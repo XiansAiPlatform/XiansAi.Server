@@ -6,8 +6,9 @@ namespace Flowmaxer.Utils
 {
     public class ServiceConfigurator
     {
-        public static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+        public static void ConfigureTemporalServices(IServiceCollection services, IConfiguration configuration, AssemblyLoader assemblyLoader)
         {
+            
             // Add services to the container.
             services.AddOpenApi();
 
@@ -16,10 +17,16 @@ namespace Flowmaxer.Utils
             services.AddSingleton<TemporalConfig>();
             services.AddSingleton<TemporalClientService>();
 
+            ConfigureTemporalWorkers(services, assemblyLoader);
+
+        }
+
+        private static void ConfigureTemporalWorkers(IServiceCollection services, AssemblyLoader assemblyLoader)
+        {
             // Add Temporal services
-            var assemblyLoader = new AssemblyLoader(configuration);
             var workflowTypes = assemblyLoader.GetWorkflowTypes();
             var activityTypes = assemblyLoader.GetActivityTypes();
+
 
             services.AddSingleton<IHostedService>(sp => new TemporalWorkerService
             {

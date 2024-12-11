@@ -5,7 +5,8 @@ using Flowmaxer.Utils;
 
 var builder = WebApplication.CreateBuilder(args);
 
-ServiceConfigurator.ConfigureServices(builder.Services, builder.Configuration);
+var assemblyLoader = new AssemblyLoader(builder.Configuration);
+ServiceConfigurator.ConfigureTemporalServices(builder.Services, builder.Configuration, assemblyLoader);
 
 var app = builder.Build();
 
@@ -25,7 +26,6 @@ void ConfigurePipeline(WebApplication app)
 
     app.UseHttpsRedirection();
 
-    var assemblyLoader = new AssemblyLoader(app.Configuration);
     var workflowTypes = assemblyLoader.GetWorkflowTypes();
 
     app.MapPost("/workflow/start", new WorkflowStarterEndpoint(workflowTypes).StartWorkflow)
