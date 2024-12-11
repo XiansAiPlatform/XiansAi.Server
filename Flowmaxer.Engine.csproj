@@ -8,6 +8,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
+    <PackageReference Include="Temporalio" Version="1.3.1" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <ProjectReference Include="..\Flowmaxer.Common\Flowmaxer.Common.csproj" />
   </ItemGroup>
 
 </Project>
