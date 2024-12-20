@@ -1,33 +1,26 @@
 using System.Reflection;
-using Flowmaxer.Common;
 using System.Runtime.Loader;
-using Flowmaxer.Utils;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
-
-var assemblyLoader = new AssemblyLoader(builder.Configuration);
-ServiceConfigurator.ConfigureTemporalServices(builder.Services, builder.Configuration, assemblyLoader);
-
+builder.Services.AddOpenApi();
 var app = builder.Build();
 
-ConfigurePipeline(app);
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
+
+app.UseHttpsRedirection();
+
+app.MapPost("/api/workflow/start", async (HttpContext context) =>
+{
+    var endpoint = new WorkflowStarterEndpoint();
+    string handle = await endpoint.StartWorkflow(context);
+    context.Response.StatusCode = StatusCodes.Status200OK;
+    await context.Response.WriteAsync($"Workflow started with handle - {handle}");
+})
+.WithName("WorkflowStart");
 
 app.Run();
-
-
-
-void ConfigurePipeline(WebApplication app)
-{
-    // Configure the HTTP request pipeline.
-    if (app.Environment.IsDevelopment())
-    {
-        app.MapOpenApi();
-    }
-
-    app.UseHttpsRedirection();
-
-    var workflowTypes = assemblyLoader.GetWorkflowTypes();
-
-    app.MapPost("/workflow/start", new WorkflowStarterEndpoint(workflowTypes).StartWorkflow)
-       .WithName("StartWorkflow");
-}
