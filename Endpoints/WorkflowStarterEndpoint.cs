@@ -1,76 +1,92 @@
 using System.Text.Json;
 using Temporalio.Client;
 
+public class WorkflowRequest
+{
+    public required string WorkflowType { get; set; }
+    public string[]? Parameters { get; set; }
+}
 
-/// <summary>
-/// Endpoints for managing workflows.
-/// </summary>
+/* 
+    curl -X POST http://localhost:5257/api/workflows \
+        -H "Content-Type: application/json" \
+        -d '{
+            "WorkflowType": "ProspectingWorkflow",
+            "Parameters": ["https://www.shifter.no/nyheter/", ""]
+        }'
+  */
 public class WorkflowStarterEndpoint
 {
-    private readonly TemporalConfig _config = new TemporalConfig();
+    private readonly ITemporalClientService _clientService;
+    private readonly ILogger<WorkflowStarterEndpoint> _logger;
 
-    /// <summary>
-    /// Starts a workflow based on the request received in the HTTP context.
-    /// </summary>
-    /// <param name="context">The HTTP context containing the request.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task<string> StartWorkflow(HttpContext context)
+    public WorkflowStarterEndpoint(
+        ITemporalClientService clientService,
+        ILogger<WorkflowStarterEndpoint> logger)
     {
-        /*
-            curl -X POST http://localhost:5257/workflow/start \
-                -H "Content-Type: application/json" \
-                -d '{"WorkflowType": "SampleWorkflow", "Input": "Hello, World!"}'
-        */
-
-        // Read the request body
-        var request = await ReadRequestBodyAsync(context);
-        // Validate the request
-        if (!ValidateRequest(context, request))
-            return "Invalid request";
-
-        var client = await new TemporalClientService(_config).GetClientAsync();
-        var options = new WorkflowOptions
-        {
-            TaskQueue = _config.TaskQueue,
-            Id = $"{request!.WorkflowType!}-{Guid.NewGuid()}"
-        };
-        // Start the workflow
-        var handle = await client.StartWorkflowAsync(request.WorkflowType!, request.Parameters ?? Array.Empty<string>(), options);
-        // Respond with the workflow handle ID
-        context.Response.StatusCode = StatusCodes.Status200OK;
-        await context.Response.WriteAsync($"Workflow started successfully with ID: {handle.Id}");
-        return handle.Id;
+        _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
-    /// Reads the request body from the HTTP context asynchronously.
+    /// Handles the HTTP request to start a workflow.
     /// </summary>
     /// <param name="context">The HTTP context containing the request.</param>
-    /// <returns>A task that represents the asynchronous operation, containing the request body as a string.</returns>
-    private async Task<WorkflowRequest?> ReadRequestBodyAsync(HttpContext context)
+    /// <returns>An IResult representing the HTTP response.</returns>
+    public async Task<IResult> HandleStartWorkflow(HttpContext context)
     {
-        using var reader = new StreamReader(context.Request.Body);
-        var body = await reader.ReadToEndAsync();
-        return JsonSerializer.Deserialize<WorkflowRequest>(body);
-    }
-
-
-    /// <summary>
-    /// Validates the deserialized workflow request.
-    /// </summary>
-    /// <param name="context">The HTTP context for setting response status and messages.</param>
-    /// <param name="request">The deserialized workflow request.</param>
-    /// <returns>True if the request is valid; otherwise, false.</returns>
-    private bool ValidateRequest(HttpContext context, WorkflowRequest? request)
-    {
-        if (request == null || string.IsNullOrEmpty(request.WorkflowType))
+        _logger.LogInformation("Received workflow start request at: {Time}", DateTime.UtcNow);
+        
+        try
         {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            context.Response.WriteAsync("Invalid request payload. Expected a JSON object with a WorkflowType and Input properties.").Wait();
-            return false;
+            using var reader = new StreamReader(context.Request.Body);
+            var requestBody = await reader.ReadToEndAsync();
+            var request = JsonSerializer.Deserialize<WorkflowRequest>(requestBody);
+
+            if (!ValidateRequest(request))
+                return Results.BadRequest("Invalid request payload. Expected a JSON object with a WorkflowType and Input properties.");
+
+            var workflowId = GenerateWorkflowId(request!.WorkflowType!);
+            var options = CreateWorkflowOptions(workflowId);
+            
+            var handle = await StartWorkflowAsync(request, options);
+            
+            _logger.LogInformation("Successfully started workflow with ID: {WorkflowId}", workflowId);
+            return Results.Ok(new { message = "Workflow started successfully", workflowId = handle.Id });
         }
-        return true;
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error starting workflow");
+            return Results.Problem(
+                title: "Workflow start failed",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
     }
 
+    private static string GenerateWorkflowId(string workflowType) =>
+        $"{workflowType.Replace(" ", "-")}-{Guid.NewGuid()}";
 
+    private WorkflowOptions CreateWorkflowOptions(string workflowId) =>
+        new()
+        {
+            TaskQueue = _clientService.Config.TaskQueue,
+            Id = workflowId
+        };
+
+    private async Task<WorkflowHandle> StartWorkflowAsync(
+        WorkflowRequest request,
+        WorkflowOptions options)
+    {
+        var client = await _clientService.GetClientAsync();
+        return await client.StartWorkflowAsync(
+            request.WorkflowType!,
+            request.Parameters ?? Array.Empty<string>(),
+            options
+        );
+    }
+
+    private static bool ValidateRequest(WorkflowRequest? request) =>
+        request != null && !string.IsNullOrEmpty(request.WorkflowType);
 }

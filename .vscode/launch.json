@@ -1,0 +1,37 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      
+      // Important: Downloading netcoredbg and building it for your architecture is crucial, at least for me. Follow the instructions in README.
+      {
+        "name": "netcoredbg engine",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build",
+        "program": "${workspaceFolder}/bin/Debug/net9.0/Flowmaxer.Engine.dll",
+        "args": [],
+        "cwd": "${workspaceFolder}",
+        "stopAtEntry": true,
+        "console": "internalConsole",
+        "internalConsoleOptions": "openOnSessionStart",
+        "pipeTransport": {
+          "pipeCwd": "${workspaceFolder}",
+  
+          "pipeProgram": "bash",
+          "pipeArgs": ["-c"],
+          "debuggerPath": "/usr/local/netcoredbg",
+          "debuggerArgs": ["--interpreter=vscode"],
+          "quoteArgs": true
+        },
+        "env": {
+          "DOTNET_ENVIRONMENT": "Development"
+        },
+        "logging": {
+          "moduleLoad": false,
+          "diagnosticsLog": {
+            "protocolMessages": true
+          }
+        }
+      }
+    ]
+  }
