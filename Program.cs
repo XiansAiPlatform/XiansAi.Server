@@ -36,6 +36,8 @@ builder.Services.AddSingleton<IOpenAIClientService>(sp =>
 builder.Services.AddScoped<WorkflowStarterEndpoint>();
 builder.Services.AddScoped<WorkflowEventsEndpoint>();
 builder.Services.AddScoped<WorkflowDefinitionEndpoint>();
+builder.Services.AddScoped<WorkflowFinderEndpoint>();
+builder.Services.AddScoped<WorkflowCancelEndpoint>();
 
 var app = builder.Build();
 
@@ -48,6 +50,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler("/error");
+app.UseCors("AllowAll");
 
 app.MapPost("/api/workflows", async (
     HttpContext context,
@@ -55,11 +58,8 @@ app.MapPost("/api/workflows", async (
 {
     return await endpoint.HandleStartWorkflow(context);
 })
-.WithName("Start a New Workflow")
-.WithOpenApi()
-.Produces<object>(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status400BadRequest) 
-.Produces(StatusCodes.Status500InternalServerError);
+.WithName("Cerate New Workflow")
+.WithOpenApi();
 
 
 app.MapGet("/api/workflows/{workflowId}/events", async (
@@ -68,11 +68,8 @@ app.MapGet("/api/workflows/{workflowId}/events", async (
 {
     return await endpoint.GetWorkflowEvents(context);
 })
-.WithName("GetWorkflowEvents")
-.WithOpenApi()
-.Produces(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status400BadRequest)
-.Produces(StatusCodes.Status500InternalServerError);
+.WithName("Get Workflow Events")
+.WithOpenApi();
 
 app.MapGet("/api/workflows/{workflowType}/definition", async (
     HttpContext context,
@@ -80,10 +77,26 @@ app.MapGet("/api/workflows/{workflowType}/definition", async (
 {
     return await endpoint.GetWorkflowDefinition(context);
 })
-.WithName("GetWorkflowDefinition")
-.WithOpenApi()
-.Produces(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status400BadRequest)
-.Produces(StatusCodes.Status500InternalServerError);
+.WithName("Get Workflow Definition")
+.WithOpenApi();
+
+app.MapGet("/api/workflows", async (
+    HttpContext context,
+    [FromServices] WorkflowFinderEndpoint endpoint) =>
+{
+    return await endpoint.GetWorkflows(context);
+})
+.WithName("Get Workflows")
+.WithOpenApi();
+
+app.MapPost("/api/workflows/{workflowId}/cancel", async (
+    HttpContext context,
+    [FromServices] WorkflowCancelEndpoint endpoint) =>
+{
+    return await endpoint.CancelWorkflow(context);
+})
+.WithName("Cancel Workflow") 
+.WithOpenApi();
+
 
 app.Run();

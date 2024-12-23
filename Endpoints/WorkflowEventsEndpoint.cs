@@ -10,12 +10,10 @@ using Temporalio.Client;
 public record WorkflowActivityEvent
 {
     public string? ActivityName { get; init; }
-    public string? ScheduledTime { get; init; }
     public string? StartedTime { get; init; }
     public string? EndedTime { get; init; }
     public object[]? Inputs { get; init; }
     public string? Result { get; init; }
-    public long CompletedEventId { get; init; }
 }
 public class WorkflowEventsEndpoint
 {
@@ -79,11 +77,29 @@ public class WorkflowEventsEndpoint
         var scheduledEvents = new Dictionary<long, HistoryEvent>();
         var startedEvents = new Dictionary<long, HistoryEvent>();
 
-        // First pass: collect scheduled and started events
+        // First pass: collect scheduled, started, and workflow events
         foreach (var evt in events)
         {
             switch (evt.EventType)
             {
+                case EventType.WorkflowExecutionStarted:
+                    _logger.LogInformation("WorkflowExecutionStarted event detected Event details: {EventDetails}", evt);
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = "Flow Started",
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                        Inputs = evt.WorkflowExecutionStartedEventAttributes.Input.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray()
+                    });
+                    break;
+                case EventType.WorkflowExecutionCompleted:
+                    _logger.LogInformation("WorkflowExecutionCompleted event detected Event details: {EventDetails}", evt);
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = "Flow Completed",
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                        Result = evt.WorkflowExecutionCompletedEventAttributes.Result.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
+                    });
+                    break;
                 case EventType.ActivityTaskScheduled:
                     scheduledEvents[evt.EventId] = evt;
                     break;
@@ -99,12 +115,10 @@ public class WorkflowEventsEndpoint
                     var activityEvent = new WorkflowActivityEvent
                     {
                         ActivityName = scheduledEvent.ActivityTaskScheduledEventAttributes.ActivityType.Name,
-                        ScheduledTime = scheduledEvent.EventTime?.ToDateTime().ToString("o"),
                         StartedTime = startedEvent.EventTime?.ToDateTime().ToString("o"),
                         EndedTime = evt.EventTime?.ToDateTime().ToString("o"),
-                        CompletedEventId = completedAttrs.ScheduledEventId,
                         Inputs = scheduledEvent.ActivityTaskScheduledEventAttributes.Input.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray(),
-                        Result = completedAttrs.Result.Payloads_.Select(p => p.Data.ToStringUtf8()).FirstOrDefault(),
+                        Result = completedAttrs.Result.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
                     };
                     activityEvents.Add(activityEvent);
                     break;
