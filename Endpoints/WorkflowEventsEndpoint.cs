@@ -83,7 +83,6 @@ public class WorkflowEventsEndpoint
             switch (evt.EventType)
             {
                 case EventType.WorkflowExecutionStarted:
-                    _logger.LogInformation("WorkflowExecutionStarted event detected Event details: {EventDetails}", evt);
                     activityEvents.Add(new WorkflowActivityEvent
                     {
                         ActivityName = "Flow Started",
@@ -92,7 +91,6 @@ public class WorkflowEventsEndpoint
                     });
                     break;
                 case EventType.WorkflowExecutionCompleted:
-                    _logger.LogInformation("WorkflowExecutionCompleted event detected Event details: {EventDetails}", evt);
                     activityEvents.Add(new WorkflowActivityEvent
                     {
                         ActivityName = "Flow Completed",

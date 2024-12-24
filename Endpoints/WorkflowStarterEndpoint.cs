@@ -71,7 +71,7 @@ public class WorkflowStarterEndpoint
     private WorkflowOptions CreateWorkflowOptions(string workflowId) =>
         new()
         {
-            TaskQueue = _clientService.Config.TaskQueue,
+            TaskQueue = "DefaultQueue",
             Id = workflowId
         };
 
