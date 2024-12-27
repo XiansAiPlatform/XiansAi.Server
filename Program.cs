@@ -30,33 +30,24 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<ITemporalClientService>(sp =>
 {
     var tenantContext = sp.GetRequiredService<TenantContext>();
-    var tenantId = tenantContext.TenantId;
-
-    // Fetch tenant-specific configuration
-    var temporalConfig = builder.Configuration.GetSection($"Tenants:{tenantId}:Temporal").Get<TemporalConfig>();
-    if (temporalConfig == null)
-    {
-        throw new Exception($"Temporal configuration not found for tenant {tenantId}");
-    }
-
-    return new TemporalClientService(temporalConfig);
+    var config = tenantContext.GetTemporalConfig();
+    return new TemporalClientService(config);
 });
 
 builder.Services.AddScoped<IOpenAIClientService>(sp =>
 {
     var tenantContext = sp.GetRequiredService<TenantContext>();
-    var tenantId = tenantContext.TenantId;
-
-    // Fetch tenant-specific configuration
-    var openAIClientServiceConfig = builder.Configuration.GetSection($"Tenants:{tenantId}:OpenAI").Get<OpenAIClientServiceConfig>();
-    if (openAIClientServiceConfig == null)
-    {
-        throw new Exception($"OpenAI configuration not found for tenant {tenantId}");
-    }
-    Console.WriteLine($"OpenAI configuration for tenant {tenantId}: {openAIClientServiceConfig}");
-
-    return new OpenAIClientService(openAIClientServiceConfig);
+    var config = tenantContext.GetOpenAIConfig();
+    return new OpenAIClientService(config);
 });
+
+builder.Services.AddScoped<IMongoDbService>(sp =>
+{
+    var tenantContext = sp.GetRequiredService<TenantContext>();
+    var config = tenantContext.GetMongoDBConfig();
+    return new MongoDbService(config);
+});
+
 
 // Register the endpoints
 builder.Services.AddScoped<WorkflowStarterEndpoint>();
