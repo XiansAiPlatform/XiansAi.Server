@@ -41,11 +41,11 @@ builder.Services.AddScoped<IOpenAIClientService>(sp =>
     return new OpenAIClientService(config);
 });
 
-builder.Services.AddScoped<IMongoDbService>(sp =>
+builder.Services.AddScoped<IMongoDbClientService>(sp =>
 {
     var tenantContext = sp.GetRequiredService<TenantContext>();
     var config = tenantContext.GetMongoDBConfig();
-    return new MongoDbService(config);
+    return new MongoDbClientService(config);
 });
 
 
