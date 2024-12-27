@@ -1,10 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using DotNetEnv;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Auth0.ManagementApi;
 
 Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
+var domain = $"https://{builder.Configuration["Auth0:Domain"]}/";
+
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -13,9 +19,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", builder =>
     {
-        builder.AllowAnyOrigin()
+        builder.WithOrigins("http://localhost:3000")
                .AllowAnyMethod()
-               .AllowAnyHeader();
+               .AllowAnyHeader()
+               .AllowCredentials();
     });
 });
 
@@ -58,8 +65,29 @@ builder.Services.AddScoped<WorkflowDefinitionEndpoint>();
 builder.Services.AddScoped<WorkflowFinderEndpoint>();
 builder.Services.AddScoped<WorkflowCancelEndpoint>();
 
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = $"https://{builder.Configuration["Auth0:Domain"]}/";
+        options.Audience = builder.Configuration["Auth0:Audience"];
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            NameClaimType = ClaimTypes.NameIdentifier
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    //options.AddPolicy("read:messages", policy => policy.Requirements.Add(new HasScopeRequirement("read:messages", domain, "tenantId")));
+});
+
+builder.Services.AddScoped<IAuthorizationHandler, HasScopeHandler>();
+
+builder.Services.AddControllers();
 
 var app = builder.Build();
+
+app.UseCors("AllowAll");
 
 app.UseMiddleware<TenantMiddleware>();
 
@@ -72,7 +100,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler("/error");
-app.UseCors("AllowAll");
+
+// Ensure CORS is applied before authentication and authorization
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapPost("/api/workflows", async (
     HttpContext context,
@@ -118,5 +149,7 @@ app.MapPost("/api/workflows/{workflowId}/cancel", async (
 })
 .WithName("Cancel Workflow")
 .WithOpenApi();
+
+app.MapControllers();
 
 app.Run();
