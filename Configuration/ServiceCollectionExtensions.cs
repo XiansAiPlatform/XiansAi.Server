@@ -1,0 +1,116 @@
+using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Authentication.Certificate;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+
+public static class ServiceCollectionExtensions
+{
+    public static IServiceCollection ConfigureServices(this WebApplicationBuilder builder)
+    {
+        builder.AddCorsConfiguration()
+              .AddAuthConfiguration()
+              .AddClientServices()
+              .AddEndpoints()
+              .AddApiConfiguration();
+
+        return builder.Services;
+    }
+
+    private static WebApplicationBuilder AddCorsConfiguration(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("AllowAll", builder =>
+            {
+                builder.WithOrigins("http://localhost:3000")
+                       .AllowAnyMethod()
+                       .AllowAnyHeader()
+                       .AllowCredentials();
+            });
+        });
+        return builder;
+    }
+
+    private static WebApplicationBuilder AddClientServices(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddScoped<TenantContext>();
+        
+        builder.Services.AddScoped<ITemporalClientService>(sp =>
+            new TemporalClientService(sp.GetRequiredService<TenantContext>().GetTemporalConfig()));
+
+        builder.Services.AddScoped<IOpenAIClientService>(sp =>
+            new OpenAIClientService(sp.GetRequiredService<TenantContext>().GetOpenAIConfig()));
+
+        builder.Services.AddScoped<IMongoDbClientService>(sp =>
+            new MongoDbClientService(sp.GetRequiredService<TenantContext>().GetMongoDBConfig()));
+
+        return builder;
+    }
+
+    private static WebApplicationBuilder AddEndpoints(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddScoped<WorkflowStarterEndpoint>();
+        builder.Services.AddScoped<WorkflowEventsEndpoint>();
+        builder.Services.AddScoped<WorkflowDefinitionEndpoint>();
+        builder.Services.AddScoped<WorkflowFinderEndpoint>();
+        builder.Services.AddScoped<WorkflowCancelEndpoint>();
+        return builder;
+    }
+
+    private static WebApplicationBuilder AddApiConfiguration(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen(c =>
+        {
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Your API", Version = "v1" });
+        });
+        builder.Services.AddOpenApi();
+        builder.Services.AddControllers();
+        return builder;
+    }
+
+    private static WebApplicationBuilder AddAuthConfiguration(this WebApplicationBuilder builder)
+    {
+        var domain = $"https://{builder.Configuration["Auth0:Domain"]}/";
+
+        builder.Services.AddAuthentication(CertificateAuthenticationDefaults.AuthenticationScheme)
+            .AddCertificate(options =>
+            {
+                options.AllowedCertificateTypes = CertificateTypes.All;
+                options.ValidateValidityPeriod = true;
+                options.RevocationMode = X509RevocationMode.Online;
+                options.ChainTrustValidationMode = X509ChainTrustMode.CustomRootTrust;
+            })
+            .AddJwtBearer("JWT", options =>
+            {
+                options.Authority = domain;
+                options.Audience = builder.Configuration["Auth0:Audience"];
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    NameClaimType = ClaimTypes.NameIdentifier
+                };
+            });
+
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("RequireJwtAuth", policy =>
+            {
+                policy.AuthenticationSchemes.Add("JWT");
+                policy.RequireAuthenticatedUser();
+            });
+
+            options.AddPolicy("RequireCertificate", policy =>
+            {
+                policy.AuthenticationSchemes.Add(CertificateAuthenticationDefaults.AuthenticationScheme);
+                policy.RequireAuthenticatedUser();
+            });
+        });
+
+        builder.Services.AddScoped<IAuthorizationHandler, HasScopeHandler>();
+
+        return builder;
+    }
+} 

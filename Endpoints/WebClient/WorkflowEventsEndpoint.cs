@@ -80,6 +80,7 @@ public class WorkflowEventsEndpoint
         // First pass: collect scheduled, started, and workflow events
         foreach (var evt in events)
         {
+            _logger.LogInformation("Processing event: {evt}", evt);
             switch (evt.EventType)
             {
                 case EventType.WorkflowExecutionStarted:
@@ -87,7 +88,7 @@ public class WorkflowEventsEndpoint
                     {
                         ActivityName = "Flow Started",
                         StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
-                        Inputs = evt.WorkflowExecutionStartedEventAttributes.Input.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray()
+                        Inputs = evt.WorkflowExecutionStartedEventAttributes.Input?.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray()
                     });
                     break;
                 case EventType.WorkflowExecutionCompleted:
@@ -95,7 +96,7 @@ public class WorkflowEventsEndpoint
                     {
                         ActivityName = "Flow Completed",
                         StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
-                        Result = evt.WorkflowExecutionCompletedEventAttributes.Result.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
+                        Result = evt.WorkflowExecutionCompletedEventAttributes.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
                     });
                     break;
                 case EventType.ActivityTaskScheduled:
@@ -115,8 +116,8 @@ public class WorkflowEventsEndpoint
                         ActivityName = scheduledEvent.ActivityTaskScheduledEventAttributes.ActivityType.Name,
                         StartedTime = startedEvent.EventTime?.ToDateTime().ToString("o"),
                         EndedTime = evt.EventTime?.ToDateTime().ToString("o"),
-                        Inputs = scheduledEvent.ActivityTaskScheduledEventAttributes.Input.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray(),
-                        Result = completedAttrs.Result.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
+                        Inputs = scheduledEvent.ActivityTaskScheduledEventAttributes.Input?.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray(),
+                        Result = completedAttrs.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
                     };
                     activityEvents.Add(activityEvent);
                     break;

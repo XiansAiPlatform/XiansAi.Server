@@ -1,10 +1,9 @@
-using Microsoft.AspNetCore.Mvc;
 using DotNetEnv;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Auth0.ManagementApi;
+using Microsoft.AspNetCore.Authentication.Certificate;
+using System.Security.Cryptography.X509Certificates;
 
 Env.Load();
 
@@ -56,8 +55,17 @@ builder.Services.AddScoped<WorkflowDefinitionEndpoint>();
 builder.Services.AddScoped<WorkflowFinderEndpoint>();
 builder.Services.AddScoped<WorkflowCancelEndpoint>();
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+builder.Services.AddAuthentication(CertificateAuthenticationDefaults.AuthenticationScheme)
+    .AddCertificate(options =>
+    {
+        options.AllowedCertificateTypes = CertificateTypes.All;
+        options.ValidateValidityPeriod = true;
+        options.RevocationMode = X509RevocationMode.Online;
+        // Custom validation logic if needed
+        options.ChainTrustValidationMode = X509ChainTrustMode.CustomRootTrust;
+    })
+    // Chain the existing JWT configuration
+    .AddJwtBearer("JWT", options =>
     {
         options.Authority = $"https://{builder.Configuration["Auth0:Domain"]}/";
         options.Audience = builder.Configuration["Auth0:Audience"];
@@ -69,7 +77,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization(options =>
 {
-    //options.AddPolicy("read:messages", policy => policy.Requirements.Add(new HasScopeRequirement("read:messages", domain, "tenantId")));
+    options.AddPolicy("RequireJwtAuth", policy =>
+    {
+        policy.AuthenticationSchemes.Add("JWT");
+        policy.RequireAuthenticatedUser();
+    });
+    
+    options.AddPolicy("RequireCertificate", policy =>
+    {
+        policy.AuthenticationSchemes.Add(CertificateAuthenticationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+    });
 });
 
 builder.Services.AddScoped<IAuthorizationHandler, HasScopeHandler>();
@@ -96,50 +114,8 @@ app.UseExceptionHandler("/error");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapPost("/api/workflows", async (
-    HttpContext context,
-    [FromServices] WorkflowStarterEndpoint endpoint) =>
-{
-    return await endpoint.HandleStartWorkflow(context);
-})
-.WithName("Create New Workflow")
-.WithOpenApi();
-
-app.MapGet("/api/workflows/{workflowId}/events", async (
-    HttpContext context,
-    [FromServices] WorkflowEventsEndpoint endpoint) =>
-{
-    return await endpoint.GetWorkflowEvents(context);
-})
-.WithName("Get Workflow Events")
-.WithOpenApi();
-
-app.MapGet("/api/workflows/{workflowType}/definition", async (
-    HttpContext context,
-    [FromServices] WorkflowDefinitionEndpoint endpoint) =>
-{
-    return await endpoint.GetWorkflowDefinition(context);
-})
-.WithName("Get Workflow Definition")
-.WithOpenApi();
-
-app.MapGet("/api/workflows", async (
-    HttpContext context,
-    [FromServices] WorkflowFinderEndpoint endpoint) =>
-{
-    return await endpoint.GetWorkflows(context);
-})
-.WithName("Get Workflows")
-.WithOpenApi();
-
-app.MapPost("/api/workflows/{workflowId}/cancel", async (
-    HttpContext context,
-    [FromServices] WorkflowCancelEndpoint endpoint) =>
-{
-    return await endpoint.CancelWorkflow(context);
-})
-.WithName("Cancel Workflow")
-.WithOpenApi();
+WebClientEndpointExtensions.MapClientEndpoints(app);
+FlowServerEndpointExtensions.MapFlowServerEndpoints(app);
 
 app.MapControllers();
 

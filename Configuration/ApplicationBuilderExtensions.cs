@@ -1,0 +1,52 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Hosting;
+
+public static class ApplicationBuilderExtensions
+{
+    public static WebApplication ConfigureMiddleware(this WebApplication app)
+    {
+        // Development specific middleware
+        if (app.Environment.IsDevelopment())
+        {
+            ConfigureDevelopmentMiddleware(app);
+        }
+
+        // Global middleware
+        ConfigureGlobalMiddleware(app);
+
+        // Authentication & Authorization
+        ConfigureAuthMiddleware(app);
+
+        // Endpoint mapping
+        ConfigureEndpoints(app);
+
+        return app;
+    }
+
+    private static void ConfigureDevelopmentMiddleware(WebApplication app)
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI();
+        app.MapOpenApi();
+    }
+
+    private static void ConfigureGlobalMiddleware(WebApplication app)
+    {
+        app.UseCors("AllowAll");
+        app.UseMiddleware<TenantMiddleware>();
+        app.UseExceptionHandler("/error");
+    }
+
+    private static void ConfigureAuthMiddleware(WebApplication app)
+    {
+        app.UseAuthentication();
+        app.UseAuthorization();
+    }
+
+    private static void ConfigureEndpoints(WebApplication app)
+    {
+        WebClientEndpointExtensions.MapClientEndpoints(app);
+        FlowServerEndpointExtensions.MapFlowServerEndpoints(app);
+        app.MapControllers();
+    }
+}
