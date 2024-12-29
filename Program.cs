@@ -1,122 +1,23 @@
 using DotNetEnv;
-using Microsoft.IdentityModel.Tokens;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authentication.Certificate;
-using System.Security.Cryptography.X509Certificates;
 
-Env.Load();
+namespace YourNamespace;
 
-var builder = WebApplication.CreateBuilder(args);
-var domain = $"https://{builder.Configuration["Auth0:Domain"]}/";
-
-builder.Services.AddScoped<TenantContext>();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-builder.Services.AddOpenApi();
-builder.Services.AddCors(options =>
+public class Program
 {
-    options.AddPolicy("AllowAll", builder =>
+    public static void Main(string[] args)
     {
-        builder.WithOrigins("http://localhost:3000")
-               .AllowAnyMethod()
-               .AllowAnyHeader()
-               .AllowCredentials();
-    });
-});
+        Env.Load();
 
-    
-builder.Services.AddScoped<ITemporalClientService>(sp =>
-{
-    var tenantContext = sp.GetRequiredService<TenantContext>();
-    var config = tenantContext.GetTemporalConfig();
-    return new TemporalClientService(config);
-});
+        var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddScoped<IOpenAIClientService>(sp =>
-{
-    var tenantContext = sp.GetRequiredService<TenantContext>();
-    var config = tenantContext.GetOpenAIConfig();
-    return new OpenAIClientService(config);
-});
+        // Configure all services
+        builder.ConfigureServices();
 
-builder.Services.AddScoped<IMongoDbClientService>(sp =>
-{
-    var tenantContext = sp.GetRequiredService<TenantContext>();
-    var config = tenantContext.GetMongoDBConfig();
-    return new MongoDbClientService(config);
-});
+        var app = builder.Build();
 
+        // Configure middleware pipeline
+        app.ConfigureMiddleware();
 
-// Register the endpoints
-builder.Services.AddScoped<WorkflowStarterEndpoint>();
-builder.Services.AddScoped<WorkflowEventsEndpoint>();
-builder.Services.AddScoped<WorkflowDefinitionEndpoint>();
-builder.Services.AddScoped<WorkflowFinderEndpoint>();
-builder.Services.AddScoped<WorkflowCancelEndpoint>();
-
-builder.Services.AddAuthentication(CertificateAuthenticationDefaults.AuthenticationScheme)
-    .AddCertificate(options =>
-    {
-        options.AllowedCertificateTypes = CertificateTypes.All;
-        options.ValidateValidityPeriod = true;
-        options.RevocationMode = X509RevocationMode.Online;
-        // Custom validation logic if needed
-        options.ChainTrustValidationMode = X509ChainTrustMode.CustomRootTrust;
-    })
-    // Chain the existing JWT configuration
-    .AddJwtBearer("JWT", options =>
-    {
-        options.Authority = $"https://{builder.Configuration["Auth0:Domain"]}/";
-        options.Audience = builder.Configuration["Auth0:Audience"];
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            NameClaimType = ClaimTypes.NameIdentifier
-        };
-    });
-
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("RequireJwtAuth", policy =>
-    {
-        policy.AuthenticationSchemes.Add("JWT");
-        policy.RequireAuthenticatedUser();
-    });
-    
-    options.AddPolicy("RequireCertificate", policy =>
-    {
-        policy.AuthenticationSchemes.Add(CertificateAuthenticationDefaults.AuthenticationScheme);
-        policy.RequireAuthenticatedUser();
-    });
-});
-
-builder.Services.AddScoped<IAuthorizationHandler, HasScopeHandler>();
-
-builder.Services.AddControllers();
-
-var app = builder.Build();
-
-app.UseCors("AllowAll");
-
-app.UseMiddleware<TenantMiddleware>();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-    app.MapOpenApi();
+        app.Run();
+    }
 }
-
-app.UseExceptionHandler("/error");
-
-// Ensure CORS is applied before authentication and authorization
-app.UseAuthentication();
-app.UseAuthorization();
-
-WebClientEndpointExtensions.MapClientEndpoints(app);
-FlowServerEndpointExtensions.MapFlowServerEndpoints(app);
-
-app.MapControllers();
-
-app.Run();
