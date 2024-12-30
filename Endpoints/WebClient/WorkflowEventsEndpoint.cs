@@ -34,7 +34,6 @@ public class WorkflowEventsEndpoint
     public async Task<IResult> GetWorkflowEvents(HttpContext context)
     {
         var workflowId = context.Request.RouteValues["workflowId"] as string;
-        _logger.LogInformation("Getting workflow events for workflow ID: {WorkflowId}", workflowId);
         if (string.IsNullOrEmpty(workflowId))
         {
             _logger.LogWarning("Attempted to get events with empty workflow ID");
@@ -50,8 +49,7 @@ public class WorkflowEventsEndpoint
             {
                 events.Add(historyEvent);
             }
-            _logger.LogInformation("Successfully fetched {Count} events for workflow {WorkflowId}", 
-                events.Count, workflowId);
+
 
             var activityEvents = ExtractActivityEvents(events);
 
@@ -80,7 +78,6 @@ public class WorkflowEventsEndpoint
         // First pass: collect scheduled, started, and workflow events
         foreach (var evt in events)
         {
-            _logger.LogInformation("Processing event: {evt}", evt);
             switch (evt.EventType)
             {
                 case EventType.WorkflowExecutionStarted:
