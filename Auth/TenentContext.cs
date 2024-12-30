@@ -2,7 +2,7 @@ using Microsoft.Extensions.Configuration;
 
 public interface ITenantContext
 {
-    string TenantId { get; }    
+    string TenantId { get; set; }    
 
     MongoDBConfig GetMongoDBConfig();
     TemporalConfig GetTemporalConfig();

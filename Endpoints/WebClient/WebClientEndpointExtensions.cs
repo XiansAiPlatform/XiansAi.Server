@@ -55,5 +55,20 @@ public static class WebClientEndpointExtensions
         .WithName("Cancel Workflow")
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
+
+        app.MapPost("/api/client/certificates/generate", async (
+            HttpContext context,
+            [FromBody] CertRequest request,
+            [FromServices] CertificateEndpoint endpoint) =>
+        {
+            return await endpoint.GenerateClientCertificate(request);
+        })
+        .WithName("Generate Client Certificate")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi(operation => {
+            operation.Summary = "Generate a new client certificate";
+            operation.Description = "Generates and returns a new client certificate in PFX format";
+            return operation;
+        });
     }
 }

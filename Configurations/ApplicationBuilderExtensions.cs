@@ -37,6 +37,8 @@ public static class ApplicationBuilderExtensions
 
     private static void ConfigureAuthMiddleware(WebApplication app)
     {
+        app.UseMiddleware<CertificateValidationMiddleware>();
+        app.UseCertificateForwarding();
         app.UseAuthentication();
         app.UseAuthorization();
     }

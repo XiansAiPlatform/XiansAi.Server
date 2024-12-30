@@ -1,8 +1,9 @@
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.Certificate;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 public static class ServiceCollectionExtensions
@@ -36,17 +37,18 @@ public static class ServiceCollectionExtensions
 
     private static WebApplicationBuilder AddClientServices(this WebApplicationBuilder builder)
     {
-        builder.Services.AddScoped<TenantContext>();
-        
+        builder.Services.AddScoped<ITenantContext, TenantContext>();
+
         builder.Services.AddScoped<ITemporalClientService>(sp =>
-            new TemporalClientService(sp.GetRequiredService<TenantContext>().GetTemporalConfig()));
+            new TemporalClientService(sp.GetRequiredService<ITenantContext>().GetTemporalConfig()));
 
         builder.Services.AddScoped<IOpenAIClientService>(sp =>
-            new OpenAIClientService(sp.GetRequiredService<TenantContext>().GetOpenAIConfig()));
+            new OpenAIClientService(sp.GetRequiredService<ITenantContext>().GetOpenAIConfig()));
 
         builder.Services.AddScoped<IMongoDbClientService>(sp =>
-            new MongoDbClientService(sp.GetRequiredService<TenantContext>().GetMongoDBConfig()));
+            new MongoDbClientService(sp.GetRequiredService<ITenantContext>().GetMongoDBConfig()));
 
+        builder.Services.AddSingleton<CertificateGenerator>();
         return builder;
     }
 
@@ -57,6 +59,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<WorkflowDefinitionEndpoint>();
         builder.Services.AddScoped<WorkflowFinderEndpoint>();
         builder.Services.AddScoped<WorkflowCancelEndpoint>();
+        builder.Services.AddScoped<CertificateEndpoint>();
         return builder;
     }
 
@@ -74,20 +77,28 @@ public static class ServiceCollectionExtensions
 
     private static WebApplicationBuilder AddAuthConfiguration(this WebApplicationBuilder builder)
     {
-
-        builder.Services.AddAuthentication(CertificateAuthenticationDefaults.AuthenticationScheme)
-            .AddCertificate(options =>
+        builder.Services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = "JWT";
+            options.DefaultChallengeScheme = "JWT";
+        })
+        .AddJwtBearer("JWT", options =>
+        {
+            options.Authority = builder.Configuration["Auth0:Domain"];
+            options.Audience = builder.Configuration["Auth0:Audience"];
+            options.Events = new JwtBearerEvents
             {
-                options.AllowedCertificateTypes = CertificateTypes.All;
-                options.ValidateValidityPeriod = true;
-                options.RevocationMode = X509RevocationMode.Online;
-                options.ChainTrustValidationMode = X509ChainTrustMode.CustomRootTrust;
-            })
-            .AddJwtBearer("JWT", options =>
-            {
-                options.Authority = builder.Configuration["Auth0:Domain"];
-                options.Audience = builder.Configuration["Auth0:Audience"];
-            });
+                OnTokenValidated = context =>
+                {
+                    if (context.Principal?.Identity is ClaimsIdentity identity)
+                    {
+                        // Set the User property of HttpContext
+                        context.HttpContext.User = context.Principal;
+                    }
+                    return Task.CompletedTask;
+                }
+            };
+        });
 
         builder.Services.AddAuthorization(options =>
         {
@@ -97,16 +108,10 @@ public static class ServiceCollectionExtensions
                 policy.RequireAuthenticatedUser();
                 policy.Requirements.Add(new JwtClientRequirement(builder.Configuration));
             });
-
-            options.AddPolicy("RequireCertificate", policy =>
-            {
-                policy.AuthenticationSchemes.Add(CertificateAuthenticationDefaults.AuthenticationScheme);
-                policy.RequireAuthenticatedUser();
-            });
         });
 
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IAuthorizationHandler, JwtClientHandler>();
         return builder;
     }
-} 
+}

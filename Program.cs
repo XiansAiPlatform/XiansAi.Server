@@ -16,7 +16,6 @@ public class Program
 
         // Configure middleware pipeline
         app.ConfigureMiddleware();
-
         app.Run();
     }
 }

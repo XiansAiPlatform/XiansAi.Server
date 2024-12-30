@@ -16,12 +16,12 @@ public class JwtClientRequirement : IAuthorizationRequirement
 public class JwtClientHandler : AuthorizationHandler<JwtClientRequirement>
 {
     private readonly ILogger<JwtClientHandler> _logger;
-    private readonly TenantContext _tenantContext;
+    private readonly ITenantContext _tenantContext;
     private readonly IConfiguration _configuration;
 
     public JwtClientHandler(
         ILogger<JwtClientHandler> logger, 
-        TenantContext tenantContext,
+        ITenantContext tenantContext,
         IConfiguration configuration)
     {
         _logger = logger;
