@@ -20,7 +20,6 @@ public class CertificateValidationMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        _logger.LogInformation("CertificateValidationMiddleware: " + context.Request.Path);
         // Only apply to /api/server paths
         if (!context.Request.Path.StartsWithSegments("/api/server"))
         {
@@ -75,11 +74,9 @@ public class CertificateValidationMiddleware
                 return;
             }
 
-            _logger.LogInformation("Certificate chain validation succeeded");
 
             // Validate tenant name from certificate subject
             var certSubject = cert.Subject;
-            _logger.LogInformation("Certificate subject: " + certSubject);
 
             var certNameFromCert = certSubject.Split('-')[0];
             var tenantIdFromCert = certSubject.Split('-')[1];
