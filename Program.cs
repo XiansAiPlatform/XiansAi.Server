@@ -1,6 +1,5 @@
 using DotNetEnv;
 
-namespace YourNamespace;
 
 public class Program
 {

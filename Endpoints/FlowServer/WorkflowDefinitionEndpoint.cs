@@ -23,6 +23,15 @@ public class WorkflowDefinitionEndpoint
         _openAIClientService = openAIClientService ?? throw new ArgumentNullException(nameof(openAIClientService));
     }
 
+    public async Task<IResult> RegisterWorkflowDefinition(HttpContext context)
+    {
+        var workflowType = context.Request.RouteValues["workflowType"] as string;
+        _logger.LogInformation("Registering workflow definition for {WorkflowType}", workflowType);
+
+        await Task.Delay(1000);
+        return Results.Ok();
+    }
+
     public async Task<IResult> SaveWorkflowDefinition(HttpContext context)
     {
         var workflowType = context.Request.RouteValues["workflowType"] as string;

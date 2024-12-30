@@ -31,8 +31,7 @@ public static class ApplicationBuilderExtensions
 
     private static void ConfigureGlobalMiddleware(WebApplication app)
     {
-        app.UseCors("AllowAll");
-        app.UseMiddleware<TenantMiddleware>();
+        app.UseCors("AllowAll");   
         app.UseExceptionHandler("/error");
     }
 

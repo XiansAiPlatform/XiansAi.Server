@@ -20,11 +20,12 @@ public static class ServiceCollectionExtensions
 
     private static WebApplicationBuilder AddCorsConfiguration(this WebApplicationBuilder builder)
     {
+        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
         builder.Services.AddCors(options =>
         {
             options.AddPolicy("AllowAll", builder =>
             {
-                builder.WithOrigins("http://localhost:3000")
+                builder.WithOrigins(allowedOrigins ?? Array.Empty<string>())
                        .AllowAnyMethod()
                        .AllowAnyHeader()
                        .AllowCredentials();
@@ -64,7 +65,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(c =>
         {
-            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Your API", Version = "v1" });
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Flowmaxer API", Version = "v1" });
         });
         builder.Services.AddOpenApi();
         builder.Services.AddControllers();
@@ -73,7 +74,6 @@ public static class ServiceCollectionExtensions
 
     private static WebApplicationBuilder AddAuthConfiguration(this WebApplicationBuilder builder)
     {
-        var domain = $"https://{builder.Configuration["Auth0:Domain"]}/";
 
         builder.Services.AddAuthentication(CertificateAuthenticationDefaults.AuthenticationScheme)
             .AddCertificate(options =>
@@ -85,12 +85,8 @@ public static class ServiceCollectionExtensions
             })
             .AddJwtBearer("JWT", options =>
             {
-                options.Authority = domain;
+                options.Authority = builder.Configuration["Auth0:Domain"];
                 options.Audience = builder.Configuration["Auth0:Audience"];
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    NameClaimType = ClaimTypes.NameIdentifier
-                };
             });
 
         builder.Services.AddAuthorization(options =>
@@ -99,6 +95,7 @@ public static class ServiceCollectionExtensions
             {
                 policy.AuthenticationSchemes.Add("JWT");
                 policy.RequireAuthenticatedUser();
+                policy.Requirements.Add(new JwtClientRequirement(builder.Configuration));
             });
 
             options.AddPolicy("RequireCertificate", policy =>
@@ -108,8 +105,8 @@ public static class ServiceCollectionExtensions
             });
         });
 
-        builder.Services.AddScoped<IAuthorizationHandler, HasScopeHandler>();
-
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddScoped<IAuthorizationHandler, JwtClientHandler>();
         return builder;
     }
 } 
