@@ -1,7 +1,9 @@
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Extensions;
+using MongoDB.Driver.Core.Events;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Api.History.V1;
 using Temporalio.Client;
@@ -9,6 +11,7 @@ using Temporalio.Client;
 
 public record WorkflowActivityEvent
 {
+    public long ID { get; init; }
     public string? ActivityName { get; init; }
     public string? StartedTime { get; init; }
     public string? EndedTime { get; init; }
@@ -20,6 +23,9 @@ public class WorkflowEventsEndpoint
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowEventsEndpoint> _logger;
 
+    private readonly Dictionary<long, HistoryEvent> _scheduledEvents = new();
+    private readonly Dictionary<long, HistoryEvent> _startedEvents = new();
+
     public WorkflowEventsEndpoint(
         ITemporalClientService clientService,
         ILogger<WorkflowEventsEndpoint> logger)
@@ -28,12 +34,104 @@ public class WorkflowEventsEndpoint
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    public IResult StreamWorkflowEvents(string? workflowId)
+    {
+        if (string.IsNullOrEmpty(workflowId))
+        {
+            return Results.BadRequest("WorkflowId is required");
+        }
+
+        return Results.Stream(async stream =>
+        {
+            try
+            {
+                var client = await _clientService.GetClientAsync();
+                var handle = client.GetWorkflowHandle(workflowId);
+                var options = new WorkflowHistoryEventFetchOptions
+                {
+                    WaitNewEvent = true,
+                    EventFilterType = HistoryEventFilterType.AllEvent
+                };
+
+                await foreach (var historyEvent in handle.FetchHistoryEventsAsync(options))
+                {
+                    // Convert the event to a WorkflowActivityEvent if it's an activity event
+                    var activityEvent = ConvertToActivityEvent(historyEvent);
+                    if (activityEvent != null)
+                    {
+                        _logger.LogInformation("Sending activity event: {ActivityEvent}", activityEvent);
+                        await JsonSerializer.SerializeAsync(stream, activityEvent);
+                        await stream.WriteAsync("\n"u8.ToArray());
+                        await stream.FlushAsync();
+                        if (historyEvent.EventType == EventType.WorkflowExecutionCompleted)
+                        {
+                            _logger.LogInformation("Workflow completed, clearing event caches");
+                            _startedEvents.Clear();
+                            _scheduledEvents.Clear();
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error streaming workflow events for workflow {WorkflowId}", workflowId);
+            }
+        }, "text/event-stream");
+    }
+
+    private WorkflowActivityEvent? ConvertToActivityEvent(HistoryEvent evt)
+    {
+        switch (evt.EventType)
+        {
+            case EventType.ActivityTaskScheduled:
+               _scheduledEvents[evt.EventId] = evt;
+               return null;
+            case EventType.ActivityTaskStarted:
+               _startedEvents[evt.EventId] = evt;
+               return null;
+            case EventType.WorkflowExecutionStarted:
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = "Flow Started",
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                    Inputs = evt.WorkflowExecutionStartedEventAttributes.Input?.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray()
+                };
+            case EventType.WorkflowExecutionCompleted:
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = "Flow Completed",
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                    Result = evt.WorkflowExecutionCompletedEventAttributes.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
+                };
+            case EventType.ActivityTaskCompleted:
+                var completedAttrs = evt.ActivityTaskCompletedEventAttributes;
+                var startedEvent = _startedEvents[completedAttrs.StartedEventId];
+                var scheduledEvent = _scheduledEvents[completedAttrs.ScheduledEventId];
+                
+                var activityEvent = new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = scheduledEvent.ActivityTaskScheduledEventAttributes.ActivityType.Name,
+                    StartedTime = startedEvent.EventTime?.ToDateTime().ToString("o"),
+                    EndedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                    Inputs = scheduledEvent.ActivityTaskScheduledEventAttributes.Input?.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray(),
+                    Result = completedAttrs.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
+                };
+                return activityEvent;
+            default:
+                return null;
+        }
+    }
+
     /**
     curl -X GET "http://localhost:5257/api/workflows/ProspectingWorkflow-79b8f89d-2c00-43a7-a3aa-50292ffdc65d/events"
     */
-    public async Task<IResult> GetWorkflowEvents(HttpContext context)
+    public async Task<IResult> GetWorkflowEvents(string? workflowId)
     {
-        var workflowId = context.Request.RouteValues["workflowId"] as string;
+        
         if (string.IsNullOrEmpty(workflowId))
         {
             _logger.LogWarning("Attempted to get events with empty workflow ID");
@@ -100,12 +198,12 @@ public class WorkflowEventsEndpoint
                     scheduledEvents[evt.EventId] = evt;
                     break;
                 case EventType.ActivityTaskStarted:
-                    var startedAttrs = evt.ActivityTaskStartedEventAttributes;
-                    startedEvents[startedAttrs.ScheduledEventId] = evt;
+                    //var startedAttrs = evt.ActivityTaskStartedEventAttributes;
+                    startedEvents[evt.EventId] = evt;
                     break;
                 case EventType.ActivityTaskCompleted:
                     var completedAttrs = evt.ActivityTaskCompletedEventAttributes;
-                    var startedEvent = startedEvents[completedAttrs.ScheduledEventId];
+                    var startedEvent = startedEvents[completedAttrs.StartedEventId];
                     var scheduledEvent = scheduledEvents[completedAttrs.ScheduledEventId];
                     
                     var activityEvent = new WorkflowActivityEvent

@@ -20,7 +20,8 @@ public static class WebClientEndpointExtensions
             HttpContext context,
             [FromServices] WorkflowEventsEndpoint endpoint) =>
         {
-            return await endpoint.GetWorkflowEvents(context);
+            var workflowId = context.Request.RouteValues["workflowId"] as string;
+            return await endpoint.GetWorkflowEvents(workflowId);
         })
         .WithName("Get Workflow Events")
         .RequireAuthorization("RequireJwtAuth")
@@ -68,6 +69,20 @@ public static class WebClientEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Generate a new client certificate";
             operation.Description = "Generates and returns a new client certificate in PFX format";
+            return operation;
+        });
+
+        app.MapGet("/api/client/workflows/{workflowId}/events/stream", (
+            [FromServices] WorkflowEventsEndpoint endpoint,
+            string workflowId) =>
+        {
+            return endpoint.StreamWorkflowEvents(workflowId);
+        })
+        .WithName("Stream Workflow Events")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi(operation => {
+            operation.Summary = "Stream workflow events in real-time";
+            operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events";
             return operation;
         });
     }
