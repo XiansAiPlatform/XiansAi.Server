@@ -78,6 +78,12 @@ public class JwtClientHandler : AuthorizationHandler<JwtClientRequirement>
                 return Task.CompletedTask;
             }
 
+            if (currentTenantId.Contains('-'))
+            {
+                _logger.LogWarning($"Tenant ID cannot contain '-'");
+                return Task.CompletedTask;
+            }
+
             // Better configuration reading
             var tenantSection = _configuration.GetSection($"Tenants:{currentTenantId}");
             if (!tenantSection.Exists())
