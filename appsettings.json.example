@@ -1,0 +1,51 @@
+{
+    "Logging": {
+      "LogLevel": {
+        "Default": "Information",
+        "Microsoft.AspNetCore": "Warning"
+      }
+    },
+    "AllowedHosts": "*",
+  
+    "Auth0": {
+      "Domain": "https://flowmaxer.eu.auth0.com/",
+      "Audience": "https://flowmaxer.ai/engine",
+      "ClientId": "gKpFhcYt8T7dburrl0qgN3oipdxe9y9O",
+      "ClientSecret": "<auth0-application-client-secret>"
+    },
+
+    "Certificates": {
+      "RootCertPath": "./root-cert.pfx",
+      "RootCertPassword": "<root-certificate-password>"
+    },
+
+    "Cors": {
+      "AllowedOrigins": [
+        "http://localhost:3000"
+      ]
+    },
+
+    "Tenants": {
+      "FmDev": {
+        "OpenAI": {
+          "ApiKey": "<openai-api-key>",
+          "Model": "gpt-4o-mini"
+        },
+        "Temporal": {
+          "TemporalServerUrl": "nine-nine-x-test.tsuah.tmprl.cloud:7233",
+          "Namespace": "nine-nine-x-test.tsuah",
+          "ClientCert": "../Certificates/Temporal/client.pem",
+          "ClientPrivateKey": "../Certificates/Temporal/client.key",
+          "CaCert": "../Certificates/Temporal/ca.pem"
+        },
+        "MongoDB": {
+          "ConnectionString": "mongodb+srv://development.lwas9.mongodb.net/?authSource=%24external&authMechanism=MONGODB-X509&retryWrites=true&w=majority&appName=Development",
+          "DatabaseName": "flowmaxer",
+          "CertificatePath": "../Certificates/MongoDB/x509.pfx",
+          "CertificatePassword": "<mongodb-certificate-password>"
+        }
+      }
+    }
+  }
+  
+  

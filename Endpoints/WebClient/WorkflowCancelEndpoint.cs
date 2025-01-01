@@ -50,6 +50,7 @@ public class WorkflowCancelEndpoint
         } 
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Error canceling or terminating workflow");
             return Results.Problem(
                 detail: $"Error canceling or terminating workflow: {ex.Message}",
                 statusCode: 500

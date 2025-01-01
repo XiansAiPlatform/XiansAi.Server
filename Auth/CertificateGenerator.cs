@@ -4,9 +4,9 @@ using System.Security.Cryptography.X509Certificates;
 public class CertificateGenerator
 {
 
-    private readonly X509Certificate2 _rootCertificate;
-    private string? _rootCertPath;
-    private string? _rootCertPassword;
+    //private readonly X509Certificate2 _rootCertificate;
+    private readonly string _rootCertPath;
+    private readonly string _rootCertPassword;
     private readonly ILogger<CertificateGenerator> _logger;
     private readonly IHostEnvironment _environment;
 
@@ -16,35 +16,30 @@ public class CertificateGenerator
     {
         _logger = logger;
         _environment = environment;
-        _rootCertPath = configuration["RootCertPath"];
-        _rootCertPassword = configuration["RootCertPassword"];
-
-        // Create or load root certificate
-        _rootCertificate = CreateOrLoadRootCertificate();
-
+        _rootCertPath = configuration["Certificates:RootCertPath"] ?? throw new InvalidOperationException("Root certificate path not found");
+        _rootCertPassword = configuration["Certificates:RootCertPassword"] ?? throw new InvalidOperationException("Root certificate password not found");
     }
 
     public X509Certificate2 CreateOrLoadRootCertificate()
     {
-        // In development, use fixed paths and passwords
-        if (string.IsNullOrEmpty(_rootCertPath) || string.IsNullOrEmpty(_rootCertPassword))
+        if (_environment.IsDevelopment() && !File.Exists(_rootCertPath))
         {
-            if (_environment.IsDevelopment())
-            {
-                _rootCertPath = "rootCert.pfx";
-                _rootCertPassword = "-pwd-";
-            } else {
-                throw new InvalidOperationException("Root certificate path and password must be configured in production");
-            }
-        }
+            return CreateNewRootCertificate();
+        } 
 
-        if (File.Exists(_rootCertPath))
+        // In Production, the root certificate must be present
+        if (!File.Exists(_rootCertPath))
         {
+            throw new InvalidOperationException("Root certificate not found");
+        }
 #pragma warning disable SYSLIB0057 // Type or member is obsolete
-            return new X509Certificate2(_rootCertPath, _rootCertPassword);
+        return new X509Certificate2(_rootCertPath, _rootCertPassword);
 #pragma warning restore SYSLIB0057 // Type or member is obsolete
-        }
 
+    }
+
+    private X509Certificate2 CreateNewRootCertificate()
+    {
         using var rsa = RSA.Create(4096);
         var rootReq = new CertificateRequest(
             $"CN=Flowmaxer Root-{DateTime.Now.Ticks}",
@@ -79,7 +74,8 @@ public class CertificateGenerator
         req.CertificateExtensions.Add(
             new X509BasicConstraintsExtension(false, false, 0, false));
 
-        var cert = req.Create(_rootCertificate, 
+        var rootCertificate = CreateOrLoadRootCertificate();
+        var cert = req.Create(rootCertificate, 
             DateTimeOffset.Now, 
             DateTimeOffset.Now.AddYears(5), 
             Guid.NewGuid().ToByteArray());
