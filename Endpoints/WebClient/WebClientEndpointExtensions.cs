@@ -58,8 +58,8 @@ public static class WebClientEndpointExtensions
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
 
-        app.MapGet("/api/client/instructions/{name}/versions", async (
-            string name,
+        app.MapGet("/api/client/instructions/versions", async (
+            [FromQuery]string name,
             [FromServices] InstructionsEndpoint endpoint) =>
         {
             return await endpoint.GetInstructionVersions(name);

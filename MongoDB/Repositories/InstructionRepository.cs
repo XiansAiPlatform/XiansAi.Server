@@ -11,6 +11,13 @@ public class InstructionRepository
         _instructions = database.GetCollection<Instruction>("instructions");
     }
 
+    public async Task<Instruction> GetLatestInstructionAsync(string name)
+    {
+        return await _instructions.Find(x => x.Name == name)
+            .SortByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
+
     public async Task<Instruction> GetByIdAsync(string id)
     {
         return await _instructions.Find(x => x.Id == id).FirstOrDefaultAsync();

@@ -1,4 +1,6 @@
 using System.Security.Cryptography.X509Certificates;
+using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 
 public class CertificateValidationMiddleware
 {
@@ -20,6 +22,8 @@ public class CertificateValidationMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+
+
         // Only apply to /api/server paths
         if (!context.Request.Path.StartsWithSegments("/api/server"))
         {
@@ -77,24 +81,36 @@ public class CertificateValidationMiddleware
 
             // Validate tenant name from certificate subject
             var certSubject = cert.Subject;
+            var certOrganization = cert.Issuer;
+            var distinguishedName = new X500DistinguishedName(certSubject);
+            var tenantNameFromCert = distinguishedName.Format(multiLine: false)
+                .Split(',')
+                .FirstOrDefault(x => x.Trim().StartsWith("O="))
+                ?.Split('=')[1];
 
-            var certNameFromCert = certSubject.Split('-')[0];
-            var tenantIdFromCert = certSubject.Split('-')[1];
-            var userNameFromCert = certSubject.Split('-')[2];
             
-            if (string.IsNullOrEmpty(tenantIdFromCert))
+            if (string.IsNullOrEmpty(tenantNameFromCert))
             {
-                _logger.LogInformation("Certificate subject does not contain tenant ID");
+                _logger.LogInformation("Certificate does not contain Organization name");
                 context.Response.StatusCode = 401;
                 return;
             }
 
-            if (!_configuration.GetSection($"Tenants:{tenantIdFromCert}").Exists())
+            if (!_configuration.GetSection($"Tenants:{tenantNameFromCert}").Exists())
             {
-                _logger.LogInformation($"Tenant ID from certificate does not exist in configuration - Tenants:{tenantIdFromCert}");
+                _logger.LogInformation($"Organization name from certificate does not exist in configuration - Organization:{tenantNameFromCert}");
                 context.Response.StatusCode = 401;
                 return;
             }
+
+            _logger.LogInformation("Authorization succeeded. Setting tenant ID: {currentTenantId}", tenantNameFromCert);
+
+
+            // Get the request services scope
+            var scope = context.RequestServices;
+            // Register services into the scope
+            var tenantContext = scope.GetRequiredService<ITenantContext>();
+            tenantContext.TenantId = tenantNameFromCert;
 
             await _next(context);
         }

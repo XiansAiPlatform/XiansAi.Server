@@ -61,6 +61,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<WorkflowCancelEndpoint>();
         builder.Services.AddScoped<CertificateEndpoint>();
         builder.Services.AddScoped<InstructionsEndpoint>();
+        builder.Services.AddScoped<InstructionsServerEndpoint>();
         return builder;
     }
 

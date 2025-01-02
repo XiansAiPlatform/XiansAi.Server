@@ -65,8 +65,11 @@ public class CertificateGenerator
     public X509Certificate2 GenerateClientCertificate(string certName, string tenantName, string userName)
     {
         using var rsa = RSA.Create(2048);
+        var distinguishedName = new X500DistinguishedName(
+            $"CN={certName}--{tenantName}--{userName}, O={tenantName}");
+        
         var req = new CertificateRequest(
-            $"CN={certName.Trim('-')}-{tenantName.Trim('-')}-{userName.Trim('-')}",
+            distinguishedName,
             rsa,
             HashAlgorithmName.SHA256,
             RSASignaturePadding.Pkcs1);

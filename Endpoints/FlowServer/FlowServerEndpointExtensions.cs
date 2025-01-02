@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Bson;
 
 public static class FlowServerEndpointExtensions
 {
@@ -16,6 +17,14 @@ public static class FlowServerEndpointExtensions
                 Claims = claims
             });
         });
-;
+
+        app.MapGet("/api/server/instructions/latest", async (
+            [FromQuery] string name,
+            [FromServices] InstructionsServerEndpoint endpoint) =>
+        {
+            var result = await endpoint.GetLatestInstruction(name);
+            return result;
+        });
+
     }
 }
