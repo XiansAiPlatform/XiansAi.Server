@@ -13,7 +13,7 @@ public class WorkflowFinderEndpoint
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<IResult> GetWorkflows(HttpContext context)
+    public async Task<IResult> GetWorkflows()
     {
         _logger.LogInformation("Getting list of workflows at: {Time}", DateTime.UtcNow);
 

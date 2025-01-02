@@ -4,23 +4,88 @@ public static class WebClientEndpointExtensions
 {
     public static void MapClientEndpoints(this WebApplication app)
     {
+        MapWorkflowEndpoints(app);
+        MapInstructionEndpoints(app);
+    }
 
+    private static void MapInstructionEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/client/instructions", async (
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.GetInstructions();
+        })
+        .WithName("Get Instructions")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+
+        app.MapPost("/api/client/instructions", async (
+            [FromBody] InstructionRequest request,
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.CreateInstruction(request);
+        })
+        .WithName("Create Instruction")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+
+        app.MapGet("/api/client/instructions/latest", async (
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.GetLatestInstructions();
+        })
+        .WithName("Get Latest Instructions")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+
+        app.MapDelete("/api/client/instructions/{id}", async (
+            string id,
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.DeleteInstruction(id);
+        })
+        .WithName("Delete Instruction")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+
+        app.MapDelete("/api/client/instructions/all", async (
+            [FromBody] DeleteAllVersionsRequest request,
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.DeleteAllVersions(request);
+        })
+        .WithName("Delete All Versions")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+
+        app.MapGet("/api/client/instructions/{name}/versions", async (
+            string name,
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.GetInstructionVersions(name);
+        })
+        .WithName("Get Instruction Versions")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+    }
+    
+
+    private static void MapWorkflowEndpoints(this WebApplication app)
+    {
         app.MapPost("/api/client/workflows", async (
-            HttpContext context,
+            [FromBody] WorkflowRequest request,
             [FromServices] WorkflowStarterEndpoint endpoint) =>
         {
-            return await endpoint.HandleStartWorkflow(context);
+            return await endpoint.HandleStartWorkflow(request);
         })
         .WithName("Create New Workflow")
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
 
-
         app.MapGet("/api/client/workflows/{workflowId}/events", async (
-            HttpContext context,
+            string workflowId,
             [FromServices] WorkflowEventsEndpoint endpoint) =>
         {
-            var workflowId = context.Request.RouteValues["workflowId"] as string;
             return await endpoint.GetWorkflowEvents(workflowId);
         })
         .WithName("Get Workflow Events")
@@ -28,30 +93,30 @@ public static class WebClientEndpointExtensions
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows/{workflowType}/definition", async (
-            HttpContext context,
+            string workflowType,
             [FromServices] WorkflowDefinitionEndpoint endpoint) =>
         {
-            return await endpoint.GetWorkflowDefinition(context);
+            return await endpoint.GetWorkflowDefinition(workflowType);
         })
         .WithName("Get Workflow Definition")
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows", async (
-            HttpContext context,
             [FromServices] WorkflowFinderEndpoint endpoint) =>
         {
-            return await endpoint.GetWorkflows(context);
+            return await endpoint.GetWorkflows();
         })
         .WithName("Get Workflows")
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
 
         app.MapPost("/api/client/workflows/{workflowId}/cancel", async (
-            HttpContext context,
+            string workflowId,
+            [FromQuery] bool force,
             [FromServices] WorkflowCancelEndpoint endpoint) =>
         {
-            return await endpoint.CancelWorkflow(context);
+            return await endpoint.CancelWorkflow(workflowId, force);
         })
         .WithName("Cancel Workflow")
         .RequireAuthorization("RequireJwtAuth")

@@ -17,9 +17,9 @@ public class MongoDbClientServiceTests
                 throw new InvalidOperationException("MONGODB_CONNECTION_STRING environment variable is required"),
             DatabaseName = Environment.GetEnvironmentVariable("MONGODB_DATABASE_NAME") ?? 
                 throw new InvalidOperationException("MONGODB_DATABASE_NAME environment variable is required"),
-            PfxPath = Environment.GetEnvironmentVariable("MONGODB_PFX_PATH") ?? 
+            CertificatePath = Environment.GetEnvironmentVariable("MONGODB_PFX_PATH") ?? 
                 throw new InvalidOperationException("MONGODB_PFX_PATH environment variable is required"),
-            PfxPassphrase = Environment.GetEnvironmentVariable("MONGODB_PFX_PASSPHRASE") ?? 
+            CertificatePassword = Environment.GetEnvironmentVariable("MONGODB_PFX_PASSPHRASE") ?? 
                 throw new InvalidOperationException("MONGODB_PFX_PASSPHRASE environment variable is required")
         };
         

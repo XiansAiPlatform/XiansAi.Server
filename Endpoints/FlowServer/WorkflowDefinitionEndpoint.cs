@@ -23,32 +23,13 @@ public class WorkflowDefinitionEndpoint
         _openAIClientService = openAIClientService ?? throw new ArgumentNullException(nameof(openAIClientService));
     }
 
-    public async Task<IResult> RegisterWorkflowDefinition(HttpContext context)
-    {
-        var workflowType = context.Request.RouteValues["workflowType"] as string;
-        _logger.LogInformation("Registering workflow definition for {WorkflowType}", workflowType);
-
-        await Task.Delay(1000);
-        return Results.Ok();
-    }
-
-    public async Task<IResult> SaveWorkflowDefinition(HttpContext context)
-    {
-        var workflowType = context.Request.RouteValues["workflowType"] as string;
-        _logger.LogInformation("Saving workflow definition for {WorkflowType}", workflowType);
-
-        var workflowDefinition = await GetWorkflowDefinition(context);
-        return workflowDefinition;
-    }
-
     /// <summary>
     /// Handles the HTTP request to start a workflow.
     /// </summary>
     /// <param name="context">The HTTP context containing the request.</param>
     /// <returns>An IResult representing the HTTP response.</returns>
-    public async Task<IResult> GetWorkflowDefinition(HttpContext context)
+    public async Task<IResult> GetWorkflowDefinition(string workflowType)
     {
-        var workflowType = context.Request.RouteValues["workflowType"] as string;
         _logger.LogInformation("Getting workflow definition for {WorkflowType}", workflowType);
 
         var messages = new List<ChatMessage>

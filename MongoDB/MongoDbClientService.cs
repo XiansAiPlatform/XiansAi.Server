@@ -39,7 +39,7 @@ public class MongoDbClientService : IMongoDbClientService
             var connectionString = Config.ConnectionString;
             var settings = MongoClientSettings.FromConnectionString(connectionString);
 #pragma warning disable SYSLIB0057 // Type or member is obsolete
-            var cert = new X509Certificate2(Config.PfxPath, Config.PfxPassphrase);
+            var cert = new X509Certificate2(Config.CertificatePath, Config.CertificatePassword);
 #pragma warning restore SYSLIB0057 // Type or member is obsolete
             settings.SslSettings = new SslSettings
             {

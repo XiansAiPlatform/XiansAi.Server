@@ -33,20 +33,16 @@ public class WorkflowStarterEndpoint
     /// </summary>
     /// <param name="context">The HTTP context containing the request.</param>
     /// <returns>An IResult representing the HTTP response.</returns>
-    public async Task<IResult> HandleStartWorkflow(HttpContext context)
+    public async Task<IResult> HandleStartWorkflow(WorkflowRequest request)
     {
         _logger.LogInformation("Received workflow start request at: {Time}", DateTime.UtcNow);
         
         try
         {
-            using var reader = new StreamReader(context.Request.Body);
-            var requestBody = await reader.ReadToEndAsync();
-            var request = JsonSerializer.Deserialize<WorkflowRequest>(requestBody);
-
             if (!ValidateRequest(request))
                 return Results.BadRequest("Invalid request payload. Expected a JSON object with a WorkflowType and Input properties.");
 
-            var workflowId = GenerateWorkflowId(request!.WorkflowType!);
+            var workflowId = GenerateWorkflowId(request.WorkflowType);
             var options = CreateWorkflowOptions(workflowId);
             
             var handle = await StartWorkflowAsync(request, options);
