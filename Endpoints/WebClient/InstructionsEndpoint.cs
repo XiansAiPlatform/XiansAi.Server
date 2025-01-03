@@ -61,14 +61,14 @@ public class InstructionsEndpoint
 
     public async Task<IResult> CreateInstruction(InstructionRequest request)
     {
-        var hash = HashGenerator.GenerateContentHash(request.Content + request.Name + request.Type + DateTime.UtcNow.ToString());
+        //var hash = HashGenerator.GenerateContentHash(request.Content + request.Name + request.Type + DateTime.UtcNow.ToString());
         var instruction = new Instruction
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = request.Name,
             Content = request.Content,
             Type = request.Type,
-            Version = hash,
+            Version = ObjectId.GenerateNewId().ToString(),
             CreatedAt = DateTime.UtcNow
         };
         await _instructionRepository.CreateAsync(instruction);
