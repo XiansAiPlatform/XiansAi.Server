@@ -68,7 +68,7 @@ public class InstructionsEndpoint
             Name = request.Name,
             Content = request.Content,
             Type = request.Type,
-            Version = ObjectId.GenerateNewId().ToString(),
+            Version = HashGenerator.GenerateContentHash(ObjectId.GenerateNewId().ToString() + DateTime.UtcNow.ToString()),
             CreatedAt = DateTime.UtcNow
         };
         await _instructionRepository.CreateAsync(instruction);

@@ -103,9 +103,6 @@ public class CertificateValidationMiddleware
                 return;
             }
 
-            _logger.LogInformation("Authorization succeeded. Setting tenant ID: {currentTenantId}", tenantNameFromCert);
-
-
             // Get the request services scope
             var scope = context.RequestServices;
             // Register services into the scope

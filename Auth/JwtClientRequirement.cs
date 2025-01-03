@@ -93,7 +93,6 @@ public class JwtClientHandler : AuthorizationHandler<JwtClientRequirement>
             }
 
             // set tenant context and succeed
-            _logger.LogInformation("Authorization succeeded. Setting tenant ID: {currentTenantId}", currentTenantId);
             _tenantContext.TenantId = currentTenantId;
             context.Succeed(requirement);
 
