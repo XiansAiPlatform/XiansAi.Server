@@ -43,7 +43,7 @@ public class WorkflowStarterEndpoint
                 return Results.BadRequest("Invalid request payload. Expected a JSON object with a WorkflowType and Input properties.");
 
             var workflowId = GenerateWorkflowId(request.WorkflowType);
-            var options = CreateWorkflowOptions(workflowId);
+            var options = CreateWorkflowOptions(workflowId, request.WorkflowType.Replace(" ", ""));
             
             var handle = await StartWorkflowAsync(request, options);
             
@@ -64,10 +64,10 @@ public class WorkflowStarterEndpoint
     private static string GenerateWorkflowId(string workflowType) =>
         $"{workflowType.Replace(" ", "-")}-{Guid.NewGuid()}";
 
-    private WorkflowOptions CreateWorkflowOptions(string workflowId) =>
+    private WorkflowOptions CreateWorkflowOptions(string workflowId, string workFlowType) =>
         new()
         {
-            TaskQueue = "DefaultQueue",
+            TaskQueue = workFlowType,
             Id = workflowId
         };
 

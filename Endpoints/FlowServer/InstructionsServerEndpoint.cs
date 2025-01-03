@@ -18,9 +18,10 @@ public class InstructionsServerEndpoint
 
     public async Task<IResult> GetLatestInstruction(string name)
     {
-        Console.WriteLine("GetLatestInstruction called with name: " + name);
         var instruction = await _instructionRepository.GetLatestInstructionAsync(name);
-        Console.WriteLine(instruction.ToJson());
-        return Results.Ok(instruction);
+        if (instruction == null)
+            return Results.NotFound("Instruction not found");
+        else
+            return Results.Ok(instruction);
     }
 }
