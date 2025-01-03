@@ -61,7 +61,7 @@ public class InstructionsEndpoint
 
     public async Task<IResult> CreateInstruction(InstructionRequest request)
     {
-        var hash = HashGenerator.GenerateContentHash(request.Content + request.Name + request.Type);
+        var hash = HashGenerator.GenerateContentHash(request.Content + request.Name + request.Type + DateTime.UtcNow.ToString());
         var instruction = new Instruction
         {
             Id = ObjectId.GenerateNewId().ToString(),
