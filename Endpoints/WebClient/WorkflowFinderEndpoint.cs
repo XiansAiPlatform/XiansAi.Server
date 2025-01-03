@@ -1,3 +1,4 @@
+using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
 
 public class WorkflowFinderEndpoint
@@ -11,6 +12,27 @@ public class WorkflowFinderEndpoint
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task<IResult> GetWorkflow(string workflowId)
+    {
+        var client = await _clientService.GetClientAsync();
+        var workflowHandle = client.GetWorkflowHandle(workflowId);
+        var workflowDescription = await workflowHandle.DescribeAsync();
+
+        var workflow = new
+        {
+            workflowDescription.Id,
+            workflowDescription.RunId,
+            workflowDescription.WorkflowType,
+            Status = workflowDescription.Status.ToString(),
+            workflowDescription.StartTime,
+            workflowDescription.ExecutionTime,
+            workflowDescription.CloseTime,
+            workflowDescription.ParentId,
+            workflowDescription.ParentRunId,
+        };
+        return Results.Ok(workflow);
     }
 
     public async Task<IResult> GetWorkflows()

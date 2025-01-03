@@ -1,3 +1,4 @@
+using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
 
 public static class WebClientEndpointExtensions
@@ -72,6 +73,16 @@ public static class WebClientEndpointExtensions
 
     private static void MapWorkflowEndpoints(this WebApplication app)
     {
+        app.MapGet("/api/client/workflows/{workflowId}", async (
+            string workflowId,
+            [FromServices] WorkflowFinderEndpoint endpoint) =>
+        {
+            return await endpoint.GetWorkflow(workflowId);
+        })
+        .WithName("Get Workflow")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+
         app.MapPost("/api/client/workflows", async (
             [FromBody] WorkflowRequest request,
             [FromServices] WorkflowStarterEndpoint endpoint) =>
