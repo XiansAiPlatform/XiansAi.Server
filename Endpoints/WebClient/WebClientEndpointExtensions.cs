@@ -7,10 +7,34 @@ public static class WebClientEndpointExtensions
     {
         MapWorkflowEndpoints(app);
         MapInstructionEndpoints(app);
+        MapActivityEndpoints(app);
+    }
+
+    private static void MapActivityEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/client/workflows/{workflowId}/activities/{activityId}", async (
+            string workflowId,
+            string activityId,
+            [FromServices] ActivitiesEndpoint endpoint) =>
+        {
+            return await endpoint.GetActivity(workflowId, activityId);
+        }).WithName("Get Activity of Workflow")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
     }
 
     private static void MapInstructionEndpoints(this WebApplication app)
     {
+        app.MapGet("/api/client/instructions/{id}", async (
+            string id,
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.GetInstruction(id);
+        })
+        .WithName("Get Instruction")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
+
         app.MapGet("/api/client/instructions", async (
             [FromServices] InstructionsEndpoint endpoint) =>
         {

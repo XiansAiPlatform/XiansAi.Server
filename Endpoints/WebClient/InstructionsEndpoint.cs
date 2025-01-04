@@ -27,6 +27,12 @@ public class InstructionsEndpoint
         _logger = logger;
     }
 
+    public async Task<IResult> GetInstruction(string id)
+    {
+        var instruction = await _instructionRepository.GetByIdAsync(id);
+        return Results.Ok(instruction);
+    }
+
     public async Task<IResult> GetInstructionVersions(string name)
     {
         var versions = await _instructionRepository.GetByNameAsync(name);

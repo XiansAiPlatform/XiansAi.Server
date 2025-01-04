@@ -10,9 +10,9 @@ public class ActivityRepository
         _activities = database.GetCollection<Activity>("activities");
     }
 
-    public async Task<Activity> GetByActivityIdAsync(string activityId)
+    public async Task<Activity> GetByWorkflowIdAndActivityIdAsync(string workflowId, string activityId)
     {
-        return await _activities.Find(x => x.ActivityId == activityId)
+        return await _activities.Find(x => x.WorkflowId == workflowId && x.ActivityId == activityId)
             .FirstOrDefaultAsync();
     }
 
