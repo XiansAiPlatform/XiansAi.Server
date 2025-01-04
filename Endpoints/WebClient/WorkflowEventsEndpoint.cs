@@ -17,6 +17,7 @@ public record WorkflowActivityEvent
     public string? EndedTime { get; init; }
     public object[]? Inputs { get; init; }
     public string? Result { get; init; }
+    public string? ActivityId { get; init; }
 }
 public class WorkflowEventsEndpoint
 {
@@ -114,6 +115,7 @@ public class WorkflowEventsEndpoint
                 var activityEvent = new WorkflowActivityEvent
                 {
                     ID = evt.EventId,
+                    ActivityId = scheduledEvent.ActivityTaskScheduledEventAttributes.ActivityId,
                     ActivityName = scheduledEvent.ActivityTaskScheduledEventAttributes.ActivityType.Name,
                     StartedTime = startedEvent.EventTime?.ToDateTime().ToString("o"),
                     EndedTime = evt.EventTime?.ToDateTime().ToString("o"),
