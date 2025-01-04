@@ -19,12 +19,3 @@ public class Definition
     
     public DateTime CreatedAt { get; set; }
 }
-
-public class Activity
-{
-    public string Name { get; set; } = null!;
-    
-    public ObjectId AgentId { get; set; }
-    
-    public List<string> InstructionRefs { get; set; } = new();
-}

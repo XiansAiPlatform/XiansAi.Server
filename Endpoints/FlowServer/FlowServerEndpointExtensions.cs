@@ -26,5 +26,13 @@ public static class FlowServerEndpointExtensions
             return result;
         });
 
+        app.MapPost("/api/server/activities", async (
+            [FromBody] ActivityRequest request,
+            [FromServices] ActivitiesServerEndpoint endpoint) =>
+        {
+            await endpoint.CreateAsync(request);
+            return Results.Ok();
+        });
+
     }
 }

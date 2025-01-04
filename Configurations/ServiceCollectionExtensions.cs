@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<CertificateEndpoint>();
         builder.Services.AddScoped<InstructionsEndpoint>();
         builder.Services.AddScoped<InstructionsServerEndpoint>();
+        builder.Services.AddScoped<ActivitiesServerEndpoint>();
         return builder;
     }
 
