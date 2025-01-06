@@ -9,6 +9,54 @@ public static class WebClientEndpointExtensions
         MapWorkflowEndpoints(app);
         MapInstructionEndpoints(app);
         MapActivityEndpoints(app);
+        MapSettingsEndpoints(app);
+    }
+
+    private static void MapSettingsEndpoints(this WebApplication app)
+    {
+        app.MapPost("/api/client/certificates/generate", async (
+            HttpContext context,
+            [FromBody] CertRequest request,
+            [FromServices] CertificateEndpoint endpoint) =>
+        {
+            return await endpoint.GenerateClientCertificate(request);
+        })
+        .WithName("Generate Client Certificate")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi(operation => {
+            operation.Summary = "Generate a new client certificate";
+            operation.Description = "Generates and returns a new client certificate in PFX format";
+            return operation;
+        });
+
+        app.MapGet("/api/client/settings/flowserver", (
+            [FromServices] CertificateEndpoint endpoint) =>
+        {
+            return endpoint.GetFlowServerSettings();
+        })
+        .WithName("Get Flow Server Settings")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi(); 
+
+        app.MapGet("/api/client/certificates/flowserver/cert", async (
+            [FromQuery] string fileName,
+            [FromServices] CertificateEndpoint endpoint) =>
+        {
+            return await endpoint.GetFlowServerCertFile(fileName);
+        })
+        .WithName("Get Flow Server Certificate File")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi(); 
+
+        app.MapGet("/api/client/certificates/flowserver/privatekey", async (
+            [FromQuery] string fileName,
+            [FromServices] CertificateEndpoint endpoint) =>
+        {
+            return await endpoint.GetFlowServerPrivateKeyFile(fileName);
+        })
+        .WithName("Get Flow Server Private Key File")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi(); 
     }
 
     private static void MapActivityEndpoints(this WebApplication app)
@@ -128,16 +176,6 @@ public static class WebClientEndpointExtensions
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
 
-        // app.MapGet("/api/client/workflows/{workflowType}/definition", async (
-        //     string workflowType,
-        //     [FromServices] WorkflowDefinitionEndpoint endpoint) =>
-        // {
-        //     return await endpoint.GetWorkflowDefinition(workflowType);
-        // })
-        // .WithName("Get Workflow Definition")
-        // .RequireAuthorization("RequireJwtAuth")
-        // .WithOpenApi();
-
         app.MapGet("/api/client/workflows", async (
             [FromServices] WorkflowFinderEndpoint endpoint) =>
         {
@@ -157,21 +195,6 @@ public static class WebClientEndpointExtensions
         .WithName("Cancel Workflow")
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
-
-        app.MapPost("/api/client/certificates/generate", async (
-            HttpContext context,
-            [FromBody] CertRequest request,
-            [FromServices] CertificateEndpoint endpoint) =>
-        {
-            return await endpoint.GenerateClientCertificate(request);
-        })
-        .WithName("Generate Client Certificate")
-        .RequireAuthorization("RequireJwtAuth")
-        .WithOpenApi(operation => {
-            operation.Summary = "Generate a new client certificate";
-            operation.Description = "Generates and returns a new client certificate in PFX format";
-            return operation;
-        });
 
         app.MapGet("/api/client/workflows/{workflowId}/events/stream", (
             [FromServices] WorkflowEventsEndpoint endpoint,
