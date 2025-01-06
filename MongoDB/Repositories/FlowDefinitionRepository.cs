@@ -66,6 +66,14 @@ public class FlowDefinitionRepository
             .FirstOrDefaultAsync();
     }
 
+    public async Task<List<FlowDefinition>> GetLatestDefinitionsForAllTypesAsync()
+    {
+        return await _definitions.Aggregate()
+            .SortByDescending(x => x.CreatedAt)
+            .Group(x => x.TypeName, 
+                   g => g.First())
+            .ToListAsync();
+    }
 }
 
 

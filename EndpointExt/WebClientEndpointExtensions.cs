@@ -10,6 +10,19 @@ public static class WebClientEndpointExtensions
         MapInstructionEndpoints(app);
         MapActivityEndpoints(app);
         MapSettingsEndpoints(app);
+        MapDefinitionsEndpoints(app);
+    }
+
+    private static void MapDefinitionsEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/client/definitions", async (
+            [FromServices] DefinitionsEndpoint endpoint) =>
+        {
+            return await endpoint.GetLatestDefinitions();
+        })
+        .WithName("Get Latest Definitions")
+        .RequireAuthorization("RequireJwtAuth")
+        .WithOpenApi();
     }
 
     private static void MapSettingsEndpoints(this WebApplication app)
