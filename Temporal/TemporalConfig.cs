@@ -6,15 +6,15 @@ public class TemporalConfig
 {
 
     [Required]
-    public required string TemporalServerUrl { get; set; }
+    public required string FlowServerUrl { get; set; }
 
     [Required]
-    public required string Namespace { get; set; }
+    public required string FlowServerNamespace { get; set; }
 
     [Required]
-    public required string ClientCert { get; set; }
+    public required string FlowServerCertPath { get; set; }
 
     [Required]
-    public required string ClientPrivateKey { get; set; }
+    public required string FlowServerPrivateKeyPath { get; set; }
 
 }

@@ -25,13 +25,13 @@ public class TemporalClientService : ITemporalClientService
     {
         if (_client != null) return _client;
 
-        _client = await TemporalClient.ConnectAsync(new(Config.TemporalServerUrl)
+        _client = await TemporalClient.ConnectAsync(new(Config.FlowServerUrl)
         {
-            Namespace = Config.Namespace,
-            Tls = new()
+            Namespace = Config.FlowServerNamespace,
+            Tls = new TlsOptions()
             {
-                ClientCert = await File.ReadAllBytesAsync(Config.ClientCert),
-                ClientPrivateKey = await File.ReadAllBytesAsync(Config.ClientPrivateKey),
+                ClientCert = await File.ReadAllBytesAsync(Config.FlowServerCertPath),
+                ClientPrivateKey = await File.ReadAllBytesAsync(Config.FlowServerPrivateKeyPath),
             }
         });
 

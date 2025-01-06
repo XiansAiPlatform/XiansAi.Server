@@ -33,10 +33,9 @@
         },
         "Temporal": {
           "TemporalServerUrl": "nine-nine-x-test.tsuah.tmprl.cloud:7233",
-          "Namespace": "nine-nine-x-test.tsuah",
-          "ClientCert": "../Certificates/Temporal/client.pem",
-          "ClientPrivateKey": "../Certificates/Temporal/client.key",
-          "CaCert": "../Certificates/Temporal/ca.pem"
+          "FlowServerNamespace": "nine-nine-x-test.tsuah",
+          "FlowServerCertPath": "../Certificates/Temporal/client.pem",
+          "FlowServerPrivateKeyPath": "../Certificates/Temporal/client.key"
         },
         "MongoDB": {
           "ConnectionString": "mongodb+srv://development.lwas9.mongodb.net/?authSource=%24external&authMechanism=MONGODB-X509&retryWrites=true&w=majority&appName=Development",
