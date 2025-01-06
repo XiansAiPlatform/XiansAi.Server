@@ -33,5 +33,12 @@ public static class FlowServerEndpointExtensions
             return Results.Ok();
         });
 
+        app.MapPost("/api/server/definitions", async (
+            [FromBody] FlowDefinitionRequest request,
+            [FromServices] DefinitionsServerEndpoint endpoint) =>
+        {
+            await endpoint.CreateAsync(request);
+            return Results.Ok();
+        });
     }
 }
