@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.002.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Flowmaxer.Engine", "Flowmaxer.Engine.csproj", "{61A322B9-E753-49F5-86E4-911D56DB7B9C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "XiansAi.Server", "XiansAi.Server.csproj", "{61A322B9-E753-49F5-86E4-911D56DB7B9C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

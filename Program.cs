@@ -1,5 +1,6 @@
 using DotNetEnv;
 
+namespace XiansAi.Server;
 
 public class Program
 {
