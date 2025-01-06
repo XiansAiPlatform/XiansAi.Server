@@ -1,6 +1,7 @@
-using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
+using XiansAi.Server.EndpointExt.WebClient;
 
+namespace XiansAi.Server.EndpointExt;
 public static class WebClientEndpointExtensions
 {
     public static void MapClientEndpoints(this WebApplication app)
@@ -127,15 +128,15 @@ public static class WebClientEndpointExtensions
         .RequireAuthorization("RequireJwtAuth")
         .WithOpenApi();
 
-        app.MapGet("/api/client/workflows/{workflowType}/definition", async (
-            string workflowType,
-            [FromServices] WorkflowDefinitionEndpoint endpoint) =>
-        {
-            return await endpoint.GetWorkflowDefinition(workflowType);
-        })
-        .WithName("Get Workflow Definition")
-        .RequireAuthorization("RequireJwtAuth")
-        .WithOpenApi();
+        // app.MapGet("/api/client/workflows/{workflowType}/definition", async (
+        //     string workflowType,
+        //     [FromServices] WorkflowDefinitionEndpoint endpoint) =>
+        // {
+        //     return await endpoint.GetWorkflowDefinition(workflowType);
+        // })
+        // .WithName("Get Workflow Definition")
+        // .RequireAuthorization("RequireJwtAuth")
+        // .WithOpenApi();
 
         app.MapGet("/api/client/workflows", async (
             [FromServices] WorkflowFinderEndpoint endpoint) =>

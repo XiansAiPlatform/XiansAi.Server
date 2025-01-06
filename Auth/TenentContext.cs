@@ -1,4 +1,8 @@
-using Microsoft.Extensions.Configuration;
+using XiansAi.Server.GenAi;
+using XiansAi.Server.MongoDB;
+using XiansAi.Server.Temporal;
+
+namespace XiansAi.Server.Auth;
 
 public interface ITenantContext
 {

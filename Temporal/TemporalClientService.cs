@@ -1,5 +1,7 @@
 using Temporalio.Client;
 
+namespace XiansAi.Server.Temporal;
+
 public interface ITemporalClientService
 {
     Task<ITemporalClient> GetClientAsync();

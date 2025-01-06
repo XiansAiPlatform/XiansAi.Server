@@ -1,5 +1,6 @@
-using Temporalio.Api.Enums.V1;
-using Temporalio.Client;
+using XiansAi.Server.Temporal;
+
+namespace XiansAi.Server.EndpointExt.WebClient;
 
 public class WorkflowFinderEndpoint
 {

@@ -1,6 +1,7 @@
 using OpenAI.Chat;
 using Microsoft.Extensions.Logging;
 
+namespace XiansAi.Server.GenAi;
 
 public interface IOpenAIClientService
 {

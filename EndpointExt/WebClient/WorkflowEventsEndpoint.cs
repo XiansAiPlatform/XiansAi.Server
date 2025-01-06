@@ -1,13 +1,10 @@
 using System.Text.Json;
-using System.Threading.Channels;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.OpenApi.Extensions;
-using MongoDB.Driver.Core.Events;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Api.History.V1;
 using Temporalio.Client;
+using XiansAi.Server.Temporal;
 
+namespace XiansAi.Server.EndpointExt.WebClient;
 
 public record WorkflowActivityEvent
 {

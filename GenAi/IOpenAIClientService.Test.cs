@@ -1,6 +1,9 @@
 using OpenAI.Chat;
 using DotNetEnv;
 using Xunit;
+using XiansAi.Server.GenAi;
+
+namespace XiansAi.Server.GenAi.Tests;
 
 public class OpenAIClientServiceTests
 {

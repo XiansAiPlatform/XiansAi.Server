@@ -1,6 +1,8 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
+namespace XiansAi.Server.MongoDB.Models;
+
 public class Instruction
 {
     [BsonId]

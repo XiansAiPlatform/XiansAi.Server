@@ -1,5 +1,10 @@
 using MongoDB.Bson;
+using XiansAi.Server.MongoDB;
+using XiansAi.Server.MongoDB.Models;
+using XiansAi.Server.MongoDB.Repositories;
+using XiansAi.Server.Utils;
 
+namespace XiansAi.Server.EndpointExt.WebClient;
 public class InstructionRequest
 {
     public required string Name { get; set; }

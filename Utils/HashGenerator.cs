@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 
+namespace XiansAi.Server.Utils;
+
 public static class HashGenerator
 {
     public static string GenerateContentHash(string content)

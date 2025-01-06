@@ -1,3 +1,5 @@
+namespace XiansAi.Server.MongoDB;
+
 public class MongoDBConfig
 {
     public required string ConnectionString { get; set; }

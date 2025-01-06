@@ -1,9 +1,10 @@
 using DotNetEnv;
 using Xunit;
-using System.Threading.Tasks;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using XiansAi.Server.MongoDB.Models;
 
+namespace XiansAi.Server.MongoDB.Tests;
 public class MongoDbClientServiceTests
 {
     private readonly MongoDbClientService _sut;

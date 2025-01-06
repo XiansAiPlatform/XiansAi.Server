@@ -1,3 +1,7 @@
+using XiansAi.Server.Temporal;
+
+namespace XiansAi.Server.EndpointExt.WebClient;
+
 public class WorkflowCancelEndpoint
 {
     private readonly ITemporalClientService _temporalClientService;

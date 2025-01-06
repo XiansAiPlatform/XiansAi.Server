@@ -1,6 +1,8 @@
 using MongoDB.Driver;
 using System.Security.Cryptography.X509Certificates;
 
+namespace XiansAi.Server.MongoDB;
+
 public interface IMongoDbClientService
 {
     IMongoDatabase GetDatabase();

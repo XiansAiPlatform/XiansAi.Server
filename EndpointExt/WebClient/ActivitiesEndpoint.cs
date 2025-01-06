@@ -1,4 +1,9 @@
 
+using XiansAi.Server.MongoDB;
+using XiansAi.Server.MongoDB.Models;
+using XiansAi.Server.MongoDB.Repositories;
+
+namespace XiansAi.Server.EndpointExt.WebClient;
 public class ActivitiesEndpoint
 {
     private readonly ActivityRepository _activityRepository;

@@ -1,10 +1,15 @@
 using System.Security.Claims;
-using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
-using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi.Models;
+using XiansAi.Server.Auth;
+using XiansAi.Server.EndpointExt.FlowServer;
+using XiansAi.Server.EndpointExt.WebClient;
+using XiansAi.Server.GenAi;
+using XiansAi.Server.MongoDB;
+using XiansAi.Server.Temporal;
+
+namespace XiansAi.Server;
 
 public static class ServiceCollectionExtensions
 {
@@ -56,7 +61,7 @@ public static class ServiceCollectionExtensions
     {
         builder.Services.AddScoped<WorkflowStarterEndpoint>();
         builder.Services.AddScoped<WorkflowEventsEndpoint>();
-        builder.Services.AddScoped<WorkflowDefinitionEndpoint>();
+        builder.Services.AddScoped<WorkflowDefinitionServerEndpoint>();
         builder.Services.AddScoped<WorkflowFinderEndpoint>();
         builder.Services.AddScoped<WorkflowCancelEndpoint>();
         builder.Services.AddScoped<CertificateEndpoint>();

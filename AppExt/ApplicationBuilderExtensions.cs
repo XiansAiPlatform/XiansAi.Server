@@ -1,5 +1,7 @@
+using XiansAi.Server.Auth;
+using XiansAi.Server.EndpointExt;
 
-
+namespace XiansAi.Server;
 public static class ApplicationBuilderExtensions
 {
     public static WebApplication ConfigureMiddleware(this WebApplication app)

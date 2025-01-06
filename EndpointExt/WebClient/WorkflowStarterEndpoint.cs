@@ -1,5 +1,7 @@
-using System.Text.Json;
+using XiansAi.Server.Temporal;
 using Temporalio.Client;
+
+namespace XiansAi.Server.EndpointExt.WebClient;
 
 public class WorkflowRequest
 {

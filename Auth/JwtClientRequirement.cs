@@ -1,8 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using System.IdentityModel.Tokens.Jwt;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.Extensions.Configuration;
+
+namespace XiansAi.Server.Auth;
 
 public class JwtClientRequirement : IAuthorizationRequirement
 {
@@ -56,8 +55,6 @@ public class JwtClientHandler : AuthorizationHandler<JwtClientRequirement>
         {
             var handler = new JwtSecurityTokenHandler();
             var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
-
-            _logger.LogInformation("Token: {token}", token);
 
             if (jsonToken == null)
             {

@@ -1,6 +1,9 @@
 using OpenAI.Chat;
+using XiansAi.Server.EndpointExt.WebClient;
+using XiansAi.Server.GenAi;
 
-public class WorkflowDefinitionEndpointConfig
+namespace XiansAi.Server.EndpointExt.FlowServer;
+public class WorkflowDefinitionServerEndpointConfig
 {
     public required string DefinitionFileLocation { get; set; }
     public required string ApiKey { get; set; }
@@ -11,11 +14,11 @@ public class WorkflowDefinitionEndpointConfig
 /* 
     curl -X GET http://localhost:5257/api/workflows/ProspectingWorkflow/definition -H "Content-Type: application/json" 
 */
-public class WorkflowDefinitionEndpoint
+public class WorkflowDefinitionServerEndpoint
 {
     private readonly ILogger<WorkflowStarterEndpoint> _logger;
     private readonly IOpenAIClientService _openAIClientService;
-    public WorkflowDefinitionEndpoint(
+    public WorkflowDefinitionServerEndpoint(
         ILogger<WorkflowStarterEndpoint> logger,
         IOpenAIClientService openAIClientService)
     {

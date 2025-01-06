@@ -1,7 +1,8 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
-using System;
-using System.Threading.Tasks;
+using XiansAi.Server.MongoDB.Models;
+
+namespace XiansAi.Server.MongoDB.Repositories;
 
 public class AgentRepository
 {

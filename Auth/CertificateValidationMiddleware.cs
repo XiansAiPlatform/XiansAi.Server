@@ -1,6 +1,6 @@
 using System.Security.Cryptography.X509Certificates;
-using System.Linq;
-using Microsoft.Extensions.DependencyInjection;
+
+namespace XiansAi.Server.Auth;
 
 public class CertificateValidationMiddleware
 {
