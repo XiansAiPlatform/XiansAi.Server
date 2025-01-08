@@ -51,16 +51,16 @@ public class ActivityRequest
 
 public class ActivitiesServerEndpoint
 {
-    private readonly ActivityRepository _activityRepository;
     private readonly ILogger<ActivitiesServerEndpoint> _logger;
+    private readonly IDatabaseService _databaseService;
+
 
     public ActivitiesServerEndpoint(
-        IMongoDbClientService mongoDbClientService,
+        IDatabaseService databaseService,
         ILogger<ActivitiesServerEndpoint> logger
     )
     {
-        var database = mongoDbClientService.GetDatabase();
-        _activityRepository = new ActivityRepository(database);
+        _databaseService = databaseService;
         _logger = logger;
     }
 
@@ -81,7 +81,8 @@ public class ActivitiesServerEndpoint
             AgentName = request.AgentName,
             InstructionIds = request.InstructionIds ?? new List<string>()
         };
-        await _activityRepository.CreateAsync(activity);
+        var activityRepository = new ActivityRepository(await _databaseService.GetDatabase());
+        await activityRepository.CreateAsync(activity);
     }
 
 

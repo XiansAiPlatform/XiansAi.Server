@@ -11,10 +11,12 @@ public class TemporalConfig
     [Required]
     public required string FlowServerNamespace { get; set; }
 
-    [Required]
-    public required string FlowServerCertPath { get; set; }
+    // optionally read from local file system
+    public string? CertificateFilePath { get; set; }
+    public string? PrivateKeyFilePath { get; set; }
 
-    [Required]
-    public required string FlowServerPrivateKeyPath { get; set; }
+    // optionally read from key vault as secrets
+    public string? Certificate { get; set; }
+    public string? PrivateKey { get; set; }
 
 }

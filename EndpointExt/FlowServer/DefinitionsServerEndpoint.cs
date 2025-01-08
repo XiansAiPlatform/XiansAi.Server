@@ -66,17 +66,16 @@ public class ParameterRequest
 
 public class DefinitionsServerEndpoint
 {
-    private readonly FlowDefinitionRepository _definitionRepository;
     private readonly ILogger<DefinitionsServerEndpoint> _logger;
     private readonly IOpenAIClientService _openAIClientService;
+    private readonly IDatabaseService _databaseService;
     public DefinitionsServerEndpoint(
-        IMongoDbClientService mongoDbClientService,
+        IDatabaseService databaseService,
         ILogger<DefinitionsServerEndpoint> logger,
         IOpenAIClientService openAIClientService    
     )
     {
-        var database = mongoDbClientService.GetDatabase();
-        _definitionRepository = new FlowDefinitionRepository(database);
+        _databaseService = databaseService;
         _logger = logger;
         _openAIClientService = openAIClientService;
     }
@@ -84,9 +83,9 @@ public class DefinitionsServerEndpoint
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
     {
         var definition = CreateFlowDefinitionFromRequest(request);
-        
+        var definitionRepository = new FlowDefinitionRepository(await _databaseService.GetDatabase());
         // Find existing definition with the same hash
-        var existingDefinition = await _definitionRepository.GetByHashAsync(definition.Hash);
+        var existingDefinition = await definitionRepository.GetByHashAsync(definition.Hash);
         
         // Only proceed if:
         // 1. No existing definition with same hash exists, OR
@@ -97,10 +96,10 @@ public class DefinitionsServerEndpoint
             if (existingDefinition != null)
             {
                 // Delete the existing record first to avoid duplicate key errors
-                await _definitionRepository.DeleteAsync(existingDefinition.Id);
+                await definitionRepository.DeleteAsync(existingDefinition.Id);
             }
             await GenerateMarkdown(definition);
-            await _definitionRepository.CreateAsync(definition);
+            await definitionRepository.CreateAsync(definition);
             return Results.Ok("Definition created successfully");
         }
         

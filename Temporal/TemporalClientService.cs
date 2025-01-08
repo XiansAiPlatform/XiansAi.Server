@@ -30,11 +30,27 @@ public class TemporalClientService : ITemporalClientService
             Namespace = Config.FlowServerNamespace,
             Tls = new TlsOptions()
             {
-                ClientCert = await File.ReadAllBytesAsync(Config.FlowServerCertPath),
-                ClientPrivateKey = await File.ReadAllBytesAsync(Config.FlowServerPrivateKeyPath),
+                ClientCert = await GetCertificate(),
+                ClientPrivateKey = await GetPrivateKey(),
             }
         });
 
         return _client;
+    }
+
+    private async Task<byte[]> GetCertificate()
+    {
+        if (Config.CertificateFilePath != null)
+            return await File.ReadAllBytesAsync(Config.CertificateFilePath);
+        else
+            return Convert.FromBase64String(Config.Certificate!);
+    }
+
+    private async Task<byte[]> GetPrivateKey()
+    {
+        if (Config.PrivateKeyFilePath != null)
+            return await File.ReadAllBytesAsync(Config.PrivateKeyFilePath);
+        else
+            return Convert.FromBase64String(Config.PrivateKey!);
     }
 }

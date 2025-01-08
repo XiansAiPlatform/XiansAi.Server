@@ -8,22 +8,22 @@ namespace XiansAi.Server.EndpointExt.WebClient;
 
 public class DefinitionsEndpoint
 {
-    private readonly FlowDefinitionRepository _flowDefinitionRepository;
+    private readonly IDatabaseService _databaseService;
     private readonly ILogger<DefinitionsEndpoint> _logger;
 
     public DefinitionsEndpoint(
-        IMongoDbClientService mongoDbClientService,
+        IDatabaseService databaseService,
         ILogger<DefinitionsEndpoint> logger
     )
     {
-        var database = mongoDbClientService.GetDatabase();
-        _flowDefinitionRepository = new FlowDefinitionRepository(database);
+        _databaseService = databaseService;
         _logger = logger;
     }
 
     public async Task<IResult> GetLatestDefinitions()
     {
-        var definitions = await _flowDefinitionRepository.GetLatestDefinitionsForAllTypesAsync();
+        var definitionRepository = new FlowDefinitionRepository(await _databaseService.GetDatabase());
+        var definitions = await definitionRepository.GetLatestDefinitionsForAllTypesAsync();
         _logger.LogInformation("Found {Count} definitions", definitions.Count);
         return Results.Ok(definitions);
     }

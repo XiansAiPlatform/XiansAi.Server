@@ -6,16 +6,16 @@ using XiansAi.Server.MongoDB.Repositories;
 namespace XiansAi.Server.EndpointExt.WebClient;
 public class ActivitiesEndpoint
 {
-    private readonly ActivityRepository _activityRepository;
+    private readonly IDatabaseService _databaseService;
 
-    public ActivitiesEndpoint(IMongoDbClientService mongoDbClientService)
+    public ActivitiesEndpoint(IDatabaseService databaseService)
     {
-        var database = mongoDbClientService.GetDatabase();
-        _activityRepository = new ActivityRepository(database);
+        _databaseService = databaseService;
     }
 
     public async Task<Activity> GetActivity(string workflowId, string activityId)
     {
-        return await _activityRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
+        var activityRepository = new ActivityRepository(await _databaseService.GetDatabase());
+        return await activityRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
     }
 }

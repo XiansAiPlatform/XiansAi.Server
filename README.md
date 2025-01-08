@@ -12,8 +12,8 @@ dotnet run
 
 ### Running the server in production
 
-To run the server in production, you can use the following command:
+To run the server in production configuration, you can use the following command:
 
 ```bash
-dotnet run --environment Production
+dotnet run --launch-profile Production
 ```

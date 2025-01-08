@@ -43,6 +43,7 @@ public static class ServiceCollectionExtensions
     private static WebApplicationBuilder AddClientServices(this WebApplicationBuilder builder)
     {
         builder.Services.AddScoped<ITenantContext, TenantContext>();
+        builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
 
         builder.Services.AddScoped<ITemporalClientService>(sp =>
             new TemporalClientService(sp.GetRequiredService<ITenantContext>().GetTemporalConfig()));
@@ -51,9 +52,13 @@ public static class ServiceCollectionExtensions
             new OpenAIClientService(sp.GetRequiredService<ITenantContext>().GetOpenAIConfig()));
 
         builder.Services.AddScoped<IMongoDbClientService>(sp =>
-            new MongoDbClientService(sp.GetRequiredService<ITenantContext>().GetMongoDBConfig()));
+            new MongoDbClientService(
+                sp.GetRequiredService<ITenantContext>().GetMongoDBConfig(),
+                sp.GetRequiredService<IKeyVaultService>(),
+                builder.Configuration));
 
         builder.Services.AddSingleton<CertificateGenerator>();
+        builder.Services.AddScoped<IDatabaseService, DatabaseService>();
         return builder;
     }
 

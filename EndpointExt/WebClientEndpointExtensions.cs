@@ -156,7 +156,6 @@ public static class WebClientEndpointExtensions
         .WithOpenApi();
     }
     
-
     private static void MapWorkflowEndpoints(this WebApplication app)
     {
         app.MapGet("/api/client/workflows/{workflowId}", async (

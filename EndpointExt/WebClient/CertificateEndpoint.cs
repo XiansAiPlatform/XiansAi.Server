@@ -11,61 +11,60 @@ public class CertificateEndpoint
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly IConfiguration _configuration;
-
+    private readonly IKeyVaultService _keyVaultService;
     public CertificateEndpoint(
         ILogger<CertificateEndpoint> logger,
         IHttpContextAccessor httpContextAccessor,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IKeyVaultService keyVaultService)
     {
         _configuration = configuration;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
+        _keyVaultService = keyVaultService;
     }
 
     public IResult GetFlowServerSettings() {
-        var url = _configuration.GetSection("Tenants").GetSection(_tenantContext.TenantId).GetSection("Temporal").GetValue<string>("FlowServerUrl");
-        var ns = _configuration.GetSection("Tenants").GetSection(_tenantContext.TenantId).GetSection("Temporal").GetValue<string>("FlowServerNamespace");
-
         return Results.Ok(new {
-            url,
-            ns
+            _tenantContext.GetTemporalConfig().FlowServerUrl,
+            _tenantContext.GetTemporalConfig().FlowServerNamespace
         });
     }
 
     public async Task<IResult> GetFlowServerCertFile(string fileName) {
-        return await GetCertificateFile("Temporal", "FlowServerCertPath", fileName);
+        var temporalConfig = _tenantContext.GetTemporalConfig();
+        if (temporalConfig.CertificateFilePath != null) {
+            // local file
+            var certBytes = await File.ReadAllBytesAsync(temporalConfig.CertificateFilePath);
+            return Results.File(certBytes, "application/x-pkcs12", fileName);
+        } else if (temporalConfig.Certificate != null) {
+            // key vault
+            var cert = temporalConfig.Certificate;
+            var certBytes = Convert.FromBase64String(cert);
+            return  Results.File(certBytes, "application/x-pkcs12", fileName);
+        } else {
+            return Results.NotFound($"Temporal certificate configuration not found for setting Tenants:{_tenantContext.TenantId}");
+        }
     }
 
     public async Task<IResult> GetFlowServerPrivateKeyFile(string fileName) {
-        return await GetCertificateFile("Temporal", "FlowServerPrivateKeyPath", fileName);
-    }
-
-    private async Task<IResult> GetCertificateFile(string group, string key, string fileName)
-    {
-        var filename = _configuration.GetSection("Tenants").GetSection(_tenantContext.TenantId).GetSection(group).GetValue<string>(key);
-
-        if (string.IsNullOrEmpty(filename))
-        {
-            return Results.NotFound($"Certificate configuration not found for setting Tenants:{_tenantContext.TenantId}:{group}:{key}");
+        var temporalConfig = _tenantContext.GetTemporalConfig();
+        if (temporalConfig.PrivateKeyFilePath != null) {
+            // local file
+            var certBytes = await File.ReadAllBytesAsync(temporalConfig.PrivateKeyFilePath);
+            return Results.File(certBytes, "application/x-pkcs12", fileName);
+        } else if (temporalConfig.PrivateKey != null) {
+            // key vault
+            var cert = temporalConfig.PrivateKey;
+            var certBytes = Convert.FromBase64String(cert);
+            return Results.File(certBytes, "application/x-pkcs12", fileName);
+        } else {
+            return Results.NotFound($"Temporal private key configuration not found for setting Tenants:{_tenantContext.TenantId}");
         }
-
-        if (!File.Exists(filename))
-        {
-            return Results.NotFound($"Certificate file not found");
-        }
-
-        var extension = Path.GetExtension(filename);
-
-        var certBytes = File.ReadAllBytes(filename);
-        return await Task.FromResult(Results.File(
-            certBytes,
-            $"application/{extension.ToLower()}",
-            $"{fileName}-{_tenantContext.TenantId}.{extension}"
-        ));
     }
 
     public async Task<IResult> GenerateClientCertificate(CertRequest request)
@@ -84,6 +83,7 @@ public class CertificateEndpoint
         }
         catch (Exception ex)
         {
+            Console.WriteLine(ex);
             _logger.LogError(ex, "Failed to generate certificate");
             return Results.Problem("Failed to generate certificate", statusCode: 500);
         }

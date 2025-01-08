@@ -5,22 +5,21 @@ using XiansAi.Server.MongoDB.Repositories;
 namespace XiansAi.Server.EndpointExt.FlowServer;
 public class InstructionsServerEndpoint
 {
-    private readonly InstructionRepository _instructionRepository;
     private readonly ILogger<InstructionsEndpoint> _logger;
-
+    private readonly IDatabaseService _databaseService;
     public InstructionsServerEndpoint(
-        IMongoDbClientService mongoDbClientService,
+        IDatabaseService databaseService,
         ILogger<InstructionsEndpoint> logger
     )
     {
-        var database = mongoDbClientService.GetDatabase();
-        _instructionRepository = new InstructionRepository(database);
+        _databaseService = databaseService;
         _logger = logger;
     }
 
     public async Task<IResult> GetLatestInstruction(string name)
     {
-        var instruction = await _instructionRepository.GetLatestInstructionAsync(name);
+        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
+        var instruction = await instructionRepository.GetLatestInstructionAsync(name);
         if (instruction == null)
             return Results.NotFound("Instruction not found");
         else

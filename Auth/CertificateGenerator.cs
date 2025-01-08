@@ -10,53 +10,48 @@ public class CertificateGenerator
     private readonly ILogger<CertificateGenerator> _logger;
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
+    private readonly IKeyVaultService _keyVaultService;
+    private readonly RootConfig _rootConfig;
     public CertificateGenerator(IConfiguration configuration, 
         ILogger<CertificateGenerator> logger, 
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IKeyVaultService keyVaultService)
     {
         _logger = logger;
         _environment = environment;
         _configuration = configuration;
+        _keyVaultService = keyVaultService;
+        _rootConfig = _configuration.GetSection("RootConfig").Get<RootConfig>() ?? throw new InvalidOperationException("Root configuration not found");
     }
 
     public async Task<X509Certificate2> GetRootCertificate()
     {
-        var rootCertPath = _configuration["Certificates:RootCert"];
-        if (string.IsNullOrEmpty(rootCertPath))
+        if (_rootConfig.RootCertKeyVaultName != null)
         {
+            return await _keyVaultService.LoadFromKeyVault(_rootConfig.RootCertKeyVaultName);
+        } else if (_rootConfig.RootCertPath != null && _rootConfig.RootCertPassword != null) {
             return CreateOrLoadRootCertificateFile();
         } else {
-            return await LoadFromKeyVault(rootCertPath);
+            throw new InvalidOperationException("Root certificate (key vault or file) not found");
         }
     }
 
-    private async Task<X509Certificate2> LoadFromKeyVault(string certPath)
-    {
-        var credential = new DefaultAzureCredential();
-        var certClient = new CertificateClient(new Uri(certPath), credential);
-        var certResponse = await certClient.GetCertificateAsync("Certificates-RootCert");
-#pragma warning disable SYSLIB0057 // Type or member is obsolete
-        var cert = new X509Certificate2(certResponse.Value.Cer);
-#pragma warning restore SYSLIB0057 // Type or member is obsolete
-        return cert;
-    }
 
     public X509Certificate2 CreateOrLoadRootCertificateFile()
     {
-        var rootCertPath = _configuration["Certificates:RootCertPath"] ?? throw new InvalidOperationException("Root certificate path not found");
-        var rootCertPassword = _configuration["Certificates:RootCertPassword"] ?? throw new InvalidOperationException("Root certificate password not found");
-        if (!_environment.IsProduction() && !File.Exists(rootCertPath))
+
+        if (!_environment.IsProduction() && !File.Exists(_rootConfig.RootCertPath))
         {
-            return CreateNewRootCertificate(rootCertPath);
+            return CreateNewRootCertificate(_rootConfig.RootCertPath!);
         } 
 
         // In Production, the root certificate must be present
-        if (!File.Exists(rootCertPath))
+        if (!File.Exists(_rootConfig.RootCertPath))
         {
             throw new InvalidOperationException("Root certificate not found");
         }
 #pragma warning disable SYSLIB0057 // Type or member is obsolete
-        return new X509Certificate2(rootCertPath, rootCertPassword);
+        return new X509Certificate2(_rootConfig.RootCertPath, _rootConfig.RootCertPassword);
 #pragma warning restore SYSLIB0057 // Type or member is obsolete
 
     }
