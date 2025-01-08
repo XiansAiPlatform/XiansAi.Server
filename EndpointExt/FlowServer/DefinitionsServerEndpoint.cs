@@ -114,7 +114,9 @@ public class DefinitionsServerEndpoint
             return;
         }
         var markdownGenerator = new MarkdownGenerator(_openAIClientService, _logger);
-        definition.Markdown = await markdownGenerator.GenerateMarkdown(definition);
+#pragma warning disable CS8601 // Possible null reference assignment.
+        definition.Markdown = await markdownGenerator.GenerateMarkdown(definition.Source);
+#pragma warning restore CS8601 // Possible null reference assignment.
     }
 
     private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request)

@@ -38,7 +38,7 @@ public class MarkdownGeneratorTests
             Parameters = new List<ParameterDefinition>(),
             Source = GetTestDefinition()
         };
-        var markdown = await _markdownGenerator.GenerateMarkdown(definition);
+        var markdown = await _markdownGenerator.GenerateMarkdown(definition.Source);
 
         _logger.LogInformation("Markdown: {markdown}", markdown);
     }

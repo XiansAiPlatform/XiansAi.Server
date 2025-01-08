@@ -24,11 +24,6 @@ public class DefinitionsEndpoint
     public async Task<IResult> GetLatestDefinitions()
     {
         var definitions = await _flowDefinitionRepository.GetLatestDefinitionsForAllTypesAsync();
-
-        foreach (var definition in definitions)
-        {
-            definition.Source = null;
-        }
         _logger.LogInformation("Found {Count} definitions", definitions.Count);
         return Results.Ok(definitions);
     }

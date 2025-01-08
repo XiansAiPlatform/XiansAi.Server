@@ -11,16 +11,16 @@ public class MarkdownGenerator
         _openAIClientService = openAIClientService;
     }
 
-    public async Task<string?> GenerateMarkdown(FlowDefinition definition)
+    public async Task<string?> GenerateMarkdown(string? source)
     {
-        if (string.IsNullOrEmpty(definition.Source))
+        if (string.IsNullOrEmpty(source))
         {
             return null;
         }
         var messages = new List<ChatMessage>
         {
             new SystemChatMessage(Instruction.Prompt),
-            new UserChatMessage("Workflow code:\n" + definition.Source)
+            new UserChatMessage("Workflow code:\n" + source)
         };
         var markdown = await _openAIClientService.GetChatCompletionAsync(messages);
 

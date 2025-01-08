@@ -35,7 +35,9 @@ public class CertificateGenerator
         var credential = new DefaultAzureCredential();
         var certClient = new CertificateClient(new Uri(certPath), credential);
         var certResponse = await certClient.GetCertificateAsync("Certificates-RootCert");
+#pragma warning disable SYSLIB0057 // Type or member is obsolete
         var cert = new X509Certificate2(certResponse.Value.Cer);
+#pragma warning restore SYSLIB0057 // Type or member is obsolete
         return cert;
     }
 
