@@ -66,7 +66,6 @@ public class ActivitiesServerEndpoint
 
     public async Task CreateAsync(ActivityRequest request)
     {
-        Console.WriteLine(JsonSerializer.Serialize(request));
         var activity = new Activity
         {
             Id = ObjectId.GenerateNewId().ToString(),

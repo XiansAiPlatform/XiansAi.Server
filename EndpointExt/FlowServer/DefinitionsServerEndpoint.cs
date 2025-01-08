@@ -109,6 +109,10 @@ public class DefinitionsServerEndpoint
 
     private async Task GenerateMarkdown(FlowDefinition definition)
     {
+        if (string.IsNullOrEmpty(definition.Source))
+        {
+            return;
+        }
         var markdownGenerator = new MarkdownGenerator(_openAIClientService, _logger);
         definition.Markdown = await markdownGenerator.GenerateMarkdown(definition);
     }

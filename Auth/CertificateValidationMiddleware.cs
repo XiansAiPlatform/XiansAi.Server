@@ -5,25 +5,23 @@ namespace XiansAi.Server.Auth;
 public class CertificateValidationMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly X509Certificate2 _rootCertificate;
+    //private readonly X509Certificate2 _rootCertificate;
     private readonly ILogger<CertificateValidationMiddleware> _logger;
     private readonly IConfiguration _configuration;
-
+    private readonly CertificateGenerator _certificateGenerator;
     public CertificateValidationMiddleware(RequestDelegate next, 
-        CertificateGenerator generator, 
+        CertificateGenerator certificateGenerator, 
         ILogger<CertificateValidationMiddleware> logger,
         IConfiguration configuration)
     {
         _next = next;
-        _rootCertificate = generator.CreateOrLoadRootCertificate();
         _logger = logger;
         _configuration = configuration;
+        _certificateGenerator = certificateGenerator;
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
-
-
         // Only apply to /api/server paths
         if (!context.Request.Path.StartsWithSegments("/api/server"))
         {
@@ -42,6 +40,8 @@ public class CertificateValidationMiddleware
 
         try
         {
+            var rootCertificate = await _certificateGenerator.GetRootCertificate();
+
             var certBytes = Convert.FromBase64String(certHeader);
 #pragma warning disable SYSLIB0057 // Type or member is obsolete
             var cert = new X509Certificate2(certBytes);
@@ -49,7 +49,7 @@ public class CertificateValidationMiddleware
 
             // Validate certificate chain
             var chain = new X509Chain();
-            chain.ChainPolicy.ExtraStore.Add(_rootCertificate);
+            chain.ChainPolicy.ExtraStore.Add(rootCertificate);
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
             chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
 
@@ -64,7 +64,7 @@ public class CertificateValidationMiddleware
             bool validRoot = false;
             for (int i = 0; i < chain.ChainElements.Count; i++)
             {
-                if (chain.ChainElements[i].Certificate.Thumbprint == _rootCertificate.Thumbprint)
+                if (chain.ChainElements[i].Certificate.Thumbprint == rootCertificate.Thumbprint)
                 {
                     validRoot = true;
                     break;

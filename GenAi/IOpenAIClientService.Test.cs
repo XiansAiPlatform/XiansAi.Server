@@ -43,8 +43,6 @@ public class OpenAIClientServiceTests
         // Act
         var response = await _service.GetChatCompletionAsync(messages);
 
-        Console.WriteLine($"Response: {response}");
-
         // Assert
         Assert.NotNull(response);
         Assert.NotEmpty(response);

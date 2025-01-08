@@ -39,7 +39,8 @@ public class MarkdownGeneratorTests
             Source = GetTestDefinition()
         };
         var markdown = await _markdownGenerator.GenerateMarkdown(definition);
-        Console.WriteLine(markdown);
+
+        _logger.LogInformation("Markdown: {markdown}", markdown);
     }
 
     string GetTestDefinition()

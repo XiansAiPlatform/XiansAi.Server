@@ -11,8 +11,12 @@ public class MarkdownGenerator
         _openAIClientService = openAIClientService;
     }
 
-    public async Task<string> GenerateMarkdown(FlowDefinition definition)
+    public async Task<string?> GenerateMarkdown(FlowDefinition definition)
     {
+        if (string.IsNullOrEmpty(definition.Source))
+        {
+            return null;
+        }
         var messages = new List<ChatMessage>
         {
             new SystemChatMessage(Instruction.Prompt),
@@ -29,8 +33,9 @@ public class MarkdownGenerator
 static class Instruction
 {
     private static string Role = @"You are a specialized assistant that converts workflow code 
-    into Mermaid flowchart markdown diagrams. 
-    You analyze workflow code to identify activities, parameters, and flow logic.
+    into Mermaid flowchart markdown diagrams for mermaid version 11. Flows should be meaningful to business users. Skip extracting technical nodes such as async, await, data validations etc.
+    You analyze workflow code to identify activities, parameters, and flow logic. Do not add a node for the parent workflow method.
+
     Activities should be identified with the name of the method. On activity names, do not use other text other than the method name.
     e.g., On the line var companies = await Workflow.ExecuteActivityAsync((CompanyActivity a) => a.GetCompanies(links[0]), options);
     the activity name is GetCompanies.
@@ -40,14 +45,13 @@ static class Instruction
     Do not imagine any additional nodes or logic that is not present in the code. ";
     
     private static string Content = @"Generate a Mermaid flowchart that follows these rules:
-1. Use 'flowchart TD' syntax for top-down diagrams
-2. Apply relevant style classes as in the example:
-3. Identify and include:
-   - Input parameters as a separate subgraph
-   - Activity methods as task nodes
-   - Loops as loop nodes with subgraphs
-   - Conditional logic as gateway nodes
-4. Use accurate proper node shapes";
+        1. Use 'flowchart TD' syntax for top-down diagrams
+        2. Apply relevant style classes as in the example:
+        3. Identify and include:
+        - Input parameters as a separate subgraph
+        - Activity methods as task nodes
+        - Loops as loop nodes with subgraphs
+        - Conditional logic as gateway nodes";
 
     private static string Example = @"Example: 
     flowchart TD
