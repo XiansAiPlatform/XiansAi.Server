@@ -29,6 +29,7 @@ public class CertificateEndpoint
     }
 
     public IResult GetFlowServerSettings() {
+        _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{_tenantContext.GetTemporalConfig().FlowServerUrl} FlowServerNamespace:{_tenantContext.GetTemporalConfig().FlowServerNamespace}");
         return Results.Ok(new {
             _tenantContext.GetTemporalConfig().FlowServerUrl,
             _tenantContext.GetTemporalConfig().FlowServerNamespace

@@ -1,5 +1,7 @@
 using OpenAI.Chat;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using XiansAi.Server.Auth;
 namespace XiansAi.Server.GenAi;
 
 public interface IOpenAIClientService
@@ -9,38 +11,40 @@ public interface IOpenAIClientService
 
 public class OpenAIClientService : IOpenAIClientService
 {
+    private static readonly ConcurrentDictionary<string, ChatClient> _clients = new();
     private readonly ILogger<OpenAIClientService>? _logger;
     private readonly IKeyVaultService _keyVaultService;
     private readonly OpenAIConfig _config;
+    private readonly ITenantContext _tenantContext;
 
     public OpenAIClientService(OpenAIConfig config, 
         IKeyVaultService keyVaultService,
-        ILogger<OpenAIClientService>? logger = null)
+        ILogger<OpenAIClientService>? logger,
+        ITenantContext tenantContext)
     {
         _logger = logger;
         _keyVaultService = keyVaultService;
         _config = config;
+        _tenantContext = tenantContext;
     }
 
     public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages)
     {
-        string? apiKey = null;
-        if (!string.IsNullOrEmpty(_config.ApiKeyKeyVaultName))
+        var tenantId = _tenantContext.TenantId;
+        var chatClient = _clients.GetOrAdd(tenantId, _ =>
         {
-            apiKey = await _keyVaultService.LoadSecret(_config.ApiKeyKeyVaultName);
-        }
-        else if (!string.IsNullOrEmpty(_config.ApiKey))
-        {
-            apiKey = _config.ApiKey;
-        }
-        else
-        {
-            throw new Exception("OpenAI ApiKey is not set");
-        }
-        var chatClient = new ChatClient(_config.Model, apiKey);
+            var apiKey = !string.IsNullOrEmpty(_config.ApiKeyKeyVaultName)
+                ? _keyVaultService.LoadSecret(_config.ApiKeyKeyVaultName).GetAwaiter().GetResult()
+                : _config.ApiKey;
+
+            if (string.IsNullOrEmpty(apiKey))
+                throw new Exception("OpenAI ApiKey is not set");
+
+            return new ChatClient(_config.Model, apiKey);
+        });
+
         var completion = await chatClient.CompleteChatAsync(messages);
-        var text = completion.Value.Content[0].Text;
-        return text;
+        return completion.Value.Content[0].Text;
     }
 
 }

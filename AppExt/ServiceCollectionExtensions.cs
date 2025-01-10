@@ -56,7 +56,8 @@ public static class ServiceCollectionExtensions
             new OpenAIClientService(
                 sp.GetRequiredService<ITenantContext>().GetOpenAIConfig(),
                 sp.GetRequiredService<IKeyVaultService>(),
-                sp.GetRequiredService<ILogger<OpenAIClientService>>()));
+                sp.GetRequiredService<ILogger<OpenAIClientService>>(),
+                sp.GetRequiredService<ITenantContext>()));
 
         builder.Services.AddScoped<IMongoDbClientService>(sp =>
             new MongoDbClientService(
