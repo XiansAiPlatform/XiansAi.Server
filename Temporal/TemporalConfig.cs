@@ -16,7 +16,7 @@ public class TemporalConfig
     public string? PrivateKeyFilePath { get; set; }
 
     // optionally read from key vault as secrets
-    public string? Certificate { get; set; }
-    public string? PrivateKey { get; set; }
+    public string? CertificateKeyVaultName { get; set; }
+    public string? PrivateKeyKeyVaultName { get; set; }
 
 }

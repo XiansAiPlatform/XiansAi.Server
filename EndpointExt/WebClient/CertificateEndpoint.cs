@@ -41,9 +41,9 @@ public class CertificateEndpoint
             // local file
             var certBytes = await File.ReadAllBytesAsync(temporalConfig.CertificateFilePath);
             return Results.File(certBytes, "application/x-pkcs12", fileName);
-        } else if (temporalConfig.Certificate != null) {
+        } else if (temporalConfig.CertificateKeyVaultName != null) {
             // key vault
-            var cert = temporalConfig.Certificate;
+            var cert = await _keyVaultService.LoadSecret(temporalConfig.CertificateKeyVaultName);
             var certBytes = Convert.FromBase64String(cert);
             return  Results.File(certBytes, "application/x-pkcs12", fileName);
         } else {
@@ -57,9 +57,9 @@ public class CertificateEndpoint
             // local file
             var certBytes = await File.ReadAllBytesAsync(temporalConfig.PrivateKeyFilePath);
             return Results.File(certBytes, "application/x-pkcs12", fileName);
-        } else if (temporalConfig.PrivateKey != null) {
+        } else if (temporalConfig.PrivateKeyKeyVaultName != null) {
             // key vault
-            var cert = temporalConfig.PrivateKey;
+            var cert = await _keyVaultService.LoadSecret(temporalConfig.PrivateKeyKeyVaultName);
             var certBytes = Convert.FromBase64String(cert);
             return Results.File(certBytes, "application/x-pkcs12", fileName);
         } else {

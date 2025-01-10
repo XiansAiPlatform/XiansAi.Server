@@ -14,17 +14,10 @@ public class Program
         _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<Program>();
         var builder = WebApplication.CreateBuilder(args);
 
-        if (builder.Environment.IsProduction() || args.Contains("--use-keyvault")) {
-            // Add Key Vault configuration
-            string keyVaultUrl = "https://kv-xiansai.vault.azure.net/";
-            builder.Configuration.AddAzureKeyVault(
-                new Uri(keyVaultUrl),
-                new DefaultAzureCredential());
-        }
-
-
         // Configure all services
         builder.ConfigureServices();
+
+        builder.Logging.AddAzureWebAppDiagnostics();
 
         var app = builder.Build();
 

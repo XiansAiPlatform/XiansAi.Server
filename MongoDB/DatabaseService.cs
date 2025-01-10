@@ -17,6 +17,6 @@ public class DatabaseService : IDatabaseService
 
     public async Task<IMongoDatabase> GetDatabase()
     {
-        return await _mongoDbClientService.GetDatabase();
+        return await Task.FromResult(_mongoDbClientService.GetDatabase());
     }
 }

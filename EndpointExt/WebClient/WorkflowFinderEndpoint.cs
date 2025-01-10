@@ -17,7 +17,7 @@ public class WorkflowFinderEndpoint
 
     public async Task<IResult> GetWorkflow(string workflowId)
     {
-        var client = await _clientService.GetClientAsync();
+        var client = _clientService.GetClient();
         var workflowHandle = client.GetWorkflowHandle(workflowId);
         var workflowDescription = await workflowHandle.DescribeAsync();
 
@@ -42,7 +42,7 @@ public class WorkflowFinderEndpoint
 
         try
         {
-            var client = await _clientService.GetClientAsync();
+            var client = _clientService.GetClient();
             var workflows = new List<object>();
 
             await foreach (var workflow in client.ListWorkflowsAsync(""))

@@ -1,6 +1,5 @@
 using OpenAI.Chat;
 using Microsoft.Extensions.Logging;
-
 namespace XiansAi.Server.GenAi;
 
 public interface IOpenAIClientService
@@ -10,18 +9,36 @@ public interface IOpenAIClientService
 
 public class OpenAIClientService : IOpenAIClientService
 {
-    private readonly ChatClient _chatClient;
     private readonly ILogger<OpenAIClientService>? _logger;
-    public OpenAIClientService(OpenAIConfig config, ILogger<OpenAIClientService>? logger = null)
+    private readonly IKeyVaultService _keyVaultService;
+    private readonly OpenAIConfig _config;
+
+    public OpenAIClientService(OpenAIConfig config, 
+        IKeyVaultService keyVaultService,
+        ILogger<OpenAIClientService>? logger = null)
     {
         _logger = logger;
-        _logger?.LogInformation("OpenAIClientService constructor initiated with model: {0} and apiKey: {1}...", config.Model, config.ApiKey.Substring(0, 2) + "..." + config.ApiKey.Substring(config.ApiKey.Length - 2));
-        _chatClient = new ChatClient(config.Model, config.ApiKey);
+        _keyVaultService = keyVaultService;
+        _config = config;
     }
 
     public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages)
     {
-        var completion = await _chatClient.CompleteChatAsync(messages);
+        string? apiKey = null;
+        if (!string.IsNullOrEmpty(_config.ApiKeyKeyVaultName))
+        {
+            apiKey = await _keyVaultService.LoadSecret(_config.ApiKeyKeyVaultName);
+        }
+        else if (!string.IsNullOrEmpty(_config.ApiKey))
+        {
+            apiKey = _config.ApiKey;
+        }
+        else
+        {
+            throw new Exception("OpenAI ApiKey is not set");
+        }
+        var chatClient = new ChatClient(_config.Model, apiKey);
+        var completion = await chatClient.CompleteChatAsync(messages);
         var text = completion.Value.Content[0].Text;
         return text;
     }

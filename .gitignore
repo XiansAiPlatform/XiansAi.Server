@@ -3,6 +3,10 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# Azure
+publish.zip
+
+
 # dotenv files
 .env
 appsettings.json

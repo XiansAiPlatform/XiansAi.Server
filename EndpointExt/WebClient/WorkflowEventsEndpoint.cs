@@ -43,7 +43,7 @@ public class WorkflowEventsEndpoint
         {
             try
             {
-                var client = await _clientService.GetClientAsync();
+                var client = _clientService.GetClient();
                 var handle = client.GetWorkflowHandle(workflowId);
                 var options = new WorkflowHistoryEventFetchOptions
                 {
@@ -138,7 +138,7 @@ public class WorkflowEventsEndpoint
         }
         try
         {
-            var client = await _clientService.GetClientAsync();
+            var client = _clientService.GetClient();
             var handle = client.GetWorkflowHandle(workflowId);
             
             var events = new List<HistoryEvent>();

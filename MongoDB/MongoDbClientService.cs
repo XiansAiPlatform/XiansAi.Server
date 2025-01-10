@@ -1,58 +1,59 @@
 using MongoDB.Driver;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Collections.Concurrent;
+using XiansAi.Server.Auth;
 
 namespace XiansAi.Server.MongoDB;
 
 public interface IMongoDbClientService
 {
-    Task<IMongoDatabase> GetDatabase();
-    Task<IMongoCollection<T>> GetCollection<T>(string collectionName);
-    Task<IMongoClient> GetClient();
+    IMongoDatabase GetDatabase();
+    IMongoCollection<T> GetCollection<T>(string collectionName);
+    IMongoClient GetClient();
 }
 
 public class MongoDbClientService : IMongoDbClientService
 {
-    private IMongoClient?_mongoClient;
+    private static readonly ConcurrentDictionary<string, IMongoClient> _mongoClients = new();
     public MongoDBConfig Config { get; init; }
-    private readonly IConfiguration _configuration;
-
+    private readonly ITenantContext _tenantContext;
     private readonly IKeyVaultService _keyVaultService;
 
 
-    public MongoDbClientService(MongoDBConfig config, IKeyVaultService keyVaultService, IConfiguration configuration)
+    public MongoDbClientService(MongoDBConfig config, IKeyVaultService keyVaultService, ITenantContext tenantContext)
     {
         Config = config;
-        _configuration = configuration;
         _keyVaultService = keyVaultService;
+        _tenantContext = tenantContext;
     }
 
-    public async Task<IMongoDatabase> GetDatabase()
+    public IMongoDatabase GetDatabase()
     {
-        var mongoClient = await GetClient();
+        var mongoClient = GetClient();
         return mongoClient.GetDatabase(Config.DatabaseName);
     }
 
-    public async Task<IMongoCollection<T>> GetCollection<T>(string collectionName)
+    public IMongoCollection<T> GetCollection<T>(string collectionName)
     {
-        var database = await GetDatabase();
+        var database = GetDatabase();
         return database.GetCollection<T>(collectionName);
     }
 
-    public async Task<IMongoClient> GetClient()
+    public IMongoClient GetClient()
     {
-        if (_mongoClient == null)
+        var tenantId = _tenantContext.TenantId;
+        return _mongoClients.GetOrAdd(tenantId, _ => 
         {
             var connectionString = Config.ConnectionString;
             var settings = MongoClientSettings.FromConnectionString(connectionString);
-            var cert = await GetCertificateAsync();
+            var cert = GetCertificateAsync().GetAwaiter().GetResult();
             settings.SslSettings = new SslSettings
             {
                 ClientCertificates = new List<X509Certificate>() { cert }
             };
-            _mongoClient = new MongoClient(settings);
-        }
-        return _mongoClient;
+            return new MongoClient(settings);
+        });
     }
 
     private async Task<X509Certificate2> GetCertificateAsync()
@@ -65,7 +66,7 @@ public class MongoDbClientService : IMongoDbClientService
 #pragma warning restore SYSLIB0057 // Type or member is obsolete        
         } else if (Config.CertificateKeyVaultName != null)
         {
-            var cert = await _keyVaultService.LoadFromKeyVault(Config.CertificateKeyVaultName);
+            var cert = await _keyVaultService.LoadCertificate(Config.CertificateKeyVaultName);
             return cert;
         } else {
             throw new Exception("CertificateFilePath and CertificateFilePassword are not set");

@@ -27,7 +27,7 @@ public class WorkflowCancelEndpoint
                 return Results.BadRequest("WorkflowId is required");
             }
 
-            var client = await _temporalClientService.GetClientAsync();
+            var client = _temporalClientService.GetClient();
             var handle = client.GetWorkflowHandle(workflowId);
             
             if (force)

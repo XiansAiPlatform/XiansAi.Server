@@ -46,16 +46,23 @@ public static class ServiceCollectionExtensions
         builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
 
         builder.Services.AddScoped<ITemporalClientService>(sp =>
-            new TemporalClientService(sp.GetRequiredService<ITenantContext>().GetTemporalConfig()));
+            new TemporalClientService(
+                sp.GetRequiredService<ITenantContext>().GetTemporalConfig(),
+                sp.GetRequiredService<IKeyVaultService>(),
+                sp.GetRequiredService<ILogger<TemporalClientService>>(),
+                sp.GetRequiredService<ITenantContext>()));
 
         builder.Services.AddScoped<IOpenAIClientService>(sp =>
-            new OpenAIClientService(sp.GetRequiredService<ITenantContext>().GetOpenAIConfig()));
+            new OpenAIClientService(
+                sp.GetRequiredService<ITenantContext>().GetOpenAIConfig(),
+                sp.GetRequiredService<IKeyVaultService>(),
+                sp.GetRequiredService<ILogger<OpenAIClientService>>()));
 
         builder.Services.AddScoped<IMongoDbClientService>(sp =>
             new MongoDbClientService(
                 sp.GetRequiredService<ITenantContext>().GetMongoDBConfig(),
                 sp.GetRequiredService<IKeyVaultService>(),
-                builder.Configuration));
+                sp.GetRequiredService<ITenantContext>()));
 
         builder.Services.AddSingleton<CertificateGenerator>();
         builder.Services.AddScoped<IDatabaseService, DatabaseService>();

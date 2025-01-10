@@ -17,3 +17,13 @@ To run the server in production configuration, you can use the following command
 ```bash
 dotnet run --launch-profile Production
 ```
+
+This will use the `appsettings.Production.json` file.
+
+## Deploying the server to Azure Production
+
+To deploy the server to Azure Production, you can use the following command. Ensure you have the correct permissions to deploy to the Azure App Service. Also ensure to clone XiansAi.Infrastructure repository, but run the deploy-webapp.sh script from the XiansAi.Server repository.
+
+```bash
+../XiansAi.Infrastructure/Azure/deploy-webapp.sh
+```

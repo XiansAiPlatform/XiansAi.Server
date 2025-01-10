@@ -77,7 +77,7 @@ public class WorkflowStarterEndpoint
         WorkflowRequest request,
         WorkflowOptions options)
     {
-        var client = await _clientService.GetClientAsync();
+        var client = _clientService.GetClient();
         return await client.StartWorkflowAsync(
             request.WorkflowType!,
             request.Parameters ?? Array.Empty<string>(),
