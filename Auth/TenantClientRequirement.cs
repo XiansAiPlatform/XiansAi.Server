@@ -23,7 +23,7 @@ public class TenantClientHandler : BaseAuthHandler<TenantClientRequirement>
         _configuration = configuration;
     }
 
-    protected override async Task HandleRequirementAsync(
+    protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         TenantClientRequirement requirement)
     {
@@ -33,28 +33,28 @@ public class TenantClientHandler : BaseAuthHandler<TenantClientRequirement>
         if (string.IsNullOrEmpty(currentTenantId))
         {
             _logger.LogWarning("No Tenant ID found in X-Tenant-Id header");
-            return;
+            return Task.CompletedTask;
         }
 
-        var (success, loggedInUser, authorizedTenantIds) = ValidateTokenAsync(context);
+        var (success, loggedInUser, authorizedTenantIds) = ValidateToken(context);
         
         if (!success || authorizedTenantIds == null || !authorizedTenantIds.Contains(currentTenantId))
         {
             _logger.LogWarning($"Tenant ID {currentTenantId} is not authorized for this token holder");
-            return;
+            return Task.CompletedTask;
         }
 
         if (currentTenantId.Contains('-'))
         {
             _logger.LogWarning($"Tenant ID cannot contain '-'");
-            return;
+            return Task.CompletedTask;
         }
 
         var tenantSection = _configuration.GetSection($"Tenants:{currentTenantId}");
         if (!tenantSection.Exists())
         {
             _logger.LogWarning("Tenant configuration not found for tenant ID: {currentTenantId}", currentTenantId);
-            return;
+            return Task.CompletedTask;
         }
 
         // set tenant context and succeed
@@ -62,5 +62,6 @@ public class TenantClientHandler : BaseAuthHandler<TenantClientRequirement>
         _tenantContext.TenantId = currentTenantId;
         _tenantContext.LoggedInUser = loggedInUser ?? null;
         context.Succeed(requirement);
+        return Task.CompletedTask;
     }
 }

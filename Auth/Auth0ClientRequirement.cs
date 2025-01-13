@@ -19,26 +19,27 @@ public class Auth0ClientHandler : BaseAuthHandler<Auth0ClientRequirement>
     {
     }
 
-    protected override async Task HandleRequirementAsync(
+    protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         Auth0ClientRequirement requirement)
     {
-        var (success, loggedInUser, authorizedTenantIds) = ValidateTokenAsync(context);
+        var (success, loggedInUser, authorizedTenantIds) = ValidateToken(context);
         
         if (!success)
         {
             context.Fail();
-            return;
+            return Task.CompletedTask;
         }
 
         _logger.LogInformation("Authorized tenant IDs: {authorizedTenantIds}", authorizedTenantIds);
         _logger.LogInformation("Logged in user: {loggedInUser}", loggedInUser);
 
         // set tenant context and succeed
-        _tenantContext.AuthorizedTenantIds = authorizedTenantIds;
+        _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
         _tenantContext.LoggedInUser = loggedInUser;
         
         _logger.LogInformation("Authorization requirement succeeded");
         context.Succeed(requirement);
+        return Task.CompletedTask;
     }
 }

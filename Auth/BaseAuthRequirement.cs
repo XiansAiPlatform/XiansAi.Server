@@ -25,7 +25,7 @@ public abstract class BaseAuthHandler<T> : AuthorizationHandler<T> where T : Bas
     }
 
     protected virtual (bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)
-        ValidateTokenAsync(AuthorizationHandlerContext context)
+        ValidateToken(AuthorizationHandlerContext context)
     {
         var httpContext = context.Resource as HttpContext;
         var authHeader = httpContext?.Request.Headers["Authorization"].FirstOrDefault();
