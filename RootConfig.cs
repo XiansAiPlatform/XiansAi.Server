@@ -1,4 +1,4 @@
-public class RootConfig
+public class FlowServerConfig
 {
     // optionally read from key vault
     public string? RootCertKeyVaultName { get; set; }

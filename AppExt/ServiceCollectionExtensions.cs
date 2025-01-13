@@ -29,7 +29,6 @@ public static class ServiceCollectionExtensions
     {
         builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
         builder.Services.AddSingleton<IAuth0MgtAPIConnect, Auth0MgtAPIConnect>();
-        builder.Services.AddScoped<IVerificationCodeService, VerificationCodeService>();
         builder.Services.AddStackExchangeRedisCache(options =>
         {
             options.Configuration = builder.Configuration.GetRequiredSection("RedisCache:ConnectionString").Value;
@@ -63,7 +62,6 @@ public static class ServiceCollectionExtensions
 
         builder.Services.AddScoped<ITemporalClientService>(sp =>
             new TemporalClientService(
-                sp.GetRequiredService<ITenantContext>().GetTemporalConfig(),
                 sp.GetRequiredService<IKeyVaultService>(),
                 sp.GetRequiredService<ILogger<TemporalClientService>>(),
                 sp.GetRequiredService<ITenantContext>()));
@@ -81,7 +79,6 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IKeyVaultService>(),
                 sp.GetRequiredService<ITenantContext>()));
 
-        builder.Services.AddScoped<IVerificationCodeService, VerificationCodeService>();
         builder.Services.AddScoped<IEmailService, EmailService>();
         builder.Services.AddScoped<IDatabaseService, DatabaseService>();
         return builder;
@@ -148,11 +145,12 @@ public static class ServiceCollectionExtensions
             options.AddPolicy("RequireTenantAuth", policy =>
             {
                 policy.AuthenticationSchemes.Add("JWT");
-                policy.RequireAuthenticatedUser();
+                //policy.RequireAuthenticatedUser();
                 policy.Requirements.Add(new TenantClientRequirement(builder.Configuration));
             });
             options.AddPolicy("RequireAuth0Auth", policy =>
             {
+                policy.AuthenticationSchemes.Add("JWT");
                 policy.Requirements.Add(new Auth0ClientRequirement(builder.Configuration));
             });
         });

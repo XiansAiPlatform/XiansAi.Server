@@ -73,9 +73,12 @@ public class TenantContext : ITenantContext
             throw new InvalidOperationException($"Temporal configuration for tenant {TenantId} not found");
         }
 
-        // if the flow server url is not set, use the tenant id
-        if (temporalConfig.FlowServerUrl == null)  throw new InvalidOperationException($"Temporal flow server url for tenant {TenantId} not found");
-
+        if (temporalConfig.CertificateKeyVaultName == null && temporalConfig.CertificateFilePath == null) 
+            throw new InvalidOperationException("CertificateKeyVaultName or CertificateFilePath is required for tenant {TenantId}");
+        if (temporalConfig.PrivateKeyKeyVaultName == null && temporalConfig.PrivateKeyFilePath == null) 
+            throw new InvalidOperationException("PrivateKeyKeyVaultName or PrivateKeyFilePath is required for tenant {TenantId}");
+        if (temporalConfig.FlowServerUrl == null) throw new InvalidOperationException("FlowServerUrl is required for tenant {TenantId}");
+        
         // if the flow server namespace is not set, use the tenant id
         if (temporalConfig.FlowServerNamespace == null) {
             temporalConfig.FlowServerNamespace = TenantId;

@@ -10,6 +10,15 @@ To run the server, you can use the following command:
 dotnet run 
 ```
 
+### Auth0 Configuration
+
+The Auth0 configuration is in the `appsettings.json` file.
+
+- Create Auth0 Application
+  - These setting are configured in the `Auth0` section of the `appsettings.json` file.
+- Create Machine to Machine application authorized to Auth0 Management API
+  - These setting are configured in the `Auth0:ManagementApi` section of the `appsettings.json` file.
+
 ### Running the server in production
 
 To run the server in production configuration, you can use the following command:

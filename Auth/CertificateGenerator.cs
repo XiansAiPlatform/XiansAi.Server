@@ -11,7 +11,7 @@ public class CertificateGenerator
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
     private readonly IKeyVaultService _keyVaultService;
-    private readonly RootConfig _rootConfig;
+    private readonly FlowServerConfig _rootConfig;
     public CertificateGenerator(IConfiguration configuration, 
         ILogger<CertificateGenerator> logger, 
         IHostEnvironment environment,
@@ -21,7 +21,7 @@ public class CertificateGenerator
         _environment = environment;
         _configuration = configuration;
         _keyVaultService = keyVaultService;
-        _rootConfig = _configuration.GetSection("RootConfig").Get<RootConfig>() ?? throw new InvalidOperationException("Root configuration not found");
+        _rootConfig = _configuration.GetSection("FlowServerConfig").Get<FlowServerConfig>() ?? throw new InvalidOperationException("Root configuration not found");
     }
 
     public async Task<X509Certificate2> GetRootCertificate()

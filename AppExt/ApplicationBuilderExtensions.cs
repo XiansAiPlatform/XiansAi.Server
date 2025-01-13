@@ -49,6 +49,8 @@ public static class ApplicationBuilderExtensions
     {
         WebClientEndpointExtensions.MapClientEndpoints(app);
         FlowServerEndpointExtensions.MapFlowServerEndpoints(app);
+        WebAdminEndpointExtensions.MapAdminEndpoints(app);
+        WebPublicEndpointExtensions.MapPublicEndpoints(app);
         app.MapControllers();
     }
 }
