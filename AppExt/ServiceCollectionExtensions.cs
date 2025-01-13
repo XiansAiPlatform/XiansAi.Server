@@ -80,8 +80,9 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ITenantContext>().GetMongoDBConfig(),
                 sp.GetRequiredService<IKeyVaultService>(),
                 sp.GetRequiredService<ITenantContext>()));
-        
+
         builder.Services.AddScoped<IVerificationCodeService, VerificationCodeService>();
+        builder.Services.AddScoped<IEmailService, EmailService>();
         builder.Services.AddScoped<IDatabaseService, DatabaseService>();
         return builder;
     }
