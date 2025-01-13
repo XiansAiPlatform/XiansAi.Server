@@ -47,7 +47,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetLatestDefinitions();
         })
         .WithName("Get Latest Definitions")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
     }
 
@@ -61,7 +61,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GenerateClientCertificate(request);
         })
         .WithName("Generate Client Certificate")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi(operation => {
             operation.Summary = "Generate a new client certificate";
             operation.Description = "Generates and returns a new client certificate in PFX format";
@@ -74,7 +74,7 @@ public static class WebClientEndpointExtensions
             return endpoint.GetFlowServerSettings();
         })
         .WithName("Get Flow Server Settings")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi(); 
 
         app.MapGet("/api/client/certificates/flowserver/cert", async (
@@ -84,7 +84,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetFlowServerCertFile(fileName);
         })
         .WithName("Get Flow Server Certificate File")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi(); 
 
         app.MapGet("/api/client/certificates/flowserver/privatekey", async (
@@ -94,7 +94,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetFlowServerPrivateKeyFile(fileName);
         })
         .WithName("Get Flow Server Private Key File")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi(); 
     }
 
@@ -107,7 +107,7 @@ public static class WebClientEndpointExtensions
         {
             return await endpoint.GetActivity(workflowId, activityId);
         }).WithName("Get Activity of Workflow")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
     }
 
@@ -120,7 +120,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetInstruction(id);
         })
         .WithName("Get Instruction")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions", async (
@@ -129,7 +129,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetInstructions();
         })
         .WithName("Get Instructions")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapPost("/api/client/instructions", async (
@@ -139,7 +139,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.CreateInstruction(request);
         })
         .WithName("Create Instruction")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions/latest", async (
@@ -148,7 +148,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetLatestInstructions();
         })
         .WithName("Get Latest Instructions")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapDelete("/api/client/instructions/{id}", async (
@@ -158,7 +158,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.DeleteInstruction(id);
         })
         .WithName("Delete Instruction")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapDelete("/api/client/instructions/all", async (
@@ -168,7 +168,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.DeleteAllVersions(request);
         })
         .WithName("Delete All Versions")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions/versions", async (
@@ -178,7 +178,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetInstructionVersions(name);
         })
         .WithName("Get Instruction Versions")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
     }
     
@@ -191,7 +191,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetWorkflow(workflowId);
         })
         .WithName("Get Workflow")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapPost("/api/client/workflows", async (
@@ -201,7 +201,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.HandleStartWorkflow(request);
         })
         .WithName("Create New Workflow")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows/{workflowId}/events", async (
@@ -211,7 +211,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetWorkflowEvents(workflowId);
         })
         .WithName("Get Workflow Events")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows", async (
@@ -220,7 +220,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.GetWorkflows();
         })
         .WithName("Get Workflows")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapPost("/api/client/workflows/{workflowId}/cancel", async (
@@ -231,7 +231,7 @@ public static class WebClientEndpointExtensions
             return await endpoint.CancelWorkflow(workflowId, force);
         })
         .WithName("Cancel Workflow")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows/{workflowId}/events/stream", (
@@ -241,7 +241,7 @@ public static class WebClientEndpointExtensions
             return endpoint.StreamWorkflowEvents(workflowId);
         })
         .WithName("Stream Workflow Events")
-        .RequireAuthorization("RequireJwtAuth")
+        .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi(operation => {
             operation.Summary = "Stream workflow events in real-time";
             operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events";

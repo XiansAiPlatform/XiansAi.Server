@@ -1,17 +1,28 @@
 using Azure;
 using Azure.Communication.Email;
-using Microsoft.Extensions.Configuration;
+
 
 public class EmailService : IEmailService
 {
-    private readonly EmailClient _emailClient;
+    private readonly EmailClient? _emailClient;
     private readonly string? _senderAddress;
+    private readonly ILogger<EmailService> _logger;
 
-    public EmailService(IConfiguration configuration)
+    public EmailService(IConfiguration configuration, ILogger<EmailService> logger, IHostEnvironment env)
     {
+        _logger = logger;
         var connectionString = configuration["CommunicationServices:ConnectionString"];
         _senderAddress = configuration["CommunicationServices:SenderEmail"];
-        _emailClient = new EmailClient(connectionString);
+
+        if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(_senderAddress))
+        {
+            _logger.LogError("CommunicationServices:ConnectionString or SenderEmail is not set");
+            if (env.IsProduction()) {
+                throw new InvalidOperationException("Email service is not properly configured. Please check CommunicationServices settings in configuration.");
+            }
+        } else {
+            _emailClient = new EmailClient(connectionString);
+        }
     }
 
     public async Task SendEmailAsync(string to, string subject, string body, bool isHtml = false)
@@ -29,6 +40,10 @@ public class EmailService : IEmailService
                 recipientAddress: to,
                 content: emailContent
             );
+
+            if (_emailClient == null) {
+                throw new InvalidOperationException("Email service is not properly configured. Please check CommunicationServices settings in configuration.");
+            }
 
             var response = await _emailClient.SendAsync(
                 wait: WaitUntil.Completed,

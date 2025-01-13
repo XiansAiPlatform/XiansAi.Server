@@ -145,11 +145,11 @@ public static class ServiceCollectionExtensions
 
         builder.Services.AddAuthorization(options =>
         {
-            options.AddPolicy("RequireJwtAuth", policy =>
+            options.AddPolicy("RequireTenantAuth", policy =>
             {
                 policy.AuthenticationSchemes.Add("JWT");
                 policy.RequireAuthenticatedUser();
-                policy.Requirements.Add(new JwtClientRequirement(builder.Configuration));
+                policy.Requirements.Add(new TenantClientRequirement(builder.Configuration));
             });
             options.AddPolicy("RequireAuth0Auth", policy =>
             {
@@ -158,7 +158,7 @@ public static class ServiceCollectionExtensions
         });
 
         builder.Services.AddHttpContextAccessor();
-        builder.Services.AddScoped<IAuthorizationHandler, JwtClientHandler>();
+        builder.Services.AddScoped<IAuthorizationHandler, TenantClientHandler>();
         builder.Services.AddScoped<IAuthorizationHandler, Auth0ClientHandler>();
         return builder;
     }

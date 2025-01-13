@@ -7,7 +7,7 @@ namespace XiansAi.Server.Auth;
 public interface ITenantContext
 {
     string TenantId { get; set; }   
-    string LoggedInUser { get; set; }
+    string? LoggedInUser { get; set; }
     IEnumerable<string> AuthorizedTenantIds { get; set; }
     MongoDBConfig GetMongoDBConfig();
     TemporalConfig GetTemporalConfig();
