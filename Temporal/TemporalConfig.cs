@@ -4,12 +4,12 @@ namespace XiansAi.Server.Temporal;
 
 public class TemporalConfig
 {
-
     [Required]
-    public required string FlowServerUrl { get; set; }
+    public string? ServiceAccountApiKey { get; set; }
 
-    [Required]
-    public required string FlowServerNamespace { get; set; }
+    public string? FlowServerUrl { get; set; }
+
+    public string? FlowServerNamespace { get; set; }
 
     // optionally read from local file system
     public string? CertificateFilePath { get; set; }

@@ -17,11 +17,27 @@ public static class ServiceCollectionExtensions
     {
         builder.AddCorsConfiguration()
               .AddAuthConfiguration()
+              .AddServerServices()
               .AddClientServices()
               .AddEndpoints()
               .AddApiConfiguration();
 
         return builder.Services;
+    }
+
+    private static WebApplicationBuilder AddServerServices(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
+        builder.Services.AddSingleton<IAuth0MgtAPIConnect, Auth0MgtAPIConnect>();
+        builder.Services.AddScoped<IVerificationCodeService, VerificationCodeService>();
+        builder.Services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = builder.Configuration.GetRequiredSection("RedisCache:ConnectionString").Value;
+            options.InstanceName = "VerificationCodes_";
+        });
+
+        builder.Services.AddSingleton<CertificateGenerator>();
+        return builder;
     }
 
     private static WebApplicationBuilder AddCorsConfiguration(this WebApplicationBuilder builder)
@@ -43,7 +59,7 @@ public static class ServiceCollectionExtensions
     private static WebApplicationBuilder AddClientServices(this WebApplicationBuilder builder)
     {
         builder.Services.AddScoped<ITenantContext, TenantContext>();
-        builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
+
 
         builder.Services.AddScoped<ITemporalClientService>(sp =>
             new TemporalClientService(
@@ -64,8 +80,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ITenantContext>().GetMongoDBConfig(),
                 sp.GetRequiredService<IKeyVaultService>(),
                 sp.GetRequiredService<ITenantContext>()));
-
-        builder.Services.AddSingleton<CertificateGenerator>();
+        
+        builder.Services.AddScoped<IVerificationCodeService, VerificationCodeService>();
         builder.Services.AddScoped<IDatabaseService, DatabaseService>();
         return builder;
     }
@@ -84,6 +100,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<ActivitiesEndpoint>();
         builder.Services.AddScoped<DefinitionsServerEndpoint>();
         builder.Services.AddScoped<DefinitionsEndpoint>();
+        builder.Services.AddScoped<RegistrationEndpoint>();
         return builder;
     }
 
@@ -108,6 +125,7 @@ public static class ServiceCollectionExtensions
         })
         .AddJwtBearer("JWT", options =>
         {
+            options.RequireHttpsMetadata = false;
             options.Authority = builder.Configuration["Auth0:Domain"];
             options.Audience = builder.Configuration["Auth0:Audience"];
             options.Events = new JwtBearerEvents
@@ -132,10 +150,15 @@ public static class ServiceCollectionExtensions
                 policy.RequireAuthenticatedUser();
                 policy.Requirements.Add(new JwtClientRequirement(builder.Configuration));
             });
+            options.AddPolicy("RequireAuth0Auth", policy =>
+            {
+                policy.Requirements.Add(new Auth0ClientRequirement(builder.Configuration));
+            });
         });
 
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IAuthorizationHandler, JwtClientHandler>();
+        builder.Services.AddScoped<IAuthorizationHandler, Auth0ClientHandler>();
         return builder;
     }
 }

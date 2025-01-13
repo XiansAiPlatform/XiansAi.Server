@@ -47,16 +47,18 @@ public class MongoDbClientService : IMongoDbClientService
         {
             var connectionString = Config.ConnectionString;
             var settings = MongoClientSettings.FromConnectionString(connectionString);
-            var cert = GetCertificateAsync().GetAwaiter().GetResult();
-            settings.SslSettings = new SslSettings
-            {
-                ClientCertificates = new List<X509Certificate>() { cert }
-            };
+            var cert = GetCertificateAsync()?.GetAwaiter().GetResult();
+            if (cert != null) {
+                settings.SslSettings = new SslSettings
+                {
+                    ClientCertificates = new List<X509Certificate>() { cert }
+                };
+            }
             return new MongoClient(settings);
         });
     }
 
-    private async Task<X509Certificate2> GetCertificateAsync()
+    private async Task<X509Certificate2?> GetCertificateAsync()
     {
         // read from local file system. User for local development
         if (Config.CertificateFilePath != null && Config.CertificateFilePassword != null)
@@ -68,9 +70,8 @@ public class MongoDbClientService : IMongoDbClientService
         {
             var cert = await _keyVaultService.LoadCertificate(Config.CertificateKeyVaultName);
             return cert;
-        } else {
-            throw new Exception("CertificateFilePath and CertificateFilePassword are not set");
-        }
+        } 
+        return null;
     }
 }
 

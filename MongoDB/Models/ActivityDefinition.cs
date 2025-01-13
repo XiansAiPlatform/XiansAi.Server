@@ -6,8 +6,8 @@ public class ActivityDefinition
     [BsonElement("activity_name")]
     public required string ActivityName { get; set; }
 
-    [BsonElement("docker_image")]
-    public string? DockerImage { get; set; }
+    [BsonElement("agent_names")]
+    public required List<string> AgentNames { get; set; }
 
     [BsonElement("instructions")]
     public required List<string> Instructions { get; set; }

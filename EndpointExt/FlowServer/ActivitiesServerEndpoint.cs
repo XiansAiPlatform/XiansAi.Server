@@ -42,8 +42,8 @@ public class ActivityRequest
     public JsonElement? Result { get; set; }
 
     [Required]
-    [JsonPropertyName("agentName")]
-    public required string AgentName { get; set; }
+    [JsonPropertyName("agentNames")]
+    public required List<string> AgentNames { get; set; }
 
     [JsonPropertyName("instructionIds")]
     public List<string>? InstructionIds { get; set; } = [];
@@ -78,7 +78,7 @@ public class ActivitiesServerEndpoint
             TaskQueue = request.TaskQueue,
             Inputs = ConvertJsonElementToBsonCompatible(request.Inputs),
             Result = ConvertJsonElementToBsonCompatible(request.Result),
-            AgentName = request.AgentName,
+            AgentNames = request.AgentNames,
             InstructionIds = request.InstructionIds ?? new List<string>()
         };
         var activityRepository = new ActivityRepository(await _databaseService.GetDatabase());

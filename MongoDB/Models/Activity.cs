@@ -37,7 +37,7 @@ public class Activity
     public string? TaskQueue { get; set; }
 
     [BsonElement("agent_name")]
-    public string? AgentName { get; set; }
+    public List<string>? AgentNames { get; set; }
 
     [BsonElement("instruction_ids")]
     public List<string>? InstructionIds { get; set; } = [];

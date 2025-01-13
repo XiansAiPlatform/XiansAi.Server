@@ -43,8 +43,8 @@ public class ActivityDefinitionRequest
     [JsonPropertyName("activityName")]
     public required string ActivityName { get; set; }
 
-    [JsonPropertyName("dockerImage")]
-    public string? DockerImage { get; set; }
+    [JsonPropertyName("agentNames")]
+    public required List<string> AgentNames { get; set; }
 
     [JsonPropertyName("instructions")]
     public required List<string> Instructions { get; set; }
@@ -131,7 +131,7 @@ public class DefinitionsServerEndpoint
             Activities = request.Activities.Select(a => new ActivityDefinition
             {
                 ActivityName = a.ActivityName,
-                DockerImage = a.DockerImage,
+                AgentNames = a.AgentNames,
                 Instructions = a.Instructions,
                 Parameters = a.Parameters.Select(p => new ParameterDefinition
                 {

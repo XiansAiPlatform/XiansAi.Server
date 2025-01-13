@@ -28,10 +28,10 @@ public class CertificateGenerator
     {
         if (_rootConfig.RootCertKeyVaultName != null)
         {
-            _logger.LogInformation("Loading root certificate from key vault---" + _rootConfig.RootCertKeyVaultName + "---");
+            _logger.LogDebug("Loading root certificate from key vault---" + _rootConfig.RootCertKeyVaultName + "---");
             return await _keyVaultService.LoadCertificate(_rootConfig.RootCertKeyVaultName);
         } else if (_rootConfig.RootCertPath != null && _rootConfig.RootCertPassword != null) {
-            _logger.LogInformation("Loading root certificate from file---" + _rootConfig.RootCertPath + "---");
+            _logger.LogDebug("Loading root certificate from file---" + _rootConfig.RootCertPath + "---");
             return CreateOrLoadRootCertificateFile();
         } else {
             throw new InvalidOperationException("Root certificate (key vault or file) not found");
