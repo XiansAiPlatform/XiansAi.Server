@@ -42,26 +42,25 @@ public class TemporalClientService : ITemporalClientService
 
     public ITemporalClient GetClient()
     {
-
-        var config = _tenantContext.GetTemporalConfig();
-
-        // if tls is true, use the tls options. Otherwise, use the api key
-        TemporalClientConnectOptions options = 
-            new TemporalClientConnectOptions(new(config.FlowServerUrl))
-        {
-            Namespace = config.FlowServerNamespace!,
-            Tls = new TlsOptions()
-            {
-                ClientCert = GetCertificate().GetAwaiter().GetResult(),
-                ClientPrivateKey = GetPrivateKey().GetAwaiter().GetResult(),
-            }
-        };
-
-        _logger.LogInformation("Connecting to temporal server---" + config.FlowServerUrl + "---, namespace---" + config.FlowServerNamespace + "---");
-
         // create clients for each tenant
         return _clients.GetOrAdd(_tenantContext.TenantId, _ =>
         {
+            var config = _tenantContext.GetTemporalConfig();
+
+            // if tls is true, use the tls options. Otherwise, use the api key
+            TemporalClientConnectOptions options =
+                new TemporalClientConnectOptions(new(config.FlowServerUrl))
+                {
+                    Namespace = config.FlowServerNamespace!,
+                    Tls = new TlsOptions()
+                    {
+                        ClientCert = GetCertificate().GetAwaiter().GetResult(),
+                        ClientPrivateKey = GetPrivateKey().GetAwaiter().GetResult(),
+                    }
+                };
+
+            _logger.LogInformation("Connecting to temporal server---" + config.FlowServerUrl + "---, namespace---" + config.FlowServerNamespace + "---");
+
             return TemporalClient.ConnectAsync(options).GetAwaiter().GetResult();
         });
     }

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi.Models;
@@ -8,6 +9,9 @@ using XiansAi.Server.EndpointExt.WebClient;
 using XiansAi.Server.GenAi;
 using XiansAi.Server.MongoDB;
 using XiansAi.Server.Temporal;
+using Microsoft.Extensions.Configuration;
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
+using Azure.Security.KeyVault.Secrets;
 
 namespace XiansAi.Server;
 
@@ -16,6 +20,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection ConfigureServices(this WebApplicationBuilder builder)
     {
         builder.AddCorsConfiguration()
+              //.AddKeyVaultConfiguration()
               .AddAuthConfiguration()
               .AddServerServices()
               .AddClientServices()
@@ -23,6 +28,42 @@ public static class ServiceCollectionExtensions
               .AddApiConfiguration();
 
         return builder.Services;
+    }
+
+    private static WebApplicationBuilder AddKeyVaultConfiguration(this WebApplicationBuilder builder)
+    {
+        if (builder.Environment.IsProduction())
+        {
+            try
+            {
+                var keyVaultUri = builder.Configuration["KeyVaultUri"];
+                if (string.IsNullOrEmpty(keyVaultUri))
+                {
+                    throw new InvalidOperationException("KeyVaultUri configuration is missing");
+                }
+
+                Console.WriteLine("Registering key vault configuration");
+                Console.WriteLine($"Adding Key Vault Configuration with url: {keyVaultUri}");
+
+                var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+                {
+                    ExcludeSharedTokenCacheCredential = true,
+                    ExcludeVisualStudioCredential = true,
+                    ExcludeVisualStudioCodeCredential = true
+                });
+
+                builder.Configuration.AddAzureKeyVault(
+                    new Uri(keyVaultUri),
+                    credential,
+                    new KeyVaultSecretManager());
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error configuring Azure Key Vault: {ex.Message}");
+                throw;
+            }
+        }
+        return builder;
     }
 
     private static WebApplicationBuilder AddServerServices(this WebApplicationBuilder builder)
@@ -107,7 +148,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(c =>
         {
-            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Flowmaxer API", Version = "v1" });
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Xians.ai API", Version = "v1" });
         });
         builder.Services.AddOpenApi();
         builder.Services.AddControllers();
@@ -159,5 +200,13 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<IAuthorizationHandler, TenantClientHandler>();
         builder.Services.AddScoped<IAuthorizationHandler, Auth0ClientHandler>();
         return builder;
+    }
+}
+
+public class PrefixKeyVaultSecretManager : KeyVaultSecretManager
+{
+    public override string GetKey(KeyVaultSecret secret)
+    {
+        return secret.Name.Replace("--", ":");
     }
 }

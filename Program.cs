@@ -23,6 +23,20 @@ public class Program
 
         // Configure middleware pipeline
         app.ConfigureMiddleware();
+
+        // Get configuration for testing
+        var config = app.Configuration;
+        if (config == null)
+        {
+            _logger.LogError("Configuration is null");
+            throw new InvalidOperationException("Configuration is null");
+        }
+        var mongoConnString = config["MongoDB:ConnectionString"];
+        Console.WriteLine($"MongoDB Connection String resolved: {mongoConnString}");
+        
+        _logger.LogInformation("Configuration loaded successfully");
+        
+        // run the app
         app.Run();
     }
 }

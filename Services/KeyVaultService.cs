@@ -22,7 +22,7 @@ public class KeyVaultService : IKeyVaultService
     public async Task<string> LoadSecret(string secretName)
     {
         _logger.LogInformation("Loading secret from key vault---" + secretName + "---");
-        var keyVaultUrl = new Uri(_configuration["KeyVaultUrl"]!);
+        var keyVaultUrl = new Uri(_configuration["KeyVaultUri"]!);
         var creds = new DefaultAzureCredential();
         var secretClient = new SecretClient(keyVaultUrl, creds);
         var secretResp = await secretClient.GetSecretAsync(secretName);
@@ -32,7 +32,7 @@ public class KeyVaultService : IKeyVaultService
     public async Task<X509Certificate2> LoadCertificate(string certificateName)
     {
         _logger.LogInformation("Loading certificate from key vault---" + certificateName + "---");
-        var keyVaultUrl = new Uri(_configuration["KeyVaultUrl"]!);
+        var keyVaultUrl = new Uri(_configuration["KeyVaultUri"]!);
         var creds = new DefaultAzureCredential();
         var certificateClient = new CertificateClient(keyVaultUrl, creds);
 
