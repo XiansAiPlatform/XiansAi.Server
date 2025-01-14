@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using XiansAi.Server.Auth;
 
@@ -61,6 +62,9 @@ public abstract class BaseAuthHandler<T> : AuthorizationHandler<T> where T : Bas
                 .Where(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)
                 .Select(c => c.Value)
                 .ToList();
+            
+            // Set the user name to the logged in user
+            httpContext?.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, loggedInUser)]));
 
             return (true, loggedInUser, authorizedTenantIds);
         }

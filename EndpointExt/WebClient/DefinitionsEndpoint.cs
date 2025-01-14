@@ -23,7 +23,7 @@ public class DefinitionsEndpoint
     public async Task<IResult> GetLatestDefinitions()
     {
         var definitionRepository = new FlowDefinitionRepository(await _databaseService.GetDatabase());
-        var definitions = await definitionRepository.GetLatestDefinitionsForAllTypesAsync();
+        var definitions = await definitionRepository.GetLatestDefinitionsAsync();
         _logger.LogInformation("Found {Count} definitions", definitions.Count);
         return Results.Ok(definitions);
     }

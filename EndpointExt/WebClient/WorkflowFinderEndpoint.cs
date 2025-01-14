@@ -1,3 +1,4 @@
+using System.Text.Json;
 using XiansAi.Server.Temporal;
 
 namespace XiansAi.Server.EndpointExt.WebClient;
@@ -21,6 +22,12 @@ public class WorkflowFinderEndpoint
         var workflowHandle = client.GetWorkflowHandle(workflowId);
         var workflowDescription = await workflowHandle.DescribeAsync();
 
+        _logger.LogDebug("Found workflow {workflow}", JsonSerializer.Serialize(workflowDescription));
+
+        var tenantId = workflowDescription.Memo.TryGetValue("tenantId", out var tenantIdValue) ? tenantIdValue.ToString() : null;
+        var userId = workflowDescription.Memo.TryGetValue("userId", out var userIdValue) ? userIdValue.ToString() : null;
+
+        _logger.LogDebug("Found workflow {workflowId} for tenant {tenantId} and user {userId}", workflowId, tenantId, userId);
         var workflow = new
         {
             workflowDescription.Id,
@@ -32,6 +39,8 @@ public class WorkflowFinderEndpoint
             workflowDescription.CloseTime,
             workflowDescription.ParentId,
             workflowDescription.ParentRunId,
+            TenantId = tenantId,
+            Owner = userId
         };
         return Results.Ok(workflow);
     }
@@ -47,6 +56,11 @@ public class WorkflowFinderEndpoint
 
             await foreach (var workflow in client.ListWorkflowsAsync(""))
             {
+                _logger.LogDebug("Found workflow {workflow}", JsonSerializer.Serialize(workflow));
+                var tenantId = workflow.Memo.TryGetValue("tenantId", out var tenantIdValue) ? tenantIdValue.Payload.Data.ToStringUtf8().Replace("\"", "") : null;
+                var userId = workflow.Memo.TryGetValue("userId", out var userIdValue) ? userIdValue.Payload.Data.ToStringUtf8().Replace("\"", "") : null;
+
+                _logger.LogDebug("Found workflow {workflowId} for tenant {tenantId} and user {userId}", workflow.Id, tenantId, userId);
                 workflows.Add(new
                 {
                     workflow.Id,
@@ -55,7 +69,9 @@ public class WorkflowFinderEndpoint
                     Status = workflow.Status.ToString(),
                     workflow.StartTime,
                     workflow.ExecutionTime,
-                    workflow.CloseTime
+                    workflow.CloseTime,
+                    TenantId = tenantId,
+                    Owner = userId
                 });
             }
 

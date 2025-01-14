@@ -72,7 +72,10 @@ public class CertificateEndpoint
     {
         try
         {
-            var userId = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "unknown";            
+            var user = _httpContextAccessor.HttpContext?.User;
+            _logger.LogDebug("Generating client certificate for {requestName}, {tenantId}", request.Name, _tenantContext.TenantId);
+            var userId = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value ?? "unknown";  
+            _logger.LogDebug("User Name: {userName}", userId);
             var cert = await _certificateGenerator.GenerateClientCertificate(request.Name, _tenantContext.TenantId, userId);
             var certBytes = cert.Export(X509ContentType.Pfx, request.Password);
             

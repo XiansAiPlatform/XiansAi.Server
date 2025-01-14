@@ -37,8 +37,7 @@ public static class FlowServerEndpointExtensions
             [FromBody] FlowDefinitionRequest request,
             [FromServices] DefinitionsServerEndpoint endpoint) =>
         {
-            await endpoint.CreateAsync(request);
-            return Results.Ok();
+            return await endpoint.CreateAsync(request);
         });
     }
 }

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 
 namespace XiansAi.Server.Auth;
@@ -88,17 +89,28 @@ public class CertificateValidationMiddleware
                 .FirstOrDefault(x => x.Trim().StartsWith("O="))
                 ?.Split('=')[1];
 
+            var userNameFromCert = distinguishedName.Format(multiLine: false)
+                .Split(',')
+                .FirstOrDefault(x => x.Trim().StartsWith("OU="))
+                ?.Split('=')[1];
             
             if (string.IsNullOrEmpty(tenantNameFromCert))
             {
-                _logger.LogInformation("Certificate does not contain Organization name");
+                _logger.LogInformation("Certificate does not contain Tenant name");
+                context.Response.StatusCode = 401;
+                return;
+            }
+
+            if (string.IsNullOrEmpty(userNameFromCert))
+            {
+                _logger.LogInformation("Certificate does not contain User name");
                 context.Response.StatusCode = 401;
                 return;
             }
 
             if (!_configuration.GetSection($"Tenants:{tenantNameFromCert}").Exists())
             {
-                _logger.LogInformation($"Organization name from certificate does not exist in configuration - Organization:{tenantNameFromCert}");
+                _logger.LogInformation($"Tenant name from certificate is not a valid tenant - Tenant:{tenantNameFromCert}");
                 context.Response.StatusCode = 401;
                 return;
             }
@@ -108,6 +120,9 @@ public class CertificateValidationMiddleware
             // Register services into the scope
             var tenantContext = scope.GetRequiredService<ITenantContext>();
             tenantContext.TenantId = tenantNameFromCert;
+            tenantContext.LoggedInUser = userNameFromCert;
+
+            context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userNameFromCert)]));
 
             await _next(context);
         }

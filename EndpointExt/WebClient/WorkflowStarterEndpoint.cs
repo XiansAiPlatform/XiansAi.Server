@@ -1,5 +1,7 @@
 using XiansAi.Server.Temporal;
 using Temporalio.Client;
+using XiansAi.Server.Auth;
+using System.Text.Json;
 
 namespace XiansAi.Server.EndpointExt.WebClient;
 
@@ -21,13 +23,15 @@ public class WorkflowStarterEndpoint
 {
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowStarterEndpoint> _logger;
-
+    private readonly ITenantContext _tenantContext;
     public WorkflowStarterEndpoint(
         ITemporalClientService clientService,
-        ILogger<WorkflowStarterEndpoint> logger)
+        ILogger<WorkflowStarterEndpoint> logger,
+        ITenantContext tenantContext    )
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _tenantContext = tenantContext;
     }
 
     /// <summary>
@@ -45,7 +49,7 @@ public class WorkflowStarterEndpoint
                 return Results.BadRequest("Invalid request payload. Expected a JSON object with a WorkflowType and Input properties.");
 
             var workflowId = GenerateWorkflowId(request.WorkflowType);
-            var options = CreateWorkflowOptions(workflowId, request.WorkflowType.Replace(" ", ""));
+            var options = CreateWorkflowOptions(workflowId, request.WorkflowType);
             
             var handle = await StartWorkflowAsync(request, options);
             
@@ -63,20 +67,25 @@ public class WorkflowStarterEndpoint
         }
     }
 
-    private static string GenerateWorkflowId(string workflowType) =>
-        $"{workflowType.Replace(" ", "-")}-{Guid.NewGuid()}";
+    private string GenerateWorkflowId(string workflowType) =>
+        $"{workflowType.Replace(" ", "-")}--{_tenantContext.LoggedInUser}--{Guid.NewGuid()}";
 
     private WorkflowOptions CreateWorkflowOptions(string workflowId, string workFlowType) =>
         new()
         {
             TaskQueue = workFlowType,
-            Id = workflowId
+            Id = workflowId,
+            Memo = new Dictionary<string, object> { 
+                { "tenantId", _tenantContext.TenantId },
+                { "userId", _tenantContext.LoggedInUser ?? "-unknown-" }
+            }
         };
 
     private async Task<WorkflowHandle> StartWorkflowAsync(
         WorkflowRequest request,
         WorkflowOptions options)
     {
+        _logger.LogDebug("Starting workflow {workflowType} with options {options}", request.WorkflowType, JsonSerializer.Serialize(options));
         var client = _clientService.GetClient();
         return await client.StartWorkflowAsync(
             request.WorkflowType!,

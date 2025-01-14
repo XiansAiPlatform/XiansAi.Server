@@ -13,6 +13,12 @@ public class FlowDefinitionRepository
         _definitions = database.GetCollection<FlowDefinition>("definitions");
     }
 
+    public async Task<bool> IfExistsInAnotherOwner(string typeName, string owner)
+    {
+        var existingDefinition = await _definitions.Find(x => x.TypeName == typeName && x.Owner != owner).FirstOrDefaultAsync();
+        return existingDefinition != null;
+    }
+
     public async Task<FlowDefinition> GetLatestFlowDefinitionAsync(string typeName)
     {
         return await _definitions.Find(x => x.TypeName == typeName)
@@ -25,9 +31,9 @@ public class FlowDefinitionRepository
         return await _definitions.Find(x => x.Id == id).FirstOrDefaultAsync();
     }
 
-    public async Task<FlowDefinition> GetByHashAsync(string hash)
+    public async Task<FlowDefinition> GetByHashAsync(string hash, string typeName)
     {
-        return await _definitions.Find(x => x.Hash == hash).FirstOrDefaultAsync();
+        return await _definitions.Find(x => x.Hash == hash && x.TypeName == typeName).FirstOrDefaultAsync();
     }
 
     public async Task<List<FlowDefinition>> GetByNameAsync(string name)
@@ -66,11 +72,27 @@ public class FlowDefinitionRepository
             .FirstOrDefaultAsync();
     }
 
+    public async Task<FlowDefinition> GetLatestByClassAndOwnerAsync(string className, string owner)
+    {
+        return await _definitions.Find(x => x.ClassName == className && x.Owner == owner)
+            .SortByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<List<FlowDefinition>> GetLatestDefinitionsAsync()
+    {
+        return await _definitions.Aggregate()
+            .SortByDescending(x => x.CreatedAt)
+            .Group(x => new { x.ClassName, x.Owner },
+                   g => g.First())
+            .ToListAsync();
+    }
+
     public async Task<List<FlowDefinition>> GetLatestDefinitionsForAllTypesAsync()
     {
         return await _definitions.Aggregate()
             .SortByDescending(x => x.CreatedAt)
-            .Group(x => x.TypeName, 
+            .Group(x => new { x.ClassName, x.Owner },
                    g => g.First())
             .ToListAsync();
     }

@@ -30,4 +30,22 @@ public class FlowDefinition
 
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; }
+
+    [BsonElement("tenant_id")]
+    public required string TenantId { get; set; }
+
+    [BsonElement("owner")]
+    public required string Owner { get; set; }
+
+    [BsonElement("permissions")]
+    public List<PermissionDefinition>? Permissions { get; set; }
+}
+
+public class PermissionDefinition
+{
+    [BsonElement("level")]
+    public string? Level { get; set; }
+
+    [BsonElement("owner")]
+    public string? Owner { get; set; }
 }

@@ -3,10 +3,9 @@ using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using XiansAi.Server.MongoDB.Repositories;
-using XiansAi.Server.MongoDB.Models;
-using XiansAi.Server.MongoDB;
 using MongoDB.Driver;
 using XiansAi.Server.GenAi;
+using XiansAi.Server.Auth;
 
 namespace XiansAi.Server.EndpointExt.FlowServer;
 
@@ -69,42 +68,67 @@ public class DefinitionsServerEndpoint
     private readonly ILogger<DefinitionsServerEndpoint> _logger;
     private readonly IOpenAIClientService _openAIClientService;
     private readonly IDatabaseService _databaseService;
+    private readonly ITenantContext _tenantContext;
     public DefinitionsServerEndpoint(
         IDatabaseService databaseService,
         ILogger<DefinitionsServerEndpoint> logger,
-        IOpenAIClientService openAIClientService    
+        IOpenAIClientService openAIClientService,
+        ITenantContext tenantContext
     )
     {
         _databaseService = databaseService;
         _logger = logger;
         _openAIClientService = openAIClientService;
+        _tenantContext = tenantContext;
     }
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
     {
-        var definition = CreateFlowDefinitionFromRequest(request);
         var definitionRepository = new FlowDefinitionRepository(await _databaseService.GetDatabase());
-        // Find existing definition with the same hash
-        var existingDefinition = await definitionRepository.GetByHashAsync(definition.Hash);
-        
-        // Only proceed if:
-        // 1. No existing definition with same hash exists, OR
-        // 2. New definition has markdown AND existing definition has no markdown
-        if (existingDefinition == null || 
-            (!string.IsNullOrEmpty(definition.Markdown) && string.IsNullOrEmpty(existingDefinition.Markdown)))
+
+        var definition = CreateFlowDefinitionFromRequest(request);
+
+        // IF another user has the same type name, we reject the request
+        var ownedByAnother = await definitionRepository.IfExistsInAnotherOwner(definition.TypeName, definition.Owner);
+        if (ownedByAnother)
         {
-            if (existingDefinition != null)
-            {
-                // Delete the existing record first to avoid duplicate key errors
-                await definitionRepository.DeleteAsync(existingDefinition.Id);
-            }
+            _logger.LogInformation("Another user has already used this flow type name {typeName}. Rejecting request", definition.TypeName);
+            return Results.BadRequest($"Another user has already used this flow type name {definition.TypeName}. Please choose a different flow name.");
+        }
+
+        
+        // Find existing definition with the same hash
+        var existingDefinition = await definitionRepository.GetLatestByClassAndOwnerAsync(definition.ClassName, definition.Owner);
+
+        // no definition in database
+        if (existingDefinition == null)
+        {
+            _logger.LogInformation("No existing definition found, creating new definition");
             await GenerateMarkdown(definition);
             await definitionRepository.CreateAsync(definition);
-            return Results.Ok("Definition created successfully");
+            return Results.Ok("No existing definition found, new definition created successfully");
         }
-        
-        return Results.Ok("Definition already exists");
+
+        // no markdown in the existing record, but there is a markdown in the new definition
+        if (string.IsNullOrEmpty(existingDefinition.Markdown) && !string.IsNullOrEmpty(definition.Markdown))
+        {
+            _logger.LogInformation("No markdown in the existing definition, generating markdown for new definition");
+            await GenerateMarkdown(definition);
+            await definitionRepository.CreateAsync(definition);
+            return Results.Ok("No markdown in the existing definition, new definition created successfully");
+        }
+
+        if (existingDefinition.Hash != definition.Hash)
+        {
+            _logger.LogInformation("Definition had a different hash, generating markdown for new definition");
+            await GenerateMarkdown(definition);
+            await definitionRepository.CreateAsync(definition);
+            return Results.Ok("Definition had a different hash, new definition created successfully");
+        }  else {
+            return Results.Ok("Definition already up to date");
+        }
     }
+
 
     private async Task GenerateMarkdown(FlowDefinition definition)
     {
@@ -144,7 +168,9 @@ public class DefinitionsServerEndpoint
                 Name = p.Name,
                 Type = p.Type
             }).ToList(),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            TenantId = _tenantContext.TenantId,
+            Owner = _tenantContext.LoggedInUser?? throw new InvalidOperationException("No logged in user found. Check the certificate.")
         };
     }
 

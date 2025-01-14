@@ -24,7 +24,7 @@ public class MarkdownGenerator
         };
         var markdown = await _openAIClientService.GetChatCompletionAsync(messages);
 
-        _logger.LogInformation("Generated markdown: {markdown}", markdown);
+        _logger.LogInformation("New *markdown* generated for definition");
 
         return markdown;
     }
