@@ -89,7 +89,7 @@ public class CertificateEndpoint
         {
             Console.WriteLine(ex);
             _logger.LogError(ex, "Failed to generate certificate");
-            return Results.Problem("Failed to generate certificate", statusCode: 500);
+            return Results.Problem($"Failed to generate certificate. {ex.Message}", statusCode: 500);
         }
     }
 }
