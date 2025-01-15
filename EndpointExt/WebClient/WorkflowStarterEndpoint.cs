@@ -68,7 +68,7 @@ public class WorkflowStarterEndpoint
     }
 
     private string GenerateWorkflowId(string workflowType) =>
-        $"{workflowType.Replace(" ", "-")}--{_tenantContext.LoggedInUser}--{Guid.NewGuid()}";
+        $"{workflowType.Replace(" ", "")}--{_tenantContext.LoggedInUser}--{Guid.NewGuid()}";
 
     private WorkflowOptions CreateWorkflowOptions(string workflowId, string workFlowType) =>
         new()

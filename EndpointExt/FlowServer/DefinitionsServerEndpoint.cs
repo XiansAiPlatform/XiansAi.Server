@@ -29,7 +29,7 @@ public class FlowDefinitionRequest
 
     [Required]
     [JsonPropertyName("activities")]
-    public required List<ActivityDefinitionRequest> Activities { get; set; }
+    public required List<ActivityDefinition> Activities { get; set; }
 
     [Required]
     [JsonPropertyName("parameters")]
