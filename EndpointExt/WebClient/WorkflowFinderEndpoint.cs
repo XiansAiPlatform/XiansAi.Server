@@ -25,7 +25,7 @@ public class WorkflowFinderEndpoint
         _logger.LogDebug("Found workflow {workflow}", JsonSerializer.Serialize(workflowDescription));
 
         var tenantId = workflowDescription.Memo.TryGetValue("tenantId", out var tenantIdValue) ? tenantIdValue.ToString() : null;
-        var userId = workflowDescription.Memo.TryGetValue("userId", out var userIdValue) ? userIdValue.ToString() : null;
+        var userId = workflowDescription.Memo.TryGetValue("userId", out var userIdValue) ? userIdValue.Payload.Data.ToStringUtf8().Replace("\"", "") : null;
 
         _logger.LogDebug("Found workflow {workflowId} for tenant {tenantId} and user {userId}", workflowId, tenantId, userId);
         var workflow = new
