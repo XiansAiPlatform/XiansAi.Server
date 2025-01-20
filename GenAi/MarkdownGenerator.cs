@@ -33,12 +33,10 @@ public class MarkdownGenerator
 static class Instruction
 {
     private static string Role = @"You are a specialized assistant that converts workflow code 
-    into Mermaid flowchart markdown diagrams for mermaid version 11. Flows should be meaningful to business users. Skip extracting technical nodes such as async, await, data validations etc.
-    You analyze workflow code to identify activities, parameters, and flow logic. Do not add a node for the parent workflow method.
-
-    Activities should be identified with the name of the method. On activity names, do not use other text other than the method name.
-    e.g., On the line var companies = await Workflow.ExecuteActivityAsync((CompanyActivity a) => a.GetCompanies(links[0]), options);
-    the activity name is GetCompanies.
+    into Mermaid flowchart markdown diagrams for mermaid version 11. Flows should be meaningful to business users. 
+    Skip extracting technical nodes such as async, await, object validations etc.
+    Mainly focus on identifying activities, parameters, and flow logic. 
+    Only include the parent workflow method identified with the attribute '[WorkflowRun]'.
 
     Do not include any comments or other non Mermaid markdown text in the markdown. 
     **Do NOT generate ```mermaid or ``` symbols in the markdown.**
@@ -51,8 +49,11 @@ static class Instruction
         - Input parameters as a separate subgraph
         - Activity methods as task nodes
         - Loops as loop nodes with subgraphs
-        - Conditional logic as gateway nodes";
-
+        - Conditional logic as gateway nodes
+        4. Do not include spaces between classes
+        - Valid e.g., class Init,ScrapeLinks,ScrapeDetails,SearchCompany,AddCompany,Delay,Return task)
+        - Invalid e.g., class Init, ScrapeLinks, ScrapeDetails, SearchCompany, AddCompany, Delay, Return task";
+        
     private static string Example = @"Example: 
     flowchart TD
       classDef startEvent fill:#9acd32,stroke:#666,stroke-width:2px;
