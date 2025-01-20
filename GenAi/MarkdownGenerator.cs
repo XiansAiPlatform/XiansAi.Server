@@ -24,6 +24,9 @@ public class MarkdownGenerator
         };
         var markdown = await _openAIClientService.GetChatCompletionAsync(messages);
 
+        // Remove spaces between classes to make it valid mermaid code
+        markdown = markdown.Replace(", ", ",");
+
         _logger.LogInformation("New *markdown* generated for definition");
 
         return markdown;
@@ -49,10 +52,7 @@ static class Instruction
         - Input parameters as a separate subgraph
         - Activity methods as task nodes
         - Loops as loop nodes with subgraphs
-        - Conditional logic as gateway nodes
-        4. Do not include spaces between classes
-        - Valid e.g., class Init,ScrapeLinks,ScrapeDetails,SearchCompany,AddCompany,Delay,Return task)
-        - Invalid e.g., class Init, ScrapeLinks, ScrapeDetails, SearchCompany, AddCompany, Delay, Return task";
+        - Conditional logic as gateway nodes";
         
     private static string Example = @"Example: 
     flowchart TD
