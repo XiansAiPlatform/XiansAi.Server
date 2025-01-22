@@ -1,3 +1,4 @@
+using System.Xml;
 using OpenAI.Chat;
 
 namespace XiansAi.Server.GenAi;
@@ -53,7 +54,8 @@ static class Instruction
         - Activity methods as task nodes
         - Loops as loop nodes with subgraphs
         - Conditional logic as gateway nodes";
-        
+    private static string Formatting = @"Markdown formatting rules:
+        1. Do not include spaces in subgraph names";
     private static string Example = @"Example: 
     flowchart TD
       classDef startEvent fill:#9acd32,stroke:#666,stroke-width:2px;
@@ -99,5 +101,5 @@ static class Instruction
   `
     ";
 
-    public static string Prompt = Role + "\n\n" + Content + "\n\n" + Example;
+    public static string Prompt = Role + "\n\n" + Content + "\n\n" + Formatting + "\n\n" + Example;
 }
