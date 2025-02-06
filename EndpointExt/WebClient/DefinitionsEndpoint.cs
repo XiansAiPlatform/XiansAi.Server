@@ -27,5 +27,6 @@ public class DefinitionsEndpoint
         _logger.LogInformation("Found {Count} definitions", definitions.Count);
         return Results.Ok(definitions);
     }
+    
 
 }

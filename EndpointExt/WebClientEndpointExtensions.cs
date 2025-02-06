@@ -28,6 +28,21 @@ public static class WebClientEndpointExtensions
 
     private static void MapSettingsEndpoints(this WebApplication app)
     {
+        app.MapPost("/api/client/certificates/generate/base64", async (
+            HttpContext context,
+            [FromBody] CertRequest request,
+            [FromServices] CertificateEndpoint endpoint) =>
+        {
+            return await endpoint.GenerateClientCertificateBase64(request);
+        })
+        .WithName("Generate Client Certificate Base64")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi(operation => {
+            operation.Summary = "Generate a new client certificate in base64 format";
+            operation.Description = "Generates and returns a new client certificate in base64 format";
+            return operation;
+        });
+
         app.MapPost("/api/client/certificates/generate", async (
             HttpContext context,
             [FromBody] CertRequest request,
@@ -92,7 +107,7 @@ public static class WebClientEndpointExtensions
             string id,
             [FromServices] InstructionsEndpoint endpoint) =>
         {
-            return await endpoint.GetInstruction(id);
+            return await endpoint.GetInstructionById(id);
         })
         .WithName("Get Instruction")
         .RequireAuthorization("RequireTenantAuth")
@@ -114,6 +129,16 @@ public static class WebClientEndpointExtensions
             return await endpoint.CreateInstruction(request);
         })
         .WithName("Create Instruction")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi();
+
+        app.MapGet("/api/client/instructions/latest/{name}", async (
+            string name,
+            [FromServices] InstructionsEndpoint endpoint) =>
+        {
+            return await endpoint.GetLatestInstructionByName(name);
+        })
+        .WithName("Get Latest Instruction")
         .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 

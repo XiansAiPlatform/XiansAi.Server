@@ -31,7 +31,7 @@ public class InstructionsEndpoint
         _logger = logger;
     }
 
-    public async Task<IResult> GetInstruction(string id)
+    public async Task<IResult> GetInstructionById(string id)
     {
         var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
         var instruction = await instructionRepository.GetByIdAsync(id);
@@ -65,6 +65,13 @@ public class InstructionsEndpoint
         var instructions = await instructionRepository.GetUniqueLatestInstructionsAsync();
         _logger.LogInformation("Found {Count} instructions", instructions.Count);
         return Results.Ok(instructions);
+    }
+
+    public async Task<IResult> GetLatestInstructionByName(string name)
+    {
+        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
+        var instruction = await instructionRepository.GetLatestInstructionByNameAsync(name);
+        return Results.Ok(instruction);
     }
 
     public async Task<IResult> GetInstructions()

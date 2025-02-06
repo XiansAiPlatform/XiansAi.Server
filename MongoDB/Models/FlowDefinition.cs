@@ -17,10 +17,10 @@ public class FlowDefinition
     public required string Hash { get; set; }
 
     [BsonElement("source")]
-    public string Source { get; set; } = string.Empty;
+    public string? Source { get; set; } = string.Empty;
 
     [BsonElement("markdown")]
-    public string Markdown { get; set; } = string.Empty;
+    public string? Markdown { get; set; } = string.Empty;
 
     [BsonElement("activities")]
     public required List<ActivityDefinition> Activities { get; set; }

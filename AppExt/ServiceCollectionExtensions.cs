@@ -129,7 +129,6 @@ public static class ServiceCollectionExtensions
     {
         builder.Services.AddScoped<WorkflowStarterEndpoint>();
         builder.Services.AddScoped<WorkflowEventsEndpoint>();
-        builder.Services.AddScoped<WorkflowDefinitionServerEndpoint>();
         builder.Services.AddScoped<WorkflowFinderEndpoint>();
         builder.Services.AddScoped<WorkflowCancelEndpoint>();
         builder.Services.AddScoped<CertificateEndpoint>();

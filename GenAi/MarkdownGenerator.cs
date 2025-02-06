@@ -27,6 +27,7 @@ public class MarkdownGenerator
 
         // Remove spaces between classes to make it valid mermaid code
         markdown = markdown.Replace(", ", ",");
+        markdown = markdown.Replace("\"", "");
 
         _logger.LogInformation("New *markdown* generated for definition");
 

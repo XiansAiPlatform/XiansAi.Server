@@ -19,7 +19,7 @@ public class InstructionsServerEndpoint
     public async Task<IResult> GetLatestInstruction(string name)
     {
         var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        var instruction = await instructionRepository.GetLatestInstructionAsync(name);
+        var instruction = await instructionRepository.GetLatestInstructionByNameAsync(name);
         if (instruction == null)
             return Results.NotFound("Instruction not found");
         else
