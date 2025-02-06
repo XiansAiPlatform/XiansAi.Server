@@ -67,6 +67,19 @@ public static class WebClientEndpointExtensions
         .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi(); 
 
+        app.MapGet("/api/client/certificates/flowserver/base64", async (
+            [FromServices] CertificateEndpoint endpoint) =>
+        {
+            var cert = await endpoint.GetFlowServerCertBase64();
+            var privateKey = await endpoint.GetFlowServerPrivateKeyBase64();
+            return Results.Ok(new {
+                apiKey = cert + ":" + privateKey
+            });
+        })
+        .WithName("Get Flow Server Certificate Base64")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi(); 
+
         app.MapGet("/api/client/certificates/flowserver/cert", async (
             [FromQuery] string fileName,
             [FromServices] CertificateEndpoint endpoint) =>
