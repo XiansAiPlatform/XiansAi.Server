@@ -11,20 +11,21 @@ public class RegistrationEndpoint
     private readonly IDistributedCache _cache;
     private readonly Random _random;
     private readonly IEmailService _emailService;
-
+    private readonly IConfiguration _configuration;
     public RegistrationEndpoint(
         IAuth0MgtAPIConnect auth0MgtAPIConnect, 
         ITemporalClientService temporalClientService,
         ILogger<RegistrationEndpoint> logger,
         ITenantContext tenantContext,
         IDistributedCache cache, 
-        IEmailService emailService)
+        IEmailService emailService,
+        IConfiguration configuration)
     {
         _auth0MgtAPIConnect = auth0MgtAPIConnect;
         _logger = logger;
         _tenantContext = tenantContext;
         _temporalClientService = temporalClientService;
-
+        _configuration = configuration;
         _cache = cache;
         _random = new Random();
         _emailService = emailService;
@@ -50,6 +51,13 @@ public class RegistrationEndpoint
 
     private async Task<string> GenerateCodeAsync(string email)
     {
+        // Validate if tenant id is valid
+        var tenantId = GenerateTenantId(email);
+        if (!IsValidTenantId(tenantId))
+        {
+            throw new ArgumentException("Email domain does not belong to a valid tenant. Please contact Xians.ai support to get access to the platform.");
+        }
+
         // Generate a 6-digit code
         string code = _random.Next(100000, 999999).ToString();
         
@@ -66,6 +74,13 @@ public class RegistrationEndpoint
         );
 
         return code;
+    }
+
+    private bool IsValidTenantId(string tenantId)
+    {
+        // Check if tenant id is valid
+        var tenantSection = _configuration.GetSection($"Tenants:{tenantId}");
+        return tenantSection.Exists();
     }
 
     private string GetEmailBody(string code)

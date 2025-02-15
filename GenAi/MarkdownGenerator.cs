@@ -56,7 +56,8 @@ static class Instruction
         - Loops as loop nodes with subgraphs
         - Conditional logic as gateway nodes";
     private static string Formatting = @"Markdown formatting rules:
-        1. Do not include spaces in subgraph names";
+        1. Do not include spaces in subgraph names
+        2. Sub graph names should be unique and not repeated in the same flowchart";
     private static string Example = @"Example: 
     flowchart TD
       classDef startEvent fill:#9acd32,stroke:#666,stroke-width:2px;
