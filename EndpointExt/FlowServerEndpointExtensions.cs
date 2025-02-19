@@ -1,12 +1,18 @@
 using Microsoft.AspNetCore.Mvc;
 using XiansAi.Server.EndpointExt.FlowServer;
+using XiansAi.Server.EndpointExt.WebClient;
 
 namespace XiansAi.Server.EndpointExt;
 public static class FlowServerEndpointExtensions
 {
     public static void MapFlowServerEndpoints(this WebApplication app)
     {
-
+        app.MapPost("api/server/flow/signal", async (
+            [FromBody] WorkflowSignalRequest request,
+            [FromServices] WorkflowSignalEndpoint endpoint) =>
+        {
+            return await endpoint.HandleSignalWorkflow(request);
+        });
 
         app.MapGet("api/server/debug/certificate", (HttpContext context) =>
         {

@@ -31,9 +31,7 @@ public class Program
             _logger.LogError("Configuration is null");
             throw new InvalidOperationException("Configuration is null");
         }
-        var mongoConnString = config["MongoDB:ConnectionString"];
-        Console.WriteLine($"MongoDB Connection String resolved: {mongoConnString}");
-        
+        var mongoConnString = config["MongoDB:ConnectionString"];        
         _logger.LogInformation("Configuration loaded successfully");
         
         // run the app
