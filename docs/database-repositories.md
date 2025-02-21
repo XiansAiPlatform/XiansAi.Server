@@ -41,7 +41,7 @@ Key points:
 
 ### 2. Repository Classes
 
-Repositories handle database operations for specific entities:
+Repositories handle database operations for specific entities and are instantiated in the endpoint layer:
 
 class should be in a file named `{name}Repository.cs` within the `MongoDB/Repositories` folder.
 
@@ -70,11 +70,33 @@ public class EntityRepository
 
 Key points:
 
+- Repositories are instantiated in endpoint methods using the database service
+- Constructor takes IMongoDatabase instance
 - Use async/await for all database operations
 - Include standard CRUD operations
 - Add specific query methods as needed
 - Return `Task<bool>` for operations that need success confirmation
-- Implement sorting and filtering methods when required
+
+Example usage in an endpoint:
+
+```csharp
+public class SomeEndpoint
+{
+    private readonly IDatabaseService _databaseService;
+
+    public SomeEndpoint(IDatabaseService databaseService)
+    {
+        _databaseService = databaseService;
+    }
+
+    public async Task<IResult> GetEntity(string id)
+    {
+        var repository = new EntityRepository(await _databaseService.GetDatabase());
+        var entity = await repository.GetByIdAsync(id);
+        return Results.Ok(entity);
+    }
+}
+```
 
 ### 3. Database Service
 
