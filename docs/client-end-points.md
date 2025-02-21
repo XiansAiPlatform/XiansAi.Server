@@ -88,12 +88,14 @@ public static class WebClientEndpointExtensions
 ## Best Practices
 
 ### 1. Naming Conventions
+
 - Endpoint classes should end with `Endpoint` suffix (e.g., `MyEntityEndpoint`)
 - Place endpoint classes in `EndpointExt/WebClient/` directory
 - Use consistent route naming: `/api/client/{resource}/{action}`
 - Request/response DTOs should be descriptive (e.g., `CreateMyEntityRequest`)
 
 ### 2. Security
+
 - Always add `.RequireAuthorization("RequireTenantAuth")` to protect endpoints
 - Use appropriate HTTP methods:
   - GET for retrieving data
@@ -102,12 +104,14 @@ public static class WebClientEndpointExtensions
   - DELETE for removing resources
 
 ### 3. Documentation
+
 - Add `.WithOpenApi()` to enable Swagger documentation
 - Use `.WithName()` to set operation IDs
 - Add operation descriptions using `.WithOpenApi(operation => {...})`
 - Document expected responses and error cases
 
 ### 4. Error Handling
+
 - Return appropriate HTTP status codes:
   - 200 OK for successful operations
   - 201 Created for successful resource creation
@@ -119,6 +123,7 @@ public static class WebClientEndpointExtensions
 ## Common Implementation Patterns
 
 ### 1. Database Operations
+
 ```csharp
 // Repository initialization
 var repository = new MyEntityRepository(await _databaseService.GetDatabase());
@@ -141,6 +146,7 @@ public async Task<IResult> GetEntity(string id)
 ```
 
 ### 2. Request Validation
+
 ```csharp
 public async Task<IResult> CreateEntity(MyEntityRequest request)
 {
@@ -164,6 +170,7 @@ public async Task<IResult> CreateEntity(MyEntityRequest request)
 ```
 
 ### 3. Logging
+
 ```csharp
 public async Task<IResult> UpdateEntity(string id, MyEntityRequest request)
 {
@@ -182,6 +189,8 @@ public async Task<IResult> UpdateEntity(string id, MyEntityRequest request)
 ```
 
 ## Complete Endpoint Example
+
+Create a new endpoint class in `EndpointExt/WebClient/`:
 
 Here's a complete example showing common endpoint patterns:
 
@@ -245,7 +254,7 @@ public class MyEntityEndpoint
 
 ## Endpoint Registration
 
-Map all endpoints in `WebClientEndpointExtensions.cs`:
+Map all endpoints in `EndpointExt/WebClientEndpointExtensions.cs`:
 
 ```csharp
 private static void MapMyEntityEndpoints(this WebApplication app)
@@ -290,14 +299,6 @@ private static void MapMyEntityEndpoints(this WebApplication app)
     .WithOpenApi();
 }
 ```
-
-## Testing
-
-1. Use Swagger UI to test endpoints at `/swagger`
-2. Ensure proper authorization headers are set
-3. Test all success and error scenarios
-4. Verify proper error handling and status codes
-5. Check logging output for debugging information
 
 ## Common Issues and Solutions
 
