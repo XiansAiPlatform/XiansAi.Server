@@ -1,19 +1,20 @@
-# Data Access Layer (DAL) Implementation Guide
+# Repository Pattern Implementation Guide
 
-This guide outlines the standard patterns for implementing a Data Access Layer in our application, using MongoDB as the database.
+This guide outlines the standard patterns for implementing Repositories in our application, using MongoDB as the database.
 
 ## Architecture Overview
 
-The DAL consists of four main components:
+The Repository layer consists of three main components:
 
 1. Model Classes
 2. Repository Classes
 3. Database Service
-4. Endpoint Controllers
 
 ### 1. Model Classes
 
 Models represent the database entities and should follow these patterns:
+
+class should be in a file named `{name}.cs` within the `MongoDB/Models` folder.
 
 ```csharp
 public class EntityName
@@ -41,6 +42,8 @@ Key points:
 ### 2. Repository Classes
 
 Repositories handle database operations for specific entities:
+
+class should be in a file named `{name}Repository.cs` within the `MongoDB/Repositories` folder.
 
 ```csharp
 public class EntityRepository
@@ -105,38 +108,6 @@ Key points:
 - Always define an interface
 - Keep the service lightweight and focused
 - Maintain single responsibility principle
-
-### 4. Endpoint Implementation
-
-Endpoints should follow this pattern:
-
-```csharp
-public class EntityEndpoint
-{
-    private readonly IDatabaseService _databaseService;
-    private readonly ILogger<EntityEndpoint> _logger;
-
-    public EntityEndpoint(IDatabaseService databaseService, ILogger<EntityEndpoint> logger)
-    {
-        _databaseService = databaseService;
-        _logger = logger;
-    }
-
-    public async Task<IResult> OperationName(Parameters parameters)
-    {
-        var repository = new EntityRepository(await _databaseService.GetDatabase());
-        var result = await repository.OperationAsync(parameters);
-        return Results.Ok(result);
-    }
-}
-```
-
-Key points:
-
-- Use dependency injection for database service and logger
-- Create repository instances per operation
-- Return `IResult` with appropriate HTTP results
-- Include logging for important operations
 
 ## Best Practices
 
@@ -220,21 +191,13 @@ public async Task<List<Entity>> SearchAsync(string searchTerm)
 
 ## Testing
 
-### 1. Repository Testing
+### Repository Testing
 
 - Use in-memory MongoDB for unit tests
 - Test all CRUD operations
 - Verify edge cases and error conditions
 - Test complex queries and aggregations
 - Implement integration tests
-
-### 2. Endpoint Testing
-
-- Test HTTP responses
-- Verify error handling
-- Test input validation
-- Implement end-to-end tests
-- Test authentication and authorization
 
 ## Example Implementation
 
@@ -243,9 +206,8 @@ See the following files for reference:
 - `MongoDB/Models/Instruction.cs` for model implementation
 - `MongoDB/Repositories/InstructionRepository.cs` for repository pattern
 - `MongoDB/DatabaseService.cs` for database service
-- `EndpointExt/WebClient/InstructionsEndpoint.cs` for endpoint implementation
 
-## Creating New DAL Components
+## Creating New Repository Components
 
 ### 1. Create Model
 
@@ -260,14 +222,7 @@ See the following files for reference:
 3. Include appropriate indexes
 4. Implement error handling
 
-### 3. Create Endpoint
-
-1. Define request/response models
-2. Implement endpoint methods
-3. Add proper validation
-4. Include logging
-
-### 4. Register Services
+### 3. Register Services
 
 1. Add to dependency injection container
 2. Configure database connection
