@@ -28,7 +28,15 @@ The Auth0 configuration is in the `appsettings.json` file.
 - Create Machine to Machine application authorized to Auth0 Management API
   - These setting are configured in the `Auth0:ManagementApi` section of the `appsettings.json` file.
 
+### Auth0 Custom Action
+
 Note: There is a custom action configured for post Login to send user's tenants with the JWT token.
+
+On Auth0 dashboard go to `Actions->Library->Create from Scratch`
+
+- Name: `Send Tenants to JWT`
+- Type: `Login/Post Login`
+- Code:
 
 ``` javascript
 exports.onExecutePostLogin = async (event, api) => {
@@ -43,6 +51,10 @@ exports.onExecutePostLogin = async (event, api) => {
   }
 };
 ```
+
+Now go to `Actions->Triggers->Post Login` and create a flow by dragging the `Send Tenants to JWT` action.
+
+`Start` -> `Send Tenants to JWT` -> `Complete`
 
 ### Running the server in production
 
