@@ -17,13 +17,20 @@ public static class WebClientEndpointExtensions
     private static void MapDefinitionsEndpoints(this WebApplication app)
     {
         app.MapGet("/api/client/definitions", async (
+            [FromQuery] DateTime? startTime,
+            [FromQuery] DateTime? endTime,
+            [FromQuery] string? owner,
             [FromServices] DefinitionsEndpoint endpoint) =>
         {
-            return await endpoint.GetLatestDefinitions();
+            return await endpoint.GetLatestDefinitions(startTime, endTime, owner);
         })
         .WithName("Get Latest Definitions")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi();
+        .WithOpenApi(operation => {
+            operation.Summary = "Get definitions with optional filters";
+            operation.Description = "Retrieves definitions with optional filtering by date range and owner";
+            return operation;
+        });
     }
 
     private static void MapSettingsEndpoints(this WebApplication app)

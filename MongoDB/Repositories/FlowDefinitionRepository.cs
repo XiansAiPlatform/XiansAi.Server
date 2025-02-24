@@ -79,10 +79,26 @@ public class FlowDefinitionRepository
             .FirstOrDefaultAsync();
     }
 
-    public async Task<List<FlowDefinition>> GetLatestDefinitionsAsync()
+    public async Task<List<FlowDefinition>> GetLatestDefinitionsAsync(DateTime? startTime, DateTime? endTime, string? owner)
     {
-        return await _definitions.Aggregate()
-            .SortByDescending(x => x.CreatedAt)
+        var query = _definitions.Aggregate();
+
+        if (startTime != null)
+        {
+            query = query.Match(x => x.CreatedAt >= startTime.Value);
+        }
+
+        if (endTime != null)
+        {
+            query = query.Match(x => x.CreatedAt <= endTime.Value);
+        }
+
+        if (owner != null)
+        {
+            query = query.Match(x => x.Owner == owner);
+        }
+
+        return await query.SortByDescending(x => x.CreatedAt)
             .Group(x => new { x.ClassName, x.Owner },
                    g => g.First())
             .ToListAsync();
