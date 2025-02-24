@@ -228,13 +228,20 @@ public static class WebClientEndpointExtensions
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows", async (
+            [FromQuery] DateTime? startTime,
+            [FromQuery] DateTime? endTime,
+            [FromQuery] string? owner,
             [FromServices] WorkflowFinderEndpoint endpoint) =>
         {
-            return await endpoint.GetWorkflows();
+            return await endpoint.GetWorkflows(startTime, endTime, owner);
         })
         .WithName("Get Workflows")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi();
+        .WithOpenApi(operation => {
+            operation.Summary = "Get workflows with optional filters";
+            operation.Description = "Retrieves workflows with optional filtering by date range and owner";
+            return operation;
+        });
 
         app.MapPost("/api/client/workflows/{workflowId}/cancel", async (
             string workflowId,
