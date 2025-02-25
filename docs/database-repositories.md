@@ -17,6 +17,8 @@ Models represent the database entities and should follow these patterns:
 class should be in a file named `{name}.cs` within the `MongoDB/Models` folder.
 
 ```csharp
+namespace XiansAi.Server.MongoDB.Models;
+
 public class EntityName
 {
     [BsonId]
@@ -46,6 +48,7 @@ Repositories handle database operations for specific entities and are instantiat
 class should be in a file named `{name}Repository.cs` within the `MongoDB/Repositories` folder.
 
 ```csharp
+namespace XiansAi.Server.MongoDB.Repositories;
 public class EntityRepository
 {
     private readonly IMongoCollection<Entity> _collection;
@@ -76,60 +79,6 @@ Key points:
 - Include standard CRUD operations
 - Add specific query methods as needed
 - Return `Task<bool>` for operations that need success confirmation
-
-Example usage in an endpoint:
-
-```csharp
-public class SomeEndpoint
-{
-    private readonly IDatabaseService _databaseService;
-
-    public SomeEndpoint(IDatabaseService databaseService)
-    {
-        _databaseService = databaseService;
-    }
-
-    public async Task<IResult> GetEntity(string id)
-    {
-        var repository = new EntityRepository(await _databaseService.GetDatabase());
-        var entity = await repository.GetByIdAsync(id);
-        return Results.Ok(entity);
-    }
-}
-```
-
-### 3. Database Service
-
-The database service provides database connection management:
-
-```csharp
-public interface IDatabaseService
-{
-    Task<IMongoDatabase> GetDatabase();
-}
-
-public class DatabaseService : IDatabaseService
-{
-    private readonly IMongoDbClientService _mongoDbClientService;
-
-    public DatabaseService(IMongoDbClientService mongoDbClientService)
-    {
-        _mongoDbClientService = mongoDbClientService;
-    }
-
-    public async Task<IMongoDatabase> GetDatabase()
-    {
-        return await Task.FromResult(_mongoDbClientService.GetDatabase());
-    }
-}
-```
-
-Key points:
-
-- Use dependency injection
-- Always define an interface
-- Keep the service lightweight and focused
-- Maintain single responsibility principle
 
 ## Best Practices
 
@@ -236,6 +185,7 @@ See the following files for reference:
 1. Define the model class with required properties
 2. Add appropriate BsonElement attributes
 3. Include standard fields (Id, CreatedAt)
+4. Namespace `XiansAi.Server.MongoDB.Models`
 
 ### 2. Create Repository
 
@@ -243,12 +193,8 @@ See the following files for reference:
 2. Add specific query methods
 3. Include appropriate indexes
 4. Implement error handling
+5. Namespace `XiansAi.Server.MongoDB.Repositories`
 
-### 3. Register Services
-
-1. Add to dependency injection container
-2. Configure database connection
-3. Set up appropriate middleware
 
 ## Maintenance and Updates
 
