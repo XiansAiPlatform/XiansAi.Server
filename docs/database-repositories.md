@@ -17,6 +17,8 @@ Models represent the database entities and should follow these patterns:
 class should be in a file named `{name}.cs` within the `MongoDB/Models` folder.
 
 ```csharp
+using MongoDB.Bson.Serialization.Attributes;
+
 namespace XiansAi.Server.MongoDB.Models;
 
 public class EntityName
@@ -49,6 +51,7 @@ class should be in a file named `{name}Repository.cs` within the `MongoDB/Reposi
 
 ```csharp
 namespace XiansAi.Server.MongoDB.Repositories;
+
 public class EntityRepository
 {
     private readonly IMongoCollection<Entity> _collection;
