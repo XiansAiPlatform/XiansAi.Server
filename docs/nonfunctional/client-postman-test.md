@@ -2,6 +2,11 @@
 
 This document provides instructions for setting up and creating Postman test scripts for the Client API endpoints.
 
+## File Location
+
+- Postman test scripts should be located in the `postman/collections` directory
+- Test scripts should be named in kebab-case: `<entity>-api-endpoints.postman_collection.json`
+
 ## Setup
 
 ### Collection Variables

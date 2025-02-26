@@ -50,6 +50,10 @@ Repositories handle database operations for specific entities and are instantiat
 class should be in a file named `{name}Repository.cs` within the `MongoDB/Repositories` folder.
 
 ```csharp
+using MongoDB.Driver;
+using MongoDB.Bson;
+using XiansAi.Server.MongoDB.Models;
+
 namespace XiansAi.Server.MongoDB.Repositories;
 
 public class EntityRepository
@@ -197,7 +201,6 @@ See the following files for reference:
 3. Include appropriate indexes
 4. Implement error handling
 5. Namespace `XiansAi.Server.MongoDB.Repositories`
-
 
 ## Maintenance and Updates
 

@@ -43,4 +43,3 @@ Project relates to a single flow definition. The project can then optionally ove
 2. Project names must be unique within an owner's workspace
 3. Project modifications must not affect the original flow definition
 4. Projects cannot change the fundamental structure of the flow definition
-

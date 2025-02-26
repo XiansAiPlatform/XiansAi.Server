@@ -3,7 +3,7 @@
 ## File Structure
 
 - Schema files should be named in kebab-case: `<entity>-schema.json`
-- Place schema files in a dedicated `Schemas` directory
+- Schema files should be located in the `MongoDB/Schemas` directory
 
 ## Schema Structure
 
