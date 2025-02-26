@@ -44,4 +44,7 @@ public class TemporalConfig
     public string? CertificateKeyVaultName { get; set; }
     public string? PrivateKeyKeyVaultName { get; set; }
 
+    // Add new properties for base64 encoded values
+    public string? CertificateBase64 { get; set; }
+    public string? PrivateKeyBase64 { get; set; }
 }

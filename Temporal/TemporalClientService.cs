@@ -174,7 +174,13 @@ public class TemporalClientService : ITemporalClientService
     private async Task<byte[]> GetCertificate()
     {
         var config = _tenantContext.GetTemporalConfig();
-        if (config.CertificateFilePath != null)
+        
+        if (!string.IsNullOrEmpty(config.CertificateBase64))
+        {
+            _logger.LogInformation("Loading certificate from base64 configuration");
+            return Convert.FromBase64String(config.CertificateBase64);
+        }
+        else if (config.CertificateFilePath != null)
         {
             _logger.LogInformation("Loading certificate from file---" + config.CertificateFilePath + "---");
             return await File.ReadAllBytesAsync(config.CertificateFilePath);
@@ -194,21 +200,35 @@ public class TemporalClientService : ITemporalClientService
     private async Task<byte[]> GetPrivateKey()
     {
         var config = _tenantContext.GetTemporalConfig();
-        if (config.PrivateKeyFilePath != null)
+
+        if (!string.IsNullOrEmpty(config.PrivateKeyBase64))
+        {
+            _logger.LogInformation("Loading private key from base64 configuration");
+            try
+            {
+                return Convert.FromBase64String(config.PrivateKeyBase64);
+            }
+            catch (FormatException ex)
+            {
+                _logger.LogError($"Failed to decode private key from base64 configuration: {ex.Message}");
+                throw new FormatException("The private key in configuration is not in valid Base64 format", ex);
+            }
+        }
+        else if (config.PrivateKeyFilePath != null)
+        {
             return await File.ReadAllBytesAsync(config.PrivateKeyFilePath);
+        }
         else if (config.PrivateKeyKeyVaultName != null)
         {
             _logger.LogInformation("Loading private key from key vault---" + config.PrivateKeyKeyVaultName + "---");
-
             var privateKeyString = await _keyVaultService.LoadSecret(config.PrivateKeyKeyVaultName);
-
             try
             {
                 return Convert.FromBase64String(privateKeyString);
             }
             catch (FormatException ex)
             {
-                _logger.LogError($"Failed to decode private key: {ex.Message}");
+                _logger.LogError($"Failed to decode private key from key vault: {ex.Message}");
                 throw new FormatException("The private key retrieved from key vault is not in valid Base64 format", ex);
             }
         }
