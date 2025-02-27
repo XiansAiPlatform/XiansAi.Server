@@ -38,15 +38,12 @@ public class CertificateEndpoint
 
     public async Task<IResult> GetFlowServerCertFile(string fileName) {
         var temporalConfig = _tenantContext.GetTemporalConfig();
-        if (temporalConfig.CertificateFilePath != null) {
-            // local file
-            var certBytes = await File.ReadAllBytesAsync(temporalConfig.CertificateFilePath);
+        
+        if (!string.IsNullOrEmpty(temporalConfig.CertificateBase64))
+        {
+            // Use base64 config
+            var certBytes = Convert.FromBase64String(temporalConfig.CertificateBase64);
             return Results.File(certBytes, "application/x-pkcs12", fileName);
-        } else if (temporalConfig.CertificateKeyVaultName != null) {
-            // key vault
-            var cert = await _keyVaultService.LoadSecret(temporalConfig.CertificateKeyVaultName);
-            var certBytes = Convert.FromBase64String(cert);
-            return  Results.File(certBytes, "application/x-pkcs12", fileName);
         } else {
             return Results.NotFound($"Temporal certificate configuration not found for setting Tenants:{_tenantContext.TenantId}");
         }
@@ -54,15 +51,11 @@ public class CertificateEndpoint
 
     public async Task<string> GetFlowServerCertBase64() {
         var temporalConfig = _tenantContext.GetTemporalConfig();
-        if (temporalConfig.CertificateFilePath != null) {
-            // local file
-            var certBytes = await File.ReadAllBytesAsync(temporalConfig.CertificateFilePath);
-            var base64String = Convert.ToBase64String(certBytes);
-            return base64String;
-        } else if (temporalConfig.CertificateKeyVaultName != null) {
-            // key vault
-            var cert = await _keyVaultService.LoadSecret(temporalConfig.CertificateKeyVaultName);
-            return cert;
+
+        if (!string.IsNullOrEmpty(temporalConfig.CertificateBase64))
+        {
+            // Use base64 config directly
+            return temporalConfig.CertificateBase64;
         } else {
             throw new Exception($"Temporal certificate configuration not found for setting Tenants:{_tenantContext.TenantId}");
         }
@@ -70,31 +63,26 @@ public class CertificateEndpoint
 
     public async Task<string> GetFlowServerPrivateKeyBase64() {
         var temporalConfig = _tenantContext.GetTemporalConfig();
-        if (temporalConfig.PrivateKeyFilePath != null) {
-            // local file
-            var certBytes = await File.ReadAllBytesAsync(temporalConfig.PrivateKeyFilePath);
-            var base64String = Convert.ToBase64String(certBytes);
-            return base64String;
-        } else if (temporalConfig.PrivateKeyKeyVaultName != null) {
-            // key vault
-            var cert = await _keyVaultService.LoadSecret(temporalConfig.PrivateKeyKeyVaultName);
-            return cert;
-        } else {
+        
+        if (!string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64))
+        {
+            // Use base64 config directly
+            return temporalConfig.PrivateKeyBase64;
+        }
+        else {
             throw new Exception($"Temporal private key configuration not found for setting Tenants:{_tenantContext.TenantId}");
         }
     }
     public async Task<IResult> GetFlowServerPrivateKeyFile(string fileName) {
         var temporalConfig = _tenantContext.GetTemporalConfig();
-        if (temporalConfig.PrivateKeyFilePath != null) {
-            // local file
-            var certBytes = await File.ReadAllBytesAsync(temporalConfig.PrivateKeyFilePath);
-            return Results.File(certBytes, "application/x-pkcs12", fileName);
-        } else if (temporalConfig.PrivateKeyKeyVaultName != null) {
-            // key vault
-            var cert = await _keyVaultService.LoadSecret(temporalConfig.PrivateKeyKeyVaultName);
-            var certBytes = Convert.FromBase64String(cert);
-            return Results.File(certBytes, "application/x-pkcs12", fileName);
-        } else {
+        
+        if (!string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64))
+        {
+            // Use base64 config
+            var keyBytes = Convert.FromBase64String(temporalConfig.PrivateKeyBase64);
+            return Results.File(keyBytes, "application/x-pkcs12", fileName);
+        }
+        else {
             return Results.NotFound($"Temporal private key configuration not found for setting Tenants:{_tenantContext.TenantId}");
         }
     }
