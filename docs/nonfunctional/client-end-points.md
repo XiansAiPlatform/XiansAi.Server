@@ -9,7 +9,6 @@ This guide explains how to implement new client endpoints in the XiansAi.Server 
 Create a new endpoint class in `EndpointExt/WebClient/` directory:
 
 ```csharp
-
 using MongoDB.Bson;
 
 using XiansAi.Server.MongoDB.Models;
@@ -126,32 +125,7 @@ public static class WebClientEndpointExtensions
   - 500 Internal Server Error for unexpected errors
 - Use consistent error response format
 
-## Common Implementation Patterns
-
-### 1. Database Operations
-
-```csharp
-// Repository initialization
-var repository = new MyEntityRepository(await _databaseService.GetDatabase());
-
-// Common operations
-public async Task<IResult> GetEntities()
-{
-    var entities = await repository.GetAllAsync();
-    _logger.LogInformation("Retrieved {Count} entities", entities.Count);
-    return Results.Ok(entities);
-}
-
-public async Task<IResult> GetEntity(string id)
-{
-    var entity = await repository.GetByIdAsync(id);
-    if (entity == null)
-        return Results.NotFound();
-    return Results.Ok(entity);
-}
-```
-
-### 2. Request Validation
+### 2. Request Validation and Entity Creation
 
 ```csharp
 public async Task<IResult> CreateEntity(MyEntityRequest request)
@@ -162,12 +136,16 @@ public async Task<IResult> CreateEntity(MyEntityRequest request)
         return Results.BadRequest("Name is required");
     }
 
-    // Create entity
+    // Create entity with all mandatory fields
+    var now = DateTime.UtcNow;
     var entity = new MyEntity
     {
         Id = ObjectId.GenerateNewId().ToString(),
         Name = request.Name,
-        CreatedAt = DateTime.UtcNow
+        CreatedAt = now,
+        UpdatedAt = now,
+        IsDeleted = false,
+        Version = 1
     };
 
     await repository.CreateAsync(entity);
@@ -175,23 +153,30 @@ public async Task<IResult> CreateEntity(MyEntityRequest request)
 }
 ```
 
-### 3. Logging
+### Mandatory Fields
+When creating new entities, ensure these standard fields are always initialized:
 
+- `Id`: Generate using `ObjectId.GenerateNewId().ToString()`
+- `CreatedAt`: Set to current UTC timestamp
+- `UpdatedAt`: Set to same value as CreatedAt for new entities
+- `IsDeleted`: Initialize to `false`
+- `Version`: Initialize to `1`
+
+Example from Project entity:
 ```csharp
-public async Task<IResult> UpdateEntity(string id, MyEntityRequest request)
+var project = new Project
 {
-    _logger.LogInformation("Updating entity {Id}", id);
-    try
-    {
-        // Update logic
-        return Results.Ok(updatedEntity);
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Error updating entity {Id}", id);
-        return Results.StatusCode(500);
-    }
-}
+    Id = ObjectId.GenerateNewId().ToString(),
+    Name = request.Name,
+    Description = request.Description,
+    CreatedAt = DateTime.UtcNow,
+    UpdatedAt = DateTime.UtcNow,
+    IsDeleted = false,
+    Version = 1,
+    // Entity-specific fields
+    TenantId = request.TenantId,
+    Status = ProjectStatus.Active
+};
 ```
 
 ## Complete Endpoint Example
@@ -238,11 +223,16 @@ public class MyEntityEndpoint
             return Results.BadRequest("Name is required");
 
         var repository = new MyEntityRepository(await _databaseService.GetDatabase());
+        var now = DateTime.UtcNow;
         var entity = new MyEntity
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = request.Name,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now,
+            UpdatedAt = now,
+            IsDeleted = false,
+            Version = 1
+            // Add other entity-specific fields
         };
 
         await repository.CreateAsync(entity);
