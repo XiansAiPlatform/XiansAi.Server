@@ -154,6 +154,7 @@ public async Task<IResult> CreateEntity(MyEntityRequest request)
 ```
 
 ### Mandatory Fields
+
 When creating new entities, ensure these standard fields are always initialized:
 
 - `Id`: Generate using `ObjectId.GenerateNewId().ToString()`
@@ -163,6 +164,7 @@ When creating new entities, ensure these standard fields are always initialized:
 - `Version`: Initialize to `1`
 
 Example from Project entity:
+
 ```csharp
 var project = new Project
 {
