@@ -1,5 +1,5 @@
 using MongoDB.Driver;
-using XiansAi.Server.MongoDB;
+using XiansAi.Server.Database;
 
 public interface IDatabaseService
 {

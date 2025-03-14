@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.EndpointExt.WebClient;
+using XiansAi.Server.Services.Web;
 
-namespace XiansAi.Server.EndpointExt;
-public static class WebPublicEndpointExtensions
+namespace XiansAi.Server.Endpoints;
+public static class PublicEndpointExtensions
 {
     public static void MapPublicEndpoints(this WebApplication app)
     {

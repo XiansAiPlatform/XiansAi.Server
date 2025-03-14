@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.EndpointExt.WebClient;
+using XiansAi.Server.Services.Web;
 
-namespace XiansAi.Server.EndpointExt;
-public static class WebClientEndpointExtensions
+namespace XiansAi.Server.Endpoints;
+public static class WebEndpointExtensions
 {
-    public static void MapClientEndpoints(this WebApplication app)
+    public static void MapWebEndpoints(this WebApplication app)
     {
         MapWorkflowEndpoints(app);
         MapInstructionEndpoints(app);

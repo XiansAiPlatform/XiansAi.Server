@@ -1,4 +1,5 @@
-namespace XiansAi.Server.MongoDB;
+namespace XiansAi.Server.Database;
+
 
 public class MongoDBConfig
 {

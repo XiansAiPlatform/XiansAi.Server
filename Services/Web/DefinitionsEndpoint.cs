@@ -1,11 +1,11 @@
 using MongoDB.Bson;
 using XiansAi.Server.Auth;
-using XiansAi.Server.MongoDB;
-using XiansAi.Server.MongoDB.Models;
-using XiansAi.Server.MongoDB.Repositories;
+using XiansAi.Server.Database;
+using XiansAi.Server.Database.Models;
+using XiansAi.Server.Database.Repositories;
 using XiansAi.Server.Utils;
 
-namespace XiansAi.Server.EndpointExt.WebClient;
+namespace XiansAi.Server.Services.Web;
 
 public class DefinitionsEndpoint
 {

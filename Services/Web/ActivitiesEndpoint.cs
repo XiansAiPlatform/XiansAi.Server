@@ -1,9 +1,9 @@
 
-using XiansAi.Server.MongoDB;
-using XiansAi.Server.MongoDB.Models;
-using XiansAi.Server.MongoDB.Repositories;
+using XiansAi.Server.Database;
+using XiansAi.Server.Database.Models;
+using XiansAi.Server.Database.Repositories;
 
-namespace XiansAi.Server.EndpointExt.WebClient;
+namespace XiansAi.Server.Services.Web;
 public class ActivitiesEndpoint
 {
     private readonly IDatabaseService _databaseService;

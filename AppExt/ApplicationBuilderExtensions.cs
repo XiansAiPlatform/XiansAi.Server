@@ -1,5 +1,5 @@
 using XiansAi.Server.Auth;
-using XiansAi.Server.EndpointExt;
+using XiansAi.Server.Endpoints;
 
 namespace XiansAi.Server;
 public static class ApplicationBuilderExtensions
@@ -47,10 +47,9 @@ public static class ApplicationBuilderExtensions
 
     private static void ConfigureEndpoints(WebApplication app)
     {
-        WebClientEndpointExtensions.MapClientEndpoints(app);
-        FlowServerEndpointExtensions.MapFlowServerEndpoints(app);
-        WebAdminEndpointExtensions.MapAdminEndpoints(app);
-        WebPublicEndpointExtensions.MapPublicEndpoints(app);
+        WebEndpointExtensions.MapWebEndpoints(app);
+        LibEndpointExtensions.MapLibEndpoints(app);
+        PublicEndpointExtensions.MapPublicEndpoints(app);
         app.MapControllers();
     }
 }

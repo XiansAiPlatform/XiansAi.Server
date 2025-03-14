@@ -1,8 +1,8 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
-using XiansAi.Server.MongoDB.Models;
+using XiansAi.Server.Database.Models;
 
-namespace XiansAi.Server.MongoDB.Repositories;
+namespace XiansAi.Server.Database.Repositories;
 
 public class InstructionRepository
 {

@@ -1,5 +1,5 @@
 using XiansAi.Server.GenAi;
-using XiansAi.Server.MongoDB;
+using XiansAi.Server.Database;
 using XiansAi.Server.Temporal;
 
 namespace XiansAi.Server.Auth;

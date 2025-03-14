@@ -14,12 +14,12 @@ The Repository layer consists of three main components:
 
 Models represent the database entities and should follow these patterns:
 
-class should be in a file named `{name}.cs` within the `MongoDB/Models` folder.
+class should be in a file named `{name}.cs` within the `Database/Models` folder.
 
 ```csharp
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace XiansAi.Server.MongoDB.Models;
+namespace XiansAi.Server.Database.Models;
 
 public class EntityName
 {
@@ -47,14 +47,14 @@ Key points:
 
 Repositories handle database operations for specific entities and are instantiated in the endpoint layer:
 
-class should be in a file named `{name}Repository.cs` within the `MongoDB/Repositories` folder.
+class should be in a file named `{name}Repository.cs` within the `Database/Repositories` folder.
 
 ```csharp
 using MongoDB.Driver;
 using MongoDB.Bson;
-using XiansAi.Server.MongoDB.Models;
+using XiansAi.Server.Database.Models;
 
-namespace XiansAi.Server.MongoDB.Repositories;
+namespace XiansAi.Server.Database.Repositories;
 
 public class EntityRepository
 {

@@ -4,7 +4,7 @@ using System.Text;
 using System.Collections.Concurrent;
 using XiansAi.Server.Auth;
 
-namespace XiansAi.Server.MongoDB;
+namespace XiansAi.Server.Database;
 
 public interface IMongoDbClientService
 {

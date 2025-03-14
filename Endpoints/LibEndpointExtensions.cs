@@ -1,11 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.EndpointExt.FlowServer;
-using XiansAi.Server.EndpointExt.WebClient;
+using XiansAi.Server.Services.Lib;
 
-namespace XiansAi.Server.EndpointExt;
-public static class FlowServerEndpointExtensions
+namespace XiansAi.Server.Endpoints;
+public static class LibEndpointExtensions
 {
-    public static void MapFlowServerEndpoints(this WebApplication app)
+    public static void MapLibEndpoints(this WebApplication app)
     {
         app.MapPost("api/server/flow/signal", async (
             [FromBody] WorkflowSignalRequest request,

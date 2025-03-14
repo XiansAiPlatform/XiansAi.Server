@@ -2,7 +2,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
 using XiansAi.Server.Auth;
 
-namespace XiansAi.Server.EndpointExt.WebClient;
+namespace XiansAi.Server.Services.Web;
 
 public class CertificateEndpoint
 {

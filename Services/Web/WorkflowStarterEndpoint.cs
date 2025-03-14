@@ -3,7 +3,7 @@ using Temporalio.Client;
 using XiansAi.Server.Auth;
 using System.Text.Json;
 
-namespace XiansAi.Server.EndpointExt.WebClient;
+namespace XiansAi.Server.Services.Web;
 
 public class WorkflowRequest
 {

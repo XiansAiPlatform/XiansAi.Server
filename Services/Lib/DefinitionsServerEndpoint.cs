@@ -2,14 +2,12 @@ using System.Text.Json;
 using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using XiansAi.Server.MongoDB.Repositories;
+using XiansAi.Server.Database.Repositories;
 using MongoDB.Driver;
 using XiansAi.Server.GenAi;
 using XiansAi.Server.Auth;
 
-namespace XiansAi.Server.EndpointExt.FlowServer;
-
-
+namespace XiansAi.Server.Services.Lib;
 
 public class FlowDefinitionRequest
 {

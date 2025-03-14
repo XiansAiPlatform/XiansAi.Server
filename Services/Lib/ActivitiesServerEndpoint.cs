@@ -2,11 +2,11 @@ using System.Text.Json;
 using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using XiansAi.Server.MongoDB.Repositories;
-using XiansAi.Server.MongoDB.Models;
-using XiansAi.Server.MongoDB;
+using XiansAi.Server.Database.Repositories;
+using XiansAi.Server.Database.Models;
+using XiansAi.Server.Database;
 
-namespace XiansAi.Server.EndpointExt.FlowServer;
+namespace XiansAi.Server.Services.Lib;
 public class ActivityRequest
 {
     [Required]

@@ -1,15 +1,15 @@
-using XiansAi.Server.EndpointExt.WebClient;
-using XiansAi.Server.MongoDB;
-using XiansAi.Server.MongoDB.Repositories;
+using XiansAi.Server.Services.Web;
+using XiansAi.Server.Database;
+using XiansAi.Server.Database.Repositories;
 
-namespace XiansAi.Server.EndpointExt.FlowServer;
+namespace XiansAi.Server.Services.Lib;
 public class InstructionsServerEndpoint
 {
-    private readonly ILogger<InstructionsEndpoint> _logger;
+    private readonly ILogger<InstructionsServerEndpoint> _logger;
     private readonly IDatabaseService _databaseService;
     public InstructionsServerEndpoint(
         IDatabaseService databaseService,
-        ILogger<InstructionsEndpoint> logger
+        ILogger<InstructionsServerEndpoint> logger
     )
     {
         _databaseService = databaseService;

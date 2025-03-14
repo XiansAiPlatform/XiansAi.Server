@@ -6,13 +6,13 @@ This guide explains how to implement new client endpoints in the XiansAi.Server 
 
 ### 1. Create the Endpoint Class
 
-Create a new endpoint class in `EndpointExt/WebClient/` directory:
+Create a new endpoint service class in `Services/Web/` directory:
 
 ```csharp
 using MongoDB.Bson;
 
-using XiansAi.Server.MongoDB.Models;
-using XiansAi.Server.MongoDB.Repositories;
+using XiansAi.Server.Database.Models;
+using XiansAi.Server.Database.Repositories;
 
 namespace XiansAi.Server.EndpointExt.WebClient;
 

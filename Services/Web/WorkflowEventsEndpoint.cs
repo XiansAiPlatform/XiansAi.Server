@@ -4,7 +4,7 @@ using Temporalio.Api.History.V1;
 using Temporalio.Client;
 using XiansAi.Server.Temporal;
 
-namespace XiansAi.Server.EndpointExt.WebClient;
+namespace XiansAi.Server.Services.Web;
 
 public record WorkflowActivityEvent
 {
