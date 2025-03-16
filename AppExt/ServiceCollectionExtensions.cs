@@ -11,6 +11,7 @@ using XiansAi.Server.Database;
 using XiansAi.Server.Temporal;
 using Azure.Extensions.AspNetCore.Configuration.Secrets;
 using Azure.Security.KeyVault.Secrets;
+using XiansAi.Server.Services.Public;
 
 namespace XiansAi.Server;
 

@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.Services.Web;
+using XiansAi.Server.Services.Public;
 
 namespace XiansAi.Server.Endpoints;
 public static class PublicEndpointExtensions
@@ -11,7 +11,7 @@ public static class PublicEndpointExtensions
 
     private static void MapRegistrationEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/client/register/verification/send", async (
+        app.MapPost("/api/public/register/verification/send", async (
             [FromBody] string email,
             [FromServices] RegistrationEndpoint endpoint) =>
         {
@@ -21,7 +21,7 @@ public static class PublicEndpointExtensions
         .WithOpenApi()
         .RequireAuthorization("RequireAuth0Auth");
 
-        app.MapPost("/api/client/register/verification/validate", async (
+        app.MapPost("/api/public/register/verification/validate", async (
             [FromBody] ValidateCodeRequest request,
             [FromServices] RegistrationEndpoint endpoint) =>
         {
