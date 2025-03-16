@@ -37,8 +37,6 @@ public class WorkflowRequest
 /// </summary>
 public class WorkflowStarterEndpoint
 {
-    private const string UnknownValue = "-unknown-";
-    private const string DefaultAssignment = "DEFAULT";
     private const string TenantIdKey = "tenantId";
     private const string UserIdKey = "userId";
     private const string AgentKey = "agent";
@@ -121,7 +119,7 @@ public class WorkflowStarterEndpoint
             _logger.LogWarning("No logged-in user found in tenant context");
         }
 
-        return $"{workflowType.Replace(" ", "")}--{_tenantContext.LoggedInUser ?? UnknownValue}--{Guid.NewGuid()}";
+        return $"{workflowType.Replace(" ", "")}--{_tenantContext.LoggedInUser ?? "-"}--{Guid.NewGuid()}";
     }
 
     /// <summary>
@@ -134,17 +132,29 @@ public class WorkflowStarterEndpoint
             throw new InvalidOperationException("TenantId is required to create workflow options");
         }
 
-        return new WorkflowOptions
+        var memo = new Dictionary<string, object> { 
+            { TenantIdKey, _tenantContext.TenantId },
+            { AgentKey, agent ?? workFlowType },
+        };
+
+        if (!string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+        {
+            memo.Add(UserIdKey, _tenantContext.LoggedInUser);
+        }
+
+        if (!string.IsNullOrEmpty(assignment))
+        {
+            memo.Add(AssignmentKey, assignment);
+        }
+
+        var options = new WorkflowOptions
         {
             TaskQueue = workFlowType,
             Id = workflowId,
-            Memo = new Dictionary<string, object> { 
-                { TenantIdKey, _tenantContext.TenantId },
-                { UserIdKey, _tenantContext.LoggedInUser ?? UnknownValue },
-                { AgentKey, agent ?? workFlowType },
-                { AssignmentKey, assignment ?? DefaultAssignment }
-            }
+            Memo = memo
         };
+
+        return options;
     }
 
     /// <summary>

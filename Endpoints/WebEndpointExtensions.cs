@@ -204,11 +204,12 @@ public static class WebEndpointExtensions
     
     private static void MapWorkflowEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/client/workflows/{workflowId}", async (
+        app.MapGet("/api/client/workflows/{workflowId}/{runId}", async (
             string workflowId,
+            string? runId,
             [FromServices] WorkflowFinderEndpoint endpoint) =>
         {
-            return await endpoint.GetWorkflow(workflowId);
+            return await endpoint.GetWorkflow(workflowId, runId);
         })
         .WithName("Get Workflow")
         .RequireAuthorization("RequireTenantAuth")
@@ -238,9 +239,10 @@ public static class WebEndpointExtensions
             [FromQuery] DateTime? startTime,
             [FromQuery] DateTime? endTime,
             [FromQuery] string? owner,
+            [FromQuery] string? status,
             [FromServices] WorkflowFinderEndpoint endpoint) =>
         {
-            return await endpoint.GetWorkflows(startTime, endTime, owner);
+            return await endpoint.GetWorkflows(startTime, endTime, owner, status);
         })
         .WithName("Get Workflows")
         .RequireAuthorization("RequireTenantAuth")

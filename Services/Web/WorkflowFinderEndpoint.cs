@@ -19,6 +19,8 @@ public class WorkflowFinderEndpoint
     private const string AgentKey = "agent";
     private const string AssignmentKey = "assignment";
     private const string CurrentOwner = "current";
+    private const string DefaultAssignment = "-default-";
+
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderEndpoint"/> class.
@@ -42,7 +44,7 @@ public class WorkflowFinderEndpoint
     /// </summary>
     /// <param name="workflowId">The unique identifier of the workflow.</param>
     /// <returns>A result containing the workflow details if found, or an error response.</returns>
-    public async Task<IResult> GetWorkflow(string workflowId)
+    public async Task<IResult> GetWorkflow(string workflowId, string? runId = null)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
         {
@@ -52,9 +54,9 @@ public class WorkflowFinderEndpoint
 
         try
         {
-            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId}", workflowId);
+            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and runId: {RunId}", workflowId, runId);
             var client = _clientService.GetClient();
-            var workflowHandle = client.GetWorkflowHandle(workflowId);
+            var workflowHandle = client.GetWorkflowHandle(workflowId, runId);
             var workflowDescription = await workflowHandle.DescribeAsync();
 
             var workflow = MapWorkflowToResponse(workflowDescription);
@@ -81,16 +83,16 @@ public class WorkflowFinderEndpoint
     /// <param name="endTime">Optional end time filter for workflow execution.</param>
     /// <param name="owner">Optional owner filter for workflows.</param>
     /// <returns>A result containing the list of filtered workflows.</returns>
-    public async Task<IResult> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner)
+    public async Task<IResult> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status)
     {
-        _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}", 
-            startTime, endTime, owner ?? "null");
+        _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}", 
+            startTime, endTime, owner ?? "null", status ?? "null");
 
         try
         {
             var client = _clientService.GetClient();
             var workflows = new List<object>();
-            var listQuery = BuildDateRangeQuery(startTime, endTime);
+            var listQuery = BuildQuery(startTime, endTime, status);
 
             _logger.LogDebug("Executing workflow query: {Query}", string.IsNullOrEmpty(listQuery) ? "No date filters" : listQuery);
 
@@ -127,26 +129,47 @@ public class WorkflowFinderEndpoint
     /// <param name="startTime">The start time of the range.</param>
     /// <param name="endTime">The end time of the range.</param>
     /// <returns>A query string for temporal workflow filtering.</returns>
-    private string BuildDateRangeQuery(DateTime? startTime, DateTime? endTime)
+    private string BuildQuery(DateTime? startTime, DateTime? endTime, string? status)
     {
-        if (startTime == null && endTime == null)
-        {
-            return string.Empty;
-        }
-
+        var queryParts = new List<string>();
         const string dateFormat = "yyyy-MM-ddTHH:mm:sszzz";
         
+        // Add time-based filters
         if (startTime != null && endTime != null)
         {
-            return $"ExecutionTime between '{startTime.Value.ToUniversalTime().ToString(dateFormat)}' and '{endTime.Value.ToUniversalTime().ToString(dateFormat)}'";
+            queryParts.Add($"ExecutionTime between '{startTime.Value.ToUniversalTime().ToString(dateFormat)}' and '{endTime.Value.ToUniversalTime().ToString(dateFormat)}'");
         }
-        
-        if (startTime != null)
+        else if (startTime != null)
         {
-            return $"ExecutionTime >= '{startTime.Value.ToUniversalTime().ToString(dateFormat)}'";
+            queryParts.Add($"ExecutionTime >= '{startTime.Value.ToUniversalTime().ToString(dateFormat)}'");
+        }
+        else if (endTime != null)
+        {
+            queryParts.Add($"ExecutionTime <= '{endTime.Value.ToUniversalTime().ToString(dateFormat)}'");
         }
         
-        return $"ExecutionTime <= '{endTime!.Value.ToUniversalTime().ToString(dateFormat)}'";
+        // Add status filter if specified
+        if (!string.IsNullOrEmpty(status))
+        {
+            status = status.ToLower();
+            // Ensure we're using the exact status values that Temporal expects
+            string normalizedStatus = status switch
+            {
+                "running" => "Running",
+                "completed" => "Completed",
+                "failed" => "Failed",
+                "canceled" => "Canceled",
+                "terminated" => "Terminated",
+                "continuedasnew" => "ContinuedAsNew",
+                "timedout" => "TimedOut",
+                _ => status // Use as-is if not matching any known status
+            };
+            
+            queryParts.Add($"ExecutionStatus = '{normalizedStatus}'");
+        }
+        
+        // Join all query parts with AND operator
+        return string.Join(" and ", queryParts);
     }
 
     /// <summary>
@@ -189,7 +212,8 @@ public class WorkflowFinderEndpoint
             ExecutionTime = workflow.ExecutionTime,
             CloseTime = workflow.CloseTime,
             TenantId = tenantId,
-            Owner = userId
+            Owner = userId,
+            HistoryLength = workflow.HistoryLength
         };
     }
 
@@ -205,7 +229,7 @@ public class WorkflowFinderEndpoint
         {
             return memoValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
         }
-        return null;
+        return DefaultAssignment;
     }
 }
 
@@ -283,4 +307,9 @@ public class WorkflowResponse
     /// Gets or sets the run identifier of the parent workflow, if any.
     /// </summary>
     public string? ParentRunId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the history length of the workflow.
+    /// </summary>
+    public int HistoryLength { get; set; }
 }
