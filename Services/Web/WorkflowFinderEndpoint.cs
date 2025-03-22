@@ -235,10 +235,6 @@ public class WorkflowFinderEndpoint
 /// </summary>
 public class WorkflowResponse
 {
-    /// <summary>
-    /// Gets or sets the unique identifier of the workflow.
-    /// </summary>
-    public string? Id { get; set; }
 
     /// <summary>
     /// Gets or sets the agent associated with the workflow.
