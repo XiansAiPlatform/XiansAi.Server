@@ -72,9 +72,9 @@ public class FlowDefinitionRepository
             .FirstOrDefaultAsync();
     }
 
-    public async Task<FlowDefinition> GetLatestByClassAndOwnerAsync(string className, string owner)
+    public async Task<FlowDefinition> GetLatestByTypeNameAndOwnerAsync(string typeName, string owner)
     {
-        return await _definitions.Find(x => x.ClassName == className && x.Owner == owner)
+        return await _definitions.Find(x => x.TypeName == typeName && x.Owner == owner)
             .SortByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync();
     }
@@ -99,7 +99,7 @@ public class FlowDefinitionRepository
         }
 
         return await query.SortByDescending(x => x.CreatedAt)
-            .Group(x => new { x.ClassName, x.Owner },
+            .Group(x => new { x.TypeName, x.Owner },
                    g => g.First())
             .ToListAsync();
     }
@@ -108,7 +108,7 @@ public class FlowDefinitionRepository
     {
         return await _definitions.Aggregate()
             .SortByDescending(x => x.CreatedAt)
-            .Group(x => new { x.ClassName, x.Owner },
+            .Group(x => new { x.TypeName, x.Owner },
                    g => g.First())
             .ToListAsync();
     }

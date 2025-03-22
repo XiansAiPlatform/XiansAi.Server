@@ -100,7 +100,7 @@ public class DefinitionsServerEndpoint
 
         
         // Find existing definition with the same hash
-        var existingDefinition = await definitionRepository.GetLatestByClassAndOwnerAsync(definition.ClassName, definition.Owner);
+        var existingDefinition = await definitionRepository.GetLatestByTypeNameAndOwnerAsync(definition.TypeName, definition.Owner);
 
         // no definition in database
         if (existingDefinition == null)
@@ -148,7 +148,6 @@ public class DefinitionsServerEndpoint
         {
             Id = ObjectId.GenerateNewId().ToString(),
             TypeName = request.TypeName,
-            ClassName = request.ClassName,
             AgentName = request.AgentName,
             Hash = ComputeHash(JsonSerializer.Serialize(request)),
             Source = string.IsNullOrEmpty(request.Source) ? string.Empty : request.Source,

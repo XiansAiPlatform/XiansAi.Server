@@ -1,4 +1,5 @@
 using MongoDB.Bson;
+using Microsoft.AspNetCore.Http;
 using XiansAi.Server.Auth;
 using XiansAi.Server.Database;
 using XiansAi.Server.Database.Models;
@@ -21,6 +22,22 @@ public class DefinitionsEndpoint
         _databaseService = databaseService;
         _logger = logger;
         _tenantContext = tenantContext;
+    }
+
+    public async Task<IResult> DeleteDefinition(string definitionId)
+    {
+        var definitionRepository = new FlowDefinitionRepository(await _databaseService.GetDatabase());
+        var definition = await definitionRepository.GetByIdAsync(definitionId);
+        if (definition == null)
+        {
+            return Results.NotFound();
+        }
+        if (definition.Owner != _tenantContext.LoggedInUser)
+        {
+            return Results.Json(new { message = "You are not allowed to delete this definition. Only the owner can delete their own definitions." }, statusCode: StatusCodes.Status403Forbidden);
+        }
+        await definitionRepository.DeleteAsync(definitionId);
+        return Results.Ok();
     }
 
     public async Task<IResult> GetLatestDefinitions(DateTime? startTime, DateTime? endTime, string? owner)

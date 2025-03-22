@@ -29,7 +29,7 @@ public class FlowDefinition
     }
 
     [BsonElement("class_name")]
-    public required string ClassName { get; set; }
+    public string? ClassName { get; set; }
 
     [BsonElement("hash")]
     public required string Hash { get; set; }

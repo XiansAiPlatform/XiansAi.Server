@@ -16,6 +16,20 @@ public static class WebEndpointExtensions
 
     private static void MapDefinitionsEndpoints(this WebApplication app)
     {
+        app.MapDelete("/api/client/definitions/{definitionId}", async (
+            string definitionId,
+            [FromServices] DefinitionsEndpoint endpoint) =>
+        {
+            return await endpoint.DeleteDefinition(definitionId);
+        })
+        .WithName("Delete Definition")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete a specific definition";
+            operation.Description = "Removes a definition by its ID";
+            return operation;
+        });
+
         app.MapGet("/api/client/definitions", async (
             [FromQuery] DateTime? startTime,
             [FromQuery] DateTime? endTime,
