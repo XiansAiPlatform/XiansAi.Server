@@ -15,10 +15,13 @@ public class WorkflowRequest
     [StringLength(100, MinimumLength = 1, ErrorMessage = "WorkflowType must be between 1 and 100 characters")]
     public required string WorkflowType { get; set; }
 
+    [StringLength(200, MinimumLength = 1, ErrorMessage = "WorkflowId must be between 1 and 200 characters")]
+    public string? WorkflowId { get; set; }
+
     public string[]? Parameters { get; set; }
 
     [StringLength(100, ErrorMessage = "Agent name cannot exceed 100 characters")]
-    public string? Agent { get; set; }
+    public string? AgentName { get; set; }
 
     [StringLength(100, ErrorMessage = "Assignment name cannot exceed 100 characters")]
     public string? Assignment { get; set; }
@@ -70,8 +73,8 @@ public class WorkflowStarterEndpoint
     /// <returns>An IResult representing the HTTP response.</returns>
     public async Task<IResult> HandleStartWorkflow(WorkflowRequest request)
     {
-        _logger.LogInformation("Received workflow start request of type {WorkflowType} at: {Time}", 
-            request?.WorkflowType ?? "null", DateTime.UtcNow);
+        _logger.LogInformation("Received workflow start request of type {WorkflowType} with data {Request}", 
+            request?.WorkflowType ?? "null", JsonSerializer.Serialize(request));
         
         try
         {
@@ -83,8 +86,9 @@ public class WorkflowStarterEndpoint
                 return Results.BadRequest(new { errors = validationResults });
             }
 
-            var workflowId = GenerateWorkflowId(request.WorkflowType);
-            var options = CreateWorkflowOptions(workflowId, request.WorkflowType, request.Agent, request.Assignment);
+
+            var workflowId = request?.WorkflowId ?? GenerateWorkflowId(request!.WorkflowType);
+            var options = CreateWorkflowOptions(workflowId, request.WorkflowType, request.AgentName, request.Assignment);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
             var handle = await StartWorkflowAsync(request, options);
@@ -198,7 +202,7 @@ public class WorkflowStarterEndpoint
             errors.Add("WorkflowType cannot exceed 100 characters");
         }
 
-        if (request.Agent?.Length > 100)
+        if (request.AgentName?.Length > 100)
         {
             errors.Add("Agent name cannot exceed 100 characters");
         }

@@ -102,7 +102,6 @@ public class WorkflowFinderEndpoint
                 
                 if (ShouldSkipWorkflow(owner, mappedWorkflow.Owner))
                 {
-                    _logger.LogDebug("Skipping workflow {WorkflowId} due to owner filter", mappedWorkflow.Id);
                     continue;
                 }
 
@@ -191,7 +190,6 @@ public class WorkflowFinderEndpoint
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
     private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow)
     {
-        _logger.LogDebug("Mapping workflow {WorkflowId} to response object", workflow.Id);
         var tenantId = ExtractMemoValue(workflow.Memo, TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, UserIdKey);
         var agent = ExtractMemoValue(workflow.Memo, AgentKey);

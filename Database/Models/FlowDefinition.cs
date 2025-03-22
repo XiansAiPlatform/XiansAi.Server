@@ -3,12 +3,30 @@ using MongoDB.Bson.Serialization.Attributes;
 
 public class FlowDefinition
 {
+    private string _agentName = string.Empty;
+
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = null!;
 
     [BsonElement("type_name")]
     public required string TypeName { get; set; }
+
+    [BsonElement("agent_name")]
+    public required string AgentName { 
+        get
+        {
+            if (string.IsNullOrEmpty(_agentName))
+            {
+                _agentName = TypeName;
+            }
+            return _agentName;
+        }
+        set
+        {
+            _agentName = value;
+        }
+    }
 
     [BsonElement("class_name")]
     public required string ClassName { get; set; }
