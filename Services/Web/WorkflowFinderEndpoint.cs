@@ -192,8 +192,8 @@ public class WorkflowFinderEndpoint
     {
         var tenantId = ExtractMemoValue(workflow.Memo, TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, UserIdKey);
-        var agent = ExtractMemoValue(workflow.Memo, AgentKey);
-        var assignment = ExtractMemoValue(workflow.Memo, AssignmentKey);
+        var agent = ExtractMemoValue(workflow.Memo, AgentKey) ?? workflow.WorkflowType;
+        var assignment = ExtractMemoValue(workflow.Memo, AssignmentKey) ?? DefaultAssignment;
 
         return new WorkflowResponse
         {
@@ -227,7 +227,7 @@ public class WorkflowFinderEndpoint
         {
             return memoValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
         }
-        return DefaultAssignment;
+        return null;
     }
 }
 
