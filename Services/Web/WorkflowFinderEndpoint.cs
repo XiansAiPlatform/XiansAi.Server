@@ -197,7 +197,6 @@ public class WorkflowFinderEndpoint
 
         return new WorkflowResponse
         {
-            Id = workflow.Id,
             Agent = agent,
             Assignment = assignment,
             ParentId = workflow.ParentId,
