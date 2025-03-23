@@ -19,6 +19,12 @@ public class FlowDefinitionRepository
         return existingDefinition != null;
     }
 
+    public async Task<long> DeleteByOwnerAndTypeNameAsync(string owner, string typeName)
+    {
+        var result = await _definitions.DeleteManyAsync(x => x.Owner == owner && x.TypeName == typeName);
+        return result.DeletedCount;
+    }
+
     public async Task<FlowDefinition> GetLatestFlowDefinitionAsync(string typeName)
     {
         return await _definitions.Find(x => x.TypeName == typeName)

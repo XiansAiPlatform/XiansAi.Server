@@ -44,8 +44,19 @@ public class ActivityDefinitionRequest
     [JsonPropertyName("activityName")]
     public required string ActivityName { get; set; }
 
+    [Obsolete("Maintained for backward compatibility only. Use AgentToolNames instead.")]
     [JsonPropertyName("agentNames")]
-    public required List<string> AgentNames { get; set; }
+    public List<string>? AgentNames {
+        get {
+            return AgentToolNames;
+        }
+        set {
+            AgentToolNames = value;
+        }
+    }
+
+    [JsonPropertyName("agentToolNames")]
+    public List<string>? AgentToolNames { get; set; }
 
     [JsonPropertyName("instructions")]
     public required List<string> Instructions { get; set; }
@@ -114,17 +125,19 @@ public class DefinitionsServerEndpoint
         // no markdown in the existing record, but there is a markdown in the new definition
         if (string.IsNullOrEmpty(existingDefinition.Markdown) && !string.IsNullOrEmpty(definition.Markdown))
         {
-            _logger.LogInformation("No markdown in the existing definition, generating markdown for new definition");
             await GenerateMarkdown(definition);
             await definitionRepository.CreateAsync(definition);
+            // delete the old definition
+            await definitionRepository.DeleteAsync(existingDefinition.Id);
             return Results.Ok("No markdown in the existing definition, new definition created successfully");
         }
 
         if (existingDefinition.Hash != definition.Hash)
         {
-            _logger.LogInformation("Definition had a different hash, generating markdown for new definition");
             await GenerateMarkdown(definition);
             await definitionRepository.CreateAsync(definition);
+            // delete the old definition
+            await definitionRepository.DeleteAsync(existingDefinition.Id);
             return Results.Ok("Definition had a different hash, new definition created successfully");
         }  else {
             return Results.Ok("Definition already up to date");
@@ -155,7 +168,7 @@ public class DefinitionsServerEndpoint
             Activities = request.Activities.Select(a => new ActivityDefinition
             {
                 ActivityName = a.ActivityName,
-                AgentNames = a.AgentNames,
+                AgentToolNames = a.AgentToolNames,
                 Instructions = a.Instructions,
                 Parameters = a.Parameters.Select(p => new ParameterDefinition
                 {

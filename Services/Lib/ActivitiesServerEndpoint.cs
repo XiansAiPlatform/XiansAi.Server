@@ -41,9 +41,19 @@ public class ActivityRequest
     [JsonPropertyName("result")]
     public JsonElement? Result { get; set; }
 
-    [Required]
+    [Obsolete("Maintained for backward compatibility only. Use AgentToolNames instead.")]
     [JsonPropertyName("agentNames")]
-    public required List<string> AgentNames { get; set; }
+    public List<string>? AgentNames {
+        get {
+            return AgentToolNames;
+        }
+        set {
+            AgentToolNames = value;
+        }
+    }
+
+    [JsonPropertyName("agentToolNames")]
+    public List<string>? AgentToolNames { get; set; }
 
     [JsonPropertyName("instructionIds")]
     public List<string>? InstructionIds { get; set; } = [];
@@ -78,7 +88,7 @@ public class ActivitiesServerEndpoint
             TaskQueue = request.TaskQueue,
             Inputs = ConvertJsonElementToBsonCompatible(request.Inputs),
             Result = ConvertJsonElementToBsonCompatible(request.Result),
-            AgentNames = request.AgentNames,
+            AgentToolNames = request.AgentToolNames,
             InstructionIds = request.InstructionIds ?? new List<string>()
         };
         var activityRepository = new ActivityRepository(await _databaseService.GetDatabase());
