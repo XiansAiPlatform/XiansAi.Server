@@ -3,6 +3,7 @@ using Temporalio.Client;
 using XiansAi.Server.Auth;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
+using Temporalio.Common;
 
 namespace XiansAi.Server.Services.Web;
 
@@ -27,23 +28,12 @@ public class WorkflowRequest
     public string? Assignment { get; set; }
 }
 
-/* 
-    curl -X POST http://localhost:5257/api/workflows \
-        -H "Content-Type: application/json" \
-        -d '{
-            "WorkflowType": "ProspectingWorkflow",
-            "Parameters": ["https://www.shifter.no/nyheter/", ""]
-        }'
-  */
+
 /// <summary>
 /// Handles the creation and initialization of workflows in the Temporal service.
 /// </summary>
 public class WorkflowStarterEndpoint
 {
-    private const string TenantIdKey = "tenantId";
-    private const string UserIdKey = "userId";
-    private const string AgentKey = "agent";
-    private const string AssignmentKey = "assignment";
 
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowStarterEndpoint> _logger;
@@ -86,8 +76,8 @@ public class WorkflowStarterEndpoint
                 return Results.BadRequest(new { errors = validationResults });
             }
 
-
-            var workflowId = request?.WorkflowId ?? GenerateWorkflowId(request!.WorkflowType);
+            var tenantId = _tenantContext.TenantId;
+            var workflowId = tenantId + ":" + (request?.WorkflowId ?? GenerateWorkflowId(request!.WorkflowType));
             var options = CreateWorkflowOptions(workflowId, request.WorkflowType, request.AgentName, request.Assignment);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
@@ -136,26 +126,33 @@ public class WorkflowStarterEndpoint
             throw new InvalidOperationException("TenantId is required to create workflow options");
         }
 
+        if (string.IsNullOrEmpty(_tenantContext.LoggedInUser)) {
+            throw new InvalidOperationException("LoggedInUser is required to create workflow options");
+        }
+
         var memo = new Dictionary<string, object> { 
-            { TenantIdKey, _tenantContext.TenantId },
-            { AgentKey, agent ?? workFlowType },
+            { Constants.TenantIdKey, _tenantContext.TenantId },
+            { Constants.AgentKey, agent ?? workFlowType },
+            { Constants.UserIdKey, _tenantContext.LoggedInUser! }
         };
 
-        if (!string.IsNullOrEmpty(_tenantContext.LoggedInUser))
-        {
-            memo.Add(UserIdKey, _tenantContext.LoggedInUser);
-        }
+        var searchAttributesBuilder = new SearchAttributeCollection.Builder()
+            .Set(SearchAttributeKey.CreateKeyword(Constants.TenantIdKey), _tenantContext.TenantId)
+            .Set(SearchAttributeKey.CreateKeyword(Constants.AgentKey), agent ?? workFlowType)
+            .Set(SearchAttributeKey.CreateKeyword(Constants.UserIdKey), _tenantContext.LoggedInUser!);
 
         if (!string.IsNullOrEmpty(assignment))
         {
-            memo.Add(AssignmentKey, assignment);
+            memo.Add(Constants.AssignmentKey, assignment);
+            searchAttributesBuilder.Set(SearchAttributeKey.CreateKeyword(Constants.AssignmentKey), assignment);
         }
 
         var options = new WorkflowOptions
         {
             TaskQueue = workFlowType,
             Id = workflowId,
-            Memo = memo
+            Memo = memo,
+            TypedSearchAttributes = searchAttributesBuilder.ToSearchAttributeCollection()
         };
 
         return options;

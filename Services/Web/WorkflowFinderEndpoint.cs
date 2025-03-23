@@ -14,13 +14,6 @@ public class WorkflowFinderEndpoint
     private readonly ILogger<WorkflowFinderEndpoint> _logger;
     private readonly ITenantContext _tenantContext;
 
-    private const string TenantIdKey = "tenantId";
-    private const string UserIdKey = "userId";
-    private const string AgentKey = "agent";
-    private const string AssignmentKey = "assignment";
-    private const string CurrentOwner = "current";
-    private const string DefaultAssignment = "-default-";
-
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderEndpoint"/> class.
@@ -92,7 +85,7 @@ public class WorkflowFinderEndpoint
         {
             var client = _clientService.GetClient();
             var workflows = new List<object>();
-            var listQuery = BuildQuery(startTime, endTime, status);
+            var listQuery = BuildQuery(startTime, endTime, status, owner);
 
             _logger.LogDebug("Executing workflow query: {Query}", string.IsNullOrEmpty(listQuery) ? "No date filters" : listQuery);
 
@@ -128,7 +121,7 @@ public class WorkflowFinderEndpoint
     /// <param name="startTime">The start time of the range.</param>
     /// <param name="endTime">The end time of the range.</param>
     /// <returns>A query string for temporal workflow filtering.</returns>
-    private string BuildQuery(DateTime? startTime, DateTime? endTime, string? status)
+    private string BuildQuery(DateTime? startTime, DateTime? endTime, string? status, string? owner)
     {
         var queryParts = new List<string>();
         const string dateFormat = "yyyy-MM-ddTHH:mm:sszzz";
@@ -145,6 +138,13 @@ public class WorkflowFinderEndpoint
         else if (endTime != null)
         {
             queryParts.Add($"ExecutionTime <= '{endTime.Value.ToUniversalTime().ToString(dateFormat)}'");
+        }
+        // Add tenantId filter
+        queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
+        
+        // Add userId filter if current owner is requested
+        if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase)) {
+            queryParts.Add($"{Constants.UserIdKey} = '{_tenantContext.LoggedInUser}'");
         }
         
         // Add status filter if specified
@@ -179,7 +179,7 @@ public class WorkflowFinderEndpoint
     /// <returns>True if the workflow should be skipped, false otherwise.</returns>
     private bool ShouldSkipWorkflow(string? owner, string? workflowOwner)
     {
-        return CurrentOwner.Equals(owner, StringComparison.OrdinalIgnoreCase) && 
+        return Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase) && 
                _tenantContext.LoggedInUser != workflowOwner;
     }
 
@@ -190,10 +190,10 @@ public class WorkflowFinderEndpoint
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
     private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow)
     {
-        var tenantId = ExtractMemoValue(workflow.Memo, TenantIdKey);
-        var userId = ExtractMemoValue(workflow.Memo, UserIdKey);
-        var agent = ExtractMemoValue(workflow.Memo, AgentKey) ?? workflow.WorkflowType;
-        var assignment = ExtractMemoValue(workflow.Memo, AssignmentKey) ?? DefaultAssignment;
+        var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
+        var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
+        var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey) ?? workflow.WorkflowType;
+        var assignment = ExtractMemoValue(workflow.Memo, Constants.AssignmentKey) ?? Constants.DefaultAssignment;
 
         return new WorkflowResponse
         {

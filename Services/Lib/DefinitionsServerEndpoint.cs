@@ -11,17 +11,23 @@ namespace XiansAi.Server.Services.Lib;
 
 public class FlowDefinitionRequest
 {
-    [Required]
+    private string? _agentName;
     [JsonPropertyName("agentName")]
-    public required string AgentName { get; set; }
+    public string? AgentName { 
+        get {
+            if (string.IsNullOrEmpty(_agentName)) {
+                return TypeName;
+            }
+            return _agentName;
+        }
+        set {
+            _agentName = value;
+        }
 
+    }
     [Required]
     [JsonPropertyName("typeName")]
     public required string TypeName { get; set; }
-
-    [Required]
-    [JsonPropertyName("className")]
-    public required string ClassName { get; set; }
 
     [JsonPropertyName("source")]
     public string? Source { get; set; }
