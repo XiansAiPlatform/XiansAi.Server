@@ -167,7 +167,7 @@ public class DefinitionsServerEndpoint
         {
             Id = ObjectId.GenerateNewId().ToString(),
             TypeName = request.TypeName,
-            AgentName = request.AgentName,
+            AgentName = request.AgentName ?? request.TypeName,
             Hash = ComputeHash(JsonSerializer.Serialize(request)),
             Source = string.IsNullOrEmpty(request.Source) ? string.Empty : request.Source,
             Markdown = string.IsNullOrEmpty(request.Markdown) ? string.Empty : request.Markdown,
