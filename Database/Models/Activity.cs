@@ -36,8 +36,19 @@ public class Activity
     [BsonElement("task_queue")]
     public string? TaskQueue { get; set; }
 
+    [Obsolete("Maintained for backward compatibility only. Use AgentToolNames instead.")]
     [BsonElement("agent_name")]
-    public List<string>? AgentNames { get; set; }
+    public List<string>? AgentNames {
+        get {
+            return AgentToolNames;
+        }
+        set {
+            AgentToolNames = value;
+        }
+    }
+
+    [BsonElement("agent_tool_names")]
+    public List<string>? AgentToolNames { get; set; } = [];
 
     [BsonElement("instruction_ids")]
     public List<string>? InstructionIds { get; set; } = [];

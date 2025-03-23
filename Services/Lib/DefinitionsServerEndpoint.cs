@@ -44,8 +44,19 @@ public class ActivityDefinitionRequest
     [JsonPropertyName("activityName")]
     public required string ActivityName { get; set; }
 
+    [Obsolete("Maintained for backward compatibility only. Use AgentToolNames instead.")]
     [JsonPropertyName("agentNames")]
-    public required List<string> AgentNames { get; set; }
+    public List<string>? AgentNames {
+        get {
+            return AgentToolNames;
+        }
+        set {
+            AgentToolNames = value;
+        }
+    }
+
+    [JsonPropertyName("agentToolNames")]
+    public List<string>? AgentToolNames { get; set; }
 
     [JsonPropertyName("instructions")]
     public required List<string> Instructions { get; set; }
@@ -155,7 +166,7 @@ public class DefinitionsServerEndpoint
             Activities = request.Activities.Select(a => new ActivityDefinition
             {
                 ActivityName = a.ActivityName,
-                AgentNames = a.AgentNames,
+                AgentToolNames = a.AgentToolNames,
                 Instructions = a.Instructions,
                 Parameters = a.Parameters.Select(p => new ParameterDefinition
                 {
