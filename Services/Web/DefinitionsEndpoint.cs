@@ -64,9 +64,17 @@ public class DefinitionsEndpoint
                 );
             }
             
-            await definitionRepository.DeleteAsync(definitionId);
-            _logger.LogInformation("Definition with ID {DefinitionId} successfully deleted", definitionId);
-            return Results.Ok();
+            var result = await definitionRepository.DeleteByOwnerAndTypeNameAsync(definition.Owner, definition.TypeName);
+            if (result > 0)
+            {
+                _logger.LogInformation("Deleted {Count} definitions for owner {Owner} and type name {TypeName}", result, definition.Owner, definition.TypeName);
+                return Results.Ok($"{result} definitions deleted successfully");
+            }
+            else
+            {
+                _logger.LogError("Failed to delete definitions for owner {Owner} and type name {TypeName}", definition.Owner, definition.TypeName);
+                return Results.Problem("Unable to delete definition. Please try again later.", statusCode: StatusCodes.Status500InternalServerError);
+            }
         }
         catch (Exception ex)
         {
