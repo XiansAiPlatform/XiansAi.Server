@@ -24,7 +24,8 @@ public class CertificateValidationMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         // Only apply to /api/server paths
-        if (!context.Request.Path.StartsWithSegments("/api/server"))
+        if (!context.Request.Path.StartsWithSegments("/api/server", StringComparison.OrdinalIgnoreCase) && 
+            !context.Request.Path.StartsWithSegments("/api/agent", StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;
