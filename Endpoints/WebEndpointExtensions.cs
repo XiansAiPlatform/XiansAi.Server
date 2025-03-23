@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using XiansAi.Server.Services.Web;
+using System.Text.Json;
+using XiansAi.Server.Services.Lib;
 
 namespace XiansAi.Server.Endpoints;
 public static class WebEndpointExtensions
@@ -11,8 +13,8 @@ public static class WebEndpointExtensions
         MapActivityEndpoints(app);
         MapSettingsEndpoints(app);
         MapDefinitionsEndpoints(app);
+        MapObjectCacheEndpoints(app);
     }
-
 
     private static void MapDefinitionsEndpoints(this WebApplication app)
     {
@@ -288,6 +290,52 @@ public static class WebEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Stream workflow events in real-time";
             operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events";
+            return operation;
+        });
+    }
+
+    private static void MapObjectCacheEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/client/cache/{key}", async (
+            string key,
+            [FromServices] ObjectCacheEndpoint endpoint) =>
+        {
+            return await endpoint.GetValue(key);
+        })
+        .WithName("Get Cache Value")
+        
+        .WithOpenApi(operation => {
+            operation.Summary = "Get a value from cache";
+            operation.Description = "Retrieves a value from the cache by its key";
+            return operation;
+        });
+
+        app.MapPost("/api/client/cache/{key}", async (
+            string key,
+            [FromBody] JsonElement value,
+            [FromServices] ObjectCacheEndpoint endpoint) =>
+        {
+            return await endpoint.SetValue(key, value);
+        })
+        .WithName("Set Cache Value")
+        
+        .WithOpenApi(operation => {
+            operation.Summary = "Set a value in cache";
+            operation.Description = "Stores a value in the cache with the specified key";
+            return operation;
+        });
+
+        app.MapDelete("/api/client/cache/{key}", async (
+            string key,
+            [FromServices] ObjectCacheEndpoint endpoint) =>
+        {
+            return await endpoint.DeleteValue(key);
+        })
+        .WithName("Delete Cache Value")
+        
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete a value from cache";
+            operation.Description = "Removes a value from the cache by its key";
             return operation;
         });
     }
