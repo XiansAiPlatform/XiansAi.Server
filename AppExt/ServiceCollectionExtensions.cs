@@ -14,6 +14,7 @@ using Azure.Security.KeyVault.Secrets;
 using XiansAi.Server.Services.Public;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using XiansAi.Server.Endpoints;
+using XiansAi.Server.Utils;
 
 namespace XiansAi.Server;
 
@@ -75,7 +76,7 @@ public static class ServiceCollectionExtensions
 
         builder.Services.AddStackExchangeRedisCache(options =>
         {
-            options.Configuration = builder.Configuration.GetConnectionString("RedisCache:ConnectionString");
+            options.Configuration = builder.Configuration.GetRequiredSection("RedisCache:ConnectionString").Value;
             options.InstanceName = "XiansAi:";
         });
 

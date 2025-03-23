@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 
-namespace XiansAi.Server.Services.Web;
+namespace XiansAi.Server.Utils;
 
 public class ObjectCacheService
 {
