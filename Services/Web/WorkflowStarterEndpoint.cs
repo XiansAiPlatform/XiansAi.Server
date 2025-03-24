@@ -76,7 +76,7 @@ public class WorkflowStarterEndpoint
                 return Results.BadRequest(new { errors = validationResults });
             }
 
-            var workflowId = request?.WorkflowId ?? GenerateWorkflowId(request!.WorkflowType);
+            var workflowId = _tenantContext.TenantId + ":" + (request?.WorkflowId ?? GenerateWorkflowId(request!.WorkflowType));
             var options = CreateWorkflowOptions(workflowId, request.WorkflowType, request.AgentName, request.Assignment);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));

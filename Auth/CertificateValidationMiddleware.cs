@@ -31,6 +31,8 @@ public class CertificateValidationMiddleware
             return;
         }
 
+        _logger.LogInformation("Received request to {Path} at: {Time}", context.Request.Path, DateTime.UtcNow);
+
         // Get the client certificate from the request headers
         var certHeader = context.Request.Headers["X-Client-Cert"].ToString();
         if (string.IsNullOrEmpty(certHeader))
@@ -125,6 +127,7 @@ public class CertificateValidationMiddleware
 
             context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userNameFromCert)]));
 
+            _logger.LogInformation("Certificate validation successful for tenant {Tenant} and user {User}", tenantNameFromCert, userNameFromCert);
             await _next(context);
         }
         catch (Exception ex)

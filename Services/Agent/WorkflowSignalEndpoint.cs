@@ -66,6 +66,9 @@ public class WorkflowSignalEndpoint
     /// </returns>
     public async Task<IResult> HandleSignalWorkflow(WorkflowSignalRequest request)
     {
+        _logger.LogInformation("Received workflow signal request for workflow {WorkflowId} with signal {SignalName} at: {Time}", 
+            request.WorkflowId, request.SignalName, DateTime.UtcNow);
+
         if (request == null)
         {
             _logger.LogWarning("Received null workflow signal request");

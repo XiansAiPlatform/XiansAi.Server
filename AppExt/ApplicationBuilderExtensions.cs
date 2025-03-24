@@ -50,6 +50,7 @@ public static class ApplicationBuilderExtensions
         WebEndpointExtensions.MapWebEndpoints(app);
         LibEndpointExtensions.MapLibEndpoints(app);
         PublicEndpointExtensions.MapPublicEndpoints(app);
+        AgentEndpointExtensions.MapAgentEndpoints(app);
         app.MapControllers();
     }
 }

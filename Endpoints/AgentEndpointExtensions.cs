@@ -20,10 +20,7 @@ public static class AgentEndpointExtensions
             [FromServices] WorkflowSignalEndpoint endpoint) =>
         {
             return await endpoint.HandleSignalWorkflow(request);
-        })
-        .WithName("SignalAgentWorkflow")
-        .WithDescription("Sends a signal to a running Agent workflow")
-        .WithTags("Agent");
+        });
 
         return app;
     }
