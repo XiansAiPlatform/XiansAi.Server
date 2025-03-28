@@ -13,7 +13,6 @@ namespace XiansAi.Server.Temporal;
 public interface ITemporalClientService
 {
     ITemporalClient GetClient();
-
     Task<string> CreateNamespaceAsync(string name);
 
     Task<string> CreateServiceAccountAsync(string name);
@@ -42,27 +41,47 @@ public class TemporalClientService : ITemporalClientService
 
     public ITemporalClient GetClient()
     {
-        // create clients for each tenant
-        return _clients.GetOrAdd(_tenantContext.TenantId, _ =>
+        var config = _tenantContext.GetTemporalConfig();
+        
+        if (config.FlowServerUrl != "localhost:7233")
         {
-            var config = _tenantContext.GetTemporalConfig();
+            // create clients for each tenant
+            return _clients.GetOrAdd(_tenantContext.TenantId, _ =>
+            {
 
-            // if tls is true, use the tls options. Otherwise, use the api key
-            TemporalClientConnectOptions options =
-                new TemporalClientConnectOptions(new(config.FlowServerUrl))
-                {
-                    Namespace = config.FlowServerNamespace!,
-                    Tls = new TlsOptions()
+                // if tls is true, use the tls options. Otherwise, use the api key
+                TemporalClientConnectOptions options =
+                    new TemporalClientConnectOptions(new(config.FlowServerUrl))
                     {
-                        ClientCert = GetCertificate().GetAwaiter().GetResult(),
-                        ClientPrivateKey = GetPrivateKey().GetAwaiter().GetResult(),
-                    }
+                        Namespace = config.FlowServerNamespace!,
+                        Tls = new TlsOptions()
+                        {
+                            ClientCert = GetCertificate().GetAwaiter().GetResult(),
+                            ClientPrivateKey = GetPrivateKey().GetAwaiter().GetResult(),
+                        }
+                    };
+
+                _logger.LogInformation("Connecting to temporal server---" + config.FlowServerUrl + "---, namespace---" + config.FlowServerNamespace + "---");
+
+                return TemporalClient.ConnectAsync(options).GetAwaiter().GetResult();
+            });
+        }
+        else
+        {
+            // create a local client
+            return _clients.GetOrAdd("local", _ =>
+            {
+                var config = _tenantContext.GetTemporalConfig();
+                _logger.LogInformation("Connecting to local temporal - " + config.FlowServerUrl + "---, namespace---" + config.FlowServerNamespace + "---");
+                var options = new TemporalClientConnectOptions(new(config.FlowServerUrl)) // Local Temporal URL
+                {
+                    Namespace = "default", // Default local namespace
                 };
 
-            _logger.LogInformation("Connecting to temporal server---" + config.FlowServerUrl + "---, namespace---" + config.FlowServerNamespace + "---");
+                return TemporalClient.ConnectAsync(options).GetAwaiter().GetResult();
+            });
+        }
 
-            return TemporalClient.ConnectAsync(options).GetAwaiter().GetResult();
-        });
     }
 
     public async Task<string[]> GetAvailableRegions()

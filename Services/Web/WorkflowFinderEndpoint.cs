@@ -140,7 +140,10 @@ public class WorkflowFinderEndpoint
             queryParts.Add($"ExecutionTime <= '{endTime.Value.ToUniversalTime().ToString(dateFormat)}'");
         }
         // Add tenantId filter
-        queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
+        var config = _tenantContext.GetTemporalConfig();
+        if(config.FlowServerUrl != "localhost:7233"){
+            queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
+        }  
         
         // Add userId filter if current owner is requested
         if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase)) {

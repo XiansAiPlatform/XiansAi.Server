@@ -135,10 +135,14 @@ public class WorkflowStarterEndpoint
             { Constants.UserIdKey, _tenantContext.LoggedInUser! }
         };
 
-        var searchAttributesBuilder = new SearchAttributeCollection.Builder()
-            .Set(SearchAttributeKey.CreateKeyword(Constants.TenantIdKey), _tenantContext.TenantId)
-            .Set(SearchAttributeKey.CreateKeyword(Constants.AgentKey), agent ?? workFlowType)
-            .Set(SearchAttributeKey.CreateKeyword(Constants.UserIdKey), _tenantContext.LoggedInUser!);
+        var searchAttributesBuilder = new SearchAttributeCollection.Builder();
+
+        var config = _tenantContext.GetTemporalConfig();
+        if(config.FlowServerUrl != "localhost:7233"){
+            searchAttributesBuilder.Set(SearchAttributeKey.CreateKeyword(Constants.TenantIdKey), _tenantContext.TenantId);
+            searchAttributesBuilder.Set(SearchAttributeKey.CreateKeyword(Constants.AgentKey), agent ?? workFlowType);
+            searchAttributesBuilder.Set(SearchAttributeKey.CreateKeyword(Constants.UserIdKey), _tenantContext.LoggedInUser!);
+        }
 
         if (!string.IsNullOrEmpty(assignment))
         {
