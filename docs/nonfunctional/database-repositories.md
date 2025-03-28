@@ -1,0 +1,226 @@
+# Repository Pattern Implementation Guide
+
+This guide outlines the standard patterns for implementing Repositories in our application, using MongoDB as the database.
+
+## Architecture Overview
+
+The Repository layer consists of three main components:
+
+1. Model Classes
+2. Repository Classes
+3. Database Service
+
+### 1. Model Classes
+
+Models represent the database entities and should follow these patterns:
+
+class should be in a file named `{name}.cs` within the `Database/Models` folder.
+
+```csharp
+using MongoDB.Bson.Serialization.Attributes;
+
+namespace XiansAi.Server.Database.Models;
+
+public class EntityName
+{
+    [BsonId]
+    [BsonRepresentation(BsonType.ObjectId)]
+    public required string Id { get; set; }
+
+    [BsonElement("field_name")]
+    public required Type FieldName { get; set; }
+
+    // Always include creation timestamp
+    [BsonElement("created_at")]
+    public required DateTime CreatedAt { get; set; }
+}
+```
+
+Key points:
+
+- Use `required` for non-nullable properties
+- Use snake_case for MongoDB field names in `BsonElement` attributes
+- Include `Id` and `CreatedAt` fields in all entities
+- Use appropriate BsonRepresentation for ID fields
+
+### 2. Repository Classes
+
+Repositories handle database operations for specific entities and are instantiated in the endpoint layer:
+
+class should be in a file named `{name}Repository.cs` within the `Database/Repositories` folder.
+
+```csharp
+using MongoDB.Driver;
+using MongoDB.Bson;
+using XiansAi.Server.Database.Models;
+
+namespace XiansAi.Server.Database.Repositories;
+
+public class EntityRepository
+{
+    private readonly IMongoCollection<Entity> _collection;
+
+    public EntityRepository(IMongoDatabase database)
+    {
+        _collection = database.GetCollection<Entity>("collection_name");
+    }
+
+    // Standard CRUD Operations
+    public async Task<Entity> GetByIdAsync(string id)
+    public async Task<List<Entity>> GetAllAsync()
+    public async Task CreateAsync(Entity entity)
+    public async Task<bool> UpdateAsync(string id, Entity entity)
+    public async Task<bool> DeleteAsync(string id)
+
+    // Common Query Patterns
+    public async Task<Entity> GetLatestByFieldAsync(string fieldValue)
+    public async Task<List<Entity>> GetByFieldAsync(string fieldValue)
+}
+```
+
+Key points:
+
+- Repositories are instantiated in endpoint methods using the database service
+- Constructor takes IMongoDatabase instance
+- Use async/await for all database operations
+- Include standard CRUD operations
+- Add specific query methods as needed
+- Return `Task<bool>` for operations that need success confirmation
+
+## Best Practices
+
+### 1. Error Handling
+
+- Use try-catch blocks for database operations
+- Return appropriate HTTP status codes
+- Log errors with sufficient context
+- Implement custom exception types when needed
+- Handle MongoDB-specific exceptions appropriately
+
+### 2. Validation
+
+- Validate input before database operations
+- Use request models for input validation
+- Include required fields and data types
+- Implement business rule validation
+- Use data annotations for basic validation
+
+### 3. Performance
+
+- Use indexes for frequently queried fields
+- Implement pagination for large result sets
+- Use projection to limit returned fields when appropriate
+- Implement caching where beneficial
+- Use bulk operations for multiple document updates
+
+### 4. Versioning
+
+- Include version fields when entity versioning is needed
+- Implement methods to retrieve latest versions
+- Maintain creation timestamps for all records
+- Consider soft deletes for historical tracking
+- Implement version control strategies
+
+### 5. Security
+
+- Implement proper access control
+- Sanitize input data
+- Use parameterized queries
+- Avoid exposing internal database details
+- Follow principle of least privilege
+
+## Advanced Patterns
+
+### 1. Aggregation Queries
+
+```csharp
+public async Task<List<Entity>> GetAggregatedData()
+{
+    return await _collection.Aggregate()
+        .Match(filter)
+        .Group(key => key.Field, group => new { Count = group.Count() })
+        .ToListAsync();
+}
+```
+
+### 2. Bulk Operations
+
+```csharp
+public async Task BulkWriteAsync(List<Entity> entities)
+{
+    var writes = entities.Select(entity =>
+        new InsertOneModel<Entity>(entity));
+    await _collection.BulkWriteAsync(writes);
+}
+```
+
+### 3. Search Implementation
+
+```csharp
+public async Task<List<Entity>> SearchAsync(string searchTerm)
+{
+    var filter = Builders<Entity>.Filter.Or(
+        Builders<Entity>.Filter.Regex(x => x.Field1, new BsonRegularExpression(searchTerm, "i")),
+        Builders<Entity>.Filter.Regex(x => x.Field2, new BsonRegularExpression(searchTerm, "i"))
+    );
+    return await _collection.Find(filter).ToListAsync();
+}
+```
+
+## Testing
+
+### Repository Testing
+
+- Use in-memory MongoDB for unit tests
+- Test all CRUD operations
+- Verify edge cases and error conditions
+- Test complex queries and aggregations
+- Implement integration tests
+
+## Example Implementation
+
+See the following files for reference:
+
+- `MongoDB/Models/Instruction.cs` for model implementation
+- `MongoDB/Repositories/InstructionRepository.cs` for repository pattern
+- `MongoDB/DatabaseService.cs` for database service
+
+## Creating New Repository Components
+
+### 1. Create Model
+
+1. Define the model class with required properties
+2. Add appropriate BsonElement attributes
+3. Include standard fields (Id, CreatedAt)
+4. Namespace `XiansAi.Server.MongoDB.Models`
+
+### 2. Create Repository
+
+1. Implement standard CRUD operations
+2. Add specific query methods
+3. Include appropriate indexes
+4. Implement error handling
+5. Namespace `XiansAi.Server.MongoDB.Repositories`
+
+## Maintenance and Updates
+
+### 1. Schema Updates
+
+- Plan for backward compatibility
+- Implement migration strategies
+- Version database schemas
+- Document changes
+
+### 2. Performance Monitoring
+
+- Monitor query performance
+- Review and update indexes
+- Implement performance logging
+- Regular maintenance checks
+
+### 3. Security Updates
+
+- Regular security audits
+- Update access controls
+- Monitor for vulnerabilities
+- Keep dependencies updated

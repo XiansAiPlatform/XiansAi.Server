@@ -4,14 +4,17 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi.Models;
 using XiansAi.Server.Auth;
-using XiansAi.Server.EndpointExt.FlowServer;
-using XiansAi.Server.EndpointExt.WebClient;
+using XiansAi.Server.Services.Lib;
+using XiansAi.Server.Services.Web;
 using XiansAi.Server.GenAi;
-using XiansAi.Server.MongoDB;
+using XiansAi.Server.Database;
 using XiansAi.Server.Temporal;
-using Microsoft.Extensions.Configuration;
 using Azure.Extensions.AspNetCore.Configuration.Secrets;
 using Azure.Security.KeyVault.Secrets;
+using XiansAi.Server.Services.Public;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
+using XiansAi.Server.Endpoints;
+using XiansAi.Server.Utils;
 
 namespace XiansAi.Server;
 
@@ -70,13 +73,16 @@ public static class ServiceCollectionExtensions
     {
         builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
         builder.Services.AddSingleton<IAuth0MgtAPIConnect, Auth0MgtAPIConnect>();
+
         builder.Services.AddStackExchangeRedisCache(options =>
         {
             options.Configuration = builder.Configuration.GetRequiredSection("RedisCache:ConnectionString").Value;
-            options.InstanceName = "VerificationCodes_";
+            options.InstanceName = "XiansAi:";
         });
 
         builder.Services.AddSingleton<CertificateGenerator>();
+        builder.Services.AddScoped<ObjectCacheService>();
+        builder.Services.AddScoped<ObjectCacheEndpoint>();
         return builder;
     }
 

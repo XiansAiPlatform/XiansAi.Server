@@ -17,6 +17,7 @@ To run the server, you can use the following command:
 
 ```bash
 dotnet run 
+dotnet watch run
 ```
 
 ### Auth0 Configuration

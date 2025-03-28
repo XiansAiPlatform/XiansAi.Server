@@ -24,11 +24,14 @@ public class CertificateValidationMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         // Only apply to /api/server paths
-        if (!context.Request.Path.StartsWithSegments("/api/server"))
+        if (!context.Request.Path.StartsWithSegments("/api/server", StringComparison.OrdinalIgnoreCase) && 
+            !context.Request.Path.StartsWithSegments("/api/agent", StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;
         }
+
+        _logger.LogInformation("Received request to {Path} at: {Time}", context.Request.Path, DateTime.UtcNow);
 
         // Get the client certificate from the request headers
         var certHeader = context.Request.Headers["X-Client-Cert"].ToString();
@@ -124,6 +127,7 @@ public class CertificateValidationMiddleware
 
             context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userNameFromCert)]));
 
+            _logger.LogInformation("Certificate validation successful for tenant {Tenant} and user {User}", tenantNameFromCert, userNameFromCert);
             await _next(context);
         }
         catch (Exception ex)
