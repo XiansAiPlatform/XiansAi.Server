@@ -51,15 +51,74 @@ public class WorkflowFinderEndpoint
             var client = _clientService.GetClient();
             var workflowHandle = client.GetWorkflowHandle(workflowId, runId);
             var workflowDescription = await workflowHandle.DescribeAsync();
+            var fetchHistory = await workflowHandle.FetchHistoryAsync();
+            var eventsList = fetchHistory.Events.ToList(); // Convert to a list for indexing
+
+            // loop through the history and print the events
+            // foreach (var historyEvent in eventsList)
+            // {
+            //     var eventObject = historyEvent.EventType.ToString();
+            //     _logger.LogDebug(eventObject);
+            // }
+
+            // Assume eventsList is your list of history events.
+            var currentActivity = (dynamic)null; // Replace with 'dynamic' if the type is unknown or define the missing type.
+
+            // Iterate in reverse so we see the most recent events first.
+            for (int i = eventsList.Count - 1; i >= 0; i--)
+            {
+                var evt = eventsList[i];
+
+                if (evt.EventType.ToString() == "ActivityTaskScheduled" &&
+                    evt.ActivityTaskScheduledEventAttributes != null)
+                {
+                    // Look ahead for any event after this one that refers back to it via ScheduledEventId.
+                    bool hasBeenProcessed = fetchHistory.Events
+                        .Skip(i + 1)
+                        .Any(e =>
+                            (e.EventType.ToString() == "ActivityTaskScheduledStarted" &&
+                             e.ActivityTaskStartedEventAttributes != null &&
+                             e.ActivityTaskStartedEventAttributes.ScheduledEventId == evt.EventId) ||
+                            (e.EventType.ToString() == "ActivityTaskScheduledCompleted" &&
+                             e.ActivityTaskCompletedEventAttributes != null &&
+                             e.ActivityTaskCompletedEventAttributes.ScheduledEventId == evt.EventId) ||
+                            (e.EventType.ToString() == "ActivityTaskScheduledFailed" &&
+                             e.ActivityTaskFailedEventAttributes != null &&
+                             e.ActivityTaskFailedEventAttributes.ScheduledEventId == evt.EventId)
+                        );
+
+                    // If no corresponding event was found, then this is our current activity.
+                    if (!hasBeenProcessed)
+                    {
+                        currentActivity = evt.ActivityTaskScheduledEventAttributes;
+                        break;
+                    }
+                }
+            }
+
+            if (currentActivity != null)
+            {
+                Console.WriteLine($"Current activity: Type = {currentActivity.ActivityType?.Name}, ActivityId = {currentActivity.ActivityId}");
+            }
+            else
+            {
+                Console.WriteLine("No current (pending or running) activity found.");
+            }
+
+
+
 
             var workflow = MapWorkflowToResponse(workflowDescription);
-            _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}", 
+
+        
+
+            _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
             return Results.Ok(workflow);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve workflow {WorkflowId}. Error: {ErrorMessage}", 
+            _logger.LogError(ex, "Failed to retrieve workflow {WorkflowId}. Error: {ErrorMessage}",
                 workflowId, ex.Message);
             return Results.Problem(
                 title: "Failed to retrieve workflow",
@@ -78,7 +137,7 @@ public class WorkflowFinderEndpoint
     /// <returns>A result containing the list of filtered workflows.</returns>
     public async Task<IResult> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status)
     {
-        _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}", 
+        _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}",
             startTime, endTime, owner ?? "null", status ?? "null");
 
         try
@@ -92,7 +151,7 @@ public class WorkflowFinderEndpoint
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
             {
                 var mappedWorkflow = MapWorkflowToResponse(workflow);
-                
+
                 if (ShouldSkipWorkflow(owner, mappedWorkflow.Owner))
                 {
                     continue;
@@ -125,7 +184,7 @@ public class WorkflowFinderEndpoint
     {
         var queryParts = new List<string>();
         const string dateFormat = "yyyy-MM-ddTHH:mm:sszzz";
-        
+
         // Add time-based filters
         if (startTime != null && endTime != null)
         {
@@ -141,12 +200,13 @@ public class WorkflowFinderEndpoint
         }
         // Add tenantId filter
         queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
-        
+
         // Add userId filter if current owner is requested
-        if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase)) {
+        if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase))
+        {
             queryParts.Add($"{Constants.UserIdKey} = '{_tenantContext.LoggedInUser}'");
         }
-        
+
         // Add status filter if specified
         if (!string.IsNullOrEmpty(status))
         {
@@ -163,10 +223,10 @@ public class WorkflowFinderEndpoint
                 "timedout" => "TimedOut",
                 _ => status // Use as-is if not matching any known status
             };
-            
+
             queryParts.Add($"ExecutionStatus = '{normalizedStatus}'");
         }
-        
+
         // Join all query parts with AND operator
         return string.Join(" and ", queryParts);
     }
@@ -179,7 +239,7 @@ public class WorkflowFinderEndpoint
     /// <returns>True if the workflow should be skipped, false otherwise.</returns>
     private bool ShouldSkipWorkflow(string? owner, string? workflowOwner)
     {
-        return Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase) && 
+        return Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase) &&
                _tenantContext.LoggedInUser != workflowOwner;
     }
 
