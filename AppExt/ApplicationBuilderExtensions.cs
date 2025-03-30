@@ -1,4 +1,5 @@
 using XiansAi.Server.Auth;
+using XiansAi.Server.Auth.Repositories;
 using XiansAi.Server.Endpoints;
 
 namespace XiansAi.Server;
@@ -20,6 +21,24 @@ public static class ApplicationBuilderExtensions
 
         // Endpoint mapping
         ConfigureEndpoints(app);
+
+        // Initialize database indexes for permissions and users
+        using (var scope = app.Services.CreateScope())
+        {
+            var indexInitializer = scope.ServiceProvider.GetRequiredService<DatabaseIndexInitializer>();
+            Task.Run(async () => 
+            {
+                try
+                {
+                    await indexInitializer.InitializeIndexesAsync();
+                    app.Logger.LogInformation("Database indexes initialized successfully");
+                }
+                catch (Exception ex)
+                {
+                    app.Logger.LogError(ex, "Failed to initialize database indexes");
+                }
+            }).Wait();
+        }
 
         return app;
     }

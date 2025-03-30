@@ -15,6 +15,7 @@ using XiansAi.Server.Services.Public;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using XiansAi.Server.Endpoints;
 using XiansAi.Server.Utils;
+using XiansAi.Server.Auth.Repositories;
 
 namespace XiansAi.Server;
 
@@ -200,11 +201,37 @@ public static class ServiceCollectionExtensions
                 policy.AuthenticationSchemes.Add("JWT");
                 policy.Requirements.Add(new Auth0ClientRequirement(builder.Configuration));
             });
+            
+            // Add new authorization policies
+            options.AddPolicy("RequireSystemAdmin", policy =>
+            {
+                policy.AuthenticationSchemes.Add("JWT");
+                policy.Requirements.Add(new SystemAdminRequirement(builder.Configuration));
+            });
+            
+            options.AddPolicy("RequireTenantAdmin", policy =>
+            {
+                policy.AuthenticationSchemes.Add("JWT");
+                policy.Requirements.Add(new TenantAdminRequirement(builder.Configuration));
+            });
         });
 
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IAuthorizationHandler, TenantClientHandler>();
         builder.Services.AddScoped<IAuthorizationHandler, Auth0ClientHandler>();
+        
+        // Register new authorization handlers
+        builder.Services.AddScoped<IAuthorizationHandler, SystemAdminHandler>();
+        builder.Services.AddScoped<IAuthorizationHandler, TenantAdminHandler>();
+        builder.Services.AddScoped<IAuthorizationHandler, EntityPermissionHandler>();
+        
+        // Register repositories
+        builder.Services.AddScoped<IUserRepository, UserRepository>();
+        builder.Services.AddScoped<IPermissionRepository, PermissionRepository>();
+        
+        // Register database index initializer
+        builder.Services.AddScoped<DatabaseIndexInitializer>();
+        
         return builder;
     }
 }

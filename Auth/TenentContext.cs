@@ -30,7 +30,7 @@ public class TenantContext : ITenantContext
     }
 
     public MongoDBConfig GetMongoDBConfig() { 
-        ValidateTenantId();
+        // ValidateTenantId();
 
         // get the mongo config for the tenant
         var mongoConfig = _configuration.GetSection($"Tenants:{TenantId}:MongoDB").Get<MongoDBConfig>();
