@@ -41,7 +41,7 @@ static class Instruction
     into Mermaid flowchart markdown diagrams for mermaid version 11. Flows should be meaningful to business users. 
     Skip extracting technical nodes such as async, await, object validations etc.
     Mainly focus on identifying activities, parameters, and flow logic. 
-    Only consider the parent workflow method identified with the attribute '[WorkflowRun]'.
+    The workflow starts with the method identified with the attribute '[WorkflowRun]'.
 
     Do not include any comments or other non Mermaid markdown text in the markdown. 
     **Do NOT generate ```mermaid or ``` symbols in the markdown.**
