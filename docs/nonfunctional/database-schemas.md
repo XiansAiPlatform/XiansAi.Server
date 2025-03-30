@@ -3,7 +3,7 @@
 ## File Structure
 
 - Schema files should be named in kebab-case: `<entity>-schema.json`
-- Schema files should be located in the `MongoDB/Schemas` directory
+- Schema files should be located in the `Database/Schemas` directory
 
 ## Schema Structure
 
@@ -20,6 +20,14 @@ Every entity schema should include these base properties:
     "created_at": {
         "bsonType": "date",
         "description": "Timestamp of creation"
+    },
+    "created_by": {
+        "bsonType": "string",
+        "description": "User ID of the creator"
+    },
+    "updated_at": {
+        "bsonType": "date",
+        "description": "Timestamp of last update"
     }
 }
 ```
@@ -30,10 +38,6 @@ When the entity needs ownership tracking:
 
 ```json
 {
-    "owner": {
-        "bsonType": "string",
-        "description": "Owner of the entity"
-    },
     "permissions": {
         "bsonType": ["array", "null"],
         "items": {
