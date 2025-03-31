@@ -52,65 +52,8 @@ public class WorkflowFinderEndpoint
             var workflowHandle = client.GetWorkflowHandle(workflowId, runId);
             var workflowDescription = await workflowHandle.DescribeAsync();
             var fetchHistory = await workflowHandle.FetchHistoryAsync();
-            var eventsList = fetchHistory.Events.ToList(); // Convert to a list for indexing
 
-            // loop through the history and print the events
-            // foreach (var historyEvent in eventsList)
-            // {
-            //     var eventObject = historyEvent.EventType.ToString();
-            //     _logger.LogDebug(eventObject);
-            // }
-
-            // Assume eventsList is your list of history events.
-            var currentActivity = (dynamic)null; // Replace with 'dynamic' if the type is unknown or define the missing type.
-
-            // Iterate in reverse so we see the most recent events first.
-            for (int i = eventsList.Count - 1; i >= 0; i--)
-            {
-                var evt = eventsList[i];
-
-                if (evt.EventType.ToString() == "ActivityTaskScheduled" &&
-                    evt.ActivityTaskScheduledEventAttributes != null)
-                {
-                    // Look ahead for any event after this one that refers back to it via ScheduledEventId.
-                    bool hasBeenProcessed = fetchHistory.Events
-                        .Skip(i + 1)
-                        .Any(e =>
-                            (e.EventType.ToString() == "ActivityTaskScheduledStarted" &&
-                             e.ActivityTaskStartedEventAttributes != null &&
-                             e.ActivityTaskStartedEventAttributes.ScheduledEventId == evt.EventId) ||
-                            (e.EventType.ToString() == "ActivityTaskScheduledCompleted" &&
-                             e.ActivityTaskCompletedEventAttributes != null &&
-                             e.ActivityTaskCompletedEventAttributes.ScheduledEventId == evt.EventId) ||
-                            (e.EventType.ToString() == "ActivityTaskScheduledFailed" &&
-                             e.ActivityTaskFailedEventAttributes != null &&
-                             e.ActivityTaskFailedEventAttributes.ScheduledEventId == evt.EventId)
-                        );
-
-                    // If no corresponding event was found, then this is our current activity.
-                    if (!hasBeenProcessed)
-                    {
-                        currentActivity = evt.ActivityTaskScheduledEventAttributes;
-                        break;
-                    }
-                }
-            }
-
-            if (currentActivity != null)
-            {
-                Console.WriteLine($"Current activity: Type = {currentActivity.ActivityType?.Name}, ActivityId = {currentActivity.ActivityId}");
-            }
-            else
-            {
-                Console.WriteLine("No current (pending or running) activity found.");
-            }
-
-
-
-
-            var workflow = MapWorkflowToResponse(workflowDescription);
-
-        
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -244,16 +187,89 @@ public class WorkflowFinderEndpoint
     }
 
     /// <summary>
+    /// Identifies the current activity from the workflow history.
+    /// </summary>
+    /// <param name="workflowHistory">The workflow history to analyze.</param>
+    /// <returns>The current activity if found, otherwise null.</returns>
+    private Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? IdentifyCurrentActivity(List<Temporalio.Api.History.V1.HistoryEvent> workflowHistory)
+    {
+        // Iterate in reverse to find the most recent unprocessed activity
+        for (int i = workflowHistory.Count - 1; i >= 0; i--)
+        {
+            var evt = workflowHistory[i];
+
+            if (evt.EventType.ToString() == "WorkflowExecutionCompleted" &&
+                evt.WorkflowExecutionCompletedEventAttributes != null)
+            {
+                // If the workflow is completed, we can stop looking for activities.
+                break;
+            }
+
+            if (evt.EventType.ToString() == "ActivityTaskScheduled" &&
+                evt.ActivityTaskScheduledEventAttributes != null)
+            {
+                // Check if this activity has been processed
+                bool hasBeenProcessed = workflowHistory
+                    .Skip(i + 1)
+                    .Any(e =>
+                        (e.EventType.ToString() == "ActivityTaskScheduledStarted" &&
+                         e.ActivityTaskStartedEventAttributes != null &&
+                         e.ActivityTaskStartedEventAttributes.ScheduledEventId == evt.EventId) ||
+                        (e.EventType.ToString() == "ActivityTaskScheduledCompleted" &&
+                         e.ActivityTaskCompletedEventAttributes != null &&
+                         e.ActivityTaskCompletedEventAttributes.ScheduledEventId == evt.EventId) ||
+                        (e.EventType.ToString() == "ActivityTaskScheduledFailed" &&
+                         e.ActivityTaskFailedEventAttributes != null &&
+                         e.ActivityTaskFailedEventAttributes.ScheduledEventId == evt.EventId)
+                    );
+
+                // If not processed, return this activity as the current one
+                if (!hasBeenProcessed)
+                {
+                    return evt.ActivityTaskScheduledEventAttributes;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Maps a Temporal workflow execution to a client-friendly response object.
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow)
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null)
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey) ?? workflow.WorkflowType;
         var assignment = ExtractMemoValue(workflow.Memo, Constants.AssignmentKey) ?? Constants.DefaultAssignment;
+        Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? currentActivity = null;
+
+        if (fetchHistory != null)
+        {
+            var eventsList = fetchHistory.Events.ToList(); // Convert to a list for indexing
+            // foreach (var historyEvent in eventsList)
+            // {
+            //     //print full object
+            //     var eventObject = historyEvent.EventType.ToString();
+            //     _logger.LogDebug(eventObject);
+            // }
+
+            // Assume eventsList is your list of history events.
+            currentActivity = IdentifyCurrentActivity(eventsList);
+
+            if (currentActivity != null)
+            {
+                Console.WriteLine($"Current activity: Type = {currentActivity.ActivityType?.Name}, ActivityId = {currentActivity.ActivityId}");
+            }
+            else
+            {
+                Console.WriteLine("No current (pending or running) activity found.");
+            }
+        }
+
 
         return new WorkflowResponse
         {
@@ -270,7 +286,8 @@ public class WorkflowFinderEndpoint
             CloseTime = workflow.CloseTime,
             TenantId = tenantId,
             Owner = userId,
-            HistoryLength = workflow.HistoryLength
+            HistoryLength = workflow.HistoryLength,
+            CurrentActivity = currentActivity,
         };
     }
 
@@ -365,4 +382,10 @@ public class WorkflowResponse
     /// Gets or sets the history length of the workflow.
     /// </summary>
     public int HistoryLength { get; set; }
+
+    /// <summary>
+    /// Gets or sets the current activity associated with the workflow.
+    /// </summary>
+    public object? CurrentActivity { get; set; }
+    /// <summary>
 }
