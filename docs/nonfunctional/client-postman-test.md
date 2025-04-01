@@ -4,7 +4,7 @@ This document provides instructions for setting up and creating Postman test scr
 
 ## File Location
 
-- Postman test scripts should be located in the `postman/collections` directory
+- Postman test scripts should be located in the `Tests/postman` directory
 - Test scripts should be named in kebab-case: `<entity>-api-endpoints.postman_collection.json`
 
 ## Setup
@@ -34,11 +34,6 @@ Configure variables at the collection level using the `variable` array in your c
       "key": "tenantId",
       "value": "your_tenant_id_here",
       "type": "string"
-    },
-    {
-      "key": "testId",
-      "value": "",
-      "type": "string"
     }
   ],
   "item": []
@@ -50,7 +45,6 @@ Mandatory variables:
 - `baseUrl` : Base URL of the API
 - `authToken` : Bearer token in Authorization header
 - `tenantId` : X-Tenant-Id header
-- `testId` : Auto-generated ID for test resources
 
 ### Auto-Generating Test Data
 
