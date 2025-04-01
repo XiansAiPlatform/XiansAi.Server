@@ -17,7 +17,7 @@ Models represent the database entities and should follow these patterns:
 class should be in a file named `{name}.cs` within the `Database/Models` folder.
 
 ```csharp
-using MongoDB.Bson.Serialization.Attributes;
+using Database.Bson.Serialization.Attributes;
 
 namespace XiansAi.Server.Database.Models;
 
@@ -181,9 +181,9 @@ public async Task<List<Entity>> SearchAsync(string searchTerm)
 
 See the following files for reference:
 
-- `MongoDB/Models/Instruction.cs` for model implementation
-- `MongoDB/Repositories/InstructionRepository.cs` for repository pattern
-- `MongoDB/DatabaseService.cs` for database service
+- `Database/Models/Instruction.cs` for model implementation
+- `Database/Repositories/InstructionRepository.cs` for repository pattern
+- `Database/DatabaseService.cs` for database service
 
 ## Creating New Repository Components
 
@@ -192,7 +192,7 @@ See the following files for reference:
 1. Define the model class with required properties
 2. Add appropriate BsonElement attributes
 3. Include standard fields (Id, CreatedAt)
-4. Namespace `XiansAi.Server.MongoDB.Models`
+4. Namespace `XiansAi.Server.Database.Models`
 
 ### 2. Create Repository
 
@@ -200,7 +200,7 @@ See the following files for reference:
 2. Add specific query methods
 3. Include appropriate indexes
 4. Implement error handling
-5. Namespace `XiansAi.Server.MongoDB.Repositories`
+5. Namespace `XiansAi.Server.Database.Repositories`
 
 ## Maintenance and Updates
 
