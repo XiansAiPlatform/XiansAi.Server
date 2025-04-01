@@ -84,7 +84,7 @@ Use the following BSON types:
 {
     "$jsonSchema": {
         "bsonType": "object",
-        "required": ["tenant_id", "created_at"],
+        "required": ["tenant_id", "created_at", "created_by"],
         "properties": {
             "tenant_id": {
                 "bsonType": "string",
@@ -93,6 +93,14 @@ Use the following BSON types:
             "created_at": {
                 "bsonType": "date",
                 "description": "Timestamp of creation"
+            },
+            "updated_at": {
+                "bsonType": "date",
+                "description": "Timestamp of last update"
+            },
+            "created_by": {
+                "bsonType": "string",
+                "description": "User ID of the creator"
             }
         }
     }

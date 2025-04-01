@@ -1,0 +1,92 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["tenant_id", "created_at", "created_by", "workflow_id", "activity_id", "activity_name", "workflow_type", "started_time"],
+        "properties": {
+            "tenant_id": {
+                "bsonType": "string",
+                "description": "Tenant ID"
+            },
+            "created_at": {
+                "bsonType": "date",
+                "description": "Timestamp of creation"
+            },
+            "created_by": {
+                "bsonType": "string",
+                "description": "User ID of the creator"
+            },
+            "updated_at": {
+                "bsonType": "date",
+                "description": "Timestamp of last update"
+            },
+            "workflow_id": {
+                "bsonType": "string",
+                "description": "ID of the workflow this activity belongs to"
+            },
+            "activity_id": {
+                "bsonType": "string",
+                "description": "Unique identifier for the activity"
+            },
+            "activity_name": {
+                "bsonType": "string",
+                "description": "Name of the activity"
+            },
+            "workflow_type": {
+                "bsonType": "string",
+                "description": "Type of the workflow"
+            },
+            "started_time": {
+                "bsonType": "date",
+                "description": "Time when the activity started"
+            },
+            "ended_time": {
+                "bsonType": ["date", "null"],
+                "description": "Time when the activity ended"
+            },
+            "task_queue": {
+                "bsonType": ["string", "null"],
+                "description": "Task queue this activity belongs to"
+            },
+            "result": {
+                "bsonType": ["object", "null"],
+                "description": "Result of the activity execution"
+            },
+            "permissions": {
+                "bsonType": ["array", "null"],
+                "items": {
+                    "bsonType": "object",
+                    "required": ["level", "owner"],
+                    "properties": {
+                        "level": {
+                            "bsonType": ["string", "null"],
+                            "description": "Permission level"
+                        },
+                        "owner": {
+                            "bsonType": ["string", "null"],
+                            "description": "Owner of the permission"
+                        }
+                    }
+                }
+            }
+        },
+        "indexes": [
+            {
+                "keys": { "workflow_id": 1, "activity_id": 1 },
+                "unique": true
+            },
+            {
+                "keys": { "started_time": -1 }
+            },
+            {
+                "keys": { "workflow_type": 1 }
+            },
+            {
+                "keys": { "task_queue": 1 }
+            },
+            {
+                "keys": { "ended_time": 1 },
+                "sparse": true
+            }
+        ]
+    }
+} 
