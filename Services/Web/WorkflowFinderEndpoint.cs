@@ -53,10 +53,19 @@ public class WorkflowFinderEndpoint
             var workflowDescription = await workflowHandle.DescribeAsync();
             var fetchHistory = await workflowHandle.FetchHistoryAsync();
 
-            string currentActivity = await workflowHandle.QueryAsync<string>("GetCurrentActivity", Array.Empty<object?>());
-            string lastError = await workflowHandle.QueryAsync<string>("GetLastError", Array.Empty<object?>());
+            string logs;
 
-            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, lastError);
+            try
+            {
+                logs = await workflowHandle.QueryAsync<string>("GetLogs", Array.Empty<object?>());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to query logs for workflow {WorkflowId}", workflowId);
+                logs = null;
+            }
+
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, logs);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -242,7 +251,7 @@ public class WorkflowFinderEndpoint
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string? lastError = null)
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string? logs = null)
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
@@ -291,7 +300,7 @@ public class WorkflowFinderEndpoint
             Owner = userId,
             HistoryLength = workflow.HistoryLength,
             CurrentActivity = currentActivity,
-            LastError = lastError,
+            Logs = logs,
         };
     }
 
@@ -395,6 +404,6 @@ public class WorkflowResponse
     /// <summary>
     /// Gets or sets the last error encountered during workflow execution.
     /// </summary>
-    public string? LastError { get; set; }
+    public string? Logs { get; set; }
 
 }
