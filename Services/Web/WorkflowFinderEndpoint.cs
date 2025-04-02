@@ -53,7 +53,10 @@ public class WorkflowFinderEndpoint
             var workflowDescription = await workflowHandle.DescribeAsync();
             var fetchHistory = await workflowHandle.FetchHistoryAsync();
 
-            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory);
+            string currentActivity = await workflowHandle.QueryAsync<string>("GetCurrentActivity", Array.Empty<object?>());
+            string lastError = await workflowHandle.QueryAsync<string>("GetLastError", Array.Empty<object?>());
+
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, lastError);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -239,7 +242,7 @@ public class WorkflowFinderEndpoint
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null)
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string? lastError = null)
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
@@ -288,6 +291,7 @@ public class WorkflowFinderEndpoint
             Owner = userId,
             HistoryLength = workflow.HistoryLength,
             CurrentActivity = currentActivity,
+            LastError = lastError,
         };
     }
 
@@ -387,5 +391,10 @@ public class WorkflowResponse
     /// Gets or sets the current activity associated with the workflow.
     /// </summary>
     public object? CurrentActivity { get; set; }
+    
     /// <summary>
+    /// Gets or sets the last error encountered during workflow execution.
+    /// </summary>
+    public string? LastError { get; set; }
+
 }
