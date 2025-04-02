@@ -26,6 +26,8 @@ public class WorkflowRequest
 
     [StringLength(100, ErrorMessage = "Assignment name cannot exceed 100 characters")]
     public string? Assignment { get; set; }
+
+    public string? QueueName { get; set; }
 }
 
 
@@ -77,7 +79,7 @@ public class WorkflowStarterEndpoint
             }
 
             var workflowId = _tenantContext.TenantId + ":" + (request?.WorkflowId ?? GenerateWorkflowId(request!.WorkflowType));
-            var options = CreateWorkflowOptions(workflowId, request.WorkflowType, request.AgentName, request.Assignment);
+            var options = CreateWorkflowOptions(workflowId, request.WorkflowType, request.AgentName, request.Assignment, request.QueueName);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
             var handle = await StartWorkflowAsync(request, options);
@@ -118,7 +120,7 @@ public class WorkflowStarterEndpoint
     /// <summary>
     /// Creates workflow options with tenant-specific configuration.
     /// </summary>
-    private WorkflowOptions CreateWorkflowOptions(string workflowId, string workFlowType, string? agent, string? assignment)
+    private WorkflowOptions CreateWorkflowOptions(string workflowId, string workFlowType, string? agent, string? assignment, string? queueName)
     {
         if (string.IsNullOrEmpty(_tenantContext.TenantId))
         {
@@ -146,9 +148,11 @@ public class WorkflowStarterEndpoint
             searchAttributesBuilder.Set(SearchAttributeKey.CreateKeyword(Constants.AssignmentKey), assignment);
         }
 
+        var queueFullName = string.IsNullOrEmpty(queueName) ? workFlowType : queueName + "--" + workFlowType;
+
         var options = new WorkflowOptions
         {
-            TaskQueue = workFlowType,
+            TaskQueue = queueFullName,
             Id = workflowId,
             Memo = memo,
             TypedSearchAttributes = searchAttributesBuilder.ToSearchAttributeCollection()

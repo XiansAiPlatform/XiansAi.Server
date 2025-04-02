@@ -146,6 +146,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<DefinitionsServerEndpoint>();
         builder.Services.AddScoped<DefinitionsEndpoint>();
         builder.Services.AddScoped<RegistrationEndpoint>();
+        builder.Services.AddScoped<TenantEndpoint>();
         return builder;
     }
 
