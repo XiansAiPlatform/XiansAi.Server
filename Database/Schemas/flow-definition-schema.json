@@ -1,0 +1,73 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["tenant_id", "created_at", "created_by", "type_name", "owner", "hash"],
+        "properties": {
+            "tenant_id": {
+                "bsonType": "string",
+                "description": "Tenant ID"
+            },
+            "created_at": {
+                "bsonType": "date",
+                "description": "Timestamp of creation"
+            },
+            "created_by": {
+                "bsonType": "string",
+                "description": "User ID of the creator"
+            },
+            "updated_at": {
+                "bsonType": "date",
+                "description": "Timestamp of last update"
+            },
+            "type_name": {
+                "bsonType": "string",
+                "description": "Name of the flow type"
+            },
+            "owner": {
+                "bsonType": "string",
+                "description": "Owner of the flow definition"
+            },
+            "hash": {
+                "bsonType": "string",
+                "description": "SHA-256 hash of the flow definition content"
+            },
+            "version": {
+                "bsonType": "string",
+                "description": "Version of the flow definition"
+            },
+            "content": {
+                "bsonType": "object",
+                "description": "Flow definition content"
+            },
+            "permissions": {
+                "bsonType": ["array", "null"],
+                "items": {
+                    "bsonType": "object",
+                    "required": ["level", "owner"],
+                    "properties": {
+                        "level": {
+                            "bsonType": ["string", "null"],
+                            "description": "Permission level"
+                        },
+                        "owner": {
+                            "bsonType": ["string", "null"],
+                            "description": "Owner of the permission"
+                        }
+                    }
+                }
+            }
+        },
+        "indexes": [
+            {
+                "keys": { "type_name": 1, "owner": 1 },
+                "unique": true
+            },
+            {
+                "keys": { "created_at": -1 }
+            },
+            {
+                "keys": { "hash": 1, "type_name": 1 }
+            }
+        ]
+    }
+} 

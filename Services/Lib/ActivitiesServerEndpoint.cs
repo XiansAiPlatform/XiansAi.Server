@@ -76,6 +76,8 @@ public class ActivitiesServerEndpoint
 
     public async Task CreateAsync(ActivityRequest request)
     {
+        _logger.LogInformation("Received request to create activity at: {Time}: {Request}", 
+            DateTime.UtcNow, JsonSerializer.Serialize(request));
         var activity = new Activity
         {
             Id = ObjectId.GenerateNewId().ToString(),

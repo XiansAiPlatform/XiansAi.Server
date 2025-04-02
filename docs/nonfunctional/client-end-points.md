@@ -6,7 +6,7 @@ This guide explains how to implement new client endpoints in the XiansAi.Server 
 
 ### 1. Create the Endpoint Class
 
-Create a new endpoint service class in `Services/Web/` directory:
+Create a new endpoint service class in `Services/Web/` directory, unless otherwise specified.
 
 ```csharp
 using MongoDB.Bson;
@@ -14,7 +14,7 @@ using MongoDB.Bson;
 using XiansAi.Server.Database.Models;
 using XiansAi.Server.Database.Repositories;
 
-namespace XiansAi.Server.EndpointExt.WebClient;
+namespace XiansAi.Server.Services.Web;
 
 // Define request DTOs if needed
 public class MyEntityRequest 
@@ -62,10 +62,10 @@ private static WebApplicationBuilder AddEndpoints(this WebApplicationBuilder bui
 
 ### 3. Map the Endpoints
 
-Create a new mapping method in `EndpointExt/WebClientEndpointExtensions.cs`:
+Create a new mapping method in `Endpoints/WebEndpointExtensions.cs`:
 
 ```csharp
-public static class WebClientEndpointExtensions
+public static class WebEndpointExtensions
 {
     public static void MapClientEndpoints(this WebApplication app)
     {
@@ -95,7 +95,7 @@ public static class WebClientEndpointExtensions
 ### 1. Naming Conventions
 
 - Endpoint classes should end with `Endpoint` suffix (e.g., `MyEntityEndpoint`)
-- Place endpoint classes in `EndpointExt/WebClient/` directory
+- Place endpoint classes in `Services/Web/` directory unless otherwise specified
 - Use consistent route naming: `/api/client/{resource}/{action}`
 - Request/response DTOs should be descriptive (e.g., `CreateMyEntityRequest`)
 
@@ -160,8 +160,6 @@ When creating new entities, ensure these standard fields are always initialized:
 - `Id`: Generate using `ObjectId.GenerateNewId().ToString()`
 - `CreatedAt`: Set to current UTC timestamp
 - `UpdatedAt`: Set to same value as CreatedAt for new entities
-- `IsDeleted`: Initialize to `false`
-- `Version`: Initialize to `1`
 
 Example from Project entity:
 
@@ -183,7 +181,7 @@ var project = new Project
 
 ## Complete Endpoint Example
 
-Create a new endpoint class in `EndpointExt/WebClient/`:
+Create a new endpoint class in `Endpoints/Web/`:
 
 Here's a complete example showing common endpoint patterns:
 
@@ -252,7 +250,7 @@ public class MyEntityEndpoint
 
 ## Endpoint Registration
 
-Map all endpoints in `EndpointExt/WebClientEndpointExtensions.cs`:
+Map all endpoints in `Endpoints/WebEndpointExtensions.cs`:
 
 ```csharp
 private static void MapMyEntityEndpoints(this WebApplication app)
