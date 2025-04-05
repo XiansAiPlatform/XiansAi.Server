@@ -10,7 +10,7 @@ public class LibApiEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFix
     {
     }
 
-    [Fact(Skip = "Requires proper certificate authentication")]
+    [Fact]
     public async Task GetCacheValue_WhenKeyNotFound_ReturnsNoContent()
     {
         // Arrange
@@ -23,7 +23,7 @@ public class LibApiEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFix
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
     }
 
-    [Fact(Skip = "Requires proper certificate authentication")]
+    [Fact]
     public async Task SetAndGetCacheValue_ReturnsExpectedResult()
     {
         // Arrange
@@ -45,7 +45,7 @@ public class LibApiEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFix
         content.GetProperty("test").GetString().Should().Be("value");
     }
 
-    [Fact(Skip = "Requires proper certificate authentication")]
+    [Fact]
     public async Task DeleteCacheValue_WhenKeyExists_ReturnsNoContent()
     {
         // Arrange

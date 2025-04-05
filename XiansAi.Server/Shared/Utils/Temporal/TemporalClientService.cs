@@ -81,7 +81,7 @@ public class TemporalClientService : ITemporalClientService
                 DisplayName = "XiansAi API Key",
                 Description = "API key used for XiansAi to work with this namespace",
                 OwnerId = "8b40c2ac66664fce8c6e958ec0f884bf",
-                OwnerType = "user",
+                OwnerType = OwnerType.User,
                 ExpiryTime = Timestamp.FromDateTime(DateTime.UtcNow.AddDays(90)),
             }
         };
@@ -97,11 +97,11 @@ public class TemporalClientService : ITemporalClientService
         var access = new Access();
         access.NamespaceAccesses.Add(name.ToLower(), new NamespaceAccess
         {
-            Permission = "admin"
+            Permission = NamespaceAccess.Types.Permission.Admin
         });
         access.AccountAccess = new AccountAccess
         {
-            Role = "admin"
+            Role = AccountAccess.Types.Role.Admin
         };
 
         var request = new CreateServiceAccountRequest
