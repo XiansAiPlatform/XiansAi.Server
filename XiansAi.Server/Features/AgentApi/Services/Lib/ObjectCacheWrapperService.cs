@@ -4,11 +4,37 @@ using System.Text.Json;
 
 namespace Features.AgentApi.Services.Lib;
 
+/// <summary>
+/// Options for cache entry expiration settings
+/// </summary>
+public class CacheOptions
+{
+    /// <summary>
+    /// Absolute expiration time in minutes after which the cache entry will expire.
+    /// Default is 24 hours (1440 minutes) if neither expiration type is specified.
+    /// </summary>
+    public int? RelativeExpirationMinutes { get; set; }
+    
+    /// <summary>
+    /// Sliding expiration time in minutes. The cache entry will expire if not accessed for this amount of time.
+    /// No default value.
+    /// </summary>
+    public int? SlidingExpirationMinutes { get; set; }
+}
+
+/// <summary>
+/// Wrapper service for cache operations accessible via API endpoints
+/// </summary>
 public class ObjectCacheWrapperService
 {
     private readonly ObjectCacheService _objectCacheService;
     private readonly ILogger<ObjectCacheWrapperService> _logger;
 
+    /// <summary>
+    /// Creates a new instance of the ObjectCacheWrapperService
+    /// </summary>
+    /// <param name="objectCacheService">The underlying cache service</param>
+    /// <param name="logger">Logger for the service</param>
     public ObjectCacheWrapperService(
         ObjectCacheService objectCacheService,
         ILogger<ObjectCacheWrapperService> logger)
@@ -17,6 +43,11 @@ public class ObjectCacheWrapperService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Gets a value from cache by key
+    /// </summary>
+    /// <param name="key">The cache key to retrieve</param>
+    /// <returns>The cached value or NotFound if not found</returns>
     public async Task<IResult> GetValue(string key)
     {
         _logger.LogInformation("Getting value for key: {Key}", key);
@@ -31,7 +62,15 @@ public class ObjectCacheWrapperService
         return Results.Ok(value);
     }
 
-    public async Task<IResult> SetValue(string key, [FromBody] JsonElement value)
+    /// <summary>
+    /// Sets a value in cache with optional expiration settings
+    /// </summary>
+    /// <param name="key">The cache key</param>
+    /// <param name="value">The value to cache</param>
+    /// <param name="options">Optional expiration settings. 
+    /// If not provided, default expiration of 24 hours will be used.</param>
+    /// <returns>Success or error result</returns>
+    public async Task<IResult> SetValue(string key, [FromBody] JsonElement value, CacheOptions? options = null)
     {
         _logger.LogInformation("Setting value for key: {Key}, Value: {Value}", key, value.ToString());
         
@@ -41,7 +80,19 @@ public class ObjectCacheWrapperService
             return Results.BadRequest("Value cannot be null");
         }
 
-        var success = await _objectCacheService.SetAsync(key, value);
+        TimeSpan? relativeExpiration = null;
+        if (options?.RelativeExpirationMinutes != null)
+        {
+            relativeExpiration = TimeSpan.FromMinutes(options.RelativeExpirationMinutes.Value);
+        }
+            
+        TimeSpan? slidingExpiration = null;
+        if (options?.SlidingExpirationMinutes != null)
+        {
+            slidingExpiration = TimeSpan.FromMinutes(options.SlidingExpirationMinutes.Value);
+        }
+
+        var success = await _objectCacheService.SetAsync(key, value, relativeExpiration, slidingExpiration);
         if (!success)
         {
             _logger.LogError("Failed to set value for key: {Key}, Value: {Value}", key, value.ToString());
@@ -52,6 +103,11 @@ public class ObjectCacheWrapperService
         return Results.Ok(new { message = "Value set successfully" });
     }
 
+    /// <summary>
+    /// Deletes a value from cache by key
+    /// </summary>
+    /// <param name="key">The cache key to delete</param>
+    /// <returns>Success or error result</returns>
     public async Task<IResult> DeleteValue(string key)
     {
         _logger.LogInformation("Deleting value for key: {Key}", key);

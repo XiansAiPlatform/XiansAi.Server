@@ -18,6 +18,9 @@ public static class SharedConfiguration
         builder.Services.AddOpenApi();
         builder.Services.AddControllers();
         
+        // Add health checks
+        builder.Services.AddHealthChecks();
+        
         return builder;
     }
     
@@ -92,16 +95,26 @@ public static class SharedConfiguration
         // Configure common middleware for both services
         if (app.Environment.IsDevelopment())
         {
-            app.UseSwagger();
-            app.UseSwaggerUI();
-            app.MapOpenApi();
+            // Development-only middleware here (if any)
         }
+        
+        // Configure Swagger and OpenAPI for all environments
+        app.UseSwagger();
+        app.UseSwaggerUI();
+        app.MapOpenApi();
         
         app.UseCors("AllowAll");
         app.UseExceptionHandler("/error");
         
         app.UseAuthentication();
         app.UseAuthorization();
+        
+        // Add health check endpoint
+        app.MapHealthChecks("/api/health").WithOpenApi(operation => {
+            operation.Summary = "API Health Check";
+            operation.Description = "Returns 200 OK when the API is running";
+            return operation;
+        });
         
         return app;
     }

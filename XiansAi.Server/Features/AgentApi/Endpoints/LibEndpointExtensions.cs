@@ -1,4 +1,3 @@
-using Features.AgentApi.Services.Agent;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Services.Lib;
@@ -26,21 +25,52 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Get a value from cache";
             operation.Description = "Retrieves a value from the cache by its key";
+            
+            operation.Parameters[0].Description = "The unique identifier key used to retrieve the cached value";
+            
             return operation;
         });
 
         app.MapPost("/api/client/cache/{key}", async (
             string key,
             [FromBody] JsonElement value,
+            [FromQuery] int? relativeExpirationMinutes,
+            [FromQuery] int? slidingExpirationMinutes,
             [FromServices] ObjectCacheWrapperService endpoint) =>
         {
-            return await endpoint.SetValue(key, value);
+            var options = new CacheOptions
+            {
+                RelativeExpirationMinutes = relativeExpirationMinutes,
+                SlidingExpirationMinutes = slidingExpirationMinutes
+            };
+            
+            return await endpoint.SetValue(key, value, options);
         })
         .WithName("Set Cache Value")
         .RequiresCertificate()
         .WithOpenApi(operation => {
             operation.Summary = "Set a value in cache";
-            operation.Description = "Stores a value in the cache with the specified key";
+            operation.Description = "Stores a value in the cache with the specified key and optional expiration settings";
+            
+            // Document path parameter
+            operation.Parameters[0].Description = "The unique identifier key used to store the cached value";
+            
+            // Document query parameters
+            var relativeExpirationParam = operation.Parameters.First(p => p.Name == "relativeExpirationMinutes");
+            relativeExpirationParam.Description = "Optional. Absolute expiration time in minutes after which the cache entry will expire. Default is 24 hours (1440 minutes) if neither expiration type is specified.";
+            relativeExpirationParam.Required = false;
+            
+            var slidingExpirationParam = operation.Parameters.First(p => p.Name == "slidingExpirationMinutes");
+            slidingExpirationParam.Description = "Optional. Sliding expiration time in minutes. The cache entry will expire if not accessed for this amount of time. No default value.";
+            slidingExpirationParam.Required = false;
+            
+            // Document request body
+            if (operation.RequestBody != null && operation.RequestBody.Content.ContainsKey("application/json"))
+            {
+                operation.RequestBody.Description = "The value to store in cache. Must be a valid JSON object or primitive.";
+                operation.RequestBody.Required = true;
+            }
+            
             return operation;
         });
 
@@ -55,6 +85,9 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Delete a value from cache";
             operation.Description = "Removes a value from the cache by its key";
+            
+            operation.Parameters[0].Description = "The unique identifier key of the cached value to delete";
+            
             return operation;
         });
     }
