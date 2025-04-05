@@ -4,7 +4,7 @@ using XiansAi.Server.Services.Lib;
 namespace XiansAi.Server.Endpoints;
 
 /// <summary>
-/// Provides extension methods for registering agent-related API endpoints.
+/// Provides extension methods for registering agent-communication API endpoints.
 /// </summary>
 public static class AgentEndpointExtensions
 {

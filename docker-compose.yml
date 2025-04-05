@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # Web API service
+  webapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - SERVICE_TYPE=--web
+      - ASPNETCORE_ENVIRONMENT=Development
+    ports:
+      - "5000:80"
+      - "5001:443"
+    networks:
+      - xiansai-network
+    volumes:
+      - ./.cert:/app/.cert
+    restart: unless-stopped
+
+  # Library API service
+  libapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - SERVICE_TYPE=--lib
+      - ASPNETCORE_ENVIRONMENT=Development
+    ports:
+      - "5010:80"
+      - "5011:443"
+    networks:
+      - xiansai-network
+    volumes:
+      - ./.cert:/app/.cert
+    restart: unless-stopped
+
+  # Combined service (all APIs)
+  # Uncomment this to run all services in a single container
+  # allapi:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - SERVICE_TYPE=--all
+  #     - ASPNETCORE_ENVIRONMENT=Development
+  #   ports:
+  #     - "5020:80"
+  #     - "5021:443"
+  #   networks:
+  #     - xiansai-network
+  #   volumes:
+  #     - ./.cert:/app/.cert
+  #   restart: unless-stopped
+
+networks:
+  xiansai-network:
+    driver: bridge 
