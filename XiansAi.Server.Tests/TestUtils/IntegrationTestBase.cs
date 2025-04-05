@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using MongoDB.Driver;
 using System.Net.Http.Headers;
 
-namespace XiansAi.Server.Tests.IntegrationTests;
+namespace XiansAi.Server.Tests.TestUtils;
 
 public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
 {

@@ -37,7 +37,7 @@ public class WorkflowSignalService
     private readonly ITenantContext _tenantContext;
     
     /// <summary>
-    /// Initializes a new instance of the <see cref="WorkflowSignalEndpoint"/> class.
+    /// Initializes a new instance of the <see cref="WorkflowSignalService"/> class.
     /// </summary>
     /// <param name="clientService">The service for obtaining Temporal clients.</param>
     /// <param name="logger">The logger for recording operational information.</param>

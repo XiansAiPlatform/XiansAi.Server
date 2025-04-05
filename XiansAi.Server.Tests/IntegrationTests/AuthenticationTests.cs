@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using XiansAi.Server.Tests.TestUtils;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Features.AgentApi.Endpoints;
 
 namespace XiansAi.Server.Tests.IntegrationTests;
 
@@ -30,9 +31,10 @@ public class AuthenticationTests : IntegrationTestBase, IClassFixture<MongoDbFix
     public async Task AccessProtectedEndpoint_WithValidCertificate_ReturnsSuccess()
     {
         // Arrange - This client already has the certificate from the base class
+        var request = new CacheKeyRequest { Key = "any-key" };
         
         // Act - Access endpoint that requires certificate auth
-        var response = await _client.GetAsync("/api/client/cache/any-key");
+        var response = await _client.PostAsJsonAsync("/api/client/cache/get", request);
         
         // Assert - Should be not found (404) rather than unauthorized (401),
         // which means the auth succeeded but the key wasn't found
@@ -46,9 +48,10 @@ public class AuthenticationTests : IntegrationTestBase, IClassFixture<MongoDbFix
     public async Task AccessProtectedEndpoint_WithoutCertificate_ReturnsUnauthorized()
     {
         // Arrange - Use client without certificate
+        var request = new CacheKeyRequest { Key = "any-key" };
         
         // Act - Access endpoint that requires certificate auth
-        var response = await _clientWithoutCert.GetAsync("/api/client/cache/any-key");
+        var response = await _clientWithoutCert.PostAsJsonAsync("/api/client/cache/get", request);
         
         // Assert - Should be unauthorized
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.Unauthorized);

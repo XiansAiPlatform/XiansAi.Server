@@ -37,6 +37,7 @@ public class WorkflowFinderEndpoint
     /// Retrieves a specific workflow by its ID.
     /// </summary>
     /// <param name="workflowId">The unique identifier of the workflow.</param>
+    /// <param name="runId">Optional run identifier for the workflow.</param>
     /// <returns>A result containing the workflow details if found, or an error response.</returns>
     public async Task<IResult> GetWorkflow(string workflowId, string? runId = null)
     {
@@ -76,6 +77,7 @@ public class WorkflowFinderEndpoint
     /// <param name="startTime">Optional start time filter for workflow execution.</param>
     /// <param name="endTime">Optional end time filter for workflow execution.</param>
     /// <param name="owner">Optional owner filter for workflows.</param>
+    /// <param name="status">Optional status filter for workflows.</param>
     /// <returns>A result containing the list of filtered workflows.</returns>
     public async Task<IResult> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status)
     {
@@ -121,6 +123,8 @@ public class WorkflowFinderEndpoint
     /// </summary>
     /// <param name="startTime">The start time of the range.</param>
     /// <param name="endTime">The end time of the range.</param>
+    /// <param name="status">Optional status filter for workflows.</param>
+    /// <param name="owner">Optional owner filter for workflows.</param>
     /// <returns>A query string for temporal workflow filtering.</returns>
     private string BuildQuery(DateTime? startTime, DateTime? endTime, string? status, string? owner)
     {
