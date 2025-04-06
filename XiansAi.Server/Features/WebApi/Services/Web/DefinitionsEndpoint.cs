@@ -1,4 +1,4 @@
-using Features.Shared.Auth;
+using Shared.Auth;
 using XiansAi.Server.Auth;
 using XiansAi.Server.Database.Repositories;
 

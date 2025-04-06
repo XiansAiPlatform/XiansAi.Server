@@ -2,7 +2,7 @@ using OpenAI.Chat;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using XiansAi.Server.Auth;
-using Features.Shared.Auth;
+using Shared.Auth;
 namespace XiansAi.Server.GenAi;
 
 public interface IOpenAIClientService

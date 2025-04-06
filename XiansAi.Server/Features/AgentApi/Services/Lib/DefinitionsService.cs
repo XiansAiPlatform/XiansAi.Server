@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Features.AgentApi.Data.Repositories;
 using MongoDB.Driver;
 using XiansAi.Server.GenAi;
-using Features.Shared.Auth;
+using Shared.Auth;
 
 namespace Features.AgentApi.Services.Lib;
 

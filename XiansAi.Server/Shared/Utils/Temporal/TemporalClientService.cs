@@ -7,7 +7,7 @@ using Temporalio.Api.Cloud.Namespace.V1;
 using Temporalio.Api.Cloud.Identity.V1;
 using Google.Protobuf.Collections;
 using Google.Protobuf.WellKnownTypes;
-using Features.Shared.Auth;
+using Shared.Auth;
 
 namespace XiansAi.Server.Temporal;
 

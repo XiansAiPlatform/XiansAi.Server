@@ -1,6 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using Features.Shared.Auth;
+using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
 using XiansAi.Server.Auth;
 

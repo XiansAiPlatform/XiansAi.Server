@@ -1,4 +1,4 @@
-using Features.Shared.Auth;
+using Shared.Auth;
 using XiansAi.Server.Auth;
 using XiansAi.Server.Database;
 using XiansAi.Server.GenAi;
@@ -28,8 +28,7 @@ public static class SharedServices
         // Register MongoDB client
         services.AddScoped<IMongoDbClientService>(sp =>
             new MongoDbClientService(
-                sp.GetRequiredService<ITenantContext>().GetMongoDBConfig(),
-                sp.GetRequiredService<ITenantContext>()));
+                sp.GetRequiredService<MongoDBConfig>()));
         
         // Register database service
         services.AddScoped<IDatabaseService, DatabaseService>();

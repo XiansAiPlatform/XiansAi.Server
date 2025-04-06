@@ -1,6 +1,6 @@
 using MongoDB.Driver;
 using System.Collections.Concurrent;
-using Features.Shared.Auth;
+using Shared.Auth;
 
 namespace XiansAi.Server.Database;
 
@@ -13,15 +13,11 @@ public interface IMongoDbClientService
 
 public class MongoDbClientService : IMongoDbClientService
 {
-    private static readonly ConcurrentDictionary<string, IMongoClient> _mongoClients = new();
     public MongoDBConfig Config { get; init; }
-    private readonly ITenantContext _tenantContext;
 
-
-    public MongoDbClientService(MongoDBConfig config, ITenantContext tenantContext)
+    public MongoDbClientService(MongoDBConfig config)
     {
         Config = config;
-        _tenantContext = tenantContext;
     }
 
     public IMongoDatabase GetDatabase()
@@ -38,13 +34,9 @@ public class MongoDbClientService : IMongoDbClientService
 
     public IMongoClient GetClient()
     {
-        var tenantId = _tenantContext.TenantId;
-        return _mongoClients.GetOrAdd(tenantId, _ => 
-        {
-            var connectionString = Config.ConnectionString;
-            var settings = MongoClientSettings.FromConnectionString(connectionString);
-            return new MongoClient(settings);
-        });
+        var connectionString = Config.ConnectionString;
+        var settings = MongoClientSettings.FromConnectionString(connectionString);
+        return new MongoClient(settings);
     }
 
 }

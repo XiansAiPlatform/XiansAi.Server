@@ -2,6 +2,8 @@ using DotNetEnv;
 using Features.AgentApi.Configuration;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
+using XiansAi.Server.Database;
+using Shared.Auth;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.
@@ -70,6 +72,11 @@ public class Program
 
         // Register microservice-specific services based on service type
         ConfigureServicesByType(builder, serviceType);
+        
+        // Register the TenantContext
+        builder.Services.AddScoped<ITenantContext, TenantContext>();
+        // Register the MongoDbContext
+        builder.Services.AddScoped<IMongoDbContext, MongoDbContext>();
         
         return builder;
     }

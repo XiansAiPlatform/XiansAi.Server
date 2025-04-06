@@ -4,7 +4,7 @@ using XiansAi.Server.Auth;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using Temporalio.Common;
-using Features.Shared.Auth;
+using Shared.Auth;
 
 namespace Features.WebApi.Services.Web;
 

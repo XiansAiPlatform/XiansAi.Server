@@ -2,7 +2,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using XiansAi.Server.Auth;
 using XiansAi.Server.Temporal;
 using Features.WebApi.Auth;
-using Features.Shared.Auth;
+using Shared.Auth;
 
 namespace Features.WebApi.Services.Public;
 

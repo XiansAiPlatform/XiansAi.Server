@@ -1,7 +1,7 @@
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
 using XiansAi.Server.Auth;
-using Features.Shared.Auth;
+using Shared.Auth;
 
 namespace Features.WebApi.Services.Web;
 

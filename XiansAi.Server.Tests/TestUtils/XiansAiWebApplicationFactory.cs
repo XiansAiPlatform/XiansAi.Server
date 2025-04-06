@@ -3,8 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using XiansAi.Server.Database;
-using Features.Shared.Auth;
-using Features.AgentApi.Auth;
+using Shared.Auth;
 
 namespace XiansAi.Server.Tests.TestUtils;
 
@@ -23,14 +22,8 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
         {
             // Remove existing MongoDB services
             RemoveService<IMongoDbClientService>(services);
-            RemoveService<ITenantContext>(services);
-            
             // Add test services
             services.AddSingleton<IMongoDbClientService>(_mongoFixture.MongoClientService);
-            services.AddSingleton(_mongoFixture.TenantContextMock.Object);
-            
-            // Do not replace the authentication system - use the one from Program.cs
-            // which already has Certificate authentication configured
         });
     }
 

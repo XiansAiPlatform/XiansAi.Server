@@ -1,4 +1,4 @@
-using Features.Shared.Auth;
+using Shared.Auth;
 using Temporalio.Client;
 using Temporalio.Converters;
 using XiansAi.Server.Auth;

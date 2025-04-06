@@ -1,5 +1,5 @@
 using XiansAi.Server.Temporal;
-using Features.Shared.Auth;
+using Shared.Auth;
 
 namespace Features.AgentApi.Services.Agent;
 
