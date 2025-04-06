@@ -15,7 +15,7 @@ public static class SharedServices
         services.AddStackExchangeRedisCache(options =>
         {
             options.Configuration = configuration.GetRequiredSection("RedisCache:ConnectionString").Value;
-            options.InstanceName = "XiansAi:";
+            options.InstanceName = configuration.GetRequiredSection("RedisCache:InstanceName").Value;
         });
 
         // Register core services
