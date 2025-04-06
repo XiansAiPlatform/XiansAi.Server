@@ -129,55 +129,6 @@ public static class LibEndpoints
             
             return operation;
         });
-
-        app.MapPost("/api/server/activities/endtime", async (
-            [FromBody] ActivityEndTimeRequest request,
-            [FromServices] ActivityHistoryService endpoint) =>
-        {
-            return await endpoint.UpdateEndTimeAsync(request);
-        })
-        .RequiresCertificate()
-        .WithOpenApi(operation => {
-            operation.Summary = "Update activity end time";
-            operation.Description = "Updates the end time and result of an existing activity";
-            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
-            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
-            
-            return operation;
-        });
-
-        app.MapGet("/api/server/activities/workflow/{workflowId}", async (
-            string workflowId,
-            [FromServices] ActivityHistoryService endpoint) =>
-        {
-            return await endpoint.GetByWorkflowIdAsync(workflowId);
-        })
-        .RequiresCertificate()
-        .WithOpenApi(operation => {
-            operation.Summary = "Get activities by workflow ID";
-            operation.Description = "Retrieves all activities associated with a specific workflow";
-            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
-            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
-            
-            return operation;
-        });
-
-        app.MapGet("/api/server/activities/workflow/{workflowId}/activity/{activityId}", async (
-            string workflowId,
-            string activityId,
-            [FromServices] ActivityHistoryService endpoint) =>
-        {
-            return await endpoint.GetActivityAsync(workflowId, activityId);
-        })
-        .RequiresCertificate()
-        .WithOpenApi(operation => {
-            operation.Summary = "Get specific activity";
-            operation.Description = "Retrieves a specific activity by its workflow ID and activity ID";
-            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
-            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
-            
-            return operation;
-        });
     }
 
     private static void MapDefinitionsEndpoints(this WebApplication app)

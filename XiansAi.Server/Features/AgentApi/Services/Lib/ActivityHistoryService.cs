@@ -40,17 +40,6 @@ public class ActivityHistoryRequest
     [JsonPropertyName("result")]
     public JsonElement? Result { get; set; }
 
-    [Obsolete("Maintained for backward compatibility only. Use AgentToolNames instead.")]
-    [JsonPropertyName("agentNames")]
-    public List<string>? AgentNames {
-        get {
-            return AgentToolNames;
-        }
-        set {
-            AgentToolNames = value;
-        }
-    }
-
     [JsonPropertyName("agentToolNames")]
     public List<string>? AgentToolNames { get; set; }
 
@@ -108,47 +97,6 @@ public class ActivityHistoryService
         await _activityHistoryRepository.CreateAsync(activity);
     }
 
-    public async Task<IResult> UpdateEndTimeAsync(ActivityEndTimeRequest request)
-    {
-        _logger.LogInformation("Updating end time for activity {ActivityId} to {EndTime}", 
-            request.ActivityId, request.EndTime);
-        
-        var result = ConvertJsonElementToBsonCompatible(request.Result);
-        if (result == null)
-        {
-            return Results.BadRequest(new { message = "Result is required" });
-        }
-        var success = await _activityHistoryRepository.UpdateEndTimeAsync(request.ActivityId, request.EndTime, result);
-        
-        if (success)
-        {
-            return Results.Ok(new { message = "Activity end time updated successfully" });
-        }
-        else
-        {
-            return Results.NotFound(new { message = $"Activity with ID {request.ActivityId} not found" });
-        }
-    }
-
-    public async Task<IResult> GetByWorkflowIdAsync(string workflowId)
-    {
-        _logger.LogInformation("Getting activities for workflow {WorkflowId}", workflowId);
-        var activities = await _activityHistoryRepository.GetByWorkflowIdAsync(workflowId);
-        return Results.Ok(activities);
-    }
-
-    public async Task<IResult> GetActivityAsync(string workflowId, string activityId)
-    {
-        _logger.LogInformation("Getting activity {ActivityId} for workflow {WorkflowId}", activityId, workflowId);
-        var activity = await _activityHistoryRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
-        
-        if (activity == null)
-        {
-            return Results.NotFound(new { message = $"Activity {activityId} in workflow {workflowId} not found" });
-        }
-        
-        return Results.Ok(activity);
-    }
 
     private Dictionary<string, object?> ConvertJsonElementToBsonCompatible(Dictionary<string, JsonElement?>? elements)
     {

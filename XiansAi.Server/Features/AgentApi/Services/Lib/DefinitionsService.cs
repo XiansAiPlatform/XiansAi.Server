@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 using Features.AgentApi.Data.Repositories;
 using MongoDB.Driver;
 using XiansAi.Server.GenAi;
-using XiansAi.Server.Auth;
 using Features.Shared.Auth;
 
 namespace Features.AgentApi.Services.Lib;
@@ -50,17 +49,6 @@ public class ActivityDefinitionRequest
     [Required]
     [JsonPropertyName("activityName")]
     public required string ActivityName { get; set; }
-
-    [Obsolete("Maintained for backward compatibility only. Use AgentToolNames instead.")]
-    [JsonPropertyName("agentNames")]
-    public List<string>? AgentNames {
-        get {
-            return AgentToolNames;
-        }
-        set {
-            AgentToolNames = value;
-        }
-    }
 
     [JsonPropertyName("agentToolNames")]
     public List<string>? AgentToolNames { get; set; }
