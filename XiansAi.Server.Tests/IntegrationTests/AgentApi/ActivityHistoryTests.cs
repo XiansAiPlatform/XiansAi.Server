@@ -123,7 +123,7 @@ public class ActivityHistoryTests : IntegrationTestBase, IClassFixture<MongoDbFi
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
         
         // Get MongoDB collection and verify data was inserted
-        var collection = _database.GetCollection<ActivityHistory>("activity-history");
+        var collection = _database.GetCollection<ActivityHistory>("activity_history");
         var filter = Builders<ActivityHistory>.Filter.Eq("activity_id", uniqueActivityId);
         
         // Allow a few retries as there might be a slight delay in the background task processing

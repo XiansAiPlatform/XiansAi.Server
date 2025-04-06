@@ -13,7 +13,7 @@ public static class HealthConfiguration
             operation.Tags = new List<OpenApiTag> { new() { Name = "System" }};
             return operation;
         });
-        
+          
         return app;
     }
 } 

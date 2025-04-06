@@ -33,17 +33,15 @@ public class Program
 
             // Parse command line args to determine which services to run
             var serviceType = ParseServiceTypeFromArgs(args);
+            var loggerFactory = LoggerFactory.Create(logBuilder => logBuilder.AddConsole());
             
             // Initialize logger
-            _logger = LoggerFactory.Create(logBuilder => logBuilder.AddConsole())
-                .CreateLogger<Program>();
-            
-            _logger.LogInformation("Starting XiansAi.Server application");
+            _logger = loggerFactory.CreateLogger<Program>();
             _logger.LogInformation($"Starting service with type: {serviceType}");
 
             // Build and run the application
-            var builder = CreateApplicationBuilder(args, serviceType);
-            var app = ConfigureApplication(builder, serviceType);
+            var builder = CreateApplicationBuilder(args, serviceType, loggerFactory);
+            var app = ConfigureApplication(builder, serviceType, loggerFactory);
             
             // Run the app
             _logger.LogInformation("Application configured successfully, starting server");
@@ -59,7 +57,7 @@ public class Program
     /// <summary>
     /// Creates and configures the WebApplicationBuilder with appropriate services.
     /// </summary>
-    private static WebApplicationBuilder CreateApplicationBuilder(string[] args, ServiceType serviceType)
+    private static WebApplicationBuilder CreateApplicationBuilder(string[] args, ServiceType serviceType, ILoggerFactory loggerFactory )
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.LoadServiceConfiguration(serviceType);
@@ -71,7 +69,7 @@ public class Program
         builder.Logging.AddAzureWebAppDiagnostics();
 
         // Register microservice-specific services based on service type
-        ConfigureServicesByType(builder, serviceType);
+        ConfigureServicesByType(builder, serviceType, loggerFactory);
         
         // Register the TenantContext
         builder.Services.AddScoped<ITenantContext, TenantContext>();
@@ -84,7 +82,7 @@ public class Program
     /// <summary>
     /// Configures services based on the selected service type.
     /// </summary>
-    private static void ConfigureServicesByType(WebApplicationBuilder builder, ServiceType serviceType)
+    private static void ConfigureServicesByType(WebApplicationBuilder builder, ServiceType serviceType, ILoggerFactory loggerFactory)
     {
         switch (serviceType)
         {
@@ -109,7 +107,7 @@ public class Program
     /// <summary>
     /// Configures the web application with appropriate middleware and endpoints.
     /// </summary>
-    private static WebApplication ConfigureApplication(WebApplicationBuilder builder, ServiceType serviceType)
+    private static WebApplication ConfigureApplication(WebApplicationBuilder builder, ServiceType serviceType, ILoggerFactory loggerFactory)
     {
         var app = builder.Build();
 
@@ -117,7 +115,7 @@ public class Program
         app.UseSharedMiddleware();
 
         // Configure service-specific endpoints and middleware
-        ConfigureEndpointsByType(app, serviceType);
+        ConfigureEndpointsByType(app, serviceType, loggerFactory);
 
         // Map controllers (shared between services)
         app.MapControllers();
@@ -131,7 +129,7 @@ public class Program
     /// <summary>
     /// Configures endpoints and middleware based on the selected service type.
     /// </summary>
-    private static void ConfigureEndpointsByType(WebApplication app, ServiceType serviceType)
+    private static void ConfigureEndpointsByType(WebApplication app, ServiceType serviceType, ILoggerFactory loggerFactory)
     {
         switch (serviceType)
         {
@@ -142,7 +140,7 @@ public class Program
             case ServiceType.LibApi:
                 // Apply LibApi specific middleware first
                 app.UseLibApiMiddleware();
-                app.UseLibApiEndpoints();
+                app.UseLibApiEndpoints(loggerFactory);
                 break;
             
             case ServiceType.All:
@@ -150,7 +148,7 @@ public class Program
                 app.UseWebApiEndpoints();
                 // Apply LibApi specific middleware first
                 app.UseLibApiMiddleware();
-                app.UseLibApiEndpoints();
+                app.UseLibApiEndpoints(loggerFactory);
                 break;
         }
     }

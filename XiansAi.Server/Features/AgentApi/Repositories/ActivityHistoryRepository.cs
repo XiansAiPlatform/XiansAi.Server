@@ -15,7 +15,7 @@ public class ActivityHistoryRepository
         IBackgroundTaskService backgroundTaskService,
         ILogger<ActivityHistoryRepository> logger)
     {
-        _activities = database.GetCollection<ActivityHistory>("activity-history");
+        _activities = database.GetCollection<ActivityHistory>("activity_history");
         _backgroundTaskService = backgroundTaskService;
         _logger = logger;
     }

@@ -10,7 +10,7 @@ public class InstructionRepository
 
     public InstructionRepository(IMongoDatabase database)
     {
-        _instructions = database.GetCollection<Instruction>("instructions");
+        _instructions = database.GetCollection<Instruction>("knowledge");
     }
 
     public async Task<Instruction> GetLatestInstructionByNameAsync(string name)

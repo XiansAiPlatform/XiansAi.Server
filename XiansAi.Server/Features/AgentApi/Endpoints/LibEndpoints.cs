@@ -21,10 +21,16 @@ public class CacheSetRequest
     public int? SlidingExpirationMinutes { get; set; }
 }
 
+// Non-static class for logger type parameter
+public class LibEndpointLogger {}
+
 public static class LibEndpoints
 {
-    public static void MapLibEndpoints(this WebApplication app)
+    private static ILogger<LibEndpointLogger> _logger = null!;
+
+    public static void MapLibEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
     {
+        _logger = loggerFactory.CreateLogger<LibEndpointLogger>();
         MapObjectCacheEndpoints(app);
         MapKnowledgeEndpoints(app);
         MapActivityHistoryEndpoints(app);
@@ -97,6 +103,7 @@ public static class LibEndpoints
             [FromQuery] string name,
             [FromServices] KnowledgeService endpoint) =>
         {
+            _logger.LogInformation("Getting latest knowledge for -{name}-", name);
             var result = await endpoint.GetLatestKnowledge(name);
             return result;
         })

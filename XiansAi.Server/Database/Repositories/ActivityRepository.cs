@@ -10,7 +10,7 @@ public class ActivityRepository
 
     public ActivityRepository(IMongoDatabase database)
     {
-        _activities = database.GetCollection<Activity>("activities");
+        _activities = database.GetCollection<Activity>("activity_history");
     }
 
     public async Task<Activity> GetByWorkflowIdAndActivityIdAsync(string workflowId, string activityId)

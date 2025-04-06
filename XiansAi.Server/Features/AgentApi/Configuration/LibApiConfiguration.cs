@@ -4,7 +4,7 @@ using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Repositories;
 using XiansAi.Server.Utils;
-
+using Microsoft.Extensions.Logging;
 namespace Features.AgentApi.Configuration;
 
 public static class LibApiConfiguration
@@ -63,11 +63,11 @@ public static class LibApiConfiguration
         return builder;
     }
     
-    public static WebApplication UseLibApiEndpoints(this WebApplication app)
+    public static WebApplication UseLibApiEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
     {
         // Map Lib API endpoints
-        LibEndpoints.MapLibEndpoints(app);
-        AgentEndpoints.MapAgentEndpoints(app);
+        LibEndpoints.MapLibEndpoints(app, loggerFactory);
+        AgentEndpoints.MapAgentEndpoints(app, loggerFactory);
         
         return app;
     }
