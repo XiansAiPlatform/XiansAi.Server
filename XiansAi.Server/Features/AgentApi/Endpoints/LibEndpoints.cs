@@ -27,13 +27,13 @@ public static class LibEndpoints
     {
         MapObjectCacheEndpoints(app);
         MapInstructionsEndpoints(app);
-        MapActivitiesEndpoints(app);
+        MapActivityHistoryEndpoints(app);
         MapDefinitionsEndpoints(app);
     }
 
     private static void MapObjectCacheEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/client/cache/get", async (
+        app.MapPost("/api/agent/cache/get", async (
             [FromBody] CacheKeyRequest request,
             [FromServices] ObjectCacheWrapperService endpoint) =>
         {
@@ -50,7 +50,7 @@ public static class LibEndpoints
             return operation;
         });
 
-        app.MapPost("/api/client/cache/set", async (
+        app.MapPost("/api/agent/cache/set", async (
             [FromBody] CacheSetRequest request,
             [FromServices] ObjectCacheWrapperService endpoint) =>
         {
@@ -73,7 +73,7 @@ public static class LibEndpoints
             return operation;
         });
 
-        app.MapPost("/api/client/cache/delete", async (
+        app.MapPost("/api/agent/cache/delete", async (
             [FromBody] CacheKeyRequest request,
             [FromServices] ObjectCacheWrapperService endpoint) =>
         {
@@ -111,14 +111,26 @@ public static class LibEndpoints
         });
     }
 
-    private static void MapActivitiesEndpoints(this WebApplication app)
+    private static void MapActivityHistoryEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/server/activities", async (
+        app.MapPost("/api/agent/activity-history", (
+            [FromServices] ActivityHistoryService endpoint,
             [FromBody] ActivityHistoryRequest request,
-            [FromServices] ActivityHistoryService endpoint) =>
+            HttpContext context) =>
         {
-            await endpoint.CreateAsync(request);
-            return Results.Ok();
+            try
+            {
+                endpoint.Create(request);
+                return Results.Ok("Activity history creation queued");
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest("Invalid JSON format");
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Error creating activity history: {ex.Message}");
+            }
         })
         .RequiresCertificate()
         .WithOpenApi(operation => {

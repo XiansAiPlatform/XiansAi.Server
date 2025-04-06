@@ -27,6 +27,10 @@ public class ActivityHistoryRequest
     public required string WorkflowId { get; set; }
 
     [Required]
+    [JsonPropertyName("workflowRunId")]
+    public required string WorkflowRunId { get; set; }
+
+    [Required]
     [JsonPropertyName("workflowType")]
     public required string WorkflowType { get; set; }
 
@@ -45,21 +49,15 @@ public class ActivityHistoryRequest
 
     [JsonPropertyName("instructionIds")]
     public List<string>? InstructionIds { get; set; } = [];
-}
 
-public class ActivityEndTimeRequest
-{
-    [Required]
-    [JsonPropertyName("activityId")]
-    public required string ActivityId { get; set; }
+    [JsonPropertyName("attempt")]
+    public int Attempt { get; set; }
 
     [Required]
-    [JsonPropertyName("endTime")]
-    public required DateTime EndTime { get; set; }
-
-    [JsonPropertyName("result")]
-    public JsonElement? Result { get; set; }
+    [JsonPropertyName("workflowNamespace")]
+    public required string WorkflowNamespace { get; set; }
 }
+
 
 public class ActivityHistoryService
 {
@@ -75,11 +73,11 @@ public class ActivityHistoryService
         _logger = logger;
     }
 
-    public async Task CreateAsync(ActivityHistoryRequest request)
+    public void Create(ActivityHistoryRequest request)
     {
         _logger.LogInformation("Received request to create activity at: {Time}: {Request}", 
             DateTime.UtcNow, JsonSerializer.Serialize(request));
-        var activity = new Activity
+        var activity = new ActivityHistory
         {
             Id = ObjectId.GenerateNewId().ToString(),
             ActivityId = request.ActivityId,
@@ -87,14 +85,19 @@ public class ActivityHistoryService
             StartedTime = request.StartedTime,
             EndedTime = request.EndedTime,
             WorkflowId = request.WorkflowId,
+            WorkflowRunId = request.WorkflowRunId,
             WorkflowType = request.WorkflowType,
             TaskQueue = request.TaskQueue,
             Inputs = ConvertJsonElementToBsonCompatible(request.Inputs),
             Result = ConvertJsonElementToBsonCompatible(request.Result),
             AgentToolNames = request.AgentToolNames,
-            InstructionIds = request.InstructionIds ?? new List<string>()
+            InstructionIds = request.InstructionIds ?? new List<string>(),
+            Attempt = request.Attempt,
+            WorkflowNamespace = request.WorkflowNamespace
         };
-        await _activityHistoryRepository.CreateAsync(activity);
+
+        // Fire and forget
+        _activityHistoryRepository.CreateWithoutWaiting(activity);
     }
 
 

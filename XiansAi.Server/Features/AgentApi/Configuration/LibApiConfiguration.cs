@@ -3,6 +3,7 @@ using Features.AgentApi.Services.Agent;
 using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Data.Repositories;
+using XiansAi.Server.Utils;
 
 namespace Features.AgentApi.Configuration;
 
@@ -14,7 +15,8 @@ public static class LibApiConfiguration
         builder.Services.AddScoped<ActivityHistoryRepository>(sp => 
         {
             var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new ActivityHistoryRepository(dbService.GetDatabase().GetAwaiter().GetResult());
+            return new ActivityHistoryRepository(dbService.GetDatabase().GetAwaiter().GetResult(), 
+                sp.GetRequiredService<IBackgroundTaskService>(), sp.GetRequiredService<ILogger<ActivityHistoryRepository>>());
         });
 
         builder.Services.AddScoped<FlowDefinitionRepository>(sp => 

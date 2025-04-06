@@ -50,6 +50,10 @@ public static class SharedServices
         // Register cache service
         services.AddScoped<ObjectCacheService>();
         
+        // Add this to the AddInfrastructureServices method in SharedServices.cs
+        services.AddSingleton<IBackgroundTaskService, BackgroundTaskService>();
+        services.AddHostedService(sp => (BackgroundTaskService)sp.GetRequiredService<IBackgroundTaskService>());
+        
         return services;
     }
 } 

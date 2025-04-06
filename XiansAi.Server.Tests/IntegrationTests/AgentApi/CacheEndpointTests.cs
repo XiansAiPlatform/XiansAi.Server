@@ -3,10 +3,13 @@ using System.Text.Json;
 using XiansAi.Server.Tests.TestUtils;
 using Features.AgentApi.Endpoints;
 
-namespace XiansAi.Server.Tests.IntegrationTests;
+namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 
 public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
+    /*
+    dotnet test --filter "FullyQualifiedName~CacheEndpointTests"    
+    */
     public CacheEndpointTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
     }
@@ -18,7 +21,7 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         var request = new CacheKeyRequest { Key = "non-existent-key" };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/client/cache/get", request);
+        var response = await _client.PostAsJsonAsync("/api/agent/cache/get", request);
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
@@ -37,14 +40,14 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
             Key = testKey,
             Value = testValue
         };
-        var setResponse = await _client.PostAsJsonAsync("/api/client/cache/set", setRequest);
+        var setResponse = await _client.PostAsJsonAsync("/api/agent/cache/set", setRequest);
         
         // Assert - Set cache value
         setResponse.EnsureSuccessStatusCode();
         
         // Act - Get cache value
         var getRequest = new CacheKeyRequest { Key = testKey };
-        var getResponse = await _client.PostAsJsonAsync("/api/client/cache/get", getRequest);
+        var getResponse = await _client.PostAsJsonAsync("/api/agent/cache/get", getRequest);
         
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
@@ -67,14 +70,14 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
             Value = testValue,
             RelativeExpirationMinutes = relativeExpirationMinutes
         };
-        var setResponse = await _client.PostAsJsonAsync("/api/client/cache/set", setRequest);
+        var setResponse = await _client.PostAsJsonAsync("/api/agent/cache/set", setRequest);
         
         // Assert - Set cache value
         setResponse.EnsureSuccessStatusCode();
         
         // Act - Get cache value
         var getRequest = new CacheKeyRequest { Key = testKey };
-        var getResponse = await _client.PostAsJsonAsync("/api/client/cache/get", getRequest);
+        var getResponse = await _client.PostAsJsonAsync("/api/agent/cache/get", getRequest);
         
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
@@ -97,14 +100,14 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
             Value = testValue,
             SlidingExpirationMinutes = slidingExpirationMinutes
         };
-        var setResponse = await _client.PostAsJsonAsync("/api/client/cache/set", setRequest);
+        var setResponse = await _client.PostAsJsonAsync("/api/agent/cache/set", setRequest);
         
         // Assert - Set cache value
         setResponse.EnsureSuccessStatusCode();
         
         // Act - Get cache value
         var getRequest = new CacheKeyRequest { Key = testKey };
-        var getResponse = await _client.PostAsJsonAsync("/api/client/cache/get", getRequest);
+        var getResponse = await _client.PostAsJsonAsync("/api/agent/cache/get", getRequest);
         
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
@@ -129,14 +132,14 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
             RelativeExpirationMinutes = relativeExpirationMinutes,
             SlidingExpirationMinutes = slidingExpirationMinutes
         };
-        var setResponse = await _client.PostAsJsonAsync("/api/client/cache/set", setRequest);
+        var setResponse = await _client.PostAsJsonAsync("/api/agent/cache/set", setRequest);
         
         // Assert - Set cache value
         setResponse.EnsureSuccessStatusCode();
         
         // Act - Get cache value
         var getRequest = new CacheKeyRequest { Key = testKey };
-        var getResponse = await _client.PostAsJsonAsync("/api/client/cache/get", getRequest);
+        var getResponse = await _client.PostAsJsonAsync("/api/agent/cache/get", getRequest);
         
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
@@ -156,18 +159,18 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
             Key = testKey,
             Value = testValue
         };
-        await _client.PostAsJsonAsync("/api/client/cache/set", setRequest);
+        await _client.PostAsJsonAsync("/api/agent/cache/set", setRequest);
 
         // Act
         var deleteRequest = new CacheKeyRequest { Key = testKey };
-        var response = await _client.PostAsJsonAsync("/api/client/cache/delete", deleteRequest);
+        var response = await _client.PostAsJsonAsync("/api/agent/cache/delete", deleteRequest);
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         
         // Verify key is deleted
         var getRequest = new CacheKeyRequest { Key = testKey };
-        var getResponse = await _client.PostAsJsonAsync("/api/client/cache/get", getRequest);
+        var getResponse = await _client.PostAsJsonAsync("/api/agent/cache/get", getRequest);
         getResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
     }
 } 

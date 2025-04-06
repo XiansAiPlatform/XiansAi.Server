@@ -63,9 +63,8 @@ public class Program
         builder.LoadServiceConfiguration(serviceType);
         
         // Configure shared services and configuration first
-        builder.AddSharedServices();
-        builder.AddSharedConfiguration();
-
+        SharedConfiguration.AddSharedServices(builder);
+        
         // Add Azure logging for cloud deployments
         builder.Logging.AddAzureWebAppDiagnostics();
 
