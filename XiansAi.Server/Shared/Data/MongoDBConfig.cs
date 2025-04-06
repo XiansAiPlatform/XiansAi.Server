@@ -1,15 +1,16 @@
 namespace XiansAi.Server.Database;
 
-
-public class MongoDBConfig
+public interface IMongoDBConfig
 {
+    string ConnectionString { get; set; }
+    string DatabaseName { get; set; }
+}
+
+public class MongoDBConfig: IMongoDBConfig
+{
+
     public required string ConnectionString { get; set; }
+
     public required string DatabaseName { get; set; }
-
-    // optionally read from local file system
-    public string? CertificateFilePath { get; set; }
-    public string? CertificateFilePassword { get; set; }
-
-    // optionally read from key vault
-    public string? CertificateKeyVaultName { get; set; }
+    
 }

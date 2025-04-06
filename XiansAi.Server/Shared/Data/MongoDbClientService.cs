@@ -13,11 +13,11 @@ public interface IMongoDbClientService
 
 public class MongoDbClientService : IMongoDbClientService
 {
-    public MongoDBConfig Config { get; init; }
+    public IMongoDBConfig Config { get; init; }
 
-    public MongoDbClientService(MongoDBConfig config)
+    public MongoDbClientService(IMongoDbContext context)
     {
-        Config = config;
+        Config = context.GetMongoDBConfig();
     }
 
     public IMongoDatabase GetDatabase()

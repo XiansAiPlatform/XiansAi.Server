@@ -1,8 +1,8 @@
 using MongoDB.Driver;
-using Features.AgentApi.Data.Models;
+using Shared.Data.Models;
 using XiansAi.Server.Utils;
 
-namespace Features.AgentApi.Data.Repositories;
+namespace Features.AgentApi.Repositories;
 
 public class ActivityHistoryRepository
 {

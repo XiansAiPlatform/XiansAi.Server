@@ -1,9 +1,9 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace Features.AgentApi.Data.Models;
+namespace Shared.Data.Models;
 
-public class Instruction
+public class Knowledge
 {
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]

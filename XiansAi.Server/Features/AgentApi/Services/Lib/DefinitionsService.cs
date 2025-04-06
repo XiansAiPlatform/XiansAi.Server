@@ -2,10 +2,11 @@ using System.Text.Json;
 using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using Features.AgentApi.Data.Repositories;
+using Features.AgentApi.Repositories;
 using MongoDB.Driver;
 using XiansAi.Server.GenAi;
 using Shared.Auth;
+using Shared.Data.Models;
 
 namespace Features.AgentApi.Services.Lib;
 
@@ -102,7 +103,6 @@ public class DefinitionsService
             _logger.LogInformation("Another user has already used this flow type name {typeName}. Rejecting request", definition.TypeName);
             return Results.BadRequest($"Another user has already used this flow type name {definition.TypeName}. Please choose a different flow name.");
         }
-
         
         // Find existing definition with the same hash
         var existingDefinition = await _flowDefinitionRepository.GetLatestByTypeNameAndOwnerAsync(definition.TypeName, definition.Owner);
@@ -115,17 +115,7 @@ public class DefinitionsService
             await _flowDefinitionRepository.CreateAsync(definition);
             return Results.Ok("No existing definition found, new definition created successfully");
         }
-
-        // no markdown in the existing record, but there is a markdown in the new definition
-        if (string.IsNullOrEmpty(existingDefinition.Markdown) && !string.IsNullOrEmpty(definition.Markdown))
-        {
-            await GenerateMarkdown(definition);
-            await _flowDefinitionRepository.CreateAsync(definition);
-            // delete the old definition
-            await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id);
-            return Results.Ok("No markdown in the existing definition, new definition created successfully");
-        }
-
+        // if the hash is different, we create a new definition
         if (existingDefinition.Hash != definition.Hash)
         {
             await GenerateMarkdown(definition);

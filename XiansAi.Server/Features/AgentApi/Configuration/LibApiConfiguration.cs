@@ -2,7 +2,7 @@ using Features.AgentApi.Endpoints;
 using Features.AgentApi.Services.Agent;
 using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
-using Features.AgentApi.Data.Repositories;
+using Features.AgentApi.Repositories;
 using XiansAi.Server.Utils;
 
 namespace Features.AgentApi.Configuration;
@@ -25,14 +25,14 @@ public static class LibApiConfiguration
             return new FlowDefinitionRepository(dbService.GetDatabase().GetAwaiter().GetResult());
         });
 
-        builder.Services.AddScoped<InstructionRepository>(sp => 
+        builder.Services.AddScoped<KnowledgeRepository>(sp => 
         {
             var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new InstructionRepository(dbService.GetDatabase().GetAwaiter().GetResult());
+            return new KnowledgeRepository(dbService.GetDatabase().GetAwaiter().GetResult());
         });
 
         // Register Lib API specific services
-        builder.Services.AddScoped<InstructionsService>();
+        builder.Services.AddScoped<KnowledgeService>();
         builder.Services.AddScoped<ActivityHistoryService>();
         builder.Services.AddScoped<DefinitionsService>();
         builder.Services.AddScoped<WorkflowSignalService>();

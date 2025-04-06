@@ -1,14 +1,12 @@
 using System.Net.Http.Json;
 using XiansAi.Server.Tests.TestUtils;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Features.AgentApi.Endpoints;
 using Features.AgentApi.Services.Lib;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using XiansAi.Server.Utils;
 using MongoDB.Driver;
-using Features.AgentApi.Data.Models;
+using Shared.Data.Models;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 

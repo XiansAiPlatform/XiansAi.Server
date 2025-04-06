@@ -1,8 +1,7 @@
-using MongoDB.Bson;
 using MongoDB.Driver;
-using Features.AgentApi.Data.Models;
+using Shared.Data.Models;
 
-namespace Features.AgentApi.Data.Repositories;
+namespace Features.AgentApi.Repositories;
 
 public class FlowDefinitionRepository
 {

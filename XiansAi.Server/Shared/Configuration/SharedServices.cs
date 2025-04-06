@@ -24,11 +24,14 @@ public static class SharedServices
         // Register business services
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<IEmailService, EmailService>();
+
+        services.AddSingleton<IMongoDbContext>(sp =>
+            new MongoDbContext(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ILogger<MongoDbContext>>()));
         
         // Register MongoDB client
         services.AddScoped<IMongoDbClientService>(sp =>
             new MongoDbClientService(
-                sp.GetRequiredService<MongoDBConfig>()));
+                sp.GetRequiredService<IMongoDbContext>()));
         
         // Register database service
         services.AddScoped<IDatabaseService, DatabaseService>();

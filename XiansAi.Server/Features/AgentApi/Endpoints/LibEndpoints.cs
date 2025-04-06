@@ -26,7 +26,7 @@ public static class LibEndpoints
     public static void MapLibEndpoints(this WebApplication app)
     {
         MapObjectCacheEndpoints(app);
-        MapInstructionsEndpoints(app);
+        MapKnowledgeEndpoints(app);
         MapActivityHistoryEndpoints(app);
         MapDefinitionsEndpoints(app);
     }
@@ -91,21 +91,21 @@ public static class LibEndpoints
         });
     }
     
-    private static void MapInstructionsEndpoints(this WebApplication app)
+    private static void MapKnowledgeEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/server/instructions/latest", async (
+        app.MapGet("/api/agent/knowledge/latest", async (
             [FromQuery] string name,
-            [FromServices] InstructionsService endpoint) =>
+            [FromServices] KnowledgeService endpoint) =>
         {
-            var result = await endpoint.GetLatestInstruction(name);
+            var result = await endpoint.GetLatestKnowledge(name);
             return result;
         })
         .RequiresCertificate()
         .WithOpenApi(operation => {
-            operation.Summary = "Get latest instructions";
-            operation.Description = "Retrieves the most recent instructions for the specified name";
+            operation.Summary = "Get latest knowledge";
+            operation.Description = "Retrieves the most recent knowledge for the specified name";
             operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
-            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Instructions" }};
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Knowledge" }};
             
             return operation;
         });
@@ -137,7 +137,7 @@ public static class LibEndpoints
             operation.Summary = "Create activity history";
             operation.Description = "Creates a new activity history record in the system";
             operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
-            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activity History" }};
             
             return operation;
         });
@@ -145,7 +145,7 @@ public static class LibEndpoints
 
     private static void MapDefinitionsEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/server/definitions", async (
+        app.MapPost("/api/agent/definitions", async (
             [FromBody] FlowDefinitionRequest request,
             [FromServices] DefinitionsService endpoint) =>
         {

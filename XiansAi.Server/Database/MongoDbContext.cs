@@ -14,53 +14,27 @@ namespace XiansAi.Server.Database
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger<MongoDbContext> _logger;
-        private readonly ITenantContext _tenantContext;
 
-        public MongoDbContext(IConfiguration configuration, ILogger<MongoDbContext> logger, ITenantContext tenantContext)
+        public MongoDbContext(IConfiguration configuration, ILogger<MongoDbContext> logger)
         {
             _configuration = configuration;
             _logger = logger;
-            _tenantContext = tenantContext;
         }
 
         public MongoDBConfig GetMongoDBConfig()
         {
-            if (string.IsNullOrEmpty(_tenantContext.TenantId))
-                throw new InvalidOperationException("TenantId is required");
+            var connectionString = _configuration.GetSection("MongoDB:ConnectionString").Value
+                ?? throw new InvalidOperationException("MongoDB connection string not found");
 
-            // get the mongo config for the tenant
-            var mongoConfig = _configuration.GetSection($"Tenants:{_tenantContext.TenantId}:MongoDB").Get<MongoDBConfig>();
-
-            // if the mongo config is not found, use the default values
-            if (mongoConfig == null)
+            var databaseName = _configuration.GetSection("MongoDB:DatabaseName").Value
+                ?? throw new InvalidOperationException("MongoDB database name not found");
+            
+            // create a new mongo config with default values
+            var mongoConfig = new MongoDBConfig
             {
-                _logger.LogInformation("MongoDB configuration for tenant {TenantId} not found. Using default values.", _tenantContext.TenantId);
-
-                var connectionString = _configuration.GetSection("MongoDB:ConnectionString").Value
-                    ?? throw new InvalidOperationException("MongoDB connection string not found");
-                var databaseName = _tenantContext.TenantId;
-                
-                // create a new mongo config with default values
-                mongoConfig = new MongoDBConfig
-                {
-                    ConnectionString = connectionString,
-                    DatabaseName = databaseName
-                };
-            }
-            else
-            {
-                // if the mongo config is found but some values are missing, use defaults
-                if (string.IsNullOrEmpty(mongoConfig.ConnectionString))
-                {
-                    mongoConfig.ConnectionString = _configuration.GetSection("MongoDB:ConnectionString").Value
-                        ?? throw new InvalidOperationException("MongoDB connection string not found");
-                }
-
-                if (string.IsNullOrEmpty(mongoConfig.DatabaseName))
-                {
-                    mongoConfig.DatabaseName = _tenantContext.TenantId;
-                }
-            }
+                ConnectionString = connectionString,
+                DatabaseName = databaseName
+            };
 
             return mongoConfig;
         }

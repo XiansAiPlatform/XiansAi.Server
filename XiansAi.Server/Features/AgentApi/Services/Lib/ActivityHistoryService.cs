@@ -2,8 +2,8 @@ using System.Text.Json;
 using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using Features.AgentApi.Data.Repositories;
-using Features.AgentApi.Data.Models;
+using Features.AgentApi.Repositories;
+using Shared.Data.Models;
 
 namespace Features.AgentApi.Services.Lib;
 public class ActivityHistoryRequest

@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
+using Shared.Data.Models;
 using XiansAi.Server.Database.Models;
 
 namespace XiansAi.Server.Database.Repositories;
