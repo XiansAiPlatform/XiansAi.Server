@@ -44,9 +44,9 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Get a value from cache";
             operation.Description = "Retrieves a value from the cache by its key. Returns the cached value if found, otherwise returns null.";
-            
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Cache" }};
-            
+            // Add header parameters to OpenAPI documentation
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             return operation;
         });
 
@@ -67,7 +67,7 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Set a value in cache";
             operation.Description = "Stores a value in the cache with the specified key and optional expiration settings";
-            
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Cache" }};
             
             return operation;
@@ -84,7 +84,7 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Delete a value from cache";
             operation.Description = "Removes a value from the cache by its key";
-            
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Cache" }};
             
             return operation;
@@ -104,7 +104,7 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Get latest instructions";
             operation.Description = "Retrieves the most recent instructions for the specified name";
-            
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Instructions" }};
             
             return operation;
@@ -124,9 +124,8 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Create activity";
             operation.Description = "Creates a new activity record in the system";
-            
-            
-                operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
             
             return operation;
         });
@@ -141,7 +140,7 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Update activity end time";
             operation.Description = "Updates the end time and result of an existing activity";
-            
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
             
             return operation;
@@ -157,7 +156,7 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Get activities by workflow ID";
             operation.Description = "Retrieves all activities associated with a specific workflow";
-            
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
             
             return operation;
@@ -174,7 +173,7 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Get specific activity";
             operation.Description = "Retrieves a specific activity by its workflow ID and activity ID";
-            
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
             
             return operation;
@@ -193,7 +192,7 @@ public static class LibEndpointExtensions
         .WithOpenApi(operation => {
             operation.Summary = "Create flow definition";
             operation.Description = "Creates a new flow definition in the system";
-            
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Definitions" }};
             
             return operation;

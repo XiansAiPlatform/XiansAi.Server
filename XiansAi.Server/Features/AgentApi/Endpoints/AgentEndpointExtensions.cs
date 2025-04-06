@@ -1,6 +1,9 @@
 using Features.AgentApi.Services.Agent;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.OpenApi.Models;
+using System.Collections.Generic;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -26,6 +29,13 @@ public static class AgentEndpointExtensions
         {
             return await endpoint.HandleSignalWorkflow(request);
         })
-        .RequiresCertificate();
+        .RequiresCertificate()
+        .WithOpenApi(operation => {
+            operation.Summary = "Signal workflow";
+            operation.Description = "Sends a signal to a running workflow instance";
+            operation.Tags = new List<OpenApiTag> { new OpenApiTag { Name = "AgentAPI - Signal" } };
+            operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
+            return operation;
+        });
     }
 }
