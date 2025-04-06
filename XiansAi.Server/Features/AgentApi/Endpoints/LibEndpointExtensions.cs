@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Services.Lib;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.OpenApi.Models;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -24,7 +26,9 @@ public static class LibEndpointExtensions
     public static void MapLibEndpoints(this WebApplication app)
     {
         MapObjectCacheEndpoints(app);
-        MapServerEndpoints(app);
+        MapInstructionsEndpoints(app);
+        MapActivitiesEndpoints(app);
+        MapDefinitionsEndpoints(app);
     }
 
     private static void MapObjectCacheEndpoints(this WebApplication app)
@@ -39,13 +43,9 @@ public static class LibEndpointExtensions
         .RequiresCertificate()
         .WithOpenApi(operation => {
             operation.Summary = "Get a value from cache";
-            operation.Description = "Retrieves a value from the cache by its key";
+            operation.Description = "Retrieves a value from the cache by its key. Returns the cached value if found, otherwise returns null.";
             
-            if (operation.RequestBody != null && operation.RequestBody.Content.ContainsKey("application/json"))
-            {
-                operation.RequestBody.Description = "The cache key request";
-                operation.RequestBody.Required = true;
-            }
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Cache" }};
             
             return operation;
         });
@@ -68,11 +68,7 @@ public static class LibEndpointExtensions
             operation.Summary = "Set a value in cache";
             operation.Description = "Stores a value in the cache with the specified key and optional expiration settings";
             
-            if (operation.RequestBody != null && operation.RequestBody.Content.ContainsKey("application/json"))
-            {
-                operation.RequestBody.Description = "The cache key, value, and optional expiration settings";
-                operation.RequestBody.Required = true;
-            }
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Cache" }};
             
             return operation;
         });
@@ -89,16 +85,13 @@ public static class LibEndpointExtensions
             operation.Summary = "Delete a value from cache";
             operation.Description = "Removes a value from the cache by its key";
             
-            if (operation.RequestBody != null && operation.RequestBody.Content.ContainsKey("application/json"))
-            {
-                operation.RequestBody.Description = "The cache key to delete";
-                operation.RequestBody.Required = true;
-            }
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Cache" }};
             
             return operation;
         });
     }
-    private static void MapServerEndpoints(this WebApplication app)
+    
+    private static void MapInstructionsEndpoints(this WebApplication app)
     {
         app.MapGet("/api/server/instructions/latest", async (
             [FromQuery] string name,
@@ -110,10 +103,16 @@ public static class LibEndpointExtensions
         .RequiresCertificate()
         .WithOpenApi(operation => {
             operation.Summary = "Get latest instructions";
-            operation.Description = "Gets the latest instructions";
+            operation.Description = "Retrieves the most recent instructions for the specified name";
+            
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Instructions" }};
+            
             return operation;
         });
+    }
 
+    private static void MapActivitiesEndpoints(this WebApplication app)
+    {
         app.MapPost("/api/server/activities", async (
             [FromBody] ActivityRequest request,
             [FromServices] ActivityHistoryService endpoint) =>
@@ -124,7 +123,11 @@ public static class LibEndpointExtensions
         .RequiresCertificate()
         .WithOpenApi(operation => {
             operation.Summary = "Create activity";
-            operation.Description = "Creates a new activity record";
+            operation.Description = "Creates a new activity record in the system";
+            
+            
+                operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
+            
             return operation;
         });
 
@@ -137,7 +140,10 @@ public static class LibEndpointExtensions
         .RequiresCertificate()
         .WithOpenApi(operation => {
             operation.Summary = "Update activity end time";
-            operation.Description = "Updates the end time and result of an activity";
+            operation.Description = "Updates the end time and result of an existing activity";
+            
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
+            
             return operation;
         });
 
@@ -150,7 +156,10 @@ public static class LibEndpointExtensions
         .RequiresCertificate()
         .WithOpenApi(operation => {
             operation.Summary = "Get activities by workflow ID";
-            operation.Description = "Retrieves all activities for a specific workflow";
+            operation.Description = "Retrieves all activities associated with a specific workflow";
+            
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
+            
             return operation;
         });
 
@@ -164,10 +173,16 @@ public static class LibEndpointExtensions
         .RequiresCertificate()
         .WithOpenApi(operation => {
             operation.Summary = "Get specific activity";
-            operation.Description = "Retrieves a specific activity by workflow ID and activity ID";
+            operation.Description = "Retrieves a specific activity by its workflow ID and activity ID";
+            
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
+            
             return operation;
         });
+    }
 
+    private static void MapDefinitionsEndpoints(this WebApplication app)
+    {
         app.MapPost("/api/server/definitions", async (
             [FromBody] FlowDefinitionRequest request,
             [FromServices] DefinitionsService endpoint) =>
@@ -176,8 +191,11 @@ public static class LibEndpointExtensions
         })
         .RequiresCertificate()
         .WithOpenApi(operation => {
-            operation.Summary = "Create definitions";
-            operation.Description = "Creates definitions";
+            operation.Summary = "Create flow definition";
+            operation.Description = "Creates a new flow definition in the system";
+            
+            operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Definitions" }};
+            
             return operation;
         });
     }

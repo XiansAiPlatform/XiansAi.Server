@@ -14,7 +14,11 @@ public static class AgentEndpointExtensions
     /// </summary>
     /// <param name="app">The web application to add endpoints to.</param>
     /// <returns>The web application with agent endpoints configured.</returns>
-    public static WebApplication MapAgentEndpoints(this WebApplication app)
+    public static void MapAgentEndpoints(this WebApplication app)
+    {
+        MapSignalEndpoints(app);
+    }
+    private static void MapSignalEndpoints(this WebApplication app)
     {
         app.MapPost("api/agent/signal", async (
             [FromBody] WorkflowSignalRequest request,
@@ -23,7 +27,5 @@ public static class AgentEndpointExtensions
             return await endpoint.HandleSignalWorkflow(request);
         })
         .RequiresCertificate();
-
-        return app;
     }
 }
