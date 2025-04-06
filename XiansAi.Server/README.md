@@ -159,5 +159,5 @@ This will use the `appsettings.Production.json` file.
 To deploy the server to Azure Production, you can use the following command. Ensure you have the correct permissions to deploy to the Azure App Service. Also ensure to clone XiansAi.Infrastructure repository, but run the deploy-webapp.sh script from the XiansAi.Server repository.
 
 ```bash
-../XiansAi.Infrastructure/Azure/deploy-webapi.sh
+../XiansAi.Server.Infra/deploy-webapi.sh
 ```
