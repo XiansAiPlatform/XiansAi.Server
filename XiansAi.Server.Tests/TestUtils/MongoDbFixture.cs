@@ -4,6 +4,22 @@ using XiansAi.Server.Database;
 
 namespace XiansAi.Server.Tests.TestUtils;
 
+// Test implementation of IMongoDbContext for tests
+public class TestMongoDbContext : IMongoDbContext
+{
+    private readonly MongoDBConfig _config;
+
+    public TestMongoDbContext(MongoDBConfig config)
+    {
+        _config = config;
+    }
+
+    public MongoDBConfig GetMongoDBConfig()
+    {
+        return _config;
+    }
+}
+
 public class MongoDbFixture : IDisposable
 {
     private readonly MongoDbRunner _runner;
@@ -24,7 +40,8 @@ public class MongoDbFixture : IDisposable
         };
         
         // Create MongoDB client service
-        MongoClientService = new MongoDbClientService(MongoConfig);
+        var context = new TestMongoDbContext(MongoConfig);
+        MongoClientService = new MongoDbClientService(context);
         
         // Get database
         Database = MongoClientService.GetDatabase();

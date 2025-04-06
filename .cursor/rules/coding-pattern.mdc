@@ -5,6 +5,9 @@ alwaysApply: true
 ---
 # Coding pattern
 
+## Identify correct project
+- This is a multi project repo. When you are asked to generate code, always ensure you do the generation on the correct project folder. Douple check always. 
+
 ## Style of coding
 
 - Always prefer simple, readable code over compact, dense code.

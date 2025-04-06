@@ -37,7 +37,7 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         try
         {
             var apiKey = TestCertificateHelper.LoadApiKeyFromEnv();
-            _client.DefaultRequestHeaders.Add("X-Client-Cert", apiKey);
+            _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
         }
         catch (Exception ex)
         {

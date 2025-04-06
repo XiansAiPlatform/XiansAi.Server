@@ -60,12 +60,12 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/server/definitions", request);
+        var response = await _client.PostAsJsonAsync("/api/agent/definitions", request);
 
         // Assert
         response.EnsureSuccessStatusCode();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("definition created successfully");
+        Assert.Contains("definition created successfully", responseContent);
         
         // Wait for background tasks to complete
         var backgroundTaskService = _factory.Services.GetRequiredService<IBackgroundTaskService>();
@@ -87,10 +87,10 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/server/definitions", invalidRequest);
+        var response = await _client.PostAsJsonAsync("/api/agent/definitions", invalidRequest);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     /*
@@ -134,7 +134,7 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/server/definitions", request);
+        var response = await _client.PostAsJsonAsync("/api/agent/definitions", request);
         
         // Assert HTTP response
         response.EnsureSuccessStatusCode();
@@ -157,18 +157,18 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         }
         
         // Assert data was inserted correctly
-        result.Should().NotBeNull();
-        result?.TypeName.Should().Be(uniqueTypeName);
-        result?.AgentName.Should().Be("Test Agent");
-        result?.Source.Should().Be("Example source code");
-        result?.Activities.Should().HaveCount(1);
-        result?.Activities[0].ActivityName.Should().Be("TestActivity");
-        result?.Activities[0].AgentToolNames.Should().Contain("tool1");
-        result?.Activities[0].AgentToolNames.Should().Contain("tool2");
-        result?.Activities[0].Instructions.Should().Contain("instruction1");
-        result?.Parameters.Should().HaveCount(1);
-        result?.Parameters[0].Name.Should().Be("flowParam1");
-        result?.Parameters[0].Type.Should().Be("string");
+        Assert.NotNull(result);
+        Assert.Equal(uniqueTypeName, result?.TypeName);
+        Assert.Equal("Test Agent", result?.AgentName);
+        Assert.Equal("Example source code", result?.Source);
+        Assert.Single(result?.Activities);
+        Assert.Equal("TestActivity", result?.Activities[0].ActivityName);
+        Assert.Contains("tool1", result?.Activities[0].AgentToolNames);
+        Assert.Contains("tool2", result?.Activities[0].AgentToolNames);
+        Assert.Contains("instruction1", result?.Activities[0].Instructions);
+        Assert.Single(result?.Parameters);
+        Assert.Equal("flowParam1", result?.Parameters[0].Name);
+        Assert.Equal("string", result?.Parameters[0].Type);
     }
     
     /*
@@ -233,7 +233,7 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         };
 
         // Act
-        var response1 = await _client.PostAsJsonAsync("/api/server/definitions", request1);
+        var response1 = await _client.PostAsJsonAsync("/api/agent/definitions", request1);
         response1.EnsureSuccessStatusCode();
         
         // Wait for background tasks to complete
@@ -241,12 +241,12 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
         
         // Send the second request
-        var response2 = await _client.PostAsJsonAsync("/api/server/definitions", request2);
+        var response2 = await _client.PostAsJsonAsync("/api/agent/definitions", request2);
         
         // Assert
         response2.EnsureSuccessStatusCode();
         var responseContent = await response2.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("different hash");
+        Assert.Contains("different hash", responseContent);
         
         // Wait for background tasks
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
@@ -257,14 +257,14 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         var result = await collection.Find(filter).SortByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
         
         // Assert updated data was inserted correctly
-        result.Should().NotBeNull();
-        result?.AgentName.Should().Be("Updated Test Agent");
-        result?.Source.Should().Be("Updated example source code");
-        result?.Activities.Should().HaveCount(1);
-        result?.Activities[0].ActivityName.Should().Be("UpdatedTestActivity");
-        result?.Activities[0].AgentToolNames.Should().HaveCount(3);
-        result?.Activities[0].Instructions.Should().HaveCount(2);
-        result?.Parameters.Should().HaveCount(2);
+        Assert.NotNull(result);
+        Assert.Equal("Updated Test Agent", result?.AgentName);
+        Assert.Equal("Updated example source code", result?.Source);
+        Assert.Single(result?.Activities);
+        Assert.Equal("UpdatedTestActivity", result?.Activities[0].ActivityName);
+        Assert.Equal(3, result?.Activities[0].AgentToolNames.Count);
+        Assert.Equal(2, result?.Activities[0].Instructions.Count);
+        Assert.Equal(2, result?.Parameters.Count);
     }
 
     /*
@@ -300,7 +300,7 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         };
 
         // Act - First request
-        var response1 = await _client.PostAsJsonAsync("/api/server/definitions", request);
+        var response1 = await _client.PostAsJsonAsync("/api/agent/definitions", request);
         response1.EnsureSuccessStatusCode();
         
         // Wait for background tasks to complete
@@ -308,11 +308,11 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
         
         // Send identical request again
-        var response2 = await _client.PostAsJsonAsync("/api/server/definitions", request);
+        var response2 = await _client.PostAsJsonAsync("/api/agent/definitions", request);
         
         // Assert
         response2.EnsureSuccessStatusCode();
         var responseContent = await response2.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("already up to date");
+        Assert.Contains("already up to date", responseContent);
     }
 } 

@@ -24,7 +24,7 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         var response = await _client.PostAsJsonAsync("/api/agent/cache/get", request);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
         var content = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
-        content.GetProperty("test").GetString().Should().Be("value");
+        Assert.Equal("value", content.GetProperty("test").GetString());
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
         var content = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
-        content.GetProperty("test").GetString().Should().Be("expiration");
+        Assert.Equal("expiration", content.GetProperty("test").GetString());
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
         var content = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
-        content.GetProperty("test").GetString().Should().Be("sliding");
+        Assert.Equal("sliding", content.GetProperty("test").GetString());
     }
 
     [Fact]
@@ -144,7 +144,7 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         // Assert - Get cache value
         getResponse.EnsureSuccessStatusCode();
         var content = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
-        content.GetProperty("test").GetString().Should().Be("both");
+        Assert.Equal("both", content.GetProperty("test").GetString());
     }
 
     [Fact]
@@ -166,11 +166,11 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         var response = await _client.PostAsJsonAsync("/api/agent/cache/delete", deleteRequest);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         
         // Verify key is deleted
         var getRequest = new CacheKeyRequest { Key = testKey };
         var getResponse = await _client.PostAsJsonAsync("/api/agent/cache/get", getRequest);
-        getResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 } 

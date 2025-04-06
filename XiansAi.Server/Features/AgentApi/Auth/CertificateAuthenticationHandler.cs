@@ -36,12 +36,25 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     {
         _logger.LogInformation("Handling certificate authentication for {Path}", Request.Path);
 
-        // Get the client certificate from the request headers
-        var certHeader = Request.Headers["X-Client-Cert"].ToString();
+        // Get the client certificate from the Authorization header
+        if (!Request.Headers.TryGetValue("Authorization", out var authHeader) || string.IsNullOrEmpty(authHeader))
+        {
+            _logger.LogInformation("No authorization header found");
+            return Task.FromResult(AuthenticateResult.Fail("No authorization header found"));
+        }
+
+        var authHeaderValue = authHeader.ToString();
+        if (!authHeaderValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Authorization header is not in Bearer format");
+            return Task.FromResult(AuthenticateResult.Fail("Authorization header is not in Bearer format"));
+        }
+
+        var certHeader = authHeaderValue.Substring("Bearer ".Length).Trim();
         if (string.IsNullOrEmpty(certHeader))
         {
-            _logger.LogInformation("No client certificate found");
-            return Task.FromResult(AuthenticateResult.Fail("No client certificate found"));
+            _logger.LogInformation("No client certificate found in Bearer token");
+            return Task.FromResult(AuthenticateResult.Fail("No client certificate found in Bearer token"));
         }
 
         try
