@@ -4,11 +4,11 @@ using Features.AgentApi.Data.Models;
 
 namespace Features.AgentApi.Data.Repositories;
 
-public class ActivityRepository
+public class ActivityHistoryRepository
 {
     private readonly IMongoCollection<Activity> _activities;
 
-    public ActivityRepository(IMongoDatabase database)
+    public ActivityHistoryRepository(IMongoDatabase database)
     {
         _activities = database.GetCollection<Activity>("activities");
     }

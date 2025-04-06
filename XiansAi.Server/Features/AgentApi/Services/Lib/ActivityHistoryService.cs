@@ -6,7 +6,7 @@ using Features.AgentApi.Data.Repositories;
 using Features.AgentApi.Data.Models;
 
 namespace Features.AgentApi.Services.Lib;
-public class ActivityRequest
+public class ActivityHistoryRequest
 {
     [Required]
     [JsonPropertyName("activityId")]
@@ -75,18 +75,18 @@ public class ActivityEndTimeRequest
 public class ActivityHistoryService
 {
     private readonly ILogger<ActivityHistoryService> _logger;
-    private readonly ActivityRepository _activityRepository;
+    private readonly ActivityHistoryRepository _activityHistoryRepository;
 
     public ActivityHistoryService(
-        ActivityRepository activityRepository,
+        ActivityHistoryRepository activityHistoryRepository,
         ILogger<ActivityHistoryService> logger
     )
     {
-        _activityRepository = activityRepository;
+        _activityHistoryRepository = activityHistoryRepository;
         _logger = logger;
     }
 
-    public async Task CreateAsync(ActivityRequest request)
+    public async Task CreateAsync(ActivityHistoryRequest request)
     {
         _logger.LogInformation("Received request to create activity at: {Time}: {Request}", 
             DateTime.UtcNow, JsonSerializer.Serialize(request));
@@ -105,7 +105,7 @@ public class ActivityHistoryService
             AgentToolNames = request.AgentToolNames,
             InstructionIds = request.InstructionIds ?? new List<string>()
         };
-        await _activityRepository.CreateAsync(activity);
+        await _activityHistoryRepository.CreateAsync(activity);
     }
 
     public async Task<IResult> UpdateEndTimeAsync(ActivityEndTimeRequest request)
@@ -118,7 +118,7 @@ public class ActivityHistoryService
         {
             return Results.BadRequest(new { message = "Result is required" });
         }
-        var success = await _activityRepository.UpdateEndTimeAsync(request.ActivityId, request.EndTime, result);
+        var success = await _activityHistoryRepository.UpdateEndTimeAsync(request.ActivityId, request.EndTime, result);
         
         if (success)
         {
@@ -133,14 +133,14 @@ public class ActivityHistoryService
     public async Task<IResult> GetByWorkflowIdAsync(string workflowId)
     {
         _logger.LogInformation("Getting activities for workflow {WorkflowId}", workflowId);
-        var activities = await _activityRepository.GetByWorkflowIdAsync(workflowId);
+        var activities = await _activityHistoryRepository.GetByWorkflowIdAsync(workflowId);
         return Results.Ok(activities);
     }
 
     public async Task<IResult> GetActivityAsync(string workflowId, string activityId)
     {
         _logger.LogInformation("Getting activity {ActivityId} for workflow {WorkflowId}", activityId, workflowId);
-        var activity = await _activityRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
+        var activity = await _activityHistoryRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
         
         if (activity == null)
         {

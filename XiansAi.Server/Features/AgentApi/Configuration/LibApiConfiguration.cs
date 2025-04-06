@@ -11,10 +11,10 @@ public static class LibApiConfiguration
     public static WebApplicationBuilder AddLibApiServices(this WebApplicationBuilder builder)
     {
         // Register repositories
-        builder.Services.AddScoped<ActivityRepository>(sp => 
+        builder.Services.AddScoped<ActivityHistoryRepository>(sp => 
         {
             var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new ActivityRepository(dbService.GetDatabase().GetAwaiter().GetResult());
+            return new ActivityHistoryRepository(dbService.GetDatabase().GetAwaiter().GetResult());
         });
 
         builder.Services.AddScoped<FlowDefinitionRepository>(sp => 
@@ -64,8 +64,8 @@ public static class LibApiConfiguration
     public static WebApplication UseLibApiEndpoints(this WebApplication app)
     {
         // Map Lib API endpoints
-        LibEndpointExtensions.MapLibEndpoints(app);
-        AgentEndpointExtensions.MapAgentEndpoints(app);
+        LibEndpoints.MapLibEndpoints(app);
+        AgentEndpoints.MapAgentEndpoints(app);
         
         return app;
     }

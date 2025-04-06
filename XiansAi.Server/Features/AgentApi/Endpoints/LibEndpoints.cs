@@ -21,7 +21,7 @@ public class CacheSetRequest
     public int? SlidingExpirationMinutes { get; set; }
 }
 
-public static class LibEndpointExtensions
+public static class LibEndpoints
 {
     public static void MapLibEndpoints(this WebApplication app)
     {
@@ -114,7 +114,7 @@ public static class LibEndpointExtensions
     private static void MapActivitiesEndpoints(this WebApplication app)
     {
         app.MapPost("/api/server/activities", async (
-            [FromBody] ActivityRequest request,
+            [FromBody] ActivityHistoryRequest request,
             [FromServices] ActivityHistoryService endpoint) =>
         {
             await endpoint.CreateAsync(request);
@@ -122,8 +122,8 @@ public static class LibEndpointExtensions
         })
         .RequiresCertificate()
         .WithOpenApi(operation => {
-            operation.Summary = "Create activity";
-            operation.Description = "Creates a new activity record in the system";
+            operation.Summary = "Create activity history";
+            operation.Description = "Creates a new activity history record in the system";
             operation.Parameters.Add(OpenAPIUtils.CertificateParameter());
             operation.Tags = new List<OpenApiTag> { new() { Name = "AgentAPI - Activities" }};
             

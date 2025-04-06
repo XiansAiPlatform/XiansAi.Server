@@ -1,16 +1,14 @@
 using Features.AgentApi.Services.Agent;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.OpenApi.Models;
-using System.Collections.Generic;
 
 namespace Features.AgentApi.Endpoints;
 
 /// <summary>
 /// Provides extension methods for registering agent-communication API endpoints.
 /// </summary>
-public static class AgentEndpointExtensions
+public static class AgentEndpoints
 {
     /// <summary>
     /// Maps all agent-related endpoints to the application's request pipeline.
