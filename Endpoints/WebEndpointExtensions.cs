@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using XiansAi.Server.Services.Web;
 using System.Text.Json;
 using XiansAi.Server.Services.Lib;
+using XiansAi.Server.Database.Models;
 
 namespace XiansAi.Server.Endpoints;
 public static class WebEndpointExtensions
@@ -10,6 +11,7 @@ public static class WebEndpointExtensions
     {
         MapWorkflowEndpoints(app);
         MapInstructionEndpoints(app);
+        MapLogsEndpoints(app);
         MapActivityEndpoints(app);
         MapSettingsEndpoints(app);
         MapDefinitionsEndpoints(app);
@@ -26,7 +28,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Delete Definition")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Delete a specific definition";
             operation.Description = "Removes a definition by its ID";
             return operation;
@@ -42,7 +45,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Latest Definitions")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get definitions with optional filters";
             operation.Description = "Retrieves definitions with optional filtering by date range and owner";
             return operation;
@@ -60,7 +64,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Generate Client Certificate Base64")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Generate a new client certificate in base64 format";
             operation.Description = "Generates and returns a new client certificate in base64 format";
             return operation;
@@ -75,7 +80,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Generate Client Certificate")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Generate a new client certificate";
             operation.Description = "Generates and returns a new client certificate in PFX format";
             return operation;
@@ -88,20 +94,21 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Flow Server Settings")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(); 
+        .WithOpenApi();
 
         app.MapGet("/api/client/certificates/flowserver/base64", async (
             [FromServices] CertificateEndpoint endpoint) =>
         {
             var cert = await endpoint.GetFlowServerCertBase64();
             var privateKey = await endpoint.GetFlowServerPrivateKeyBase64();
-            return Results.Ok(new {
+            return Results.Ok(new
+            {
                 apiKey = cert + ":" + privateKey
             });
         })
         .WithName("Get Flow Server Certificate Base64")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(); 
+        .WithOpenApi();
 
         app.MapGet("/api/client/certificates/flowserver/cert", async (
             [FromQuery] string fileName,
@@ -111,7 +118,7 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Flow Server Certificate File")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(); 
+        .WithOpenApi();
 
         app.MapGet("/api/client/certificates/flowserver/privatekey", async (
             [FromQuery] string fileName,
@@ -121,7 +128,7 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Flow Server Private Key File")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(); 
+        .WithOpenApi();
     }
 
     private static void MapActivityEndpoints(this WebApplication app)
@@ -208,7 +215,7 @@ public static class WebEndpointExtensions
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions/versions", async (
-            [FromQuery]string name,
+            [FromQuery] string name,
             [FromServices] InstructionsEndpoint endpoint) =>
         {
             return await endpoint.GetInstructionVersions(name);
@@ -217,7 +224,72 @@ public static class WebEndpointExtensions
         .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
     }
-    
+
+
+    public static void MapLogsEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/client/logs/{id}", async (
+            string id,
+            [FromServices] LogsEndpoint endpoint) =>
+        {
+            return await endpoint.GetLogById(id);
+        })
+        .WithName("Get Log by ID")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi();
+
+        app.MapGet("/api/client/logs/by-run-id/{runId}", async (
+            string runId,
+            [FromServices] LogsEndpoint endpoint) =>
+        {
+            return await endpoint.GetLogsByRunId(runId);
+        })
+        .WithName("Get Logs by Run ID")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi();
+
+        app.MapGet("/api/client/logs/by-date-range", async (
+            [FromQuery] DateTime startDate,
+            [FromQuery] DateTime endDate,
+            [FromServices] LogsEndpoint endpoint) =>
+        {
+            return await endpoint.GetLogsByDateRange(startDate, endDate);
+        })
+        .WithName("Get Logs by Date Range")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi();
+
+        app.MapPost("/api/client/logs", async (
+            [FromBody] Log log,
+            [FromServices] LogsEndpoint endpoint) =>
+        {
+            return await endpoint.CreateLog(log);
+        })
+        .WithName("Create Log")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi();
+
+        app.MapDelete("/api/client/logs/{id}", async (
+            string id,
+            [FromServices] LogsEndpoint endpoint) =>
+        {
+            return await endpoint.DeleteLog(id);
+        })
+        .WithName("Delete Log")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi();
+
+        app.MapGet("/api/client/logs/search", async (
+            [FromQuery] string searchTerm,
+            [FromServices] LogsEndpoint endpoint) =>
+        {
+            return await endpoint.SearchLogs(searchTerm);
+        })
+        .WithName("Search Logs")
+        .RequireAuthorization("RequireTenantAuth")
+        .WithOpenApi();
+    }
+
     private static void MapWorkflowEndpoints(this WebApplication app)
     {
         app.MapGet("/api/client/workflows/{workflowId}/{runId}", async (
@@ -262,7 +334,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Workflows")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get workflows with optional filters";
             operation.Description = "Retrieves workflows with optional filtering by date range and owner";
             return operation;
@@ -287,7 +360,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Stream Workflow Events")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Stream workflow events in real-time";
             operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events";
             return operation;
@@ -303,8 +377,9 @@ public static class WebEndpointExtensions
             return await endpoint.GetValue(key);
         })
         .WithName("Get Cache Value")
-        
-        .WithOpenApi(operation => {
+
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get a value from cache";
             operation.Description = "Retrieves a value from the cache by its key";
             return operation;
@@ -318,8 +393,9 @@ public static class WebEndpointExtensions
             return await endpoint.SetValue(key, value);
         })
         .WithName("Set Cache Value")
-        
-        .WithOpenApi(operation => {
+
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Set a value in cache";
             operation.Description = "Stores a value in the cache with the specified key";
             return operation;
@@ -332,8 +408,9 @@ public static class WebEndpointExtensions
             return await endpoint.DeleteValue(key);
         })
         .WithName("Delete Cache Value")
-        
-        .WithOpenApi(operation => {
+
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Delete a value from cache";
             operation.Description = "Removes a value from the cache by its key";
             return operation;

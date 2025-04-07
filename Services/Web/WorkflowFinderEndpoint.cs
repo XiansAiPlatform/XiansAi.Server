@@ -2,6 +2,9 @@ using Temporalio.Client;
 using Temporalio.Converters;
 using XiansAi.Server.Auth;
 using XiansAi.Server.Temporal;
+using XiansAi.Server.Database.Models;
+using XiansAi.Server.Database.Repositories;
+using System.Text.Json;
 
 namespace XiansAi.Server.Services.Web;
 
@@ -13,7 +16,7 @@ public class WorkflowFinderEndpoint
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowFinderEndpoint> _logger;
     private readonly ITenantContext _tenantContext;
-
+    private readonly IDatabaseService _databaseService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderEndpoint"/> class.
@@ -25,11 +28,13 @@ public class WorkflowFinderEndpoint
     public WorkflowFinderEndpoint(
         ITemporalClientService clientService,
         ILogger<WorkflowFinderEndpoint> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+         IDatabaseService databaseService)
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _databaseService = databaseService;
     }
 
     /// <summary>
@@ -53,19 +58,32 @@ public class WorkflowFinderEndpoint
             var workflowDescription = await workflowHandle.DescribeAsync();
             var fetchHistory = await workflowHandle.FetchHistoryAsync();
 
-            string logs;
+            var logs = await GetLogsByWorkRunId(workflowId);
+            var logString = JsonSerializer.Serialize(logs);
 
-            try
-            {
-                logs = await workflowHandle.QueryAsync<string>("GetLogs", Array.Empty<object?>());
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to query logs for workflow {WorkflowId}", workflowId);
-                logs = null;
-            }
+            // workflowId = "123456";
+            // runId = "789012";
 
-            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, logs);
+            // Parameters for the query method (workflowId and runId)
+            // IReadOnlyCollection<object?> args = new List<object?> { workflowId, runId };
+
+            // try
+            // {
+            //     //logs = await workflowHandle.QueryAsync<string>("GetLogs", Array.Empty<object?>());
+            //     // [WorkflowQuery]
+            //     // Query the workflow to get logs
+            //     // logs = await workflowHandle.QueryAsync<string>("GetLogsFromMongo", args);
+
+            //     // _logger.LogInformation("Successfully retrieved logs for workflow {WorkflowId}", workflowId);
+
+            // }
+            // catch (Exception ex)
+            // {
+            //     _logger.LogWarning(ex, "Failed to query logs for workflow {WorkflowId}", workflowId);
+            //     logs = null;
+            // }
+
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, logString);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -127,6 +145,14 @@ public class WorkflowFinderEndpoint
                 statusCode: StatusCodes.Status500InternalServerError
             );
         }
+    }
+
+
+     public async Task<IResult> GetLogsByWorkRunId(string runId)
+    {
+        var logRepository = new LogRepository(await _databaseService.GetDatabase());
+        var logs = await logRepository.GetByRunIdAsync(runId);
+        return Results.Ok(logs);
     }
 
     /// <summary>
@@ -400,7 +426,7 @@ public class WorkflowResponse
     /// Gets or sets the current activity associated with the workflow.
     /// </summary>
     public object? CurrentActivity { get; set; }
-    
+
     /// <summary>
     /// Gets or sets the last error encountered during workflow execution.
     /// </summary>
