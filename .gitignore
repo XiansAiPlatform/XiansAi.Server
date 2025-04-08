@@ -10,7 +10,7 @@ publish.zip
 # dotenv files
 .env
 appsettings.json
-.cert
+.certs
 
 # User-specific files
 *.rsuser

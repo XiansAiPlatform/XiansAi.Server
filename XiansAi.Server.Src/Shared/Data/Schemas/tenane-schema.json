@@ -1,0 +1,111 @@
+{
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": ["tenant_id", "name", "domain", "created_at", "created_by"],
+      "properties": {
+        "tenant_id": {
+          "bsonType": "string",
+          "description": "Tenant ID"
+        },
+        "name": {
+          "bsonType": "string",
+          "description": "Name of the tenant"
+        },
+        "domain": {
+          "bsonType": "string",
+          "description": "Domain of the tenant"
+        },
+        "description": {
+          "bsonType": ["string", "null"],
+          "description": "Description of the tenant"
+        },
+        "logo": {
+          "bsonType": ["object", "null"],
+          "description": "Logo of the tenant",
+          "properties": {
+            "url": {
+              "bsonType": "string",
+              "description": "URL of the tenant logo"
+            },
+            "width": {
+              "bsonType": "int",
+              "description": "Width of the tenant logo"
+            },
+            "height": {
+              "bsonType": "int",
+              "description": "Height of the tenant logo"
+            }
+          }
+        },
+        "timezone": {
+          "bsonType": ["string", "null"],
+          "description": "Timezone of the tenant"
+        },
+        "agents": {
+          "bsonType": ["array", "null"],
+          "description": "Array of agents for this tenant",
+          "items": {
+            "bsonType": "object",
+            "required": ["name", "is_active"],
+            "properties": {
+              "name": {
+                "bsonType": "string",
+                "description": "Name of the agent"
+              },
+              "is_active": {
+                "bsonType": "bool",
+                "description": "Whether the agent is active"
+              },
+              "flows": {
+                "bsonType": ["array", "null"],
+                "description": "Array of flows for this agent",
+                "items": {
+                  "bsonType": "object",
+                  "required": ["name", "is_active"],
+                  "properties": {
+                    "name": {
+                      "bsonType": "string",
+                      "description": "Name of the flow"
+                    },
+                    "is_active": {
+                      "bsonType": "bool",
+                      "description": "Whether the flow is active"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "permissions": {
+          "bsonType": ["array", "null"],
+          "items": {
+            "bsonType": "object",
+            "required": ["level", "owner"],
+            "properties": {
+              "level": {
+                "bsonType": ["string", "null"],
+                "description": "Permission level"
+              },
+              "owner": {
+                "bsonType": ["string", "null"],
+                "description": "Owner of the permission"
+              }
+            }
+          }
+        },
+        "created_at": {
+          "bsonType": "date",
+          "description": "Timestamp of creation"
+        },
+        "created_by": {
+          "bsonType": "string",
+          "description": "User ID of the creator"
+        },
+        "updated_at": {
+          "bsonType": ["date", "null"],
+          "description": "Timestamp of last update"
+        }
+      }
+    }
+  }
