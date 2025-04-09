@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Features.WebApi.Endpoints;
 using Features.WebApi.Services.Web;
 using Features.WebApi.Auth;
@@ -18,6 +16,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<WorkflowCancelEndpoint>();
         builder.Services.AddScoped<CertificateEndpoint>();
         builder.Services.AddScoped<InstructionsEndpoint>();
+        builder.Services.AddScoped<LogsEndpoint>();
         builder.Services.AddScoped<DefinitionsEndpoint>();
         builder.Services.AddScoped<TenantEndpoint>();
         

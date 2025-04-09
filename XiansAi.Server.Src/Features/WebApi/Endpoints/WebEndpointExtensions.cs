@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services.Web;
 using System.Text.Json;
+using XiansAi.Server.Database.Models;
 
 namespace Features.WebApi.Endpoints;
+
 public static class WebEndpointExtensions
 {
     public static void MapWebEndpoints(this WebApplication app)
@@ -216,13 +218,13 @@ public static class WebEndpointExtensions
         .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
-        app.MapGet("/api/client/logs/by-run-id/{runId}", async (
-            string runId,
+        app.MapGet("/api/client/logs/by-run-id/{workflowRunId}", async (
+            string workflowRunId,
             [FromServices] LogsEndpoint endpoint) =>
         {
-            return await endpoint.GetLogsByRunId(runId);
+            return await endpoint.GetLogsByWorkflowRunId(workflowRunId);
         })
-        .WithName("Get Logs by Run ID")
+        .WithName("Get Logs by Workflow Run ID")
         .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
@@ -236,7 +238,7 @@ public static class WebEndpointExtensions
         .WithName("Get Logs by Date Range")
         .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
-
+            
         app.MapPost("/api/client/logs", async (
             [FromBody] Log log,
             [FromServices] LogsEndpoint endpoint) =>
@@ -244,7 +246,7 @@ public static class WebEndpointExtensions
             return await endpoint.CreateLog(log);
         })
         .WithName("Create Log")
-        .RequireAuthorization("RequireTenantAuth")
+        //.RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
         app.MapDelete("/api/client/logs/{id}", async (
@@ -270,12 +272,12 @@ public static class WebEndpointExtensions
 
     private static void MapWorkflowEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/client/workflows/{workflowId}/{runId}", async (
+        app.MapGet("/api/client/workflows/{workflowId}/{workflowRunId}", async (
             string workflowId,
-            string? runId,
+            string? workflowRunId,
             [FromServices] WorkflowFinderEndpoint endpoint) =>
         {
-            return await endpoint.GetWorkflow(workflowId, runId);
+            return await endpoint.GetWorkflow(workflowId, workflowRunId);
         })
         .WithName("Get Workflow")
         .RequireAuthorization("RequireTenantAuth")

@@ -2,7 +2,7 @@ using MongoDB.Bson;
 using XiansAi.Server.Database.Models;
 using XiansAi.Server.Database.Repositories;
 
-namespace XiansAi.Server.Services.Web;
+namespace Features.WebApi.Services.Web;
 
 public class LogsEndpoint
 {
@@ -22,10 +22,10 @@ public class LogsEndpoint
         return Results.Ok(log);
     }
 
-    public async Task<IResult> GetLogsByRunId(string runId)
+    public async Task<IResult> GetLogsByWorkflowRunId(string workflowRunId)
     {
         var logRepository = new LogRepository(await _databaseService.GetDatabase());
-        var logs = await logRepository.GetByRunIdAsync(runId);
+        var logs = await logRepository.GetByWorkflowRunIdAsync(workflowRunId);
         return Results.Ok(logs);
     }
 

@@ -25,8 +25,8 @@ public class Log
     [BsonElement("workflow_id")]
     public required string WorkflowId { get; set; }
 
-    [BsonElement("run_id")]
-    public required string RunId { get; set; }
+    [BsonElement("workflow_run_id")]
+    public required string WorkflowRunId { get; set; }
 
     [BsonElement("properties")]
     public Dictionary<string, object>? Properties { get; set; }
@@ -40,9 +40,12 @@ public class Log
 
 public enum LogLevel
 {
-    Information,
-    Warning,
-    Error,
-    Debug,
-    Critical
+    Trace = 0,
+    Debug = 1,
+    Information = 2,
+    Warning = 3,
+    Error = 4,
+    Critical = 5,
+    None = 6
 }
+

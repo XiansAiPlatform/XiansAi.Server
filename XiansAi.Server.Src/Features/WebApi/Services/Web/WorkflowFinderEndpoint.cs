@@ -6,6 +6,7 @@ using XiansAi.Server.Temporal;
 using XiansAi.Server.Database.Models;
 using XiansAi.Server.Database.Repositories;
 using System.Text.Json;
+using System.Text;
 
 namespace Features.WebApi.Services.Web;
 
@@ -42,9 +43,9 @@ public class WorkflowFinderEndpoint
     /// Retrieves a specific workflow by its ID.
     /// </summary>
     /// <param name="workflowId">The unique identifier of the workflow.</param>
-    /// <param name="runId">Optional run identifier for the workflow.</param>
+    /// <param name="workflowRunId">Optional run identifier for the workflow.</param>
     /// <returns>A result containing the workflow details if found, or an error response.</returns>
-    public async Task<IResult> GetWorkflow(string workflowId, string? runId = null)
+    public async Task<IResult> GetWorkflow(string workflowId, string workflowRunId)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
         {
@@ -54,38 +55,13 @@ public class WorkflowFinderEndpoint
 
         try
         {
-            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and runId: {RunId}", workflowId, runId);
+            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", workflowId, workflowRunId);
             var client = _clientService.GetClient();
-            var workflowHandle = client.GetWorkflowHandle(workflowId, runId);
+            var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
             var workflowDescription = await workflowHandle.DescribeAsync();
             var fetchHistory = await workflowHandle.FetchHistoryAsync();
-
-            var logs = await GetLogsByWorkRunId(workflowId);
-            var logString = JsonSerializer.Serialize(logs);
-
-            // workflowId = "123456";
-            // runId = "789012";
-
-            // Parameters for the query method (workflowId and runId)
-            // IReadOnlyCollection<object?> args = new List<object?> { workflowId, runId };
-
-            // try
-            // {
-            //     //logs = await workflowHandle.QueryAsync<string>("GetLogs", Array.Empty<object?>());
-            //     // [WorkflowQuery]
-            //     // Query the workflow to get logs
-            //     // logs = await workflowHandle.QueryAsync<string>("GetLogsFromMongo", args);
-
-            //     // _logger.LogInformation("Successfully retrieved logs for workflow {WorkflowId}", workflowId);
-
-            // }
-            // catch (Exception ex)
-            // {
-            //     _logger.LogWarning(ex, "Failed to query logs for workflow {WorkflowId}", workflowId);
-            //     logs = null;
-            // }
-
-            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, logString);
+            var logs = await GetLogsByWorkRunId(workflowRunId);
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, logs);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -151,12 +127,13 @@ public class WorkflowFinderEndpoint
     }
 
 
-     public async Task<IResult> GetLogsByWorkRunId(string runId)
+    public async Task<IEnumerable<Log>> GetLogsByWorkRunId(string workflowRunId)
     {
         var logRepository = new LogRepository(await _databaseService.GetDatabase());
-        var logs = await logRepository.GetByRunIdAsync(runId);
-        return Results.Ok(logs);
+        var logs = await logRepository.GetByWorkflowRunIdAsync(workflowRunId);
+        return logs;
     }
+
 
     /// <summary>
     /// Builds a date range query string for filtering workflows.
@@ -282,23 +259,22 @@ public class WorkflowFinderEndpoint
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string? logs = null)
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, IEnumerable<Log>? logs = null)
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey) ?? workflow.WorkflowType;
         var assignment = ExtractMemoValue(workflow.Memo, Constants.AssignmentKey) ?? Constants.DefaultAssignment;
         Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? currentActivity = null;
+        if (logs == null)
+        {
+            logs = new List<Log>();
+        }
+        string logsString = FormatLogsForConsole(logs);
 
         if (fetchHistory != null)
         {
             var eventsList = fetchHistory.Events.ToList(); // Convert to a list for indexing
-            // foreach (var historyEvent in eventsList)
-            // {
-            //     //print full object
-            //     var eventObject = historyEvent.EventType.ToString();
-            //     _logger.LogDebug(eventObject);
-            // }
 
             // Assume eventsList is your list of history events.
             currentActivity = IdentifyCurrentActivity(eventsList);
@@ -331,7 +307,7 @@ public class WorkflowFinderEndpoint
             Owner = userId,
             HistoryLength = workflow.HistoryLength,
             CurrentActivity = currentActivity,
-            Logs = logs,
+            Logs = logsString,
         };
     }
 
@@ -348,6 +324,45 @@ public class WorkflowFinderEndpoint
             return memoValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
         }
         return null;
+    }
+
+    public string FormatLogsForConsole(IEnumerable<Log> logs)
+    {
+        var sb = new StringBuilder();
+
+        var sortedLogs = logs.OrderBy(log => log.CreatedAt); // Sort chronologically
+
+        foreach (var log in sortedLogs)
+        {
+            string time = log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+            string level = ConvertLogLevel((int)log.Level);
+            string message = log.Message ?? "(No message)";
+            string workflowId = log.WorkflowId ?? "N/A";
+            string runId = log.WorkflowRunId ?? "N/A";
+
+            sb.AppendLine($"[{time}] [{level}]");
+            sb.AppendLine($"  Message       : {message}");
+            sb.AppendLine($"  Workflow ID   : {workflowId}");
+            sb.AppendLine($"  Run ID        : {runId}");
+            sb.AppendLine(new string('-', 60));
+        }
+
+        return sb.ToString();
+    }
+
+    private string ConvertLogLevel(int level)
+    {
+        return level switch
+        {
+            0 => "TRACE",
+            1 => "DEBUG",
+            2 => "INFO",
+            3 => "WARN",
+            4 => "ERROR",
+            5 => "CRITICAL",
+            6 => "NONE",
+            _ => "UNKNOWN"
+        };
     }
 }
 

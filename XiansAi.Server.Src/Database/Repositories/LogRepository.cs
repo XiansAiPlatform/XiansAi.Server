@@ -32,9 +32,9 @@ public class LogRepository
             .ToListAsync();
     }
 
-    public async Task<List<Log>> GetByRunIdAsync(string runId)
+    public async Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId)
     {
-        return await _logs.Find(x => x.RunId == runId)
+        return await _logs.Find(x => x.WorkflowRunId == workflowRunId)
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
     }

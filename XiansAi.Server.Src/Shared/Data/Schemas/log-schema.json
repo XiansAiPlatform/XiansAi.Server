@@ -24,9 +24,9 @@
                 "bsonType": "string",
                 "description": "Associated workflow ID"
             },
-            "run_id": {
+            "workflow_run_id": {
                 "bsonType": "string",
-                "description": "Associated run ID"
+                "description": "Associated workflow run ID"
             },
             "properties": {
                 "bsonType": "object",
