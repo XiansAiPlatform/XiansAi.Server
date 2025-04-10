@@ -32,16 +32,21 @@ public class LogRepository
             .ToListAsync();
     }
 
-    public async Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit)
+    public async Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit, int? logLevel = null)
     {
-        var Logs = await _logs.Find(x => x.WorkflowRunId == workflowRunId)
+        var filter = Builders<Log>.Filter.Eq(x => x.WorkflowRunId, workflowRunId);
+        if (logLevel.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Level, (XiansAi.Server.Database.Models.LogLevel)logLevel.Value);
+        }
+
+        var Logs = await _logs.Find(filter)
             .SortByDescending(x => x.CreatedAt)
             .Skip(skip)
             .Limit(limit)
             .ToListAsync();
         return Logs;
     }
-
     public async Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level)
     {
         return await _logs.Find(x => x.Level == level)

@@ -22,10 +22,10 @@ public class LogsEndpoint
         return Results.Ok(log);
     }
 
-    public async Task<IResult> GetLogsByWorkflowRunId(string workflowRunId, int skip, int limit)
+    public async Task<IResult> GetLogsByWorkflowRunId(string workflowRunId, int skip, int limit, int? logLevel = null)
     {
         var logRepository = new LogRepository(await _databaseService.GetDatabase());
-        var logs = await logRepository.GetByWorkflowRunIdAsync(workflowRunId, skip, limit);
+        var logs = await logRepository.GetByWorkflowRunIdAsync(workflowRunId, skip, limit, logLevel);
         return Results.Ok(logs);
     }
 

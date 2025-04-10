@@ -223,9 +223,10 @@ public static class WebEndpointExtensions
             string workflowRunId,
             [FromQuery] int skip,
             [FromQuery] int limit,
+            [FromQuery] int? level,
             [FromServices] LogsEndpoint endpoint) =>
         {
-            return await endpoint.GetLogsByWorkflowRunId(workflowRunId, skip, limit);
+            return await endpoint.GetLogsByWorkflowRunId(workflowRunId, skip, limit, level);
         })
         .WithName("Get Logs by Workflow Run ID")
         .RequireAuthorization("RequireTenantAuth")
