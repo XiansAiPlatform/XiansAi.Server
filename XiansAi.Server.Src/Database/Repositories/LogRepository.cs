@@ -32,11 +32,14 @@ public class LogRepository
             .ToListAsync();
     }
 
-    public async Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId)
+    public async Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit)
     {
-        return await _logs.Find(x => x.WorkflowRunId == workflowRunId)
+        var Logs = await _logs.Find(x => x.WorkflowRunId == workflowRunId)
             .SortByDescending(x => x.CreatedAt)
+            .Skip(skip)
+            .Limit(limit)
             .ToListAsync();
+        return Logs;
     }
 
     public async Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level)

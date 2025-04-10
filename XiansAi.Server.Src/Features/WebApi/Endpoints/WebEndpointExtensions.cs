@@ -101,7 +101,8 @@ public static class WebEndpointExtensions
         {
             var cert = endpoint.GetFlowServerCertBase64();
             var privateKey = endpoint.GetFlowServerPrivateKeyBase64();
-            return Results.Ok(new {
+            return Results.Ok(new
+            {
                 apiKey = cert + ":" + privateKey
             });
         })
@@ -220,9 +221,11 @@ public static class WebEndpointExtensions
 
         app.MapGet("/api/client/logs/by-run-id/{workflowRunId}", async (
             string workflowRunId,
+            [FromQuery] int skip,
+            [FromQuery] int limit,
             [FromServices] LogsEndpoint endpoint) =>
         {
-            return await endpoint.GetLogsByWorkflowRunId(workflowRunId);
+            return await endpoint.GetLogsByWorkflowRunId(workflowRunId, skip, limit);
         })
         .WithName("Get Logs by Workflow Run ID")
         .RequireAuthorization("RequireTenantAuth")
@@ -238,7 +241,7 @@ public static class WebEndpointExtensions
         .WithName("Get Logs by Date Range")
         .RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
-            
+
         app.MapPost("/api/client/logs", async (
             [FromBody] Log log,
             [FromServices] LogsEndpoint endpoint) =>
@@ -357,7 +360,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Tenants")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get all tenants";
             operation.Description = "Retrieves all tenant records";
             return operation;
@@ -371,7 +375,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Tenant")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get tenant by ID";
             operation.Description = "Retrieves a tenant by its unique ID";
             return operation;
@@ -385,7 +390,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Tenant By TenantId")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get tenant by tenant ID";
             operation.Description = "Retrieves a tenant by its tenant ID";
             return operation;
@@ -399,7 +405,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Get Tenant By Domain")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get tenant by domain";
             operation.Description = "Retrieves a tenant by its domain";
             return operation;
@@ -416,7 +423,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Create Tenant")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Create a new tenant";
             operation.Description = "Creates a new tenant record";
             return operation;
@@ -431,7 +439,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Update Tenant")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Update a tenant";
             operation.Description = "Updates an existing tenant record";
             return operation;
@@ -445,7 +454,8 @@ public static class WebEndpointExtensions
         })
         .WithName("Delete Tenant")
         .RequireAuthorization("RequireTenantAuth")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Delete a tenant";
             operation.Description = "Deletes a tenant by its ID";
             return operation;
