@@ -37,7 +37,7 @@ Send a signal to a running Agent workflow to provide data or instructions.
 
 ```json
 {
-  "workflowInstanceId": "string",  // ID of the running workflow
+  "workflowId": "string",  // ID of the running workflow
   "signalName": "string",          // Must match the signal function name in your workflow
   "payload": {                     // Optional data payload to send with the signal
     // Any JSON object
@@ -55,7 +55,15 @@ Send a signal to a running Agent workflow to provide data or instructions.
 
 **Response Body:** 
 
-The response will include details about the signal delivery status.
+The response will include details about the signal delivery status. Here is a sample response body for a request.
+
+```json
+{
+    "message": "Signal sent successfully",
+    "workflowId": "ID-1123145",
+    "signalName": "ReceiveEmail"
+}
+```
 
 ## Defining a Signal in a Workflow
 
@@ -106,12 +114,13 @@ namespace XiansAi.EmailChannel.Flow
 ## Example
 
 ```bash
+{
 # Send a signal to a workflow
 curl -X POST https://api.xians.ai/api/agent/signal \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${APP_SERVER_API_KEY}" \
   -d '{
-    "workflowInstanceId": "wf-new-purchases",
+    "workflowId": "ID-1123145",
     "signalName": "ReceiveEmail",
     "payload": {
       "message": "Hello, please process this signal.",
