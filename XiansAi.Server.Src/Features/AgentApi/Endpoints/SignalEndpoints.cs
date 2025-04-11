@@ -48,7 +48,7 @@ public static class SignalEndpoints
             
         signalGroup.MapPost("", async (
             [FromBody] WorkflowSignalRequest request,
-            [FromServices] WorkflowSignalService endpoint) =>
+            [FromServices] IWorkflowSignalService endpoint) =>
         {
             return await endpoint.HandleSignalWorkflow(request);
         })

@@ -22,7 +22,7 @@ public static class DefinitionsEndpoints
             
         definitionsGroup.MapPost("", async (
             [FromBody] FlowDefinitionRequest request,
-            [FromServices] DefinitionsService endpoint) =>
+            [FromServices] IDefinitionsService endpoint) =>
         {
             return await endpoint.CreateAsync(request);
         })

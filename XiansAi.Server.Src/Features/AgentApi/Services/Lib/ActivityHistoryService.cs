@@ -59,13 +59,18 @@ public class ActivityHistoryRequest
 }
 
 
-public class ActivityHistoryService
+public interface IActivityHistoryService
+{
+    void Create(ActivityHistoryRequest request);
+}
+
+public class ActivityHistoryService : IActivityHistoryService
 {
     private readonly ILogger<ActivityHistoryService> _logger;
-    private readonly ActivityHistoryRepository _activityHistoryRepository;
+    private readonly IActivityHistoryRepository _activityHistoryRepository;
 
     public ActivityHistoryService(
-        ActivityHistoryRepository activityHistoryRepository,
+        IActivityHistoryRepository activityHistoryRepository,
         ILogger<ActivityHistoryService> logger
     )
     {

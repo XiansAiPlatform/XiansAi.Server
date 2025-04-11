@@ -1,14 +1,35 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.AgentApi.Repositories;
 
-public class FlowDefinitionRepository
+public interface IFlowDefinitionRepository
+{
+    Task<bool> IfExistsInAnotherOwner(string typeName, string owner);
+    Task<long> DeleteByOwnerAndTypeNameAsync(string owner, string typeName);
+    Task<FlowDefinition> GetLatestFlowDefinitionAsync(string typeName);
+    Task<FlowDefinition> GetByIdAsync(string id);
+    Task<FlowDefinition> GetByHashAsync(string hash, string typeName);
+    Task<List<FlowDefinition>> GetByNameAsync(string name);
+    Task<List<FlowDefinition>> GetAllAsync();
+    Task CreateAsync(FlowDefinition definition);
+    Task<bool> DeleteAsync(string id);
+    Task<bool> UpdateAsync(string id, FlowDefinition definition);
+    Task<FlowDefinition> GetByNameHashAsync(string typeName, string hash);
+    Task<FlowDefinition> GetLatestByTypeNameAndOwnerAsync(string typeName, string owner);
+    Task<List<FlowDefinition>> GetLatestDefinitionsAsync(DateTime? startTime, DateTime? endTime, string? owner);
+    Task<List<FlowDefinition>> GetLatestDefinitionsForAllTypesAsync();
+}
+
+
+public class FlowDefinitionRepository : IFlowDefinitionRepository
 {
     private readonly IMongoCollection<FlowDefinition> _definitions;
 
-    public FlowDefinitionRepository(IMongoDatabase database)
+    public FlowDefinitionRepository(IDatabaseService databaseService)
     {
+        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _definitions = database.GetCollection<FlowDefinition>("definitions");
     }
 

@@ -7,22 +7,21 @@ public static class PublicEndpointExtensions
 {
     public static void MapPublicEndpoints(this WebApplication app)
     {
-        MapRegistrationEndpoints(app);
-    }
+        // Map registration endpoints with common attributes
+        var registrationGroup = app.MapGroup("/api/public/register")
+            .WithTags("WebAPI - Public Registration")
+            .RequiresToken();
 
-    private static void MapRegistrationEndpoints(this WebApplication app)
-    {
-        app.MapPost("/api/public/register/verification/send", async (
+        registrationGroup.MapPost("/verification/send", async (
             [FromBody] string email,
             [FromServices] PublicService endpoint) =>
         {
             return await endpoint.SendVerificationCode(email);
         })
         .WithName("Send Verification Code")
-        .WithOpenApi()
-        .RequiresToken();
+        .WithOpenApi();
 
-        app.MapPost("/api/public/register/verification/validate", async (
+        registrationGroup.MapPost("/verification/validate", async (
             [FromBody] ValidateCodeRequest request,
             [FromServices] PublicService endpoint) =>
         {
@@ -30,8 +29,6 @@ public static class PublicEndpointExtensions
             return Results.Ok(new { isValid });
         })
         .WithName("Validate Verification Code")
-        .WithOpenApi()
-        .RequiresToken();
-
+        .WithOpenApi();
     }
 }

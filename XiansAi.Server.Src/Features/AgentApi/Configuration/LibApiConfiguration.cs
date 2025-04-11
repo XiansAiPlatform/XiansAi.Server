@@ -15,40 +15,20 @@ public static class LibApiConfiguration
     public static WebApplicationBuilder AddLibApiServices(this WebApplicationBuilder builder)
     {
         // Register repositories
-        builder.Services.AddScoped<ActivityHistoryRepository>(sp => 
-        {
-            var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new ActivityHistoryRepository(dbService.GetDatabase().GetAwaiter().GetResult(), 
-                sp.GetRequiredService<IBackgroundTaskService>(), sp.GetRequiredService<ILogger<ActivityHistoryRepository>>());
-        });
-
-        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>(sp => 
-        {
-            var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new WebhookRepository(dbService.GetDatabase().GetAwaiter().GetResult());
-        });
-
-        builder.Services.AddScoped<FlowDefinitionRepository>(sp => 
-        {
-            var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new FlowDefinitionRepository(dbService.GetDatabase().GetAwaiter().GetResult());
-        });
-
-        builder.Services.AddScoped<KnowledgeRepository>(sp => 
-        {
-            var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new KnowledgeRepository(dbService.GetDatabase().GetAwaiter().GetResult());
-        });
+        builder.Services.AddScoped<IActivityHistoryRepository, ActivityHistoryRepository>();
+        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
+        builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
+        builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
 
         // Register HttpClient for webhook service
         builder.Services.AddHttpClient();
 
         // Register Lib API specific services
-        builder.Services.AddScoped<KnowledgeService>();
-        builder.Services.AddScoped<ActivityHistoryService>();
-        builder.Services.AddScoped<DefinitionsService>();
-        builder.Services.AddScoped<WorkflowSignalService>();
-        builder.Services.AddScoped<ObjectCacheWrapperService>();
+        builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
+        builder.Services.AddScoped<IActivityHistoryService, ActivityHistoryService>();
+        builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
+        builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
+        builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
         builder.Services.AddScoped<IWebhookService, WebhookService>();
 
         return builder;

@@ -2,13 +2,19 @@ using Features.AgentApi.Repositories;
 using XiansAi.Server.Shared.Data;
 
 namespace Features.AgentApi.Services.Lib;
-public class KnowledgeService
+
+public interface IKnowledgeService
+{
+    Task<IResult> GetLatestKnowledge(string name);
+}
+
+public class KnowledgeService : IKnowledgeService
 {
     private readonly ILogger<KnowledgeService> _logger;
-    private readonly KnowledgeRepository _knowledgeRepository;
+    private readonly IKnowledgeRepository _knowledgeRepository;
     
     public KnowledgeService(
-        KnowledgeRepository knowledgeRepository,
+        IKnowledgeRepository knowledgeRepository,
         ILogger<KnowledgeService> logger
     )
     {

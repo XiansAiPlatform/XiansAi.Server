@@ -296,7 +296,7 @@ public class TenantService
         {
             flow.CreatedAt = DateTime.UtcNow;
             flow.UpdatedAt = DateTime.UtcNow;
-            flow.CreatedBy = _tenantContext.LoggedInUser;
+            flow.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
 
             var success = await _tenantRepository.AddFlowToAgentAsync(tenantId, agentName, flow);
             if (success)

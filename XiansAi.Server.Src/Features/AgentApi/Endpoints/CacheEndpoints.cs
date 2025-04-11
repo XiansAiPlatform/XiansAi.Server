@@ -24,7 +24,7 @@ public static class CacheEndpoints
             
         cacheGroup.MapPost("/get", async (
             [FromBody] CacheKeyRequest request,
-            [FromServices] ObjectCacheWrapperService endpoint) =>
+            [FromServices] IObjectCacheWrapperService endpoint) =>
         {
             return await endpoint.GetValue(request.Key);
         })
@@ -37,7 +37,7 @@ public static class CacheEndpoints
 
         cacheGroup.MapPost("/set", async (
             [FromBody] CacheSetRequest request,
-            [FromServices] ObjectCacheWrapperService endpoint) =>
+            [FromServices] IObjectCacheWrapperService endpoint) =>
         {
             var options = new CacheOptions
             {
@@ -56,7 +56,7 @@ public static class CacheEndpoints
 
         cacheGroup.MapPost("/delete", async (
             [FromBody] CacheKeyRequest request,
-            [FromServices] ObjectCacheWrapperService endpoint) =>
+            [FromServices] IObjectCacheWrapperService endpoint) =>
         {
             return await endpoint.DeleteValue(request.Key);
         })

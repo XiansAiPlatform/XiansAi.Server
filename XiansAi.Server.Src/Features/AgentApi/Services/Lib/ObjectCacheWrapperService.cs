@@ -22,10 +22,17 @@ public class CacheOptions
     public int? SlidingExpirationMinutes { get; set; }
 }
 
+public interface IObjectCacheWrapperService
+{
+    Task<IResult> GetValue(string key);
+    Task<IResult> SetValue(string key, JsonElement value, CacheOptions? options = null);
+    Task<IResult> DeleteValue(string key);
+}
+
 /// <summary>
 /// Wrapper service for cache operations accessible via API endpoints
 /// </summary>
-public class ObjectCacheWrapperService
+public class ObjectCacheWrapperService : IObjectCacheWrapperService
 {
     private readonly ObjectCacheService _objectCacheService;
     private readonly ILogger<ObjectCacheWrapperService> _logger;

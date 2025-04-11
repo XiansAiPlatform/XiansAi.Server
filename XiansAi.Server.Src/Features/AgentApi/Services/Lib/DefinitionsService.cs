@@ -73,15 +73,20 @@ public class ParameterRequest
     public required string Type { get; set; }
 }
 
-public class DefinitionsService
+public interface IDefinitionsService
+{
+    Task<IResult> CreateAsync(FlowDefinitionRequest request);
+}
+
+public class DefinitionsService : IDefinitionsService
 {
     private readonly ILogger<DefinitionsService> _logger;
     private readonly IOpenAIClientService _openAIClientService;
-    private readonly FlowDefinitionRepository _flowDefinitionRepository;
+    private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly ITenantContext _tenantContext;
     
     public DefinitionsService(
-        FlowDefinitionRepository flowDefinitionRepository,
+        IFlowDefinitionRepository flowDefinitionRepository,
         ILogger<DefinitionsService> logger,
         IOpenAIClientService openAIClientService,
         ITenantContext tenantContext

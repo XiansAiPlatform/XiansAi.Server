@@ -8,7 +8,12 @@ public static class SettingsEndpointExtensions
 {
     public static void MapSettingsEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/client/certificates/generate/base64", (
+        // Map certificate endpoints with common attributes
+        var certificatesGroup = app.MapGroup("/api/client/certificates")
+            .WithTags("WebAPI - Settings")
+            .RequiresValidTenant();
+
+        certificatesGroup.MapPost("/generate/base64", (
             HttpContext context,
             [FromBody] CertRequest request,
             [FromServices] CertificateService endpoint) =>
@@ -16,14 +21,13 @@ public static class SettingsEndpointExtensions
             return endpoint.GenerateClientCertificateBase64(request);
         })
         .WithName("Generate Client Certificate Base64")
-        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Generate a new client certificate in base64 format";
             operation.Description = "Generates and returns a new client certificate in base64 format";
             return operation;
         });
 
-        app.MapPost("/api/client/certificates/generate", async (
+        certificatesGroup.MapPost("/generate", async (
             HttpContext context,
             [FromBody] CertRequest request,
             [FromServices] CertificateService endpoint) =>
@@ -31,23 +35,13 @@ public static class SettingsEndpointExtensions
             return await endpoint.GenerateClientCertificate(request);
         })
         .WithName("Generate Client Certificate")
-        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Generate a new client certificate";
             operation.Description = "Generates and returns a new client certificate in PFX format";
             return operation;
         });
 
-        app.MapGet("/api/client/settings/flowserver", (
-            [FromServices] CertificateService endpoint) =>
-        {
-            return endpoint.GetFlowServerSettings();
-        })
-        .WithName("Get Flow Server Settings")
-        .RequiresValidTenant()
-        .WithOpenApi(); 
-
-        app.MapGet("/api/client/certificates/flowserver/base64", (
+        certificatesGroup.MapGet("/flowserver/base64", (
             [FromServices] CertificateService endpoint) =>
         {
             var cert = endpoint.GetFlowServerCertBase64();
@@ -57,7 +51,19 @@ public static class SettingsEndpointExtensions
             });
         })
         .WithName("Get Flow Server Certificate Base64")
-        .RequiresValidTenant()
-        .WithOpenApi(); 
+        .WithOpenApi();
+
+        // Map settings endpoints with common attributes
+        var settingsGroup = app.MapGroup("/api/client/settings")
+            .WithTags("WebAPI - Settings")
+            .RequiresValidTenant();
+
+        settingsGroup.MapGet("/flowserver", (
+            [FromServices] CertificateService endpoint) =>
+        {
+            return endpoint.GetFlowServerSettings();
+        })
+        .WithName("Get Flow Server Settings")
+        .WithOpenApi();
     }
 } 

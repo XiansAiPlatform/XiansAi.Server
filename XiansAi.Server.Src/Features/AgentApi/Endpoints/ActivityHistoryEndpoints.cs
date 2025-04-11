@@ -22,7 +22,7 @@ public static class ActivityHistoryEndpoints
             .RequiresCertificate();
             
         activityHistoryGroup.MapPost("", (
-            [FromServices] ActivityHistoryService endpoint,
+            [FromServices] IActivityHistoryService endpoint,
             [FromBody] ActivityHistoryRequest request,
             HttpContext context) =>
         {

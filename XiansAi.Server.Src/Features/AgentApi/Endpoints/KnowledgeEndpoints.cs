@@ -22,7 +22,7 @@ public static class KnowledgeEndpoints
             
         knowledgeGroup.MapGet("/latest", async (
             [FromQuery] string name,
-            [FromServices] KnowledgeService endpoint) =>
+            [FromServices] IKnowledgeService endpoint) =>
         {
             _logger.LogInformation("Getting latest knowledge for -{name}-", name);
             var result = await endpoint.GetLatestKnowledge(name);

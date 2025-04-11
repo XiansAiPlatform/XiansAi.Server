@@ -30,7 +30,12 @@ public class WorkflowSignalRequest
 /// <summary>
 /// Handles API endpoints for signaling Temporal workflows.
 /// </summary>
-public class WorkflowSignalService
+public interface IWorkflowSignalService
+{
+    Task<IResult> HandleSignalWorkflow(WorkflowSignalRequest request);
+}
+
+public class WorkflowSignalService : IWorkflowSignalService
 {
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowSignalService> _logger;

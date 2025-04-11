@@ -1,20 +1,27 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
 using XiansAi.Server.Utils;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.AgentApi.Repositories;
 
-public class ActivityHistoryRepository
+public interface IActivityHistoryRepository
+{
+    void CreateWithoutWaiting(ActivityHistory activity);
+}
+
+public class ActivityHistoryRepository : IActivityHistoryRepository
 {
     private readonly IMongoCollection<ActivityHistory> _activities;
     private readonly IBackgroundTaskService _backgroundTaskService;
     private readonly ILogger<ActivityHistoryRepository> _logger;
 
     public ActivityHistoryRepository(
-        IMongoDatabase database, 
+        IDatabaseService databaseService, 
         IBackgroundTaskService backgroundTaskService,
         ILogger<ActivityHistoryRepository> logger)
     {
+        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _activities = database.GetCollection<ActivityHistory>("activity_history");
         _backgroundTaskService = backgroundTaskService;
         _logger = logger;
