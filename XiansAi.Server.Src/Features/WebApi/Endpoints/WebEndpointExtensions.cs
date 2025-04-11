@@ -250,6 +250,7 @@ public static class WebEndpointExtensions
             return await endpoint.CreateLog(log);
         })
         .WithName("Create Log")
+        // will not work with auth enabled 
         //.RequireAuthorization("RequireTenantAuth")
         .WithOpenApi();
 
