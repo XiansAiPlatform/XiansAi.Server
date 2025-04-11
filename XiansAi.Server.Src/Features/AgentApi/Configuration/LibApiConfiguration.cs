@@ -79,8 +79,11 @@ public static class LibApiConfiguration
     public static WebApplication UseLibApiEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
     {
         // Map Lib API endpoints
-        LibEndpoints.MapLibEndpoints(app, loggerFactory);
-        AgentEndpoints.MapAgentEndpoints(app, loggerFactory);
+        CacheEndpoints.MapCacheEndpoints(app, loggerFactory);
+        KnowledgeEndpoints.MapKnowledgeEndpoints(app, loggerFactory);
+        ActivityHistoryEndpoints.MapActivityHistoryEndpoints(app, loggerFactory);
+        DefinitionsEndpoints.MapDefinitionsEndpoints(app, loggerFactory);
+        SignalEndpoints.MapSignalEndpoints(app, loggerFactory);
         WebhookEndpoints.MapWebhookEndpoints(app);
         
         return app;

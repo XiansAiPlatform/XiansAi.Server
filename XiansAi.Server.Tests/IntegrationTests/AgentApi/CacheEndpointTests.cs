@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using XiansAi.Server.Tests.TestUtils;
 using Features.AgentApi.Endpoints;
+using Features.AgentApi.Endpoints.Models;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 
