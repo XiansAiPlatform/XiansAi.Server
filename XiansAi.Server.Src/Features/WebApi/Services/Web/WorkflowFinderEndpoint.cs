@@ -2,6 +2,7 @@ using Shared.Auth;
 using Temporalio.Client;
 using Temporalio.Converters;
 using XiansAi.Server.Temporal;
+using XiansAi.Server.Database.Repositories;
 
 namespace Features.WebApi.Services.Web;
 
@@ -105,8 +106,22 @@ public class WorkflowFinderEndpoint
 
                 workflows.Add(mappedWorkflow);
             }
-
             _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", workflows.Count);
+
+            // retrieve last logs for each workflow run
+            var logRepository = new LogRepository(await _databaseService.GetDatabase());
+            var logs = await logRepository.GetLastLogAsync(startTime, endTime);
+            foreach (var workflow in workflows)
+            {
+                var workflowId = ((WorkflowResponse)workflow).WorkflowId;
+                var workflowRunId = ((WorkflowResponse)workflow).RunId;
+
+                var lastLog = logs.FirstOrDefault(x => x.WorkflowRunId == workflowRunId);
+                if (lastLog != null)
+                {
+                    ((WorkflowResponse)workflow).LastLog = lastLog;
+                }
+            }
             return Results.Ok(workflows);
         }
         catch (Exception ex)
@@ -384,5 +399,7 @@ public class WorkflowFinderEndpoint
         /// Gets or sets the current activity associated with the workflow.
         /// </summary>
         public object? CurrentActivity { get; set; }
+
+        public object? LastLog { get; set; }
     }
 }

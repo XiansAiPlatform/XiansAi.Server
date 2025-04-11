@@ -54,6 +54,25 @@ public class LogRepository
             .ToListAsync();
     }
 
+    public async Task<List<Log>> GetLastLogAsync(DateTime? startTime, DateTime? endTime)
+    {
+        var matchStage = Builders<Log>.Filter.Empty;
+
+        if (startTime.HasValue)
+            matchStage &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startTime.Value);
+
+        if (endTime.HasValue)
+            matchStage &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endTime.Value);
+
+        var result = await _logs.Aggregate()
+            .Match(matchStage)
+            .Group(x => x.WorkflowRunId, g => g.Last())
+            .SortByDescending(x => x.CreatedAt)
+            .ToListAsync();
+
+        return result;
+    }
+
     public async Task<List<Log>> GetByDateRangeAsync(DateTime startDate, DateTime endDate)
     {
         return await _logs.Find(x => x.CreatedAt >= startDate && x.CreatedAt <= endDate)
