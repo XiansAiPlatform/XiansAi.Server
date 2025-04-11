@@ -56,7 +56,8 @@ namespace XiansAi.Server.Features.AgentApi.Services.Agent
                 EventType = registration.EventType,
                 Secret = GenerateWebhookSecret(),
                 IsActive = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = _tenantContext.LoggedInUser
             };
 
             return await _webhookRepository.CreateAsync(webhook);

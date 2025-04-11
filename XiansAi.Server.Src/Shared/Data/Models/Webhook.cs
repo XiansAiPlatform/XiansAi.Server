@@ -17,5 +17,6 @@ namespace XiansAi.Server.Shared.Data.Models
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? LastTriggeredAt { get; set; }
+        public string? CreatedBy { get; set; }
     }
 } 

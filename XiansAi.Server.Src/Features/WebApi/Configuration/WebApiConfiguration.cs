@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Features.WebApi.Endpoints;
 using Features.WebApi.Services.Web;
 using Features.WebApi.Auth;
+using Features.WebApi.Repositories;
 
 namespace Features.WebApi.Configuration;
 
@@ -20,6 +21,14 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<InstructionsEndpoint>();
         builder.Services.AddScoped<DefinitionsEndpoint>();
         builder.Services.AddScoped<TenantEndpoint>();
+        
+        // Register Webhook services
+        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>(sp => 
+        {
+            var dbService = sp.GetRequiredService<IDatabaseService>();
+            return new WebhookRepository(dbService.GetDatabase().GetAwaiter().GetResult());
+        });
+        builder.Services.AddScoped<WebhookEndpoint>();
         
         return builder;
     }
