@@ -6,7 +6,7 @@ using System.ComponentModel.DataAnnotations;
 using Temporalio.Common;
 using Shared.Auth;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
 /// <summary>
 /// Represents a request to start a new workflow.
@@ -35,23 +35,23 @@ public class WorkflowRequest
 /// <summary>
 /// Handles the creation and initialization of workflows in the Temporal service.
 /// </summary>
-public class WorkflowStarterEndpoint
+public class WorkflowStarterService
 {
 
     private readonly ITemporalClientService _clientService;
-    private readonly ILogger<WorkflowStarterEndpoint> _logger;
+    private readonly ILogger<WorkflowStarterService> _logger;
     private readonly ITenantContext _tenantContext;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="WorkflowStarterEndpoint"/> class.
+    /// Initializes a new instance of the <see cref="WorkflowStarterService"/> class.
     /// </summary>
     /// <param name="clientService">The Temporal client service.</param>
     /// <param name="logger">The logger instance.</param>
     /// <param name="tenantContext">The tenant context.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
-    public WorkflowStarterEndpoint(
+    public WorkflowStarterService(
         ITemporalClientService clientService,
-        ILogger<WorkflowStarterEndpoint> logger,
+        ILogger<WorkflowStarterService> logger,
         ITenantContext tenantContext)
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));

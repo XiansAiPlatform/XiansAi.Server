@@ -4,7 +4,7 @@ using Temporalio.Api.History.V1;
 using Temporalio.Client;
 using XiansAi.Server.Temporal;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
 public record WorkflowActivityEvent
 {
@@ -16,17 +16,17 @@ public record WorkflowActivityEvent
     public string? Result { get; init; }
     public string? ActivityId { get; init; }
 }
-public class WorkflowEventsEndpoint
+public class WorkflowEventsService
 {
     private readonly ITemporalClientService _clientService;
-    private readonly ILogger<WorkflowEventsEndpoint> _logger;
+    private readonly ILogger<WorkflowEventsService> _logger;
 
     private readonly Dictionary<long, HistoryEvent> _scheduledEvents = new();
     private readonly Dictionary<long, HistoryEvent> _startedEvents = new();
 
-    public WorkflowEventsEndpoint(
+    public WorkflowEventsService(
         ITemporalClientService clientService,
-        ILogger<WorkflowEventsEndpoint> logger)
+        ILogger<WorkflowEventsService> logger)
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));

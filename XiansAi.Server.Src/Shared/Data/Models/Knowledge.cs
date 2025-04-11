@@ -6,8 +6,8 @@ namespace Shared.Data.Models;
 public class Knowledge
 {
     [BsonId]
-    [BsonRepresentation(BsonType.String)]
-    public required Guid Id { get; set; }
+    [BsonRepresentation(BsonType.ObjectId)]
+    public required string Id { get; set; }
 
     [BsonElement("name")]
     public required string Name { get; set; }

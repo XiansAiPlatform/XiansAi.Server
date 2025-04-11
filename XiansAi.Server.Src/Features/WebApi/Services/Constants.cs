@@ -1,4 +1,4 @@
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
 public static class Constants {
     public const string CurrentOwnerKey = "current";

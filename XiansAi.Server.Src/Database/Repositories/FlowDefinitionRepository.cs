@@ -35,7 +35,7 @@ public class FlowDefinitionRepository
 
     public async Task<FlowDefinition> GetByIdAsync(string id)
     {
-        return await _definitions.Find(x => x.Id == Guid.Parse(id)).FirstOrDefaultAsync();
+        return await _definitions.Find(x => x.Id == id).FirstOrDefaultAsync();
     }
 
     public async Task<FlowDefinition> GetByHashAsync(string hash, string typeName)
@@ -63,13 +63,13 @@ public class FlowDefinitionRepository
 
     public async Task<bool> DeleteAsync(string id)
     {
-        var result = await _definitions.DeleteOneAsync(x => x.Id == Guid.Parse(id));
+        var result = await _definitions.DeleteOneAsync(x => x.Id == id);
         return result.DeletedCount > 0;
     }
 
     public async Task<bool> UpdateAsync(string id, FlowDefinition definition)
     {
-        var result = await _definitions.ReplaceOneAsync(x => x.Id == Guid.Parse(id), definition);
+        var result = await _definitions.ReplaceOneAsync(x => x.Id == id, definition);
         return result.ModifiedCount > 0;
     }
 

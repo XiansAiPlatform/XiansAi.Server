@@ -142,7 +142,7 @@ public class DefinitionsService
     {
         return new FlowDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = ObjectId.GenerateNewId().ToString(),
             TypeName = request.TypeName,
             AgentName = request.AgentName ?? request.TypeName,
             Hash = ComputeHash(JsonSerializer.Serialize(request)),

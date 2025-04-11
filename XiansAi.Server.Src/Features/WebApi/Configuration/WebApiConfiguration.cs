@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Features.WebApi.Endpoints;
-using Features.WebApi.Services.Web;
 using Features.WebApi.Auth;
 using Features.WebApi.Repositories;
+using Features.WebApi.Services;
 
 namespace Features.WebApi.Configuration;
 
@@ -13,22 +13,15 @@ public static class WebApiConfiguration
     {
         // Register Web API specific services
         builder.Services.AddSingleton<IAuth0MgtAPIConnect, Auth0MgtAPIConnect>();
-        builder.Services.AddScoped<WorkflowStarterEndpoint>();
-        builder.Services.AddScoped<WorkflowEventsEndpoint>();
-        builder.Services.AddScoped<WorkflowFinderEndpoint>();
-        builder.Services.AddScoped<WorkflowCancelEndpoint>();
-        builder.Services.AddScoped<CertificateEndpoint>();
-        builder.Services.AddScoped<InstructionsEndpoint>();
-        builder.Services.AddScoped<DefinitionsEndpoint>();
-        builder.Services.AddScoped<TenantEndpoint>();
-        
-        // Register Webhook services
-        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>(sp => 
-        {
-            var dbService = sp.GetRequiredService<IDatabaseService>();
-            return new WebhookRepository(dbService.GetDatabase().GetAwaiter().GetResult());
-        });
-        builder.Services.AddScoped<WebhookEndpoint>();
+        builder.Services.AddScoped<WorkflowStarterService>();
+        builder.Services.AddScoped<WorkflowEventsService>();
+        builder.Services.AddScoped<WorkflowFinderService>();
+        builder.Services.AddScoped<WorkflowCancelService>();
+        builder.Services.AddScoped<CertificateService>();
+        builder.Services.AddScoped<InstructionsService>();
+        builder.Services.AddScoped<DefinitionsService>();
+        builder.Services.AddScoped<TenantService>();
+        builder.Services.AddScoped<WebhookService>();
         
         return builder;
     }
@@ -36,7 +29,13 @@ public static class WebApiConfiguration
     public static WebApplication UseWebApiEndpoints(this WebApplication app)
     {
         // Map Web API endpoints
-        WebEndpointExtensions.MapWebEndpoints(app);
+        WorkflowEndpointExtensions.MapWorkflowEndpoints(app);
+        InstructionEndpointExtensions.MapInstructionEndpoints(app);
+        ActivityEndpointExtensions.MapActivityEndpoints(app);
+        SettingsEndpointExtensions.MapSettingsEndpoints(app);
+        DefinitionsEndpointExtensions.MapDefinitionsEndpoints(app);
+        TenantEndpointExtensions.MapTenantEndpoints(app);
+        WebhookEndpointExtensions.MapWebhookEndpoints(app);
         PublicEndpointExtensions.MapPublicEndpoints(app);
         
         return app;

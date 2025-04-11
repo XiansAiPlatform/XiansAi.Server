@@ -7,8 +7,8 @@ namespace XiansAi.Server.Shared.Data.Models
     public class Webhook
     {
         [BsonId]
-        [BsonRepresentation(BsonType.String)]
-        public Guid Id { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public required string Id { get; set; }
         public required string TenantId { get; set; }
         public required string WorkflowId { get; set; }
         public required string CallbackUrl { get; set; }

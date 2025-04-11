@@ -6,10 +6,10 @@ namespace XiansAi.Server.Features.AgentApi.Repositories
 {
     public interface IWebhookRepository
     {
-        Task<Webhook> GetByIdAsync(Guid id, string tenantId);
+        Task<Webhook> GetByIdAsync(string id, string tenantId);
         Task<IEnumerable<Webhook>> GetByWorkflowIdAsync(string workflowId, string tenantId);
         Task<Webhook> CreateAsync(Webhook webhook);
-        Task<bool> DeleteAsync(Guid id, string tenantId);
+        Task<bool> DeleteAsync(string id, string tenantId);
         Task UpdateAsync(Webhook webhook);
     }
 
@@ -35,7 +35,7 @@ namespace XiansAi.Server.Features.AgentApi.Repositories
             _webhooks.Indexes.CreateOne(indexModelWorkflow);
         }
 
-        public async Task<Webhook> GetByIdAsync(Guid id, string tenantId)
+        public async Task<Webhook> GetByIdAsync(string id, string tenantId)
         {
             return await _webhooks.Find(w => w.Id == id && w.TenantId == tenantId)
                 .FirstOrDefaultAsync();
@@ -57,7 +57,7 @@ namespace XiansAi.Server.Features.AgentApi.Repositories
             return webhook;
         }
 
-        public async Task<bool> DeleteAsync(Guid id, string tenantId)
+        public async Task<bool> DeleteAsync(string id, string tenantId)
         {
             var result = await _webhooks.DeleteOneAsync(w => w.Id == id && w.TenantId == tenantId);
             return result.DeletedCount > 0;

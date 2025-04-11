@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using XiansAi.Server.Database.Models;
 using XiansAi.Server.Database.Repositories;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
 // Request DTOs
 public class CreateTenantRequest 
@@ -25,14 +25,14 @@ public class UpdateTenantRequest
     public string? Timezone { get; set; }
 }
 
-public class TenantEndpoint
+public class TenantService
 {
     private readonly IDatabaseService _databaseService;
-    private readonly ILogger<TenantEndpoint> _logger;
+    private readonly ILogger<TenantService> _logger;
 
-    public TenantEndpoint(
+    public TenantService(
         IDatabaseService databaseService,
-        ILogger<TenantEndpoint> logger
+        ILogger<TenantService> logger
     )
     {
         _databaseService = databaseService;

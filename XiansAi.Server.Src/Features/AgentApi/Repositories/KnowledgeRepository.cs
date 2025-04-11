@@ -21,7 +21,7 @@ public class KnowledgeRepository
 
     public async Task<Knowledge> GetByIdAsync(string id)
     {
-        return await _knowledge.Find(x => x.Id == Guid.Parse(id)).FirstOrDefaultAsync();
+        return await _knowledge.Find(x => x.Id == id).FirstOrDefaultAsync();
     }
 
     public async Task<Knowledge> GetByVersionAsync(string version)

@@ -5,6 +5,7 @@ using XiansAi.Server.Shared.Data.Models;
 using XiansAi.Server.Features.AgentApi.Models;
 using XiansAi.Server.Features.AgentApi.Repositories;
 using Shared.Auth;
+using MongoDB.Bson;
 
 namespace XiansAi.Server.Features.AgentApi.Services.Agent
 {
@@ -12,8 +13,8 @@ namespace XiansAi.Server.Features.AgentApi.Services.Agent
     {
         Task<Webhook> RegisterWebhookAsync(WebhookRegistrationDto registration);
         Task<WebhookTriggerResult> TriggerWebhookAsync(string workflowId, string eventType, object payload);
-        Task<bool> DeleteWebhookAsync(Guid webhookId);
-        Task<Webhook> GetWebhookAsync(Guid webhookId);
+        Task<bool> DeleteWebhookAsync(string webhookId);
+        Task<Webhook> GetWebhookAsync(string webhookId);
         Task<WebhookTriggerResult> ManuallyTriggerWebhookAsync(WebhookTriggerDto triggerDto);
     }
 
@@ -49,7 +50,7 @@ namespace XiansAi.Server.Features.AgentApi.Services.Agent
 
             var webhook = new Webhook
             {
-                Id = Guid.NewGuid(),
+                Id = ObjectId.GenerateNewId().ToString(),
                 TenantId = _tenantContext.TenantId,
                 WorkflowId = registration.WorkflowId,
                 CallbackUrl = registration.CallbackUrl,
@@ -95,13 +96,13 @@ namespace XiansAi.Server.Features.AgentApi.Services.Agent
             return await TriggerWebhookAsync(triggerDto.WorkflowId, triggerDto.EventType, triggerDto.Payload);
         }
 
-        public async Task<bool> DeleteWebhookAsync(Guid webhookId)
+        public async Task<bool> DeleteWebhookAsync(string webhookId)
         {
             ValidateTenantContext();
             return await _webhookRepository.DeleteAsync(webhookId, _tenantContext.TenantId);
         }
 
-        public async Task<Webhook> GetWebhookAsync(Guid webhookId)
+        public async Task<Webhook> GetWebhookAsync(string webhookId)
         {
             ValidateTenantContext();
             return await _webhookRepository.GetByIdAsync(webhookId, _tenantContext.TenantId);

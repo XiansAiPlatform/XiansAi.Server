@@ -24,7 +24,7 @@ namespace XiansAi.Server.Features.AgentApi.Endpoints
             .WithDescription("Register a new webhook for a workflow");
 
             group.MapDelete("/{webhookId}", async (
-                Guid webhookId,
+                string webhookId,
                 IWebhookService webhookService,
                 HttpContext context) =>
             {
@@ -35,7 +35,7 @@ namespace XiansAi.Server.Features.AgentApi.Endpoints
             .WithDescription("Delete an existing webhook");
 
             group.MapGet("/{webhookId}", async (
-                Guid webhookId,
+                string webhookId,
                 IWebhookService webhookService,
                 HttpContext context) =>
             {

@@ -2,26 +2,26 @@ using Shared.Auth;
 using XiansAi.Server.Auth;
 using XiansAi.Server.Database.Repositories;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
 /// <summary>
 /// Endpoint for managing flow definitions with operations for retrieval and deletion.
 /// </summary>
-public class DefinitionsEndpoint
+public class DefinitionsService
 {
     private readonly IDatabaseService _databaseService;
-    private readonly ILogger<DefinitionsEndpoint> _logger;
+    private readonly ILogger<DefinitionsService> _logger;
     private readonly ITenantContext _tenantContext;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="DefinitionsEndpoint"/> class.
+    /// Initializes a new instance of the <see cref="DefinitionsService"/> class.
     /// </summary>
     /// <param name="databaseService">Service for database operations.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
-    public DefinitionsEndpoint(
+    public DefinitionsService(
         IDatabaseService databaseService,
-        ILogger<DefinitionsEndpoint> logger,
+        ILogger<DefinitionsService> logger,
         ITenantContext tenantContext
     )
     {

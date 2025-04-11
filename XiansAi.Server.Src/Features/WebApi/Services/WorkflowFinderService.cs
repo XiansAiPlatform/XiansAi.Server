@@ -1,31 +1,30 @@
 using Shared.Auth;
 using Temporalio.Client;
 using Temporalio.Converters;
-using XiansAi.Server.Auth;
 using XiansAi.Server.Temporal;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
 /// <summary>
 /// Endpoint for retrieving and managing workflow information from Temporal.
 /// </summary>
-public class WorkflowFinderEndpoint
+public class WorkflowFinderService
 {
     private readonly ITemporalClientService _clientService;
-    private readonly ILogger<WorkflowFinderEndpoint> _logger;
+    private readonly ILogger<WorkflowFinderService> _logger;
     private readonly ITenantContext _tenantContext;
 
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="WorkflowFinderEndpoint"/> class.
+    /// Initializes a new instance of the <see cref="WorkflowFinderService"/> class.
     /// </summary>
     /// <param name="clientService">The Temporal client service for workflow operations.</param>
     /// <param name="logger">Logger for recording operational events.</param>
     /// <param name="tenantContext">Context containing tenant-specific information.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
-    public WorkflowFinderEndpoint(
+    public WorkflowFinderService(
         ITemporalClientService clientService,
-        ILogger<WorkflowFinderEndpoint> logger,
+        ILogger<WorkflowFinderService> logger,
         ITenantContext tenantContext)
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));

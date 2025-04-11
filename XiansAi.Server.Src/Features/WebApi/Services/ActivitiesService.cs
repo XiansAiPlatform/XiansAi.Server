@@ -3,12 +3,12 @@ using XiansAi.Server.Database;
 using XiansAi.Server.Database.Models;
 using XiansAi.Server.Database.Repositories;
 
-namespace Features.WebApi.Services.Web;
-public class ActivitiesEndpoint
+namespace Features.WebApi.Services;
+public class ActivitiesService
 {
     private readonly IDatabaseService _databaseService;
 
-    public ActivitiesEndpoint(IDatabaseService databaseService)
+    public ActivitiesService(IDatabaseService databaseService)
     {
         _databaseService = databaseService;
     }

@@ -1,13 +1,13 @@
 using XiansAi.Server.Temporal;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
-public class WorkflowCancelEndpoint
+public class WorkflowCancelService
 {
     private readonly ITemporalClientService _temporalClientService;
-    private readonly ILogger<WorkflowCancelEndpoint> _logger;
+    private readonly ILogger<WorkflowCancelService> _logger;
 
-    public WorkflowCancelEndpoint(ITemporalClientService temporalClientService, ILogger<WorkflowCancelEndpoint> logger)
+    public WorkflowCancelService(ITemporalClientService temporalClientService, ILogger<WorkflowCancelService> logger)
     {
         _temporalClientService = temporalClientService;
         _logger = logger;

@@ -3,17 +3,17 @@ using System.Security.Claims;
 using XiansAi.Server.Auth;
 using Shared.Auth;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 
-public class CertificateEndpoint
+public class CertificateService
 {
-    private readonly ILogger<CertificateEndpoint> _logger;
+    private readonly ILogger<CertificateService> _logger;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly IConfiguration _configuration;
-    public CertificateEndpoint(
-        ILogger<CertificateEndpoint> logger,
+    public CertificateService(
+        ILogger<CertificateService> logger,
         IHttpContextAccessor httpContextAccessor,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,

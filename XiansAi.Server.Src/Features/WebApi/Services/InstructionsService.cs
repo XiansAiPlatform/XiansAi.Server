@@ -4,7 +4,7 @@ using XiansAi.Server.Database.Models;
 using XiansAi.Server.Database.Repositories;
 using XiansAi.Server.Utils;
 
-namespace Features.WebApi.Services.Web;
+namespace Features.WebApi.Services;
 public class InstructionRequest
 {
     public required string Name { get; set; }
@@ -17,14 +17,14 @@ public class DeleteAllVersionsRequest
     public required string Name { get; set; }
 }
 
-public class InstructionsEndpoint
+public class InstructionsService
 {
     private readonly IDatabaseService _databaseService;
-    private readonly ILogger<InstructionsEndpoint> _logger;
+    private readonly ILogger<InstructionsService> _logger;
 
-    public InstructionsEndpoint(
+    public InstructionsService(
         IDatabaseService databaseService,
-        ILogger<InstructionsEndpoint> logger
+        ILogger<InstructionsService> logger
     )
     {
         _databaseService = databaseService;

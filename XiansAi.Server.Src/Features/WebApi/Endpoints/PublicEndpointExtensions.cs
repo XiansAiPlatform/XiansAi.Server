@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services.Public;
+using Features.WebApi.Services;
 
 namespace Features.WebApi.Endpoints;
 public static class PublicEndpointExtensions
@@ -13,7 +13,7 @@ public static class PublicEndpointExtensions
     {
         app.MapPost("/api/public/register/verification/send", async (
             [FromBody] string email,
-            [FromServices] RegistrationEndpoint endpoint) =>
+            [FromServices] PublicService endpoint) =>
         {
             return await endpoint.SendVerificationCode(email);
         })
@@ -23,7 +23,7 @@ public static class PublicEndpointExtensions
 
         app.MapPost("/api/public/register/verification/validate", async (
             [FromBody] ValidateCodeRequest request,
-            [FromServices] RegistrationEndpoint endpoint) =>
+            [FromServices] PublicService endpoint) =>
         {
             var isValid = await endpoint.ValidateCode(request.Email, request.Code);
             return Results.Ok(new { isValid });

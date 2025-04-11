@@ -4,15 +4,15 @@ using XiansAi.Server.Temporal;
 using Features.WebApi.Auth;
 using Shared.Auth;
 
-namespace Features.WebApi.Services.Public;
+namespace Features.WebApi.Services;
 
 /// <summary>
 /// Handles user registration and email verification processes.
 /// </summary>
-public class RegistrationEndpoint 
+public class PublicService 
 {
     private readonly IAuth0MgtAPIConnect _auth0MgtAPIConnect;
-    private readonly ILogger<RegistrationEndpoint> _logger;
+    private readonly ILogger<PublicService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly ITemporalClientService _temporalClientService;
     private readonly IDistributedCache _cache;
@@ -26,7 +26,7 @@ public class RegistrationEndpoint
     private const string EMAIL_SUBJECT = "Xians.ai - Verification Code";
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="RegistrationEndpoint"/> class.
+    /// Initializes a new instance of the <see cref="PublicService"/> class.
     /// </summary>
     /// <param name="auth0MgtAPIConnect">Service for Auth0 Management API operations</param>
     /// <param name="temporalClientService">Service for Temporal workflow operations</param>
@@ -36,10 +36,10 @@ public class RegistrationEndpoint
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
-    public RegistrationEndpoint(
+    public PublicService(
         IAuth0MgtAPIConnect auth0MgtAPIConnect, 
         ITemporalClientService temporalClientService,
-        ILogger<RegistrationEndpoint> logger,
+        ILogger<PublicService> logger,
         ITenantContext tenantContext,
         IDistributedCache cache, 
         IEmailService emailService,
