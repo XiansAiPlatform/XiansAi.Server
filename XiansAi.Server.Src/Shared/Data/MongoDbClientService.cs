@@ -1,8 +1,7 @@
 using MongoDB.Driver;
-using System.Collections.Concurrent;
-using Shared.Auth;
 
-namespace XiansAi.Server.Database;
+
+namespace XiansAi.Server.Shared.Data;
 
 public interface IMongoDbClientService
 {

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using XiansAi.Server.Utils;
 using MongoDB.Driver;
 using Shared.Data.Models;
+using XiansAi.Server.Features.WebApi.Models;
 
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;

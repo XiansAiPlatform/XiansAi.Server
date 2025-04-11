@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using XiansAi.Server.Database;
+using XiansAi.Server.Shared.Data;
 
 namespace XiansAi.Server.Tests.TestUtils;
 

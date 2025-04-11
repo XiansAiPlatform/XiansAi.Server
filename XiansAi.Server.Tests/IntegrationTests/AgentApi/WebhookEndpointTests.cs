@@ -7,6 +7,7 @@ using XiansAi.Server.Shared.Data.Models;
 using MongoDB.Driver;
 using Microsoft.Extensions.DependencyInjection;
 using XiansAi.Server.Utils;
+using MongoDB.Bson;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 
@@ -96,7 +97,7 @@ public class WebhookEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFi
     public async Task GetWebhook_WithInvalidId_ReturnsNotFound()
     {
         // Arrange - Use a non-existent webhook ID
-        var invalidId = Guid.NewGuid();
+        var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
         var response = await _client.GetAsync($"/api/agent/webhooks/{invalidId}");
@@ -134,7 +135,7 @@ public class WebhookEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFi
     public async Task DeleteWebhook_WithInvalidId_ReturnsNotFound()
     {
         // Arrange - Use a non-existent webhook ID
-        var invalidId = Guid.NewGuid();
+        var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
         var response = await _client.DeleteAsync($"/api/agent/webhooks/{invalidId}");

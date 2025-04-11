@@ -1,9 +1,9 @@
 using Shared.Auth;
 using XiansAi.Server.Auth;
-using XiansAi.Server.Database;
 using XiansAi.Server.GenAi;
 using XiansAi.Server.Temporal;
 using XiansAi.Server.Utils;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.Shared.Configuration;
 

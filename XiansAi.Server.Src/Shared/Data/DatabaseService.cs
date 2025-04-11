@@ -1,6 +1,6 @@
 using MongoDB.Driver;
-using XiansAi.Server.Database;
 
+namespace XiansAi.Server.Shared.Data;
 public interface IDatabaseService
 {
     Task<IMongoDatabase> GetDatabase();

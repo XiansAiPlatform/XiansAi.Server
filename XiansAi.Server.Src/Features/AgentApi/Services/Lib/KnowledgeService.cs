@@ -1,5 +1,5 @@
 using Features.AgentApi.Repositories;
-using XiansAi.Server.Database;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.AgentApi.Services.Lib;
 public class KnowledgeService

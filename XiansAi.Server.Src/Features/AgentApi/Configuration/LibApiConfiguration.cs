@@ -4,10 +4,10 @@ using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Repositories;
 using XiansAi.Server.Utils;
-using Microsoft.Extensions.Logging;
 using XiansAi.Server.Features.AgentApi.Repositories;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using XiansAi.Server.Features.AgentApi.Endpoints;
+using XiansAi.Server.Shared.Data;
 namespace Features.AgentApi.Configuration;
 
 public static class LibApiConfiguration
