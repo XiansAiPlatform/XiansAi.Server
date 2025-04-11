@@ -5,8 +5,6 @@ using XiansAi.Server.Tests.TestUtils;
 using XiansAi.Server.Features.AgentApi.Models;
 using XiansAi.Server.Shared.Data.Models;
 using MongoDB.Driver;
-using Microsoft.Extensions.DependencyInjection;
-using XiansAi.Server.Utils;
 using MongoDB.Bson;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
