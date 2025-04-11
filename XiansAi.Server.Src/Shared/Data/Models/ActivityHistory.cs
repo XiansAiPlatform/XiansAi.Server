@@ -8,8 +8,8 @@ public class ActivityHistory
 {
     [JsonPropertyName("id")]
     [BsonId]
-    [BsonRepresentation(BsonType.ObjectId)]
-    public string? Id { get; set; }
+    [BsonRepresentation(BsonType.String)]
+    public Guid? Id { get; set; }
 
     [JsonPropertyName("activityId")]
     [BsonElement("activity_id")]

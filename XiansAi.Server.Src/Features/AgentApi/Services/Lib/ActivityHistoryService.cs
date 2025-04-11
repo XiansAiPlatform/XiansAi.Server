@@ -79,7 +79,7 @@ public class ActivityHistoryService
             DateTime.UtcNow, JsonSerializer.Serialize(request));
         var activity = new ActivityHistory
         {
-            Id = ObjectId.GenerateNewId().ToString(),
+            Id = Guid.NewGuid(),
             ActivityId = request.ActivityId,
             ActivityName = request.ActivityName,
             StartedTime = request.StartedTime,

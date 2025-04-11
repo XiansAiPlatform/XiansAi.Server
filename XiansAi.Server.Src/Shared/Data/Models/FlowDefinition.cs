@@ -7,8 +7,8 @@ public class FlowDefinition
     private string _agentName = string.Empty;
 
     [BsonId]
-    [BsonRepresentation(BsonType.ObjectId)]
-    public string Id { get; set; } = null!;
+    [BsonRepresentation(BsonType.String)]
+    public Guid Id { get; set; } = Guid.Empty;
 
     [BsonElement("type_name")]
     public required string TypeName { get; set; }

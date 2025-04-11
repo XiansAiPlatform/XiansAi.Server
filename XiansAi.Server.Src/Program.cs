@@ -139,15 +139,12 @@ public class Program
             
             case ServiceType.LibApi:
                 // Apply LibApi specific middleware first
-                app.UseLibApiMiddleware();
                 app.UseLibApiEndpoints(loggerFactory);
                 break;
             
             case ServiceType.All:
             default:
                 app.UseWebApiEndpoints();
-                // Apply LibApi specific middleware first
-                app.UseLibApiMiddleware();
                 app.UseLibApiEndpoints(loggerFactory);
                 break;
         }

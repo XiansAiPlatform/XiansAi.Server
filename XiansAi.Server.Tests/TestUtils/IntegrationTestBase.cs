@@ -9,18 +9,20 @@ namespace XiansAi.Server.Tests.TestUtils;
 public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
 {
     protected readonly MongoDbFixture _mongoFixture;
-    protected readonly XiansAiWebApplicationFactory _factory;
-    protected readonly HttpClient _client;
-    protected readonly IMongoDatabase _database;
+    protected XiansAiWebApplicationFactory _factory;
+    protected HttpClient _client;
+    protected IMongoDatabase _database;
 
     protected IntegrationTestBase(MongoDbFixture mongoFixture)
     {
         _mongoFixture = mongoFixture;
         
         // Initialize environment variables for certificate authentication
+        // This should be done before creating the factory to ensure proper configuration
         TestCertificateHelper.Initialize();
         
         _factory = new XiansAiWebApplicationFactory(mongoFixture);
+        
         _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
@@ -31,13 +33,29 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         
         _database = _mongoFixture.Database;
     }
+
+    public Task DisposeAsync()
+    {
+        _client?.Dispose();
+        return Task.CompletedTask;
+    }
     
     private void ConfigureClientWithCertificate()
     {
         try
         {
+            if (_client == null) 
+            {
+                throw new InvalidOperationException("Client is not initialized");
+            }
+            
             var apiKey = TestCertificateHelper.LoadApiKeyFromEnv();
-            _client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new InvalidOperationException("API key is null or empty");
+            }
+            
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         }
         catch (Exception ex)
         {

@@ -121,7 +121,7 @@ public class DefinitionsService
             await GenerateMarkdown(definition);
             await _flowDefinitionRepository.CreateAsync(definition);
             // delete the old definition
-            await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id);
+            await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id.ToString());
             return Results.Ok("Definition had a different hash, new definition created successfully");
         }  else {
             return Results.Ok("Definition already up to date");
@@ -142,7 +142,7 @@ public class DefinitionsService
     {
         return new FlowDefinition
         {
-            Id = ObjectId.GenerateNewId().ToString(),
+            Id = Guid.NewGuid(),
             TypeName = request.TypeName,
             AgentName = request.AgentName ?? request.TypeName,
             Hash = ComputeHash(JsonSerializer.Serialize(request)),

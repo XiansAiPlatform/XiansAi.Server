@@ -29,7 +29,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         {
             new Knowledge
             {
-                Id = ObjectId.GenerateNewId().ToString(),
+                Id = Guid.NewGuid(),
                 Name = testInstructionName,
                 Content = "First instruction content",
                 Type = "text",
@@ -38,7 +38,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
             },
             new Knowledge
             {
-                Id = ObjectId.GenerateNewId().ToString(),
+                Id = Guid.NewGuid(),
                 Name = testInstructionName,
                 Content = "Second instruction content",
                 Type = "text",
@@ -47,7 +47,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
             },
             new Knowledge
             {
-                Id = ObjectId.GenerateNewId().ToString(),
+                Id = Guid.NewGuid(),
                 Name = testInstructionName,
                 Content = "Latest instruction content",
                 Type = "text",
@@ -103,7 +103,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         {
             new Knowledge
             {
-                Id = ObjectId.GenerateNewId().ToString(),
+                Id = Guid.NewGuid(),
                 Name = testInstructionName,
                 Content = "First content",
                 Type = "text",
@@ -112,7 +112,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
             },
             new Knowledge
             {
-                Id = ObjectId.GenerateNewId().ToString(),
+                Id = Guid.NewGuid(),
                 Name = testInstructionName,
                 Content = "Newest content", // This should be returned as it has the latest timestamp
                 Type = "text",
@@ -121,7 +121,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
             },
             new Knowledge
             {
-                Id = ObjectId.GenerateNewId().ToString(),
+                Id = Guid.NewGuid(),
                 Name = testInstructionName,
                 Content = "Middle content",
                 Type = "text",

@@ -5,6 +5,9 @@ using Features.AgentApi.Auth;
 using Features.AgentApi.Repositories;
 using XiansAi.Server.Utils;
 using Microsoft.Extensions.Logging;
+using XiansAi.Server.Features.AgentApi.Repositories;
+using XiansAi.Server.Features.AgentApi.Services.Agent;
+using XiansAi.Server.Features.AgentApi.Endpoints;
 namespace Features.AgentApi.Configuration;
 
 public static class LibApiConfiguration
@@ -19,6 +22,12 @@ public static class LibApiConfiguration
                 sp.GetRequiredService<IBackgroundTaskService>(), sp.GetRequiredService<ILogger<ActivityHistoryRepository>>());
         });
 
+        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>(sp => 
+        {
+            var dbService = sp.GetRequiredService<IDatabaseService>();
+            return new WebhookRepository(dbService.GetDatabase().GetAwaiter().GetResult());
+        });
+
         builder.Services.AddScoped<FlowDefinitionRepository>(sp => 
         {
             var dbService = sp.GetRequiredService<IDatabaseService>();
@@ -31,12 +40,16 @@ public static class LibApiConfiguration
             return new KnowledgeRepository(dbService.GetDatabase().GetAwaiter().GetResult());
         });
 
+        // Register HttpClient for webhook service
+        builder.Services.AddHttpClient();
+
         // Register Lib API specific services
         builder.Services.AddScoped<KnowledgeService>();
         builder.Services.AddScoped<ActivityHistoryService>();
         builder.Services.AddScoped<DefinitionsService>();
         builder.Services.AddScoped<WorkflowSignalService>();
         builder.Services.AddScoped<ObjectCacheWrapperService>();
+        builder.Services.AddScoped<IWebhookService, WebhookService>();
 
         return builder;
     }
@@ -68,15 +81,8 @@ public static class LibApiConfiguration
         // Map Lib API endpoints
         LibEndpoints.MapLibEndpoints(app, loggerFactory);
         AgentEndpoints.MapAgentEndpoints(app, loggerFactory);
+        WebhookEndpoints.MapWebhookEndpoints(app);
         
-        return app;
-    }
-    
-    // Since we're now using authentication handlers, we don't need the middleware anymore
-    // But keeping the method to maintain backwards compatibility with Program.cs
-    public static WebApplication UseLibApiMiddleware(this WebApplication app)
-    {
-        // No longer applying certificate validation middleware as it's now handled by the authentication handler
         return app;
     }
 } 

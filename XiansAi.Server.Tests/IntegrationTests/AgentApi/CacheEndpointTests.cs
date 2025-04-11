@@ -85,6 +85,9 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         Assert.Equal("expiration", content.GetProperty("test").GetString());
     }
 
+    /*
+    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetCacheValue_WithSlidingExpiration_SetsValueCorrectly"
+    */
     [Fact]
     public async Task SetCacheValue_WithSlidingExpiration_SetsValueCorrectly()
     {

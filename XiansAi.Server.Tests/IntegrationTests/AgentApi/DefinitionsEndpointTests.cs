@@ -161,12 +161,15 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         Assert.Equal(uniqueTypeName, result?.TypeName);
         Assert.Equal("Test Agent", result?.AgentName);
         Assert.Equal("Example source code", result?.Source);
-        Assert.Single(result?.Activities);
+        Assert.Single(result!.Activities);
+        Assert.NotNull(result?.Activities[0]);
         Assert.Equal("TestActivity", result?.Activities[0].ActivityName);
-        Assert.Contains("tool1", result?.Activities[0].AgentToolNames);
-        Assert.Contains("tool2", result?.Activities[0].AgentToolNames);
-        Assert.Contains("instruction1", result?.Activities[0].Instructions);
-        Assert.Single(result?.Parameters);
+        Assert.NotNull(result?.Activities[0].AgentToolNames);
+        Assert.Contains("tool1", result?.Activities[0].AgentToolNames!);
+        Assert.Contains("tool2", result?.Activities[0].AgentToolNames!);
+        Assert.Single(result!.Activities[0].Instructions);
+        Assert.Contains("instruction1", result!.Activities[0].Instructions);
+        Assert.Single(result!.Parameters);
         Assert.Equal("flowParam1", result?.Parameters[0].Name);
         Assert.Equal("string", result?.Parameters[0].Type);
     }
@@ -260,9 +263,10 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         Assert.NotNull(result);
         Assert.Equal("Updated Test Agent", result?.AgentName);
         Assert.Equal("Updated example source code", result?.Source);
-        Assert.Single(result?.Activities);
+        Assert.Single(result!.Activities);
         Assert.Equal("UpdatedTestActivity", result?.Activities[0].ActivityName);
-        Assert.Equal(3, result?.Activities[0].AgentToolNames.Count);
+        Assert.NotNull(result?.Activities[0].AgentToolNames);
+        Assert.Equal(3, result?.Activities[0].AgentToolNames!.Count);
         Assert.Equal(2, result?.Activities[0].Instructions.Count);
         Assert.Equal(2, result?.Parameters.Count);
     }
