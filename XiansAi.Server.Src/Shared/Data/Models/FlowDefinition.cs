@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
+using XiansAi.Server.Features.WebApi.Models;
 
 namespace Shared.Data.Models;
 public class FlowDefinition

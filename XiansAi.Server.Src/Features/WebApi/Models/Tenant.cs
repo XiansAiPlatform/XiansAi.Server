@@ -3,7 +3,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using System;
 using System.Collections.Generic;
 
-namespace XiansAi.Server.Database.Models;
+namespace XiansAi.Server.Features.WebApi.Models;
 
 public class Tenant
 {

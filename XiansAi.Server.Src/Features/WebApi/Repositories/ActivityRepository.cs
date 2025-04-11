@@ -1,8 +1,7 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
-using XiansAi.Server.Database.Models;
-
-namespace XiansAi.Server.Database.Repositories;
+using XiansAi.Server.Features.WebApi.Models;
+namespace XiansAi.Server.Features.WebApi.Repositories;
 
 public class ActivityRepository
 {

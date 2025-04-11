@@ -1,7 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace XiansAi.Server.Database.Models;
+namespace XiansAi.Server.Features.WebApi.Models;
 
 public class Instruction
 {

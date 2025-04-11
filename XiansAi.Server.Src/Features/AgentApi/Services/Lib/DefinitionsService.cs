@@ -7,6 +7,7 @@ using MongoDB.Driver;
 using XiansAi.Server.GenAi;
 using Shared.Auth;
 using Shared.Data.Models;
+using XiansAi.Server.Features.WebApi.Models;
 
 namespace Features.AgentApi.Services.Lib;
 

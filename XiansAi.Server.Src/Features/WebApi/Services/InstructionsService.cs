@@ -1,7 +1,6 @@
 using MongoDB.Bson;
-using XiansAi.Server.Database;
-using XiansAi.Server.Database.Models;
-using XiansAi.Server.Database.Repositories;
+using XiansAi.Server.Features.WebApi.Models;
+using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Utils;
 
 namespace Features.WebApi.Services;

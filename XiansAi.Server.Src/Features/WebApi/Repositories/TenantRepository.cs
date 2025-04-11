@@ -1,11 +1,8 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using XiansAi.Server.Database.Models;
+using XiansAi.Server.Features.WebApi.Models;
 
-namespace XiansAi.Server.Database.Repositories;
+namespace XiansAi.Server.Features.WebApi.Repositories;
 
 public class TenantRepository
 {

@@ -1,7 +1,5 @@
-
-using XiansAi.Server.Database;
-using XiansAi.Server.Database.Models;
-using XiansAi.Server.Database.Repositories;
+using XiansAi.Server.Features.WebApi.Models;
+using XiansAi.Server.Features.WebApi.Repositories;
 
 namespace Features.WebApi.Services;
 public class ActivitiesService

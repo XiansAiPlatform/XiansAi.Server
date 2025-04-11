@@ -1,6 +1,8 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
+namespace XiansAi.Server.Features.WebApi.Models;
+
 public class ActivityDefinition
 {
     private List<string>? _agentToolNames;
