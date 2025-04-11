@@ -1,6 +1,7 @@
 using MongoDB.Driver;
 using XiansAi.Server.Shared.Data.Models;
 using Shared.Auth;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.WebApi.Repositories
 {
@@ -18,8 +19,9 @@ namespace Features.WebApi.Repositories
     {
         private readonly IMongoCollection<Webhook> _webhooks;
 
-        public WebhookRepository(IMongoDatabase database)
+        public WebhookRepository(IDatabaseService databaseService)
         {
+            var database = databaseService.GetDatabase().Result;
             _webhooks = database.GetCollection<Webhook>("webhooks");
             
             // Create indexes if they don't exist

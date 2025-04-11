@@ -10,7 +10,7 @@ public static class TenantEndpointExtensions
         app.MapGet("/api/client/tenants", async (
             [FromServices] TenantService endpoint) =>
         {
-            return await endpoint.GetTenants();
+            return await endpoint.GetAllTenants();
         })
         .WithName("Get Tenants")
         .RequireAuthorization("RequireTenantAuth")
@@ -24,7 +24,7 @@ public static class TenantEndpointExtensions
             string id,
             [FromServices] TenantService endpoint) =>
         {
-            return await endpoint.GetTenant(id);
+            return await endpoint.GetTenantById(id);
         })
         .WithName("Get Tenant")
         .RequireAuthorization("RequireTenantAuth")
@@ -69,7 +69,7 @@ public static class TenantEndpointExtensions
         {
             var userIdClaim = httpContext.User.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
             var createdBy = userIdClaim ?? "system";
-            return await endpoint.CreateTenant(request, createdBy);
+            return await endpoint.CreateTenant(request);
         })
         .WithName("Create Tenant")
         .RequireAuthorization("RequireTenantAuth")

@@ -19,65 +19,58 @@ public class DeleteAllVersionsRequest
 
 public class InstructionsService
 {
-    private readonly IDatabaseService _databaseService;
+    private readonly IInstructionRepository _instructionRepository;
     private readonly ILogger<InstructionsService> _logger;
 
     public InstructionsService(
-        IDatabaseService databaseService,
+        IInstructionRepository instructionRepository,
         ILogger<InstructionsService> logger
     )
     {
-        _databaseService = databaseService;
+        _instructionRepository = instructionRepository;
         _logger = logger;
     }
 
     public async Task<IResult> GetInstructionById(string id)
     {
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        var instruction = await instructionRepository.GetByIdAsync(id);
+        var instruction = await _instructionRepository.GetByIdAsync(id);
         return Results.Ok(instruction);
     }
 
     public async Task<IResult> GetInstructionVersions(string name)
     {
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        var versions = await instructionRepository.GetByNameAsync(name);
+        var versions = await _instructionRepository.GetByNameAsync(name);
         return Results.Ok(versions);
     }
 
     public async Task<IResult> DeleteInstruction(string id)
     {
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        await instructionRepository.DeleteAsync(id);
+        await _instructionRepository.DeleteAsync(id);
         return Results.Ok();
     }
 
     public async Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request)
     {
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        await instructionRepository.DeleteAllVersionsAsync(request.Name);
+        await _instructionRepository.DeleteAllVersionsAsync(request.Name);
         return Results.Ok(new { message = "All versions deleted" });
     }
 
     public async Task<IResult> GetLatestInstructions()
     {
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        var instructions = await instructionRepository.GetUniqueLatestInstructionsAsync();
+        var instructions = await _instructionRepository.GetUniqueLatestInstructionsAsync();
         _logger.LogInformation("Found {Count} instructions", instructions.Count);
         return Results.Ok(instructions);
     }
 
     public async Task<IResult> GetLatestInstructionByName(string name)
     {
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        var instruction = await instructionRepository.GetLatestInstructionByNameAsync(name);
+        var instruction = await _instructionRepository.GetLatestInstructionByNameAsync(name);
         return Results.Ok(instruction);
     }
 
     public async Task<IResult> GetInstructions()
     {
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        var instructions = await instructionRepository.GetAllAsync();
+        var instructions = await _instructionRepository.GetAllAsync();
         _logger.LogInformation("Found {Count} instructions", instructions.Count);
         return Results.Ok(instructions);
     }
@@ -94,8 +87,7 @@ public class InstructionsService
             Version = HashGenerator.GenerateContentHash(ObjectId.GenerateNewId().ToString() + DateTime.UtcNow.ToString()),
             CreatedAt = DateTime.UtcNow
         };
-        var instructionRepository = new InstructionRepository(await _databaseService.GetDatabase());
-        await instructionRepository.CreateAsync(instruction);
+        await _instructionRepository.CreateAsync(instruction);
         return Results.Ok(instruction);
     }
 }

@@ -4,6 +4,7 @@ using Features.WebApi.Endpoints;
 using Features.WebApi.Auth;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
+using XiansAi.Server.Features.WebApi.Repositories;
 
 namespace Features.WebApi.Configuration;
 
@@ -22,6 +23,14 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<DefinitionsService>();
         builder.Services.AddScoped<TenantService>();
         builder.Services.AddScoped<WebhookService>();
+        builder.Services.AddScoped<ActivitiesService>();
+        
+        // Register repositories
+        builder.Services.AddScoped<IInstructionRepository, InstructionRepository>();
+        builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
+        builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
+        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
+        builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         
         return builder;
     }

@@ -9,23 +9,23 @@ namespace Features.WebApi.Services;
 /// </summary>
 public class DefinitionsService
 {
-    private readonly IDatabaseService _databaseService;
+    private readonly IFlowDefinitionRepository _definitionRepository;
     private readonly ILogger<DefinitionsService> _logger;
     private readonly ITenantContext _tenantContext;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefinitionsService"/> class.
     /// </summary>
-    /// <param name="databaseService">Service for database operations.</param>
+    /// <param name="definitionRepository">Repository for flow definition operations.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     public DefinitionsService(
-        IDatabaseService databaseService,
+        IFlowDefinitionRepository definitionRepository,
         ILogger<DefinitionsService> logger,
         ITenantContext tenantContext
     )
     {
-        _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
+        _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
@@ -46,8 +46,7 @@ public class DefinitionsService
 
         try
         {
-            var definitionRepository = new FlowDefinitionRepository(await _databaseService.GetDatabase());
-            var definition = await definitionRepository.GetByIdAsync(definitionId);
+            var definition = await _definitionRepository.GetByIdAsync(definitionId);
             
             if (definition == null)
             {
@@ -65,7 +64,7 @@ public class DefinitionsService
                 );
             }
             
-            var result = await definitionRepository.DeleteByOwnerAndTypeNameAsync(definition.Owner, definition.TypeName);
+            var result = await _definitionRepository.DeleteByOwnerAndTypeNameAsync(definition.Owner, definition.TypeName);
             if (result > 0)
             {
                 _logger.LogInformation("Deleted {Count} definitions for owner {Owner} and type name {TypeName}", result, definition.Owner, definition.TypeName);
@@ -113,8 +112,7 @@ public class DefinitionsService
                 return Results.BadRequest(new { message = "Start time cannot be after end time." });
             }
 
-            var definitionRepository = new FlowDefinitionRepository(await _databaseService.GetDatabase());
-            var definitions = await definitionRepository.GetLatestDefinitionsAsync(startTime, endTime, owner);
+            var definitions = await _definitionRepository.GetLatestDefinitionsAsync(startTime, endTime, owner);
             
             _logger.LogInformation("Found {Count} definitions for query: StartTime={StartTime}, EndTime={EndTime}, Owner={Owner}", 
                 definitions.Count, startTime, endTime, owner);

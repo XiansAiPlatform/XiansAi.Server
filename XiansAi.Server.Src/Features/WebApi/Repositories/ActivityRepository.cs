@@ -1,14 +1,32 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
 using XiansAi.Server.Features.WebApi.Models;
+using XiansAi.Server.Shared.Data;
+
 namespace XiansAi.Server.Features.WebApi.Repositories;
 
-public class ActivityRepository
+public interface IActivityRepository
+{
+    Task<Activity> GetByWorkflowIdAndActivityIdAsync(string workflowId, string activityId);
+    Task<List<Activity>> GetByWorkflowIdAsync(string workflowId);
+    Task<List<Activity>> GetByWorkflowTypeAsync(string workflowType);
+    Task<List<Activity>> GetByDateRangeAsync(DateTime startDate, DateTime endDate);
+    Task CreateAsync(Activity activity);
+    Task<bool> UpdateAsync(string activityId, Activity activity);
+    Task<bool> UpdateEndTimeAsync(string activityId, DateTime endTime, object result);
+    Task<List<Activity>> GetActiveActivitiesAsync();
+    Task<List<Activity>> GetByTaskQueueAsync(string taskQueue);
+    Task<bool> DeleteAsync(string activityId);
+    Task<List<Activity>> SearchAsync(string searchTerm);
+}
+
+public class ActivityRepository : IActivityRepository
 {
     private readonly IMongoCollection<Activity> _activities;
 
-    public ActivityRepository(IMongoDatabase database)
+    public ActivityRepository(IDatabaseService databaseService)
     {
+        var database = databaseService.GetDatabase().Result;
         _activities = database.GetCollection<Activity>("activity_history");
     }
 

@@ -24,17 +24,17 @@ public class WebhookUpdateRequest
 public class WebhookService
 {
     private readonly ILogger<WebhookService> _logger;
-    private readonly IDatabaseService _databaseService;
+    private readonly IWebhookRepository _webhookRepository;
     private readonly ITenantContext _tenantContext;
 
     public WebhookService(
         ILogger<WebhookService> logger,
-        IDatabaseService databaseService,
+        IWebhookRepository webhookRepository,
         ITenantContext tenantContext)
     {
-        _logger = logger;
-        _databaseService = databaseService;
-        _tenantContext = tenantContext;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _webhookRepository = webhookRepository ?? throw new ArgumentNullException(nameof(webhookRepository));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
 
     public async Task<IResult> GetAllWebhooks()
@@ -42,8 +42,7 @@ public class WebhookService
         try
         {
             ValidateTenantContext();
-            var webhookRepository = new WebhookRepository(await _databaseService.GetDatabase());
-            var webhooks = await webhookRepository.GetAllForTenantAsync(_tenantContext.TenantId);
+            var webhooks = await _webhookRepository.GetAllForTenantAsync(_tenantContext.TenantId);
             return Results.Ok(webhooks);
         }
         catch (Exception ex)
@@ -58,8 +57,7 @@ public class WebhookService
         try
         {
             ValidateTenantContext();
-            var webhookRepository = new WebhookRepository(await _databaseService.GetDatabase());
-            var webhooks = await webhookRepository.GetByWorkflowIdAsync(workflowId, _tenantContext.TenantId);
+            var webhooks = await _webhookRepository.GetByWorkflowIdAsync(workflowId, _tenantContext.TenantId);
             return Results.Ok(webhooks);
         }
         catch (Exception ex)
@@ -74,8 +72,7 @@ public class WebhookService
         try
         {
             ValidateTenantContext();
-            var webhookRepository = new WebhookRepository(await _databaseService.GetDatabase());
-            var webhook = await webhookRepository.GetByIdAsync(webhookId, _tenantContext.TenantId);
+            var webhook = await _webhookRepository.GetByIdAsync(webhookId, _tenantContext.TenantId);
             if (webhook == null)
             {
                 return Results.NotFound();
@@ -108,8 +105,7 @@ public class WebhookService
                 CreatedBy = _tenantContext.LoggedInUser
             };
 
-            var webhookRepository = new WebhookRepository(await _databaseService.GetDatabase());
-            var createdWebhook = await webhookRepository.CreateAsync(webhook);
+            var createdWebhook = await _webhookRepository.CreateAsync(webhook);
             return Results.Created($"/api/client/webhooks/{createdWebhook.Id}", createdWebhook);
         }
         catch (Exception ex)
@@ -124,8 +120,7 @@ public class WebhookService
         try
         {
             ValidateTenantContext();
-            var webhookRepository = new WebhookRepository(await _databaseService.GetDatabase());
-            var webhook = await webhookRepository.GetByIdAsync(webhookId, _tenantContext.TenantId);
+            var webhook = await _webhookRepository.GetByIdAsync(webhookId, _tenantContext.TenantId);
             if (webhook == null)
             {
                 return Results.NotFound();
@@ -146,7 +141,7 @@ public class WebhookService
                 webhook.IsActive = request.IsActive.Value;
             }
 
-            await webhookRepository.UpdateAsync(webhook);
+            await _webhookRepository.UpdateAsync(webhook);
             return Results.Ok(webhook);
         }
         catch (Exception ex)
@@ -161,8 +156,7 @@ public class WebhookService
         try
         {
             ValidateTenantContext();
-            var webhookRepository = new WebhookRepository(await _databaseService.GetDatabase());
-            var result = await webhookRepository.DeleteAsync(webhookId, _tenantContext.TenantId);
+            var result = await _webhookRepository.DeleteAsync(webhookId, _tenantContext.TenantId);
             return result ? Results.NoContent() : Results.NotFound();
         }
         catch (Exception ex)

@@ -1,14 +1,34 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
 using XiansAi.Server.Features.WebApi.Models;
+using XiansAi.Server.Shared.Data;
+
 namespace XiansAi.Server.Features.WebApi.Repositories;
 
-public class InstructionRepository
+public interface IInstructionRepository
+{
+    Task<Instruction> GetLatestInstructionByNameAsync(string name);
+    Task<Instruction> GetByIdAsync(string id);
+    Task<Instruction> GetByVersionAsync(string version);
+    Task<List<Instruction>> GetByNameAsync(string name);
+    Task<Instruction> GetLatestByNameAsync(string name);
+    Task<List<Instruction>> GetAllAsync();
+    Task CreateAsync(Instruction instruction);
+    Task<bool> DeleteAsync(string id);
+    Task<bool> UpdateAsync(string id, Instruction instruction);
+    Task<Instruction> GetByNameVersionAsync(string name, string version);
+    Task<List<Instruction>> SearchAsync(string searchTerm);
+    Task<List<Instruction>> GetUniqueLatestInstructionsAsync();
+    Task<bool> DeleteAllVersionsAsync(string name);
+}
+
+public class InstructionRepository : IInstructionRepository
 {
     private readonly IMongoCollection<Instruction> _instructions;
 
-    public InstructionRepository(IMongoDatabase database)
+    public InstructionRepository(IDatabaseService databaseService)
     {
+        var database = databaseService.GetDatabase().Result;
         _instructions = database.GetCollection<Instruction>("knowledge");
     }
 

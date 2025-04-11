@@ -67,6 +67,15 @@ public class Agent
 
     [BsonElement("flows")]
     public List<Flow>? Flows { get; set; }
+
+    [BsonElement("created_at")]
+    public required DateTime CreatedAt { get; set; }
+
+    [BsonElement("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
+
+    [BsonElement("created_by")]
+    public required string CreatedBy { get; set; }
 }
 
 public class Flow
@@ -76,6 +85,15 @@ public class Flow
 
     [BsonElement("is_active")]
     public required bool IsActive { get; set; }
+
+    [BsonElement("created_at")]
+    public required DateTime CreatedAt { get; set; }
+
+    [BsonElement("updated_at")]
+    public DateTime? UpdatedAt { get; set; }
+
+    [BsonElement("created_by")]
+    public required string CreatedBy { get; set; }
 }
 
 public class Permission

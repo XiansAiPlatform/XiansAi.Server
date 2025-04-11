@@ -5,16 +5,15 @@ using XiansAi.Server.Shared.Data;
 namespace Features.WebApi.Services;
 public class ActivitiesService
 {
-    private readonly IDatabaseService _databaseService;
+    private readonly IActivityRepository _activityRepository;
 
-    public ActivitiesService(IDatabaseService databaseService)
+    public ActivitiesService(IActivityRepository activityRepository)
     {
-        _databaseService = databaseService;
+        _activityRepository = activityRepository ?? throw new ArgumentNullException(nameof(activityRepository));
     }
 
     public async Task<Activity> GetActivity(string workflowId, string activityId)
     {
-        var activityRepository = new ActivityRepository(await _databaseService.GetDatabase());
-        return await activityRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
+        return await _activityRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
     }
 }

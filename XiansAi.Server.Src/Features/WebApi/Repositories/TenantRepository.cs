@@ -1,15 +1,35 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
 using XiansAi.Server.Features.WebApi.Models;
+using XiansAi.Server.Shared.Data;
 
 namespace XiansAi.Server.Features.WebApi.Repositories;
 
-public class TenantRepository
+public interface ITenantRepository
+{
+    Task<Tenant> GetByIdAsync(string id);
+    Task<Tenant> GetByTenantIdAsync(string tenantId);
+    Task<Tenant> GetByDomainAsync(string domain);
+    Task<List<Tenant>> GetAllAsync();
+    Task CreateAsync(Tenant tenant);
+    Task<bool> UpdateAsync(string id, Tenant tenant);
+    Task<bool> DeleteAsync(string id);
+    Task<List<Tenant>> SearchAsync(string searchTerm);
+    Task<List<Tenant>> GetTenantsByCreatorAsync(string createdBy);
+    Task<List<Tenant>> GetTenantsWithActiveAgentsAsync();
+    Task<bool> AddAgentAsync(string tenantId, Agent agent);
+    Task<bool> UpdateAgentAsync(string tenantId, string agentName, Agent updatedAgent);
+    Task<bool> RemoveAgentAsync(string tenantId, string agentName);
+    Task<bool> AddFlowToAgentAsync(string tenantId, string agentName, Flow flow);
+}
+
+public class TenantRepository : ITenantRepository
 {
     private readonly IMongoCollection<Tenant> _collection;
 
-    public TenantRepository(IMongoDatabase database)
+    public TenantRepository(IDatabaseService databaseService)
     {
+        var database = databaseService.GetDatabase().Result;
         _collection = database.GetCollection<Tenant>("tenants");
         
         // Create indexes for frequently queried fields
