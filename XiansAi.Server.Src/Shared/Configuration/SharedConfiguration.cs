@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
+
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
@@ -17,9 +18,7 @@ public static class SharedConfiguration
     {
         // Add services using specialized configuration classes
         builder = builder
-            .AddCorsConfiguration()
-            .AddAuthenticationServices()
-            .AddAuthorizationServices();
+            .AddCorsConfiguration();
             
         // Add common services
         builder = ServiceConfiguration.AddSharedServices(builder);

@@ -129,7 +129,7 @@ public class TenantService
                 Description = request.Description,
                 Logo = request.Logo,
                 Timezone = request.Timezone,
-                CreatedBy = _tenantContext.LoggedInUser,
+                CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set"),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -222,7 +222,7 @@ public class TenantService
         {
             agent.CreatedAt = DateTime.UtcNow;
             agent.UpdatedAt = DateTime.UtcNow;
-            agent.CreatedBy = _tenantContext.LoggedInUser;
+            agent.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
 
             var success = await _tenantRepository.AddAgentAsync(tenantId, agent);
             if (success)

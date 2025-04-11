@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 public static class PublicEndpointExtensions
@@ -19,7 +20,7 @@ public static class PublicEndpointExtensions
         })
         .WithName("Send Verification Code")
         .WithOpenApi()
-        .RequireAuthorization("RequireAuth0Auth");
+        .RequiresToken();
 
         app.MapPost("/api/public/register/verification/validate", async (
             [FromBody] ValidateCodeRequest request,
@@ -30,7 +31,7 @@ public static class PublicEndpointExtensions
         })
         .WithName("Validate Verification Code")
         .WithOpenApi()
-        .RequireAuthorization("RequireAuth0Auth");
+        .RequiresToken();
 
     }
 }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
@@ -14,7 +15,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.GetInstructionById(id);
         })
         .WithName("Get Instruction")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions", async (
@@ -23,7 +24,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.GetInstructions();
         })
         .WithName("Get Instructions")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapPost("/api/client/instructions", async (
@@ -33,7 +34,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.CreateInstruction(request);
         })
         .WithName("Create Instruction")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions/latest/{name}", async (
@@ -43,7 +44,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.GetLatestInstructionByName(name);
         })
         .WithName("Get Latest Instruction")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions/latest", async (
@@ -52,7 +53,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.GetLatestInstructions();
         })
         .WithName("Get Latest Instructions")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapDelete("/api/client/instructions/{id}", async (
@@ -62,7 +63,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.DeleteInstruction(id);
         })
         .WithName("Delete Instruction")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapDelete("/api/client/instructions/all", async (
@@ -72,7 +73,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.DeleteAllVersions(request);
         })
         .WithName("Delete All Versions")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapGet("/api/client/instructions/versions", async (
@@ -82,7 +83,7 @@ public static class InstructionEndpointExtensions
             return await endpoint.GetInstructionVersions(name);
         })
         .WithName("Get Instruction Versions")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
     }
 } 

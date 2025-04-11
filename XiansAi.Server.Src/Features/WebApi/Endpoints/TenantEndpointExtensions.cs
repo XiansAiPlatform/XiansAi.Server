@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
@@ -13,7 +14,7 @@ public static class TenantEndpointExtensions
             return await endpoint.GetAllTenants();
         })
         .WithName("Get Tenants")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get all tenants";
             operation.Description = "Retrieves all tenant records";
@@ -27,7 +28,7 @@ public static class TenantEndpointExtensions
             return await endpoint.GetTenantById(id);
         })
         .WithName("Get Tenant")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get tenant by ID";
             operation.Description = "Retrieves a tenant by its unique ID";
@@ -41,7 +42,7 @@ public static class TenantEndpointExtensions
             return await endpoint.GetTenantByTenantId(tenantId);
         })
         .WithName("Get Tenant By TenantId")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get tenant by tenant ID";
             operation.Description = "Retrieves a tenant by its tenant ID";
@@ -55,7 +56,7 @@ public static class TenantEndpointExtensions
             return await endpoint.GetTenantByDomain(domain);
         })
         .WithName("Get Tenant By Domain")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get tenant by domain";
             operation.Description = "Retrieves a tenant by its domain";
@@ -72,7 +73,7 @@ public static class TenantEndpointExtensions
             return await endpoint.CreateTenant(request);
         })
         .WithName("Create Tenant")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Create a new tenant";
             operation.Description = "Creates a new tenant record";
@@ -87,7 +88,7 @@ public static class TenantEndpointExtensions
             return await endpoint.UpdateTenant(id, request);
         })
         .WithName("Update Tenant")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Update a tenant";
             operation.Description = "Updates an existing tenant record";
@@ -101,7 +102,7 @@ public static class TenantEndpointExtensions
             return await endpoint.DeleteTenant(id);
         })
         .WithName("Delete Tenant")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Delete a tenant";
             operation.Description = "Deletes a tenant by its ID";

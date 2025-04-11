@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
@@ -13,7 +14,7 @@ public static class WebhookEndpointExtensions
             return await endpoint.GetAllWebhooks();
         })
         .WithName("Get All Webhooks")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get all webhooks for the current tenant";
             operation.Description = "Retrieves all webhooks associated with the current tenant";
@@ -27,7 +28,7 @@ public static class WebhookEndpointExtensions
             return await endpoint.GetWebhooksByWorkflow(workflowId);
         })
         .WithName("Get Webhooks By Workflow")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get webhooks for a specific workflow";
             operation.Description = "Retrieves all webhooks associated with the specified workflow";
@@ -41,7 +42,7 @@ public static class WebhookEndpointExtensions
             return await endpoint.GetWebhook(webhookId);
         })
         .WithName("Get Webhook")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get a specific webhook";
             operation.Description = "Retrieves details of a specific webhook by ID";
@@ -55,7 +56,7 @@ public static class WebhookEndpointExtensions
             return await endpoint.CreateWebhook(request);
         })
         .WithName("Create Webhook")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Create a new webhook";
             operation.Description = "Creates a new webhook for a specific workflow";
@@ -70,7 +71,7 @@ public static class WebhookEndpointExtensions
             return await endpoint.UpdateWebhook(webhookId, request);
         })
         .WithName("Update Webhook")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Update an existing webhook";
             operation.Description = "Updates an existing webhook with new information";
@@ -84,7 +85,7 @@ public static class WebhookEndpointExtensions
             return await endpoint.DeleteWebhook(webhookId);
         })
         .WithName("Delete Webhook")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Delete a webhook";
             operation.Description = "Deletes an existing webhook";

@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.Security.Claims;
 using Features.WebApi.Auth;
 
-namespace Features.Shared.Configuration;
+namespace Features.WebApi.Configuration;
 
 public static class AuthenticationConfiguration
 {
@@ -46,7 +46,7 @@ public static class AuthenticationConfiguration
                 policy.AuthenticationSchemes.Add("JWT");
                 policy.Requirements.Add(new TenantClientRequirement(builder.Configuration));
             });
-            options.AddPolicy("RequireAuth0Auth", policy =>
+            options.AddPolicy("RequireTokenAuth", policy =>
             {
                 policy.AuthenticationSchemes.Add("JWT");
                 policy.Requirements.Add(new Auth0ClientRequirement(builder.Configuration));

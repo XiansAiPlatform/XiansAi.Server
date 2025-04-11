@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
@@ -14,7 +15,7 @@ public static class ActivityEndpointExtensions
         {
             return await endpoint.GetActivity(workflowId, activityId);
         }).WithName("Get Activity of Workflow")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
     }
 } 

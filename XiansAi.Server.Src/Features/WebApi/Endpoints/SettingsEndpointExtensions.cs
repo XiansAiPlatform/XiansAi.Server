@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
@@ -15,7 +16,7 @@ public static class SettingsEndpointExtensions
             return endpoint.GenerateClientCertificateBase64(request);
         })
         .WithName("Generate Client Certificate Base64")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Generate a new client certificate in base64 format";
             operation.Description = "Generates and returns a new client certificate in base64 format";
@@ -30,7 +31,7 @@ public static class SettingsEndpointExtensions
             return await endpoint.GenerateClientCertificate(request);
         })
         .WithName("Generate Client Certificate")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Generate a new client certificate";
             operation.Description = "Generates and returns a new client certificate in PFX format";
@@ -43,7 +44,7 @@ public static class SettingsEndpointExtensions
             return endpoint.GetFlowServerSettings();
         })
         .WithName("Get Flow Server Settings")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(); 
 
         app.MapGet("/api/client/certificates/flowserver/base64", (
@@ -56,7 +57,7 @@ public static class SettingsEndpointExtensions
             });
         })
         .WithName("Get Flow Server Certificate Base64")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(); 
     }
 } 

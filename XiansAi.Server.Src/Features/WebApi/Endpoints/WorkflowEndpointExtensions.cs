@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
@@ -15,7 +16,7 @@ public static class WorkflowEndpointExtensions
             return await endpoint.GetWorkflow(workflowId, runId);
         })
         .WithName("Get Workflow")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapPost("/api/client/workflows", async (
@@ -25,7 +26,7 @@ public static class WorkflowEndpointExtensions
             return await endpoint.HandleStartWorkflow(request);
         })
         .WithName("Create New Workflow")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows/{workflowId}/events", async (
@@ -35,7 +36,7 @@ public static class WorkflowEndpointExtensions
             return await endpoint.GetWorkflowEvents(workflowId);
         })
         .WithName("Get Workflow Events")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows", async (
@@ -48,7 +49,7 @@ public static class WorkflowEndpointExtensions
             return await endpoint.GetWorkflows(startTime, endTime, owner, status);
         })
         .WithName("Get Workflows")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get workflows with optional filters";
             operation.Description = "Retrieves workflows with optional filtering by date range and owner";
@@ -63,7 +64,7 @@ public static class WorkflowEndpointExtensions
             return await endpoint.CancelWorkflow(workflowId, force);
         })
         .WithName("Cancel Workflow")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi();
 
         app.MapGet("/api/client/workflows/{workflowId}/events/stream", (
@@ -73,7 +74,7 @@ public static class WorkflowEndpointExtensions
             return endpoint.StreamWorkflowEvents(workflowId);
         })
         .WithName("Stream Workflow Events")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Stream workflow events in real-time";
             operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events";

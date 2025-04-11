@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
+using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
@@ -14,7 +15,7 @@ public static class DefinitionsEndpointExtensions
             return await endpoint.DeleteDefinition(definitionId);
         })
         .WithName("Delete Definition")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Delete a specific definition";
             operation.Description = "Removes a definition by its ID";
@@ -30,7 +31,7 @@ public static class DefinitionsEndpointExtensions
             return await endpoint.GetLatestDefinitions(startTime, endTime, owner);
         })
         .WithName("Get Latest Definitions")
-        .RequireAuthorization("RequireTenantAuth")
+        .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Get definitions with optional filters";
             operation.Description = "Retrieves definitions with optional filtering by date range and owner";

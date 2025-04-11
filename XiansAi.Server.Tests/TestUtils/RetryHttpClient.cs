@@ -33,7 +33,18 @@ public class RetryHttpClient : IAsyncDisposable
 
         while (retryCount <= _maxRetries)
         {
-            response = await _innerClient.SendAsync(request, cancellationToken);
+            // Create a new request message for each attempt
+            var requestClone = new HttpRequestMessage(request.Method, request.RequestUri);
+            if (request.Content != null)
+            {
+                requestClone.Content = request.Content;
+            }
+            foreach (var header in request.Headers)
+            {
+                requestClone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            response = await _innerClient.SendAsync(requestClone, cancellationToken);
             
             if (response.StatusCode != HttpStatusCode.Unauthorized || retryCount == _maxRetries)
             {

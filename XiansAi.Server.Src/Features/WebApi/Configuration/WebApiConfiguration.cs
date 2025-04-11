@@ -12,6 +12,9 @@ public static class WebApiConfiguration
 {
     public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
     {
+        builder = builder.AddAuthenticationServices();
+        builder = builder.AddAuthorizationServices();
+        
         // Register Web API specific services
         builder.Services.AddSingleton<IAuth0MgtAPIConnect, Auth0MgtAPIConnect>();
         builder.Services.AddScoped<WorkflowStarterService>();
