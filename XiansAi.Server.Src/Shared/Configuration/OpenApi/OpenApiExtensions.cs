@@ -68,25 +68,4 @@ public static class OpenApiExtensions
         return services;
     }
 
-    public static WebApplication MapOpenApi(this WebApplication app)
-    {
-        app.UseSwagger(options =>
-        {
-            options.RouteTemplate = "api-docs/{documentName}/swagger.json";
-        });
-        
-        app.UseSwaggerUI(options =>
-        {
-            options.SwaggerEndpoint("/api-docs/v1/swagger.json", "XiansAI API v1");
-            options.RoutePrefix = "api-docs";
-            options.DocumentTitle = "XiansAI API Documentation";
-            options.DefaultModelsExpandDepth(-1); // Hide models section by default
-            options.DisplayRequestDuration(); // Show request duration
-            options.EnableDeepLinking(); // Enable deep linking for operations and tags
-            options.EnableFilter(); // Enable filtering by tag
-            options.EnableTryItOutByDefault(); // Enable TryItOut by default
-        });
-        
-        return app;
-    }
 }

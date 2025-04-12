@@ -10,8 +10,23 @@ public static class SharedConfiguration
         builder = builder
             .AddCorsConfiguration();
             
-        // Add common services
-        builder = ServiceConfiguration.AddSharedServices(builder);
+        // Add infrastructure services (clients, data access, etc.)
+        builder.Services.AddInfrastructureServices(builder.Configuration);
+        
+        // Add common api-related services
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen();
+        builder.Services.AddServerOpenApi();
+        builder.Services.AddControllers();
+        
+        // Add health checks
+        builder.Services.AddHealthChecks();
+        
+        // Register TimeProvider for DI
+        builder.Services.AddSingleton(TimeProvider.System);
+        
+        // Add HttpContextAccessor for access to the current HttpContext
+        builder.Services.AddHttpContextAccessor();
         
         return builder;
     }
@@ -27,11 +42,13 @@ public static class SharedConfiguration
         // Configure middleware using specialized configuration classes
         app = app
             .UseSwaggerConfiguration()
-            .UseExceptionHandlingConfiguration()
-            .UseHealthChecks();
+            .UseExceptionHandlingConfiguration();
+        
+        // Get policy name from configuration
+        var corsSettings = app.Configuration.GetSection("Cors").Get<CorsSettings>() ?? new CorsSettings();
         
         // Configure standard middleware
-        app.UseCors("AllowAll");
+        app.UseCors(corsSettings.PolicyName);
         app.UseAuthentication();
         app.UseAuthorization();
         
