@@ -20,8 +20,8 @@ namespace Features.Shared.Configuration
                     Description = "XiansAI Server API Documentation",
                     Contact = new OpenApiContact
                     {
-                        Name = "Flowmaxer.ai",
-                        Url = new Uri("https://flowmaxer.ai")
+                        Name = "xians.ai",
+                        Url = new Uri("https://xians.ai")
                     },
                     License = new OpenApiLicense
                     {

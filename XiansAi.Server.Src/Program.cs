@@ -88,18 +88,20 @@ public class Program
         {
             case ServiceType.WebApi:
                 builder.AddWebApiServices();
+                builder.AddWebApiAuth();
                 break;
             
             case ServiceType.LibApi:
-                builder.AddLibApiServices();
-                builder.AddLibApiAuthentication();
+                builder.AddAgentApiServices();
+                builder.AddAgentApiAuth();
                 break;
             
             case ServiceType.All:
             default:
                 builder.AddWebApiServices();
-                builder.AddLibApiServices();
-                builder.AddLibApiAuthentication();
+                builder.AddAgentApiServices();
+                builder.AddAgentApiAuth();
+                builder.AddWebApiAuth();
                 break;
         }
     }

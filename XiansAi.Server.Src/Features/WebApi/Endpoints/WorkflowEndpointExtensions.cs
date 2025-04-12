@@ -16,7 +16,7 @@ public static class WorkflowEndpointExtensions
         workflowsGroup.MapGet("/{workflowId}/{runId}", async (
             string workflowId,
             string? runId,
-            [FromServices] WorkflowFinderService endpoint) =>
+            [FromServices] IWorkflowFinderService endpoint) =>
         {
             return await endpoint.GetWorkflow(workflowId, runId);
         })
@@ -46,7 +46,7 @@ public static class WorkflowEndpointExtensions
             [FromQuery] DateTime? endTime,
             [FromQuery] string? owner,
             [FromQuery] string? status,
-            [FromServices] WorkflowFinderService endpoint) =>
+            [FromServices] IWorkflowFinderService endpoint) =>
         {
             return await endpoint.GetWorkflows(startTime, endTime, owner, status);
         })

@@ -10,9 +10,9 @@ using XiansAi.Server.Features.AgentApi.Endpoints;
 using XiansAi.Server.Shared.Data;
 namespace Features.AgentApi.Configuration;
 
-public static class LibApiConfiguration
+public static class AgentApiConfiguration
 {
-    public static WebApplicationBuilder AddLibApiServices(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddAgentApiServices(this WebApplicationBuilder builder)
     {
         // Register repositories
         builder.Services.AddScoped<IActivityHistoryRepository, ActivityHistoryRepository>();
@@ -34,7 +34,7 @@ public static class LibApiConfiguration
         return builder;
     }
     
-    public static WebApplicationBuilder AddLibApiAuthentication(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddAgentApiAuth(this WebApplicationBuilder builder)
     {
         // Add certificate authentication scheme
         builder.Services.AddAuthentication()

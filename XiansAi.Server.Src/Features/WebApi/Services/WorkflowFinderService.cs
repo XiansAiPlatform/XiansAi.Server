@@ -5,10 +5,17 @@ using XiansAi.Server.Temporal;
 
 namespace Features.WebApi.Services;
 
+public interface IWorkflowFinderService
+{
+    Task<IResult> GetWorkflow(string workflowId, string? runId = null);
+    Task<IResult> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status);
+    Task<IResult> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName);
+}
+
 /// <summary>
 /// Endpoint for retrieving and managing workflow information from Temporal.
 /// </summary>
-public class WorkflowFinderService
+public class WorkflowFinderService : IWorkflowFinderService
 {
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowFinderService> _logger;
@@ -111,6 +118,64 @@ public class WorkflowFinderService
             _logger.LogError(ex, "Failed to retrieve workflows. Error: {ErrorMessage}", ex.Message);
             return Results.Problem(
                 title: "Failed to retrieve workflows",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    }
+
+    /// <summary>
+    /// Retrieves a list of workflows based on agent name and workflow type.
+    /// </summary>
+    /// <param name="agentName">Optional agent name filter for workflows.</param>
+    /// <param name="typeName">Optional workflow type filter for workflows.</param>
+    /// <returns>A result containing the list of filtered workflows.</returns>
+    public async Task<IResult> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName)
+    {
+        _logger.LogInformation("Retrieving workflows with filters - AgentName: {AgentName}, TypeName: {TypeName}", 
+            agentName ?? "null", typeName ?? "null");
+
+        try
+        {
+            var client = _clientService.GetClient();
+            var workflows = new List<object>();
+            var queryParts = new List<string>
+            {
+                // Add tenantId filter
+                $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'",
+                // status = running
+                "ExecutionStatus = 'Running'"
+            };
+
+            // Add agent filter if specified
+            if (!string.IsNullOrEmpty(agentName))
+            {
+                queryParts.Add($"{Constants.AgentKey} = '{agentName}'");
+            }
+
+            // Add workflow type filter if specified
+            if (!string.IsNullOrEmpty(typeName))
+            {
+                queryParts.Add($"WorkflowType = '{typeName}'");
+            }
+
+            string listQuery = string.Join(" and ", queryParts);
+            _logger.LogDebug("Executing workflow query: {Query}", listQuery);
+
+            await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
+            {
+                var mappedWorkflow = MapWorkflowToResponse(workflow);
+                workflows.Add(mappedWorkflow);
+            }
+
+            _logger.LogInformation("Retrieved {Count} workflows matching agent and type criteria", workflows.Count);
+            return Results.Ok(workflows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve workflows by agent and type. Error: {ErrorMessage}", ex.Message);
+            return Results.Problem(
+                title: "Failed to retrieve workflows by agent and type",
                 detail: ex.Message,
                 statusCode: StatusCodes.Status500InternalServerError
             );

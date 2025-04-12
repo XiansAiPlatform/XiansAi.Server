@@ -19,7 +19,8 @@ public interface IFlowDefinitionRepository
     Task<bool> UpdateAsync(string id, FlowDefinition definition);
     Task<FlowDefinition> GetByNameHashAsync(string typeName, string hash);
     Task<FlowDefinition> GetLatestByTypeNameAndOwnerAsync(string typeName, string owner);
-    Task<List<FlowDefinition>> GetLatestDefinitionsAsync(DateTime? startTime, DateTime? endTime, string? owner);
+    Task<List<FlowDefinition>> GetLatestDefinitionsAsync(DateTime? startTime = null, DateTime? endTime = null, string? owner = null);
+    Task<List<FlowDefinition>> GetLatestDefinitionsBasicDataAsync();
     Task<List<FlowDefinition>> GetLatestDefinitionsForAllTypesAsync();
 }
 
@@ -136,6 +137,16 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
             .SortByDescending(x => x.CreatedAt)
             .Group(x => new { x.TypeName, x.Owner },
                    g => g.First())
+            .ToListAsync();
+    }
+
+    public async Task<List<FlowDefinition>> GetLatestDefinitionsBasicDataAsync()
+    {
+        return await _definitions.Aggregate()
+            .SortByDescending(x => x.CreatedAt)
+            .Group(x => new { x.TypeName, x.Owner },
+                   g => g.First())
+            .Project<FlowDefinition>(Builders<FlowDefinition>.Projection.Include(x => x.AgentName).Include(x => x.TypeName))
             .ToListAsync();
     }
 }
