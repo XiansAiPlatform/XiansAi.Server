@@ -1,14 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using System.Security.Claims;
-using Features.WebApi.Auth;
-using Microsoft.OpenApi.Models;
-using System.Collections.Generic;
-using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
-using System.Text.Json;
-
+using Features.Shared.Configuration.OpenApi;
 
 namespace Features.Shared.Configuration;
 

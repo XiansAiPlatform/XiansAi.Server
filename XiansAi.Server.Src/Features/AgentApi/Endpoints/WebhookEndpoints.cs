@@ -9,7 +9,7 @@ namespace XiansAi.Server.Features.AgentApi.Endpoints
         public static void MapWebhookEndpoints(this IEndpointRouteBuilder endpoints)
         {
             var group = endpoints.MapGroup("/api/agent/webhooks")
-                .WithTags("Webhooks")
+                .WithTags("AgentAPI - Webhooks")
                 .RequiresCertificate();
 
             group.MapPost("/register", async (

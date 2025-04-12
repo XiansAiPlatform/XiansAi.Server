@@ -8,7 +8,12 @@ public static class ActivityEndpointExtensions
 {
     public static void MapActivityEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/client/workflows/{workflowId}/activities/{activityId}", async (
+
+        var group = app.MapGroup("/api/client/workflows/{workflowId}/activities")
+            .WithTags("WebAPI - Activities")
+            .RequiresValidTenant();
+
+        group.MapGet("/{activityId}", async (
             string workflowId,
             string activityId,
             [FromServices] ActivitiesService endpoint) =>

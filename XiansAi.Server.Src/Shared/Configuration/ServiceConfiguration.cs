@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+using Features.Shared.Configuration.OpenApi;
 
 namespace Features.Shared.Configuration;
 
@@ -12,7 +12,7 @@ public static class ServiceConfiguration
         // Add common api-related services
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
-        builder.Services.AddOpenApi();
+        builder.Services.AddServerOpenApi();
         builder.Services.AddControllers();
         
         // Add health checks

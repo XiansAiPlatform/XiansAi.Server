@@ -1,7 +1,7 @@
 using Microsoft.OpenApi.Models;
 using System.Collections.Generic;
 
-namespace Features.Shared.Configuration;
+namespace Features.Shared.Configuration.OpenApi;
 
 public static class SwaggerConfiguration
 {
