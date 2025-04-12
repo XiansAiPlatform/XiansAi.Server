@@ -56,7 +56,7 @@ public static class AgentApiConfiguration
         return builder;
     }
     
-    public static WebApplication UseLibApiEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
+    public static WebApplication UseAgentApiEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
     {
         // Map Lib API endpoints
         CacheEndpoints.MapCacheEndpoints(app, loggerFactory);

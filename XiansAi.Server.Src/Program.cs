@@ -4,6 +4,7 @@ using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
 using XiansAi.Server.Shared.Data;
 using Shared.Auth;
+using Features.WebApi.Auth;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.
@@ -140,14 +141,13 @@ public class Program
                 break;
             
             case ServiceType.LibApi:
-                // Apply LibApi specific middleware first
-                app.UseLibApiEndpoints(loggerFactory);
+                app.UseAgentApiEndpoints(loggerFactory);
                 break;
             
             case ServiceType.All:
             default:
                 app.UseWebApiEndpoints();
-                app.UseLibApiEndpoints(loggerFactory);
+                app.UseAgentApiEndpoints(loggerFactory);
                 break;
         }
     }

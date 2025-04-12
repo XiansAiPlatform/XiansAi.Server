@@ -32,13 +32,7 @@ See [Repository Pattern Implementation Guide](database-repositories.md) for:
 
 ## 3. REST Endpoints
 
-Implement the REST endpoints for your entity:
-
-1. Create an endpoint class in `Services/Web/{EntityName}Endpoint.cs`
-2. Register the endpoint in `AppExt/ServiceCollectionExtensions.cs`
-3. Map the endpoints in `Endpoints/WebEndpointExtensions.cs`
-
-See [Client Endpoints Guide](client-end-points.md) for:
+See [End-Point Design](end-point-design.md) for:
 
 - Endpoint class implementation
 - Request/response DTOs

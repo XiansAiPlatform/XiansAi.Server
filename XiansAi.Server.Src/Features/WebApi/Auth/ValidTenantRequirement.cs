@@ -5,19 +5,19 @@ using XiansAi.Server.Auth;
 
 namespace Features.WebApi.Auth;
 
-public class TenantClientRequirement : BaseAuthRequirement
+public class ValidTenantRequirement : BaseAuthRequirement
 {
-    public TenantClientRequirement(IConfiguration configuration) : base(configuration)
+    public ValidTenantRequirement(IConfiguration configuration) : base(configuration)
     {
     }
 }
 
-public class TenantClientHandler : BaseAuthHandler<TenantClientRequirement>
+public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
 {
     private readonly IConfiguration _configuration;
 
-    public TenantClientHandler(
-        ILogger<TenantClientHandler> logger, 
+    public ValidTenantHandler(
+        ILogger<ValidTenantHandler> logger, 
         ITenantContext tenantContext,
         IConfiguration configuration)
         : base(logger, tenantContext)
@@ -27,9 +27,9 @@ public class TenantClientHandler : BaseAuthHandler<TenantClientRequirement>
 
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
-        TenantClientRequirement requirement)
+        ValidTenantRequirement requirement)
     {
-        _logger.LogDebug("Handling TenantClientRequirement");
+        _logger.LogDebug("Handling ValidTenantRequirement");
         var httpContext = context.Resource as HttpContext;
         var currentTenantId = httpContext?.Request.Headers["X-Tenant-Id"].FirstOrDefault();
         _logger.LogDebug($"Current Tenant ID: {currentTenantId}");

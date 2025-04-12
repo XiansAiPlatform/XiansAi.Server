@@ -13,54 +13,10 @@ namespace Features.WebApi.Configuration;
 
 public static class WebApiConfiguration
 {
-        
-    public static WebApplicationBuilder AddWebApiAuth(this WebApplicationBuilder builder)
-    {
-        // Add Authentication
-        builder.Services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = "JWT";
-            options.DefaultChallengeScheme = "JWT";
-        })
-        .AddJwtBearer("JWT", options =>
-        {
-            options.RequireHttpsMetadata = false;
-            options.Authority = builder.Configuration["Auth0:Domain"];
-            options.Audience = builder.Configuration["Auth0:Audience"];
-            options.Events = new JwtBearerEvents
-            {
-                OnTokenValidated = context =>
-                {
-                    if (context.Principal?.Identity is ClaimsIdentity identity)
-                    {
-                        // Set the User property of HttpContext
-                        context.HttpContext.User = context.Principal;
-                    }
-                    return Task.CompletedTask;
-                }
-            };
-        });
-        // Add Authorization
-        builder.Services.AddAuthorization(options =>
-        {
-            options.AddPolicy("RequireTenantAuth", policy =>
-            {
-                policy.AuthenticationSchemes.Add("JWT");
-                policy.Requirements.Add(new TenantClientRequirement(builder.Configuration));
-            });
-            options.AddPolicy("RequireTokenAuth", policy =>
-            {
-                policy.AuthenticationSchemes.Add("JWT");
-                policy.Requirements.Add(new Auth0ClientRequirement(builder.Configuration));
-            });
-        });
-
-        return builder;
-    }
     public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
     {
         // Register authorization handlers
-        builder.Services.AddScoped<IAuthorizationHandler, TenantClientHandler>();
+        builder.Services.AddScoped<IAuthorizationHandler, ValidTenantHandler>();
         builder.Services.AddScoped<IAuthorizationHandler, Auth0ClientHandler>();
 
         // Register Web API specific services
