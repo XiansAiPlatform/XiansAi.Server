@@ -8,9 +8,9 @@ This project uses Swashbuckle.AspNetCore to provide OpenAPI documentation for th
 
 The OpenAPI documentation is configured in the following files:
 
-- `Shared/Configuration/OpenApiExtensions.cs`: Contains the main Swagger configuration
+- `Shared/Configuration/OpenApi/OpenApiExtensions.cs`: Contains the OpenAPI Configuration
 - `Shared/Configuration/SharedConfiguration.cs`: Configures Swagger middleware in the HTTP pipeline
-- `Shared/Configuration/SwaggerFilters.cs`: Contains custom filters for enhancing the documentation
+- `Shared/Configuration/OpenApi/SwaggerConfiguration.cs`: Contains custom filters for enhancing the documentation
 
 ## Accessing the Documentation
 

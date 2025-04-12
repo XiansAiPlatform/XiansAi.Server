@@ -1,5 +1,3 @@
-using Features.Shared.Configuration.OpenApi;
-
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
