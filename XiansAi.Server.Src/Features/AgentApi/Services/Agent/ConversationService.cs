@@ -84,7 +84,7 @@ public class ConversationService : IConversationService
     private readonly ILogger<ConversationService> _logger;
     private readonly ITenantContext _tenantContext;
 
-    public const string SIGNAL_NAME_INBOUND_MESSAGE = "inboundMessage";
+    public const string SIGNAL_NAME_INBOUND_MESSAGE = "HandleInboundMessage";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConversationService"/> class.
@@ -342,8 +342,6 @@ public class ConversationService : IConversationService
     /// <returns>The created message.</returns>
     private async Task<ConversationMessage> CreateAndSaveMessageAsync(ConversationMessage message)
     {
-
-
         // Save message to database
         message.Id = await _messageRepository.CreateAsync(message);
         _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}",
