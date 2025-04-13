@@ -2,13 +2,14 @@ using MongoDB.Driver;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using XiansAi.Server.Shared.Data;
+using System.Text.Json.Serialization;
 
 namespace Shared.Repositories;
 
 public enum MessageDirection
 {
-    Inbound,
-    Outbound
+    Incoming,
+    Outgoing
 }
 
 public enum MessageStatus
@@ -41,9 +42,6 @@ public class ConversationMessage
     [BsonElement("thread_id")]
     public required string ThreadId { get; set; }
 
-    [BsonElement("participant_channel_id")]
-    public required string ParticipantChannelId { get; set; }
-
     [BsonElement("created_at")]
     public required DateTime CreatedAt { get; set; }
 
@@ -55,6 +53,7 @@ public class ConversationMessage
 
     [BsonElement("direction")]
     [BsonRepresentation(BsonType.String)]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public required MessageDirection Direction { get; set; }
 
     [BsonElement("content")]
@@ -62,6 +61,7 @@ public class ConversationMessage
 
     [BsonElement("status")]
     [BsonRepresentation(BsonType.String)]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public MessageStatus? Status { get; set; }
 
     [BsonElement("metadata")]
@@ -78,10 +78,8 @@ public interface IConversationMessageRepository
 {
     Task<ConversationMessage?> GetByIdAsync(string id);
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
-    Task<List<ConversationMessage>> GetByParticipantChannelIdAsync(string tenantId, string participantChannelId, int? page = null, int? pageSize = null);
     Task<List<ConversationMessage>> GetByStatusAsync(string tenantId, MessageStatus status, int? page = null, int? pageSize = null);
     Task<string> CreateAsync(ConversationMessage message);
-    Task<bool> UpdateAsync(ConversationMessage message);
     Task<bool> UpdateStatusAsync(string id, MessageStatus status);
     Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
 }
@@ -114,12 +112,11 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
         // Channel lookup index (tenant_id, channel, channel_key)
         var channelLookupIndex = Builders<ConversationMessage>.IndexKeys
-            .Ascending(x => x.TenantId)
-            .Ascending(x => x.ParticipantChannelId);
+            .Ascending(x => x.TenantId);
         
         var channelLookupIndexModel = new CreateIndexModel<ConversationMessage>(
             channelLookupIndex,
-            new CreateIndexOptions { Background = true, Name = "channel_lookup" }
+            new CreateIndexOptions { Background = true, Name = "tenant_lookup" }
         );
 
         // Message status index (tenant_id, status)
@@ -162,11 +159,10 @@ public class ConversationMessageRepository : IConversationMessageRepository
         return await query.ToListAsync();
     }
 
-    public async Task<List<ConversationMessage>> GetByParticipantChannelIdAsync(string tenantId, string participantChannelId, int? page = null, int? pageSize = null)
+    public async Task<List<ConversationMessage>> GetByParticipantChannelIdAsync(string tenantId, int? page = null, int? pageSize = null)
     {
         var filter = Builders<ConversationMessage>.Filter.And(
-            Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationMessage>.Filter.Eq(x => x.ParticipantChannelId, participantChannelId)
+            Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId)
         );
 
         var query = _collection.Find(filter).Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt));
@@ -214,18 +210,10 @@ public class ConversationMessageRepository : IConversationMessageRepository
         return message.Id;
     }
 
-    public async Task<bool> UpdateAsync(ConversationMessage message)
-    {
-        message.UpdatedAt = DateTime.UtcNow;
-        var result = await _collection.ReplaceOneAsync(x => x.Id == message.Id, message);
-        return result.ModifiedCount > 0;
-    }
-
     public async Task<bool> UpdateStatusAsync(string id, MessageStatus status)
     {
         var update = Builders<ConversationMessage>.Update
             .Set(x => x.Status, status)
-            .Set(x => x.UpdatedAt, DateTime.UtcNow)
             .Push(x => x.Logs, new MessageLogEvent
             {
                 Timestamp = DateTime.UtcNow,

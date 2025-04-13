@@ -55,7 +55,6 @@ public static class WebApiConfiguration
         WebhookEndpoints.MapWebhookEndpoints(app);
         PublicEndpoints.MapPublicEndpoints(app);
         MessagingEndpoints.MapMessagingEndpoints(app);
-        ConversationEndpoints.MapConversationEndpoints(app);
         
         return app;
     }

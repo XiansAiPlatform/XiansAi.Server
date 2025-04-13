@@ -45,6 +45,7 @@ public interface IConversationThreadRepository
 {
     Task<ConversationThread?> GetByIdAsync(string id);
     Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string workflowId, string participantId);
+    Task<List<ConversationThread>> GetByWorkflowIdAsync(string tenantId, string workflowId);
     Task<List<ConversationThread>> GetByTenantAndWorkflowAsync(string tenantId, string workflowId, int? page = null, int? pageSize = null);
     Task<List<ConversationThread>> GetByTenantAndParticipantAsync(string tenantId, string participantId, int? page = null, int? pageSize = null);
     Task<List<ConversationThread>> GetByStatusAsync(string tenantId, ConversationThreadStatus status, int? page = null, int? pageSize = null);
@@ -107,6 +108,13 @@ public class ConversationThreadRepository : IConversationThreadRepository
         });
     }
 
+    public async Task<List<ConversationThread>> GetByWorkflowIdAsync(string tenantId, string workflowId)
+    {
+        return await _collection.Find(x => x.TenantId == tenantId && x.WorkflowId == workflowId)
+            .Sort(Builders<ConversationThread>.Sort.Descending(x => x.UpdatedAt))
+            .ToListAsync();
+    }
+    
     public async Task<ConversationThread?> GetByIdAsync(string id)
     {
         return await _collection.Find(x => x.Id == id).FirstOrDefaultAsync();

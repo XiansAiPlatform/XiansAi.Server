@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using Temporalio.Exceptions;
 using Shared.Repositories;
 using Shared.Utils.Services;
+using System.Text.Json;
 
 
 namespace Shared.Services;
@@ -30,13 +31,6 @@ public class InboundMessageRequest
     /// Required.
     /// </summary>
     public required string Content { get; set; }
-
-
-    /// <summary>
-    /// Gets or sets a unique identifier of the participant in the channel. For example, the user ID in Slack.
-    /// Required.
-    /// </summary>
-    public required string ParticipantChannelId { get; set; }
 
     /// <summary>
     /// Gets or sets the workflow ID.
@@ -171,21 +165,21 @@ public class ConversationService : IConversationService
         string userId, 
         string threadId)
     {
-
-
         // Create message
         var message = new ConversationMessage
         {
             TenantId = tenantId,
             ThreadId = threadId,
-            ParticipantChannelId = request.ParticipantChannelId,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = userId,
-            Direction = MessageDirection.Inbound,
+            Direction = MessageDirection.Incoming,
             Content = request.Content,
             Metadata = request.Metadata,
             WorkflowId = request.WorkflowId
         };
+
+        _logger.LogInformation("Preparing and sending message {Message} to workflow {WorkflowId}",
+            JsonSerializer.Serialize(message), request.WorkflowId);
 
         try
         {

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Utils.Services;
+using Shared.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -13,6 +15,20 @@ public static class MessagingEndpoints
             .WithTags("WebAPI - Messaging")
             .RequiresValidTenant();
 
+
+        messagingGroup.MapPost("/inbound", async (
+            [FromBody] InboundMessageRequest request, 
+            [FromServices] IConversationService conversationService) => {
+            var result = await conversationService.ProcessInboundMessage(request);
+            return result.ToHttpResult();
+        })
+        .WithName("Send Message to workflow")
+        .WithOpenApi(operation => {
+            operation.Summary = "Send Message to workflow";
+            operation.Description = "Send a message to a workflow";
+            return operation;
+        });
+        
         messagingGroup.MapGet("/agents", async (
             [FromServices] IMessagingService endpoint) =>
         {
@@ -37,6 +53,34 @@ public static class MessagingEndpoints
             operation.Summary = "Get workflow instances";
             operation.Description = "Retrieves workflow instances";
             return operation;
-        });        
+        });     
+
+        messagingGroup.MapGet("/threads", async (
+            [FromServices] IMessagingService endpoint,
+            [FromQuery] string workflowId) => {
+            var result = await endpoint.GetThreads(workflowId);  
+            return result.ToHttpResult();
+        })
+        .WithName("Get AllThreads")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get all threads for a workflow";
+            operation.Description = "Gets all threads for a given workflow of a tenant";
+            return operation;
+        });   
+
+        messagingGroup.MapGet("/threads/{threadId}/messages", async (
+            [FromServices] IMessagingService endpoint,
+            [FromRoute] string threadId,
+            [FromQuery] int? page = null,
+            [FromQuery] int? pageSize = null) => {
+            var result = await endpoint.GetMessages(threadId, page, pageSize);  
+            return result.ToHttpResult();
+        })
+        .WithName("Get Messages for a thread")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get all messages for a thread";
+            operation.Description = "Gets all messages for a given thread";
+            return operation;
+        });   
     }
 } 
