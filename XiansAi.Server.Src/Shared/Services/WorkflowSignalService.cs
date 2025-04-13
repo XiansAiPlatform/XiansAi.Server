@@ -106,9 +106,8 @@ public class WorkflowSignalService : IWorkflowSignalService
             var handle = client.GetWorkflowHandle(request.WorkflowId);
             
             var signalPayload = request.Payload != null 
-                ? [ConvertBsonToStandardTypes(request.Payload)]
+                ? new object[] { request.Payload }
                 : Array.Empty<object>();
-
 
             await handle.SignalAsync(request.SignalName, signalPayload);
             
@@ -142,22 +141,4 @@ public class WorkflowSignalService : IWorkflowSignalService
         !string.IsNullOrEmpty(request.WorkflowId) && 
         !string.IsNullOrEmpty(request.SignalName);
 
-    /// <summary>
-    /// Converts MongoDB BSON objects to standard .NET types to ensure compatibility with Temporal.
-    /// </summary>
-    /// <param name="obj">The object that may contain BSON values</param>
-    /// <returns>A new object with BSON values converted to standard .NET types</returns>
-    private static object ConvertBsonToStandardTypes(object obj)
-    {
-
-        // Handle BSON types directly
-        if (obj is BsonValue bsonValue)
-        {
-            return BsonTypeMapper.MapToDotNetValue(bsonValue);
-        }
-
-        // For complex objects, serialize and deserialize to convert all nested BSON values
-        var json = JsonConvert.SerializeObject(obj);
-        return JsonConvert.DeserializeObject(json) ?? throw new Exception("Failed to deserialize object");
-    }
 }

@@ -41,7 +41,7 @@ public class InboundMessageRequest
     /// Gets or sets additional metadata for the message.
     /// Optional.
     /// </summary>
-    public string? Metadata { get; set; }
+    public object? Metadata { get; set; }
 
 
 }
@@ -131,7 +131,7 @@ public class ConversationService : IConversationService
             string threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowId, request.ParticipantId);
 
             // Prepare and send message
-            var message = await PrepareAndSendMessage(request, tenantId, userId, threadId);
+            var message = await PrepareAndSendMessage(request, tenantId, userId, threadId, request.ParticipantId);
 
             _logger.LogInformation("Successfully processed inbound message {MessageId} for thread {ThreadId}",
                 message.Id, threadId);
@@ -163,7 +163,8 @@ public class ConversationService : IConversationService
         InboundMessageRequest request, 
         string tenantId, 
         string userId, 
-        string threadId)
+        string threadId,
+        string participantId)
     {
         // Create message
         var message = new ConversationMessage
@@ -174,8 +175,8 @@ public class ConversationService : IConversationService
             CreatedBy = userId,
             Direction = MessageDirection.Incoming,
             Content = request.Content,
-            Metadata = request.Metadata,
-            WorkflowId = request.WorkflowId
+            Metadata = JsonSerializer.Serialize(request.Metadata),
+            WorkflowId = request.WorkflowId        
         };
 
         _logger.LogInformation("Preparing and sending message {Message} to workflow {WorkflowId}",
@@ -184,7 +185,7 @@ public class ConversationService : IConversationService
         try
         {
             // Signal the workflow
-            await SignalWorkflowAsync(message);
+            await SignalWorkflowAsync(message, participantId);
             message.Status = MessageStatus.DeliveredToWorkflow;
         }
         catch (RpcException ex)
@@ -349,13 +350,20 @@ public class ConversationService : IConversationService
     /// Signals the workflow with the inbound message.
     /// </summary>
     /// <param name="message">The conversation message.</param>
-    private async Task SignalWorkflowAsync(ConversationMessage message)
+    private async Task SignalWorkflowAsync(ConversationMessage message, string participantId)
     {
         var signalRequest = new WorkflowSignalRequest
         {
             WorkflowId = message.WorkflowId,
             SignalName = SIGNAL_NAME_INBOUND_MESSAGE,
-            Payload = message
+            Payload =  new {
+                message.ThreadId,
+                message.Content,
+                message.Metadata,
+                message.CreatedAt,
+                message.CreatedBy,
+                participantId
+            }
         };
 
         await _workflowSignalService.HandleSignalWorkflow(signalRequest);
