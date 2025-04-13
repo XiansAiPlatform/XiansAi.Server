@@ -1,7 +1,8 @@
-using Features.AgentApi.Services.Agent;
-using Features.AgentApi.Auth;
+using Shared.Services;
 using Shared.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Features.AgentApi.Auth;
+using Shared.Utils.Services;
 
 namespace Features.AgentApi.Endpoints
 {

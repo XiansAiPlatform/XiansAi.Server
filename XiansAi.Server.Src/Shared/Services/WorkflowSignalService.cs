@@ -4,7 +4,7 @@ using Temporalio.Api.Enums.V1;
 using Newtonsoft.Json;
 using MongoDB.Bson;
 
-namespace Features.AgentApi.Services.Agent;
+namespace Shared.Services;
 
 /// <summary>
 /// Represents a request to signal a Temporal workflow.

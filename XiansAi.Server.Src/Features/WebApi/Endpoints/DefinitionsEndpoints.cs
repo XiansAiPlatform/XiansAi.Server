@@ -4,7 +4,7 @@ using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
-public static class DefinitionsEndpointExtensions
+public static class DefinitionsEndpoints
 {
     public static void MapDefinitionsEndpoints(this WebApplication app)
     {

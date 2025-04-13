@@ -1,4 +1,4 @@
-using Features.AgentApi.Services.Agent;
+using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Microsoft.OpenApi.Models;

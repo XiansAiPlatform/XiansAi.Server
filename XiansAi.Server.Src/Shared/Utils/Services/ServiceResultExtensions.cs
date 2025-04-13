@@ -1,7 +1,6 @@
-using Features.AgentApi.Services.Agent;
-using Microsoft.AspNetCore.Http;
 
-namespace Shared.Utils;
+
+namespace Shared.Utils.Services;
 
 /// <summary>
 /// Extension methods for converting ServiceResult to HTTP results
@@ -11,7 +10,7 @@ public static class ServiceResultExtensions
     /// <summary>
     /// Converts a ServiceResult to an appropriate IResult for HTTP responses
     /// </summary>
-    public static IResult ToHttpResult<T>(this Features.AgentApi.Services.Agent.ServiceResult<T> result)
+    public static IResult ToHttpResult<T>(this ServiceResult<T> result)
     {
         if (result.IsSuccess)
         {
@@ -32,7 +31,7 @@ public static class ServiceResultExtensions
     /// <summary>
     /// Converts a non-generic ServiceResult to an appropriate IResult for HTTP responses
     /// </summary>
-    public static IResult ToHttpResult(this Features.AgentApi.Services.Agent.ServiceResult result)
+    public static IResult ToHttpResult(this ServiceResult result)
     {
         if (result.IsSuccess)
         {

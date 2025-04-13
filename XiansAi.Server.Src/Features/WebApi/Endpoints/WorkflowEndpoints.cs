@@ -4,7 +4,7 @@ using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
-public static class WorkflowEndpointExtensions
+public static class WorkflowEndpoints
 {
     public static void MapWorkflowEndpoints(this WebApplication app)
     {

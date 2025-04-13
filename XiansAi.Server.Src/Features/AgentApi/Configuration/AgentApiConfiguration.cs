@@ -1,14 +1,15 @@
 using Features.AgentApi.Endpoints;
-using Features.AgentApi.Services.Agent;
+using Features.AgentApi.Services;
 using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
-using Features.AgentApi.Repositories;
 using XiansAi.Server.Utils;
 using XiansAi.Server.Features.AgentApi.Repositories;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using XiansAi.Server.Features.AgentApi.Endpoints;
 using XiansAi.Server.Shared.Data;
-using XiansAi.Server.Src.Features.AgentApi.Repositories;
+using Features.AgentApi.Repositories;
+using Shared.Repositories;
+using Shared.Services;
 
 namespace Features.AgentApi.Configuration;
 

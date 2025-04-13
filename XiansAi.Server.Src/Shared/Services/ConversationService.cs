@@ -1,10 +1,11 @@
-using XiansAi.Server.Src.Features.AgentApi.Repositories;
 using Shared.Auth;
 using MongoDB.Bson;
 using Temporalio.Exceptions;
+using Shared.Repositories;
+using Shared.Utils.Services;
 
 
-namespace Features.AgentApi.Services.Agent;
+namespace Shared.Services;
 
 
 public enum DeliveryMode
@@ -28,7 +29,7 @@ public class InboundMessageRequest
     /// Gets or sets the message content.
     /// Required.
     /// </summary>
-    public required object Content { get; set; }
+    public required string Content { get; set; }
 
 
     /// <summary>
@@ -46,7 +47,7 @@ public class InboundMessageRequest
     /// Gets or sets additional metadata for the message.
     /// Optional.
     /// </summary>
-    public object? Metadata { get; set; }
+    public string? Metadata { get; set; }
 
 
 }
@@ -170,13 +171,7 @@ public class ConversationService : IConversationService
         string userId, 
         string threadId)
     {
-        // Create message content
-        var messageContent = ConvertToMessageContent(request.Content);
-        
-        // Create message metadata if provided
-        var metadata = request.Metadata != null
-            ? ConvertToMessageContent(request.Metadata)
-            : null;
+
 
         // Create message
         var message = new ConversationMessage
@@ -187,8 +182,8 @@ public class ConversationService : IConversationService
             CreatedAt = DateTime.UtcNow,
             CreatedBy = userId,
             Direction = MessageDirection.Inbound,
-            Content = messageContent,
-            Metadata = metadata,
+            Content = request.Content,
+            Metadata = request.Metadata,
             WorkflowId = request.WorkflowId
         };
 
@@ -354,17 +349,7 @@ public class ConversationService : IConversationService
         return message;
     }
 
-    /// <summary>
-    /// Converts an object to BsonDocument for message content or metadata.
-    /// </summary>
-    /// <param name="content">The content to convert.</param>
-    /// <returns>The converted BsonDocument.</returns>
-    private BsonDocument ConvertToMessageContent(object content)
-    {
-        return content is BsonDocument bsonContent
-            ? bsonContent
-            : BsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(content));
-    }
+
 
     /// <summary>
     /// Signals the workflow with the inbound message.

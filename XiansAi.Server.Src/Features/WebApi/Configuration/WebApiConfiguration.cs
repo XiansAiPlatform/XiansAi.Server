@@ -46,15 +46,16 @@ public static class WebApiConfiguration
     public static WebApplication UseWebApiEndpoints(this WebApplication app)
     {
         // Map Web API endpoints
-        WorkflowEndpointExtensions.MapWorkflowEndpoints(app);
-        InstructionEndpointExtensions.MapInstructionEndpoints(app);
-        ActivityEndpointExtensions.MapActivityEndpoints(app);
-        SettingsEndpointExtensions.MapSettingsEndpoints(app);
-        DefinitionsEndpointExtensions.MapDefinitionsEndpoints(app);
-        TenantEndpointExtensions.MapTenantEndpoints(app);
-        WebhookEndpointExtensions.MapWebhookEndpoints(app);
-        PublicEndpointExtensions.MapPublicEndpoints(app);
-        MessagingEndpointExtensions.MapMessagingEndpoints(app);
+        WorkflowEndpoints.MapWorkflowEndpoints(app);
+        InstructionEndpoints.MapInstructionEndpoints(app);
+        ActivityEndpoints.MapActivityEndpoints(app);
+        SettingsEndpoints.MapSettingsEndpoints(app);
+        DefinitionsEndpoints.MapDefinitionsEndpoints(app);
+        TenantEndpoints.MapTenantEndpoints(app);
+        WebhookEndpoints.MapWebhookEndpoints(app);
+        PublicEndpoints.MapPublicEndpoints(app);
+        MessagingEndpoints.MapMessagingEndpoints(app);
+        ConversationEndpoints.MapConversationEndpoints(app);
         
         return app;
     }

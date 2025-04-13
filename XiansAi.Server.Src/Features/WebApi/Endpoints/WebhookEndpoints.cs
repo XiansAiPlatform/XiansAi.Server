@@ -4,7 +4,7 @@ using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
-public static class WebhookEndpointExtensions
+public static class WebhookEndpoints
 {
     public static void MapWebhookEndpoints(this WebApplication app)
     {

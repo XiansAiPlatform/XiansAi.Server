@@ -4,7 +4,7 @@ using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 
-public static class MessagingEndpointExtensions
+public static class MessagingEndpoints
 {
     public static void MapMessagingEndpoints(this WebApplication app)
     {

@@ -3,7 +3,7 @@ using Features.WebApi.Services;
 using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
-public static class PublicEndpointExtensions
+public static class PublicEndpoints
 {
     public static void MapPublicEndpoints(this WebApplication app)
     {

@@ -1,4 +1,4 @@
-namespace Features.AgentApi.Services.Agent;
+namespace Shared.Utils.Services;
 
 public enum StatusCode
 {
