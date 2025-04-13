@@ -1,5 +1,8 @@
 using XiansAi.Server.Temporal;
 using Shared.Auth;
+using Temporalio.Api.Enums.V1;
+using Newtonsoft.Json;
+using MongoDB.Bson;
 
 namespace Features.AgentApi.Services.Agent;
 
@@ -58,6 +61,7 @@ public class WorkflowSignalService : IWorkflowSignalService
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
 
+
     /// <summary>
     /// Handles the HTTP request to send a signal to an existing Temporal workflow.
     /// </summary>
@@ -96,15 +100,16 @@ public class WorkflowSignalService : IWorkflowSignalService
             if (client == null)
             {
                 _logger.LogError("Failed to get Temporal client");
-                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+                throw new Exception("Failed to get Temporal client");
             }
 
             var handle = client.GetWorkflowHandle(request.WorkflowId);
             
             var signalPayload = request.Payload != null 
-                ? new object[] { request.Payload }
+                ? [ConvertBsonToStandardTypes(request.Payload)]
                 : Array.Empty<object>();
-            
+
+
             await handle.SignalAsync(request.SignalName, signalPayload);
             
             _logger.LogInformation("Successfully sent signal {SignalName} to workflow: {WorkflowId}", 
@@ -121,11 +126,7 @@ public class WorkflowSignalService : IWorkflowSignalService
             _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowId}", 
                 request.SignalName, request.WorkflowId);
                 
-            return Results.Problem(
-                title: "Workflow signal failed",
-                detail: ex.Message,
-                statusCode: StatusCodes.Status500InternalServerError
-            );
+            throw;
         }
     }
 
@@ -140,4 +141,23 @@ public class WorkflowSignalService : IWorkflowSignalService
     private static bool ValidateRequest(WorkflowSignalRequest request) =>
         !string.IsNullOrEmpty(request.WorkflowId) && 
         !string.IsNullOrEmpty(request.SignalName);
+
+    /// <summary>
+    /// Converts MongoDB BSON objects to standard .NET types to ensure compatibility with Temporal.
+    /// </summary>
+    /// <param name="obj">The object that may contain BSON values</param>
+    /// <returns>A new object with BSON values converted to standard .NET types</returns>
+    private static object ConvertBsonToStandardTypes(object obj)
+    {
+
+        // Handle BSON types directly
+        if (obj is BsonValue bsonValue)
+        {
+            return BsonTypeMapper.MapToDotNetValue(bsonValue);
+        }
+
+        // For complex objects, serialize and deserialize to convert all nested BSON values
+        var json = JsonConvert.SerializeObject(obj);
+        return JsonConvert.DeserializeObject(json) ?? throw new Exception("Failed to deserialize object");
+    }
 }

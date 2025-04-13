@@ -1,0 +1,95 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["tenant_id", "url", "secret", "events", "created_at", "created_by"],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId",
+        "description": "The unique identifier for the webhook subscription"
+      },
+      "tenant_id": {
+        "bsonType": "string",
+        "description": "Tenant ID"
+      },
+      "workflow_id": {
+        "bsonType": ["string", "null"],
+        "description": "Optional workflow ID if webhook is specific to a workflow"
+      },
+      "url": {
+        "bsonType": "string",
+        "description": "URL to send webhook events to"
+      },
+      "secret": {
+        "bsonType": "string",
+        "description": "Secret key for HMAC signing of webhook payloads"
+      },
+      "events": {
+        "bsonType": "array",
+        "description": "List of events to subscribe to",
+        "items": {
+          "bsonType": "string",
+          "enum": ["message.created", "message.updated", "message.delivered", "message.read", "message.failed"]
+        },
+        "minItems": 1,
+        "uniqueItems": true
+      },
+      "created_at": {
+        "bsonType": "date",
+        "description": "Timestamp of creation"
+      },
+      "updated_at": {
+        "bsonType": "date",
+        "description": "Timestamp of last update"
+      },
+      "created_by": {
+        "bsonType": "string",
+        "description": "User ID of the creator"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["active", "inactive"],
+        "description": "Current status of the webhook subscription",
+        "default": "active"
+      },
+      "last_triggered_at": {
+        "bsonType": ["date", "null"],
+        "description": "Timestamp of the last successful webhook trigger"
+      },
+      "error_count": {
+        "bsonType": "int",
+        "description": "Count of consecutive delivery errors",
+        "minimum": 0,
+        "default": 0
+      },
+      "metadata": {
+        "bsonType": "object",
+        "description": "Flexible field for additional properties",
+        "additionalProperties": true
+      }
+    },
+    "additionalProperties": false
+  },
+  "indices": [
+    {
+      "key": {
+        "tenant_id": 1,
+        "status": 1
+      },
+      "name": "webhook_status_lookup"
+    },
+    {
+      "key": {
+        "tenant_id": 1,
+        "workflow_id": 1
+      },
+      "name": "webhook_workflow_lookup",
+      "sparse": true
+    },
+    {
+      "key": {
+        "events": 1
+      },
+      "name": "webhook_events"
+    }
+  ]
+} 

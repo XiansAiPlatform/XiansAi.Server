@@ -8,16 +8,17 @@ This project uses Swashbuckle.AspNetCore to provide OpenAPI documentation for th
 
 The OpenAPI documentation is configured in the following files:
 
-- `Shared/Configuration/OpenApi/OpenApiExtensions.cs`: Contains the OpenAPI Configuration
-- `Shared/Configuration/SharedConfiguration.cs`: Configures Swagger middleware in the HTTP pipeline
-- `Shared/Configuration/OpenApi/SwaggerConfiguration.cs`: Contains custom filters for enhancing the documentation
+- `Shared/Configuration/OpenApiExtensions.cs`: Contains the main OpenAPI configuration
+- `Features/WebApi/Endpoints`: Contains WebAPI endpoint definitions
+- `Features/AgentApi/Endpoints`: Contains AgentAPI endpoint definitions
 
 ## Accessing the Documentation
 
 The API documentation is available at:
 
 ```url
-https://your-server/api-docs
+https://api.xians.ai/api-docs
+http://localhost:5000/api-docs
 ```
 
 ## Custom Paths
@@ -34,12 +35,13 @@ Our Swagger configuration includes:
 
 - JWT Authentication support
 - Certificate Authentication support
-- Auto-generated operation IDs based on method names
 - XML documentation integration
-- Request examples for common types
 - Server URL detection based on the current request
-- Custom filters for authorization and schema enhancement
-- Support for inheritance using `allOf`
+- Request duration display
+- Deep linking for operations and tags
+- Filtering by tag
+- TryItOut enabled by default
+- Models section hidden by default
 
 ## Documenting Endpoints
 
@@ -56,25 +58,82 @@ app.MapGet("/api/resource/{id}", GetResource)
     });
 ```
 
-### Controllers
-
-For controller actions, use XML documentation:
+### Example from WebAPI Endpoints
 
 ```csharp
-/// <summary>
-/// Retrieves a specific resource
-/// </summary>
-/// <param name="id">The resource ID</param>
-/// <returns>The requested resource</returns>
-/// <response code="200">Resource found and returned</response>
-/// <response code="404">Resource not found</response>
-[HttpGet("{id}")]
-[ProducesResponseType(typeof(Resource), 200)]
-[ProducesResponseType(404)]
-public IActionResult GetResource(string id)
+workflowsGroup.MapGet("/", async (
+    [FromQuery] DateTime? startTime,
+    [FromQuery] DateTime? endTime,
+    [FromQuery] string? owner,
+    [FromQuery] string? status,
+    [FromServices] IWorkflowFinderService endpoint) =>
 {
-    // Implementation
-}
+    return await endpoint.GetWorkflows(startTime, endTime, owner, status);
+})
+.WithName("Get Workflows")
+.WithOpenApi(operation => {
+    operation.Summary = "Get workflows with optional filters";
+    operation.Description = "Retrieves workflows with optional filtering by date range and owner";
+    return operation;
+});
+```
+
+### Example from AgentAPI Endpoints
+
+```csharp
+signalGroup.MapPost("", async (
+    [FromBody] WorkflowSignalRequest request,
+    [FromServices] IWorkflowSignalService endpoint) =>
+{
+    return await endpoint.HandleSignalWorkflow(request);
+})
+.WithOpenApi(operation => {
+    operation.Summary = "Signal workflow";
+    operation.Description = "Sends a signal to a running workflow instance";
+    return operation;
+});
+```
+
+## Endpoint Groups and Authorization
+
+Endpoints are organized into groups with common attributes:
+
+### WebAPI Endpoints
+
+```csharp
+var workflowsGroup = app.MapGroup("/api/client/workflows")
+    .WithTags("WebAPI - Workflows")
+    .RequiresValidTenant();
+```
+
+### AgentAPI Endpoints
+
+```csharp
+var signalGroup = app.MapGroup("/api/agent/signal")
+    .WithTags("AgentAPI - Signal")
+    .RequiresCertificate();
+```
+
+## Authentication Methods
+
+The API supports two authentication methods:
+
+1. JWT Bearer Authentication (for WebAPI clients)
+2. Certificate Authentication (for AgentAPI clients)
+
+The Swagger UI includes instructions for using JWT authentication:
+
+```csharp
+options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+{
+    Description = @"Authorization header using the Bearer scheme. Example: ""Authorization: Bearer {token}. ""
+        If you are calling AgentAPI functions, use the App Server Token downloaded from the portal settings. 
+        If you are calling WebAPI functions, use the JWT token obtained from the user login in browser.",
+    Name = "Authorization",
+    In = ParameterLocation.Header,
+    Type = SecuritySchemeType.ApiKey,
+    Scheme = "Bearer"
+});
 ```
 
 ## Custom Schema Documentation
@@ -101,21 +160,12 @@ public class WorkflowRequest
 }
 ```
 
-## Adding Authorization Requirements
-
-The `AuthorizationOperationFilter` automatically adds 401/403 responses to operations that require authorization.
-
-## Custom Filters
-
-We've implemented the following custom filters:
-
-- `ExampleSchemaFilter`: Adds examples for common types like DateTime and Guid
-- `AuthorizationOperationFilter`: Adds authorization-related responses to secured endpoints
-
 ## Best Practices
 
 1. Always include operation summaries and descriptions
 2. Document all possible response codes
 3. Provide examples for complex request/response models
 4. Use XML comments for detailed documentation
-5. Group related endpoints using tags 
+5. Group related endpoints using tags
+6. Follow naming conventions for endpoints with `WithName()`
+7. Use consistent tag naming for logical grouping in the documentation 

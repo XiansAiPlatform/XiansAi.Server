@@ -8,6 +8,8 @@ using XiansAi.Server.Features.AgentApi.Repositories;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using XiansAi.Server.Features.AgentApi.Endpoints;
 using XiansAi.Server.Shared.Data;
+using XiansAi.Server.Src.Features.AgentApi.Repositories;
+
 namespace Features.AgentApi.Configuration;
 
 public static class AgentApiConfiguration
@@ -19,6 +21,8 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
+        builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
+        builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
 
         // Register HttpClient for webhook service
         builder.Services.AddHttpClient();
@@ -30,6 +34,7 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
         builder.Services.AddScoped<IWebhookService, WebhookService>();
+        builder.Services.AddScoped<IConversationService, ConversationService>();
 
         return builder;
     }
@@ -65,6 +70,7 @@ public static class AgentApiConfiguration
         DefinitionsEndpoints.MapDefinitionsEndpoints(app, loggerFactory);
         SignalEndpoints.MapSignalEndpoints(app, loggerFactory);
         WebhookEndpoints.MapWebhookEndpoints(app);
+        ConversationEndpoints.MapConversationEndpoints(app);
         
         return app;
     }

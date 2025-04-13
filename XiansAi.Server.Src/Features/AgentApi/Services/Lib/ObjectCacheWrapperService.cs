@@ -34,19 +34,19 @@ public interface IObjectCacheWrapperService
 /// </summary>
 public class ObjectCacheWrapperService : IObjectCacheWrapperService
 {
-    private readonly ObjectCacheService _objectCacheService;
+    private readonly ObjectCache _objectCache;
     private readonly ILogger<ObjectCacheWrapperService> _logger;
 
     /// <summary>
     /// Creates a new instance of the ObjectCacheWrapperService
     /// </summary>
-    /// <param name="objectCacheService">The underlying cache service</param>
+    /// <param name="objectCache">The underlying cache service</param>
     /// <param name="logger">Logger for the service</param>
     public ObjectCacheWrapperService(
-        ObjectCacheService objectCacheService,
+        ObjectCache objectCache,
         ILogger<ObjectCacheWrapperService> logger)
     {
-        _objectCacheService = objectCacheService;
+        _objectCache = objectCache;
         _logger = logger;
     }
 
@@ -58,7 +58,7 @@ public class ObjectCacheWrapperService : IObjectCacheWrapperService
     public async Task<IResult> GetValue(string key)
     {
         _logger.LogInformation("Getting value for key: {Key}", key);
-        var value = await _objectCacheService.GetAsync<object>(key);
+        var value = await _objectCache.GetAsync<object>(key);
         if (value == null)
         {
             _logger.LogWarning("No value found for key: {Key}", key);
@@ -99,7 +99,7 @@ public class ObjectCacheWrapperService : IObjectCacheWrapperService
             slidingExpiration = TimeSpan.FromMinutes(options.SlidingExpirationMinutes.Value);
         }
 
-        var success = await _objectCacheService.SetAsync(key, value, relativeExpiration, slidingExpiration);
+        var success = await _objectCache.SetAsync(key, value, relativeExpiration, slidingExpiration);
         if (!success)
         {
             _logger.LogError("Failed to set value for key: {Key}, Value: {Value}", key, value.ToString());
@@ -118,7 +118,7 @@ public class ObjectCacheWrapperService : IObjectCacheWrapperService
     public async Task<IResult> DeleteValue(string key)
     {
         _logger.LogInformation("Deleting value for key: {Key}", key);
-        var success = await _objectCacheService.RemoveAsync(key);
+        var success = await _objectCache.RemoveAsync(key);
         if (!success)
         {
             _logger.LogError("Failed to delete value for key: {Key}", key);

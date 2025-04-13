@@ -6,10 +6,10 @@ namespace XiansAi.Server.Utils;
 /// <summary>
 /// Service for handling cached objects with customizable expiration policies
 /// </summary>
-public class ObjectCacheService
+public class ObjectCache
 {
     private readonly IDistributedCache _cache;
-    private readonly ILogger<ObjectCacheService> _logger;
+    private readonly ILogger<ObjectCache> _logger;
     private readonly DistributedCacheEntryOptions _defaultCacheOptions;
 
     /// <summary>
@@ -17,9 +17,9 @@ public class ObjectCacheService
     /// </summary>
     /// <param name="cache">The distributed cache implementation</param>
     /// <param name="logger">Logger for the service</param>
-    public ObjectCacheService(
+    public ObjectCache(
         IDistributedCache cache,
-        ILogger<ObjectCacheService> logger)
+        ILogger<ObjectCache> logger)
     {
         _cache = cache;
         _logger = logger;

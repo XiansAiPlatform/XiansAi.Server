@@ -55,8 +55,8 @@ public class TemporalClientService : ITemporalClientService
                         ClientCert = GetCertificate(),
                         ClientPrivateKey = GetPrivateKey(),
                     }
-                };
-
+                };            
+            
             _logger.LogInformation("Connecting to temporal server---" + config.FlowServerUrl + "---, namespace---" + config.FlowServerNamespace + "---");
 
             return TemporalClient.ConnectAsync(options).GetAwaiter().GetResult();

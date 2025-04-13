@@ -7,19 +7,18 @@ This guide outlines the standard patterns for implementing Repositories in our a
 The Repository layer consists of three main components:
 
 1. Model Classes
-2. Repository Classes
-3. Database Service
+2. Repository Interfaces and Implementations
+3. Shared Database Service
 
 ### 1. Model Classes
 
 Models represent the database entities and should follow these patterns:
 
-class should be in a file named `{name}.cs` within the `Database/Models` folder.
-
 ```csharp
-using Database.Bson.Serialization.Attributes;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
-namespace XiansAi.Server.Database.Models;
+namespace XiansAi.Server.Shared.Data.Models;
 
 public class EntityName
 {
@@ -33,6 +32,10 @@ public class EntityName
     // Always include creation timestamp
     [BsonElement("created_at")]
     public required DateTime CreatedAt { get; set; }
+    
+    // Include tenant ID for multi-tenant data
+    [BsonElement("tenant_id")]
+    public string? TenantId { get; set; }
 }
 ```
 
@@ -41,166 +44,205 @@ Key points:
 - Use `required` for non-nullable properties
 - Use snake_case for MongoDB field names in `BsonElement` attributes
 - Include `Id` and `CreatedAt` fields in all entities
+- Include `TenantId` for multi-tenant data
 - Use appropriate BsonRepresentation for ID fields
 
 ### 2. Repository Classes
 
-Repositories handle database operations for specific entities and are instantiated in the endpoint layer:
+Repositories handle database operations for specific entities. They are organized in feature-specific directories:
 
-class should be in a file named `{name}Repository.cs` within the `Database/Repositories` folder.
+- `Features/AgentApi/Repositories` for agent-related repositories
+- `Features/WebApi/Repositories` for web API related repositories
+
+Each repository follows this pattern:
 
 ```csharp
 using MongoDB.Driver;
-using MongoDB.Bson;
-using XiansAi.Server.Database.Models;
+using XiansAi.Server.Shared.Data;
+using XiansAi.Server.Shared.Data.Models;
 
-namespace XiansAi.Server.Database.Repositories;
+namespace Features.FeatureName.Repositories;
 
-public class EntityRepository
+public interface IEntityRepository
+{
+    Task<Entity> GetByIdAsync(string id);
+    Task<List<Entity>> GetAllAsync();
+    // Additional query methods...
+}
+
+public class EntityRepository : IEntityRepository
 {
     private readonly IMongoCollection<Entity> _collection;
 
-    public EntityRepository(IMongoDatabase database)
+    public EntityRepository(IDatabaseService databaseService)
     {
+        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _collection = database.GetCollection<Entity>("collection_name");
+        
+        // Create indexes if needed
+        var indexKeys = Builders<Entity>.IndexKeys.Ascending(x => x.SomeField);
+        var indexOptions = new CreateIndexOptions { Background = true };
+        var indexModel = new CreateIndexModel<Entity>(indexKeys, indexOptions);
+        _collection.Indexes.CreateOne(indexModel);
     }
 
     // Standard CRUD Operations
     public async Task<Entity> GetByIdAsync(string id)
-    public async Task<List<Entity>> GetAllAsync()
-    public async Task CreateAsync(Entity entity)
-    public async Task<bool> UpdateAsync(string id, Entity entity)
-    public async Task<bool> DeleteAsync(string id)
+    {
+        return await _collection.Find(x => x.Id == id).FirstOrDefaultAsync();
+    }
 
-    // Common Query Patterns
-    public async Task<Entity> GetLatestByFieldAsync(string fieldValue)
-    public async Task<List<Entity>> GetByFieldAsync(string fieldValue)
+    // Additional query implementations...
 }
 ```
 
 Key points:
 
-- Repositories are instantiated in endpoint methods using the database service
-- Constructor takes IMongoDatabase instance
-- Use async/await for all database operations
-- Include standard CRUD operations
-- Add specific query methods as needed
-- Return `Task<bool>` for operations that need success confirmation
+- Always define an interface for each repository
+- Inject the `IDatabaseService` in the constructor
+- Create indexes in the constructor if needed
+- Implement async methods for all database operations
+- Include standard CRUD operations and custom queries as needed
+
+## Dependency Registration
+
+Repositories must be registered for dependency injection in the appropriate configuration class:
+
+### For AgentApi features:
+
+```csharp
+// In Features/AgentApi/Configuration/AgentApiConfiguration.cs
+public static WebApplicationBuilder AddAgentApiServices(this WebApplicationBuilder builder)
+{
+    // Register repositories
+    builder.Services.AddScoped<IEntityRepository, EntityRepository>();
+    
+    // Other service registrations...
+    return builder;
+}
+```
+
+### For WebApi features:
+
+```csharp
+// In Features/WebApi/Configuration/WebApiConfiguration.cs
+public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
+{
+    // Register repositories
+    builder.Services.AddScoped<IEntityRepository, EntityRepository>();
+    
+    // Other service registrations...
+    return builder;
+}
+```
 
 ## Best Practices
 
 ### 1. Error Handling
 
 - Use try-catch blocks for database operations
-- Return appropriate HTTP status codes
 - Log errors with sufficient context
-- Implement custom exception types when needed
+- Return appropriate results to indicate success/failure
 - Handle MongoDB-specific exceptions appropriately
 
-### 2. Validation
+### 2. Multi-tenant Data
 
-- Validate input before database operations
-- Use request models for input validation
-- Include required fields and data types
-- Implement business rule validation
-- Use data annotations for basic validation
+- Always include tenant filtering in queries for multi-tenant data
+- Add tenant ID indexes for performance
+- Validate tenant access in service layer
 
 ### 3. Performance
 
-- Use indexes for frequently queried fields
+- Create indexes for frequently queried fields
 - Implement pagination for large result sets
 - Use projection to limit returned fields when appropriate
-- Implement caching where beneficial
-- Use bulk operations for multiple document updates
+- Consider using async enumeration for large datasets
 
-### 4. Versioning
+### 4. Security
 
-- Include version fields when entity versioning is needed
-- Implement methods to retrieve latest versions
-- Maintain creation timestamps for all records
-- Consider soft deletes for historical tracking
-- Implement version control strategies
-
-### 5. Security
-
-- Implement proper access control
+- Implement proper access control at the service layer
 - Sanitize input data
-- Use parameterized queries
 - Avoid exposing internal database details
 - Follow principle of least privilege
 
 ## Advanced Patterns
 
-### 1. Aggregation Queries
+### 1. Complex Queries
 
 ```csharp
-public async Task<List<Entity>> GetAggregatedData()
+public async Task<List<EntityDto>> GetFilteredEntitiesAsync(string tenantId, string searchTerm)
 {
-    return await _collection.Aggregate()
-        .Match(filter)
-        .Group(key => key.Field, group => new { Count = group.Count() })
+    var builder = Builders<Entity>.Filter;
+    var filter = builder.Eq(x => x.TenantId, tenantId);
+    
+    if (!string.IsNullOrEmpty(searchTerm))
+    {
+        var searchFilter = builder.Regex(x => x.Name, new MongoDB.Bson.BsonRegularExpression(searchTerm, "i"));
+        filter = builder.And(filter, searchFilter);
+    }
+    
+    return await _collection.Find(filter)
+        .Sort(Builders<Entity>.Sort.Descending(x => x.CreatedAt))
+        .Limit(100)
+        .Project(x => new EntityDto
+        {
+            Id = x.Id,
+            Name = x.Name,
+            CreatedAt = x.CreatedAt
+        })
         .ToListAsync();
 }
 ```
 
-### 2. Bulk Operations
+### 2. Index Creation
+
+Always create appropriate indexes in the repository constructor:
 
 ```csharp
-public async Task BulkWriteAsync(List<Entity> entities)
-{
-    var writes = entities.Select(entity =>
-        new InsertOneModel<Entity>(entity));
-    await _collection.BulkWriteAsync(writes);
-}
+// Single field index
+var indexKeys = Builders<Entity>.IndexKeys.Ascending(x => x.Name);
+var indexModel = new CreateIndexModel<Entity>(indexKeys, new CreateIndexOptions { Background = true });
+_collection.Indexes.CreateOne(indexModel);
+
+// Compound index
+var compoundIndex = Builders<Entity>.IndexKeys
+    .Ascending(x => x.TenantId)
+    .Ascending(x => x.WorkflowId);
+var compoundModel = new CreateIndexModel<Entity>(compoundIndex, new CreateIndexOptions { Background = true });
+_collection.Indexes.CreateOne(compoundModel);
 ```
 
-### 3. Search Implementation
+## Creating New Repository Components
 
-```csharp
-public async Task<List<Entity>> SearchAsync(string searchTerm)
-{
-    var filter = Builders<Entity>.Filter.Or(
-        Builders<Entity>.Filter.Regex(x => x.Field1, new BsonRegularExpression(searchTerm, "i")),
-        Builders<Entity>.Filter.Regex(x => x.Field2, new BsonRegularExpression(searchTerm, "i"))
-    );
-    return await _collection.Find(filter).ToListAsync();
-}
-```
+### 1. Create Models
 
-## Testing
+1. Define the model class in `Shared.Data.Models` namespace
+2. Add appropriate BsonElement attributes
+3. Include standard fields (Id, CreatedAt)
+4. Add TenantId for multi-tenant data
 
-### Repository Testing
+### 2. Create Repository
 
-- Use in-memory MongoDB for unit tests
-- Test all CRUD operations
-- Verify edge cases and error conditions
-- Test complex queries and aggregations
-- Implement integration tests
+1. Create a new file in the appropriate feature repository folder
+2. Define an interface with required operations
+3. Implement the repository class with the interface
+4. Add constructor that accepts IDatabaseService
+5. Set up collection and indexes
+
+### 3. Register the Repository
+
+1. Add registration to the appropriate configuration class
+2. Use AddScoped for the lifetime scope
 
 ## Example Implementation
 
 See the following files for reference:
 
-- `Database/Models/Instruction.cs` for model implementation
-- `Database/Repositories/InstructionRepository.cs` for repository pattern
-- `Database/DatabaseService.cs` for database service
-
-## Creating New Repository Components
-
-### 1. Create Model
-
-1. Define the model class with required properties
-2. Add appropriate BsonElement attributes
-3. Include standard fields (Id, CreatedAt)
-4. Namespace `XiansAi.Server.Database.Models`
-
-### 2. Create Repository
-
-1. Implement standard CRUD operations
-2. Add specific query methods
-3. Include appropriate indexes
-4. Implement error handling
-5. Namespace `XiansAi.Server.Database.Repositories`
+- `Features/WebApi/Repositories/WebhookRepository.cs`
+- `Features/AgentApi/Repositories/KnowledgeRepository.cs`
+- `Features/WebApi/Configuration/WebApiConfiguration.cs`
+- `Features/AgentApi/Configuration/AgentApiConfiguration.cs`
+- `Shared/Data/DatabaseService.cs`
 
 ## Maintenance and Updates
 

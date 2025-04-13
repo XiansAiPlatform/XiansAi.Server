@@ -50,6 +50,13 @@ See [End-Point Design](end-point-design.md) for:
 - Error handling
 - Documentation standards
 
+See [OpenAPI Documentation](openapi-docs.md) for:
+
+- Endpoint documentation
+- Request/response examples
+- Error codes
+- Security requirements
+
 ## 5. Postman Tests
 
 Create a Postman collection for testing your endpoints:

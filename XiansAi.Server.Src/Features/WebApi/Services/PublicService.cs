@@ -14,7 +14,6 @@ public class PublicService
     private readonly IAuth0MgtAPIConnect _auth0MgtAPIConnect;
     private readonly ILogger<PublicService> _logger;
     private readonly ITenantContext _tenantContext;
-    private readonly ITemporalClientService _temporalClientService;
     private readonly IDistributedCache _cache;
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
@@ -29,7 +28,6 @@ public class PublicService
     /// Initializes a new instance of the <see cref="PublicService"/> class.
     /// </summary>
     /// <param name="auth0MgtAPIConnect">Service for Auth0 Management API operations</param>
-    /// <param name="temporalClientService">Service for Temporal workflow operations</param>
     /// <param name="logger">Logger for this class</param>
     /// <param name="tenantContext">Context for tenant operations</param>
     /// <param name="cache">Distributed cache for storing verification codes</param>
@@ -38,7 +36,6 @@ public class PublicService
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
         IAuth0MgtAPIConnect auth0MgtAPIConnect, 
-        ITemporalClientService temporalClientService,
         ILogger<PublicService> logger,
         ITenantContext tenantContext,
         IDistributedCache cache, 
@@ -48,7 +45,6 @@ public class PublicService
         _auth0MgtAPIConnect = auth0MgtAPIConnect ?? throw new ArgumentNullException(nameof(auth0MgtAPIConnect));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
-        _temporalClientService = temporalClientService ?? throw new ArgumentNullException(nameof(temporalClientService));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
