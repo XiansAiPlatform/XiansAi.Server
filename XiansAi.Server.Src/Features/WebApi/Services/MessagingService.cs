@@ -10,7 +10,7 @@ public interface IMessagingService
 {
     Task<IResult> GetGroupedDefinitions();
     Task<IResult> GetWorkflowInstances(string? agentName, string? typeName);
-    Task<ServiceResult<List<ConversationThread>>> GetThreads(string workflowId);
+    Task<ServiceResult<List<ConversationThread>>> GetThreads(string workflowId, int? page = null, int? pageSize = null);
     Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null);
 }
 
@@ -56,15 +56,39 @@ public class MessagingService : IMessagingService
     public async Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null)
     {
         var tenantId = _tenantContext.TenantId;
+        
+        // Validate pagination parameters
+        if (page.HasValue && page.Value <= 0)
+        {
+            page = 1;
+        }
+        
+        if (pageSize.HasValue && pageSize.Value <= 0)
+        {
+            pageSize = 10;
+        }
+        
         var messages = await _messageRepository.GetByThreadIdAsync(tenantId, threadId, page, pageSize);
         return ServiceResult<List<ConversationMessage>>.Success(messages);
     }
 
-    public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string workflowId)
+    public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string workflowId, int? page = null, int? pageSize = null)
     {
         var tenantId = _tenantContext.TenantId;
-        var threads = await _threadRepository.GetByWorkflowIdAsync(tenantId, workflowId);
-        return ServiceResult<List<ConversationThread>>.Success(threads) ;
+        
+        // Validate pagination parameters
+        if (page.HasValue && page.Value <= 0)
+        {
+            page = 1;
+        }
+        
+        if (pageSize.HasValue && pageSize.Value <= 0)
+        {
+            pageSize = 10;
+        }
+        
+        var threads = await _threadRepository.GetByTenantAndWorkflowAsync(tenantId, workflowId, page, pageSize);
+        return ServiceResult<List<ConversationThread>>.Success(threads);
     }
 
     public async Task<IResult> GetGroupedDefinitions()

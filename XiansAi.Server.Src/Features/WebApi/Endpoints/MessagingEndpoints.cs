@@ -57,8 +57,10 @@ public static class MessagingEndpoints
 
         messagingGroup.MapGet("/threads", async (
             [FromServices] IMessagingService endpoint,
-            [FromQuery] string workflowId) => {
-            var result = await endpoint.GetThreads(workflowId);  
+            [FromQuery] string workflowId,
+            [FromQuery] int? page = null,
+            [FromQuery] int? pageSize = null) => {
+            var result = await endpoint.GetThreads(workflowId, page, pageSize);  
             return result.ToHttpResult();
         })
         .WithName("Get AllThreads")
