@@ -350,6 +350,7 @@ public class ConversationService : IConversationService
     /// Signals the workflow with the inbound message.
     /// </summary>
     /// <param name="message">The conversation message.</param>
+    /// <param name="participantId">The participant ID.</param>
     private async Task SignalWorkflowAsync(ConversationMessage message, string participantId)
     {
         var signalRequest = new WorkflowSignalRequest
@@ -362,7 +363,7 @@ public class ConversationService : IConversationService
                 message.Metadata,
                 message.CreatedAt,
                 message.CreatedBy,
-                participantId
+                ParticipantId = participantId
             }
         };
 
