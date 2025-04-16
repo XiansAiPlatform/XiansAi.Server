@@ -2,11 +2,9 @@ using Features.AgentApi.Endpoints;
 using Features.AgentApi.Services;
 using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
-using XiansAi.Server.Utils;
 using XiansAi.Server.Features.AgentApi.Repositories;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using XiansAi.Server.Features.AgentApi.Endpoints;
-using XiansAi.Server.Shared.Data;
 using Features.AgentApi.Repositories;
 using Shared.Repositories;
 using Shared.Services;
@@ -36,6 +34,7 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
         builder.Services.AddScoped<IWebhookService, WebhookService>();
         builder.Services.AddScoped<IConversationService, ConversationService>();
+        builder.Services.AddScoped<IWorkflowStarterService, WorkflowStarterService>();
 
         return builder;
     }
@@ -72,6 +71,7 @@ public static class AgentApiConfiguration
         SignalEndpoints.MapSignalEndpoints(app, loggerFactory);
         WebhookEndpoints.MapWebhookEndpoints(app);
         ConversationEndpoints.MapConversationEndpoints(app);
+        WorkflowStarterEndpoints.MapWorkflowStarterEndpoints(app, loggerFactory);
         
         return app;
     }
