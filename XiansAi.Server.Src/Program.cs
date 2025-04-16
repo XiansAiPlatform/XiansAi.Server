@@ -2,8 +2,9 @@ using DotNetEnv;
 using Features.AgentApi.Configuration;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
-using XiansAi.Server.Database;
+using XiansAi.Server.Shared.Data;
 using Shared.Auth;
+using Features.WebApi.Auth;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.
@@ -88,18 +89,20 @@ public class Program
         {
             case ServiceType.WebApi:
                 builder.AddWebApiServices();
+                builder.AddWebApiAuth();
                 break;
             
             case ServiceType.LibApi:
-                builder.AddLibApiServices();
-                builder.AddLibApiAuthentication();
+                builder.AddAgentApiServices();
+                builder.AddAgentApiAuth();
                 break;
             
             case ServiceType.All:
             default:
                 builder.AddWebApiServices();
-                builder.AddLibApiServices();
-                builder.AddLibApiAuthentication();
+                builder.AddAgentApiServices();
+                builder.AddAgentApiAuth();
+                builder.AddWebApiAuth();
                 break;
         }
     }
@@ -138,17 +141,13 @@ public class Program
                 break;
             
             case ServiceType.LibApi:
-                // Apply LibApi specific middleware first
-                app.UseLibApiMiddleware();
-                app.UseLibApiEndpoints(loggerFactory);
+                app.UseAgentApiEndpoints(loggerFactory);
                 break;
             
             case ServiceType.All:
             default:
                 app.UseWebApiEndpoints();
-                // Apply LibApi specific middleware first
-                app.UseLibApiMiddleware();
-                app.UseLibApiEndpoints(loggerFactory);
+                app.UseAgentApiEndpoints(loggerFactory);
                 break;
         }
     }

@@ -1,14 +1,23 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.AgentApi.Repositories;
 
-public class KnowledgeRepository
+public interface IKnowledgeRepository
+{
+    Task<Knowledge> GetLatestKnowledgeByNameAsync(string name);
+    Task<Knowledge> GetByIdAsync(string id);
+    Task<Knowledge> GetByVersionAsync(string version);
+    Task<Knowledge> GetLatestByNameAsync(string name);
+}
+
+public class KnowledgeRepository : IKnowledgeRepository
 {
     private readonly IMongoCollection<Knowledge> _knowledge;
-
-    public KnowledgeRepository(IMongoDatabase database)
+    public KnowledgeRepository(IDatabaseService databaseService)
     {
+        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _knowledge = database.GetCollection<Knowledge>("knowledge");
     }
 

@@ -1,6 +1,11 @@
 using Features.WebApi.Endpoints;
-using Features.WebApi.Services.Web;
 using Features.WebApi.Auth;
+using Features.WebApi.Repositories;
+using Features.WebApi.Services;
+using XiansAi.Server.Features.WebApi.Repositories;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Features.WebApi.Configuration;
 
@@ -8,17 +13,30 @@ public static class WebApiConfiguration
 {
     public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
     {
+        // Register authorization handlers
+        builder.Services.AddScoped<IAuthorizationHandler, ValidTenantHandler>();
+        builder.Services.AddScoped<IAuthorizationHandler, Auth0ClientHandler>();
+
         // Register Web API specific services
         builder.Services.AddSingleton<IAuth0MgtAPIConnect, Auth0MgtAPIConnect>();
-        builder.Services.AddScoped<WorkflowStarterEndpoint>();
-        builder.Services.AddScoped<WorkflowEventsEndpoint>();
-        builder.Services.AddScoped<WorkflowFinderEndpoint>();
-        builder.Services.AddScoped<WorkflowCancelEndpoint>();
-        builder.Services.AddScoped<CertificateEndpoint>();
-        builder.Services.AddScoped<InstructionsEndpoint>();
-        builder.Services.AddScoped<LogsEndpoint>();
-        builder.Services.AddScoped<DefinitionsEndpoint>();
-        builder.Services.AddScoped<TenantEndpoint>();
+        builder.Services.AddScoped<WorkflowStarterService>();
+        builder.Services.AddScoped<WorkflowEventsService>();
+        builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
+        builder.Services.AddScoped<WorkflowCancelService>();
+        builder.Services.AddScoped<CertificateService>();
+        builder.Services.AddScoped<InstructionsService>();
+        builder.Services.AddScoped<DefinitionsService>();
+        builder.Services.AddScoped<TenantService>();
+        builder.Services.AddScoped<WebhookService>();
+        builder.Services.AddScoped<ActivitiesService>();
+        builder.Services.AddScoped<IMessagingService, MessagingService>();
+        
+        // Register repositories
+        builder.Services.AddScoped<IInstructionRepository, InstructionRepository>();
+        builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
+        builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
+        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
+        builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         
         return builder;
     }
@@ -26,8 +44,16 @@ public static class WebApiConfiguration
     public static WebApplication UseWebApiEndpoints(this WebApplication app)
     {
         // Map Web API endpoints
-        WebEndpointExtensions.MapWebEndpoints(app);
-        PublicEndpointExtensions.MapPublicEndpoints(app);
+        WorkflowEndpoints.MapWorkflowEndpoints(app);
+        InstructionEndpoints.MapInstructionEndpoints(app);
+        ActivityEndpoints.MapActivityEndpoints(app);
+        SettingsEndpoints.MapSettingsEndpoints(app);
+        DefinitionsEndpoints.MapDefinitionsEndpoints(app);
+        TenantEndpoints.MapTenantEndpoints(app);
+        WebhookEndpoints.MapWebhookEndpoints(app);
+        PublicEndpoints.MapPublicEndpoints(app);
+        MessagingEndpoints.MapMessagingEndpoints(app);
+        ConversationEndpoints.MapConversationEndpoints(app);
         
         return app;
     }

@@ -3,7 +3,7 @@
 ## File Structure
 
 - Schema files should be named in kebab-case: `<entity>-schema.json`
-- Schema files should be located in the `Database/Schemas` directory
+- Schema files should be located in the `Shared/Data/Schemas` directory
 
 ## Schema Structure
 
@@ -28,32 +28,6 @@ Every entity schema should include these base properties:
     "updated_at": {
         "bsonType": "date",
         "description": "Timestamp of last update"
-    }
-}
-```
-
-### Common Ownership Properties
-
-When the entity needs ownership tracking:
-
-```json
-{
-    "permissions": {
-        "bsonType": ["array", "null"],
-        "items": {
-            "bsonType": "object",
-            "required": ["level", "owner"],
-            "properties": {
-                "level": {
-                    "bsonType": ["string", "null"],
-                    "description": "Permission level"
-                },
-                "owner": {
-                    "bsonType": ["string", "null"],
-                    "description": "Owner of the permission"
-                }
-            }
-        }
     }
 }
 ```
@@ -113,7 +87,6 @@ Use the following BSON types:
 
 - Always include `tenant_id` and `created_at` in required fields
 - List all non-optional fields in the `required` array
-- Consider including `owner` for entities that need ownership tracking
 
 ### 2. Descriptions
 
@@ -141,72 +114,6 @@ Use the following BSON types:
 - Define clear structure for array items
 - Consider using `minItems` and `maxItems` when appropriate
 - Use consistent item structure within arrays
-
-## Common Patterns
-
-### 1. Versioning Pattern
-
-For versioned entities:
-
-```json
-{
-    "version": {
-        "bsonType": "string",
-        "description": "SHA-256 hash of the content"
-    },
-    "hash": {
-        "bsonType": "string",
-        "description": "SHA-256 hash of the definition content"
-    }
-}
-```
-
-### 2. Configuration Pattern
-
-For configurable entities:
-
-```json
-{
-    "config": {
-        "bsonType": "array",
-        "description": "Array of configuration entries",
-        "items": {
-            "bsonType": "object",
-            "required": ["group", "key", "value"],
-            "properties": {
-                "group": {
-                    "bsonType": "string",
-                    "description": "Configuration group name"
-                },
-                "key": {
-                    "bsonType": "string",
-                    "description": "Configuration key"
-                },
-                "value": {
-                    "description": "Configuration value - can be any type"
-                }
-            }
-        }
-    }
-}
-```
-
-### 3. Timing Pattern
-
-For entities with timing requirements:
-
-```json
-{
-    "started_time": {
-        "bsonType": "date",
-        "description": "Time when activity started"
-    },
-    "ended_time": {
-        "bsonType": ["date", "null"],
-        "description": "Time when activity ended"
-    }
-}
-```
 
 ## Indexing Guidelines
 
@@ -246,20 +153,6 @@ For entities with timing requirements:
 - Create unique indexes on business keys
 - Index array fields when querying array elements
 
-## Schema Validation
-
-When implementing the schema in MongoDB:
-
-```javascript
-await db.createCollection("collection_name", {
-    validator: {
-        $jsonSchema: {
-            // schema definition
-        }
-    }
-});
-```
-
 ## Error Handling
 
 - Document should fail validation if required fields are missing
@@ -267,15 +160,38 @@ await db.createCollection("collection_name", {
 - Consider adding custom error messages for validation failures
 - Use appropriate error codes for different validation scenarios
 
-```json
-{
-    "tenant_id": {
-        "bsonType": "string",
-        "description": "Tenant ID"
-    },
-    "created_at": {
-        "bsonType": "date",
-        "description": "Timestamp of creation"
-    }
-}
-```
+## Conversation API Schemas
+
+The following schemas are used for the Conversation API feature:
+
+### conversation-thread-schema.json
+
+Represents a conversation thread between agents and participants:
+
+- **Primary Properties**: tenant_id, workflow_id, participant_id, status
+- **Indexes**: 
+  - Composite key on (tenant_id, workflow_id, participant_id) for uniqueness
+  - Status lookup by tenant_id and status
+  - Updated_at index for time-based queries
+
+### conversation-message-schema.json
+
+Represents individual messages within a conversation thread:
+
+- **Primary Properties**: thread_id, channel, channel_key, direction, content
+- **Nested Data**: logs array for tracking message delivery status
+- **Indexes**:
+  - Thread lookup by tenant_id, thread_id, and created_at
+  - Channel lookup for filtering by communication channel
+  - Status lookup for tracking message states
+
+### webhook-subscription-schema.json
+
+Manages webhook integration for outbound messages:
+
+- **Primary Properties**: url, secret, events
+- **Performance Features**: error_count tracking, status monitoring
+- **Indexes**:
+  - Status lookup for active webhooks
+  - Workflow-specific webhook filtering
+  - Events index for efficient event type matching

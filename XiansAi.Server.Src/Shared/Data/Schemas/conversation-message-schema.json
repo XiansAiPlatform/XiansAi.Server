@@ -1,0 +1,110 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["tenant_id", "thread_id", "channel", "channel_key", "created_at", "created_by", "direction", "content"],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId",
+        "description": "The unique identifier for the message"
+      },
+      "tenant_id": {
+        "bsonType": "string",
+        "description": "Tenant ID"
+      },
+      "thread_id": {
+        "bsonType": "string",
+        "description": "ID of the conversation thread this message belongs to"
+      },
+      "channel": {
+        "bsonType": "string",
+        "description": "Communication channel (email, chat, voice, sms, etc.)"
+      },
+      "channel_key": {
+        "bsonType": "string",
+        "description": "The identifiable information of the participant (email address, phone number, etc.)"
+      },
+      "created_at": {
+        "bsonType": "date",
+        "description": "Timestamp of creation"
+      },
+      "updated_at": {
+        "bsonType": "date",
+        "description": "Timestamp of last update"
+      },
+      "created_by": {
+        "bsonType": "string",
+        "description": "User ID of the creator"
+      },
+      "direction": {
+        "bsonType": "string",
+        "enum": ["inbound", "outbound"],
+        "description": "Direction of the message (inbound or outbound)"
+      },
+      "content": {
+        "bsonType": "object",
+        "description": "Structured content based on channel type",
+        "additionalProperties": true
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["sent", "delivered", "read", "failed"],
+        "description": "Current status of the message"
+      },
+      "metadata": {
+        "bsonType": "object",
+        "description": "Flexible field for additional properties",
+        "additionalProperties": true
+      },
+      "logs": {
+        "bsonType": "array",
+        "description": "List of events related to the message",
+        "items": {
+          "bsonType": "object",
+          "required": ["timestamp", "event"],
+          "properties": {
+            "timestamp": {
+              "bsonType": "date",
+              "description": "Timestamp of the log event"
+            },
+            "event": {
+              "bsonType": "string",
+              "enum": ["created", "sent", "delivered", "read", "failed"],
+              "description": "Type of event"
+            },
+            "details": {
+              "bsonType": "object",
+              "description": "Context-specific information",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "indices": [
+    {
+      "key": {
+        "tenant_id": 1,
+        "thread_id": 1,
+        "created_at": -1
+      },
+      "name": "message_lookup"
+    },
+    {
+      "key": {
+        "tenant_id": 1,
+        "channel": 1,
+        "channel_key": 1
+      },
+      "name": "channel_lookup"
+    },
+    {
+      "key": {
+        "tenant_id": 1,
+        "status": 1
+      },
+      "name": "message_status"
+    }
+  ]
+} 

@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
+using XiansAi.Server.Features.WebApi.Models;
 
 namespace Shared.Data.Models;
 public class FlowDefinition
@@ -8,7 +9,7 @@ public class FlowDefinition
 
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
-    public string Id { get; set; } = null!;
+    public required string Id { get; set; }
 
     [BsonElement("type_name")]
     public required string TypeName { get; set; }

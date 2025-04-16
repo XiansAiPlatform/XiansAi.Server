@@ -1,4 +1,4 @@
-namespace XiansAi.Server.Database;
+namespace XiansAi.Server.Shared.Data;
 
 public interface IMongoDBConfig
 {

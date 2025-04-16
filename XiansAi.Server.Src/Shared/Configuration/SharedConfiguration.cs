@@ -1,14 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using System.Security.Claims;
-using Features.WebApi.Auth;
-using Microsoft.OpenApi.Models;
-using System.Collections.Generic;
-using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
-using System.Text.Json;
-
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
@@ -17,12 +6,25 @@ public static class SharedConfiguration
     {
         // Add services using specialized configuration classes
         builder = builder
-            .AddCorsConfiguration()
-            .AddAuthenticationServices()
-            .AddAuthorizationServices();
+            .AddCorsConfiguration();
             
-        // Add common services
-        builder = ServiceConfiguration.AddSharedServices(builder);
+        // Add infrastructure services (clients, data access, etc.)
+        builder.Services.AddInfrastructureServices(builder.Configuration);
+        
+        // Add common api-related services
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen();
+        builder.Services.AddServerOpenApi();
+        builder.Services.AddControllers();
+        
+        // Add health checks
+        builder.Services.AddHealthChecks();
+        
+        // Register TimeProvider for DI
+        builder.Services.AddSingleton(TimeProvider.System);
+        
+        // Add HttpContextAccessor for access to the current HttpContext
+        builder.Services.AddHttpContextAccessor();
         
         return builder;
     }
@@ -38,11 +40,13 @@ public static class SharedConfiguration
         // Configure middleware using specialized configuration classes
         app = app
             .UseSwaggerConfiguration()
-            .UseExceptionHandlingConfiguration()
-            .UseHealthChecks();
+            .UseExceptionHandlingConfiguration();
+        
+        // Get policy name from configuration
+        var corsSettings = app.Configuration.GetSection("Cors").Get<CorsSettings>() ?? new CorsSettings();
         
         // Configure standard middleware
-        app.UseCors("AllowAll");
+        app.UseCors(corsSettings.PolicyName);
         app.UseAuthentication();
         app.UseAuthorization();
         

@@ -30,15 +30,19 @@ See [Repository Pattern Implementation Guide](database-repositories.md) for:
 - Best practices for error handling, validation, and performance
 - Testing guidelines
 
-## 3. REST Endpoints
+## 3. Service Layer
 
-Implement the REST endpoints for your entity:
+Implement service classes to encapsulate business logic and orchestrate operations between repositories and endpoints.
 
-1. Create an endpoint class in `Services/Web/{EntityName}Endpoint.cs`
-2. Register the endpoint in `AppExt/ServiceCollectionExtensions.cs`
-3. Map the endpoints in `Endpoints/WebEndpointExtensions.cs`
+See [Service Layer Design](service-layer-design.md) for:
 
-See [Client Endpoints Guide](client-end-points.md) for:
+- Design principles (Dependency Injection, SRP)
+- Registration patterns
+- Best practices
+
+## 4. REST Endpoints
+
+See [End-Point Design](end-point-design.md) for:
 
 - Endpoint class implementation
 - Request/response DTOs
@@ -46,7 +50,14 @@ See [Client Endpoints Guide](client-end-points.md) for:
 - Error handling
 - Documentation standards
 
-## 4. Postman Tests
+See [OpenAPI Documentation](openapi-docs.md) for:
+
+- Endpoint documentation
+- Request/response examples
+- Error codes
+- Security requirements
+
+## 5. Postman Tests
 
 Create a Postman collection for testing your endpoints:
 
@@ -98,7 +109,8 @@ Here's a quick example of implementing a new "Task" feature:
 1. Create `Database/Schemas/task-schema.json`
 2. Create `Database/Models/Task.cs`
 3. Create `Database/Repositories/TaskRepository.cs`
-4. Create `Services/Web/TaskEndpoint.cs`
-5. Create `Tests/postman/task-api-endpoints.postman_collection.json`
+4. Create service classes (e.g., `Services/WebApi/TaskService.cs`)
+5. Create `Features/WebApi/Endpoints/TaskEndpoint.cs`
+6. Create `Tests/postman/task-api-endpoints.postman_collection.json`
 
 Follow the detailed guidelines in each referenced document for the specific implementation details.

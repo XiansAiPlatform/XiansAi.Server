@@ -1,0 +1,71 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["tenant_id", "workflow_id", "participant_id", "created_at", "created_by", "status"],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId",
+        "description": "The unique identifier for the conversation thread"
+      },
+      "tenant_id": {
+        "bsonType": "string",
+        "description": "Tenant ID"
+      },
+      "workflow_id": {
+        "bsonType": "string",
+        "description": "ID of the workflow this thread belongs to"
+      },
+      "participant_id": {
+        "bsonType": "string",
+        "description": "ID of the participant in this conversation"
+      },
+      "created_at": {
+        "bsonType": "date",
+        "description": "Timestamp of creation"
+      },
+      "updated_at": {
+        "bsonType": "date",
+        "description": "Timestamp of last update"
+      },
+      "created_by": {
+        "bsonType": "string",
+        "description": "User ID of the creator"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["active", "archived", "closed"],
+        "description": "Current status of the conversation thread"
+      },
+      "metadata": {
+        "bsonType": "object",
+        "description": "Flexible field for additional properties",
+        "additionalProperties": true
+      }
+    },
+    "additionalProperties": false
+  },
+  "indices": [
+    {
+      "key": {
+        "tenant_id": 1,
+        "workflow_id": 1,
+        "participant_id": 1
+      },
+      "name": "thread_composite_key",
+      "unique": true
+    },
+    {
+      "key": {
+        "tenant_id": 1,
+        "status": 1
+      },
+      "name": "thread_status_lookup"
+    },
+    {
+      "key": {
+        "updated_at": -1
+      },
+      "name": "thread_updated_at"
+    }
+  ]
+} 

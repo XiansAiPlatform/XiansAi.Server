@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using XiansAi.Server.Tests.TestUtils;
 using Features.AgentApi.Endpoints;
+using Features.AgentApi.Endpoints.Models;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 
@@ -85,6 +86,9 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         Assert.Equal("expiration", content.GetProperty("test").GetString());
     }
 
+    /*
+    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetCacheValue_WithSlidingExpiration_SetsValueCorrectly"
+    */
     [Fact]
     public async Task SetCacheValue_WithSlidingExpiration_SetsValueCorrectly()
     {

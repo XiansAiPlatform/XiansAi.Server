@@ -1,9 +1,9 @@
 using Shared.Auth;
 using XiansAi.Server.Auth;
-using XiansAi.Server.Database;
 using XiansAi.Server.GenAi;
 using XiansAi.Server.Temporal;
 using XiansAi.Server.Utils;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.Shared.Configuration;
 
@@ -50,7 +50,7 @@ public static class SharedServices
                 sp.GetRequiredService<ITenantContext>()));
                 
         // Register cache service
-        services.AddScoped<ObjectCacheService>();
+        services.AddScoped<ObjectCache>();
         
         // Add this to the AddInfrastructureServices method in SharedServices.cs
         services.AddSingleton<IBackgroundTaskService, BackgroundTaskService>();
