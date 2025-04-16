@@ -2,7 +2,8 @@ using Shared.Auth;
 using Temporalio.Client;
 using Temporalio.Converters;
 using XiansAi.Server.Temporal;
-using XiansAi.Server.Database.Repositories;
+using XiansAi.Server.Features.WebApi.Repositories;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.WebApi.Services;
 
@@ -29,11 +30,13 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="clientService">The Temporal client service for workflow operations.</param>
     /// <param name="logger">Logger for recording operational events.</param>
     /// <param name="tenantContext">Context containing tenant-specific information.</param>
+    /// <param name="databaseService">The database service for accessing workflow logs.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
         ITemporalClientService clientService,
         ILogger<WorkflowFinderService> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IDatabaseService databaseService)
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -47,7 +50,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="workflowId">The unique identifier of the workflow.</param>
     /// <param name="workflowRunId">Optional run identifier for the workflow.</param>
     /// <returns>A result containing the workflow details if found, or an error response.</returns>
-    public async Task<IResult> GetWorkflow(string workflowId, string workflowRunId)
+    public async Task<IResult> GetWorkflow(string workflowId, string? workflowRunId)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
         {
@@ -115,7 +118,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", workflows.Count);
 
             // retrieve last logs for each workflow run
-            var logRepository = new LogRepository(await _databaseService.GetDatabase());
+            var logRepository = new LogRepository(_databaseService);
             var logs = await logRepository.GetLastLogAsync(startTime, endTime);
             foreach (var workflow in workflows)
             {
@@ -322,6 +325,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// Maps a Temporal workflow execution to a client-friendly response object.
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
+    /// <param name="fetchHistory">Optional workflow history to analyze for current activity.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
     private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null)
     {

@@ -1,15 +1,33 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
-using XiansAi.Server.Database.Models;
+using XiansAi.Server.Features.WebApi.Models;
+using XiansAi.Server.Shared.Data;
 
-namespace XiansAi.Server.Database.Repositories;
+namespace XiansAi.Server.Features.WebApi.Repositories;
 
-public class LogRepository
+public interface ILogRepository
+{
+    Task<Log?> GetByIdAsync(string id);
+    Task<List<Log>> GetByTenantIdAsync(string tenantId);
+    Task<List<Log>> GetByWorkflowIdAsync(string workflowId);
+    Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit, int? logLevel = null);
+    Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level);
+    Task<List<Log>> GetLastLogAsync(DateTime? startTime, DateTime? endTime);
+    Task<List<Log>> GetByDateRangeAsync(DateTime startDate, DateTime endDate);
+    Task CreateAsync(Log log);
+    Task<bool> UpdateAsync(string id, Log log);
+    Task<bool> UpdatePropertiesAsync(string id, Dictionary<string, object> properties);
+    Task<bool> DeleteAsync(string id);
+    Task<List<Log>> SearchAsync(string searchTerm);
+}
+
+public class LogRepository : ILogRepository
 {
     private readonly IMongoCollection<Log> _logs;
 
-    public LogRepository(IMongoDatabase database)
+    public LogRepository(IDatabaseService databaseService)
     {
+        var database = databaseService.GetDatabase().Result;
         _logs = database.GetCollection<Log>("logs");
     }
 
@@ -37,16 +55,16 @@ public class LogRepository
         var filter = Builders<Log>.Filter.Eq(x => x.WorkflowRunId, workflowRunId);
         if (logLevel.HasValue)
         {
-            filter &= Builders<Log>.Filter.Eq(x => x.Level, (XiansAi.Server.Database.Models.LogLevel)logLevel.Value);
+            filter &= Builders<Log>.Filter.Eq(x => x.Level, (Models.LogLevel)logLevel.Value);
         }
 
-        var Logs = await _logs.Find(filter)
+        return await _logs.Find(filter)
             .SortByDescending(x => x.CreatedAt)
             .Skip(skip)
             .Limit(limit)
             .ToListAsync();
-        return Logs;
     }
+
     public async Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level)
     {
         return await _logs.Find(x => x.Level == level)
@@ -64,13 +82,11 @@ public class LogRepository
         if (endTime.HasValue)
             matchStage &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endTime.Value);
 
-        var result = await _logs.Aggregate()
+        return await _logs.Aggregate()
             .Match(matchStage)
             .Group(x => x.WorkflowRunId, g => g.Last())
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
-
-        return result;
     }
 
     public async Task<List<Log>> GetByDateRangeAsync(DateTime startDate, DateTime endDate)
