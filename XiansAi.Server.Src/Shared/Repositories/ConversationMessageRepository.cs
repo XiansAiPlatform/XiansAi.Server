@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace Shared.Repositories;
 
@@ -65,7 +66,8 @@ public class ConversationMessage
     public MessageStatus? Status { get; set; }
 
     [BsonElement("metadata")]
-    public string? Metadata { get; set; }
+    [BsonRepresentation(BsonType.Document)]
+    public object? Metadata { get; set; }
 
     [BsonElement("logs")]
     public List<MessageLogEvent>? Logs { get; set; }
@@ -206,8 +208,66 @@ public class ConversationMessageRepository : IConversationMessageRepository
             };
         }
 
+        // If metadata is provided as JsonElement, convert it to BsonDocument
+        if (message.Metadata == null && message is { } m && 
+            m.GetType().GetProperty("Metadata")?.GetValue(m) is JsonElement jsonElement)
+        {
+            message.Metadata = JsonElementToBsonDocument(jsonElement);
+        }
+
         await _collection.InsertOneAsync(message);
         return message.Id;
+    }
+
+    // Helper method to convert JsonElement to BsonDocument
+    private BsonDocument JsonElementToBsonDocument(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                var document = new BsonDocument();
+                foreach (var property in element.EnumerateObject())
+                {
+                    document[property.Name] = JsonElementToBsonValue(property.Value);
+                }
+                return document;
+            default:
+                throw new ArgumentException("Root element must be an object to convert to BsonDocument");
+        }
+    }
+
+    private BsonValue JsonElementToBsonValue(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                return JsonElementToBsonDocument(element);
+            case JsonValueKind.Array:
+                var array = new BsonArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    array.Add(JsonElementToBsonValue(item));
+                }
+                return array;
+            case JsonValueKind.String:
+                return new BsonString(element.GetString() ?? string.Empty);
+            case JsonValueKind.Number:
+                if (element.TryGetInt32(out int intValue))
+                    return new BsonInt32(intValue);
+                if (element.TryGetInt64(out long longValue))
+                    return new BsonInt64(longValue);
+                if (element.TryGetDecimal(out decimal decimalValue))
+                    return new BsonDecimal128(decimalValue);
+                return new BsonDouble(element.GetDouble());
+            case JsonValueKind.True:
+                return BsonBoolean.True;
+            case JsonValueKind.False:
+                return BsonBoolean.False;
+            case JsonValueKind.Null:
+                return BsonNull.Value;
+            default:
+                return BsonNull.Value;
+        }
     }
 
     public async Task<bool> UpdateStatusAsync(string id, MessageStatus status)
