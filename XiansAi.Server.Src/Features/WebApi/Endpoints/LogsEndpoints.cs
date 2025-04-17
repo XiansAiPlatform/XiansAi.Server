@@ -10,8 +10,9 @@ public static class LogsEndpoints
     {
         // Map logs endpoints with common attributes
         var logsGroup = app.MapGroup("/api/client/logs")
-            .WithTags("WebAPI - Logs")
-            .RequiresValidTenant();
+            .WithTags("WebAPI - Logs");
+            // Does not work with authentication
+            //.RequiresValidTenant();
 
         logsGroup.MapGet("/{id}", async (
             string id,
