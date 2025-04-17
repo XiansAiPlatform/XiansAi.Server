@@ -3,6 +3,8 @@ using Shared.Utils;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Utils.Services;
+using Shared.Repositories;
+using Shared.Auth;
 
 namespace Features.AgentApi.Endpoints
 {
@@ -10,9 +12,26 @@ namespace Features.AgentApi.Endpoints
     {
         public static void MapConversationEndpoints(WebApplication app)
         {
-            var group = app.MapGroup("/api/agent/messaging")
-                .WithTags("AgentAPI - Messaging")
+            var group = app.MapGroup("/api/agent/conversation")
+                .WithTags("AgentAPI - Conversation")
                 .RequiresCertificate();
+
+            group.MapGet("/history", async (
+                [FromQuery] string threadId,
+                [FromQuery] int page,
+                [FromQuery] int pageSize,
+                [FromServices] IConversationService conversationService) => {
+                
+                var result = await conversationService.GetMessageHistoryAsync(threadId, page, pageSize);
+                return result.ToHttpResult();
+            })
+            .WithName("Get Conversation History")
+            .WithOpenApi(operation => {
+                operation.Summary = "Get conversation history";
+                operation.Description = "Gets the conversation history for a given conversation thread with pagination support";
+                return operation;
+            });
+
 
             group.MapPost("/inbound", async (
                 [FromBody] InboundMessageRequest request, 

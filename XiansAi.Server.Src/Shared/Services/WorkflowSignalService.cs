@@ -109,6 +109,9 @@ public class WorkflowSignalService : IWorkflowSignalService
                 ? new object[] { request.Payload }
                 : Array.Empty<object>();
 
+            _logger.LogInformation("************ Sending signal {SignalName} to workflow {WorkflowId} with payload {Payload}", 
+                request.SignalName, request.WorkflowId, JsonConvert.SerializeObject(signalPayload));
+
             await handle.SignalAsync(request.SignalName, signalPayload);
             
             _logger.LogInformation("Successfully sent signal {SignalName} to workflow: {WorkflowId}", 

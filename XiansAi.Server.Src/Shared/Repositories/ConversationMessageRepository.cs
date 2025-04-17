@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Shared.Repositories;
 
@@ -66,7 +67,6 @@ public class ConversationMessage
     public MessageStatus? Status { get; set; }
 
     [BsonElement("metadata")]
-    [BsonRepresentation(BsonType.Document)]
     public object? Metadata { get; set; }
 
     [BsonElement("logs")]
@@ -89,9 +89,13 @@ public interface IConversationMessageRepository
 public class ConversationMessageRepository : IConversationMessageRepository
 {
     private readonly IMongoCollection<ConversationMessage> _collection;
+    private readonly ILogger<ConversationMessageRepository> _logger;
     
-    public ConversationMessageRepository(IDatabaseService databaseService)
+    public ConversationMessageRepository(
+        IDatabaseService databaseService,
+        ILogger<ConversationMessageRepository> logger)
     {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _collection = database.GetCollection<ConversationMessage>("conversation_message");
 
@@ -141,7 +145,12 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<ConversationMessage?> GetByIdAsync(string id)
     {
-        return await _collection.Find(x => x.Id == id).FirstOrDefaultAsync();
+        var message = await _collection.Find(x => x.Id == id).FirstOrDefaultAsync();
+        if (message != null)
+        {
+            ConvertBsonMetadataToObject(message);
+        }
+        return message;
     }
 
     public async Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null)
@@ -158,7 +167,12 @@ public class ConversationMessageRepository : IConversationMessageRepository
             query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
         }
 
-        return await query.ToListAsync();
+        var messages = await query.ToListAsync();
+        foreach (var message in messages)
+        {
+            ConvertBsonMetadataToObject(message);
+        }
+        return messages;
     }
 
     public async Task<List<ConversationMessage>> GetByParticipantChannelIdAsync(string tenantId, int? page = null, int? pageSize = null)
@@ -174,7 +188,12 @@ public class ConversationMessageRepository : IConversationMessageRepository
             query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
         }
 
-        return await query.ToListAsync();
+        var messages = await query.ToListAsync();
+        foreach (var message in messages)
+        {
+            ConvertBsonMetadataToObject(message);
+        }
+        return messages;
     }
 
     public async Task<List<ConversationMessage>> GetByStatusAsync(string tenantId, MessageStatus status, int? page = null, int? pageSize = null)
@@ -191,7 +210,12 @@ public class ConversationMessageRepository : IConversationMessageRepository
             query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
         }
 
-        return await query.ToListAsync();
+        var messages = await query.ToListAsync();
+        foreach (var message in messages)
+        {
+            ConvertBsonMetadataToObject(message);
+        }
+        return messages;
     }
 
     public async Task<string> CreateAsync(ConversationMessage message)
@@ -208,45 +232,98 @@ public class ConversationMessageRepository : IConversationMessageRepository
             };
         }
 
-        // If metadata is provided as JsonElement, convert it to BsonDocument
-        if (message.Metadata == null && message is { } m && 
-            m.GetType().GetProperty("Metadata")?.GetValue(m) is JsonElement jsonElement)
+        // Convert metadata to BsonDocument if needed
+        if (message.Metadata != null)
         {
-            message.Metadata = JsonElementToBsonDocument(jsonElement);
+            message.Metadata = ConvertToBsonDocument(message.Metadata);
         }
 
         await _collection.InsertOneAsync(message);
         return message.Id;
     }
 
-    // Helper method to convert JsonElement to BsonDocument
-    private BsonDocument JsonElementToBsonDocument(JsonElement element)
+    // Helper method to convert any object to BsonDocument
+    public BsonDocument? ConvertToBsonDocument(object? obj)
     {
-        switch (element.ValueKind)
+        if (obj == null) return null;
+        
+        // If it's already a BsonDocument, just return it
+        if (obj is BsonDocument bsonDoc)
         {
-            case JsonValueKind.Object:
-                var document = new BsonDocument();
-                foreach (var property in element.EnumerateObject())
+            return bsonDoc;
+        }
+        
+        // If the object is already a string, ensure it's a valid JSON object
+        if (obj is string stringValue)
+        {
+            // If it looks like a JSON object, parse it directly
+            if ((stringValue.StartsWith("{") && stringValue.EndsWith("}")) ||
+                (stringValue.StartsWith("[") && stringValue.EndsWith("]")))
+            {
+                try 
                 {
-                    document[property.Name] = JsonElementToBsonValue(property.Value);
+                    return BsonDocument.Parse(stringValue);
                 }
-                return document;
-            default:
-                throw new ArgumentException("Root element must be an object to convert to BsonDocument");
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse string as JSON. Storing as simple string value.");
+                    // If parsing fails, wrap it in an object
+                    return new BsonDocument("value", stringValue);
+                }
+            }
+            
+            // If it's just a string, wrap it in a document
+            return new BsonDocument("value", stringValue);
+        }
+        
+        try 
+        {
+            // If it's a JsonElement, handle it specially
+            if (obj is JsonElement jsonElement)
+            {
+                return ConvertJsonElementToBson(jsonElement);
+            }
+            
+            // Convert the object to JSON, then to BsonDocument
+            var json = JsonSerializer.Serialize(obj);
+            return BsonDocument.Parse(json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert object to BsonDocument. Storing as string representation.");
+            // If parsing fails, create a simpler BsonDocument with the string representation
+            return new BsonDocument("value", obj.ToString() ?? "");
         }
     }
-
-    private BsonValue JsonElementToBsonValue(JsonElement element)
+    
+    // Helper method to convert JsonElement to BsonDocument
+    private BsonDocument ConvertJsonElementToBson(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return new BsonDocument("value", element.GetRawText());
+        }
+        
+        var document = new BsonDocument();
+        foreach (var property in element.EnumerateObject())
+        {
+            document[property.Name] = ConvertJsonElementToBsonValue(property.Value);
+        }
+        return document;
+    }
+    
+    // Helper method to convert JsonElement to BsonValue
+    private BsonValue ConvertJsonElementToBsonValue(JsonElement element)
     {
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
-                return JsonElementToBsonDocument(element);
+                return ConvertJsonElementToBson(element);
             case JsonValueKind.Array:
                 var array = new BsonArray();
                 foreach (var item in element.EnumerateArray())
                 {
-                    array.Add(JsonElementToBsonValue(item));
+                    array.Add(ConvertJsonElementToBsonValue(item));
                 }
                 return array;
             case JsonValueKind.String:
@@ -292,5 +369,56 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
         var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
         return result.ModifiedCount > 0;
+    }
+
+    // Helper method to convert BsonDocument metadata back to the original object format
+    private void ConvertBsonMetadataToObject(ConversationMessage message)
+    {
+        if (message.Metadata is BsonDocument bsonDoc)
+        {
+            // If it's a simple wrapper with a "value" field, extract the value
+            if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
+            {
+                var valueElement = bsonDoc["value"];
+                if (valueElement.IsString)
+                {
+                    // Try to deserialize if it looks like JSON
+                    string strValue = valueElement.AsString;
+                    if ((strValue.StartsWith("{") && strValue.EndsWith("}")) ||
+                        (strValue.StartsWith("[") && strValue.EndsWith("]")))
+                    {
+                        try
+                        {
+                            message.Metadata = JsonSerializer.Deserialize<object>(strValue);
+                            return;
+                        }
+                        catch
+                        {
+                            // If parsing fails, just use the string value
+                            message.Metadata = strValue;
+                            return;
+                        }
+                    }
+                    
+                    // It's just a string
+                    message.Metadata = strValue;
+                    return;
+                }
+            }
+            
+            // Convert the BsonDocument to a string representation then deserialize
+            string json = bsonDoc.ToJson();
+            try
+            {
+                message.Metadata = JsonSerializer.Deserialize<object>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+            }
+            catch
+            {
+                // If all else fails, keep the original metadata
+            }
+        }
     }
 }

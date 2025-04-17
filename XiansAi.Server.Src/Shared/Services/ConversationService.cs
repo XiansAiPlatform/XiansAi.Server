@@ -81,6 +81,15 @@ public interface IConversationService
     /// <param name="request">The outbound message request.</param>
     /// <returns>A result object indicating success or failure.</returns>
     Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request);
+    
+    /// <summary>
+    /// Gets conversation message history for a specific thread with pagination.
+    /// </summary>
+    /// <param name="threadId">The conversation thread ID.</param>
+    /// <param name="page">The page number (1-based).</param>
+    /// <param name="pageSize">The page size.</param>
+    /// <returns>A list of conversation messages.</returns>
+    Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string threadId, int page, int pageSize);
 }
 
 /// <summary>
@@ -159,7 +168,7 @@ public class ConversationService : IConversationService
                     CreatedBy = userId,
                     Direction = MessageDirection.Outgoing,
                     Content = request.Content,
-                    Metadata = ConvertToBsonDocument(request.Metadata),
+                    Metadata = request.Metadata,
                     WorkflowId = request.WorkflowId,
                     Logs = new List<MessageLogEvent>
                     {
@@ -293,7 +302,7 @@ public class ConversationService : IConversationService
             CreatedBy = userId,
             Direction = MessageDirection.Incoming,
             Content = request.Content,
-            Metadata = ConvertToBsonDocument(request.Metadata),
+            Metadata = request.Metadata,
             WorkflowId = request.WorkflowId        
         };
 
@@ -330,7 +339,7 @@ public class ConversationService : IConversationService
 
         // Save the message
         message.Status = MessageStatus.DeliveredToWorkflow;
-        message =await CreateAndSaveMessageAsync(message);
+        message = await CreateAndSaveMessageAsync(message);
         return message;
     }
 
@@ -462,8 +471,6 @@ public class ConversationService : IConversationService
         return message;
     }
 
-
-
     /// <summary>
     /// Signals the workflow with the inbound message.
     /// </summary>
@@ -490,14 +497,45 @@ public class ConversationService : IConversationService
     }
 
     /// <summary>
-    /// Helper method to convert any object to BsonDocument
+    /// Gets conversation message history for a specific thread with pagination.
     /// </summary>
-    private BsonDocument? ConvertToBsonDocument(object? obj)
+    /// <param name="threadId">The conversation thread ID.</param>
+    /// <param name="page">The page number (1-based).</param>
+    /// <param name="pageSize">The page size.</param>
+    /// <returns>A list of conversation messages.</returns>
+    public async Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string threadId, int page, int pageSize)
     {
-        if (obj == null) return null;
-        
-        // Convert the object to JSON, then to BsonDocument
-        var json = JsonSerializer.Serialize(obj);
-        return BsonDocument.Parse(json);
+        try
+        {
+            _logger.LogInformation("Getting message history for thread {ThreadId}, page {Page}, pageSize {PageSize}", 
+                threadId, page, pageSize);
+            
+            // Get tenant ID from the context
+            string tenantId = _tenantContext.TenantId;
+            
+            if (string.IsNullOrEmpty(threadId))
+            {
+                return ServiceResult<List<ConversationMessage>>.BadRequest("ThreadId is required");
+            }
+            
+            if (page < 1)
+            {
+                return ServiceResult<List<ConversationMessage>>.BadRequest("Page must be greater than 0");
+            }
+            
+            if (pageSize < 1)
+            {
+                return ServiceResult<List<ConversationMessage>>.BadRequest("PageSize must be greater than 0");
+            }
+            
+            var messages = await _messageRepository.GetByThreadIdAsync(tenantId, threadId, page, pageSize);
+            
+            return ServiceResult<List<ConversationMessage>>.Success(messages);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting message history for thread {ThreadId}", threadId);
+            throw;
+        }
     }
 }

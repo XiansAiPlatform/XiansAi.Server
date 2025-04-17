@@ -21,7 +21,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
     /*
     dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.ConversationEndpointTests.ProcessInboundMessage_WithMissingRequiredField_ReturnsBadRequest"
     */
-    [Fact(Skip = "This test is only works with a real workflow id")]
+    [Fact]
     public async Task ProcessInboundMessage_WithMissingRequiredField_ReturnsBadRequest()
     {
         // Arrange - missing required fields
@@ -33,7 +33,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/agent/messaging/inbound", invalidRequest);
+        var response = await _client.PostAsJsonAsync("/api/agent/conversation/inbound", invalidRequest);
         var content = await response.Content.ReadAsStringAsync();
         Console.WriteLine($"Response content: {content}");
 
@@ -44,7 +44,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
     /*
     dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.ConversationEndpointTests.ProcessInboundMessage_WithNullContent_ReturnsBadRequest"
     */
-    [Fact(Skip = "This test is only works with a real workflow id")]
+    [Fact]
     public async Task ProcessInboundMessage_WithNullContent_ReturnsBadRequest()
     {
         // Arrange
@@ -57,7 +57,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/agent/messaging/inbound", request);
+        var response = await _client.PostAsJsonAsync("/api/agent/conversation/inbound", request);
 
         var content = await response.Content.ReadAsStringAsync();
         Console.WriteLine($"Response content: {content}");
@@ -101,7 +101,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/agent/messaging/inbound", request);
+        var response = await _client.PostAsJsonAsync("/api/agent/conversation/inbound", request);
         
         // Assert HTTP response
         response.EnsureSuccessStatusCode();
@@ -187,7 +187,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/agent/messaging/inbound", request);
+        var response = await _client.PostAsJsonAsync("/api/agent/conversation/inbound", request);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         // Assert HTTP response
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -198,7 +198,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
     /*
     dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.ConversationEndpointTests.ProcessInboundMessage_NotExistingWorkflow"
     */
-    [Fact(Skip = "This test is only works with a real workflow id")]
+    [Fact]
     public async Task ProcessInboundMessage_NotExistingWorkflow()
     {
         var notExistingWorkflowId = "xyzzy-workflow-id";
@@ -224,7 +224,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
     /*
     dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.ConversationEndpointTests.ProcessOutboundMessage_VerifyMessageSavedToDatabase"
     */
-    [Fact(Skip = "This test is only works with a real workflow id")]
+    [Fact]
     public async Task ProcessOutboundMessage_VerifyMessageSavedToDatabase()
     {
         // Arrange
@@ -260,7 +260,7 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/agent/messaging/outbound", request);
+        var response = await _client.PostAsJsonAsync("/api/agent/conversation/outbound", request);
         
         // Assert HTTP response
         response.EnsureSuccessStatusCode();
@@ -327,5 +327,121 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         
         // Verify timestamps
         Assert.True(result.Contains("created_at"));
+    }
+
+    /*
+    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.ConversationEndpointTests.GetConversationHistory_ReturnsCorrectMessageHistory"
+    */
+    [Fact]
+    public async Task GetConversationHistory_ReturnsCorrectMessageHistory()
+    {
+        // Arrange
+        string workflowId = "test-workflow-id-thread";
+        string participantId = "test-participant-id";
+        string threadId = $"test-thread-{Guid.NewGuid()}";
+        
+        // Create messages directly in the database since posting will fail due to missing workflow
+        var messageCollection = _database.GetCollection<BsonDocument>("conversation_message");
+        var threadCollection = _database.GetCollection<BsonDocument>("conversation_thread");
+        
+        // Create a thread document first
+        var threadDoc = new BsonDocument
+        {
+            { "thread_id", threadId },
+            { "workflow_id", workflowId },
+            { "participant_id", participantId },
+            { "tenant_id", "99xio" },
+            { "status", "Active" },
+            { "created_at", DateTime.UtcNow },
+            { "updated_at", DateTime.UtcNow },
+            { "created_by", "test-user" }
+        };
+        
+        await threadCollection.InsertOneAsync(threadDoc);
+        
+        // Create three messages - NOTE: ConversationMessage doesn't have participant_id field
+        var message1 = new BsonDocument
+        {
+            { "thread_id", threadId },
+            { "workflow_id", workflowId },
+            { "tenant_id", "99xio" },
+            { "content", JsonSerializer.Serialize(new { text = "First inbound message" }) },
+            { "direction", "Incoming" },
+            { "status", "DeliveredToWorkflow" },
+            { "created_at", DateTime.UtcNow.AddMinutes(-10) },
+            { "created_by", "test-user" }
+        };
+        
+        var message2 = new BsonDocument
+        {
+            { "thread_id", threadId },
+            { "workflow_id", workflowId },
+            { "tenant_id", "99xio" },
+            { "content", JsonSerializer.Serialize(new { text = "Outbound response message" }) },
+            { "direction", "Outgoing" },
+            { "status", "DeliveredToWorkflow" },
+            { "created_at", DateTime.UtcNow.AddMinutes(-5) },
+            { "created_by", "test-user" }
+        };
+        
+        var message3 = new BsonDocument
+        {
+            { "thread_id", threadId },
+            { "workflow_id", workflowId },
+            { "tenant_id", "99xio" },
+            { "content", JsonSerializer.Serialize(new { text = "Second inbound message" }) },
+            { "direction", "Incoming" },
+            { "status", "DeliveredToWorkflow" },
+            { "created_at", DateTime.UtcNow },
+            { "created_by", "test-user" }
+        };
+        
+        await messageCollection.InsertOneAsync(message1);
+        await messageCollection.InsertOneAsync(message2);
+        await messageCollection.InsertOneAsync(message3);
+        
+        // Act - Get conversation history
+        var response = await _client.GetAsync($"/api/agent/conversation/history?threadId={threadId}&page=1&pageSize=10");
+        
+        // Assert
+        response.EnsureSuccessStatusCode(); // This will throw if response is not successful
+        
+        var responseContent = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"Response content: {responseContent}");
+        
+        // Check if response is not empty before parsing
+        Assert.False(string.IsNullOrEmpty(responseContent), "Response content should not be empty");
+        
+        // The response appears to be a direct array of messages, not an object with a messages property
+        var messages = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        Assert.NotNull(messages);
+        
+        // Verify we got all 3 messages
+        Assert.Equal(3, messages.Length);
+        
+        // Verify messages content
+        var foundMessages = new bool[3] { false, false, false };
+        
+        foreach (var message in messages)
+        {
+            if (message.TryGetProperty("content", out var contentProperty))
+            {
+                var content = contentProperty.GetString();
+                
+                if (content != null)
+                {
+                    if (content.Contains("First inbound message"))
+                        foundMessages[0] = true;
+                    else if (content.Contains("Outbound response message"))
+                        foundMessages[1] = true;
+                    else if (content.Contains("Second inbound message"))
+                        foundMessages[2] = true;
+                }
+            }
+        }
+        
+        // Verify all messages were found
+        Assert.True(foundMessages[0] && foundMessages[1] && foundMessages[2], 
+            "Not all expected messages were found in the response");
     }
 } 
