@@ -3,7 +3,7 @@ using MongoDB.Bson;
 using Temporalio.Exceptions;
 using Shared.Repositories;
 using Shared.Utils.Services;
-
+using System.Text.Json;
 
 namespace Shared.Services;
 
@@ -31,13 +31,6 @@ public class InboundMessageRequest
     /// </summary>
     public required string Content { get; set; }
 
-
-    /// <summary>
-    /// Gets or sets a unique identifier of the participant in the channel. For example, the user ID in Slack.
-    /// Required.
-    /// </summary>
-    public required string ParticipantChannelId { get; set; }
-
     /// <summary>
     /// Gets or sets the workflow ID.
     /// Required.
@@ -47,9 +40,18 @@ public class InboundMessageRequest
     /// Gets or sets additional metadata for the message.
     /// Optional.
     /// </summary>
-    public string? Metadata { get; set; }
+    public object? Metadata { get; set; }
 
 
+}
+
+public class OutboundMessageRequest
+{
+    public required string WorkflowId { get; set; }
+    public required string ParticipantId { get; set; }
+    public required string Content { get; set; }
+    public required string ThreadId { get; set; }
+    public object? Metadata { get; set; }
 }
 
 /// <summary>
@@ -72,6 +74,13 @@ public interface IConversationService
     /// <param name="request">The inbound message request.</param>
     /// <returns>A result object indicating success or failure.</returns>
     Task<ServiceResult<MessageProcessingResponse>> ProcessInboundMessage(InboundMessageRequest request);
+
+    /// <summary>
+    /// Processes an outbound message, stores it in the database, and signals the workflow.
+    /// </summary>
+    /// <param name="request">The outbound message request.</param>
+    /// <returns>A result object indicating success or failure.</returns>
+    Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request);
 }
 
 /// <summary>
@@ -111,6 +120,109 @@ public class ConversationService : IConversationService
     }
 
     /// <summary>
+    /// Processes an outbound message, stores it in the database, and signals the workflow.
+    /// </summary>
+    /// <param name="request">The outbound message request.</param>
+    /// <returns>A result object indicating success or failure.</returns>
+    public async Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request)
+    {
+       _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
+            request.WorkflowId, request.ParticipantId);
+
+        try
+        {
+            // Validate request
+            var validationResult = ValidateRequest(request);
+            if (validationResult != null)
+            {
+                return ServiceResult<MessageProcessingResponse>.BadRequest(validationResult);
+            }
+
+            // Get tenant ID and user ID
+            string tenantId = _tenantContext.TenantId;
+            string userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("User not found");
+
+            // Notify the webhooks
+            var logs = await NotifyWebhooksAsync(request);
+
+            // Get or create thread
+            string threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowId, request.ParticipantId);
+
+            // Prepare and send message
+            var message = await CreateAndSaveMessageAsync(
+                new ConversationMessage
+                {
+                    TenantId = tenantId,
+                    ThreadId = threadId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    CreatedBy = userId,
+                    Direction = MessageDirection.Outgoing,
+                    Content = request.Content,
+                    Metadata = ConvertToBsonDocument(request.Metadata),
+                    WorkflowId = request.WorkflowId,
+                    Logs = new List<MessageLogEvent>
+                    {
+                        new MessageLogEvent
+                        {
+                            Event = "Created",
+                            Timestamp = DateTime.UtcNow,
+                            Details = "Message created"
+                        }
+                    }.Concat(logs).ToList()
+                }
+            );
+
+            _logger.LogInformation("Successfully processed inbound message {MessageId} for thread {ThreadId}",
+                message.Id, threadId);
+
+            return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
+            {
+                MessageId = message.Id,
+                ThreadId = threadId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing inbound message for agent {AgentId} from participant {ParticipantId}",
+                request.WorkflowId, request.ParticipantId);
+
+            throw;
+        }
+    }
+
+    private async Task<List<MessageLogEvent>> NotifyWebhooksAsync(OutboundMessageRequest request)
+    {
+        // TODO: Implement webhook notification
+        return new List<MessageLogEvent>();
+    }
+
+    private string? ValidateRequest(OutboundMessageRequest request)
+    {
+        if (request == null)
+        {
+            return "Request cannot be null";
+        }
+
+        if (string.IsNullOrEmpty(request.WorkflowId))
+        {
+            return "WorkflowId is required";
+        }
+
+        if (string.IsNullOrEmpty(request.ParticipantId))
+        {
+            return "ParticipantId is required";
+        }
+
+        if (string.IsNullOrEmpty(request.ThreadId))
+        {
+            return "ThreadId is required";
+        }
+
+        return null;
+    }
+    
+    /// <summary>
     /// Processes an inbound message, stores it in the database, and signals the workflow.
     /// </summary>
     /// <param name="request">The inbound message request.</param>
@@ -137,7 +249,7 @@ public class ConversationService : IConversationService
             string threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowId, request.ParticipantId);
 
             // Prepare and send message
-            var message = await PrepareAndSendMessage(request, tenantId, userId, threadId);
+            var message = await PrepareAndSendMessage(request, tenantId, userId, threadId, request.ParticipantId);
 
             _logger.LogInformation("Successfully processed inbound message {MessageId} for thread {ThreadId}",
                 message.Id, threadId);
@@ -169,28 +281,29 @@ public class ConversationService : IConversationService
         InboundMessageRequest request, 
         string tenantId, 
         string userId, 
-        string threadId)
+        string threadId,
+        string participantId)
     {
-
-
         // Create message
         var message = new ConversationMessage
         {
             TenantId = tenantId,
             ThreadId = threadId,
-            ParticipantChannelId = request.ParticipantChannelId,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = userId,
-            Direction = MessageDirection.Inbound,
+            Direction = MessageDirection.Incoming,
             Content = request.Content,
-            Metadata = request.Metadata,
-            WorkflowId = request.WorkflowId
+            Metadata = ConvertToBsonDocument(request.Metadata),
+            WorkflowId = request.WorkflowId        
         };
+
+        _logger.LogInformation("Preparing and sending message {MessageId} to workflow {WorkflowId}",
+            message.Id, request.WorkflowId);
 
         try
         {
             // Signal the workflow
-            await SignalWorkflowAsync(message);
+            await SignalWorkflowAsync(message, participantId);
             message.Status = MessageStatus.DeliveredToWorkflow;
         }
         catch (RpcException ex)
@@ -355,16 +468,36 @@ public class ConversationService : IConversationService
     /// Signals the workflow with the inbound message.
     /// </summary>
     /// <param name="message">The conversation message.</param>
-    private async Task SignalWorkflowAsync(ConversationMessage message)
+    /// <param name="participantId">The participant ID.</param>
+    private async Task SignalWorkflowAsync(ConversationMessage message, string participantId)
     {
         var signalRequest = new WorkflowSignalRequest
         {
             WorkflowId = message.WorkflowId,
             SignalName = SIGNAL_NAME_INBOUND_MESSAGE,
-            Payload = message
+            Payload =  new {
+                message.ThreadId,
+                message.Content,
+                message.Metadata,
+                message.CreatedAt,
+                message.CreatedBy,
+                ParticipantId = participantId
+            }
         };
 
         await _workflowSignalService.HandleSignalWorkflow(signalRequest);
         _logger.LogInformation("Sent inbound message signal to workflow {WorkflowId}", message.WorkflowId);
+    }
+
+    /// <summary>
+    /// Helper method to convert any object to BsonDocument
+    /// </summary>
+    private BsonDocument? ConvertToBsonDocument(object? obj)
+    {
+        if (obj == null) return null;
+        
+        // Convert the object to JSON, then to BsonDocument
+        var json = JsonSerializer.Serialize(obj);
+        return BsonDocument.Parse(json);
     }
 }
