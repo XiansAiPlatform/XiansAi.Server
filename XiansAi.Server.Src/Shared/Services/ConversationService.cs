@@ -50,7 +50,6 @@ public class OutboundMessageRequest
     public required string WorkflowId { get; set; }
     public required string ParticipantId { get; set; }
     public required string Content { get; set; }
-    public required string ThreadId { get; set; }
     public object? Metadata { get; set; }
 }
 
@@ -135,7 +134,7 @@ public class ConversationService : IConversationService
     /// <returns>A result object indicating success or failure.</returns>
     public async Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request)
     {
-       _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
+       _logger.LogInformation("Processing outbound message for agent {AgentId} from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
 
         try
@@ -193,7 +192,7 @@ public class ConversationService : IConversationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing inbound message for agent {AgentId} from participant {ParticipantId}",
+            _logger.LogError(ex, "Error processing outbound message for agent {AgentId} from participant {ParticipantId}",
                 request.WorkflowId, request.ParticipantId);
 
             throw;
@@ -218,14 +217,9 @@ public class ConversationService : IConversationService
             return "WorkflowId is required";
         }
 
-        if (string.IsNullOrEmpty(request.ParticipantId))
+        if (string.IsNullOrEmpty(request.ParticipantId) )
         {
             return "ParticipantId is required";
-        }
-
-        if (string.IsNullOrEmpty(request.ThreadId))
-        {
-            return "ThreadId is required";
         }
 
         return null;
