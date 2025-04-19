@@ -4,7 +4,6 @@ using MongoDB.Bson.Serialization.Attributes;
 using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
 
 namespace Shared.Repositories;
 
@@ -38,11 +37,11 @@ public class ConversationMessage
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = null!;
 
-    [BsonElement("tenant_id")]
-    public required string TenantId { get; set; }
-
     [BsonElement("thread_id")]
     public required string ThreadId { get; set; }
+
+    [BsonElement("tenant_id")]
+    public required string TenantId { get; set; }
 
     [BsonElement("created_at")]
     public required DateTime CreatedAt { get; set; }
@@ -74,16 +73,26 @@ public class ConversationMessage
 
     [BsonElement("workflow_id")]
     public required string WorkflowId { get; set; }
+
+    [BsonElement("participant_id")]
+    public required string ParticipantId { get; set; }
+
+    [BsonElement("handed_over_to")]
+    public string? HandedOverTo { get; set; }
+
+    [BsonElement("handed_over_by")]
+    public string? HandedOverBy { get; set; }
 }
 
 public interface IConversationMessageRepository
 {
     Task<ConversationMessage?> GetByIdAsync(string id);
-    Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
     Task<List<ConversationMessage>> GetByStatusAsync(string tenantId, MessageStatus status, int? page = null, int? pageSize = null);
     Task<string> CreateAsync(ConversationMessage message);
     Task<bool> UpdateStatusAsync(string id, MessageStatus status);
     Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
+
+    Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -108,12 +117,13 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // Message lookup index (tenant_id, thread_id, created_at)
         var messageLookupIndex = Builders<ConversationMessage>.IndexKeys
             .Ascending(x => x.TenantId)
-            .Ascending(x => x.ThreadId)
+            .Ascending(x => x.WorkflowId)
+            .Ascending(x => x.ParticipantId)
             .Descending(x => x.CreatedAt);
         
         var messageLookupIndexModel = new CreateIndexModel<ConversationMessage>(
             messageLookupIndex, 
-            new CreateIndexOptions { Background = true, Name = "message_lookup" }
+            new CreateIndexOptions { Background = true, Name = "workflow_participant_message_lookup" }
         );
 
         // Channel lookup index (tenant_id, channel, channel_key)
@@ -421,4 +431,5 @@ public class ConversationMessageRepository : IConversationMessageRepository
             }
         }
     }
+
 }

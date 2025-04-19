@@ -146,7 +146,11 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
             .SortByDescending(x => x.CreatedAt)
             .Group(x => new { x.TypeName, x.Owner },
                    g => g.First())
-            .Project<FlowDefinition>(Builders<FlowDefinition>.Projection.Include(x => x.AgentName).Include(x => x.TypeName))
+            .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
+                .Include(x => x.AgentName)
+                .Include(x => x.TypeName)
+                .Include(x => x.CreatedAt))
+            .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
     }
 }

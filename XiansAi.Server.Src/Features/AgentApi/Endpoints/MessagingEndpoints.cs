@@ -17,12 +17,13 @@ namespace Features.AgentApi.Endpoints
                 .RequiresCertificate();
 
             group.MapGet("/history", async (
-                [FromQuery] string threadId,
+                [FromQuery] string workflowId,
+                [FromQuery] string participantId,
                 [FromQuery] int page,
                 [FromQuery] int pageSize,
                 [FromServices] IConversationService conversationService) => {
                 
-                var result = await conversationService.GetMessageHistoryAsync(threadId, page, pageSize);
+                var result = await conversationService.GetMessageHistoryAsync(workflowId, participantId, page, pageSize);
                 return result.ToHttpResult();
             })
             .WithName("Get Conversation History")
@@ -39,9 +40,9 @@ namespace Features.AgentApi.Endpoints
                 var result = await conversationService.ProcessInboundMessage(request);
                 return result.ToHttpResult();
             })
-            .WithName("Process Inbound Message")
+            .WithName("Process Inbound Message to Agent")
             .WithOpenApi(operation => {
-                operation.Summary = "Process inbound conversation message";
+                operation.Summary = "Process inbound message to Agent";
                 operation.Description = "Processes an inbound message for agent conversations and returns the result";
                 return operation;
             });
@@ -53,9 +54,9 @@ namespace Features.AgentApi.Endpoints
                 var result = await conversationService.ProcessOutboundMessage(request);
                 return result.ToHttpResult();
             })
-            .WithName("Process Outbound Message")
+            .WithName("Process Outbound Message from Agent")
             .WithOpenApi(operation => {
-                operation.Summary = "Process outbound conversation message";
+                operation.Summary = "Process outbound message to Agent";
                 operation.Description = "Processes an outbound message for agent conversations and returns the result";
                 return operation;
             });

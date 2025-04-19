@@ -42,15 +42,26 @@ public class InboundMessageRequest
     /// </summary>
     public object? Metadata { get; set; }
 
+    /// <summary>
+    /// Gets or sets the participant ID of the agent that handed over the message.
+    /// Optional.
+    /// </summary>
+    public string? HandedOverBy { get; set; }
 
+    /// <summary>
+    /// Gets or sets the participant ID of the agent that received the message.
+    /// Optional.
+    /// </summary>
+    public string? HandedOverTo { get; set; }
 }
 
 public class OutboundMessageRequest
 {
-    public required string WorkflowId { get; set; }
+    public required string[] WorkflowIds { get; set; }
     public required string ParticipantId { get; set; }
     public required string Content { get; set; }
     public object? Metadata { get; set; }
+    public string? HandedOverTo { get; set; }
 }
 
 /// <summary>
@@ -58,8 +69,7 @@ public class OutboundMessageRequest
 /// </summary>
 public class MessageProcessingResponse
 {
-    public required string MessageId { get; set; }
-    public required string ThreadId { get; set; }
+    public required string[] MessageIds { get; set; }
 }
 
 /// <summary>
@@ -82,13 +92,14 @@ public interface IConversationService
     Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request);
     
     /// <summary>
-    /// Gets conversation message history for a specific thread with pagination.
+    /// Gets conversation message history for a specific workflow with pagination.
     /// </summary>
-    /// <param name="threadId">The conversation thread ID.</param>
+    /// <param name="workflowId">The conversation workflow ID.</param>
+    /// <param name="participantId">The conversation participant ID.</param>
     /// <param name="page">The page number (1-based).</param>
     /// <param name="pageSize">The page size.</param>
     /// <returns>A list of conversation messages.</returns>
-    Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string threadId, int page, int pageSize);
+    Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string workflowId, string participantId, int page, int pageSize);
 }
 
 /// <summary>
@@ -134,8 +145,8 @@ public class ConversationService : IConversationService
     /// <returns>A result object indicating success or failure.</returns>
     public async Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request)
     {
-       _logger.LogInformation("Processing outbound message for agent {AgentId} from participant {ParticipantId}",
-            request.WorkflowId, request.ParticipantId);
+       _logger.LogInformation("Processing outbound message for workflows {WorkflowIds} from participant {ParticipantId}",
+            request.WorkflowIds, request.ParticipantId);
 
         try
         {
@@ -150,50 +161,89 @@ public class ConversationService : IConversationService
             string tenantId = _tenantContext.TenantId;
             string userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("User not found");
 
-            // Notify the webhooks
-            var logs = await NotifyWebhooksAsync(request);
+            List<MessageLogEvent> logs = new List<MessageLogEvent>();
 
-            // Get or create thread
-            string threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowId, request.ParticipantId);
+            if (string.IsNullOrEmpty(request.HandedOverTo))
+            {
+                // This is a message from the agent to the participant, so we need to notify the webhooks
+                logs = await NotifyWebhooksAsync(request);
+            }
+            else if (request.WorkflowIds.Length > 1)
+            {
+                // This is a message handover to another agent, so we need to signal the agent
+                _logger.LogInformation("Handed over to {HandedOverTo}", request.HandedOverTo);
 
-            // Prepare and send message
-            var message = await CreateAndSaveMessageAsync(
-                new ConversationMessage
+                var signalRequest = new InboundMessageRequest
                 {
-                    TenantId = tenantId,
-                    ThreadId = threadId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    CreatedBy = userId,
-                    Direction = MessageDirection.Outgoing,
+                    // Set workflow id to the id of the handed over to agent
+                    WorkflowId = request.WorkflowIds[0],
+                    ParticipantId = request.ParticipantId,
                     Content = request.Content,
                     Metadata = request.Metadata,
-                    WorkflowId = request.WorkflowId,
-                    Logs = new List<MessageLogEvent>
-                    {
-                        new MessageLogEvent
-                        {
-                            Event = "Created",
-                            Timestamp = DateTime.UtcNow,
-                            Details = "Message created"
-                        }
-                    }.Concat(logs).ToList()
-                }
-            );
+                    HandedOverBy = request.WorkflowIds[0],
+                    HandedOverTo = request.HandedOverTo
+                };
+                // This is a message handover to another agent, so we need to signal the agent
+                var signalResponse = await PrepareAndSendSignal(signalRequest, tenantId, userId);
+                logs = signalResponse.Logs ?? new List<MessageLogEvent>();
+                
+            } else {
+                // This is a response from a HandedOverTo agent, so we should notify the webhooks
+                logs = await NotifyWebhooksAsync(request);
+            }
 
-            _logger.LogInformation("Successfully processed inbound message {MessageId} for thread {ThreadId}",
-                message.Id, threadId);
+            // Get or create thread
+
+            // if this is a handed over message response, there can be more than one workflow ids
+
+            List<string> messageIds = new List<string>();
+
+            var threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowIds[0], request.ParticipantId);
+
+            foreach (var workflowId in request.WorkflowIds) {
+                // Prepare and send message
+                var message = await CreateAndSaveMessageAsync(
+                    new ConversationMessage
+                    {
+                        ThreadId = threadId,
+                        ParticipantId = request.ParticipantId,
+                        TenantId = tenantId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                        CreatedBy = userId,
+                        Direction = MessageDirection.Outgoing,
+                        Content = request.Content,
+                        Metadata = request.Metadata,
+                        WorkflowId = workflowId,
+                        HandedOverTo = request.HandedOverTo,
+                        Logs = new List<MessageLogEvent>
+                        {
+                            new MessageLogEvent
+                            {
+                                Event = "Created",
+                                Timestamp = DateTime.UtcNow,
+                                Details = "Message created"
+                            }
+                        }.Concat(logs).ToList()
+                    }
+                );
+
+                messageIds.Add(message.Id);
+
+                _logger.LogInformation("Successfully processed outbound message {MessageId}",
+                    message.Id);
+            }
+
 
             return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
             {
-                MessageId = message.Id,
-                ThreadId = threadId
+                MessageIds = messageIds.ToArray()
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing outbound message for agent {AgentId} from participant {ParticipantId}",
-                request.WorkflowId, request.ParticipantId);
+            _logger.LogError(ex, "Error processing outbound message for workflows {WorkflowIds} from participant {ParticipantId}",
+                request.WorkflowIds, request.ParticipantId);
 
             throw;
         }
@@ -212,9 +262,9 @@ public class ConversationService : IConversationService
             return "Request cannot be null";
         }
 
-        if (string.IsNullOrEmpty(request.WorkflowId))
+        if (request.WorkflowIds == null || request.WorkflowIds.Length == 0)
         {
-            return "WorkflowId is required";
+            return "WorkflowIds is required";
         }
 
         if (string.IsNullOrEmpty(request.ParticipantId) )
@@ -248,19 +298,16 @@ public class ConversationService : IConversationService
             string tenantId = _tenantContext.TenantId;
             string userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("User not found");
 
-            // Get or create thread
-            string threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowId, request.ParticipantId);
 
             // Prepare and send message
-            var message = await PrepareAndSendMessage(request, tenantId, userId, threadId, request.ParticipantId);
+            var message = await PrepareAndSendSignal(request, tenantId, userId);
 
-            _logger.LogInformation("Successfully processed inbound message {MessageId} for thread {ThreadId}",
-                message.Id, threadId);
+            _logger.LogInformation("Successfully processed inbound message {MessageId}",
+                message.Id);
 
             return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
             {
-                MessageId = message.Id,
-                ThreadId = threadId
+                MessageIds = new string[] { message.Id }
             });
         }
         catch (WorkflowNotFoundException ex)
@@ -280,24 +327,25 @@ public class ConversationService : IConversationService
     /// <summary>
     /// Prepares the message and sends it to the workflow.
     /// </summary>
-    private async Task<ConversationMessage> PrepareAndSendMessage(
+    private async Task<ConversationMessage> PrepareAndSendSignal(
         InboundMessageRequest request, 
         string tenantId, 
-        string userId, 
-        string threadId,
-        string participantId)
+        string userId)
     {
         // Create message
         var message = new ConversationMessage
         {
+            ThreadId = string.Empty, //this is not used by the signal clients
             TenantId = tenantId,
-            ThreadId = threadId,
+            ParticipantId = request.ParticipantId,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = userId,
             Direction = MessageDirection.Incoming,
             Content = request.Content,
             Metadata = request.Metadata,
-            WorkflowId = request.WorkflowId        
+            WorkflowId = request.WorkflowId,
+            HandedOverTo = request.HandedOverTo,
+            HandedOverBy = request.HandedOverBy
         };
 
         _logger.LogInformation("Preparing and sending message {MessageId} to workflow {WorkflowId}",
@@ -306,7 +354,7 @@ public class ConversationService : IConversationService
         try
         {
             // Signal the workflow
-            await SignalWorkflowAsync(message, participantId);
+            await SignalWorkflowAsync(message);
             message.Status = MessageStatus.DeliveredToWorkflow;
         }
         catch (RpcException ex)
@@ -455,12 +503,12 @@ public class ConversationService : IConversationService
     {
         // Save message to database
         message.Id = await _messageRepository.CreateAsync(message);
-        _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}",
-            message.Id, message.ThreadId);
+        _logger.LogInformation("Created conversation message {MessageId}",
+            message.Id);
 
         // Update thread's UpdatedAt timestamp
         await _threadRepository.UpdateLastActivityAsync(message.ThreadId, DateTime.UtcNow);
-        _logger.LogDebug("Updated last activity timestamp for thread {ThreadId}", message.ThreadId);
+        _logger.LogDebug("Updated last activity timestamp for thread {WorkflowId}", message.WorkflowId);
 
         return message;
     }
@@ -469,20 +517,20 @@ public class ConversationService : IConversationService
     /// Signals the workflow with the inbound message.
     /// </summary>
     /// <param name="message">The conversation message.</param>
-    /// <param name="participantId">The participant ID.</param>
-    private async Task SignalWorkflowAsync(ConversationMessage message, string participantId)
+    private async Task SignalWorkflowAsync(ConversationMessage message)
     {
         var signalRequest = new WorkflowSignalRequest
         {
-            WorkflowId = message.WorkflowId,
+            // If the message is handed over to another agent, use the workflow id of the agent that handed over the message
+            WorkflowId = message.HandedOverTo ?? message.WorkflowId,
             SignalName = SIGNAL_NAME_INBOUND_MESSAGE,
             Payload =  new {
-                message.ThreadId,
                 message.Content,
                 message.Metadata,
                 message.CreatedAt,
                 message.CreatedBy,
-                ParticipantId = participantId
+                message.ParticipantId,
+                message.HandedOverBy
             }
         };
 
@@ -493,42 +541,53 @@ public class ConversationService : IConversationService
     /// <summary>
     /// Gets conversation message history for a specific thread with pagination.
     /// </summary>
-    /// <param name="threadId">The conversation thread ID.</param>
+    /// <param name="workflowId">The workflow ID.</param>
+    /// <param name="participantId">The participant ID.</param>
     /// <param name="page">The page number (1-based).</param>
     /// <param name="pageSize">The page size.</param>
     /// <returns>A list of conversation messages.</returns>
-    public async Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string threadId, int page, int pageSize)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string workflowId, string participantId, int page, int pageSize)
     {
         try
         {
-            _logger.LogInformation("Getting message history for thread {ThreadId}, page {Page}, pageSize {PageSize}", 
-                threadId, page, pageSize);
+            _logger.LogInformation("Getting message history for workflow {WorkflowId}, participant {ParticipantId}, page {Page}, pageSize {PageSize}", 
+                workflowId, participantId, page, pageSize);
             
             // Get tenant ID from the context
             string tenantId = _tenantContext.TenantId;
-            
-            if (string.IsNullOrEmpty(threadId))
+            string userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("User not found");
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
-                return ServiceResult<List<ConversationMessage>>.BadRequest("ThreadId is required");
+                _logger.LogWarning("Invalid request: missing required fields");
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowId and ParticipantId are required");
             }
             
             if (page < 1)
             {
+                _logger.LogWarning("Invalid request: page must be greater than 0");
                 return ServiceResult<List<ConversationMessage>>.BadRequest("Page must be greater than 0");
             }
             
             if (pageSize < 1)
             {
+                _logger.LogWarning("Invalid request: pageSize must be greater than 0");
                 return ServiceResult<List<ConversationMessage>>.BadRequest("PageSize must be greater than 0");
             }
+
+            // Get or create thread
+            var threadId = await GetOrCreateThreadAsync(tenantId, userId, workflowId, participantId);
+
+            _logger.LogInformation("Getting messages for thread {ThreadId}", threadId);
             
+            // Get messages
             var messages = await _messageRepository.GetByThreadIdAsync(tenantId, threadId, page, pageSize);
             
+            _logger.LogInformation("Found {Count} messages for thread {ThreadId}", messages.Count, threadId);
             return ServiceResult<List<ConversationMessage>>.Success(messages);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting message history for thread {ThreadId}", threadId);
+            _logger.LogError(ex, "Error getting message history for workflow {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
             throw;
         }
     }
