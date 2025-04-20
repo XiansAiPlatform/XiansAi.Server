@@ -157,7 +157,7 @@ public class ConversationService : IConversationService
 
         try
         {
-            var threadId = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParticipantId);
+            var threadId = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParticipantId, false);
 
             var message = await CreateMessageAsync(
                 threadId,
@@ -305,7 +305,7 @@ public class ConversationService : IConversationService
     private async Task<ConversationMessage> CreateOutboundHandoverMessageAsync(OutboundHandoverRequest request)
     {
         // Source thread id
-        var threadIdOutbound = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.ChildWorkflowId!);
+        var threadIdOutbound = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.ChildWorkflowId!, true);
 
         // Save outgoing message for Handed Over By workflow
         return await CreateMessageAsync(
@@ -326,7 +326,7 @@ public class ConversationService : IConversationService
     private async Task<ConversationMessage> CreateInboundHandoverMessageAsync(OutboundHandoverRequest request)
     {
         // Target thread id
-        var threadIdInbound = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ChildWorkflowId!, request.ParentWorkflowId);
+        var threadIdInbound = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ChildWorkflowId!, request.ParentWorkflowId, true);
 
         // Save incoming message for Handed Over To workflow
         return await CreateMessageAsync(
@@ -346,17 +346,17 @@ public class ConversationService : IConversationService
         try
         {
             // Thread between child and parent
-            var threadIdHandedOverTo = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParentWorkflowId);
+            var threadIdHandedOverTo = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParentWorkflowId, true);
             _logger.LogDebug("Using thread '{ThreadId}' between child workflow '{ChildWorkflowId}' and parent workflow '{ParentWorkflowId}'", 
                 threadIdHandedOverTo, request.WorkflowId, request.ParentWorkflowId);
 
             // Thread between parent and child
-            var threadIdHandedOverBy = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.WorkflowId);
+            var threadIdHandedOverBy = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.WorkflowId, true);
             _logger.LogDebug("Using thread '{ThreadId}' between parent workflow '{ParentWorkflowId}' and child workflow '{ChildWorkflowId}'", 
                 threadIdHandedOverBy, request.ParentWorkflowId, request.WorkflowId);
 
             // Thread between parent and participant
-            var threadIdHandedOverByParticipant = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.ParticipantId);
+            var threadIdHandedOverByParticipant = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.ParticipantId, false);
             _logger.LogDebug("Using thread '{ThreadId}' between parent workflow '{ParentWorkflowId}' and participant '{ParticipantId}'", 
                 threadIdHandedOverByParticipant, request.ParentWorkflowId, request.ParticipantId);
 
@@ -416,7 +416,7 @@ public class ConversationService : IConversationService
 
         try
         {
-            var threadId = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParticipantId);
+            var threadId = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParticipantId, false);
 
             // Create and save the inbound message
             var messageInbound = await CreateMessageAsync(
@@ -520,8 +520,9 @@ public class ConversationService : IConversationService
     /// <param name="userId">The user ID.</param>
     /// <param name="workflowId">The workflow ID.</param>
     /// <param name="participantId">The participant ID.</param>
+    /// <param name="isInternalThread">Whether the thread is internal.</param>
     /// <returns>The thread ID.</returns>
-    private async Task<string> GetOrCreateThreadAsync(string tenantId, string userId, string workflowId, string participantId)
+    private async Task<string> GetOrCreateThreadAsync(string tenantId, string userId, string workflowId, string participantId, bool isInternalThread)
     {
         _logger.LogDebug("Looking for thread between '{WorkflowId}' and '{ParticipantId}'", workflowId, participantId);
         var thread = await _threadRepository.GetByCompositeKeyAsync(
@@ -538,6 +539,7 @@ public class ConversationService : IConversationService
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = userId,
                 Status = ConversationThreadStatus.Active,
+                IsInternalThread = isInternalThread
             };
 
             var threadId = await _threadRepository.CreateAsync(newThread);

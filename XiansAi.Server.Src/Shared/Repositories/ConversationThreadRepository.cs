@@ -39,6 +39,8 @@ public class ConversationThread
     [BsonRepresentation(BsonType.String)]
     public required ConversationThreadStatus Status { get; set; }
 
+    [BsonElement("is_internal_thread")]
+    public bool IsInternalThread { get; set; }
 }
 
 public interface IConversationThreadRepository

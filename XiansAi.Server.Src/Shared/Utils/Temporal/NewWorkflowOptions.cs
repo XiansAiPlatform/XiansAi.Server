@@ -14,7 +14,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
         Id = workflowId;
         TaskQueue = GetTemporalQueueName(workFlowType, queueName);
-        Memo = GetMemo(workFlowType, tenantContext, assignment, queueName);
+        Memo = GetMemo(workFlowType, tenantContext, assignment, queueName, agentName);
         TypedSearchAttributes = GetSearchAttributes(workFlowType, tenantContext, agentName, assignment);
     }
 
@@ -40,11 +40,11 @@ public class NewWorkflowOptions : WorkflowOptions
         return queueFullName;
     }
 
-    private Dictionary<string, object> GetMemo(string workFlowType, ITenantContext tenantContext, string? assignment, string? queueName)
+    private Dictionary<string, object> GetMemo(string workFlowType, ITenantContext tenantContext, string? assignment, string? queueName, string? agentName)
     {
         var memo = new Dictionary<string, object> {
             { Constants.TenantIdKey, tenantContext.TenantId },
-            { Constants.AgentKey, workFlowType },
+            { Constants.AgentKey, agentName ?? workFlowType },
             { Constants.UserIdKey, tenantContext.LoggedInUser! },
         };
         if (!string.IsNullOrEmpty(assignment))
