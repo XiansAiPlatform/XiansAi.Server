@@ -35,7 +35,7 @@ namespace Features.AgentApi.Endpoints
 
 
             group.MapPost("/inbound", async (
-                [FromBody] InboundMessageRequest request, 
+                [FromBody] InboundSignalRequest request, 
                 [FromServices] IConversationService conversationService) => {
                 var result = await conversationService.ProcessInboundMessage(request);
                 return result.ToHttpResult();
@@ -48,8 +48,8 @@ namespace Features.AgentApi.Endpoints
             });
 
 
-            group.MapPost("/outbound", async (
-                [FromBody] OutboundMessageRequest request, 
+            group.MapPost("/outbound/send", async (
+                [FromBody] OutboundSendRequest request, 
                 [FromServices] IConversationService conversationService) => {
                 var result = await conversationService.ProcessOutboundMessage(request);
                 return result.ToHttpResult();
@@ -58,6 +58,32 @@ namespace Features.AgentApi.Endpoints
             .WithOpenApi(operation => {
                 operation.Summary = "Process outbound message to Agent";
                 operation.Description = "Processes an outbound message for agent conversations and returns the result";
+                return operation;
+            });
+
+            group.MapPost("/outbound/handover", async (
+                [FromBody] OutboundHandoverRequest request, 
+                [FromServices] IConversationService conversationService) => {
+                var result = await conversationService.ProcessOutboundHandover(request);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Handover Message from Agent")
+            .WithOpenApi(operation => {
+                operation.Summary = "Process handover message from Agent";
+                operation.Description = "Processes a handover message for agent conversations and returns the result";
+                return operation;
+            });
+
+            group.MapPost("/outbound/handover-response", async (
+                [FromBody] OutboundHandoverResponse request, 
+                [FromServices] IConversationService conversationService) => {
+                var result = await conversationService.ProcessOutboundHandoverResponse(request);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Outbound Hand Over Response from Agent")
+            .WithOpenApi(operation => {
+                operation.Summary = "Process outbound hand over response from Agent";
+                operation.Description = "Processes an outbound hand over response for agent conversations and returns the result";
                 return operation;
             });
         }

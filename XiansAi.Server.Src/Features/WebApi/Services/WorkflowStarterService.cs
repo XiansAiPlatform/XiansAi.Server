@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using Temporalio.Common;
 using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -69,6 +70,11 @@ public class WorkflowStarterService
         _logger.LogInformation("Received workflow start request of type {WorkflowType} with data {Request}", 
             request?.WorkflowType ?? "null", JsonSerializer.Serialize(request));
         
+        if (request == null)
+        {
+            return Results.BadRequest(new { errors = new[] { "HandleStartWorkflow request body cannot be null" } });
+        }
+        
         try
         {
             var validationResults = ValidateRequest(request);
@@ -79,8 +85,10 @@ public class WorkflowStarterService
                 return Results.BadRequest(new { errors = validationResults });
             }
 
-            var workflowId = _tenantContext.TenantId + ":" + (request?.WorkflowId ?? GenerateWorkflowId(request!.WorkflowType));
-            var options = CreateWorkflowOptions(workflowId, request.WorkflowType, request.AgentName, request.Assignment, request.QueueName);
+            var agentName = request!.AgentName ?? request.WorkflowType;
+
+            var workflowId = NewWorkflowOptions.GenerateNewWorkflowId(request!.WorkflowId, agentName, request.WorkflowType, _tenantContext);
+            var options = new NewWorkflowOptions(workflowId, request.WorkflowType, _tenantContext, request.QueueName, agentName, request.Assignment);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
             var handle = await StartWorkflowAsync(request, options);
@@ -103,63 +111,6 @@ public class WorkflowStarterService
                 statusCode: StatusCodes.Status500InternalServerError
             );
         }
-    }
-
-    /// <summary>
-    /// Generates a unique workflow ID based on the workflow type and tenant context.
-    /// </summary>
-    private string GenerateWorkflowId(string workflowType)
-    {
-        if (string.IsNullOrEmpty(_tenantContext.LoggedInUser))
-        {
-            _logger.LogWarning("No logged-in user found in tenant context");
-        }
-
-        return $"{workflowType.Replace(" ", "")}--{_tenantContext.LoggedInUser ?? "-"}--{Guid.NewGuid()}";
-    }
-
-    /// <summary>
-    /// Creates workflow options with tenant-specific configuration.
-    /// </summary>
-    private WorkflowOptions CreateWorkflowOptions(string workflowId, string workFlowType, string? agent, string? assignment, string? queueName)
-    {
-        if (string.IsNullOrEmpty(_tenantContext.TenantId))
-        {
-            throw new InvalidOperationException("TenantId is required to create workflow options");
-        }
-
-        if (string.IsNullOrEmpty(_tenantContext.LoggedInUser)) {
-            throw new InvalidOperationException("LoggedInUser is required to create workflow options");
-        }
-
-        var memo = new Dictionary<string, object> { 
-            { Constants.TenantIdKey, _tenantContext.TenantId },
-            { Constants.AgentKey, agent ?? workFlowType },
-            { Constants.UserIdKey, _tenantContext.LoggedInUser! }
-        };
-
-        var searchAttributesBuilder = new SearchAttributeCollection.Builder()
-            .Set(SearchAttributeKey.CreateKeyword(Constants.TenantIdKey), _tenantContext.TenantId)
-            .Set(SearchAttributeKey.CreateKeyword(Constants.AgentKey), agent ?? workFlowType)
-            .Set(SearchAttributeKey.CreateKeyword(Constants.UserIdKey), _tenantContext.LoggedInUser!);
-
-        if (!string.IsNullOrEmpty(assignment))
-        {
-            memo.Add(Constants.AssignmentKey, assignment);
-            searchAttributesBuilder.Set(SearchAttributeKey.CreateKeyword(Constants.AssignmentKey), assignment);
-        }
-
-        var queueFullName = string.IsNullOrEmpty(queueName) ? workFlowType : queueName + "--" + workFlowType;
-
-        var options = new WorkflowOptions
-        {
-            TaskQueue = queueFullName,
-            Id = workflowId,
-            Memo = memo,
-            TypedSearchAttributes = searchAttributesBuilder.ToSearchAttributeCollection()
-        };
-
-        return options;
     }
 
     /// <summary>

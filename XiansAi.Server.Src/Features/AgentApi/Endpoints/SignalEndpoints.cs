@@ -50,7 +50,7 @@ public static class SignalEndpoints
             [FromBody] WorkflowSignalRequest request,
             [FromServices] IWorkflowSignalService endpoint) =>
         {
-            return await endpoint.HandleSignalWorkflow(request);
+            return await endpoint.SignalWorkflow(request);
         })
         .WithOpenApi(operation => {
             operation.Summary = "Signal workflow";

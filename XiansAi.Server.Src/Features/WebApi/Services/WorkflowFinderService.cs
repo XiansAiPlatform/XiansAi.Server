@@ -1,4 +1,5 @@
 using Shared.Auth;
+using Shared.Utils;
 using Temporalio.Client;
 using Temporalio.Converters;
 using XiansAi.Server.Temporal;
