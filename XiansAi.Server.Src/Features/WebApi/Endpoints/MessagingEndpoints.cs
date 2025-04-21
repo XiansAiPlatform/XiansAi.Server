@@ -17,7 +17,7 @@ public static class MessagingEndpoints
 
 
         messagingGroup.MapPost("/inbound", async (
-            [FromBody] InboundMessageRequest request, 
+            [FromBody] InboundSignalRequest request, 
             [FromServices] IConversationService conversationService) => {
             var result = await conversationService.ProcessInboundMessage(request);
             return result.ToHttpResult();

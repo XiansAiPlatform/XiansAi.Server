@@ -52,6 +52,7 @@ public static class ExceptionHandlingConfiguration
                             message = exception?.Message ?? "Unknown error"
                         });
                         break;
+
                 }
             });
         });

@@ -33,12 +33,10 @@ public class Auth0ClientHandler : BaseAuthHandler<Auth0ClientRequirement>
             return Task.CompletedTask;
         }
 
-        _logger.LogInformation("Authorized tenant IDs: {authorizedTenantIds}", authorizedTenantIds);
-        _logger.LogInformation("Logged in user: {loggedInUser}", loggedInUser);
 
         // set tenant context and succeed
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
-        _tenantContext.LoggedInUser = loggedInUser;
+        _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
         
         _logger.LogInformation("Authorization requirement succeeded");
         context.Succeed(requirement);

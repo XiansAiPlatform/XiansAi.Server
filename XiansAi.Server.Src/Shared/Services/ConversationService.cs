@@ -1,12 +1,8 @@
 using Shared.Auth;
-using MongoDB.Bson;
-using Temporalio.Exceptions;
 using Shared.Repositories;
 using Shared.Utils.Services;
-using System.Text.Json;
 
 namespace Shared.Services;
-
 
 public enum DeliveryMode
 {
@@ -17,41 +13,48 @@ public enum DeliveryMode
 /// <summary>
 /// Request model for inbound conversation messages.
 /// </summary>
-public class InboundMessageRequest
+public class InboundSignalRequest
 {
-    /// <summary>
-    /// Gets or sets the channel independent unique identifier of the participant. For example the user id in the system.
-    /// Required.
-    /// </summary>
     public required string ParticipantId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the message content.
-    /// Required.
-    /// </summary>
     public required string Content { get; set; }
-
-    /// <summary>
-    /// Gets or sets the workflow ID.
-    /// Required.
-    /// </summary>
     public required string WorkflowId { get; set; }
-    /// <summary>
-    /// Gets or sets additional metadata for the message.
-    /// Optional.
-    /// </summary>
     public object? Metadata { get; set; }
-
-
+    public string? ParentWorkflowId { get; set; }
 }
 
-public class OutboundMessageRequest
+public class OutboundSendRequest
 {
     public required string WorkflowId { get; set; }
     public required string ParticipantId { get; set; }
     public required string Content { get; set; }
-    public required string ThreadId { get; set; }
     public object? Metadata { get; set; }
+}
+
+public class OutboundHandoverRequest
+{
+    public required string WorkflowId { get; set; }
+    public required string ParticipantId { get; set; }
+    public required string Content { get; set; }
+    public object? Metadata { get; set; }
+    public required string ParentWorkflowId { get; set; }
+
+    // Optional parameters for signaling existing workflow
+    public string? ChildWorkflowId { get; set; }
+
+    // Optional parameters for starting a new workflow
+    public string? WorkflowTypeToStart { get; set; }
+    public string? QueueName { get; set; }
+    public string? Agent { get; set; }
+    public string? Assignment { get; set; }
+}
+
+public class OutboundHandoverResponse
+{
+    public required string WorkflowId { get; set; }
+    public required string ParticipantId { get; set; }
+    public required string Content { get; set; }
+    public object? Metadata { get; set; }
+    public required string ParentWorkflowId { get; set; }
 }
 
 /// <summary>
@@ -59,8 +62,7 @@ public class OutboundMessageRequest
 /// </summary>
 public class MessageProcessingResponse
 {
-    public required string MessageId { get; set; }
-    public required string ThreadId { get; set; }
+    public required string[] MessageIds { get; set; }
 }
 
 /// <summary>
@@ -73,14 +75,38 @@ public interface IConversationService
     /// </summary>
     /// <param name="request">The inbound message request.</param>
     /// <returns>A result object indicating success or failure.</returns>
-    Task<ServiceResult<MessageProcessingResponse>> ProcessInboundMessage(InboundMessageRequest request);
+    Task<ServiceResult<MessageProcessingResponse>> ProcessInboundMessage(InboundSignalRequest request);
 
     /// <summary>
     /// Processes an outbound message, stores it in the database, and signals the workflow.
     /// </summary>
     /// <param name="request">The outbound message request.</param>
     /// <returns>A result object indicating success or failure.</returns>
-    Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request);
+    Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundSendRequest request);
+
+    /// <summary>
+    /// Processes an outbound message, stores it in the database, and signals the workflow.
+    /// </summary>
+    /// <param name="request">The outbound message request.</param>
+    /// <returns>A result object indicating success or failure.</returns>
+    Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundHandover(OutboundHandoverRequest request);
+
+    /// <summary>
+    /// Processes an outbound message, stores it in the database, and signals the workflow.
+    /// </summary>
+    /// <param name="request">The outbound message request.</param>
+    /// <returns>A result object indicating success or failure.</returns>
+    Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundHandoverResponse(OutboundHandoverResponse request);
+
+    /// <summary>
+    /// Gets conversation message history for a specific thread with pagination.
+    /// </summary>
+    /// <param name="workflowId">The workflow ID.</param>
+    /// <param name="participantId">The participant ID.</param>
+    /// <param name="page">The page number (1-based).</param>
+    /// <param name="pageSize">The page size.</param>
+    /// <returns>A list of conversation messages.</returns>
+    Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string workflowId, string participantId, int page, int pageSize);
 }
 
 /// <summary>
@@ -124,140 +150,297 @@ public class ConversationService : IConversationService
     /// </summary>
     /// <param name="request">The outbound message request.</param>
     /// <returns>A result object indicating success or failure.</returns>
-    public async Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundMessageRequest request)
+    public async Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundMessage(OutboundSendRequest request)
     {
-       _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
-            request.WorkflowId, request.ParticipantId);
+        _logger.LogInformation("Processing outbound message from workflow {WorkflowId} to participant {ParticipantId}",
+             request.WorkflowId, request.ParticipantId);
 
         try
         {
-            // Validate request
-            var validationResult = ValidateRequest(request);
-            if (validationResult != null)
-            {
-                return ServiceResult<MessageProcessingResponse>.BadRequest(validationResult);
-            }
+            var threadId = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParticipantId, false);
 
-            // Get tenant ID and user ID
-            string tenantId = _tenantContext.TenantId;
-            string userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("User not found");
+            var message = await CreateMessageAsync(
+                threadId,
+                request.ParticipantId,
+                MessageDirection.Outgoing,
+                request.Content,
+                request.Metadata,
+                CreateLogEvent("Outbound Message", "Outbound message sent to participant"));
 
-            // Notify the webhooks
-            var logs = await NotifyWebhooksAsync(request);
-
-            // Get or create thread
-            string threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowId, request.ParticipantId);
-
-            // Prepare and send message
-            var message = await CreateAndSaveMessageAsync(
-                new ConversationMessage
-                {
-                    TenantId = tenantId,
-                    ThreadId = threadId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    CreatedBy = userId,
-                    Direction = MessageDirection.Outgoing,
-                    Content = request.Content,
-                    Metadata = ConvertToBsonDocument(request.Metadata),
-                    WorkflowId = request.WorkflowId,
-                    Logs = new List<MessageLogEvent>
-                    {
-                        new MessageLogEvent
-                        {
-                            Event = "Created",
-                            Timestamp = DateTime.UtcNow,
-                            Details = "Message created"
-                        }
-                    }.Concat(logs).ToList()
-                }
-            );
-
-            _logger.LogInformation("Successfully processed inbound message {MessageId} for thread {ThreadId}",
-                message.Id, threadId);
+            await NotifyWebhooksAsync(message);
 
             return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
             {
-                MessageId = message.Id,
-                ThreadId = threadId
+                MessageIds = [message.Id]
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing inbound message for agent {AgentId} from participant {ParticipantId}",
-                request.WorkflowId, request.ParticipantId);
-
+            LogError(ex, "Error processing outbound message", request.WorkflowId, request.ParticipantId);
             throw;
         }
     }
 
-    private async Task<List<MessageLogEvent>> NotifyWebhooksAsync(OutboundMessageRequest request)
+    /// <summary>
+    /// Processes an outbound message, stores it in the database, and signals the workflow.
+    /// </summary>
+    /// <param name="request">The outbound message request.</param>
+    /// <returns>A result object indicating success or failure.</returns>
+    public async Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundHandover(OutboundHandoverRequest request)
+    {
+        if (request.ChildWorkflowId != null)
+        {
+            _logger.LogInformation("Processing outbound handover for existing workflow '{WorkflowId}' to child workflow '{ChildWorkflowId}'", 
+                request.WorkflowId, request.ChildWorkflowId);
+            return await ProcessHandoverExistingWorkflow(request);
+        }
+        else
+        {
+            _logger.LogInformation("Processing outbound handover for new workflow type '{WorkflowType}' from workflow '{ParentWorkflowId}'", 
+                request.WorkflowTypeToStart, request.WorkflowId);
+            return await ProcessHandoverNewWorkflow(request);
+        }
+    }
+
+    public async Task<ServiceResult<MessageProcessingResponse>> ProcessHandoverNewWorkflow(OutboundHandoverRequest request)
+    {
+        if (request.WorkflowTypeToStart == null)
+        {
+            _logger.LogError("Workflow type to start is required when starting a new workflow");
+            throw new ArgumentNullException(nameof(request.WorkflowTypeToStart), "Workflow type to start is required when starting a new workflow");
+        }
+
+        var agentName = request.Agent ?? request.WorkflowTypeToStart;
+
+        // Generate new workflow id for the new workflow
+        var childWorkflowId = NewWorkflowOptions.GenerateNewWorkflowId(null, agentName, request.WorkflowTypeToStart, _tenantContext);
+        request.ChildWorkflowId = childWorkflowId;
+        _logger.LogDebug("Generated new workflow ID '{ChildWorkflowId}' for workflow type '{WorkflowType}'", 
+            childWorkflowId, request.WorkflowTypeToStart);
+
+        // Create outbound and inbound handover messages
+        var messageOutbound = await CreateOutboundHandoverMessageAsync(request);
+        _logger.LogDebug("Created outbound handover message with ID '{MessageId}' in parent workflow '{ParentWorkflowId}'", 
+            messageOutbound.Id, request.ParentWorkflowId);
+        
+        var messageInbound = await CreateInboundHandoverMessageAsync(request);
+        _logger.LogDebug("Created inbound handover message with ID '{MessageId}' in child workflow '{ChildWorkflowId}'", 
+            messageInbound.Id, childWorkflowId);
+
+        _logger.LogDebug("Signaling start of workflow '{ChildWorkflowId}' of type '{WorkflowType}'", 
+            childWorkflowId, request.WorkflowTypeToStart);
+        await SignalWithStartWorkflowAsync(
+            childWorkflowId,
+            request.Content,
+            request.Metadata,
+            request.ParticipantId,
+            request.ParentWorkflowId!,
+            request.WorkflowTypeToStart,
+            request.QueueName,
+            request.Agent,
+            request.Assignment);
+
+        _logger.LogInformation("Successfully started new workflow '{ChildWorkflowId}' of type '{WorkflowType}' with handover from '{ParentWorkflowId}'", 
+            childWorkflowId, request.WorkflowTypeToStart, request.ParentWorkflowId);
+
+        // Return the message ids
+        return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
+        {
+            MessageIds = [messageOutbound.Id, messageInbound.Id]
+        });
+    }
+
+    public async Task<ServiceResult<MessageProcessingResponse>> ProcessHandoverExistingWorkflow(OutboundHandoverRequest request)
+    {
+        _logger.LogInformation("Processing outbound handover from workflow '{ParentWorkflowId}' to existing workflow '{ChildWorkflowId}'",
+             request.WorkflowId, request.ChildWorkflowId);
+
+        if (request.ChildWorkflowId == null)
+        {
+            _logger.LogError("Child workflow id is required when processing outbound handover for existing workflow");
+            throw new ArgumentNullException(nameof(request.ChildWorkflowId), "Child workflow id is required when processing outbound handover for existing workflow");
+        }
+
+        try
+        {
+            // Create outbound and inbound handover messages
+            var messageOutbound = await CreateOutboundHandoverMessageAsync(request);
+            _logger.LogDebug("Created outbound handover message with ID '{MessageId}' in parent workflow '{ParentWorkflowId}'", 
+                messageOutbound.Id, request.WorkflowId);
+            
+            var messageInbound = await CreateInboundHandoverMessageAsync(request);
+            _logger.LogDebug("Created inbound handover message with ID '{MessageId}' in child workflow '{ChildWorkflowId}'", 
+                messageInbound.Id, request.ChildWorkflowId);
+
+            _logger.LogDebug("Signaling existing workflow '{ChildWorkflowId}' with handover from '{ParentWorkflowId}'", 
+                request.ChildWorkflowId, request.WorkflowId);
+            await SignalWorkflowAsync(
+                request.Content,
+                request.Metadata,
+                request.ParticipantId,
+                request.ChildWorkflowId!,
+                request.WorkflowId);
+
+            _logger.LogInformation("Successfully signaled existing workflow '{ChildWorkflowId}' with handover from '{ParentWorkflowId}'", 
+                request.ChildWorkflowId, request.WorkflowId);
+
+            // Return the message ids
+            return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
+            {
+                MessageIds = [messageOutbound.Id, messageInbound.Id]
+            });
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "Error processing outbound handover", request.WorkflowId, childWorkflowId: request.ChildWorkflowId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Creates an outbound handover message from parent workflow to child workflow.
+    /// </summary>
+    /// <param name="request">The handover request containing message details.</param>
+    /// <returns>The created conversation message.</returns>
+    private async Task<ConversationMessage> CreateOutboundHandoverMessageAsync(OutboundHandoverRequest request)
+    {
+        // Source thread id
+        var threadIdOutbound = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.ChildWorkflowId!, true);
+
+        // Save outgoing message for Handed Over By workflow
+        return await CreateMessageAsync(
+            threadIdOutbound,
+            request.ParticipantId,
+            MessageDirection.Outgoing,
+            request.Content,
+            request.Metadata,
+            CreateLogEvent("In Parent Thread - To Child Handover", "Message handed over to another workflow"),
+            childWorkflowId: request.ChildWorkflowId);
+    }
+
+    /// <summary>
+    /// Creates an inbound handover message in child workflow from parent workflow.
+    /// </summary>
+    /// <param name="request">The handover request containing message details.</param>
+    /// <returns>The created conversation message.</returns>
+    private async Task<ConversationMessage> CreateInboundHandoverMessageAsync(OutboundHandoverRequest request)
+    {
+        // Target thread id
+        var threadIdInbound = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ChildWorkflowId!, request.ParentWorkflowId, true);
+
+        // Save incoming message for Handed Over To workflow
+        return await CreateMessageAsync(
+            threadIdInbound,
+            request.ParticipantId,
+            MessageDirection.Incoming,
+            request.Content,
+            request.Metadata,
+            CreateLogEvent("In Child Thread - From Parent Handover", "Message handed over from another workflow"),
+            parentWorkflowId: request.WorkflowId);
+    }
+
+    public async Task<ServiceResult<MessageProcessingResponse>> ProcessOutboundHandoverResponse(OutboundHandoverResponse request)
+    {
+        _logger.LogInformation("Processing handover response message from child workflow '{ChildWorkflowId}' through parent workflow '{ParentWorkflowId}'",
+             request.WorkflowId, request.ParentWorkflowId);
+        try
+        {
+            // Thread between child and parent
+            var threadIdHandedOverTo = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParentWorkflowId, true);
+            _logger.LogDebug("Using thread '{ThreadId}' between child workflow '{ChildWorkflowId}' and parent workflow '{ParentWorkflowId}'", 
+                threadIdHandedOverTo, request.WorkflowId, request.ParentWorkflowId);
+
+            // Thread between parent and child
+            var threadIdHandedOverBy = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.WorkflowId, true);
+            _logger.LogDebug("Using thread '{ThreadId}' between parent workflow '{ParentWorkflowId}' and child workflow '{ChildWorkflowId}'", 
+                threadIdHandedOverBy, request.ParentWorkflowId, request.WorkflowId);
+
+            // Thread between parent and participant
+            var threadIdHandedOverByParticipant = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.ParentWorkflowId, request.ParticipantId, false);
+            _logger.LogDebug("Using thread '{ThreadId}' between parent workflow '{ParentWorkflowId}' and participant '{ParticipantId}'", 
+                threadIdHandedOverByParticipant, request.ParentWorkflowId, request.ParticipantId);
+
+            _logger.LogDebug("Creating batch of 3 messages for handover response");
+            // Create all three messages in a batch operation
+            var messageIds = await CreateMessagesAsync(
+                new List<(string threadId, string participantId, MessageDirection direction, string content, object? metadata, MessageLogEvent logEvent, string? childWorkflowId, string? parentWorkflowId)>
+                {
+                    // Message 1: Outgoing message for HandedOverTo workflow
+                    (threadIdHandedOverTo, request.ParticipantId, MessageDirection.Outgoing, request.Content, request.Metadata,
+                     CreateLogEvent("Handover Response to Handed Over By", "Message handed over response from Handed Over To workflow"),
+                     null, request.ParentWorkflowId),
+                    
+                    // Message 2: Incoming message for HandedOverBy workflow
+                    (threadIdHandedOverBy, request.ParticipantId, MessageDirection.Incoming, request.Content, request.Metadata,
+                     CreateLogEvent("Handover Response Passthrough", "Message handed over response from Handed Over To workflow"),
+                     null, request.ParentWorkflowId),
+                     
+                    // Message 3: Outgoing message from HandedOverBy to Participant
+                    (threadIdHandedOverByParticipant, request.ParticipantId, MessageDirection.Outgoing, request.Content, request.Metadata,
+                     CreateLogEvent("Handover Response Delivered to Participant", "Message handed over response passthrough from Handed Over By workflow"),
+                     request.WorkflowId, null)
+                });
+
+            _logger.LogInformation("Successfully processed handover response: created 3 messages with IDs [{MessageIds}]", 
+                string.Join(", ", messageIds));
+
+            // Return the message ids
+            return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
+            {
+                MessageIds = messageIds.ToArray()
+            });
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "Error processing outbound handover response", request.WorkflowId, parentWorkflowId: request.ParentWorkflowId);
+            throw;
+        }
+    }
+
+    private async Task<List<MessageLogEvent>> NotifyWebhooksAsync(ConversationMessage message)
     {
         // TODO: Implement webhook notification
+        _logger.LogDebug("Webhook notification not implemented yet for message '{MessageId}'", message.Id);
         return new List<MessageLogEvent>();
     }
 
-    private string? ValidateRequest(OutboundMessageRequest request)
-    {
-        if (request == null)
-        {
-            return "Request cannot be null";
-        }
-
-        if (string.IsNullOrEmpty(request.WorkflowId))
-        {
-            return "WorkflowId is required";
-        }
-
-        if (string.IsNullOrEmpty(request.ParticipantId))
-        {
-            return "ParticipantId is required";
-        }
-
-        if (string.IsNullOrEmpty(request.ThreadId))
-        {
-            return "ThreadId is required";
-        }
-
-        return null;
-    }
-    
     /// <summary>
     /// Processes an inbound message, stores it in the database, and signals the workflow.
     /// </summary>
     /// <param name="request">The inbound message request.</param>
     /// <returns>A result object indicating success or failure.</returns>
-    public async Task<ServiceResult<MessageProcessingResponse>> ProcessInboundMessage(InboundMessageRequest request)
+    public async Task<ServiceResult<MessageProcessingResponse>> ProcessInboundMessage(InboundSignalRequest request)
     {
         _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
 
         try
         {
-            // Validate request
-            var validationResult = ValidateRequest(request);
-            if (validationResult != null)
-            {
-                return ServiceResult<MessageProcessingResponse>.BadRequest(validationResult);
-            }
+            var threadId = await GetOrCreateThreadAsync(_tenantContext.TenantId, _tenantContext.LoggedInUser, request.WorkflowId, request.ParticipantId, false);
 
-            // Get tenant ID and user ID
-            string tenantId = _tenantContext.TenantId;
-            string userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("User not found");
+            // Create and save the inbound message
+            var messageInbound = await CreateMessageAsync(
+                threadId,
+                request.ParticipantId,
+                MessageDirection.Incoming,
+                request.Content,
+                request.Metadata,
+                CreateLogEvent("Inbound Message", "Message received from participant"),
+                parentWorkflowId: request.ParentWorkflowId);
 
-            // Get or create thread
-            string threadId = await GetOrCreateThreadAsync(tenantId, userId, request.WorkflowId, request.ParticipantId);
+            // Signal the workflow
+            await SignalWorkflowAsync(
+                request.Content,
+                request.Metadata,
+                request.ParticipantId,
+                request.WorkflowId,
+                request.ParentWorkflowId);
 
-            // Prepare and send message
-            var message = await PrepareAndSendMessage(request, tenantId, userId, threadId, request.ParticipantId);
-
-            _logger.LogInformation("Successfully processed inbound message {MessageId} for thread {ThreadId}",
-                message.Id, threadId);
+            _logger.LogInformation("Successfully processed inbound message {MessageId}", messageInbound.Id);
 
             return ServiceResult<MessageProcessingResponse>.Success(new MessageProcessingResponse
             {
-                MessageId = message.Id,
-                ThreadId = threadId
+                MessageIds = [messageInbound.Id]
             });
         }
         catch (WorkflowNotFoundException ex)
@@ -267,86 +450,55 @@ public class ConversationService : IConversationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing inbound message for agent {AgentId} from participant {ParticipantId}",
-                request.WorkflowId, request.ParticipantId);
-
+            LogError(ex, "Error processing inbound message", request.WorkflowId, request.ParticipantId);
             throw;
         }
     }
 
-    /// <summary>
-    /// Prepares the message and sends it to the workflow.
-    /// </summary>
-    private async Task<ConversationMessage> PrepareAndSendMessage(
-        InboundMessageRequest request, 
-        string tenantId, 
-        string userId, 
-        string threadId,
-        string participantId)
+    private void LogError(Exception ex, string message, string workflowId, string? participantId = null, string? childWorkflowId = null, string? parentWorkflowId = null)
     {
-        // Create message
-        var message = new ConversationMessage
+        if (participantId != null && childWorkflowId != null)
         {
-            TenantId = tenantId,
-            ThreadId = threadId,
-            CreatedAt = DateTime.UtcNow,
-            CreatedBy = userId,
-            Direction = MessageDirection.Incoming,
-            Content = request.Content,
-            Metadata = ConvertToBsonDocument(request.Metadata),
-            WorkflowId = request.WorkflowId        
-        };
-
-        _logger.LogInformation("Preparing and sending message {MessageId} to workflow {WorkflowId}",
-            message.Id, request.WorkflowId);
-
-        try
-        {
-            // Signal the workflow
-            await SignalWorkflowAsync(message, participantId);
-            message.Status = MessageStatus.DeliveredToWorkflow;
+            _logger.LogError(ex, "{Message} for workflow {WorkflowId} to workflow {ChildWorkflowId} for participant {ParticipantId}",
+                message, workflowId, childWorkflowId, participantId);
         }
-        catch (RpcException ex)
+        else if (participantId != null && parentWorkflowId != null)
         {
-            if (ex.Code == RpcException.StatusCode.NotFound)
-            {
-                var errorMessage = $"Workflow with id {request.WorkflowId} not found";
-                message.Status = MessageStatus.FailedToDeliverToWorkflow;
-                message.Logs = CreateErrorLog("ErrorDeliveringToWorkflow", errorMessage);
-                
-                message = await CreateAndSaveMessageAsync(message);
-                _logger.LogError(ex, $"Workflow {request.WorkflowId} not found");
-                
-                throw new WorkflowNotFoundException(errorMessage, ex);
-            }
-            
-            message.Status = MessageStatus.FailedToDeliverToWorkflow;
-            message.Logs = CreateErrorLog("ErrorDeliveringToWorkflow", ex.Message);
-            
-            await CreateAndSaveMessageAsync(message);
-            _logger.LogError(ex, $"Error signaling workflow for message {message.Id}");
-            throw;
+            _logger.LogError(ex, "{Message} for workflow {WorkflowId} from workflow {ParentWorkflowId} for participant {ParticipantId}",
+                message, workflowId, parentWorkflowId, participantId);
         }
-
-        // Save the message
-        message.Status = MessageStatus.DeliveredToWorkflow;
-        message =await CreateAndSaveMessageAsync(message);
-        return message;
+        else if (participantId != null)
+        {
+            _logger.LogError(ex, "{Message} for workflow {WorkflowId} to workflow {ChildWorkflowId}",
+                message, workflowId, childWorkflowId);
+        }
+        else if (parentWorkflowId != null)
+        {
+            _logger.LogError(ex, "{Message} for workflow {WorkflowId} from workflow {ParentWorkflowId}",
+                message, workflowId, parentWorkflowId);
+        }
+        else if (participantId != null)
+        {
+            _logger.LogError(ex, "{Message} for workflow {WorkflowId} from participant {ParticipantId}",
+                message, workflowId, participantId);
+        }
+        else
+        {
+            _logger.LogError(ex, "{Message} for workflow {WorkflowId}",
+                message, workflowId);
+        }
     }
 
     /// <summary>
-    /// Creates an error log list for a message.
+    /// Creates a message log event.
     /// </summary>
-    private List<MessageLogEvent> CreateErrorLog(string eventName, string details)
+    private MessageLogEvent CreateLogEvent(string eventName, string details)
     {
-        return new List<MessageLogEvent>
+        return new MessageLogEvent
         {
-            new MessageLogEvent
-            {
-                Timestamp = DateTime.UtcNow,
-                Event = eventName,
-                Details = details
-            }
+            Event = eventName,
+            Timestamp = DateTime.UtcNow,
+            Details = details
         };
     }
 
@@ -355,44 +507,10 @@ public class ConversationService : IConversationService
     /// </summary>
     public class WorkflowNotFoundException : Exception
     {
-        public WorkflowNotFoundException(string message, Exception innerException) 
+        public WorkflowNotFoundException(string message, Exception innerException)
             : base(message, innerException)
         {
         }
-    }
-
-    /// <summary>
-    /// Validates the inbound message request.
-    /// </summary>
-    /// <param name="request">The request to validate.</param>
-    /// <returns>An error message if validation fails, null otherwise.</returns>
-    private string? ValidateRequest(InboundMessageRequest request)
-    {
-        if (request == null)
-        {
-            _logger.LogWarning("Received null inbound message request");
-            return "Request cannot be null";
-        }
-
-        if (string.IsNullOrEmpty(request.WorkflowId))
-        {
-            _logger.LogWarning("Invalid inbound message request: missing required fields");
-            return "WorkflowId is required";
-        }
-
-        if (string.IsNullOrEmpty(request.ParticipantId))
-        {
-            _logger.LogWarning("Invalid inbound message request: missing required fields");
-            return "ParticipantId is required";
-        }
-
-        if (request.Content == null)
-        {
-            _logger.LogWarning("Invalid inbound message request: missing required fields");
-            return "Content is required";
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -402,9 +520,11 @@ public class ConversationService : IConversationService
     /// <param name="userId">The user ID.</param>
     /// <param name="workflowId">The workflow ID.</param>
     /// <param name="participantId">The participant ID.</param>
+    /// <param name="isInternalThread">Whether the thread is internal.</param>
     /// <returns>The thread ID.</returns>
-    private async Task<string> GetOrCreateThreadAsync(string tenantId, string userId, string workflowId, string participantId)
+    private async Task<string> GetOrCreateThreadAsync(string tenantId, string userId, string workflowId, string participantId, bool isInternalThread)
     {
+        _logger.LogDebug("Looking for thread between '{WorkflowId}' and '{ParticipantId}'", workflowId, participantId);
         var thread = await _threadRepository.GetByCompositeKeyAsync(
             tenantId, workflowId, participantId);
 
@@ -419,10 +539,11 @@ public class ConversationService : IConversationService
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = userId,
                 Status = ConversationThreadStatus.Active,
+                IsInternalThread = isInternalThread
             };
 
             var threadId = await _threadRepository.CreateAsync(newThread);
-            _logger.LogInformation("Created new conversation thread {ThreadId} for workflow {WorkflowId} and participant {ParticipantId}",
+            _logger.LogInformation("Created new conversation thread '{ThreadId}' for workflow '{WorkflowId}' and participant '{ParticipantId}'",
                 threadId, workflowId, participantId);
 
             return threadId;
@@ -435,7 +556,12 @@ public class ConversationService : IConversationService
             if (thread.Status != ConversationThreadStatus.Active)
             {
                 await _threadRepository.UpdateStatusAsync(threadId, ConversationThreadStatus.Active);
-                _logger.LogInformation("Reactivated conversation thread {ThreadId} for workflow {WorkflowId} and participant {ParticipantId}",
+                _logger.LogInformation("Reactivated conversation thread '{ThreadId}' for workflow '{WorkflowId}' and participant '{ParticipantId}'",
+                    threadId, workflowId, participantId);
+            }
+            else
+            {
+                _logger.LogDebug("Using existing active thread '{ThreadId}' for workflow '{WorkflowId}' and participant '{ParticipantId}'",
                     threadId, workflowId, participantId);
             }
 
@@ -444,60 +570,188 @@ public class ConversationService : IConversationService
     }
 
     /// <summary>
-    /// Creates and saves a conversation message.
+    /// Creates and saves a conversation message with the specified parameters.
     /// </summary>
-    /// <param name="message">The conversation message to create and save.</param>
-    /// <returns>The created message.</returns>
-    private async Task<ConversationMessage> CreateAndSaveMessageAsync(ConversationMessage message)
+    private async Task<ConversationMessage> CreateMessageAsync(
+        string threadId,
+        string participantId,
+        MessageDirection direction,
+        string content,
+        object? metadata,
+        MessageLogEvent logEvent,
+        string? childWorkflowId = null,
+        string? parentWorkflowId = null)
     {
-        // Save message to database
-        message.Id = await _messageRepository.CreateAsync(message);
-        _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}",
-            message.Id, message.ThreadId);
+        var message = new ConversationMessage
+        {
+            ThreadId = threadId,
+            ParticipantId = participantId,
+            TenantId = _tenantContext.TenantId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CreatedBy = _tenantContext.LoggedInUser,
+            Direction = direction,
+            Content = content,
+            Metadata = metadata,
+            ChildWorkflowId = childWorkflowId,
+            ParentWorkflowId = parentWorkflowId,
+            Logs = new List<MessageLogEvent> { logEvent }
+        };
 
-        // Update thread's UpdatedAt timestamp
-        await _threadRepository.UpdateLastActivityAsync(message.ThreadId, DateTime.UtcNow);
-        _logger.LogDebug("Updated last activity timestamp for thread {ThreadId}", message.ThreadId);
+        // Save message to database and update thread in a single transaction
+        message.Id = await _messageRepository.CreateAndUpdateThreadAsync(message, threadId, DateTime.UtcNow);
+        _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, threadId);
 
         return message;
     }
 
+    /// <summary>
+    /// Creates and saves multiple conversation messages in a single batch operation.
+    /// </summary>
+    private async Task<List<string>> CreateMessagesAsync(
+        List<(string threadId, string participantId, MessageDirection direction, string content, object? metadata, MessageLogEvent logEvent, string? childWorkflowId, string? parentWorkflowId)> messageParams)
+    {
+        var messages = new List<ConversationMessage>();
+        var threadTimestamps = new Dictionary<string, DateTime>();
+        var timestamp = DateTime.UtcNow;
 
+        foreach (var (threadId, participantId, direction, content, metadata, logEvent, childWorkflowId, parentWorkflowId) in messageParams)
+        {
+            messages.Add(new ConversationMessage
+            {
+                ThreadId = threadId,
+                ParticipantId = participantId,
+                TenantId = _tenantContext.TenantId,
+                CreatedAt = timestamp,
+                UpdatedAt = timestamp,
+                CreatedBy = _tenantContext.LoggedInUser,
+                Direction = direction,
+                Content = content,
+                Metadata = metadata,
+                ChildWorkflowId = childWorkflowId,
+                ParentWorkflowId = parentWorkflowId,
+                Logs = new List<MessageLogEvent> { logEvent }
+            });
+
+            // Add thread ID to the update collection with the same timestamp
+            threadTimestamps[threadId] = timestamp;
+        }
+
+        // Save all messages and update all threads in a single transaction
+        var messageIds = await _messageRepository.CreateManyAndUpdateThreadsAsync(messages, threadTimestamps);
+
+        // Log created messages
+        for (int i = 0; i < messages.Count; i++)
+        {
+            _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}",
+                messageIds[i], messages[i].ThreadId);
+        }
+
+        return messageIds;
+    }
 
     /// <summary>
     /// Signals the workflow with the inbound message.
     /// </summary>
-    /// <param name="message">The conversation message.</param>
-    /// <param name="participantId">The participant ID.</param>
-    private async Task SignalWorkflowAsync(ConversationMessage message, string participantId)
+    private async Task SignalWithStartWorkflowAsync(string proposedWorkflowId, string Content, object? Metadata, string ParticipantId,
+        string ParentWorkflowId,
+        string WorkflowType,
+        string? QueueName = null,
+        string? Agent = null,
+        string? Assignment = null)
     {
-        var signalRequest = new WorkflowSignalRequest
+        _logger.LogDebug("Preparing to signal and start workflow '{WorkflowId}' of type '{WorkflowType}' with participant '{ParticipantId}' from parent '{ParentWorkflowId}'",
+            proposedWorkflowId, WorkflowType, ParticipantId, ParentWorkflowId);
+        
+        var request = new WorkflowSignalWithStartRequest
         {
-            WorkflowId = message.WorkflowId,
+            ProposedWorkflowId = proposedWorkflowId,
+            WorkflowType = WorkflowType ?? throw new ArgumentNullException(nameof(WorkflowType), "WorkflowType is required when signaling with start"),
             SignalName = SIGNAL_NAME_INBOUND_MESSAGE,
-            Payload =  new {
-                message.ThreadId,
-                message.Content,
-                message.Metadata,
-                message.CreatedAt,
-                message.CreatedBy,
-                ParticipantId = participantId
-            }
+            Payload = new
+            {
+                Content,
+                Metadata,
+                ParticipantId,
+                ParentWorkflowId
+            },
+            QueueName = QueueName,
+            Agent = Agent,
+            Assignment = Assignment
         };
+        
+        await _workflowSignalService.SignalWithStartWorkflow(request);
 
-        await _workflowSignalService.HandleSignalWorkflow(signalRequest);
-        _logger.LogInformation("Sent inbound message signal to workflow {WorkflowId}", message.WorkflowId);
+        _logger.LogInformation("Sent inbound message signal to start new workflow '{WorkflowId}' of type '{WorkflowType}'", 
+            proposedWorkflowId, WorkflowType);
     }
 
     /// <summary>
-    /// Helper method to convert any object to BsonDocument
+    /// Signals the workflow with the inbound message.
     /// </summary>
-    private BsonDocument? ConvertToBsonDocument(object? obj)
+    private async Task SignalWorkflowAsync(string Content, object? Metadata, string ParticipantId, string WorkflowId, string? ParentWorkflowId = null)
     {
-        if (obj == null) return null;
+        _logger.LogDebug("Preparing to signal workflow '{WorkflowId}' with participant '{ParticipantId}'{ParentWorkflowInfo}",
+            WorkflowId, ParticipantId, ParentWorkflowId != null ? $" from parent '{ParentWorkflowId}'" : "");
         
-        // Convert the object to JSON, then to BsonDocument
-        var json = JsonSerializer.Serialize(obj);
-        return BsonDocument.Parse(json);
+        var request = new WorkflowSignalRequest
+        {
+            WorkflowId = WorkflowId,
+            SignalName = SIGNAL_NAME_INBOUND_MESSAGE,
+            Payload = new
+            {
+                Content,
+                Metadata,
+                ParticipantId,
+                ParentWorkflowId,
+            }
+        };
+        
+        await _workflowSignalService.SignalWorkflow(request);
+
+        _logger.LogInformation("Sent inbound message signal to workflow '{WorkflowId}'{ParentWorkflowInfo}", 
+            WorkflowId, ParentWorkflowId != null ? $" from parent '{ParentWorkflowId}'" : "");
+    }
+
+    /// <summary>
+    /// Gets conversation message history for a specific thread with pagination.
+    /// </summary>
+    /// <param name="workflowId">The workflow ID.</param>
+    /// <param name="participantId">The participant ID.</param>
+    /// <param name="page">The page number (1-based).</param>
+    /// <param name="pageSize">The page size.</param>
+    /// <returns>A list of conversation messages.</returns>
+    public async Task<ServiceResult<List<ConversationMessage>>> GetMessageHistoryAsync(string workflowId, string participantId, int page, int pageSize)
+    {
+        try
+        {
+            _logger.LogInformation("Getting message history for workflow {WorkflowId}, participant {ParticipantId}, page {Page}, pageSize {PageSize}",
+                workflowId, participantId, page, pageSize);
+
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
+            {
+                _logger.LogWarning("Invalid request: missing required fields");
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowId and ParticipantId are required");
+            }
+
+            if (page < 1 || pageSize < 1)
+            {
+                _logger.LogWarning("Invalid request: page and pageSize must be greater than 0");
+                return ServiceResult<List<ConversationMessage>>.BadRequest("Page and PageSize must be greater than 0");
+            }
+
+            // Get messages directly by workflow and participant IDs
+            var messages = await _messageRepository.GetByWorkflowAndParticipantAsync(_tenantContext.TenantId, workflowId, participantId, page, pageSize);
+
+            _logger.LogInformation("Found {Count} messages for workflow {WorkflowId} and participant {ParticipantId}",
+                messages.Count, workflowId, participantId);
+
+            return ServiceResult<List<ConversationMessage>>.Success(messages);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting message history for workflow {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
+            throw;
+        }
     }
 }
