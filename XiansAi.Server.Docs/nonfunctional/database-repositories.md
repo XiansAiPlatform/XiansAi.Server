@@ -51,8 +51,8 @@ Key points:
 
 Repositories handle database operations for specific entities. They are organized in feature-specific directories:
 
-- `Features/AgentApi/Repositories` for agent-related repositories
-- `Features/WebApi/Repositories` for web API related repositories
+- `XiansAi.Server.Src/Features/AgentApi/Repositories` for agent-related repositories
+- `XiansAi.Server.Src/Features/WebApi/Repositories` for web API related repositories
 
 Each repository follows this pattern:
 
