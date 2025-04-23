@@ -58,12 +58,22 @@ public static class LogsEndpoints
         .WithOpenApi();
 
         logsGroup.MapPost("/", async (
+            [FromBody] LogRequest[] requests,
+            [FromServices] LogsService service) =>
+        {
+            return await service.CreateLogs(requests);
+        })
+        .WithName("Create Logs")
+        .WithOpenApi();
+
+        // Keep the single log endpoint for backward compatibility
+        logsGroup.MapPost("/single", async (
             [FromBody] LogRequest request,
             [FromServices] LogsService service) =>
         {
             return await service.CreateLog(request);
         })
-        .WithName("Create Log")
+        .WithName("Create Single Log")
         .WithOpenApi();
 
         logsGroup.MapDelete("/{id}", async (

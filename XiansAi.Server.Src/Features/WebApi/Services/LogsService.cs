@@ -102,6 +102,44 @@ public class LogsService
         }
     }
 
+    public async Task<IResult> CreateLogs(LogRequest[] requests)
+    {
+        try
+        {
+            var logs = new List<Log>();
+            
+            foreach (var request in requests)
+            {
+                var log = new Log
+                {
+                    Id = ObjectId.GenerateNewId().ToString(),
+                    TenantId = _tenantContext.TenantId,
+                    Message = request.Message,
+                    Level = request.Level,
+                    WorkflowId = request.WorkflowId ?? throw new ArgumentNullException(nameof(request.WorkflowId), "WorkflowId is required"),
+                    WorkflowRunId = request.WorkflowRunId,
+                    Properties = request.Properties,
+                    CreatedAt = DateTime.UtcNow
+                };
+                logs.Add(log);
+            }
+
+            // Optimize by using bulk insert if available in repository
+            foreach (var log in logs)
+            {
+                await _logRepository.CreateAsync(log);
+            }
+
+            _logger.LogInformation("Created {Count} logs", logs.Count);
+            return Results.Ok(logs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating logs, count: {Count}", requests.Length);
+            return Results.Problem("An error occurred while creating the logs");
+        }
+    }
+
     public async Task<IResult> CreateLog(LogRequest request)
     {
         try
