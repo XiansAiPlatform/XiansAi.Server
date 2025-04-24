@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
-using Features.WebApi.Auth;
 
 namespace Features.WebApi.Endpoints;
 

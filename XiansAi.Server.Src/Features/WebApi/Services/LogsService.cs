@@ -69,6 +69,7 @@ public class LogsService
     {
         try
         {
+
             var logs = await _logRepository.GetByWorkflowRunIdAsync(
                 request.WorkflowRunId, 
                 request.Skip, 

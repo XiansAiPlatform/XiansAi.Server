@@ -58,11 +58,34 @@ public class LogRepository : ILogRepository
             filter &= Builders<Log>.Filter.Eq(x => x.Level, (Models.LogLevel)logLevel.Value);
         }
 
-        return await _logs.Find(filter)
-            .SortByDescending(x => x.CreatedAt)
-            .Skip(skip)
-            .Limit(limit)
+        // Count total logs
+        var totalCount = (int)await _logs.CountDocumentsAsync(filter);
+        
+        // If skip exceeds total count, return empty list
+        if (skip >= totalCount)
+        {
+            return new List<Log>();
+        }
+        
+        // Handle edge case where skip+limit exceeds total count
+        if (skip + limit > totalCount)
+        {
+            limit = Math.Max(0, totalCount - skip);
+        }
+        
+        // If skip is from the beginning, convert it to skip from the end
+        var adjustedSkip = Math.Max(0, totalCount - limit - skip);
+        var adjustedLimit = Math.Min(limit, totalCount - adjustedSkip);
+
+        // Get logs with the adjusted skip/limit
+        var logs = await _logs.Find(filter)
+            .Skip(adjustedSkip)
+            .Limit(adjustedLimit)
             .ToListAsync();
+            
+        // Reverse to get newest first
+        logs.Reverse();
+        return logs;
     }
 
     public async Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level)
