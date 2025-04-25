@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Features.WebApi.Endpoints;
 using Features.WebApi.Auth;
 using Features.WebApi.Repositories;
@@ -8,6 +6,7 @@ using XiansAi.Server.Features.WebApi.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using XiansAi.Server.Features.WebApi.Models;
 
 namespace Features.WebApi.Configuration;
 
@@ -27,6 +26,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<WorkflowCancelService>();
         builder.Services.AddScoped<CertificateService>();
         builder.Services.AddScoped<InstructionsService>();
+        builder.Services.AddScoped<LogsService>();
         builder.Services.AddScoped<DefinitionsService>();
         builder.Services.AddScoped<TenantService>();
         builder.Services.AddScoped<WebhookService>();
@@ -35,6 +35,7 @@ public static class WebApiConfiguration
         
         // Register repositories
         builder.Services.AddScoped<IInstructionRepository, InstructionRepository>();
+        builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
@@ -48,6 +49,7 @@ public static class WebApiConfiguration
         // Map Web API endpoints
         WorkflowEndpoints.MapWorkflowEndpoints(app);
         InstructionEndpoints.MapInstructionEndpoints(app);
+        LogsEndpoints.MapLogsEndpoints(app);
         ActivityEndpoints.MapActivityEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
         DefinitionsEndpoints.MapDefinitionsEndpoints(app);

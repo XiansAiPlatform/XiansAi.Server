@@ -3,6 +3,8 @@ using Shared.Utils;
 using Temporalio.Client;
 using Temporalio.Converters;
 using XiansAi.Server.Temporal;
+using XiansAi.Server.Features.WebApi.Repositories;
+using XiansAi.Server.Shared.Data;
 
 namespace Features.WebApi.Services;
 
@@ -21,7 +23,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowFinderService> _logger;
     private readonly ITenantContext _tenantContext;
-
+    private readonly IDatabaseService _databaseService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderService"/> class.
@@ -29,24 +31,27 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="clientService">The Temporal client service for workflow operations.</param>
     /// <param name="logger">Logger for recording operational events.</param>
     /// <param name="tenantContext">Context containing tenant-specific information.</param>
+    /// <param name="databaseService">The database service for accessing workflow logs.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
         ITemporalClientService clientService,
         ILogger<WorkflowFinderService> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IDatabaseService databaseService)
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _databaseService = databaseService;
     }
 
     /// <summary>
     /// Retrieves a specific workflow by its ID.
     /// </summary>
     /// <param name="workflowId">The unique identifier of the workflow.</param>
-    /// <param name="runId">Optional run identifier for the workflow.</param>
+    /// <param name="workflowRunId">Optional run identifier for the workflow.</param>
     /// <returns>A result containing the workflow details if found, or an error response.</returns>
-    public async Task<IResult> GetWorkflow(string workflowId, string? runId = null)
+    public async Task<IResult> GetWorkflow(string workflowId, string? workflowRunId)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
         {
@@ -56,19 +61,20 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and runId: {RunId}", workflowId, runId);
+            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", workflowId, workflowRunId);
             var client = _clientService.GetClient();
-            var workflowHandle = client.GetWorkflowHandle(workflowId, runId);
+            var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
             var workflowDescription = await workflowHandle.DescribeAsync();
+            var fetchHistory = await workflowHandle.FetchHistoryAsync();
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory);
 
-            var workflow = MapWorkflowToResponse(workflowDescription);
-            _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}", 
+            _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
             return Results.Ok(workflow);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve workflow {WorkflowId}. Error: {ErrorMessage}", 
+            _logger.LogError(ex, "Failed to retrieve workflow {WorkflowId}. Error: {ErrorMessage}",
                 workflowId, ex.Message);
             return Results.Problem(
                 title: "Failed to retrieve workflow",
@@ -88,7 +94,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <returns>A result containing the list of filtered workflows.</returns>
     public async Task<IResult> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status)
     {
-        _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}", 
+        _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}",
             startTime, endTime, owner ?? "null", status ?? "null");
 
         try
@@ -102,7 +108,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
             {
                 var mappedWorkflow = MapWorkflowToResponse(workflow);
-                
+
                 if (ShouldSkipWorkflow(owner, mappedWorkflow.Owner))
                 {
                     continue;
@@ -110,8 +116,22 @@ public class WorkflowFinderService : IWorkflowFinderService
 
                 workflows.Add(mappedWorkflow);
             }
-
             _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", workflows.Count);
+
+            // retrieve last logs for each workflow run
+            var logRepository = new LogRepository(_databaseService);
+            var logs = await logRepository.GetLastLogAsync(startTime, endTime);
+            foreach (var workflow in workflows)
+            {
+                var workflowId = ((WorkflowResponse)workflow).WorkflowId;
+                var workflowRunId = ((WorkflowResponse)workflow).RunId;
+
+                var lastLog = logs.FirstOrDefault(x => x.WorkflowRunId == workflowRunId);
+                if (lastLog != null)
+                {
+                    ((WorkflowResponse)workflow).LastLog = lastLog;
+                }
+            }
             return Results.Ok(workflows);
         }
         catch (Exception ex)
@@ -195,7 +215,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     {
         var queryParts = new List<string>();
         const string dateFormat = "yyyy-MM-ddTHH:mm:sszzz";
-        
+
         // Add time-based filters
         if (startTime != null && endTime != null)
         {
@@ -211,12 +231,13 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         // Add tenantId filter
         queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
-        
+
         // Add userId filter if current owner is requested
-        if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase)) {
+        if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase))
+        {
             queryParts.Add($"{Constants.UserIdKey} = '{_tenantContext.LoggedInUser}'");
         }
-        
+
         // Add status filter if specified
         if (!string.IsNullOrEmpty(status))
         {
@@ -233,10 +254,10 @@ public class WorkflowFinderService : IWorkflowFinderService
                 "timedout" => "TimedOut",
                 _ => status // Use as-is if not matching any known status
             };
-            
+
             queryParts.Add($"ExecutionStatus = '{normalizedStatus}'");
         }
-        
+
         // Join all query parts with AND operator
         return string.Join(" and ", queryParts);
     }
@@ -249,21 +270,88 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <returns>True if the workflow should be skipped, false otherwise.</returns>
     private bool ShouldSkipWorkflow(string? owner, string? workflowOwner)
     {
-        return Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase) && 
+        return Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase) &&
                _tenantContext.LoggedInUser != workflowOwner;
+    }
+
+    /// <summary>
+    /// Identifies the current activity from the workflow history.
+    /// </summary>
+    /// <param name="workflowHistory">The workflow history to analyze.</param>
+    /// <returns>The current activity if found, otherwise null.</returns>
+    private Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? IdentifyCurrentActivity(List<Temporalio.Api.History.V1.HistoryEvent> workflowHistory)
+    {
+        // Iterate in reverse to find the most recent unprocessed activity
+        for (int i = workflowHistory.Count - 1; i >= 0; i--)
+        {
+            var evt = workflowHistory[i];
+
+            if (evt.EventType.ToString() == "WorkflowExecutionCompleted" &&
+                evt.WorkflowExecutionCompletedEventAttributes != null)
+            {
+                // If the workflow is completed, we can stop looking for activities.
+                break;
+            }
+
+            if (evt.EventType.ToString() == "ActivityTaskScheduled" &&
+                evt.ActivityTaskScheduledEventAttributes != null)
+            {
+                // Check if this activity has been processed
+                bool hasBeenProcessed = workflowHistory
+                    .Skip(i + 1)
+                    .Any(e =>
+                        (e.EventType.ToString() == "ActivityTaskScheduledStarted" &&
+                         e.ActivityTaskStartedEventAttributes != null &&
+                         e.ActivityTaskStartedEventAttributes.ScheduledEventId == evt.EventId) ||
+                        (e.EventType.ToString() == "ActivityTaskScheduledCompleted" &&
+                         e.ActivityTaskCompletedEventAttributes != null &&
+                         e.ActivityTaskCompletedEventAttributes.ScheduledEventId == evt.EventId) ||
+                        (e.EventType.ToString() == "ActivityTaskScheduledFailed" &&
+                         e.ActivityTaskFailedEventAttributes != null &&
+                         e.ActivityTaskFailedEventAttributes.ScheduledEventId == evt.EventId)
+                    );
+
+                // If not processed, return this activity as the current one
+                if (!hasBeenProcessed)
+                {
+                    return evt.ActivityTaskScheduledEventAttributes;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
     /// Maps a Temporal workflow execution to a client-friendly response object.
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
+    /// <param name="fetchHistory">Optional workflow history to analyze for current activity.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow)
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null)
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey) ?? workflow.WorkflowType;
         var assignment = ExtractMemoValue(workflow.Memo, Constants.AssignmentKey) ?? Constants.DefaultAssignment;
+        Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? currentActivity = null;
+
+        if (fetchHistory != null)
+        {
+            var eventsList = fetchHistory.Events.ToList(); // Convert to a list for indexing
+
+            currentActivity = IdentifyCurrentActivity(eventsList);
+
+            if (currentActivity != null)
+            {
+                Console.WriteLine($"Current activity: Type = {currentActivity.ActivityType?.Name}, ActivityId = {currentActivity.ActivityId}");
+            }
+            else
+            {
+                Console.WriteLine("No current (pending or running) activity found.");
+            }
+        }
+
 
         return new WorkflowResponse
         {
@@ -280,7 +368,8 @@ public class WorkflowFinderService : IWorkflowFinderService
             CloseTime = workflow.CloseTime,
             TenantId = tenantId,
             Owner = userId,
-            HistoryLength = workflow.HistoryLength
+            HistoryLength = workflow.HistoryLength,
+            CurrentActivity = currentActivity
         };
     }
 
@@ -298,81 +387,88 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         return null;
     }
-}
-
-/// <summary>
-/// Represents a workflow response object containing workflow execution details.
-/// </summary>
-public class WorkflowResponse
-{
 
     /// <summary>
-    /// Gets or sets the agent associated with the workflow.
+    /// Represents a workflow response object containing workflow execution details.
     /// </summary>
-    public string? Agent { get; set; }
+    public class WorkflowResponse
+    {
 
-    /// <summary>
-    /// Gets or sets the assignment details for the workflow.
-    /// </summary>
-    public string? Assignment { get; set; }
+        /// <summary>
+        /// Gets or sets the agent associated with the workflow.
+        /// </summary>
+        public string? Agent { get; set; }
 
-    /// <summary>
-    /// Gets or sets the tenant identifier associated with the workflow.
-    /// </summary>
-    public string? TenantId { get; set; }
+        /// <summary>
+        /// Gets or sets the assignment details for the workflow.
+        /// </summary>
+        public string? Assignment { get; set; }
 
-    /// <summary>
-    /// Gets or sets the owner of the workflow.
-    /// </summary>
-    public string? Owner { get; set; }
+        /// <summary>
+        /// Gets or sets the tenant identifier associated with the workflow.
+        /// </summary>
+        public string? TenantId { get; set; }
 
-    /// <summary>
-    /// Gets or sets the workflow identifier.
-    /// </summary>
-    public string? WorkflowId { get; set; }
+        /// <summary>
+        /// Gets or sets the owner of the workflow.
+        /// </summary>
+        public string? Owner { get; set; }
 
-    /// <summary>
-    /// Gets or sets the run identifier for the workflow execution.
-    /// </summary>
-    public string? RunId { get; set; }
+        /// <summary>
+        /// Gets or sets the workflow identifier.
+        /// </summary>
+        public string? WorkflowId { get; set; }
 
-    /// <summary>
-    /// Gets or sets the type of the workflow.
-    /// </summary>
-    public string? WorkflowType { get; set; }
+        /// <summary>
+        /// Gets or sets the run identifier for the workflow execution.
+        /// </summary>
+        public string? RunId { get; set; }
 
-    /// <summary>
-    /// Gets or sets the current status of the workflow.
-    /// </summary>
-    public string? Status { get; set; }
+        /// <summary>
+        /// Gets or sets the type of the workflow.
+        /// </summary>
+        public string? WorkflowType { get; set; }
 
-    /// <summary>
-    /// Gets or sets the time when the workflow started.
-    /// </summary>
-    public DateTime? StartTime { get; set; }
+        /// <summary>
+        /// Gets or sets the current status of the workflow.
+        /// </summary>
+        public string? Status { get; set; }
 
-    /// <summary>
-    /// Gets or sets the execution time of the workflow.
-    /// </summary>
-    public DateTime? ExecutionTime { get; set; }
+        /// <summary>
+        /// Gets or sets the time when the workflow started.
+        /// </summary>
+        public DateTime? StartTime { get; set; }
 
-    /// <summary>
-    /// Gets or sets the time when the workflow closed.
-    /// </summary>
-    public DateTime? CloseTime { get; set; }
+        /// <summary>
+        /// Gets or sets the execution time of the workflow.
+        /// </summary>
+        public DateTime? ExecutionTime { get; set; }
 
-    /// <summary>
-    /// Gets or sets the identifier of the parent workflow, if any.
-    /// </summary>
-    public string? ParentId { get; set; }
+        /// <summary>
+        /// Gets or sets the time when the workflow closed.
+        /// </summary>
+        public DateTime? CloseTime { get; set; }
 
-    /// <summary>
-    /// Gets or sets the run identifier of the parent workflow, if any.
-    /// </summary>
-    public string? ParentRunId { get; set; }
+        /// <summary>
+        /// Gets or sets the identifier of the parent workflow, if any.
+        /// </summary>
+        public string? ParentId { get; set; }
 
-    /// <summary>
-    /// Gets or sets the history length of the workflow.
-    /// </summary>
-    public int HistoryLength { get; set; }
+        /// <summary>
+        /// Gets or sets the run identifier of the parent workflow, if any.
+        /// </summary>
+        public string? ParentRunId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the history length of the workflow.
+        /// </summary>
+        public int HistoryLength { get; set; }
+
+        /// <summary>
+        /// Gets or sets the current activity associated with the workflow.
+        /// </summary>
+        public object? CurrentActivity { get; set; }
+
+        public object? LastLog { get; set; }
+    }
 }
