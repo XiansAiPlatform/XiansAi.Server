@@ -5,14 +5,14 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
-    public NewWorkflowOptions(string workflowId, string workFlowType, ITenantContext tenantContext, string? queueName, string? agentName, string? assignment)
+    public NewWorkflowOptions(string? proposedId, string workFlowType, ITenantContext tenantContext, string? queueName, string? agentName, string? assignment)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId) || string.IsNullOrEmpty(tenantContext.LoggedInUser))
         {
             throw new InvalidOperationException("TenantId and LoggedInUser are required to create workflow options");
         }
 
-        Id = workflowId;
+        Id = proposedId ?? GenerateNewWorkflowId(null, agentName ?? workFlowType, workFlowType, tenantContext);
         TaskQueue = GetTemporalQueueName(workFlowType, queueName);
         Memo = GetMemo(workFlowType, tenantContext, assignment, queueName, agentName);
         TypedSearchAttributes = GetSearchAttributes(workFlowType, tenantContext, agentName, assignment);

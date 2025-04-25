@@ -24,23 +24,6 @@ public static class SignalEndpoints
     {
         var logger = loggerFactory.CreateLogger<AgentEndpointLogger>();
         
-        // Map info endpoints
-        var infoGroup = app.MapGroup("/api/agent/info")
-            .WithTags("AgentAPI - Info")
-            .RequiresCertificate();
-            
-        infoGroup.MapGet("", (
-            [FromServices] ITenantContext tenantContext
-        ) =>
-        {
-            return "Agent API called by user : " + tenantContext.LoggedInUser + " From Tenant : " + tenantContext.TenantId;
-        })
-        .WithOpenApi(operation => {
-            operation.Summary = "Get agent info";
-            operation.Description = "Returns the agent info";
-            return operation;
-        });
-        
         // Map signal endpoints
         var signalGroup = app.MapGroup("/api/agent/signal")
             .WithTags("AgentAPI - Signal")
@@ -55,6 +38,18 @@ public static class SignalEndpoints
         .WithOpenApi(operation => {
             operation.Summary = "Signal workflow";
             operation.Description = "Sends a signal to a running workflow instance";
+            return operation;
+        });
+
+        signalGroup.MapPost("/with-start", async (
+            [FromBody] WorkflowSignalWithStartRequest request,
+            [FromServices] IWorkflowSignalService endpoint) =>
+        {
+            return await endpoint.SignalWithStartWorkflow(request);
+        })
+        .WithOpenApi(operation => {
+            operation.Summary = "Signal workflow with start";
+            operation.Description = "Sends a signal to a running workflow instance and starts a new one if it doesn't exist";
             return operation;
         });
     }

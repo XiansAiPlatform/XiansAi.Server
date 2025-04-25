@@ -3,7 +3,7 @@
 ## File Structure
 
 - Schema files should be named in kebab-case: `<entity>-schema.json`
-- Schema files should be located in the `Shared/Data/Schemas` directory
+- Schema files should be located in the `XiansAi.Server.Src/Shared/Data/Schemas` directory
 
 ## Schema Structure
 

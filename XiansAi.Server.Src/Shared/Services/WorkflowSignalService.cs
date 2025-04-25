@@ -40,7 +40,7 @@ public class WorkflowSignalWithStartRequest : WorkflowSignalRequestBase
     /// Gets or sets the optional workflow ID to start.
     /// May be null if no workflow needs to be started.
     /// </summary>
-    public required string ProposedWorkflowId { get; set; }
+    public string? ProposedWorkflowId { get; set; }
 
     /// <summary>
     /// Gets or sets the optional workflow type to start.
@@ -160,6 +160,14 @@ public class WorkflowSignalService : IWorkflowSignalService
                 signalName = request.SignalName
             });
         }
+        catch (Temporalio.Exceptions.RpcException ex) when (ex.Message.Contains("workflow not found"))
+        {
+            _logger.LogWarning(ex, "Workflow not found: {WorkflowId}", request.WorkflowId);
+            return Results.NotFound(new {
+                message = $"Workflow with ID '{request.WorkflowId}' not found",
+                workflowId = request.WorkflowId
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowId}", 
@@ -220,6 +228,14 @@ public class WorkflowSignalService : IWorkflowSignalService
                 message = "Signal with start sent successfully", 
                 workflowId = request.ProposedWorkflowId,
                 signalName = request.SignalName
+            });
+        }
+        catch (Temporalio.Exceptions.RpcException ex) when (ex.Message.Contains("workflow not found"))
+        {
+            _logger.LogWarning(ex, "Workflow reference not found for type: {WorkflowType}", request.WorkflowType);
+            return Results.NotFound(new {
+                message = $"Workflow type '{request.WorkflowType}' could not be started or referenced",
+                workflowType = request.WorkflowType
             });
         }
         catch (Exception ex)
