@@ -8,4 +8,7 @@ public static class Constants {
     public const string AssignmentKey = "assignment";
     public const string QueueNameKey = "queueName";
     public const string DefaultAssignment = "-default-";
+
+    public const string SIGNAL_NAME_INBOUND_MESSAGE = "HandleInboundMessage";
+    public const string SIGNAL_NAME_EVENT = "ReceiveEvent";
 }

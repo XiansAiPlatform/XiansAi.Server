@@ -1,5 +1,6 @@
 using Shared.Auth;
 using Shared.Repositories;
+using Shared.Utils;
 using Shared.Utils.Services;
 
 namespace Shared.Services;
@@ -44,7 +45,7 @@ public class OutboundHandoverRequest
     // Optional parameters for starting a new workflow
     public string? WorkflowTypeToStart { get; set; }
     public string? QueueName { get; set; }
-    public string? Agent { get; set; }
+    public required string Agent { get; set; }
     public string? Assignment { get; set; }
 }
 
@@ -119,8 +120,6 @@ public class ConversationService : IConversationService
     private readonly IWorkflowSignalService _workflowSignalService;
     private readonly ILogger<ConversationService> _logger;
     private readonly ITenantContext _tenantContext;
-
-    public const string SIGNAL_NAME_INBOUND_MESSAGE = "HandleInboundMessage";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConversationService"/> class.
@@ -236,8 +235,8 @@ public class ConversationService : IConversationService
             request.ParticipantId,
             request.ParentWorkflowId!,
             request.WorkflowTypeToStart,
+            request.Agent!,
             request.QueueName,
-            request.Agent,
             request.Assignment);
 
         _logger.LogInformation("Successfully started new workflow '{ChildWorkflowId}' of type '{WorkflowType}' with handover from '{ParentWorkflowId}'", 
@@ -653,37 +652,37 @@ public class ConversationService : IConversationService
     /// <summary>
     /// Signals the workflow with the inbound message.
     /// </summary>
-    private async Task SignalWithStartWorkflowAsync(string proposedWorkflowId, string Content, object? Metadata, string ParticipantId,
-        string ParentWorkflowId,
-        string WorkflowType,
-        string? QueueName = null,
-        string? Agent = null,
-        string? Assignment = null)
+    private async Task SignalWithStartWorkflowAsync(string proposedWorkflowId, string content, object? metadata, string participantId,
+        string parentWorkflowId,
+        string workflowType,
+        string agent,
+        string? queueName = null,
+        string? assignment = null)
     {
         _logger.LogDebug("Preparing to signal and start workflow '{WorkflowId}' of type '{WorkflowType}' with participant '{ParticipantId}' from parent '{ParentWorkflowId}'",
-            proposedWorkflowId, WorkflowType, ParticipantId, ParentWorkflowId);
+            proposedWorkflowId, workflowType, participantId, parentWorkflowId);
         
         var request = new WorkflowSignalWithStartRequest
         {
             ProposedWorkflowId = proposedWorkflowId,
-            WorkflowType = WorkflowType ?? throw new ArgumentNullException(nameof(WorkflowType), "WorkflowType is required when signaling with start"),
-            SignalName = SIGNAL_NAME_INBOUND_MESSAGE,
+            WorkflowType = workflowType ?? throw new ArgumentNullException(nameof(workflowType), "WorkflowType is required when signaling with start"),
+            SignalName = Constants.SIGNAL_NAME_INBOUND_MESSAGE,
             Payload = new
             {
-                Content,
-                Metadata,
-                ParticipantId,
-                ParentWorkflowId
+                Content = content,
+                Metadata = metadata,
+                ParticipantId = participantId,
+                ParentWorkflowId = parentWorkflowId
             },
-            QueueName = QueueName,
-            Agent = Agent,
-            Assignment = Assignment
+            QueueName = queueName,
+            Agent = agent,
+            Assignment = assignment
         };
         
         await _workflowSignalService.SignalWithStartWorkflow(request);
 
         _logger.LogInformation("Sent inbound message signal to start new workflow '{WorkflowId}' of type '{WorkflowType}'", 
-            proposedWorkflowId, WorkflowType);
+            proposedWorkflowId, workflowType);
     }
 
     /// <summary>
@@ -697,7 +696,7 @@ public class ConversationService : IConversationService
         var request = new WorkflowSignalRequest
         {
             WorkflowId = WorkflowId,
-            SignalName = SIGNAL_NAME_INBOUND_MESSAGE,
+            SignalName = Constants.SIGNAL_NAME_INBOUND_MESSAGE,
             Payload = new
             {
                 Content,
