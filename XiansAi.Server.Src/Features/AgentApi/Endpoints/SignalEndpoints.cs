@@ -1,8 +1,6 @@
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
-using Microsoft.OpenApi.Models;
-using Shared.Auth;
 
 namespace Features.AgentApi.Endpoints;
 
