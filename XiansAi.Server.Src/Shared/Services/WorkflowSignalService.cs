@@ -43,7 +43,7 @@ public class WorkflowEventWithStartRequest
         {
             SignalName = Constants.SIGNAL_NAME_EVENT,
             Payload = Payload,
-            ProposedWorkflowId = ProposedWorkflowId,
+            WorkflowId = ProposedWorkflowId,
             WorkflowType = WorkflowType,
             QueueName = QueueName,
             Agent = Agent,
@@ -56,11 +56,11 @@ public class WorkflowSignalWithStartRequest
 {
     public required string SignalName { get; set; }
     public object? Payload { get; set; }
-    public string? ProposedWorkflowId { get; set; }
+    public string? WorkflowId { get; set; }
     public required string WorkflowType { get; set; }
     public string? QueueName { get; set; }
-    public required string Agent { get; set; }
     public string? Assignment { get; set; }
+    public required string Agent { get; set; }
 }
 
 /// <summary>
@@ -205,7 +205,13 @@ public class WorkflowSignalService : IWorkflowSignalService
             }
 
 
-            var options = new NewWorkflowOptions(request.ProposedWorkflowId, request.WorkflowType, _tenantContext, request.QueueName, request.Agent, request.Assignment);
+            var options = new NewWorkflowOptions(
+                request.WorkflowId, 
+                request.WorkflowType, 
+                _tenantContext, 
+                request.QueueName, 
+                request.Agent, 
+                request.Assignment);
        
             var signalPayload = request.Payload != null 
                 ? new object[] { request.Payload }
@@ -223,7 +229,7 @@ public class WorkflowSignalService : IWorkflowSignalService
             
             return Results.Ok(new { 
                 message = "Signal with start sent successfully", 
-                workflowId = request.ProposedWorkflowId,
+                workflowId = request.WorkflowId,
                 signalName = request.SignalName
             });
         }

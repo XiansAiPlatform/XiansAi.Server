@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Shared.Utils.Services;
+using Features.WebApi.Services;
 using Shared.Services;
 
 namespace Features.WebApi.Endpoints;
@@ -17,9 +17,9 @@ public static class MessagingEndpoints
 
 
         messagingGroup.MapPost("/inbound", async (
-            [FromBody] InboundSignalRequest request, 
-            [FromServices] IConversationService conversationService) => {
-            var result = await conversationService.ProcessInboundMessage(request);
+            [FromBody] MessageRequest request, 
+            [FromServices] IMessageService messageService) => {
+            var result = await messageService.ProcessIncomingMessage(request);
             return result.ToHttpResult();
         })
         .WithName("Send Message to workflow")
@@ -57,10 +57,10 @@ public static class MessagingEndpoints
 
         messagingGroup.MapGet("/threads", async (
             [FromServices] IMessagingService endpoint,
-            [FromQuery] string workflowId,
+            [FromQuery] string agent,
             [FromQuery] int? page = null,
             [FromQuery] int? pageSize = null) => {
-            var result = await endpoint.GetThreads(workflowId, page, pageSize);  
+            var result = await endpoint.GetThreads(agent, page, pageSize);  
             return result.ToHttpResult();
         })
         .WithName("Get AllThreads")

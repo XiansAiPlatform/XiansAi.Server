@@ -210,6 +210,8 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         var request = new
         {
             WorkflowId = workflowId,
+            Agent = "test-agent",
+            WorkflowType = "test-workflow-type",
             ParticipantId = "test-participant-id",
             Content = JsonSerializer.Serialize(new { text = "Database verification test" }),
             ParticipantChannelId = "test-participant-channel-id",
@@ -280,6 +282,8 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
             Content = messageContent,
             ThreadId = threadId,
             Metadata = new { test = true },
+            Agent = "test-agent",
+            WorkflowType = "test-workflow-type",
             ParticipantChannelId = "test-participant-channel-id"
         };
 

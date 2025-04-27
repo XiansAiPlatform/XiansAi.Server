@@ -17,13 +17,13 @@ namespace Features.AgentApi.Endpoints
                 .RequiresCertificate();
 
             group.MapGet("/history", async (
-                [FromQuery] string workflowId,
+                [FromQuery] string agent,
                 [FromQuery] string participantId,
                 [FromQuery] int page,
                 [FromQuery] int pageSize,
-                [FromServices] IConversationService conversationService) => {
+                [FromServices] IMessageService messageService) => {
                 
-                var result = await conversationService.GetMessageHistoryAsync(workflowId, participantId, page, pageSize);
+                var result = await messageService.GetThreadHistoryAsync(agent, participantId, page, pageSize);
                 return result.ToHttpResult();
             })
             .WithName("Get Conversation History")
@@ -35,9 +35,9 @@ namespace Features.AgentApi.Endpoints
 
 
             group.MapPost("/inbound", async (
-                [FromBody] InboundSignalRequest request, 
-                [FromServices] IConversationService conversationService) => {
-                var result = await conversationService.ProcessInboundMessage(request);
+            [FromBody] MessageRequest request, 
+            [FromServices] IMessageService messageService) => {
+                var result = await messageService.ProcessIncomingMessage(request);
                 return result.ToHttpResult();
             })
             .WithName("Process Inbound Message to Agent")
@@ -49,9 +49,9 @@ namespace Features.AgentApi.Endpoints
 
 
             group.MapPost("/outbound/send", async (
-                [FromBody] OutboundSendRequest request, 
-                [FromServices] IConversationService conversationService) => {
-                var result = await conversationService.ProcessOutboundMessage(request);
+                [FromBody] MessageRequest request, 
+                [FromServices] IMessageService messageService) => {
+                var result = await messageService.ProcessOutgoingMessage(request);
                 return result.ToHttpResult();
             })
             .WithName("Process Outbound Message from Agent")
@@ -62,9 +62,9 @@ namespace Features.AgentApi.Endpoints
             });
 
             group.MapPost("/outbound/handover", async (
-                [FromBody] OutboundHandoverRequest request, 
-                [FromServices] IConversationService conversationService) => {
-                var result = await conversationService.ProcessOutboundHandover(request);
+                [FromBody] HandoverRequest request, 
+                [FromServices] IMessageService messageService) => {
+                var result = await messageService.ProcessHandover(request);
                 return result.ToHttpResult();
             })
             .WithName("Process Handover Message from Agent")
@@ -74,18 +74,6 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
-            group.MapPost("/outbound/handover-response", async (
-                [FromBody] OutboundHandoverResponse request, 
-                [FromServices] IConversationService conversationService) => {
-                var result = await conversationService.ProcessOutboundHandoverResponse(request);
-                return result.ToHttpResult();
-            })
-            .WithName("Process Outbound Hand Over Response from Agent")
-            .WithOpenApi(operation => {
-                operation.Summary = "Process outbound hand over response from Agent";
-                operation.Description = "Processes an outbound hand over response for agent conversations and returns the result";
-                return operation;
-            });
         }
     }
 } 

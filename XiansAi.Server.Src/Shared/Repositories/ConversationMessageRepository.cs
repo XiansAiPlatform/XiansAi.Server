@@ -10,7 +10,8 @@ namespace Shared.Repositories;
 public enum MessageDirection
 {
     Incoming,
-    Outgoing
+    Outgoing,
+    Handover
 }
 
 public enum MessageStatus
@@ -75,11 +76,12 @@ public class ConversationMessage
     [BsonElement("participant_id")]
     public required string ParticipantId { get; set; }
 
-    [BsonElement("child_workflow_id")]
-    public string? ChildWorkflowId { get; set; }
+    [BsonElement("workflow_id")]
+    public required string WorkflowId { get; set; }
 
-    [BsonElement("parent_workflow_id")]
-    public string? ParentWorkflowId { get; set; }
+    [BsonElement("workflow_type")]
+    public required string WorkflowType { get; set; }
+
 }
 
 public interface IConversationMessageRepository
@@ -94,7 +96,7 @@ public interface IConversationMessageRepository
     Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
 
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
-    Task<List<ConversationMessage>> GetByWorkflowAndParticipantAsync(string tenantId, string workflowId, string participantId, int? page = null, int? pageSize = null);
+    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string participantId, int? page = null, int? pageSize = null);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -590,14 +592,14 @@ public class ConversationMessageRepository : IConversationMessageRepository
         }
     }
 
-    public async Task<List<ConversationMessage>> GetByWorkflowAndParticipantAsync(string tenantId, string workflowId, string participantId, int? page = null, int? pageSize = null)
+    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string participantId, int? page = null, int? pageSize = null)
     {
-        _logger.LogDebug("Querying messages directly by workflowId {WorkflowId} and participantId {ParticipantId}", workflowId, participantId);
+        _logger.LogDebug("Querying messages directly by agent {Agent} and participantId {ParticipantId}", agent, participantId);
         
         // First, get the thread ID for the given workflow and participant
         var threadFilter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowId, workflowId),
+            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
         
@@ -609,7 +611,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // If no thread exists, return empty list
         if (threadResult == null)
         {
-            _logger.LogInformation("No thread found for workflowId {WorkflowId} and participantId {ParticipantId}", workflowId, participantId);
+            _logger.LogInformation("No thread found for agent {Agent} and participantId {ParticipantId}", agent, participantId);
             return new List<ConversationMessage>();
         }
 

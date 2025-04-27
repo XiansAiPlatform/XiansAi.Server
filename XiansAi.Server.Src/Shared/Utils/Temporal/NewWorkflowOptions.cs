@@ -5,24 +5,39 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
-    public NewWorkflowOptions(string? proposedId, string workFlowType, ITenantContext tenantContext, string? queueName, string? agentName, string? assignment)
+    public NewWorkflowOptions(string? proposedId, string workFlowType, ITenantContext tenantContext, string? queueName, string agentName, string? assignment)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId) || string.IsNullOrEmpty(tenantContext.LoggedInUser))
         {
             throw new InvalidOperationException("TenantId and LoggedInUser are required to create workflow options");
         }
 
-        Id = proposedId ?? GenerateNewWorkflowId(null, agentName ?? workFlowType, workFlowType, tenantContext);
+        if (proposedId != null && !proposedId.StartsWith(tenantContext.TenantId + ":"))
+        {
+            throw new InvalidOperationException("Proposed workflowId must start with TenantId");
+        }
+
+        Id = proposedId ?? GenerateNewWorkflowId(agentName, workFlowType, tenantContext);
         TaskQueue = GetTemporalQueueName(workFlowType, queueName);
-        Memo = GetMemo(workFlowType, tenantContext, assignment, queueName, agentName);
-        TypedSearchAttributes = GetSearchAttributes(workFlowType, tenantContext, agentName, assignment);
+        Memo = GetMemo(tenantContext, assignment, queueName, agentName);
+        TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName, assignment);
     }
 
-    private SearchAttributeCollection GetSearchAttributes(string workFlowType, ITenantContext tenantContext, string? agent, string? assignment)
+    private SearchAttributeCollection GetSearchAttributes(ITenantContext tenantContext, string agent, string? assignment)
     {
+        if (string.IsNullOrEmpty(tenantContext.TenantId) || string.IsNullOrEmpty(tenantContext.LoggedInUser))
+        {
+            throw new InvalidOperationException("TenantId and LoggedInUser are required to create workflow options");
+        }
+
+        if (string.IsNullOrEmpty(agent))
+        {
+            throw new InvalidOperationException("Agent is required to create workflow options");
+        }
+
         var searchAttributesBuilder = new SearchAttributeCollection.Builder()
                     .Set(SearchAttributeKey.CreateKeyword(Constants.TenantIdKey), tenantContext.TenantId)
-                    .Set(SearchAttributeKey.CreateKeyword(Constants.AgentKey), agent ?? workFlowType)
+                    .Set(SearchAttributeKey.CreateKeyword(Constants.AgentKey), agent)
                     .Set(SearchAttributeKey.CreateKeyword(Constants.UserIdKey), tenantContext.LoggedInUser!);
 
         if (!string.IsNullOrEmpty(assignment))
@@ -40,11 +55,11 @@ public class NewWorkflowOptions : WorkflowOptions
         return queueFullName;
     }
 
-    private Dictionary<string, object> GetMemo(string workFlowType, ITenantContext tenantContext, string? assignment, string? queueName, string? agentName)
+    private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string? assignment, string? queueName, string agentName)
     {
         var memo = new Dictionary<string, object> {
             { Constants.TenantIdKey, tenantContext.TenantId },
-            { Constants.AgentKey, agentName ?? workFlowType },
+            { Constants.AgentKey, agentName },
             { Constants.UserIdKey, tenantContext.LoggedInUser! },
         };
         if (!string.IsNullOrEmpty(assignment))
@@ -58,9 +73,9 @@ public class NewWorkflowOptions : WorkflowOptions
         return memo;
     }
 
-    public static string GenerateNewWorkflowId(string? proposedId, string agentName, string workflowType, ITenantContext tenantContext)
+    public static string GenerateNewWorkflowId(string agentName, string workflowType, ITenantContext tenantContext)
     {
-        var id = string.IsNullOrEmpty(proposedId) ? $"{agentName}:{workflowType}:{Guid.NewGuid()}" : proposedId;
+        var id = $"{agentName}:{workflowType}:{Guid.NewGuid()}" ;
         var tenantWorkflowId = tenantContext.TenantId + ":" + id.Replace(" ", "");
         return tenantWorkflowId;
     }
