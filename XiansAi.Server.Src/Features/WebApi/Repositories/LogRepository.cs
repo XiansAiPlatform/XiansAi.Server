@@ -14,7 +14,6 @@ public interface ILogRepository
     Task<List<Log>> GetByLogLevelAsync(LogLevel level);
     Task<List<Log>> GetLastLogAsync(DateTime? startTime, DateTime? endTime);
     Task<List<Log>> GetByDateRangeAsync(DateTime startDate, DateTime endDate);
-    Task CreateAsync(Log log);
     Task<bool> UpdateAsync(string id, Log log);
     Task<bool> UpdatePropertiesAsync(string id, Dictionary<string, object> properties);
     Task<bool> DeleteAsync(string id);
@@ -117,11 +116,6 @@ public class LogRepository : ILogRepository
         return await _logs.Find(x => x.CreatedAt >= startDate && x.CreatedAt <= endDate)
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
-    }
-
-    public async Task CreateAsync(Log log)
-    {
-        await _logs.InsertOneAsync(log);
     }
 
     public async Task<bool> UpdateAsync(string id, Log log)
