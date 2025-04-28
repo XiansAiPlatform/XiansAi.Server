@@ -1,19 +1,8 @@
-using MongoDB.Bson;
-using XiansAi.Server.Features.WebApi.Models;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Shared.Data;
 using Shared.Auth;
 
 namespace Features.WebApi.Services;
-
-public class LogRequest
-{
-    public required string Message { get; set; }
-    public required XiansAi.Server.Features.WebApi.Models.LogLevel Level { get; set; }
-    public required string WorkflowRunId { get; set; }
-    public required string WorkflowId { get; set; }
-    public Dictionary<string, object>? Properties { get; set; }
-}
 
 public class LogsByWorkflowRequest
 {
@@ -33,17 +22,14 @@ public class LogsService
 {
     private readonly LogRepository _logRepository;
     private readonly ILogger<LogsService> _logger;
-    private readonly ITenantContext _tenantContext;
 
     public LogsService(
         IDatabaseService databaseService,
-        ILogger<LogsService> logger,
-        ITenantContext tenantContext
+        ILogger<LogsService> logger
     )
     {
         _logRepository = new LogRepository(databaseService);
         _logger = logger;
-        _tenantContext = tenantContext;
     }
 
     public async Task<IResult> GetLogById(string id)
@@ -69,6 +55,7 @@ public class LogsService
     {
         try
         {
+
             var logs = await _logRepository.GetByWorkflowRunIdAsync(
                 request.WorkflowRunId, 
                 request.Skip, 
@@ -101,34 +88,6 @@ public class LogsService
             return Results.Problem("An error occurred while retrieving the logs");
         }
     }
-
-    public async Task<IResult> CreateLog(LogRequest request)
-    {
-        try
-        {
-            var log = new Log
-            {
-                Id = ObjectId.GenerateNewId().ToString(),
-                TenantId = _tenantContext.TenantId,
-                Message = request.Message,
-                Level = request.Level,
-                WorkflowId = request.WorkflowId ?? throw new ArgumentNullException(nameof(request.WorkflowId), "WorkflowId is required"),
-                WorkflowRunId = request.WorkflowRunId,
-                Properties = request.Properties,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _logRepository.CreateAsync(log);
-            _logger.LogInformation("Created log: {Log}", log.ToJson());
-            return Results.Ok(log);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating log: {Request}", request);
-            return Results.Problem("An error occurred while creating the log");
-        }
-    }
-
     public async Task<IResult> DeleteLog(string id)
     {
         try

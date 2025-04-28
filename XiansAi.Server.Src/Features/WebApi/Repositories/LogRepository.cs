@@ -11,10 +11,9 @@ public interface ILogRepository
     Task<List<Log>> GetByTenantIdAsync(string tenantId);
     Task<List<Log>> GetByWorkflowIdAsync(string workflowId);
     Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit, int? logLevel = null);
-    Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level);
+    Task<List<Log>> GetByLogLevelAsync(LogLevel level);
     Task<List<Log>> GetLastLogAsync(DateTime? startTime, DateTime? endTime);
     Task<List<Log>> GetByDateRangeAsync(DateTime startDate, DateTime endDate);
-    Task CreateAsync(Log log);
     Task<bool> UpdateAsync(string id, Log log);
     Task<bool> UpdatePropertiesAsync(string id, Dictionary<string, object> properties);
     Task<bool> DeleteAsync(string id);
@@ -55,17 +54,40 @@ public class LogRepository : ILogRepository
         var filter = Builders<Log>.Filter.Eq(x => x.WorkflowRunId, workflowRunId);
         if (logLevel.HasValue)
         {
-            filter &= Builders<Log>.Filter.Eq(x => x.Level, (Models.LogLevel)logLevel.Value);
+            filter &= Builders<Log>.Filter.Eq(x => x.Level, (LogLevel)logLevel.Value);
         }
 
-        return await _logs.Find(filter)
-            .SortByDescending(x => x.CreatedAt)
-            .Skip(skip)
-            .Limit(limit)
+        // Count total logs
+        var totalCount = (int)await _logs.CountDocumentsAsync(filter);
+        
+        // If skip exceeds total count, return empty list
+        if (skip >= totalCount)
+        {
+            return new List<Log>();
+        }
+        
+        // Handle edge case where skip+limit exceeds total count
+        if (skip + limit > totalCount)
+        {
+            limit = Math.Max(0, totalCount - skip);
+        }
+        
+        // If skip is from the beginning, convert it to skip from the end
+        var adjustedSkip = Math.Max(0, totalCount - limit - skip);
+        var adjustedLimit = Math.Min(limit, totalCount - adjustedSkip);
+
+        // Get logs with the adjusted skip/limit
+        var logs = await _logs.Find(filter)
+            .Skip(adjustedSkip)
+            .Limit(adjustedLimit)
             .ToListAsync();
+            
+        // Reverse to get newest first
+        logs.Reverse();
+        return logs;
     }
 
-    public async Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level)
+    public async Task<List<Log>> GetByLogLevelAsync(LogLevel level)
     {
         return await _logs.Find(x => x.Level == level)
             .SortByDescending(x => x.CreatedAt)
@@ -94,11 +116,6 @@ public class LogRepository : ILogRepository
         return await _logs.Find(x => x.CreatedAt >= startDate && x.CreatedAt <= endDate)
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
-    }
-
-    public async Task CreateAsync(Log log)
-    {
-        await _logs.InsertOneAsync(log);
     }
 
     public async Task<bool> UpdateAsync(string id, Log log)
