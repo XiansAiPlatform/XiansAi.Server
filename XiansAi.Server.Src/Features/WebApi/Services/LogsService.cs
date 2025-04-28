@@ -9,7 +9,7 @@ namespace Features.WebApi.Services;
 public class LogRequest
 {
     public required string Message { get; set; }
-    public required XiansAi.Server.Features.WebApi.Models.LogLevel Level { get; set; }
+    public required LogLevel Level { get; set; }
     public required string WorkflowRunId { get; set; }
     public required string WorkflowId { get; set; }
     public Dictionary<string, object>? Properties { get; set; }

@@ -6,7 +6,6 @@ using XiansAi.Server.Features.AgentApi.Services.Agent;
 using XiansAi.Server.Features.AgentApi.Endpoints;
 using Features.AgentApi.Repositories;
 using Shared.Repositories;
-using Shared.Services;
 
 namespace Features.AgentApi.Configuration;
 
@@ -31,6 +30,7 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
         builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
         builder.Services.AddScoped<IWebhookService, WebhookService>();
+        builder.Services.AddScoped<ILogsService, LogsService>();
 
         return builder;
     }

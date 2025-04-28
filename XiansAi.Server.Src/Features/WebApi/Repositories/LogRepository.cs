@@ -11,7 +11,7 @@ public interface ILogRepository
     Task<List<Log>> GetByTenantIdAsync(string tenantId);
     Task<List<Log>> GetByWorkflowIdAsync(string workflowId);
     Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit, int? logLevel = null);
-    Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level);
+    Task<List<Log>> GetByLogLevelAsync(LogLevel level);
     Task<List<Log>> GetLastLogAsync(DateTime? startTime, DateTime? endTime);
     Task<List<Log>> GetByDateRangeAsync(DateTime startDate, DateTime endDate);
     Task CreateAsync(Log log);
@@ -55,7 +55,7 @@ public class LogRepository : ILogRepository
         var filter = Builders<Log>.Filter.Eq(x => x.WorkflowRunId, workflowRunId);
         if (logLevel.HasValue)
         {
-            filter &= Builders<Log>.Filter.Eq(x => x.Level, (Models.LogLevel)logLevel.Value);
+            filter &= Builders<Log>.Filter.Eq(x => x.Level, (LogLevel)logLevel.Value);
         }
 
         // Count total logs
@@ -88,7 +88,7 @@ public class LogRepository : ILogRepository
         return logs;
     }
 
-    public async Task<List<Log>> GetByLogLevelAsync(Models.LogLevel level)
+    public async Task<List<Log>> GetByLogLevelAsync(LogLevel level)
     {
         return await _logs.Find(x => x.Level == level)
             .SortByDescending(x => x.CreatedAt)

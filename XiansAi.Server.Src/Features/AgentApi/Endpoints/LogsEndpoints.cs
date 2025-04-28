@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services;
 using Features.AgentApi.Auth;
+using Features.AgentApi.Services.Lib;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -17,7 +17,7 @@ public static class LogsEndpoints
 
         logsGroup.MapPost("/", async (
             [FromBody] LogRequest[] requests,
-            [FromServices] LogsService service) =>
+            [FromServices] ILogsService service) =>
         {
             return await service.CreateLogs(requests);
         })
@@ -29,7 +29,7 @@ public static class LogsEndpoints
 
         logsGroup.MapPost("/single", async (
             [FromBody] LogRequest request,
-            [FromServices] LogsService service) =>
+            [FromServices] ILogsService service) =>
         {
             return await service.CreateLog(request);
         })
