@@ -12,12 +12,14 @@ public class NewWorkflowOptions : WorkflowOptions
             throw new InvalidOperationException("TenantId and LoggedInUser are required to create workflow options");
         }
 
-        if (proposedId != null && !proposedId.StartsWith(tenantContext.TenantId + ":"))
+        if(string.IsNullOrEmpty(proposedId))
         {
-            throw new InvalidOperationException("Proposed workflowId must start with TenantId");
+            proposedId = GenerateNewWorkflowId(agentName, workFlowType, tenantContext);
+        } else {
+            proposedId = tenantContext.TenantId + ":" + proposedId;
         }
 
-        Id = proposedId ?? GenerateNewWorkflowId(agentName, workFlowType, tenantContext);
+        Id = proposedId;
         TaskQueue = GetTemporalQueueName(workFlowType, queueName);
         Memo = GetMemo(tenantContext, assignment, queueName, agentName);
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName, assignment);
