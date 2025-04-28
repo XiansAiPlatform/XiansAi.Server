@@ -210,6 +210,8 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
         var request = new
         {
             WorkflowId = workflowId,
+            Agent = "test-agent",
+            WorkflowType = "test-workflow-type",
             ParticipantId = "test-participant-id",
             Content = JsonSerializer.Serialize(new { text = "Database verification test" }),
             ParticipantChannelId = "test-participant-channel-id",
@@ -280,6 +282,8 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
             Content = messageContent,
             ThreadId = threadId,
             Metadata = new { test = true },
+            Agent = "test-agent",
+            WorkflowType = "test-workflow-type",
             ParticipantChannelId = "test-participant-channel-id"
         };
 
@@ -425,6 +429,8 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
             { "workflow_id", workflowId },
             { "participant_id", participantId },
             { "tenant_id", "99xio" },
+            { "agent", "test-agent" },
+            { "workflow_type", "test-workflow-type" },
             { "status", "Active" },
             { "created_at", DateTime.UtcNow },
             { "updated_at", DateTime.UtcNow },
@@ -439,6 +445,9 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
             { "thread_id", threadId },
             { "workflow_id", workflowId },
             { "tenant_id", "99xio" },
+            { "agent", $"test-agent-{Guid.NewGuid()}" },
+            { "workflow_type", "test-workflow-type" },
+            { "participant_id", participantId },
             { "content", JsonSerializer.Serialize(new { text = "First inbound message" }) },
             { "direction", "Incoming" },
             { "status", "DeliveredToWorkflow" },
@@ -451,6 +460,9 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
             { "thread_id", threadId },
             { "workflow_id", workflowId },
             { "tenant_id", "99xio" },
+            { "agent", $"test-agent-{Guid.NewGuid()}" },
+            { "workflow_type", "test-workflow-type" },
+            { "participant_id", participantId },
             { "content", JsonSerializer.Serialize(new { text = "Outbound response message" }) },
             { "direction", "Outgoing" },
             { "status", "DeliveredToWorkflow" },
@@ -463,6 +475,9 @@ public class ConversationEndpointTests : IntegrationTestBase, IClassFixture<Mong
             { "thread_id", threadId },
             { "workflow_id", workflowId },
             { "tenant_id", "99xio" },
+            { "agent", $"test-agent-{Guid.NewGuid()}" },
+            { "workflow_type", "test-workflow-type" },
+            { "participant_id", participantId },
             { "content", JsonSerializer.Serialize(new { text = "Second inbound message" }) },
             { "direction", "Incoming" },
             { "status", "DeliveredToWorkflow" },

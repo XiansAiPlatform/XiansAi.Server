@@ -68,15 +68,15 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
     }
 
     /// <summary>
-    /// Executes an HTTP request with retry logic for unauthorized responses
+    /// Executes an HTTP request with retry logic for unauthorized responses and server timeouts
     /// </summary>
     /// <param name="request">The HTTP request to execute</param>
-    /// <param name="maxRetries">Maximum number of retry attempts (default: 3)</param>
+    /// <param name="maxRetries">Maximum number of retry attempts (default: 5)</param>
     /// <param name="retryDelayMs">Delay between retries in milliseconds (default: 1000)</param>
     /// <returns>The HTTP response</returns>
     protected async Task<HttpResponseMessage> ExecuteWithRetryAsync(
         HttpRequestMessage request,
-        int maxRetries = 3,
+        int maxRetries = 5,
         int retryDelayMs = 1000)
     {
         HttpResponseMessage? response = null;
@@ -86,7 +86,12 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         {
             response = await _client.SendAsync(request);
             
-            if (response.StatusCode != HttpStatusCode.Unauthorized || retryCount == maxRetries)
+            // Check if response is not a retryable status code or we've reached max retries
+            bool isTimeout = response.StatusCode == HttpStatusCode.RequestTimeout || 
+                             response.StatusCode == HttpStatusCode.GatewayTimeout;
+            bool shouldRetry = response.StatusCode == HttpStatusCode.Unauthorized || isTimeout;
+            
+            if (!shouldRetry || retryCount == maxRetries)
             {
                 return response;
             }

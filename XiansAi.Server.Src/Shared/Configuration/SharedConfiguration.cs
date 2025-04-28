@@ -1,3 +1,5 @@
+using Shared.Services;
+
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
@@ -25,6 +27,9 @@ public static class SharedConfiguration
         
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
+
+        builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
+        builder.Services.AddScoped<IMessageService, MessageService>();
         
         return builder;
     }

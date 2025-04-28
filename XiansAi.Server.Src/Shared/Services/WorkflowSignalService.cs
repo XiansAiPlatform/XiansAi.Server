@@ -1,71 +1,68 @@
 using XiansAi.Server.Temporal;
 using Shared.Auth;
 using Newtonsoft.Json;
+using Shared.Utils;
 
 namespace Shared.Services;
 
-/// <summary>
-/// Represents a request to signal a Temporal workflow.
-/// </summary>
-public class WorkflowSignalRequestBase
+public class WorkflowEventRequest
 {
-    
-    /// <summary>
-    /// Gets or sets the name of the signal to send to the workflow.
-    /// Required.
-    /// </summary>
-    public required string SignalName { get; set; }
-    
-    /// <summary>
-    /// Gets or sets the optional payload data to include with the signal.
-    /// May be null if no data needs to be sent with the signal.
-    /// </summary>
     public object? Payload { get; set; }
+    public required string WorkflowId { get; set; }
 
+    public WorkflowSignalRequest ToWorkflowSignalRequest()
+    {
+       return new WorkflowSignalRequest
+       {
+            SignalName = Constants.SIGNAL_NAME_EVENT,
+            WorkflowId = WorkflowId,
+            Payload = Payload
+       };
+    }
 }
 
-public class WorkflowSignalRequest: WorkflowSignalRequestBase
+public class WorkflowSignalRequest
 {
-    /// <summary>
-    /// Gets or sets the unique identifier of the workflow to signal.
-    /// Required.
-    /// </summary>
+    public required string SignalName { get; set; }
+    public object? Payload { get; set; }
     public required string WorkflowId { get; set; }
 }
 
-public class WorkflowSignalWithStartRequest : WorkflowSignalRequestBase
+public class WorkflowEventWithStartRequest
 {
-
-    /// <summary>
-    /// Gets or sets the optional workflow ID to start.
-    /// May be null if no workflow needs to be started.
-    /// </summary>
+    public object? Payload { get; set; }
     public string? ProposedWorkflowId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the optional workflow type to start.
-    /// May be null if no workflow needs to be started.
-    /// </summary>
     public required string WorkflowType { get; set; }
-
-    /// <summary>
-    /// Gets or sets the optional workflow ID to start.
-    /// May be null if no workflow needs to be started.
-    /// </summary>
     public string? QueueName { get; set; }
-
-    /// <summary>
-    /// Gets or sets the optional workflow ID to start.
-    /// May be null if no workflow needs to be started.
-    /// </summary>
-    public string? Agent { get; set; }
-
-    /// <summary>
-    /// Gets or sets the optional workflow ID to start.
-    /// May be null if no workflow needs to be started.
-    /// </summary>
+    public required string Agent { get; set; }
     public string? Assignment { get; set; }
+
+    public WorkflowSignalWithStartRequest ToWorkflowSignalWithStartRequest()
+    {
+        return new WorkflowSignalWithStartRequest
+        {
+            SignalName = Constants.SIGNAL_NAME_EVENT,
+            Payload = Payload,
+            WorkflowId = ProposedWorkflowId,
+            WorkflowType = WorkflowType,
+            QueueName = QueueName,
+            Agent = Agent,
+            Assignment = Assignment
+        };
+    }
 }
+
+public class WorkflowSignalWithStartRequest
+{
+    public required string SignalName { get; set; }
+    public object? Payload { get; set; }
+    public string? WorkflowId { get; set; }
+    public required string WorkflowType { get; set; }
+    public string? QueueName { get; set; }
+    public string? Assignment { get; set; }
+    public required string Agent { get; set; }
+}
+
 /// <summary>
 /// Handles API endpoints for signaling Temporal workflows.
 /// </summary>
@@ -208,7 +205,13 @@ public class WorkflowSignalService : IWorkflowSignalService
             }
 
 
-            var options = new NewWorkflowOptions(request.ProposedWorkflowId, request.WorkflowType, _tenantContext, request.QueueName, request.Agent, request.Assignment);
+            var options = new NewWorkflowOptions(
+                request.WorkflowId, 
+                request.WorkflowType, 
+                _tenantContext, 
+                request.QueueName, 
+                request.Agent, 
+                request.Assignment);
        
             var signalPayload = request.Payload != null 
                 ? new object[] { request.Payload }
@@ -226,7 +229,7 @@ public class WorkflowSignalService : IWorkflowSignalService
             
             return Results.Ok(new { 
                 message = "Signal with start sent successfully", 
-                workflowId = request.ProposedWorkflowId,
+                workflowId = request.WorkflowId,
                 signalName = request.SignalName
             });
         }

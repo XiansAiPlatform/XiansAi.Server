@@ -10,7 +10,7 @@ public interface IMessagingService
 {
     Task<IResult> GetGroupedDefinitions();
     Task<IResult> GetWorkflowInstances(string? agentName, string? typeName);
-    Task<ServiceResult<List<ConversationThread>>> GetThreads(string workflowId, int? page = null, int? pageSize = null);
+    Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null);
     Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null);
 }
 
@@ -72,7 +72,7 @@ public class MessagingService : IMessagingService
         return ServiceResult<List<ConversationMessage>>.Success(messages);
     }
 
-    public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string workflowId, int? page = null, int? pageSize = null)
+    public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null)
     {
         var tenantId = _tenantContext.TenantId;
         
@@ -87,7 +87,7 @@ public class MessagingService : IMessagingService
             pageSize = 10;
         }
         
-        var threads = await _threadRepository.GetByTenantAndWorkflowAsync(tenantId, workflowId, page, pageSize);
+        var threads = await _threadRepository.GetByTenantAndAgentAsync(tenantId, agent, page, pageSize);
         return ServiceResult<List<ConversationThread>>.Success(threads);
     }
 

@@ -38,6 +38,12 @@ To run all tests:
 dotnet test
 ```
 
+To run all tests and generate a test results HTML file:
+
+```shell
+dotnet test --logger "html;LogFileName=test-results.html"
+```
+
 To run a specific test:
 
 ```shell
