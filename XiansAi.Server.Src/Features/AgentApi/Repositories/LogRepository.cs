@@ -1,0 +1,25 @@
+using MongoDB.Driver;
+using XiansAi.Server.Features.AgentApi.Models;
+using XiansAi.Server.Shared.Data;
+
+namespace XiansAi.Server.Features.AgentApi.Repositories;
+
+public interface ILogRepository
+{
+    Task CreateAsync(Log log);
+}
+
+public class LogRepository : ILogRepository
+{
+    private readonly IMongoCollection<Log> _logs;
+
+    public LogRepository(IDatabaseService databaseService)
+    {
+        var database = databaseService.GetDatabase().Result;
+        _logs = database.GetCollection<Log>("logs");
+    }
+    public async Task CreateAsync(Log log)
+    {
+        await _logs.InsertOneAsync(log);
+    }
+}

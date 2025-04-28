@@ -3,10 +3,7 @@ using Features.WebApi.Auth;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
 using XiansAi.Server.Features.WebApi.Repositories;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using XiansAi.Server.Features.WebApi.Models;
 
 namespace Features.WebApi.Configuration;
 

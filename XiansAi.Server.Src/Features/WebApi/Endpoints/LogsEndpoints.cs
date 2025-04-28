@@ -10,9 +10,8 @@ public static class LogsEndpoints
     {
         // Map logs endpoints with common attributes
         var logsGroup = app.MapGroup("/api/client/logs")
-            .WithTags("WebAPI - Logs");
-            // Does not work with authentication
-            //.RequiresValidTenant();
+            .WithTags("WebAPI - Logs")
+            .RequiresValidTenant();
 
         logsGroup.MapGet("/{id}", async (
             string id,
@@ -55,15 +54,6 @@ public static class LogsEndpoints
             return await service.GetLogsByDateRange(request);
         })
         .WithName("Get Logs by Date Range")
-        .WithOpenApi();
-
-        logsGroup.MapPost("/", async (
-            [FromBody] LogRequest request,
-            [FromServices] LogsService service) =>
-        {
-            return await service.CreateLog(request);
-        })
-        .WithName("Create Log")
         .WithOpenApi();
 
         logsGroup.MapDelete("/{id}", async (
