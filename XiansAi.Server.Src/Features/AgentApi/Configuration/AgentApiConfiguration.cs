@@ -68,6 +68,7 @@ public static class AgentApiConfiguration
         WebhookEndpoints.MapWebhookEndpoints(app);
         ConversationEndpoints.MapConversationEndpoints(app);
         EventsEndpoints.MapEventsEndpoints(app, loggerFactory);
+        LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
         
         return app;
     }
