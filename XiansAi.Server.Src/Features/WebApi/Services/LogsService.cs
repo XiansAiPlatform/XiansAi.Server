@@ -22,17 +22,14 @@ public class LogsService
 {
     private readonly LogRepository _logRepository;
     private readonly ILogger<LogsService> _logger;
-    private readonly ITenantContext _tenantContext;
 
     public LogsService(
         IDatabaseService databaseService,
-        ILogger<LogsService> logger,
-        ITenantContext tenantContext
+        ILogger<LogsService> logger
     )
     {
         _logRepository = new LogRepository(databaseService);
         _logger = logger;
-        _tenantContext = tenantContext;
     }
 
     public async Task<IResult> GetLogById(string id)
