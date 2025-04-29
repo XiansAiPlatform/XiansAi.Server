@@ -42,17 +42,27 @@ public class LogsService : ILogsService
     {
         try
         {
+            if (requests == null || requests.Length == 0)
+            {
+                return Results.BadRequest("At least one log request is required");
+            }
+
             var logs = new List<Log>();
             
             foreach (var request in requests)
             {
+                if (string.IsNullOrEmpty(request.WorkflowId))
+                {
+                    return Results.BadRequest("WorkflowId is required");
+                }
+
                 var log = new Log
                 {
                     Id = ObjectId.GenerateNewId().ToString(),
                     TenantId = _tenantContext.TenantId,
                     Message = request.Message,
                     Level = request.Level,
-                    WorkflowId = request.WorkflowId ?? throw new ArgumentNullException(nameof(request.WorkflowId), "WorkflowId is required"),
+                    WorkflowId = request.WorkflowId,
                     WorkflowRunId = request.WorkflowRunId,
                     Properties = request.Properties,
                     CreatedAt = DateTime.UtcNow
@@ -71,8 +81,8 @@ public class LogsService : ILogsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating logs, count: {Count}", requests.Length);
-            return Results.Problem("An error occurred while creating the logs");
+            _logger.LogError(ex, "Error creating logs, count: {Count}", requests?.Length ?? 0);
+            return Results.BadRequest($"An error occurred while creating the logs: {ex.Message}");
         }
     }
 
@@ -80,13 +90,23 @@ public class LogsService : ILogsService
     {
         try
         {
+            if (request == null)
+            {
+                return Results.BadRequest("Log request is required");
+            }
+
+            if (string.IsNullOrEmpty(request.WorkflowId))
+            {
+                return Results.BadRequest("WorkflowId is required");
+            }
+
             var log = new Log
             {
                 Id = ObjectId.GenerateNewId().ToString(),
                 TenantId = _tenantContext.TenantId,
                 Message = request.Message,
                 Level = request.Level,
-                WorkflowId = request.WorkflowId ?? throw new ArgumentNullException(nameof(request.WorkflowId), "WorkflowId is required"),
+                WorkflowId = request.WorkflowId,
                 WorkflowRunId = request.WorkflowRunId,
                 Properties = request.Properties,
                 CreatedAt = DateTime.UtcNow
@@ -99,7 +119,7 @@ public class LogsService : ILogsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating log: {Request}", request);
-            return Results.Problem("An error occurred while creating the log");
+            return Results.BadRequest($"An error occurred while creating the log: {ex.Message}");
         }
     }
 } 
