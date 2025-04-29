@@ -61,8 +61,8 @@ public interface IConversationThreadRepository
     Task<bool> UpdateAsync(ConversationThread thread);
     Task<bool> UpdateStatusAsync(string id, ConversationThreadStatus status);
     Task<bool> UpdateLastActivityAsync(string id, DateTime timestamp);
-
     Task<bool> UpdateWorkflowIdAndTypeAsync(string id, string workflowId, string workflowType);
+    Task<bool> DeleteAsync(string id);
 }
 
 public class ConversationThreadRepository : IConversationThreadRepository
@@ -244,4 +244,9 @@ public class ConversationThreadRepository : IConversationThreadRepository
         return result.ModifiedCount > 0;
     }
 
+    public async Task<bool> DeleteAsync(string id)
+    {
+        var result = await _collection.DeleteOneAsync(x => x.Id == id);
+        return result.DeletedCount > 0;
+    }
 }
