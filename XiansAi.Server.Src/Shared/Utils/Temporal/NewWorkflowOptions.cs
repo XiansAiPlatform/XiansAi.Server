@@ -12,11 +12,17 @@ public class NewWorkflowOptions : WorkflowOptions
             throw new InvalidOperationException("TenantId and LoggedInUser are required to create workflow options");
         }
 
-        if(string.IsNullOrEmpty(proposedId))
+        if (string.IsNullOrEmpty(proposedId))
         {
             proposedId = GenerateNewWorkflowId(agentName, workFlowType, tenantContext);
-        } else {
-            proposedId = tenantContext.TenantId + ":" + proposedId;
+        }
+        else
+        {
+            if (!proposedId.StartsWith(tenantContext.TenantId + ":"))
+            {
+                proposedId = tenantContext.TenantId + ":" + proposedId;
+            }
+
         }
 
         Id = proposedId;
@@ -77,7 +83,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
     public static string GenerateNewWorkflowId(string agentName, string workflowType, ITenantContext tenantContext)
     {
-        var id = $"{agentName}:{workflowType}:{Guid.NewGuid()}" ;
+        var id = $"{agentName}:{workflowType}:{Guid.NewGuid()}";
         var tenantWorkflowId = tenantContext.TenantId + ":" + id.Replace(" ", "");
         return tenantWorkflowId;
     }
