@@ -146,7 +146,7 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
         
         // Get MongoDB collection and verify data was inserted
-        var collection = _database.GetCollection<FlowDefinition>("definitions");
+        var collection = _database.GetCollection<FlowDefinition>("flow_definitions");
         var filter = Builders<FlowDefinition>.Filter.Eq("workflow_type", uniqueTypeName);
         
         // Allow a few retries as there might be a slight delay
@@ -253,13 +253,13 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         // Assert
         response2.EnsureSuccessStatusCode();
         var responseContent = await response2.Content.ReadAsStringAsync();
-        Assert.Contains("different hash", responseContent);
+        Assert.Contains("Definition updated successfully", responseContent);
         
         // Wait for background tasks
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
         
         // Get MongoDB collection and verify updated data
-        var collection = _database.GetCollection<FlowDefinition>("definitions");
+        var collection = _database.GetCollection<FlowDefinition>("flow_definitions");
         var filter = Builders<FlowDefinition>.Filter.Eq("workflow_type", uniqueTypeName);
         var result = await collection.Find(filter).SortByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
         
