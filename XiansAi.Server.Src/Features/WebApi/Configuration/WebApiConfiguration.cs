@@ -29,6 +29,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<WebhookService>();
         builder.Services.AddScoped<ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
+        builder.Services.AddScoped<IAuditingService, AuditingService>();
         
         // Register repositories
         builder.Services.AddScoped<IInstructionRepository, InstructionRepository>();
@@ -54,6 +55,7 @@ public static class WebApiConfiguration
         WebhookEndpoints.MapWebhookEndpoints(app);
         PublicEndpoints.MapPublicEndpoints(app);
         MessagingEndpoints.MapMessagingEndpoints(app);
+        AuditingEndpoints.MapAuditingEndpoints(app);
         
         return app;
     }
