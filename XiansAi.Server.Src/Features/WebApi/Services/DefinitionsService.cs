@@ -52,16 +52,7 @@ public class DefinitionsService
             _logger.LogWarning("Definition not found with ID: {DefinitionId}", definitionId);
             return Results.NotFound();
         }
-        if (definition.Permissions == null)
-        {
-            //depend on the created by
-            if (definition.CreatedBy != _tenantContext.LoggedInUser)
-            {
-                _logger.LogWarning("User {UserId} attempted to delete definition without owner permission", 
-                    _tenantContext.LoggedInUser);
-                return Results.Forbid();
-            }
-        } else if (!definition.Permissions.HasPermission(_tenantContext.LoggedInUser, Array.Empty<string>(), PermissionLevel.Owner))
+        if (!definition.Permissions.HasPermission(_tenantContext.LoggedInUser, Array.Empty<string>(), PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to delete definition without owner permission", 
                 _tenantContext.LoggedInUser);
