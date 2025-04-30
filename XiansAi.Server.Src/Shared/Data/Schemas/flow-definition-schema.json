@@ -59,8 +59,11 @@
         },
         "indexes": [
             {
-                "keys": { "type_name": 1, "owner": 1 },
+                "keys": { "type_name": 1 },
                 "unique": true
+            },
+            {
+                "keys": { "type_name": 1, "owner": 1 }
             },
             {
                 "keys": { "created_at": -1 }

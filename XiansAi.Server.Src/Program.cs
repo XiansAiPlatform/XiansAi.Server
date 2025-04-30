@@ -5,6 +5,7 @@ using Features.WebApi.Configuration;
 using XiansAi.Server.Shared.Data;
 using Shared.Auth;
 using Features.WebApi.Auth;
+using XiansAi.Server.Features.WebApi.Scripts;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.
@@ -25,7 +26,7 @@ public class Program
     /// Application entry point. Sets up the web application with services and middleware.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         try
         {
@@ -42,11 +43,11 @@ public class Program
 
             // Build and run the application
             var builder = CreateApplicationBuilder(args, serviceType, loggerFactory);
-            var app = ConfigureApplication(builder, serviceType, loggerFactory);
+            var app = await ConfigureApplication(builder, serviceType, loggerFactory);
             
             // Run the app
             _logger.LogInformation("Application configured successfully, starting server");
-            app.Run();
+            await app.RunAsync();
         }
         catch (Exception ex)
         {
@@ -110,7 +111,7 @@ public class Program
     /// <summary>
     /// Configures the web application with appropriate middleware and endpoints.
     /// </summary>
-    private static WebApplication ConfigureApplication(WebApplicationBuilder builder, ServiceType serviceType, ILoggerFactory loggerFactory)
+    private static async Task<WebApplication> ConfigureApplication(WebApplicationBuilder builder, ServiceType serviceType, ILoggerFactory loggerFactory)
     {
         var app = builder.Build();
 
@@ -125,6 +126,13 @@ public class Program
 
         // Verify critical configuration
         ValidateConfiguration(app.Configuration);
+        
+        // After your services are configured
+        using (var scope = app.Services.CreateScope())
+        {
+            var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+            await CreateIndexes.CreateDefinitionIndexes(databaseService);
+        }
         
         return app;
     }

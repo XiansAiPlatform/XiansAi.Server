@@ -1,37 +1,21 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using XiansAi.Server.Features.WebApi.Models;
 
 namespace Shared.Data.Models;
 public class FlowDefinition
 {
-    private string _agentName = string.Empty;
-
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public required string Id { get; set; }
 
-    [BsonElement("type_name")]
-    public required string TypeName { get; set; }
+    [BsonElement("workflow_type")]
+    public required string WorkflowType { get; set; }
 
-    [BsonElement("agent_name")]
-    public required string AgentName { 
-        get
-        {
-            if (string.IsNullOrEmpty(_agentName))
-            {
-                _agentName = TypeName;
-            }
-            return _agentName;
-        }
-        set
-        {
-            _agentName = value;
-        }
-    }
+    [BsonElement("agent")]
+    public required string Agent { get; set; }
 
-    [BsonElement("class_name")]
-    public string? ClassName { get; set; }
+    [BsonElement("knowledge_ids")]
+    public required List<string> KnowledgeIds { get; set; }
 
     [BsonElement("hash")]
     public required string Hash { get; set; }
@@ -43,29 +27,17 @@ public class FlowDefinition
     public string? Markdown { get; set; } = string.Empty;
 
     [BsonElement("activities")]
-    public required List<ActivityDefinition> Activities { get; set; }
+    public required List<ActivityDefinition> ActivityDefinitions { get; set; }
 
     [BsonElement("parameters")]
-    public required List<ParameterDefinition> Parameters { get; set; }
+    public required List<ParameterDefinition> ParameterDefinitions { get; set; }
 
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; }
 
-    [BsonElement("tenant_id")]
-    public required string TenantId { get; set; }
-
-    [BsonElement("owner")]
-    public required string Owner { get; set; }
+    [BsonElement("created_by")]
+    public required string CreatedBy { get; set; }
 
     [BsonElement("permissions")]
-    public List<PermissionDefinition>? Permissions { get; set; }
-}
-
-public class PermissionDefinition
-{
-    [BsonElement("level")]
-    public string? Level { get; set; }
-
-    [BsonElement("owner")]
-    public string? Owner { get; set; }
+    public required Permission Permissions { get; set; }
 }

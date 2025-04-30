@@ -29,10 +29,9 @@ public static class DefinitionsEndpoints
         definitionsGroup.MapGet("/", async (
             [FromQuery] DateTime? startTime,
             [FromQuery] DateTime? endTime,
-            [FromQuery] string? owner,
             [FromServices] DefinitionsService endpoint) =>
         {
-            return await endpoint.GetLatestDefinitions(startTime, endTime, owner);
+            return await endpoint.GetLatestDefinitions(startTime, endTime);
         })
         .WithName("Get Latest Definitions")
         .WithOpenApi(operation => {

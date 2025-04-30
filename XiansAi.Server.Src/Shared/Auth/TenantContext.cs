@@ -11,6 +11,7 @@ namespace Shared.Auth
     {
         string TenantId { get; set; }   
         string LoggedInUser { get; set; }
+        string[] UserRoles { get; set; }
         IEnumerable<string> AuthorizedTenantIds { get; set; }
         
         TemporalConfig GetTemporalConfig();
@@ -24,6 +25,7 @@ namespace Shared.Auth
 
         public required string TenantId { get; set; }
         public required string LoggedInUser { get; set; }
+        public required string[] UserRoles { get; set; } = Array.Empty<string>();
         public IEnumerable<string> AuthorizedTenantIds { get; set; } = new List<string>();
 
         public TenantContext(IConfiguration configuration, ILogger<TenantContext> logger)

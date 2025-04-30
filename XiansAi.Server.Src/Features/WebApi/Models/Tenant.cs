@@ -1,9 +1,8 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using System;
-using System.Collections.Generic;
+using Shared.Data;
 
-namespace XiansAi.Server.Features.WebApi.Models;
+namespace Features.WebApi.Models;
 
 public class Tenant
 {
@@ -95,12 +94,3 @@ public class Flow
     [BsonElement("created_by")]
     public required string CreatedBy { get; set; }
 }
-
-public class Permission
-{
-    [BsonElement("level")]
-    public required string Level { get; set; }
-
-    [BsonElement("owner")]
-    public required string Owner { get; set; }
-} 
