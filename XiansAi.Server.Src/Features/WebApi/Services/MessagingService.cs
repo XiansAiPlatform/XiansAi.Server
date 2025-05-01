@@ -96,7 +96,7 @@ public class MessagingService : IMessagingService
     {
         try
         {
-            var definitions = await _definitionRepository.GetLatestDefinitionsBasicDataAsync();
+            var definitions = await _definitionRepository.GetDefinitionsWithPermissionAsync(_tenantContext.LoggedInUser, null, null, basicDataOnly: true);
             return Results.Ok(definitions);
         }
         catch (Exception ex)

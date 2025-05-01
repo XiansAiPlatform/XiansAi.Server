@@ -19,8 +19,7 @@ public interface IFlowDefinitionRepository
     Task<bool> DeleteAsync(string id);
     Task<bool> UpdateAsync(string id, FlowDefinition definition);
     Task<FlowDefinition> GetByNameHashAsync(string workflowType, string hash);
-     Task<List<FlowDefinition>> GetLatestDefinitionsBasicDataAsync();
-    Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime);
+    Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
 }
 
 public class FlowDefinitionRepository : IFlowDefinitionRepository
@@ -89,21 +88,7 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
             .FirstOrDefaultAsync();
     }
 
-    public async Task<List<FlowDefinition>> GetLatestDefinitionsBasicDataAsync()
-    {
-        return await _definitions.Aggregate()
-            .SortByDescending(x => x.CreatedAt)
-            .Group(x => new { x.WorkflowType },
-                   g => g.First())
-            .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
-                .Include(x => x.Agent)
-                .Include(x => x.WorkflowType)
-                .Include(x => x.CreatedAt))
-            .SortByDescending(x => x.CreatedAt)
-            .ToListAsync();
-    }
-
-    public async Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime)
+    public async Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false)
     {
         _logger.LogInformation("Getting definitions with permission for user: {UserId} and start time: {StartTime} and end time: {EndTime}", userId, startTime, endTime);
 
@@ -131,8 +116,19 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
         // Combine filters
         var finalFilter = filterBuilder.And(permissionFilter, timeFilter);
 
-        return await _definitions.Find(finalFilter)
-            .SortByDescending(x => x.CreatedAt)
+        var findFluent = _definitions.Find(finalFilter).SortByDescending(x => x.CreatedAt);
+
+        if (basicDataOnly)
+        {
+            return await findFluent
+                .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
+                    .Include(x => x.Agent)
+                    .Include(x => x.WorkflowType)
+                    .Include(x => x.CreatedAt))
+                .ToListAsync();
+        }
+
+        return await findFluent
             .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
                 .Include(x => x.Agent)
                 .Include(x => x.WorkflowType)

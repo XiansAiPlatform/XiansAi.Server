@@ -80,8 +80,8 @@ public class ActivityHistoryService : IActivityHistoryService
 
     public void Create(ActivityHistoryRequest request)
     {
-        _logger.LogInformation("Received request to create activity at: {Time}: {Request}", 
-            DateTime.UtcNow, JsonSerializer.Serialize(request));
+        _logger.LogInformation("Received request to create activity at: {Time} for {ActivityName}", 
+            DateTime.UtcNow, request.ActivityName);
         var activity = new ActivityHistory
         {
             Id = ObjectId.GenerateNewId().ToString(),

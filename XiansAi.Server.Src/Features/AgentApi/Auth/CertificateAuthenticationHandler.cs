@@ -149,7 +149,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         }
         catch (Exception ex)
         {
-            _logger.LogInformation("Certificate validation failed due to exception {Exception}", ex);
+            _logger.LogError("Certificate validation failed due to exception {Exception}", ex);
             return Task.FromResult(AuthenticateResult.Fail($"Certificate validation failed: {ex.Message}"));
         }
     }
