@@ -84,5 +84,18 @@ public static class MessagingEndpoints
             operation.Description = "Gets all messages for a given thread";
             return operation;
         });   
+
+        messagingGroup.MapDelete("/threads/{threadId}", async (
+            [FromServices] IMessagingService endpoint,
+            [FromRoute] string threadId) => {
+            var result = await endpoint.DeleteThread(threadId);
+            return result.ToHttpResult();
+        })
+        .WithName("Delete Thread")
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete a conversation thread";
+            operation.Description = "Deletes a conversation thread and all its messages";
+            return operation;
+        });
     }
 } 

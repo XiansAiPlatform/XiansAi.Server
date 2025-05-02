@@ -8,7 +8,6 @@ using MongoDB.Driver;
 using Shared.Data.Models;
 using XiansAi.Server.Features.WebApi.Models;
 
-
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 
 public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
@@ -30,17 +29,18 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         string uniqueTypeName = $"test-flow-type-{Guid.NewGuid()}";
         var request = new FlowDefinitionRequest
         {
-            TypeName = uniqueTypeName,
-            AgentName = "Test Agent",
+            WorkflowType = uniqueTypeName,
+            Agent = "Test Agent",
             Source = "Example source code",
-            Activities = new List<ActivityDefinition>
+            KnowledgeIds = new List<string> { "instruction1" },
+            ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
-                new ActivityDefinition
+                new ActivityDefinitionRequest
                 {
                     ActivityName = "TestActivity",
                     AgentToolNames = new List<string> { "tool1", "tool2" },
-                    Instructions = new List<string> { "instruction1" },
-                    Parameters = new List<ParameterDefinition>
+                    KnowledgeIds = new List<string> { "instruction1" },
+                    ParameterDefinitions = new List<ParameterDefinition>
                     {
                         new ParameterDefinition
                         {
@@ -50,9 +50,9 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
                     }
                 }
             },
-            Parameters = new List<ParameterRequest>
+            ParameterDefinitions = new List<ParameterDefinitionRequest>
             {
-                new ParameterRequest
+                new ParameterDefinitionRequest
                 {
                     Name = "flowParam1",
                     Type = "string"
@@ -82,9 +82,9 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         // Arrange - missing required fields
         var invalidRequest = new
         {
-            AgentName = "Test Agent",
+            Agent = "Test Agent",
             Source = "Example source code"
-            // Missing required fields: TypeName, Activities, Parameters
+            // Missing required fields: WorkflowType, ActivityDefinitions, ParameterDefinitions
         };
 
         // Act
@@ -104,17 +104,18 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         string uniqueTypeName = $"test-flow-type-{Guid.NewGuid()}";
         var request = new FlowDefinitionRequest
         {
-            TypeName = uniqueTypeName,
-            AgentName = "Test Agent",
+            WorkflowType = uniqueTypeName,
+            Agent = "Test Agent",
             Source = "Example source code",
-            Activities = new List<ActivityDefinition>
+            KnowledgeIds = new List<string> { "instruction1" },
+            ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
-                new ActivityDefinition
+                new ActivityDefinitionRequest
                 {
                     ActivityName = "TestActivity",
                     AgentToolNames = new List<string> { "tool1", "tool2" },
-                    Instructions = new List<string> { "instruction1" },
-                    Parameters = new List<ParameterDefinition>
+                    KnowledgeIds = new List<string> { "instruction1" },
+                    ParameterDefinitions = new List<ParameterDefinition>
                     {
                         new ParameterDefinition
                         {
@@ -124,9 +125,9 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
                     }
                 }
             },
-            Parameters = new List<ParameterRequest>
+            ParameterDefinitions = new List<ParameterDefinitionRequest>
             {
-                new ParameterRequest
+                new ParameterDefinitionRequest
                 {
                     Name = "flowParam1",
                     Type = "string"
@@ -145,8 +146,8 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
         
         // Get MongoDB collection and verify data was inserted
-        var collection = _database.GetCollection<FlowDefinition>("definitions");
-        var filter = Builders<FlowDefinition>.Filter.Eq("type_name", uniqueTypeName);
+        var collection = _database.GetCollection<FlowDefinition>("flow_definitions");
+        var filter = Builders<FlowDefinition>.Filter.Eq("workflow_type", uniqueTypeName);
         
         // Allow a few retries as there might be a slight delay
         FlowDefinition? result = null;
@@ -159,20 +160,20 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         
         // Assert data was inserted correctly
         Assert.NotNull(result);
-        Assert.Equal(uniqueTypeName, result?.TypeName);
-        Assert.Equal("Test Agent", result?.AgentName);
+        Assert.Equal(uniqueTypeName, result?.WorkflowType);
+        Assert.Equal("Test Agent", result?.Agent);
         Assert.Equal("Example source code", result?.Source);
-        Assert.Single(result!.Activities);
-        Assert.NotNull(result?.Activities[0]);
-        Assert.Equal("TestActivity", result?.Activities[0].ActivityName);
-        Assert.NotNull(result?.Activities[0].AgentToolNames);
-        Assert.Contains("tool1", result?.Activities[0].AgentToolNames!);
-        Assert.Contains("tool2", result?.Activities[0].AgentToolNames!);
-        Assert.Single(result!.Activities[0].Instructions);
-        Assert.Contains("instruction1", result!.Activities[0].Instructions);
-        Assert.Single(result!.Parameters);
-        Assert.Equal("flowParam1", result?.Parameters[0].Name);
-        Assert.Equal("string", result?.Parameters[0].Type);
+        Assert.Single(result!.ActivityDefinitions);
+        Assert.NotNull(result?.ActivityDefinitions[0]);
+        Assert.Equal("TestActivity", result?.ActivityDefinitions[0].ActivityName);
+        Assert.NotNull(result?.ActivityDefinitions[0].AgentToolNames);
+        Assert.Contains("tool1", result?.ActivityDefinitions[0].AgentToolNames!);
+        Assert.Contains("tool2", result?.ActivityDefinitions[0].AgentToolNames!);
+        Assert.Single(result!.ActivityDefinitions[0].KnowledgeIds);
+        Assert.Contains("instruction1", result!.ActivityDefinitions[0].KnowledgeIds);
+        Assert.Single(result!.ParameterDefinitions);
+        Assert.Equal("flowParam1", result?.ParameterDefinitions[0].Name);
+        Assert.Equal("string", result?.ParameterDefinitions[0].Type);
     }
     
     /*
@@ -187,52 +188,54 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         // First request
         var request1 = new FlowDefinitionRequest
         {
-            TypeName = uniqueTypeName,
-            AgentName = "Test Agent",
+            WorkflowType = uniqueTypeName,
+            Agent = "Test Agent",
             Source = "Example source code",
-            Activities = new List<ActivityDefinition>
+            KnowledgeIds = new List<string> { "instruction1" },
+            ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
-                new ActivityDefinition
+                new ActivityDefinitionRequest
                 {
                     ActivityName = "TestActivity",
                     AgentToolNames = new List<string> { "tool1" },
-                    Instructions = new List<string> { "instruction1" },
-                    Parameters = new List<ParameterDefinition>
+                    KnowledgeIds = new List<string> { "instruction1" },
+                    ParameterDefinitions = new List<ParameterDefinition>
                     {
                         new ParameterDefinition { Name = "param1", Type = "string" }
                     }
                 }
             },
-            Parameters = new List<ParameterRequest>
+            ParameterDefinitions = new List<ParameterDefinitionRequest>
             {
-                new ParameterRequest { Name = "flowParam1", Type = "string" }
+                new ParameterDefinitionRequest { Name = "flowParam1", Type = "string" }
             }
         };
         
         // Second request with same TypeName but modified content
         var request2 = new FlowDefinitionRequest
         {
-            TypeName = uniqueTypeName,
-            AgentName = "Updated Test Agent",
+            WorkflowType = uniqueTypeName,
+            Agent = "Updated Test Agent",
             Source = "Updated example source code",
-            Activities = new List<ActivityDefinition>
+            KnowledgeIds = new List<string> { "instruction1", "instruction2" },
+            ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
-                new ActivityDefinition
+                new ActivityDefinitionRequest
                 {
                     ActivityName = "UpdatedTestActivity",
                     AgentToolNames = new List<string> { "tool1", "tool2", "tool3" },
-                    Instructions = new List<string> { "instruction1", "instruction2" },
-                    Parameters = new List<ParameterDefinition>
+                    KnowledgeIds = new List<string> { "instruction1", "instruction2" },
+                    ParameterDefinitions = new List<ParameterDefinition>
                     {
                         new ParameterDefinition { Name = "param1", Type = "string" },
                         new ParameterDefinition { Name = "param2", Type = "number" }
                     }
                 }
             },
-            Parameters = new List<ParameterRequest>
+            ParameterDefinitions = new List<ParameterDefinitionRequest>
             {
-                new ParameterRequest { Name = "flowParam1", Type = "string" },
-                new ParameterRequest { Name = "flowParam2", Type = "boolean" }
+                new ParameterDefinitionRequest { Name = "flowParam1", Type = "string" },
+                new ParameterDefinitionRequest { Name = "flowParam2", Type = "boolean" }
             }
         };
 
@@ -250,26 +253,26 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         // Assert
         response2.EnsureSuccessStatusCode();
         var responseContent = await response2.Content.ReadAsStringAsync();
-        Assert.Contains("different hash", responseContent);
+        Assert.Contains("Definition updated successfully", responseContent);
         
         // Wait for background tasks
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
         
         // Get MongoDB collection and verify updated data
-        var collection = _database.GetCollection<FlowDefinition>("definitions");
-        var filter = Builders<FlowDefinition>.Filter.Eq("type_name", uniqueTypeName);
+        var collection = _database.GetCollection<FlowDefinition>("flow_definitions");
+        var filter = Builders<FlowDefinition>.Filter.Eq("workflow_type", uniqueTypeName);
         var result = await collection.Find(filter).SortByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
         
         // Assert updated data was inserted correctly
         Assert.NotNull(result);
-        Assert.Equal("Updated Test Agent", result?.AgentName);
+        Assert.Equal("Updated Test Agent", result?.Agent);
         Assert.Equal("Updated example source code", result?.Source);
-        Assert.Single(result!.Activities);
-        Assert.Equal("UpdatedTestActivity", result?.Activities[0].ActivityName);
-        Assert.NotNull(result?.Activities[0].AgentToolNames);
-        Assert.Equal(3, result?.Activities[0].AgentToolNames!.Count);
-        Assert.Equal(2, result?.Activities[0].Instructions.Count);
-        Assert.Equal(2, result?.Parameters.Count);
+        Assert.Single(result!.ActivityDefinitions);
+        Assert.Equal("UpdatedTestActivity", result?.ActivityDefinitions[0].ActivityName);
+        Assert.NotNull(result?.ActivityDefinitions[0].AgentToolNames);
+        Assert.Equal(3, result?.ActivityDefinitions[0].AgentToolNames!.Count);
+        Assert.Equal(2, result?.ActivityDefinitions[0].KnowledgeIds.Count);
+        Assert.Equal(2, result?.ParameterDefinitions.Count);
     }
 
     /*
@@ -282,25 +285,26 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
         string uniqueTypeName = $"test-flow-type-{Guid.NewGuid()}";
         var request = new FlowDefinitionRequest
         {
-            TypeName = uniqueTypeName,
-            AgentName = "Test Agent",
+            WorkflowType = uniqueTypeName,
+            Agent = "Test Agent",   
             Source = "Example source code",
-            Activities = new List<ActivityDefinition>
+            KnowledgeIds = new List<string> { "instruction1" },
+            ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
-                new ActivityDefinition
+                new ActivityDefinitionRequest
                 {
                     ActivityName = "TestActivity",
                     AgentToolNames = new List<string> { "tool1" },
-                    Instructions = new List<string> { "instruction1" },
-                    Parameters = new List<ParameterDefinition>
+                    KnowledgeIds = new List<string> { "instruction1" },
+                    ParameterDefinitions = new List<ParameterDefinition>
                     {
                         new ParameterDefinition { Name = "param1", Type = "string" }
                     }
                 }
             },
-            Parameters = new List<ParameterRequest>
+            ParameterDefinitions = new List<ParameterDefinitionRequest>
             {
-                new ParameterRequest { Name = "flowParam1", Type = "string" }
+                new ParameterDefinitionRequest { Name = "flowParam1", Type = "string" }
             }
         };
 

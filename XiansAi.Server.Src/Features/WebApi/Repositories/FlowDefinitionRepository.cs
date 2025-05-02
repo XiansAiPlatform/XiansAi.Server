@@ -2,53 +2,42 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data.Models;
 using XiansAi.Server.Shared.Data;
+using Shared.Data;
 
 namespace XiansAi.Server.Features.WebApi.Repositories;
 
 public interface IFlowDefinitionRepository
 {
-    Task<bool> IfExistsInAnotherOwner(string typeName, string owner);
-    Task<long> DeleteByOwnerAndTypeNameAsync(string owner, string typeName);
-    Task<FlowDefinition> GetLatestFlowDefinitionAsync(string typeName);
+    //Task<bool> IfExistsInAnotherOwner(string typeName, string owner);
+    //Task<long> DeleteByOwnerAndTypeNameAsync(string owner, string typeName);
+    Task<FlowDefinition> GetLatestFlowDefinitionAsync(string workflowType);
     Task<FlowDefinition> GetByIdAsync(string id);
-    Task<FlowDefinition> GetByHashAsync(string hash, string typeName);
+    Task<FlowDefinition> GetByHashAsync(string hash, string workflowType);
     Task<List<FlowDefinition>> GetByNameAsync(string name);
     Task<List<FlowDefinition>> GetAllAsync();
     Task CreateAsync(FlowDefinition definition);
     Task<bool> DeleteAsync(string id);
     Task<bool> UpdateAsync(string id, FlowDefinition definition);
-    Task<FlowDefinition> GetByNameHashAsync(string typeName, string hash);
-    Task<FlowDefinition> GetLatestByTypeNameAndOwnerAsync(string typeName, string owner);
-    Task<List<FlowDefinition>> GetLatestDefinitionsAsync(DateTime? startTime = null, DateTime? endTime = null, string? owner = null);
-    Task<List<FlowDefinition>> GetLatestDefinitionsBasicDataAsync();
-    Task<List<FlowDefinition>> GetLatestDefinitionsForAllTypesAsync();
+    Task<FlowDefinition> GetByNameHashAsync(string workflowType, string hash);
+    Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
 }
 
 public class FlowDefinitionRepository : IFlowDefinitionRepository
 {
     private readonly IMongoCollection<FlowDefinition> _definitions;
 
-    public FlowDefinitionRepository(IDatabaseService databaseService)
+    private readonly ILogger<FlowDefinitionRepository> _logger ;
+
+    public FlowDefinitionRepository(IDatabaseService databaseService, ILogger<FlowDefinitionRepository> logger)
     {
         var database = databaseService.GetDatabase().Result;
-        _definitions = database.GetCollection<FlowDefinition>("definitions");
+        _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
+        _logger = logger;
     }
 
-    public async Task<bool> IfExistsInAnotherOwner(string typeName, string owner)
+    public async Task<FlowDefinition> GetLatestFlowDefinitionAsync(string workflowType)
     {
-        var existingDefinition = await _definitions.Find(x => x.TypeName == typeName && x.Owner != owner).FirstOrDefaultAsync();
-        return existingDefinition != null;
-    }
-
-    public async Task<long> DeleteByOwnerAndTypeNameAsync(string owner, string typeName)
-    {
-        var result = await _definitions.DeleteManyAsync(x => x.Owner == owner && x.TypeName == typeName);
-        return result.DeletedCount;
-    }
-
-    public async Task<FlowDefinition> GetLatestFlowDefinitionAsync(string typeName)
-    {
-        return await _definitions.Find(x => x.TypeName == typeName)
+        return await _definitions.Find(x => x.WorkflowType == workflowType)
             .SortByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync();
     }
@@ -58,14 +47,14 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
         return await _definitions.Find(x => x.Id == id).FirstOrDefaultAsync();
     }
 
-    public async Task<FlowDefinition> GetByHashAsync(string hash, string typeName)
+    public async Task<FlowDefinition> GetByHashAsync(string hash, string workflowType)
     {
-        return await _definitions.Find(x => x.Hash == hash && x.TypeName == typeName).FirstOrDefaultAsync();
+        return await _definitions.Find(x => x.Hash == hash && x.WorkflowType == workflowType).FirstOrDefaultAsync();
     }
 
     public async Task<List<FlowDefinition>> GetByNameAsync(string name)
     {
-        return await _definitions.Find(x => x.TypeName == name)
+        return await _definitions.Find(x => x.WorkflowType == name)
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
     }
@@ -93,64 +82,65 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
         return result.ModifiedCount > 0;
     }
 
-    public async Task<FlowDefinition> GetByNameHashAsync(string typeName, string hash)
+    public async Task<FlowDefinition> GetByNameHashAsync(string workflowType, string hash)
     {
-        return await _definitions.Find(x => x.TypeName == typeName && x.Hash == hash)
+        return await _definitions.Find(x => x.WorkflowType == workflowType && x.Hash == hash)
             .FirstOrDefaultAsync();
     }
 
-    public async Task<FlowDefinition> GetLatestByTypeNameAndOwnerAsync(string typeName, string owner)
+    public async Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false)
     {
-        return await _definitions.Find(x => x.TypeName == typeName && x.Owner == owner)
-            .SortByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync();
-    }
+        _logger.LogInformation("Getting definitions with permission for user: {UserId} and start time: {StartTime} and end time: {EndTime}", userId, startTime, endTime);
 
-    public async Task<List<FlowDefinition>> GetLatestDefinitionsAsync(DateTime? startTime, DateTime? endTime, string? owner)
-    {
-        var query = _definitions.Aggregate();
-
-        if (startTime != null)
+        var filterBuilder = Builders<FlowDefinition>.Filter;
+        
+        // Create permission filter using the simplified model
+        var permissionFilters = new List<FilterDefinition<FlowDefinition>>
         {
-            query = query.Match(x => x.CreatedAt >= startTime.Value);
+            // Check if user is owner
+            filterBuilder.AnyEq("permissions.owner_access", userId),
+            // Check if user has read access
+            filterBuilder.AnyEq("permissions.read_access", userId),
+            // Check if user has write access (which includes read)
+            filterBuilder.AnyEq("permissions.write_access", userId)
+        };
+
+        var permissionFilter = filterBuilder.Or(permissionFilters);
+
+        // Create time filter
+        var timeFilter = filterBuilder.And(
+            startTime == null ? filterBuilder.Empty : filterBuilder.Gte(x => x.CreatedAt, startTime.Value),
+            endTime == null ? filterBuilder.Empty : filterBuilder.Lte(x => x.CreatedAt, endTime.Value)
+        );
+
+        // Combine filters
+        var finalFilter = filterBuilder.And(permissionFilter, timeFilter);
+
+        var findFluent = _definitions.Find(finalFilter).SortByDescending(x => x.CreatedAt);
+
+        if (basicDataOnly)
+        {
+            return await findFluent
+                .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
+                    .Include(x => x.Agent)
+                    .Include(x => x.WorkflowType)
+                    .Include(x => x.CreatedAt))
+                .ToListAsync();
         }
 
-        if (endTime != null)
-        {
-            query = query.Match(x => x.CreatedAt <= endTime.Value);
-        }
-
-        if (owner != null)
-        {
-            query = query.Match(x => x.Owner == owner);
-        }
-
-        return await query.SortByDescending(x => x.CreatedAt)
-            .Group(x => new { x.TypeName, x.Owner },
-                   g => g.First())
-            .ToListAsync();
-    }
-
-    public async Task<List<FlowDefinition>> GetLatestDefinitionsForAllTypesAsync()
-    {
-        return await _definitions.Aggregate()
-            .SortByDescending(x => x.CreatedAt)
-            .Group(x => new { x.TypeName, x.Owner },
-                   g => g.First())
-            .ToListAsync();
-    }
-
-    public async Task<List<FlowDefinition>> GetLatestDefinitionsBasicDataAsync()
-    {
-        return await _definitions.Aggregate()
-            .SortByDescending(x => x.CreatedAt)
-            .Group(x => new { x.TypeName, x.Owner },
-                   g => g.First())
+        return await findFluent
             .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
-                .Include(x => x.AgentName)
-                .Include(x => x.TypeName)
+                .Include(x => x.Agent)
+                .Include(x => x.WorkflowType)
+                .Include(x => x.CreatedAt)
+                .Include(x => x.Permissions)
+                .Include(x => x.ParameterDefinitions)
+                .Include(x => x.ActivityDefinitions)
+                .Include(x => x.Id)
+                .Include(x => x.Source)
+                .Include(x => x.Markdown)
+                .Include(x => x.WorkflowType)
                 .Include(x => x.CreatedAt))
-            .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
     }
 }

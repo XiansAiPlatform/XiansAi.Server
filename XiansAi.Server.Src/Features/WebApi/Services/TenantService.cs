@@ -3,6 +3,7 @@ using XiansAi.Server.Features.WebApi.Models;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Shared.Data;
 using Shared.Auth;
+using Features.WebApi.Models;
 
 namespace Features.WebApi.Services;
 

@@ -12,6 +12,7 @@ public interface IMessagingService
     Task<IResult> GetWorkflowInstances(string? agentName, string? typeName);
     Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null);
     Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null);
+    Task<ServiceResult<bool>> DeleteThread(string threadId);
 }
 
 /// <summary>
@@ -95,7 +96,7 @@ public class MessagingService : IMessagingService
     {
         try
         {
-            var definitions = await _definitionRepository.GetLatestDefinitionsBasicDataAsync();
+            var definitions = await _definitionRepository.GetDefinitionsWithPermissionAsync(_tenantContext.LoggedInUser, null, null, basicDataOnly: true);
             return Results.Ok(definitions);
         }
         catch (Exception ex)
@@ -116,6 +117,24 @@ public class MessagingService : IMessagingService
         {
             _logger.LogError(ex, "Error retrieving workflows");
             return Results.Problem("An error occurred while retrieving workflows.", statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteThread(string threadId)
+    {
+        try
+        {
+            var result = await _threadRepository.DeleteAsync(threadId);
+            if (!result)
+            {
+                return ServiceResult<bool>.BadRequest("Thread not found or could not be deleted");
+            }
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting thread {ThreadId}", threadId);
+            return ServiceResult<bool>.BadRequest("An error occurred while deleting the thread");
         }
     }
 }

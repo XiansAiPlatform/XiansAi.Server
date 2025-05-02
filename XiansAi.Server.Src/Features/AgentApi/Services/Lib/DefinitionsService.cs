@@ -8,42 +8,32 @@ using XiansAi.Server.GenAi;
 using Shared.Auth;
 using Shared.Data.Models;
 using XiansAi.Server.Features.WebApi.Models;
+using Shared.Data;
 
 namespace Features.AgentApi.Services.Lib;
 
 public class FlowDefinitionRequest
 {
-    private string? _agentName;
-    [JsonPropertyName("agentName")]
-    public string? AgentName { 
-        get {
-            if (string.IsNullOrEmpty(_agentName)) {
-                return TypeName;
-            }
-            return _agentName;
-        }
-        set {
-            _agentName = value;
-        }
-
-    }
+    [JsonPropertyName("agent")]
+    public string? Agent { get; set; }
+    
     [Required]
-    [JsonPropertyName("typeName")]
-    public required string TypeName { get; set; }
+    [JsonPropertyName("workflowType")]
+    public required string WorkflowType { get; set; }
+
+    [JsonPropertyName("knowledgeIds")]
+    public required List<string> KnowledgeIds { get; set; }
 
     [JsonPropertyName("source")]
     public string? Source { get; set; }
 
-    [JsonPropertyName("markdown")]
-    public string? Markdown { get; set; }
+    [Required]
+    [JsonPropertyName("activityDefinitions")]
+    public required List<ActivityDefinitionRequest> ActivityDefinitions { get; set; }
 
     [Required]
-    [JsonPropertyName("activities")]
-    public required List<ActivityDefinition> Activities { get; set; }
-
-    [Required]
-    [JsonPropertyName("parameters")]
-    public required List<ParameterRequest> Parameters { get; set; }
+    [JsonPropertyName("parameterDefinitions")]
+    public required List<ParameterDefinitionRequest> ParameterDefinitions { get; set; }
 }
 
 public class ActivityDefinitionRequest
@@ -55,14 +45,14 @@ public class ActivityDefinitionRequest
     [JsonPropertyName("agentToolNames")]
     public List<string>? AgentToolNames { get; set; }
 
-    [JsonPropertyName("instructions")]
-    public required List<string> Instructions { get; set; }
+    [JsonPropertyName("knowledgeIds")]
+    public required List<string> KnowledgeIds { get; set; }
 
-    [JsonPropertyName("parameters")]
-    public required List<ParameterRequest> Parameters { get; set; }
+    [JsonPropertyName("parameterDefinitions")]
+    public required List<ParameterDefinition> ParameterDefinitions { get; set; }
 }
 
-public class ParameterRequest
+public class ParameterDefinitionRequest
 {
     [Required]
     [JsonPropertyName("name")]
@@ -100,38 +90,38 @@ public class DefinitionsService : IDefinitionsService
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
     {
-        var definition = CreateFlowDefinitionFromRequest(request);
-
-        // IF another user has the same type name, we reject the request
-        var ownedByAnother = await _flowDefinitionRepository.IfExistsInAnotherOwner(definition.TypeName, definition.Owner);
-        if (ownedByAnother)
-        {
-            _logger.LogInformation("Another user has already used this flow type name {typeName}. Rejecting request", definition.TypeName);
-            return Results.BadRequest($"Another user has already used this flow type name {definition.TypeName}. Please choose a different flow name.");
-        }
+        var existingDefinition = await _flowDefinitionRepository.GetByWorkflowTypeAsync(request.WorkflowType);
+        var definition = CreateFlowDefinitionFromRequest(request, existingDefinition);
         
-        // Find existing definition with the same hash
-        var existingDefinition = await _flowDefinitionRepository.GetLatestByTypeNameAndOwnerAsync(definition.TypeName, definition.Owner);
+        if (existingDefinition != null)
+        {
+            if (!existingDefinition.Permissions.HasPermission(
+                _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found"),
+                _tenantContext.UserRoles, 
+                PermissionLevel.Write))
+            {
+                _logger.LogWarning("User {User} attempted to update definition {WorkflowType} without write permission", 
+                    _tenantContext.LoggedInUser, definition.WorkflowType);
+                return Results.Json(
+                    new { message = "You do not have permission to update this definition." }, 
+                    statusCode: StatusCodes.Status403Forbidden
+                );
+            }
 
-        // no definition in database
-        if (existingDefinition == null)
-        {
-            _logger.LogInformation("No existing definition found, creating new definition");
-            await GenerateMarkdown(definition);
-            await _flowDefinitionRepository.CreateAsync(definition);
-            return Results.Ok("No existing definition found, new definition created successfully");
-        }
-        // if the hash is different, we create a new definition
-        if (existingDefinition.Hash != definition.Hash)
-        {
-            await GenerateMarkdown(definition);
-            await _flowDefinitionRepository.CreateAsync(definition);
-            // delete the old definition
-            await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id.ToString());
-            return Results.Ok("Definition had a different hash, new definition created successfully");
-        }  else {
+            if (existingDefinition.Hash != definition.Hash)
+            {
+                await GenerateMarkdown(definition);
+                await _flowDefinitionRepository.UpdateAsync(existingDefinition.Id, definition);
+                return Results.Ok("Definition updated successfully");
+            }
+            
             return Results.Ok("Definition already up to date");
         }
+
+        _logger.LogInformation("Creating new definition {WorkflowType}", definition.WorkflowType);
+        await GenerateMarkdown(definition);
+        await _flowDefinitionRepository.CreateAsync(definition);
+        return Results.Ok("New definition created successfully");
     }
 
     private async Task GenerateMarkdown(FlowDefinition definition)
@@ -144,35 +134,44 @@ public class DefinitionsService : IDefinitionsService
         definition.Markdown = await markdownGenerator.GenerateMarkdown(definition.Source) ?? string.Empty;
     }
 
-    private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request)
+    private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null)
     {
+        var userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found. Check the certificate.");
+        
+        var permissions = existingDefinition?.Permissions ?? new Permission();
+        if (existingDefinition == null)
+        {
+            permissions.GrantOwnerAccess(userId);
+        }
+        
         return new FlowDefinition
         {
-            Id = ObjectId.GenerateNewId().ToString(),
-            TypeName = request.TypeName,
-            AgentName = request.AgentName ?? request.TypeName,
+            Id = existingDefinition?.Id ?? ObjectId.GenerateNewId().ToString(),
+            WorkflowType = request.WorkflowType,
+            Agent = request.Agent ?? request.WorkflowType,
+            KnowledgeIds = request.KnowledgeIds,
             Hash = ComputeHash(JsonSerializer.Serialize(request)),
             Source = string.IsNullOrEmpty(request.Source) ? string.Empty : request.Source,
-            Markdown = string.IsNullOrEmpty(request.Markdown) ? string.Empty : request.Markdown,
-            Activities = request.Activities.Select(a => new ActivityDefinition
+            Markdown = string.IsNullOrEmpty(existingDefinition?.Markdown) ? string.Empty : existingDefinition.Markdown,
+            ActivityDefinitions = request.ActivityDefinitions.Select(a => new ActivityDefinition
             {
                 ActivityName = a.ActivityName,
                 AgentToolNames = a.AgentToolNames,
-                Instructions = a.Instructions,
-                Parameters = a.Parameters.Select(p => new ParameterDefinition
+                KnowledgeIds = a.KnowledgeIds,
+                ParameterDefinitions = a.ParameterDefinitions.Select(p => new ParameterDefinition
                 {
                     Name = p.Name,
                     Type = p.Type
                 }).ToList()
             }).ToList(),
-            Parameters = request.Parameters.Select(p => new ParameterDefinition
+            ParameterDefinitions = request.ParameterDefinitions.Select(p => new ParameterDefinition
             {
                 Name = p.Name,
                 Type = p.Type
             }).ToList(),
-            CreatedAt = DateTime.UtcNow,
-            TenantId = _tenantContext.TenantId,
-            Owner = _tenantContext.LoggedInUser?? throw new InvalidOperationException("No logged in user found. Check the certificate.")
+            CreatedAt = existingDefinition?.CreatedAt ?? DateTime.UtcNow,
+            CreatedBy = existingDefinition?.CreatedBy ?? userId,
+            Permissions = permissions
         };
     }
 

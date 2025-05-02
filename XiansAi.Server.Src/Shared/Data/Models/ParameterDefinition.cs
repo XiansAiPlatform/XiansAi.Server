@@ -1,6 +1,6 @@
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace XiansAi.Server.Features.WebApi.Models;
+namespace Shared.Data.Models;
 
 public class ParameterDefinition
 {
