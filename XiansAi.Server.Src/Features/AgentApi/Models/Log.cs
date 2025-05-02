@@ -3,6 +3,7 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace XiansAi.Server.Features.AgentApi.Models;
 
+[BsonIgnoreExtraElements]
 public class Log
 {
     [BsonId]
