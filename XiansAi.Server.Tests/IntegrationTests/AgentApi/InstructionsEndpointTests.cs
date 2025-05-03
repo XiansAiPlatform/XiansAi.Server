@@ -37,7 +37,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Version = "v1",
                 CreatedAt = DateTime.UtcNow.AddHours(-2),
                 CreatedBy = "test-agent",
-                TenantId = "test-tenant"
+                Agent = "test-agent"
             },
             new Knowledge
             {
@@ -46,7 +46,9 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Content = "Second instruction content",
                 Type = "text",
                 Version = "v2",
-                CreatedAt = DateTime.UtcNow.AddHours(-1)
+                CreatedAt = DateTime.UtcNow.AddHours(-1),
+                CreatedBy = "test-agent",
+                Agent = "test-agent"
             },
             new Knowledge
             {
@@ -55,7 +57,9 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Content = "Latest instruction content",
                 Type = "text",
                 Version = "v3",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "test-agent",
+                Agent = "test-agent"
             }
         };
 
@@ -64,7 +68,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         await collection.InsertManyAsync(knowledge);
 
         // Act - Call the endpoint to get the latest instruction
-        var response = await _client.GetAsync($"/api/agent/knowledge/latest?name={testInstructionName}");
+        var response = await _client.GetAsync($"/api/agent/knowledge/latest?name={testInstructionName}&agent=test-agent");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -86,7 +90,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         string nonExistentName = $"non-existent-instruction-{Guid.NewGuid()}";
 
         // Act
-        var response = await _client.GetAsync($"/api/agent/knowledge/latest?name={nonExistentName}");
+        var response = await _client.GetAsync($"/api/agent/knowledge/latest?name={nonExistentName}&agent=test-agent");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -111,7 +115,10 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Content = "First content",
                 Type = "text",
                 Version = "v1",
-                CreatedAt = DateTime.UtcNow.AddHours(-3)
+                CreatedAt = DateTime.UtcNow.AddHours(-3),
+                TenantId = "test-tenant",
+                Agent = "test-agent",
+                CreatedBy = "test-user"
             },
             new Knowledge
             {
@@ -120,7 +127,10 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Content = "Newest content", // This should be returned as it has the latest timestamp
                 Type = "text",
                 Version = "v2",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                TenantId = "test-tenant",
+                Agent = "test-agent",
+                CreatedBy = "test-user"
             },
             new Knowledge
             {
@@ -129,7 +139,10 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Content = "Middle content",
                 Type = "text",
                 Version = "v3",
-                CreatedAt = DateTime.UtcNow.AddHours(-1)
+                CreatedAt = DateTime.UtcNow.AddHours(-1),
+                TenantId = "test-tenant",
+                Agent = "test-agent",
+                CreatedBy = "test-user"
             }
         };
 
@@ -137,7 +150,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         await collection.InsertManyAsync(knowledge);
 
         // Act
-        var response = await _client.GetAsync($"/api/agent/knowledge/latest?name={testInstructionName}");
+        var response = await _client.GetAsync($"/api/agent/knowledge/latest?name={testInstructionName}&agent=test-agent");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
