@@ -116,7 +116,6 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v1",
                 CreatedAt = DateTime.UtcNow.AddHours(-3),
-                TenantId = "test-tenant",
                 Agent = "test-agent",
                 CreatedBy = "test-user"
             },
@@ -128,7 +127,6 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v2",
                 CreatedAt = DateTime.UtcNow,
-                TenantId = "test-tenant",
                 Agent = "test-agent",
                 CreatedBy = "test-user"
             },
@@ -140,7 +138,6 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v3",
                 CreatedAt = DateTime.UtcNow.AddHours(-1),
-                TenantId = "test-tenant",
                 Agent = "test-agent",
                 CreatedBy = "test-user"
             }
