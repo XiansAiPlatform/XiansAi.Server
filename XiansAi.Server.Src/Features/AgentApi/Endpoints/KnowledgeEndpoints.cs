@@ -44,7 +44,7 @@ public static class KnowledgeEndpoints
                 Name = request.Name,
                 Content = request.Content,
                 Agent = request.Agent,
-                Type = "knowledge"
+                Type = request.Type
             };
             var result = await endpoint.Create(knowledgeRequest);
             return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
@@ -62,4 +62,5 @@ public record KnowledgeCreateRequest
     public required string Name { get; init; }
     public required string Content { get; init; }
     public required string Agent { get; init; }
+    public required string Type { get; init; }
 } 
