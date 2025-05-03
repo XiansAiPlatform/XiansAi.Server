@@ -1,7 +1,7 @@
 {
     "$jsonSchema": {
         "bsonType": "object",
-        "required": ["tenant_id", "created_at", "level", "message", "workflow_id", "run_id"],
+        "required": ["tenant_id", "created_at", "level", "message", "workflow_id", "workflow_run_id"],
         "properties": {
             "tenant_id": {
                 "bsonType": "string",
