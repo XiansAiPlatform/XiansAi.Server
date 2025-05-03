@@ -20,6 +20,7 @@ public interface IFlowDefinitionRepository
     Task<bool> UpdateAsync(string id, FlowDefinition definition);
     Task<FlowDefinition> GetByNameHashAsync(string workflowType, string hash);
     Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
+    Task<List<string>> GetAgentsWithPermissionAsync(string userId);
 }
 
 public class FlowDefinitionRepository : IFlowDefinitionRepository
@@ -86,6 +87,12 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
     {
         return await _definitions.Find(x => x.WorkflowType == workflowType && x.Hash == hash)
             .FirstOrDefaultAsync();
+    }
+
+    public async Task<List<string>> GetAgentsWithPermissionAsync(string userId)
+    {
+        var definitions = await GetDefinitionsWithPermissionAsync(userId, null, null, basicDataOnly: true);
+        return definitions.Select(x => x.Agent).Distinct().ToList();
     }
 
     public async Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false)

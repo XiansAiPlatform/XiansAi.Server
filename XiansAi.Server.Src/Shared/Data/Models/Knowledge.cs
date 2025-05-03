@@ -1,28 +1,37 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace Shared.Data.Models;
+namespace XiansAi.Server.Shared.Data.Models;
 
-public class Knowledge
+public class Knowledge : IKnowledge
 {
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
-    public required string Id { get; set; }
+    public string Id { get; set; } = ObjectId.GenerateNewId().ToString();
+    
+    [BsonElement("agent")]
+    public string? Agent { get; set; }
+
+    [BsonElement("tenant_id")]
+    public string? TenantId { get; set; }
+    
+    [BsonElement("created_by")]
+    public string CreatedBy { get; set; } = string.Empty;
 
     [BsonElement("name")]
-    public required string Name { get; set; }
-
-    [BsonElement("version")]
-    public required string Version { get; set; }
-
+    public string Name { get; set; } = string.Empty;
+    
     [BsonElement("content")]
-    public required string Content { get; set; }
-
+    public string Content { get; set; } = string.Empty;
+    
     [BsonElement("type")]
-    public required string Type { get; set; }
-
+    public string Type { get; set; } = string.Empty;
+    
+    [BsonElement("version")]
+    public string Version { get; set; } = string.Empty;
+    
     [BsonElement("created_at")]
-    public required DateTime CreatedAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public enum InstructionType

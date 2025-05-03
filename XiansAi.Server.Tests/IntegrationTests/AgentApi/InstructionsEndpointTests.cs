@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using MongoDB.Bson;
 using Shared.Data.Models;
+using XiansAi.Server.Shared.Data.Models;
 using XiansAi.Server.Tests.TestUtils;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
@@ -34,7 +35,9 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Content = "First instruction content",
                 Type = "text",
                 Version = "v1",
-                CreatedAt = DateTime.UtcNow.AddHours(-2)
+                CreatedAt = DateTime.UtcNow.AddHours(-2),
+                CreatedBy = "test-agent",
+                TenantId = "test-tenant"
             },
             new Knowledge
             {

@@ -5,7 +5,6 @@ using XiansAi.Server.Features.AgentApi.Repositories;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using XiansAi.Server.Features.AgentApi.Endpoints;
 using Features.AgentApi.Repositories;
-using Shared.Repositories;
 
 namespace Features.AgentApi.Configuration;
 
@@ -17,15 +16,11 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IActivityHistoryRepository, ActivityHistoryRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
-        builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
-        builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
-        builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
 
         // Register HttpClient for webhook service
         builder.Services.AddHttpClient();
 
         // Register Lib API specific services
-        builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IActivityHistoryService, ActivityHistoryService>();
         builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
         builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
