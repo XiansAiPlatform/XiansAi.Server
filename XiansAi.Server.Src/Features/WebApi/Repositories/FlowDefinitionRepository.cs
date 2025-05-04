@@ -116,14 +116,14 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
 
         // Create time filter
         var timeFilter = filterBuilder.And(
-            startTime == null ? filterBuilder.Empty : filterBuilder.Gte(x => x.CreatedAt, startTime.Value),
-            endTime == null ? filterBuilder.Empty : filterBuilder.Lte(x => x.CreatedAt, endTime.Value)
+            startTime == null ? filterBuilder.Empty : filterBuilder.Gte(x => x.UpdatedAt, startTime.Value),
+            endTime == null ? filterBuilder.Empty : filterBuilder.Lte(x => x.UpdatedAt, endTime.Value)
         );
 
         // Combine filters
         var finalFilter = filterBuilder.And(permissionFilter, timeFilter);
 
-        var findFluent = _definitions.Find(finalFilter).SortByDescending(x => x.CreatedAt);
+        var findFluent = _definitions.Find(finalFilter).SortByDescending(x => x.UpdatedAt);
 
         if (basicDataOnly)
         {
@@ -131,7 +131,8 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
                 .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
                     .Include(x => x.Agent)
                     .Include(x => x.WorkflowType)
-                    .Include(x => x.CreatedAt))
+                    .Include(x => x.CreatedAt)
+                    .Include(x => x.UpdatedAt))
                 .ToListAsync();
         }
 
@@ -147,7 +148,7 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
                 .Include(x => x.Source)
                 .Include(x => x.Markdown)
                 .Include(x => x.WorkflowType)
-                .Include(x => x.CreatedAt))
+                .Include(x => x.UpdatedAt))
             .ToListAsync();
     }
 }

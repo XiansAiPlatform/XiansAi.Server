@@ -2,6 +2,8 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace Shared.Data.Models;
+
+[BsonIgnoreExtraElements]
 public class FlowDefinition
 {
     [BsonId]
@@ -34,6 +36,9 @@ public class FlowDefinition
 
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; }
+
+    [BsonElement("updated_at")]
+    public DateTime UpdatedAt { get; set; }
 
     [BsonElement("created_by")]
     public required string CreatedBy { get; set; }

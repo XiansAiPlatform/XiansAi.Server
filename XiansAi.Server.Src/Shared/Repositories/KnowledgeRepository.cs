@@ -10,7 +10,7 @@ namespace XiansAi.Server.Shared.Repositories;
 
 public interface IKnowledgeRepository
 {
-    Task<T?> GetLatestByNameAsync<T>(string name, string agent, string tenantId) where T : IKnowledge;
+    Task<T?> GetLatestByNameAsync<T>(string name, string agent, string? tenantId) where T : IKnowledge;
     Task<T> GetByIdAsync<T>(string id) where T : IKnowledge;
     Task<T> GetByVersionAsync<T>(string version) where T : IKnowledge;
     Task<List<T>> GetByNameAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge;
@@ -38,7 +38,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         _logger = logger;
     }
 
-    public async Task<T?> GetLatestByNameAsync<T>(string name, string agent, string tenantId) where T : IKnowledge
+    public async Task<T?> GetLatestByNameAsync<T>(string name, string agent, string? tenantId) where T : IKnowledge
     {
         var collection = GetTypedCollection<T>();
         

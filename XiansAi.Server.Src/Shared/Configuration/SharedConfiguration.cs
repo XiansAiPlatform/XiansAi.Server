@@ -1,5 +1,7 @@
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Utils.GenAi;
+using XiansAi.Server.GenAi;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
 
@@ -35,6 +37,10 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
         builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
+
+
+        // Register Utility service
+        builder.Services.AddScoped<IMarkdownService, MarkdownService>();
 
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
