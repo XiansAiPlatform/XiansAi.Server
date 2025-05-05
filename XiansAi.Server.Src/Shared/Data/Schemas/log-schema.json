@@ -28,6 +28,18 @@
                 "bsonType": "string",
                 "description": "Associated workflow run ID"
             },
+            "workflow_type": {
+                "bsonType": ["string", "null"],
+                "description": "Associated workflow type"
+            },
+            "agent": {
+                "bsonType": ["string", "null"],
+                "description": "Associated agent"
+            },
+            "participant_id": {
+                "bsonType": ["string", "null"],
+                "description": "Associated participant ID"
+            },
             "properties": {
                 "bsonType": "object",
                 "description": "Additional metadata related to the log"

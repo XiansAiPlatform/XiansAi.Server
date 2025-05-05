@@ -1,5 +1,4 @@
 using MongoDB.Driver;
-using MongoDB.Bson;
 using XiansAi.Server.Features.WebApi.Models;
 using XiansAi.Server.Shared.Data;
 
@@ -17,7 +16,7 @@ public interface ILogRepository
     Task<bool> UpdateAsync(string id, Log log);
     Task<bool> UpdatePropertiesAsync(string id, Dictionary<string, object> properties);
     Task<bool> DeleteAsync(string id);
-    Task<List<Log>> SearchAsync(string searchTerm);
+
 }
 
 public class LogRepository : ILogRepository
@@ -59,19 +58,19 @@ public class LogRepository : ILogRepository
 
         // Count total logs
         var totalCount = (int)await _logs.CountDocumentsAsync(filter);
-        
+
         // If skip exceeds total count, return empty list
         if (skip >= totalCount)
         {
             return new List<Log>();
         }
-        
+
         // Handle edge case where skip+limit exceeds total count
         if (skip + limit > totalCount)
         {
             limit = Math.Max(0, totalCount - skip);
         }
-        
+
         // If skip is from the beginning, convert it to skip from the end
         var adjustedSkip = Math.Max(0, totalCount - limit - skip);
         var adjustedLimit = Math.Min(limit, totalCount - adjustedSkip);
@@ -81,7 +80,7 @@ public class LogRepository : ILogRepository
             .Skip(adjustedSkip)
             .Limit(adjustedLimit)
             .ToListAsync();
-            
+
         // Reverse to get newest first
         logs.Reverse();
         return logs;
@@ -137,12 +136,24 @@ public class LogRepository : ILogRepository
         return result.DeletedCount > 0;
     }
 
-    public async Task<List<Log>> SearchAsync(string searchTerm)
+    public async Task<IEnumerable<Log>> GetLogsAsync(
+        FilterDefinition<Log> filter,
+        int skip = 0,
+        int limit = 20,
+        SortDefinition<Log> sort = null)
     {
-        var filter = Builders<Log>.Filter.Regex(x => x.Message, new BsonRegularExpression(searchTerm, "i"));
+        var findOptions = new FindOptions<Log>
+        {
+            Skip = skip,
+            Limit = limit,
+            Sort = sort ?? Builders<Log>.Sort.Descending(l => l.CreatedAt)
+        };
 
-        return await _logs.Find(filter)
-            .SortByDescending(x => x.CreatedAt)
-            .ToListAsync();
+        return await _logs.Find(filter).Skip(skip).Limit(limit).Sort(sort).ToListAsync();
+    }
+
+    public async Task<long> CountAsync(FilterDefinition<Log> filter)
+    {
+        return await _logs.CountDocumentsAsync(filter);
     }
 }

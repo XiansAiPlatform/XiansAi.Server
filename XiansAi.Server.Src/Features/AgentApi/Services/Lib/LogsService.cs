@@ -13,6 +13,9 @@ public class LogRequest
     public required string WorkflowRunId { get; set; }
     public required string WorkflowId { get; set; }
     public Dictionary<string, object>? Properties { get; set; }
+    public string? WorkflowType { get; set; }
+    public string? Agent { get; set; }
+    public string? ParticipantId { get; set; }
 }
 
 public interface ILogsService
@@ -65,6 +68,9 @@ public class LogsService : ILogsService
                     WorkflowId = request.WorkflowId,
                     WorkflowRunId = request.WorkflowRunId,
                     Properties = request.Properties,
+                    WorkflowType = request.WorkflowType,
+                    Agent = request.Agent,
+                    ParticipantId = request.ParticipantId,
                     CreatedAt = DateTime.UtcNow
                 };
                 logs.Add(log);
@@ -109,6 +115,9 @@ public class LogsService : ILogsService
                 WorkflowId = request.WorkflowId,
                 WorkflowRunId = request.WorkflowRunId,
                 Properties = request.Properties,
+                WorkflowType = request.WorkflowType,
+                Agent = request.Agent,
+                ParticipantId = request.ParticipantId,
                 CreatedAt = DateTime.UtcNow
             };
 

@@ -1,27 +1,23 @@
 using Shared.Auth;
-using Shared.Repositories;
-using Shared.Utils.Services;
 using XiansAi.Server.Features.WebApi.Repositories;
-using XiansAi.Server.Shared.Data;
-using Microsoft.Extensions.Logging;
+using XiansAi.Server.Features.WebApi.Models;
+using MongoDB.Driver;
 
 namespace Features.WebApi.Services;
 
 public interface IAuditingService
 {
-    /// <summary>
-    /// Retrieves all agent definitions
-    /// </summary>
-    /// <returns>A collection of agent definitions</returns>
-    Task<ServiceResult<object>> GetAgentDefinitions();
-
-    /// <summary>
-    /// Retrieves workflow audit data with optional filtering
-    /// </summary>
-    /// <param name="agentName">Optional agent name filter</param>
-    /// <param name="typeName">Optional workflow type filter</param>
-    /// <returns>A collection of workflows with audit data</returns>
-    Task<ServiceResult<object>> GetWorkflows(string? agentName, string? typeName);
+    Task<(IEnumerable<string> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20);
+    Task<IEnumerable<string>> GetWorkflowTypesAsync(string agent, string? participantId = null);
+    Task<IEnumerable<string>> GetWorkflowIdsForWorkflowTypeAsync(string agent, string workflowType, string? participantId = null);
+    Task<(IEnumerable<Log> logs, long totalCount)> GetLogsAsync(
+        string agent, 
+        string? participantId, 
+        string? workflowType, 
+        string? workflowId = null,
+        LogLevel? logLevel = null, 
+        int page = 1, 
+        int pageSize = 20);
 } 
 
 /// <summary>
@@ -29,84 +25,173 @@ public interface IAuditingService
 /// </summary>
 public class AuditingService : IAuditingService
 {
-    private readonly IFlowDefinitionRepository _definitionRepository;
-    private readonly IWorkflowFinderService _workflowFinderService;
     private readonly ILogger<AuditingService> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly ILogRepository _logRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AuditingService"/> class.
     /// </summary>
-    /// <param name="definitionRepository">Repository for flow definition operations.</param>
-    /// <param name="workflowFinderService">Service for workflow finder operations.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
+    /// <param name="logRepository">Repository for log data access.</param>
     public AuditingService(
-        IFlowDefinitionRepository definitionRepository,
-        IWorkflowFinderService workflowFinderService,
         ILogger<AuditingService> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ILogRepository logRepository)
     {
-        _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
-        _workflowFinderService = workflowFinderService ?? throw new ArgumentNullException(nameof(workflowFinderService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _logRepository = logRepository ?? throw new ArgumentNullException(nameof(logRepository));
     }
 
-    /// <inheritdoc/>
-    public async Task<ServiceResult<object>> GetAgentDefinitions()
+    public async Task<(IEnumerable<string> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20)
     {
         try
         {
-            _logger.LogInformation("Retrieving agent definitions for audit");
-            var tenantId = _tenantContext.TenantId;
+            var logs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
             
-            var definitions = await _definitionRepository.GetLatestDefinitionsBasicDataAsync();
+            var distinctParticipants = logs
+                .Where(l => l.Agent == agent && !string.IsNullOrEmpty(l.ParticipantId))
+                .Select(l => l.ParticipantId!)
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+                
+            // Get total count
+            var totalCount = distinctParticipants.Count;
             
-            // Add audit information such as when definitions were created, modified, etc.
-            var auditedDefinitions = new
-            {
-                Definitions = definitions,
-                AuditedAt = DateTime.UtcNow,
-                TenantId = tenantId
-            };
-            
-            return ServiceResult<object>.Success(auditedDefinitions);
+            // Apply pagination
+            var paginatedParticipants = distinctParticipants
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+                
+            return (paginatedParticipants, totalCount);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agent definitions for audit");
-            return ServiceResult<object>.BadRequest("An error occurred while retrieving agent definitions.");
+            _logger.LogError(ex, "Error retrieving participants for agent {Agent}", agent);
+            throw;
         }
     }
 
-    /// <inheritdoc/>
-    public async Task<ServiceResult<object>> GetWorkflows(string? agentName, string? typeName)
+    /// <summary>
+    /// Gets a list of workflow types for a specific agent and optional participant
+    /// </summary>
+    public async Task<IEnumerable<string>> GetWorkflowTypesAsync(string agent, string? participantId = null)
     {
         try
         {
-            _logger.LogInformation("Retrieving workflow audit data with filters - Agent: {AgentName}, Type: {TypeName}", 
-                agentName ?? "All", typeName ?? "All");
+            var logs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
             
-            var tenantId = _tenantContext.TenantId;
+            var filteredLogs = logs.Where(l => l.Agent == agent);
             
-            var workflows = await _workflowFinderService.GetRunningWorkflowsByAgentAndType(agentName, typeName);
-            
-            // Add audit information such as execution history, status changes, etc.
-            var auditedWorkflows = new
+            if (!string.IsNullOrEmpty(participantId))
             {
-                Workflows = workflows,
-                AuditedAt = DateTime.UtcNow,
-                TenantId = tenantId,
-                Filters = new { AgentName = agentName, TypeName = typeName }
-            };
+                filteredLogs = filteredLogs.Where(l => l.ParticipantId == participantId);
+            }
             
-            return ServiceResult<object>.Success(auditedWorkflows);
+            return filteredLogs
+                .Where(l => !string.IsNullOrEmpty(l.WorkflowType))
+                .Select(l => l.WorkflowType)
+                .Distinct()
+                .OrderBy(wt => wt)
+                .ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving workflow audit data");
-            return ServiceResult<object>.BadRequest("An error occurred while retrieving workflow audit data.");
+            _logger.LogError(ex, "Error retrieving workflow types for agent {Agent} and participant {ParticipantId}", agent, participantId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets a list of workflowIds for a specific workflowType and agent with optional participant filter
+    /// </summary>
+    public async Task<IEnumerable<string>> GetWorkflowIdsForWorkflowTypeAsync(string agent, string workflowType, string? participantId = null)
+    {
+        try
+        {
+            var logs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
+            
+            var filteredLogs = logs.Where(l => l.Agent == agent && l.WorkflowType == workflowType);
+            
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                filteredLogs = filteredLogs.Where(l => l.ParticipantId == participantId);
+            }
+            
+            return filteredLogs
+                .Where(l => !string.IsNullOrEmpty(l.WorkflowId))
+                .Select(l => l.WorkflowId)
+                .Distinct()
+                .OrderBy(wid => wid)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving workflow IDs for agent {Agent}, workflow type {WorkflowType}, and participant {ParticipantId}", 
+                agent, workflowType, participantId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets logs filtered by agent, participant, workflow type, workflow ID, and log level with pagination
+    /// </summary>
+    public async Task<(IEnumerable<Log> logs, long totalCount)> GetLogsAsync(
+        string agent, 
+        string? participantId, 
+        string? workflowType, 
+        string? workflowId = null,
+        LogLevel? logLevel = null, 
+        int page = 1, 
+        int pageSize = 20)
+    {
+        try
+        {
+            var allLogs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
+            
+            // Apply filters
+            var filteredLogs = allLogs.Where(l => l.Agent == agent);
+            
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                filteredLogs = filteredLogs.Where(l => l.ParticipantId == participantId);
+            }
+            
+            if (!string.IsNullOrEmpty(workflowType))
+            {
+                filteredLogs = filteredLogs.Where(l => l.WorkflowType == workflowType);
+            }
+            
+            if (!string.IsNullOrEmpty(workflowId))
+            {
+                filteredLogs = filteredLogs.Where(l => l.WorkflowId == workflowId);
+            }
+            
+            if (logLevel.HasValue)
+            {
+                filteredLogs = filteredLogs.Where(l => l.Level == logLevel.Value);
+            }
+            
+            // Get total count
+            var totalCount = filteredLogs.Count();
+            
+            // Apply pagination
+            var paginatedLogs = filteredLogs
+                .OrderByDescending(l => l.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+                
+            return (paginatedLogs, totalCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving logs for agent {Agent}", agent);
+            throw;
         }
     }
 } 
