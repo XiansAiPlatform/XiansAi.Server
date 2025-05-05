@@ -60,7 +60,7 @@ public class NewWorkflowOptions : WorkflowOptions
     {
         var queueFullName = string.IsNullOrEmpty(queueName) ? workFlowType : queueName + "--" + workFlowType;
 
-        return queueFullName;
+        return workFlowType.ToLower().Replace(" ", "").Replace("-", "").Trim();;
     }
 
     private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string? assignment, string? queueName, string agentName)
