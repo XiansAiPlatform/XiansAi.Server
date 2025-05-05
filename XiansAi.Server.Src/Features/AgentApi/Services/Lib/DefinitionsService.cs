@@ -9,6 +9,7 @@ using Shared.Auth;
 using Shared.Data.Models;
 using XiansAi.Server.Features.WebApi.Models;
 using Shared.Data;
+using Shared.Utils.GenAi;
 
 namespace Features.AgentApi.Services.Lib;
 
@@ -74,18 +75,20 @@ public class DefinitionsService : IDefinitionsService
     private readonly IOpenAIClientService _openAIClientService;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly ITenantContext _tenantContext;
-    
+    private readonly IMarkdownService _markdownService; 
     public DefinitionsService(
         IFlowDefinitionRepository flowDefinitionRepository,
         ILogger<DefinitionsService> logger,
         IOpenAIClientService openAIClientService,
-        ITenantContext tenantContext
+        ITenantContext tenantContext,
+        IMarkdownService markdownService
     )
     {
         _flowDefinitionRepository = flowDefinitionRepository;
         _logger = logger;
         _openAIClientService = openAIClientService;
         _tenantContext = tenantContext;
+        _markdownService = markdownService;
     }
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
@@ -130,8 +133,8 @@ public class DefinitionsService : IDefinitionsService
         {
             return;
         }
-        var markdownGenerator = new MarkdownGenerator(_openAIClientService, _logger);
-        definition.Markdown = await markdownGenerator.GenerateMarkdown(definition.Source) ?? string.Empty;
+        definition.Markdown = await _markdownService.GenerateMarkdown(definition.Source);
+        definition.UpdatedAt = DateTime.UtcNow;
     }
 
     private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null)
@@ -171,6 +174,7 @@ public class DefinitionsService : IDefinitionsService
             }).ToList(),
             CreatedAt = existingDefinition?.CreatedAt ?? DateTime.UtcNow,
             CreatedBy = existingDefinition?.CreatedBy ?? userId,
+            UpdatedAt = DateTime.UtcNow,
             Permissions = permissions
         };
     }

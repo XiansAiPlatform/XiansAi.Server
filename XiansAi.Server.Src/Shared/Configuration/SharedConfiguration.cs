@@ -1,4 +1,9 @@
+using Shared.Repositories;
 using Shared.Services;
+using Shared.Utils.GenAi;
+using XiansAi.Server.GenAi;
+using XiansAi.Server.Shared.Repositories;
+using XiansAi.Server.Shared.Services;
 
 namespace Features.Shared.Configuration;
 
@@ -28,8 +33,20 @@ public static class SharedConfiguration
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
 
+        // Register repositories
+        builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
+        builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
+        builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
+
+
+        // Register Utility service
+        builder.Services.AddScoped<IMarkdownService, MarkdownService>();
+
+        // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
+        builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
+
         
         return builder;
     }

@@ -4,6 +4,7 @@ using Features.WebApi.Repositories;
 using Features.WebApi.Services;
 using XiansAi.Server.Features.WebApi.Repositories;
 using Microsoft.AspNetCore.Authorization;
+using XiansAi.Server.Features.WebApi.Endpoints;
 
 namespace Features.WebApi.Configuration;
 
@@ -22,7 +23,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
         builder.Services.AddScoped<WorkflowCancelService>();
         builder.Services.AddScoped<CertificateService>();
-        builder.Services.AddScoped<InstructionsService>();
         builder.Services.AddScoped<LogsService>();
         builder.Services.AddScoped<DefinitionsService>();
         builder.Services.AddScoped<TenantService>();
@@ -31,9 +31,9 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<PermissionsService>();
+        builder.Services.AddScoped<IAgentService, AgentService>();
         
         // Register repositories
-        builder.Services.AddScoped<IInstructionRepository, InstructionRepository>();
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
@@ -48,7 +48,7 @@ public static class WebApiConfiguration
     {
         // Map Web API endpoints
         WorkflowEndpoints.MapWorkflowEndpoints(app);
-        InstructionEndpoints.MapInstructionEndpoints(app);
+        KnowledgeEndpoints.MapKnowledgeEndpoints(app);
         LogsEndpoints.MapLogsEndpoints(app);
         ActivityEndpoints.MapActivityEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
@@ -59,6 +59,7 @@ public static class WebApiConfiguration
         MessagingEndpoints.MapMessagingEndpoints(app);
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);
+        AgentEndpoints.MapAgentEndpoints(app);
         
         return app;
     }

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using XiansAi.Server.Shared.Data;
+using Shared.Utils.GenAi;
+using Moq;
 
 namespace XiansAi.Server.Tests.TestUtils;
 
@@ -23,6 +25,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             // Remove existing MongoDB services
             RemoveService<IMongoDbClientService>(services);
             RemoveService<HttpClient>(services);
+            RemoveService<IMarkdownService>(services);
 
             // Add test services
             services.AddSingleton<IMongoDbClientService>(_mongoFixture.MongoClientService);
@@ -33,6 +36,12 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                 var handler = new TestHttpMessageHandler();
                 return new HttpClient(handler);
             });
+            
+            // Add mock MarkdownService
+            var mockMarkdownService = new Mock<IMarkdownService>();
+            mockMarkdownService.Setup(m => m.GenerateMarkdown(It.IsAny<string>()))
+                .ReturnsAsync("```mermaid\ngraph TD\n    A[Start] --> B[End]\n```");
+            services.AddSingleton<IMarkdownService>(mockMarkdownService.Object);
         });
     }
 
