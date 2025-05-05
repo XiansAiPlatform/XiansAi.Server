@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
 using Features.WebApi.Services;
-using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -21,7 +20,6 @@ public static class AuditingEndpoints
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
-            Console.WriteLine("Getting participants for agent: " + agent);
             if (page < 1)
             {
                 page = 1;
@@ -42,9 +40,6 @@ public static class AuditingEndpoints
                 TotalPages = (int)Math.Ceiling((double)totalCount / pageSize),
                 Participants = participants
             };
-            
-            Console.WriteLine("Participants: " + string.Join(", ", participants));
-
             return Results.Ok(result);
         })
         .WithName("GetAuditingParticipantsForAgent")
@@ -60,9 +55,7 @@ public static class AuditingEndpoints
             [FromServices] IAuditingService auditingService,
             [FromQuery] string? participantId) =>
         {
-            Console.WriteLine("Getting workflow types for agent with participantId: " + participantId + " and agent: " + agent);
             var workflowTypes = await auditingService.GetWorkflowTypesAsync(agent, participantId);
-            Console.WriteLine("Workflow types: " + string.Join(", ", workflowTypes));
             return Results.Ok(workflowTypes);
         })
         .WithName("GetAuditingWorkflowTypes")
@@ -79,9 +72,7 @@ public static class AuditingEndpoints
             [FromServices] IAuditingService auditingService,
             [FromQuery] string? participantId) =>
         {
-            Console.WriteLine($"Getting workflow IDs for agent: {agent}, workflow type: {workflowType}, and participantId: {participantId}");
             var workflowIds = await auditingService.GetWorkflowIdsForWorkflowTypeAsync(agent, workflowType, participantId);
-            Console.WriteLine("Workflow IDs: " + string.Join(", ", workflowIds));
             return Results.Ok(workflowIds);
         })
         .WithName("GetWorkflowIdsForWorkflowType")
@@ -102,7 +93,6 @@ public static class AuditingEndpoints
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
-            Console.WriteLine($"Getting logs for agent: {agent}, participantId: {participantId}, workflowType: {workflowType}, workflowId: {workflowId}, logLevel: {logLevel}, page: {page}, pageSize: {pageSize}");
             if (string.IsNullOrEmpty(agent))
             {
                 return Results.BadRequest("Agent is required");

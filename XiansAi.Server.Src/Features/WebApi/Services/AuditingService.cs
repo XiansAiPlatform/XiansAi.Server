@@ -49,25 +49,11 @@ public class AuditingService : IAuditingService
     {
         try
         {
-            var logs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
-            
-            var distinctParticipants = logs
-                .Where(l => l.Agent == agent && !string.IsNullOrEmpty(l.ParticipantId))
-                .Select(l => l.ParticipantId!)
-                .Distinct()
-                .OrderBy(p => p)
-                .ToList();
-                
-            // Get total count
-            var totalCount = distinctParticipants.Count;
-            
-            // Apply pagination
-            var paginatedParticipants = distinctParticipants
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToList();
-                
-            return (paginatedParticipants, totalCount);
+            return await _logRepository.GetDistinctParticipantsForAgentAsync(
+                _tenantContext.TenantId, 
+                agent, 
+                page, 
+                pageSize);
         }
         catch (Exception ex)
         {
@@ -83,21 +69,10 @@ public class AuditingService : IAuditingService
     {
         try
         {
-            var logs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
-            
-            var filteredLogs = logs.Where(l => l.Agent == agent);
-            
-            if (!string.IsNullOrEmpty(participantId))
-            {
-                filteredLogs = filteredLogs.Where(l => l.ParticipantId == participantId);
-            }
-            
-            return filteredLogs
-                .Where(l => !string.IsNullOrEmpty(l.WorkflowType))
-                .Select(l => l.WorkflowType)
-                .Distinct()
-                .OrderBy(wt => wt)
-                .ToList();
+            return await _logRepository.GetDistinctWorkflowTypesAsync(
+                _tenantContext.TenantId,
+                agent,
+                participantId);
         }
         catch (Exception ex)
         {
@@ -113,21 +88,11 @@ public class AuditingService : IAuditingService
     {
         try
         {
-            var logs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
-            
-            var filteredLogs = logs.Where(l => l.Agent == agent && l.WorkflowType == workflowType);
-            
-            if (!string.IsNullOrEmpty(participantId))
-            {
-                filteredLogs = filteredLogs.Where(l => l.ParticipantId == participantId);
-            }
-            
-            return filteredLogs
-                .Where(l => !string.IsNullOrEmpty(l.WorkflowId))
-                .Select(l => l.WorkflowId)
-                .Distinct()
-                .OrderBy(wid => wid)
-                .ToList();
+            return await _logRepository.GetDistinctWorkflowIdsForTypeAsync(
+                _tenantContext.TenantId,
+                agent,
+                workflowType,
+                participantId);
         }
         catch (Exception ex)
         {
@@ -151,42 +116,15 @@ public class AuditingService : IAuditingService
     {
         try
         {
-            var allLogs = await _logRepository.GetByTenantIdAsync(_tenantContext.TenantId);
-            
-            // Apply filters
-            var filteredLogs = allLogs.Where(l => l.Agent == agent);
-            
-            if (!string.IsNullOrEmpty(participantId))
-            {
-                filteredLogs = filteredLogs.Where(l => l.ParticipantId == participantId);
-            }
-            
-            if (!string.IsNullOrEmpty(workflowType))
-            {
-                filteredLogs = filteredLogs.Where(l => l.WorkflowType == workflowType);
-            }
-            
-            if (!string.IsNullOrEmpty(workflowId))
-            {
-                filteredLogs = filteredLogs.Where(l => l.WorkflowId == workflowId);
-            }
-            
-            if (logLevel.HasValue)
-            {
-                filteredLogs = filteredLogs.Where(l => l.Level == logLevel.Value);
-            }
-            
-            // Get total count
-            var totalCount = filteredLogs.Count();
-            
-            // Apply pagination
-            var paginatedLogs = filteredLogs
-                .OrderByDescending(l => l.CreatedAt)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToList();
-                
-            return (paginatedLogs, totalCount);
+            return await _logRepository.GetFilteredLogsAsync(
+                _tenantContext.TenantId,
+                agent,
+                participantId,
+                workflowType,
+                workflowId,
+                logLevel,
+                page,
+                pageSize);
         }
         catch (Exception ex)
         {

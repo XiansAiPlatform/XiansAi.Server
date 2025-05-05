@@ -16,7 +16,20 @@ public interface ILogRepository
     Task<bool> UpdateAsync(string id, Log log);
     Task<bool> UpdatePropertiesAsync(string id, Dictionary<string, object> properties);
     Task<bool> DeleteAsync(string id);
-
+    
+    // New optimized methods
+    Task<(IEnumerable<string> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(string tenantId, string agent, int page = 1, int pageSize = 20);
+    Task<IEnumerable<string>> GetDistinctWorkflowTypesAsync(string tenantId, string agent, string? participantId = null);
+    Task<IEnumerable<string>> GetDistinctWorkflowIdsForTypeAsync(string tenantId, string agent, string workflowType, string? participantId = null);
+    Task<(IEnumerable<Log> logs, long totalCount)> GetFilteredLogsAsync(
+        string tenantId,
+        string agent,
+        string? participantId,
+        string? workflowType,
+        string? workflowId = null,
+        LogLevel? logLevel = null,
+        int page = 1,
+        int pageSize = 20);
 }
 
 public class LogRepository : ILogRepository
@@ -155,5 +168,123 @@ public class LogRepository : ILogRepository
     public async Task<long> CountAsync(FilterDefinition<Log> filter)
     {
         return await _logs.CountDocumentsAsync(filter);
+    }
+    
+    public async Task<(IEnumerable<string> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(
+        string tenantId, 
+        string agent, 
+        int page = 1, 
+        int pageSize = 20)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent) & 
+                    Builders<Log>.Filter.Ne(x => x.ParticipantId, null) &
+                    Builders<Log>.Filter.Ne(x => x.ParticipantId, "");
+        
+        // Get distinct participant IDs using aggregate
+        var distinctParticipants = await _logs.Distinct(x => x.ParticipantId, filter).ToListAsync();
+        distinctParticipants.Sort(); // Order by participant ID
+        
+        // Get total count
+        var totalCount = distinctParticipants.Count;
+        
+        // Apply pagination
+        var paginatedParticipants = distinctParticipants
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+            
+        return (paginatedParticipants, totalCount);
+    }
+    
+    public async Task<IEnumerable<string>> GetDistinctWorkflowTypesAsync(
+        string tenantId, 
+        string agent, 
+        string? participantId = null)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowType, null) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowType, "");
+        
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+        
+        var workflowTypes = await _logs.Distinct(x => x.WorkflowType, filter).ToListAsync();
+        workflowTypes.Sort(); // Order by workflow type
+        
+        return workflowTypes;
+    }
+    
+    public async Task<IEnumerable<string>> GetDistinctWorkflowIdsForTypeAsync(
+        string tenantId, 
+        string agent, 
+        string workflowType, 
+        string? participantId = null)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent) &
+                    Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowId, null) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowId, "");
+        
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+        
+        var workflowIds = await _logs.Distinct(x => x.WorkflowId, filter).ToListAsync();
+        workflowIds.Sort(); // Order by workflow ID
+        
+        return workflowIds;
+    }
+    
+    public async Task<(IEnumerable<Log> logs, long totalCount)> GetFilteredLogsAsync(
+        string tenantId,
+        string agent,
+        string? participantId,
+        string? workflowType,
+        string? workflowId = null,
+        LogLevel? logLevel = null,
+        int page = 1,
+        int pageSize = 20)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent);
+        
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+        
+        if (!string.IsNullOrEmpty(workflowType))
+        
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
+        }
+        
+        if (!string.IsNullOrEmpty(workflowId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowId, workflowId);
+        }
+        
+        if (logLevel.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Level, logLevel.Value);
+        }
+        
+        // Get total count
+        var totalCount = await _logs.CountDocumentsAsync(filter);
+        
+        // Apply pagination and sorting
+        var logs = await _logs.Find(filter)
+            .SortByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+            
+        return (logs, totalCount);
     }
 }
