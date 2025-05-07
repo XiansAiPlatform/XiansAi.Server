@@ -30,6 +30,11 @@ public interface ILogRepository
         LogLevel? logLevel = null,
         int page = 1,
         int pageSize = 20);
+    Task<IEnumerable<Log>> GetErrorLogsByWorkflowTypesAsync(
+        string tenantId,
+        IEnumerable<string> workflowTypes,
+        DateTime? startTime = null,
+        DateTime? endTime = null);
 }
 
 public class LogRepository : ILogRepository
@@ -286,5 +291,58 @@ public class LogRepository : ILogRepository
             .ToListAsync();
             
         return (logs, totalCount);
+    }
+
+    /// <summary>
+    /// Gets the last log of each workflow run for specific workflow types, but only if it's an error log
+    /// </summary>
+    public async Task<IEnumerable<Log>> GetErrorLogsByWorkflowTypesAsync(
+        string tenantId,
+        IEnumerable<string> workflowTypes,
+        DateTime? startTime = null,
+        DateTime? endTime = null)
+    {
+        var matchStage = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                         Builders<Log>.Filter.In(x => x.WorkflowType, workflowTypes);
+        
+        if (startTime.HasValue)
+        {
+            matchStage &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startTime.Value);
+        }
+        
+        if (endTime.HasValue)
+        {
+            matchStage &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endTime.Value);
+        }
+
+        // Create error message filter for level 0 logs
+        var errorMessageFilter = Builders<Log>.Filter.Or(
+            // Match JSON error messages
+            Builders<Log>.Filter.Regex(x => x.Message, new MongoDB.Bson.BsonRegularExpression("\"failed\"\\s*:\\s*\\{", "i")),
+            Builders<Log>.Filter.Regex(x => x.Message, new MongoDB.Bson.BsonRegularExpression("\"failure\"\\s*:\\s*\\{", "i")),
+            Builders<Log>.Filter.Regex(x => x.Message, new MongoDB.Bson.BsonRegularExpression("\"error\"\\s*:\\s*\\{", "i")),
+            // Match direct error messages
+            Builders<Log>.Filter.Regex(x => x.Message, new MongoDB.Bson.BsonRegularExpression("\"message\"\\s*:\\s*\"[^\"]*error[^\"]*\"", "i")),
+            Builders<Log>.Filter.Regex(x => x.Message, new MongoDB.Bson.BsonRegularExpression("\"message\"\\s*:\\s*\"[^\"]*exception[^\"]*\"", "i")),
+            Builders<Log>.Filter.Regex(x => x.Message, new MongoDB.Bson.BsonRegularExpression("\"message\"\\s*:\\s*\"[^\"]*failure[^\"]*\"", "i"))
+        );
+        
+        // Combine level 1 and level 0 with error messages
+        var errorFilter = Builders<Log>.Filter.Or(
+            Builders<Log>.Filter.Eq(x => x.Level, (LogLevel)4),
+            Builders<Log>.Filter.And(
+                Builders<Log>.Filter.Eq(x => x.Level, (LogLevel)0),
+                errorMessageFilter
+            )
+        );
+        
+        // Get all logs that match our criteria
+        var errorLogs = await _logs.Aggregate()
+            .Match(matchStage & errorFilter)
+            .SortByDescending(x => x.CreatedAt)
+            .ToListAsync();
+            
+        Console.WriteLine("Error logs: " + errorLogs.Count());
+        return errorLogs;
     }
 }

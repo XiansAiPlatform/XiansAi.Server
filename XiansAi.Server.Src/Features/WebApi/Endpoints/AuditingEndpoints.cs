@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
 using Features.WebApi.Services;
+using XiansAi.Server.Features.WebApi.Models;
 
 namespace Features.WebApi.Endpoints;
 
@@ -132,6 +133,35 @@ public static class AuditingEndpoints
         .WithOpenApi(operation => {
             operation.Summary = "Get logs filtered by criteria";
             operation.Description = "Get logs filtered by agent, participant, workflow type, workflow ID, and log level with pagination";
+            return operation;
+        });
+
+        // Get the last error log of each workflow run across all agents the user has access to
+        // Grouped by agent > workflow type > workflow > workflow run > error log
+        auditingGroup.MapGet("/error-logs", async (
+            [FromServices] IAuditingService auditingService,
+            [FromServices] IAgentService agentService,
+            [FromQuery] DateTime? startTime = null,
+            [FromQuery] DateTime? endTime = null) =>
+        {
+            // Get all agents the user has access to
+            var agentNames = await agentService.GetAgentNames();
+            
+            if (agentNames == null || !agentNames.Any())
+            {
+                return Results.Ok(new List<AgentErrorGroup>());
+            }
+
+            var groupedErrorLogs = await auditingService.GetGroupedErrorLogsAsync(
+                agentNames,
+                startTime,
+                endTime);
+            return Results.Ok(groupedErrorLogs);
+        })
+        .WithName("GetLastErrorLogsByWorkflowRunAcrossAgents")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get the last error log of each workflow run across all agents";
+            operation.Description = "Returns the last error log of each workflow run grouped by agent, workflow type, workflow, and workflow run";
             return operation;
         });
     }

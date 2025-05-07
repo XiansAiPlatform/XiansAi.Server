@@ -2,6 +2,7 @@ using Shared.Auth;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Models;
 using MongoDB.Driver;
+using System.Text.Json;
 
 namespace Features.WebApi.Services;
 
@@ -18,6 +19,8 @@ public interface IAuditingService
         LogLevel? logLevel = null, 
         int page = 1, 
         int pageSize = 20);
+    Task<Dictionary<string, IEnumerable<string>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents);
+    Task<List<AgentErrorGroup>> GetGroupedErrorLogsAsync(IEnumerable<string> agents, DateTime? startTime = null, DateTime? endTime = null);
 } 
 
 /// <summary>
@@ -129,6 +132,111 @@ public class AuditingService : IAuditingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving logs for agent {Agent}", agent);
+            throw;
+        }
+    }
+    
+
+    /// <summary>
+    /// Gets the workflow types for a list of agents
+    /// </summary>
+    public async Task<Dictionary<string, IEnumerable<string>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents)
+    {
+        try
+        {
+            var result = new Dictionary<string, IEnumerable<string>>();
+            
+            foreach (var agent in agents)
+            {
+                var workflowTypes = await _logRepository.GetDistinctWorkflowTypesAsync(
+                    _tenantContext.TenantId,
+                    agent);
+                    
+                result.Add(agent, workflowTypes);
+            }
+            
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving workflow types for multiple agents");
+            throw;
+        }
+    }
+    
+    /// <summary>
+    /// Gets error logs grouped by agent, workflow type, workflow, and workflow run
+    /// </summary>
+    public async Task<List<AgentErrorGroup>> GetGroupedErrorLogsAsync(
+        IEnumerable<string> agents, 
+        DateTime? startTime = null, 
+        DateTime? endTime = null)
+    {
+        try
+        {
+            var result = new List<AgentErrorGroup>();
+            
+            // Get workflow types by agent
+            var agentToWorkflowTypes = await GetWorkflowTypesByAgentsAsync(agents);
+            
+            foreach (var agentEntry in agentToWorkflowTypes)
+            {
+                var agentName = agentEntry.Key;
+                var workflowTypes = agentEntry.Value;
+                
+                if (!workflowTypes.Any())
+                {
+                    continue;
+                }
+                
+                // Get error logs for all workflow types of this agent
+                var errorLogs = await _logRepository.GetErrorLogsByWorkflowTypesAsync(
+                    _tenantContext.TenantId,
+                    workflowTypes,
+                    startTime,
+                    endTime);
+                
+
+                if (!errorLogs.Any())
+                {
+                    continue;
+                }
+                
+                // Group by workflow type
+                var agentGroup = new AgentErrorGroup { AgentName = agentName };
+                
+                var workflowTypeGroups = errorLogs
+                    .GroupBy(log => log.WorkflowType)
+                    .Select(typeGroup => new WorkflowTypeErrorGroup
+                    {
+                        WorkflowTypeName = typeGroup.Key,
+                        Workflows = typeGroup
+                            .GroupBy(log => log.WorkflowId)
+                            .Select(workflowGroup => new WorkflowErrorGroup
+                            {
+                                WorkflowId = workflowGroup.Key,
+                                WorkflowRuns = workflowGroup
+                                    .GroupBy(log => log.WorkflowRunId)
+                                    .Select(runGroup => new WorkflowRunErrorGroup
+                                    {
+                                        WorkflowRunId = runGroup.Key,
+                                        ErrorLogs = runGroup.OrderByDescending(log => log.CreatedAt).ToList()
+                                    })
+                                    .ToList()
+                            })
+                            .ToList()
+                    })
+                    .ToList();
+                
+                agentGroup.WorkflowTypes = workflowTypeGroups;
+                result.Add(agentGroup);
+            }
+            
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving grouped error logs");
             throw;
         }
     }
