@@ -91,6 +91,8 @@ public static class AuditingEndpoints
             [FromQuery] string? workflowType = null,
             [FromQuery] string? workflowId = null,
             [FromQuery] LogLevel? logLevel = null,
+            [FromQuery] DateTime? startTime = null,
+            [FromQuery] DateTime? endTime = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
@@ -114,7 +116,9 @@ public static class AuditingEndpoints
                 participantId, 
                 workflowType, 
                 workflowId,
-                logLevel, 
+                logLevel,
+                startTime,
+                endTime,
                 page, 
                 pageSize);
 
@@ -132,7 +136,7 @@ public static class AuditingEndpoints
         .WithName("GetAuditingLogs")
         .WithOpenApi(operation => {
             operation.Summary = "Get logs filtered by criteria";
-            operation.Description = "Get logs filtered by agent, participant, workflow type, workflow ID, and log level with pagination";
+            operation.Description = "Get logs filtered by agent, participant, workflow type, workflow ID, log level, and time range with pagination";
             return operation;
         });
 

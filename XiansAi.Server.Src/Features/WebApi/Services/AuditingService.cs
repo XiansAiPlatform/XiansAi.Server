@@ -2,7 +2,6 @@ using Shared.Auth;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Models;
 using MongoDB.Driver;
-using System.Text.Json;
 
 namespace Features.WebApi.Services;
 
@@ -16,7 +15,9 @@ public interface IAuditingService
         string? participantId, 
         string? workflowType, 
         string? workflowId = null,
-        LogLevel? logLevel = null, 
+        LogLevel? logLevel = null,
+        DateTime? startTime = null,
+        DateTime? endTime = null,
         int page = 1, 
         int pageSize = 20);
     Task<Dictionary<string, IEnumerable<string>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents);
@@ -113,7 +114,9 @@ public class AuditingService : IAuditingService
         string? participantId, 
         string? workflowType, 
         string? workflowId = null,
-        LogLevel? logLevel = null, 
+        LogLevel? logLevel = null,
+        DateTime? startTime = null,
+        DateTime? endTime = null,
         int page = 1, 
         int pageSize = 20)
     {
@@ -126,6 +129,8 @@ public class AuditingService : IAuditingService
                 workflowType,
                 workflowId,
                 logLevel,
+                startTime,
+                endTime,
                 page,
                 pageSize);
         }

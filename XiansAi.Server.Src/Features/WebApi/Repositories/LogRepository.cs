@@ -28,6 +28,8 @@ public interface ILogRepository
         string? workflowType,
         string? workflowId = null,
         LogLevel? logLevel = null,
+        DateTime? startTime = null,
+        DateTime? endTime = null,
         int page = 1,
         int pageSize = 20);
     Task<IEnumerable<Log>> GetErrorLogsByWorkflowTypesAsync(
@@ -253,6 +255,8 @@ public class LogRepository : ILogRepository
         string? workflowType,
         string? workflowId = null,
         LogLevel? logLevel = null,
+        DateTime? startTime = null,
+        DateTime? endTime = null,
         int page = 1,
         int pageSize = 20)
     {
@@ -265,7 +269,6 @@ public class LogRepository : ILogRepository
         }
         
         if (!string.IsNullOrEmpty(workflowType))
-        
         {
             filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
         }
@@ -278,6 +281,16 @@ public class LogRepository : ILogRepository
         if (logLevel.HasValue)
         {
             filter &= Builders<Log>.Filter.Eq(x => x.Level, logLevel.Value);
+        }
+
+        if (startTime.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startTime.Value);
+        }
+
+        if (endTime.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endTime.Value);
         }
         
         // Get total count
