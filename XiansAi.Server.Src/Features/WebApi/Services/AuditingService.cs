@@ -21,7 +21,7 @@ public interface IAuditingService
         int page = 1, 
         int pageSize = 20);
     Task<Dictionary<string, IEnumerable<string>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents);
-    Task<List<AgentErrorGroup>> GetGroupedErrorLogsAsync(IEnumerable<string> agents, DateTime? startTime = null, DateTime? endTime = null);
+    Task<List<AgentCriticalGroup>> GetGroupedCriticalLogsAsync(IEnumerable<string> agents, DateTime? startTime = null, DateTime? endTime = null);
 } 
 
 /// <summary>
@@ -172,14 +172,14 @@ public class AuditingService : IAuditingService
     /// <summary>
     /// Gets error logs grouped by agent, workflow type, workflow, and workflow run
     /// </summary>
-    public async Task<List<AgentErrorGroup>> GetGroupedErrorLogsAsync(
+    public async Task<List<AgentCriticalGroup>> GetGroupedCriticalLogsAsync(
         IEnumerable<string> agents, 
         DateTime? startTime = null, 
         DateTime? endTime = null)
     {
         try
         {
-            var result = new List<AgentErrorGroup>();
+            var result = new List<AgentCriticalGroup>();
             
             // Get workflow types by agent
             var agentToWorkflowTypes = await GetWorkflowTypesByAgentsAsync(agents);
@@ -195,37 +195,37 @@ public class AuditingService : IAuditingService
                 }
                 
                 // Get error logs for all workflow types of this agent
-                var errorLogs = await _logRepository.GetErrorLogsByWorkflowTypesAsync(
+                var criticalLogs = await _logRepository.GetCriticalLogsByWorkflowTypesAsync(
                     _tenantContext.TenantId,
                     workflowTypes,
                     startTime,
                     endTime);
                 
 
-                if (!errorLogs.Any())
+                if (!criticalLogs.Any())
                 {
                     continue;
                 }
                 
                 // Group by workflow type
-                var agentGroup = new AgentErrorGroup { AgentName = agentName };
+                var agentGroup = new AgentCriticalGroup { AgentName = agentName };
                 
-                var workflowTypeGroups = errorLogs
+                var workflowTypeGroups = criticalLogs
                     .GroupBy(log => log.WorkflowType)
-                    .Select(typeGroup => new WorkflowTypeErrorGroup
+                    .Select(typeGroup => new WorkflowTypeCriticalGroup
                     {
                         WorkflowTypeName = typeGroup.Key,
                         Workflows = typeGroup
                             .GroupBy(log => log.WorkflowId)
-                            .Select(workflowGroup => new WorkflowErrorGroup
+                            .Select(workflowGroup => new WorkflowCriticalGroup
                             {
                                 WorkflowId = workflowGroup.Key,
                                 WorkflowRuns = workflowGroup
                                     .GroupBy(log => log.WorkflowRunId)
-                                    .Select(runGroup => new WorkflowRunErrorGroup
+                                    .Select(runGroup => new WorkflowRunCriticalGroup
                                     {
                                         WorkflowRunId = runGroup.Key,
-                                        ErrorLogs = runGroup.OrderByDescending(log => log.CreatedAt).ToList()
+                                        CriticalLogs = runGroup.OrderByDescending(log => log.CreatedAt).ToList()
                                     })
                                     .ToList()
                             })

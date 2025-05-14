@@ -1,11 +1,9 @@
-using System.Collections.Generic;
-
 namespace XiansAi.Server.Features.WebApi.Models;
 
 /// <summary>
-/// Represents an agent with its workflow error groupings
+/// Represents an agent with its workflow critical log groupings
 /// </summary>
-public class AgentErrorGroup
+public class AgentCriticalGroup
 {
     /// <summary>
     /// Agent name
@@ -13,15 +11,15 @@ public class AgentErrorGroup
     public string AgentName { get; set; } = string.Empty;
     
     /// <summary>
-    /// Workflow types with errors grouped by workflow type
+    /// Workflow types with critical logs grouped by workflow type
     /// </summary>
-    public List<WorkflowTypeErrorGroup> WorkflowTypes { get; set; } = new();
+    public List<WorkflowTypeCriticalGroup> WorkflowTypes { get; set; } = new();
 }
 
 /// <summary>
-/// Represents a workflow type with its workflow error groupings
+/// Represents a workflow type with its workflow critical log groupings
 /// </summary>
-public class WorkflowTypeErrorGroup
+public class WorkflowTypeCriticalGroup
 {
     /// <summary>
     /// Workflow type name
@@ -31,13 +29,13 @@ public class WorkflowTypeErrorGroup
     /// <summary>
     /// Workflows grouped by workflow ID
     /// </summary>
-    public List<WorkflowErrorGroup> Workflows { get; set; } = new();
+    public List<WorkflowCriticalGroup> Workflows { get; set; } = new();
 }
 
 /// <summary>
-/// Represents a workflow with its workflow run error groupings
+/// Represents a workflow with its workflow run critical log groupings
 /// </summary>
-public class WorkflowErrorGroup
+public class WorkflowCriticalGroup
 {
     /// <summary>
     /// Workflow ID
@@ -45,15 +43,15 @@ public class WorkflowErrorGroup
     public string WorkflowId { get; set; } = string.Empty;
     
     /// <summary>
-    /// Workflow runs with error logs
+    /// Workflow runs with critical logs
     /// </summary>
-    public List<WorkflowRunErrorGroup> WorkflowRuns { get; set; } = new();
+    public List<WorkflowRunCriticalGroup> WorkflowRuns { get; set; } = new();
 }
 
 /// <summary>
-/// Represents a workflow run with its last error log
+/// Represents a workflow run with its last critical log
 /// </summary>
-public class WorkflowRunErrorGroup
+public class WorkflowRunCriticalGroup
 {
     /// <summary>
     /// Workflow run ID
@@ -61,7 +59,7 @@ public class WorkflowRunErrorGroup
     public string WorkflowRunId { get; set; } = string.Empty;
     
     /// <summary>
-    /// Error logs for this workflow run
+    /// Critical logs for this workflow run
     /// </summary>
-    public List<Log> ErrorLogs { get; set; } = new();
+    public List<Log> CriticalLogs { get; set; } = new();
 } 

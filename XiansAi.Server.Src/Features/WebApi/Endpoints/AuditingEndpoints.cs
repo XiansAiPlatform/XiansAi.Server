@@ -140,9 +140,9 @@ public static class AuditingEndpoints
             return operation;
         });
 
-        // Get the last error log of each workflow run across all agents the user has access to
+        // Get critical log of each workflow run across all agents the user has access to
         // Grouped by agent > workflow type > workflow > workflow run > error log
-        auditingGroup.MapGet("/error-logs", async (
+        auditingGroup.MapGet("/critical-logs", async (
             [FromServices] IAuditingService auditingService,
             [FromServices] IAgentService agentService,
             [FromQuery] DateTime? startTime = null,
@@ -153,19 +153,19 @@ public static class AuditingEndpoints
             
             if (agentNames == null || !agentNames.Any())
             {
-                return Results.Ok(new List<AgentErrorGroup>());
+                return Results.Ok(new List<AgentCriticalGroup>());
             }
 
-            var groupedErrorLogs = await auditingService.GetGroupedErrorLogsAsync(
+            var groupedCriticalLogs = await auditingService.GetGroupedCriticalLogsAsync(
                 agentNames,
                 startTime,
                 endTime);
-            return Results.Ok(groupedErrorLogs);
+            return Results.Ok(groupedCriticalLogs);
         })
-        .WithName("GetLastErrorLogsByWorkflowRunAcrossAgents")
+        .WithName("GetLastCriticalLogsByWorkflowRunAcrossAgents")
         .WithOpenApi(operation => {
-            operation.Summary = "Get the last error log of each workflow run across all agents";
-            operation.Description = "Returns the last error log of each workflow run grouped by agent, workflow type, workflow, and workflow run";
+            operation.Summary = "Get the critical log of each workflow run across all agents";
+            operation.Description = "Returns the critical log of each workflow run grouped by agent, workflow type, workflow, and workflow run";
             return operation;
         });
     }
