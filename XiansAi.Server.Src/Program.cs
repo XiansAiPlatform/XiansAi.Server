@@ -72,6 +72,8 @@ public class Program
 
         // Register microservice-specific services based on service type
         ConfigureServicesByType(builder, serviceType, loggerFactory);
+
+        builder.Services.AddScoped<Features.WebApi.Services.PublicService>();
         
         // Register the TenantContext
         builder.Services.AddScoped<ITenantContext, TenantContext>();
