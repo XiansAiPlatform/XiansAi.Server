@@ -5,6 +5,9 @@ using Temporalio.Converters;
 using XiansAi.Server.Temporal;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Shared.Data;
+using System.Text.Json;
+using Temporalio.Api.WorkflowService.V1;
+using Temporalio.Api.TaskQueue.V1;
 
 namespace Features.WebApi.Services;
 
@@ -65,8 +68,12 @@ public class WorkflowFinderService : IWorkflowFinderService
             var client = _clientService.GetClient();
             var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
             var workflowDescription = await workflowHandle.DescribeAsync();
+            //log the workflow description object
+            _logger.LogDebug("Workflow description: {Description}", JsonSerializer.Serialize(workflowDescription));
+            string recentWorkerCount = await GetRecentWorkerCount(client, workflowDescription.TaskQueue!);
+
             var fetchHistory = await workflowHandle.FetchHistoryAsync();
-            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory);
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, recentWorkerCount);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -153,7 +160,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <returns>A result containing the list of filtered workflows.</returns>
     public async Task<IResult> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName)
     {
-        _logger.LogInformation("Retrieving workflows with filters - AgentName: {AgentName}, TypeName: {TypeName}", 
+        _logger.LogInformation("Retrieving workflows with filters - AgentName: {AgentName}, TypeName: {TypeName}",
             agentName ?? "null", typeName ?? "null");
 
         try
@@ -327,8 +334,9 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
     /// <param name="fetchHistory">Optional workflow history to analyze for current activity.</param>
+    /// <param name="numberOfWorkers">The number of workers associated with the workflow.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null)
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string numberOfWorkers = "N/A")
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
@@ -369,7 +377,8 @@ public class WorkflowFinderService : IWorkflowFinderService
             TenantId = tenantId,
             Owner = userId,
             HistoryLength = workflow.HistoryLength,
-            CurrentActivity = currentActivity
+            CurrentActivity = currentActivity,
+            NumOfWorkers = numberOfWorkers
         };
     }
 
@@ -386,6 +395,50 @@ public class WorkflowFinderService : IWorkflowFinderService
             return memoValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
         }
         return null;
+    }
+
+    /// <summary>
+    /// Retrieves the count of workers polling a task queue within the last minute.
+    /// </summary>
+    /// <param name="client">The Temporal client.</param>
+    /// <param name="taskQueueName">The name of the task queue.</param>
+    /// <returns>The count of recent workers as a string.</returns>
+    private async Task<string> GetRecentWorkerCount(ITemporalClient client, string taskQueueName)
+    {
+        try
+        {
+            var describeQueueRequest = new DescribeTaskQueueRequest
+            {
+                Namespace = _tenantContext.GetTemporalConfig().FlowServerNamespace!,
+                TaskQueue = new TaskQueue { Name = taskQueueName },
+                ReportPollers = true,      // ask for the list of current pollers
+                ReportStats = false,       // stats are optional here
+                ReportTaskReachability = false
+            };
+
+            var describeQueueResponse = await client.WorkflowService.DescribeTaskQueueAsync(describeQueueRequest);
+            
+            var currentTime = DateTime.UtcNow;
+            var oneMinuteAgo = currentTime.AddMinutes(-1);
+            var recentWorkers = describeQueueResponse.Pollers
+                .Where(poller => DateTimeOffset.FromUnixTimeSeconds(poller.LastAccessTime.Seconds).UtcDateTime >= oneMinuteAgo)
+                .ToList();
+
+            string recentWorkerCount = recentWorkers.Count.ToString();
+            _logger.LogInformation(
+                "TaskQueue {TaskQueue} has {WorkerCount} worker(s) polling it within the last minute",
+                taskQueueName,
+                recentWorkerCount
+            );
+
+            return recentWorkerCount;
+        }
+        catch (System.Exception)
+        {
+            _logger.LogWarning("Failed to retrieve recent worker count for TaskQueue {TaskQueue}", taskQueueName);
+            return "N/A"; // Return "N/A" if unable to retrieve the count
+        }
+
     }
 
     /// <summary>
@@ -433,6 +486,11 @@ public class WorkflowFinderService : IWorkflowFinderService
         /// Gets or sets the current status of the workflow.
         /// </summary>
         public string? Status { get; set; }
+
+        /// <summary>
+        /// Gets or sets the number of workers associated with the workflow.
+        /// </summary>
+        public string? NumOfWorkers { get; set; }
 
         /// <summary>
         /// Gets or sets the time when the workflow started.
