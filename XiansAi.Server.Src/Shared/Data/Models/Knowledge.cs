@@ -42,6 +42,9 @@ public class Knowledge : IKnowledge
     
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [BsonIgnore]
+    public string? PermissionLevel { get; set; }
 }
 
 public enum InstructionType
