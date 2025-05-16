@@ -16,9 +16,6 @@ public class FlowDefinition
     [BsonElement("agent")]
     public required string Agent { get; set; }
 
-    [BsonElement("knowledge_ids")]
-    public required List<string> KnowledgeIds { get; set; }
-
     [BsonElement("hash")]
     public required string Hash { get; set; }
 

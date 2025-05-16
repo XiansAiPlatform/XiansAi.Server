@@ -22,8 +22,6 @@ public class FlowDefinitionRequest
     [JsonPropertyName("workflowType")]
     public required string WorkflowType { get; set; }
 
-    [JsonPropertyName("knowledgeIds")]
-    public required List<string> KnowledgeIds { get; set; }
 
     [JsonPropertyName("source")]
     public string? Source { get; set; }
@@ -152,7 +150,6 @@ public class DefinitionsService : IDefinitionsService
             Id = existingDefinition?.Id ?? ObjectId.GenerateNewId().ToString(),
             WorkflowType = request.WorkflowType,
             Agent = request.Agent ?? request.WorkflowType,
-            KnowledgeIds = request.KnowledgeIds,
             Hash = ComputeHash(JsonSerializer.Serialize(request)),
             Source = string.IsNullOrEmpty(request.Source) ? string.Empty : request.Source,
             Markdown = string.IsNullOrEmpty(existingDefinition?.Markdown) ? string.Empty : existingDefinition.Markdown,

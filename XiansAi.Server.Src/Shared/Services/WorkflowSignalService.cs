@@ -1,7 +1,7 @@
 using XiansAi.Server.Temporal;
 using Shared.Auth;
-using Newtonsoft.Json;
 using Shared.Utils;
+using System.Text.Json;
 
 namespace Shared.Services;
 
@@ -143,8 +143,8 @@ public class WorkflowSignalService : IWorkflowSignalService
                 ? new object[] { request.Payload }
                 : Array.Empty<object>();
 
-            _logger.LogInformation("Sending signal {SignalName} to workflow {WorkflowId} with payload {Payload}", 
-                request.SignalName, request.WorkflowId, JsonConvert.SerializeObject(signalPayload));
+            _logger.LogInformation("Sending signal {SignalName} to workflow {WorkflowId}", 
+                request.SignalName, request.WorkflowId);
 
             await handle.SignalAsync(request.SignalName, signalPayload);
             
@@ -219,13 +219,13 @@ public class WorkflowSignalService : IWorkflowSignalService
 
             options.SignalWithStart(request.SignalName, signalPayload);
 
-            _logger.LogInformation("Starting workflow {WorkflowType} with signal {SignalName} and payload {Payload}", 
-                request.WorkflowType, request.SignalName, JsonConvert.SerializeObject(signalPayload));
+            _logger.LogInformation("Starting workflow {WorkflowType} with signal {SignalName}", 
+                request.WorkflowType, request.SignalName);
 
             await client.StartWorkflowAsync(request.WorkflowType, new List<object>().AsReadOnly(), options);
 
-            _logger.LogInformation("Successfully started workflow {WorkflowType} with signal {SignalName} and payload {Payload}", 
-                request.WorkflowType, request.SignalName, JsonConvert.SerializeObject(signalPayload));
+            _logger.LogInformation("Successfully started workflow {WorkflowType} with signal {SignalName}", 
+                request.WorkflowType, request.SignalName);
             
             return Results.Ok(new { 
                 message = "Signal with start sent successfully", 
