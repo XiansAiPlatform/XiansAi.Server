@@ -1,5 +1,4 @@
 using MongoDB.Driver;
-using MongoDB.Bson;
 using XiansAi.Server.Features.WebApi.Models;
 using XiansAi.Server.Shared.Data;
 
@@ -17,7 +16,27 @@ public interface ILogRepository
     Task<bool> UpdateAsync(string id, Log log);
     Task<bool> UpdatePropertiesAsync(string id, Dictionary<string, object> properties);
     Task<bool> DeleteAsync(string id);
-    Task<List<Log>> SearchAsync(string searchTerm);
+    
+    // New optimized methods
+    Task<(IEnumerable<string?> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(string tenantId, string agent, int page = 1, int pageSize = 20);
+    Task<IEnumerable<string>> GetDistinctWorkflowTypesAsync(string tenantId, string agent, string? participantId = null);
+    Task<IEnumerable<string>> GetDistinctWorkflowIdsForTypeAsync(string tenantId, string agent, string workflowType, string? participantId = null);
+    Task<(IEnumerable<Log> logs, long totalCount)> GetFilteredLogsAsync(
+        string tenantId,
+        string agent,
+        string? participantId,
+        string? workflowType,
+        string? workflowId = null,
+        LogLevel? logLevel = null,
+        DateTime? startTime = null,
+        DateTime? endTime = null,
+        int page = 1,
+        int pageSize = 20);
+    Task<IEnumerable<Log>> GetCriticalLogsByWorkflowTypesAsync(
+        string tenantId,
+        IEnumerable<string> workflowTypes,
+        DateTime? startTime = null,
+        DateTime? endTime = null);
 }
 
 public class LogRepository : ILogRepository
@@ -59,19 +78,19 @@ public class LogRepository : ILogRepository
 
         // Count total logs
         var totalCount = (int)await _logs.CountDocumentsAsync(filter);
-        
+
         // If skip exceeds total count, return empty list
         if (skip >= totalCount)
         {
             return new List<Log>();
         }
-        
+
         // Handle edge case where skip+limit exceeds total count
         if (skip + limit > totalCount)
         {
             limit = Math.Max(0, totalCount - skip);
         }
-        
+
         // If skip is from the beginning, convert it to skip from the end
         var adjustedSkip = Math.Max(0, totalCount - limit - skip);
         var adjustedLimit = Math.Min(limit, totalCount - adjustedSkip);
@@ -81,7 +100,7 @@ public class LogRepository : ILogRepository
             .Skip(adjustedSkip)
             .Limit(adjustedLimit)
             .ToListAsync();
-            
+
         // Reverse to get newest first
         logs.Reverse();
         return logs;
@@ -137,12 +156,187 @@ public class LogRepository : ILogRepository
         return result.DeletedCount > 0;
     }
 
-    public async Task<List<Log>> SearchAsync(string searchTerm)
+    public async Task<IEnumerable<Log>> GetLogsAsync(
+        FilterDefinition<Log> filter,
+        int skip = 0,
+        int limit = 20,
+        SortDefinition<Log>? sort = null)
     {
-        var filter = Builders<Log>.Filter.Regex(x => x.Message, new BsonRegularExpression(searchTerm, "i"));
+        var findOptions = new FindOptions<Log>
+        {
+            Skip = skip,
+            Limit = limit,
+            Sort = sort ?? Builders<Log>.Sort.Descending(l => l.CreatedAt)
+        };
 
-        return await _logs.Find(filter)
+        return await _logs.Find(filter).Skip(skip).Limit(limit).Sort(sort).ToListAsync();
+    }
+
+    public async Task<long> CountAsync(FilterDefinition<Log> filter)
+    {
+        return await _logs.CountDocumentsAsync(filter);
+    }
+    
+    public async Task<(IEnumerable<string?> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(
+        string tenantId, 
+        string agent, 
+        int page = 1, 
+        int pageSize = 20)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent) & 
+                    Builders<Log>.Filter.Ne(x => x.ParticipantId, null) &
+                    Builders<Log>.Filter.Ne(x => x.ParticipantId, "");
+        
+        // Get distinct participant IDs using aggregate
+        var distinctParticipants = await _logs.Distinct(x => x.ParticipantId, filter).ToListAsync();
+        distinctParticipants = distinctParticipants.Where(x => x != null).ToList();
+        distinctParticipants.Sort(); // Order by participant ID
+        
+        // Get total count
+        var totalCount = distinctParticipants.Count;
+        
+        // Apply pagination
+        var paginatedParticipants = distinctParticipants
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+            
+        return (paginatedParticipants, totalCount);
+    }
+    
+    public async Task<IEnumerable<string>> GetDistinctWorkflowTypesAsync(
+        string tenantId, 
+        string agent, 
+        string? participantId = null)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowType, null) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowType, "");
+        
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+        
+        var workflowTypes = await _logs.Distinct(x => x.WorkflowType, filter).ToListAsync();
+        workflowTypes.Sort(); // Order by workflow type
+        
+        return workflowTypes;
+    }
+    
+    public async Task<IEnumerable<string>> GetDistinctWorkflowIdsForTypeAsync(
+        string tenantId, 
+        string agent, 
+        string workflowType, 
+        string? participantId = null)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent) &
+                    Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowId, null) &
+                    Builders<Log>.Filter.Ne(x => x.WorkflowId, "");
+        
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+        
+        var workflowIds = await _logs.Distinct(x => x.WorkflowId, filter).ToListAsync();
+        workflowIds.Sort(); // Order by workflow ID
+        
+        return workflowIds;
+    }
+    
+    public async Task<(IEnumerable<Log> logs, long totalCount)> GetFilteredLogsAsync(
+        string tenantId,
+        string agent,
+        string? participantId,
+        string? workflowType,
+        string? workflowId = null,
+        LogLevel? logLevel = null,
+        DateTime? startTime = null,
+        DateTime? endTime = null,
+        int page = 1,
+        int pageSize = 20)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, agent);
+        
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+        
+        if (!string.IsNullOrEmpty(workflowType))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
+        }
+        
+        if (!string.IsNullOrEmpty(workflowId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowId, workflowId);
+        }
+        
+        if (logLevel.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Level, logLevel.Value);
+        }
+
+        if (startTime.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startTime.Value);
+        }
+
+        if (endTime.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endTime.Value);
+        }
+        
+        // Get total count
+        var totalCount = await _logs.CountDocumentsAsync(filter);
+        
+        // Apply pagination and sorting
+        var logs = await _logs.Find(filter)
+            .SortByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+            
+        return (logs, totalCount);
+    }
+
+    /// <summary>
+    /// Gets the last log of each workflow run for specific workflow types, but only if it's a critical log
+    /// </summary>
+    public async Task<IEnumerable<Log>> GetCriticalLogsByWorkflowTypesAsync(
+        string tenantId,
+        IEnumerable<string> workflowTypes,
+        DateTime? startTime = null,
+        DateTime? endTime = null)
+    {
+        var matchStage = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
+                         Builders<Log>.Filter.In(x => x.WorkflowType, workflowTypes) &
+                         Builders<Log>.Filter.Eq(x => x.Level, (LogLevel)5);
+        
+        if (startTime.HasValue)
+        {
+            matchStage &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startTime.Value);
+        }
+        
+        if (endTime.HasValue)
+        {
+            matchStage &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endTime.Value);
+        }
+        
+        // Get all critical logs that match our criteria
+        var criticalLogs = await _logs.Aggregate()
+            .Match(matchStage)
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
+            
+        Console.WriteLine("Critical logs: " + criticalLogs.Count());
+        return criticalLogs;
     }
 }

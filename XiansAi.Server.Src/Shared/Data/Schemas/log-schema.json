@@ -28,6 +28,18 @@
                 "bsonType": "string",
                 "description": "Associated workflow run ID"
             },
+            "workflow_type": {
+                "bsonType": ["string", "null"],
+                "description": "Associated workflow type"
+            },
+            "agent": {
+                "bsonType": ["string", "null"],
+                "description": "Associated agent"
+            },
+            "participant_id": {
+                "bsonType": ["string", "null"],
+                "description": "Associated participant ID"
+            },
             "properties": {
                 "bsonType": "object",
                 "description": "Additional metadata related to the log"
@@ -46,10 +58,19 @@
                 "keys": { "tenant_id": 1, "created_at": -1 }
             },
             {
-                "keys": { "workflow_id": 1, "run_id": 1 }
+                "keys": { "workflow_id": 1, "workflow_run_id": 1 }
             },
             {
                 "keys": { "level": 1 }
+            },
+            {
+                "keys": { "tenant_id": 1, "agent": 1, "participant_id": 1 }
+            },
+            {
+                "keys": { "tenant_id": 1, "agent": 1, "workflow_type": 1 }
+            },
+            {
+                "keys": { "tenant_id": 1, "agent": 1, "workflow_id": 1 }
             }
         ]
     }

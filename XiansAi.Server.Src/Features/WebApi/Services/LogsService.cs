@@ -107,20 +107,4 @@ public class LogsService
             return Results.Problem("An error occurred while deleting the log");
         }
     }
-
-    public async Task<IResult> SearchLogs(string searchTerm)
-    {
-        try
-        {
-            var logs = await _logRepository.SearchAsync(searchTerm);
-            _logger.LogInformation("Found {Count} logs matching search term: {SearchTerm}", 
-                logs.Count, searchTerm);
-            return Results.Ok(logs);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error searching logs with term: {SearchTerm}", searchTerm);
-            return Results.Problem("An error occurred while searching the logs");
-        }
-    }
 }

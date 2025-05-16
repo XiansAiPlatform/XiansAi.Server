@@ -65,13 +65,5 @@ public static class LogsEndpoints
         .WithName("Delete Log")
         .WithOpenApi();
 
-        app.MapGet("/api/client/logs/search", async (
-            [FromQuery] string searchTerm,
-            [FromServices] LogsService service) =>
-        {
-            return await service.SearchLogs(searchTerm);
-        })
-        .WithName("Search Logs")
-        .WithOpenApi();
     }
 }
