@@ -7,7 +7,7 @@ namespace Features.WebApi.Services;
 
 public interface IAuditingService
 {
-    Task<(IEnumerable<string> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20);
+    Task<(IEnumerable<string?> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20);
     Task<IEnumerable<string>> GetWorkflowTypesAsync(string agent, string? participantId = null);
     Task<IEnumerable<string>> GetWorkflowIdsForWorkflowTypeAsync(string agent, string workflowType, string? participantId = null);
     Task<(IEnumerable<Log> logs, long totalCount)> GetLogsAsync(
@@ -49,7 +49,7 @@ public class AuditingService : IAuditingService
         _logRepository = logRepository ?? throw new ArgumentNullException(nameof(logRepository));
     }
 
-    public async Task<(IEnumerable<string> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20)
+    public async Task<(IEnumerable<string?> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20)
     {
         try
         {

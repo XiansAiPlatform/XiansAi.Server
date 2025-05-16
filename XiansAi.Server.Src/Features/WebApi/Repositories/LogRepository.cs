@@ -18,7 +18,7 @@ public interface ILogRepository
     Task<bool> DeleteAsync(string id);
     
     // New optimized methods
-    Task<(IEnumerable<string> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(string tenantId, string agent, int page = 1, int pageSize = 20);
+    Task<(IEnumerable<string?> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(string tenantId, string agent, int page = 1, int pageSize = 20);
     Task<IEnumerable<string>> GetDistinctWorkflowTypesAsync(string tenantId, string agent, string? participantId = null);
     Task<IEnumerable<string>> GetDistinctWorkflowIdsForTypeAsync(string tenantId, string agent, string workflowType, string? participantId = null);
     Task<(IEnumerable<Log> logs, long totalCount)> GetFilteredLogsAsync(
@@ -160,7 +160,7 @@ public class LogRepository : ILogRepository
         FilterDefinition<Log> filter,
         int skip = 0,
         int limit = 20,
-        SortDefinition<Log> sort = null)
+        SortDefinition<Log>? sort = null)
     {
         var findOptions = new FindOptions<Log>
         {
@@ -177,7 +177,7 @@ public class LogRepository : ILogRepository
         return await _logs.CountDocumentsAsync(filter);
     }
     
-    public async Task<(IEnumerable<string> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(
+    public async Task<(IEnumerable<string?> participants, long totalCount)> GetDistinctParticipantsForAgentAsync(
         string tenantId, 
         string agent, 
         int page = 1, 
@@ -190,6 +190,7 @@ public class LogRepository : ILogRepository
         
         // Get distinct participant IDs using aggregate
         var distinctParticipants = await _logs.Distinct(x => x.ParticipantId, filter).ToListAsync();
+        distinctParticipants = distinctParticipants.Where(x => x != null).ToList();
         distinctParticipants.Sort(); // Order by participant ID
         
         // Get total count
