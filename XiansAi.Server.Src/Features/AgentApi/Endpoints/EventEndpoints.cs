@@ -1,13 +1,12 @@
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
-using Microsoft.OpenApi.Models;
-using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.AgentApi.Endpoints;
 
 // Non-static class for logger type parameter
-public class EventsEndpointLogger {}
+public class AgentEndpointLogger {}
 
 /// <summary>
 /// Provides extension methods for registering agent-communication API endpoints.
@@ -22,30 +21,19 @@ public static class EventsEndpoints
     /// <returns>The web application with agent endpoints configured.</returns>
     public static void MapEventsEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
     {
-        var logger = loggerFactory.CreateLogger<EventsEndpointLogger>();
+        var logger = loggerFactory.CreateLogger<AgentEndpointLogger>();
         
         // Map signal endpoints
-        var eventGroup = app.MapGroup("/api/agent/event")
-            .WithTags("AgentAPI - Event")
+        var signalGroup = app.MapGroup("/api/agent/events")
+            .WithTags("AgentAPI - Events")
             .RequiresCertificate();
-            
-        eventGroup.MapPost("/by-id", async (
-            [FromBody] WorkflowEventRequest request,
-            [FromServices] IWorkflowSignalService endpoint) =>
-        {
-            return await endpoint.SignalWorkflow(request.ToWorkflowSignalRequest());
-        })
-        .WithOpenApi(operation => {
-            operation.Summary = "Send event to workflow";
-            operation.Description = "Sends an event to a running workflow instance";
-            return operation;
-        });
 
-        eventGroup.MapPost("/by-type", async (
-            [FromBody] WorkflowEventWithStartRequest request,
+        signalGroup.MapPost("/with-start", async (
+            [FromBody] WorkflowSignalWithStartRequest request,
             [FromServices] IWorkflowSignalService endpoint) =>
         {
-            return await endpoint.SignalWithStartWorkflow(request.ToWorkflowSignalWithStartRequest());
+            request.SignalName = Constants.SIGNAL_INBOUND_EVENT;
+            return await endpoint.SignalWithStartWorkflow(request);
         })
         .WithOpenApi(operation => {
             operation.Summary = "Signal workflow with start";

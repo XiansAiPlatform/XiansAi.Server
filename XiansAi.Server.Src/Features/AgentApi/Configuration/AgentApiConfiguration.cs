@@ -59,10 +59,9 @@ public static class AgentApiConfiguration
         KnowledgeEndpoints.MapKnowledgeEndpoints(app, loggerFactory);
         ActivityHistoryEndpoints.MapActivityHistoryEndpoints(app, loggerFactory);
         DefinitionsEndpoints.MapDefinitionsEndpoints(app, loggerFactory);
-        SignalEndpoints.MapSignalEndpoints(app, loggerFactory);
+        EventsEndpoints.MapEventsEndpoints(app, loggerFactory);
         WebhookEndpoints.MapWebhookEndpoints(app);
         ConversationEndpoints.MapConversationEndpoints(app);
-        EventsEndpoints.MapEventsEndpoints(app, loggerFactory);
         LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
         
         return app;

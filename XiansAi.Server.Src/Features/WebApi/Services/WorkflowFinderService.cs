@@ -341,7 +341,6 @@ public class WorkflowFinderService : IWorkflowFinderService
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey) ?? workflow.WorkflowType;
-        var assignment = ExtractMemoValue(workflow.Memo, Constants.AssignmentKey) ?? Constants.DefaultAssignment;
         Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? currentActivity = null;
 
         if (fetchHistory != null)
@@ -364,7 +363,6 @@ public class WorkflowFinderService : IWorkflowFinderService
         return new WorkflowResponse
         {
             Agent = agent,
-            Assignment = assignment,
             ParentId = workflow.ParentId,
             ParentRunId = workflow.ParentRunId,
             WorkflowId = workflow.Id,
@@ -451,11 +449,6 @@ public class WorkflowFinderService : IWorkflowFinderService
         /// Gets or sets the agent associated with the workflow.
         /// </summary>
         public string? Agent { get; set; }
-
-        /// <summary>
-        /// Gets or sets the assignment details for the workflow.
-        /// </summary>
-        public string? Assignment { get; set; }
 
         /// <summary>
         /// Gets or sets the tenant identifier associated with the workflow.

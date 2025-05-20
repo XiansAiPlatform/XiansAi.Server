@@ -1,7 +1,7 @@
 using XiansAi.Server.Temporal;
 using Shared.Auth;
 using Shared.Utils;
-using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Shared.Services;
 
@@ -14,7 +14,7 @@ public class WorkflowEventRequest
     {
        return new WorkflowSignalRequest
        {
-            SignalName = Constants.SIGNAL_NAME_EVENT,
+            SignalName = Constants.SIGNAL_INBOUND_EVENT,
             WorkflowId = WorkflowId,
             Payload = Payload
        };
@@ -28,39 +28,34 @@ public class WorkflowSignalRequest
     public required string WorkflowId { get; set; }
 }
 
-public class WorkflowEventWithStartRequest
-{
-    public object? Payload { get; set; }
-    public string? ProposedWorkflowId { get; set; }
-    public required string WorkflowType { get; set; }
-    public string? QueueName { get; set; }
-    public required string Agent { get; set; }
-    public string? Assignment { get; set; }
-
-    public WorkflowSignalWithStartRequest ToWorkflowSignalWithStartRequest()
-    {
-        return new WorkflowSignalWithStartRequest
-        {
-            SignalName = Constants.SIGNAL_NAME_EVENT,
-            Payload = Payload,
-            WorkflowId = ProposedWorkflowId,
-            WorkflowType = WorkflowType,
-            QueueName = QueueName,
-            Agent = Agent,
-            Assignment = Assignment
-        };
-    }
-}
-
 public class WorkflowSignalWithStartRequest
 {
-    public required string SignalName { get; set; }
+    [JsonPropertyName("SignalName")]
+    public string? SignalName { get; set; }
+
+    [JsonPropertyName("EventType")]
+    public string? EventType { get; set; }
+
+    [JsonPropertyName("Payload")]
     public object? Payload { get; set; }
-    public string? WorkflowId { get; set; }
-    public required string WorkflowType { get; set; }
-    public string? QueueName { get; set; }
-    public string? Assignment { get; set; }
-    public required string Agent { get; set; }
+
+    [JsonPropertyName("SourceWorkflowId")]
+    public string? SourceWorkflowId { get; set; }
+
+    [JsonPropertyName("SourceWorkflowType")]
+    public string? SourceWorkflowType { get; set; }
+
+    [JsonPropertyName("SourceAgent")]
+    public required string SourceAgent { get; set; }
+
+    [JsonPropertyName("TargetWorkflowId")]
+    public string? TargetWorkflowId { get; set; }
+
+    [JsonPropertyName("TargetWorkflowType")]
+    public required string TargetWorkflowType { get; set; }
+
+    [JsonPropertyName("Timestamp")]
+    public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>
@@ -177,7 +172,7 @@ public class WorkflowSignalService : IWorkflowSignalService
     public async Task<IResult> SignalWithStartWorkflow(WorkflowSignalWithStartRequest request)
     {
         _logger.LogInformation("Received workflow signal request for workflow {WorkflowType} with signal {SignalName} at: {Time}", 
-            request.WorkflowType, request.SignalName, DateTime.UtcNow);
+            request.TargetWorkflowType, request.SignalName, DateTime.UtcNow);
 
         if (request == null)
         {
@@ -186,14 +181,14 @@ public class WorkflowSignalService : IWorkflowSignalService
         }
 
         _logger.LogInformation("Received workflow signal request for workflow {WorkflowType} with signal {SignalName} at: {Time}", 
-            request.WorkflowType, request.SignalName, DateTime.UtcNow);
+            request.TargetWorkflowType, request.SignalName, DateTime.UtcNow);
         
         try
         {
             if (!ValidateRequest(request))
             {
                 _logger.LogWarning("Invalid workflow signal request: {WorkflowType}, {SignalName}", 
-                    request.WorkflowType, request.SignalName);
+                    request.TargetWorkflowType, request.SignalName);
                 return Results.BadRequest("Invalid request. WorkflowType and SignalName are required.");
             }
 
@@ -206,45 +201,41 @@ public class WorkflowSignalService : IWorkflowSignalService
 
 
             var options = new NewWorkflowOptions(
-                request.WorkflowId, 
-                request.WorkflowType, 
-                _tenantContext, 
-                request.QueueName, 
-                request.Agent, 
-                request.Assignment);
+                request.SourceAgent, 
+                request.TargetWorkflowType, 
+                request.TargetWorkflowId, 
+                _tenantContext);
        
-            var signalPayload = request.Payload != null 
-                ? new object[] { request.Payload }
-                : Array.Empty<object>();
+            var signalPayload = new object[] { request };
 
             options.SignalWithStart(request.SignalName, signalPayload);
 
             _logger.LogInformation("Starting workflow {WorkflowType} with signal {SignalName}", 
-                request.WorkflowType, request.SignalName);
+                request.TargetWorkflowType, request.SignalName);
 
-            await client.StartWorkflowAsync(request.WorkflowType, new List<object>().AsReadOnly(), options);
+            await client.StartWorkflowAsync(request.TargetWorkflowType, new List<object>().AsReadOnly(), options);
 
             _logger.LogInformation("Successfully started workflow {WorkflowType} with signal {SignalName}", 
-                request.WorkflowType, request.SignalName);
+                request.TargetWorkflowType, request.SignalName);
             
             return Results.Ok(new { 
                 message = "Signal with start sent successfully", 
-                workflowId = request.WorkflowId,
+                workflowId = request.TargetWorkflowId,
                 signalName = request.SignalName
             });
         }
         catch (Temporalio.Exceptions.RpcException ex) when (ex.Message.Contains("workflow not found"))
         {
-            _logger.LogWarning(ex, "Workflow reference not found for type: {WorkflowType}", request.WorkflowType);
+            _logger.LogWarning(ex, "Workflow reference not found for type: {WorkflowType}", request.TargetWorkflowType);
             return Results.NotFound(new {
-                message = $"Workflow type '{request.WorkflowType}' could not be started or referenced",
-                workflowType = request.WorkflowType
+                message = $"Workflow type '{request.TargetWorkflowType}' could not be started or referenced",
+                workflowType = request.TargetWorkflowType
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowType}", 
-                request.SignalName, request.WorkflowType);
+                request.SignalName, request.TargetWorkflowType);
                 
             throw;
         }
@@ -263,6 +254,6 @@ public class WorkflowSignalService : IWorkflowSignalService
         !string.IsNullOrEmpty(request.SignalName);
 
     private static bool ValidateRequest(WorkflowSignalWithStartRequest request) =>
-        !string.IsNullOrEmpty(request.WorkflowType) && 
+        !string.IsNullOrEmpty(request.TargetWorkflowType) && 
         !string.IsNullOrEmpty(request.SignalName);
 }

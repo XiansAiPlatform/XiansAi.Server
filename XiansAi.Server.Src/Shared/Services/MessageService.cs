@@ -198,20 +198,16 @@ public class MessageService : IMessageService
     {
         var signalRequest = new WorkflowSignalWithStartRequest
         {
-            SignalName = Constants.SIGNAL_NAME_INBOUND_MESSAGE,
-            WorkflowId = request.WorkflowId,
-            WorkflowType = request.WorkflowType,            
-            QueueName = request.QueueName,
-            Assignment = request.Assignment,
-            Agent = request.Agent,
+            SignalName = Constants.SIGNAL_INBOUND_MESSAGE,
+            TargetWorkflowId = request.WorkflowId,
+            TargetWorkflowType = request.WorkflowType,            
+            SourceAgent = request.Agent,
             Payload = new {
-                 request.Content, 
-                 request.Metadata, 
-                 request.ParticipantId,
-                 request.ThreadId,
                  request.Agent,
-                 request.WorkflowId,
-                 request.WorkflowType
+                 request.ThreadId,
+                 request.ParticipantId,
+                 request.Content, 
+                 request.Metadata
             }
         };
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);

@@ -87,7 +87,12 @@ public class WorkflowStarterService
 
             var agentName = request!.AgentName ?? request.WorkflowType;
 
-            var options = new NewWorkflowOptions(request.WorkflowId, request.WorkflowType, _tenantContext, request.QueueName, agentName, request.Assignment);
+            var options = new NewWorkflowOptions(
+                agentName, 
+                request.WorkflowType, 
+                request.WorkflowId, 
+                _tenantContext, 
+                request.QueueName);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
             var handle = await StartWorkflowAsync(request, options);
