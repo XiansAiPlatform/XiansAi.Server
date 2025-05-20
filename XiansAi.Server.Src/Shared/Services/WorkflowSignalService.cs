@@ -208,6 +208,8 @@ public class WorkflowSignalService : IWorkflowSignalService
        
             var signalPayload = new object[] { request };
 
+            if (request.SignalName == null) throw new Exception("SignalName is required");
+
             options.SignalWithStart(request.SignalName, signalPayload);
 
             _logger.LogInformation("Starting workflow {WorkflowType} with signal {SignalName}", 
