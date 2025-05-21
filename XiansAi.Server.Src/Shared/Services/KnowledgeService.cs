@@ -179,8 +179,6 @@ public class KnowledgeService : IKnowledgeService
                 item.PermissionLevel = "read";
             }
         }
-        Console.WriteLine(JsonSerializer.Serialize(knowledge));
-
         return Results.Ok(knowledge);
     }
 

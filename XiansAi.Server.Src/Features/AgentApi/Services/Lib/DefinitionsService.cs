@@ -101,10 +101,13 @@ public class DefinitionsService : IDefinitionsService
                 _tenantContext.UserRoles, 
                 PermissionLevel.Write))
             {
-                _logger.LogWarning("User {User} attempted to update definition {WorkflowType} without write permission", 
-                    _tenantContext.LoggedInUser, definition.WorkflowType);
+                var warningMessage = @$"User `{_tenantContext.LoggedInUser}` (you)
+                    attempted to update definition `{definition.WorkflowType}` without write permission. 
+                    Another user in your tenant has already owning this definition. Use a different name 
+                    or ask them to share the definition with you with write permission.";
+                _logger.LogWarning(warningMessage);
                 return Results.Json(
-                    new { message = "You do not have permission to update this definition." }, 
+                    new { message = warningMessage }, 
                     statusCode: StatusCodes.Status403Forbidden
                 );
             }
