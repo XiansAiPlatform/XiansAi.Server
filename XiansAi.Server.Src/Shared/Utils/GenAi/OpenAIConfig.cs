@@ -1,4 +1,4 @@
-namespace XiansAi.Server.GenAi;
+namespace Shared.Utils.GenAi;
 public class OpenAIConfig
 {
     public required string ApiKeyKeyVaultName { get; set; }

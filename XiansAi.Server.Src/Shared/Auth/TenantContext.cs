@@ -1,9 +1,5 @@
-using XiansAi.Server.GenAi;
-using XiansAi.Server.Temporal;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
+using Shared.Utils.GenAi;
+using Shared.Utils.Temporal;
 
 namespace Shared.Auth
 {

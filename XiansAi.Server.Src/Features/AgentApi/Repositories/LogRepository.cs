@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using Shared.Data;
 using XiansAi.Server.Features.AgentApi.Models;
 using XiansAi.Server.Shared.Data;
 

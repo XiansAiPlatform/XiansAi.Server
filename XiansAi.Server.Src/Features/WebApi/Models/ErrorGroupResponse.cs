@@ -1,4 +1,4 @@
-namespace XiansAi.Server.Features.WebApi.Models;
+namespace Features.WebApi.Models;
 
 /// <summary>
 /// Represents an agent with its workflow critical log groupings

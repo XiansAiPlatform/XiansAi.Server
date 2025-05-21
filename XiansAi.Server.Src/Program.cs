@@ -6,6 +6,7 @@ using XiansAi.Server.Shared.Data;
 using Shared.Auth;
 using Features.WebApi.Auth;
 using XiansAi.Server.Features.WebApi.Scripts;
+using Shared.Data;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.

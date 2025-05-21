@@ -1,7 +1,6 @@
 using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
 using System.IdentityModel.Tokens.Jwt;
-using XiansAi.Server.Auth;
 
 namespace Features.WebApi.Auth;
 

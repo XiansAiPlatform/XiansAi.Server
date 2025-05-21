@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -26,25 +26,5 @@ public static class SettingsEndpoints
             return operation;
         });
 
-        settingsGroup.MapGet("/flowserver/base64cert", (
-            [FromServices] CertificateService endpoint) =>
-        {
-            var cert = endpoint.GetFlowServerCertBase64();
-            var privateKey = endpoint.GetFlowServerPrivateKeyBase64();
-            return Results.Ok(new {
-                apiKey = cert + ":" + privateKey
-            });
-        })
-        .WithName("Get Flow Server Certificate Base64")
-        .WithOpenApi();
-
-
-        settingsGroup.MapGet("/flowserver", (
-            [FromServices] CertificateService endpoint) =>
-        {
-            return endpoint.GetFlowServerSettings();
-        })
-        .WithName("Get Flow Server Settings")
-        .WithOpenApi();
     }
 } 

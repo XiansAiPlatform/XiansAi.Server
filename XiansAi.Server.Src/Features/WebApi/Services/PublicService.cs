@@ -1,6 +1,4 @@
 using Microsoft.Extensions.Caching.Distributed;
-using XiansAi.Server.Auth;
-using XiansAi.Server.Temporal;
 using Features.WebApi.Auth;
 using Shared.Auth;
 

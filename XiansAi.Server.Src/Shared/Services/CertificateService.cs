@@ -1,11 +1,21 @@
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
-using XiansAi.Server.Auth;
 using Shared.Auth;
 using Features.AgentApi.Repositories;
 using Features.AgentApi.Models;
+using Shared.Utils.GenAi;
+using Shared.Utils;
 
-namespace Features.WebApi.Services;
+namespace Shared.Services;
+
+public class FlowServerSettings
+{
+    public required string FlowServerUrl { get; set; }
+    public required string FlowServerNamespace { get; set; }
+    public required string FlowServerCertBase64 { get; set; }
+    public required string FlowServerPrivateKeyBase64 { get; set; }
+    public required string OpenAIApiKey { get; set; }
+}
 
 public class CertificateService
 {
@@ -14,29 +24,32 @@ public class CertificateService
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
-    private readonly IConfiguration _configuration;
+    private readonly IOpenAIClientService _openAIClientService;
     public CertificateService(
         ILogger<CertificateService> logger,
         IHttpContextAccessor httpContextAccessor,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        IConfiguration configuration)
+        IOpenAIClientService openAIClientService)
     {
-        _configuration = configuration;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
+        _openAIClientService = openAIClientService;
     }
 
-    public IResult GetFlowServerSettings() {
+    public FlowServerSettings GetFlowServerSettings() {
         _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{_tenantContext.GetTemporalConfig().FlowServerUrl} FlowServerNamespace:{_tenantContext.GetTemporalConfig().FlowServerNamespace}");
-        return Results.Ok(new {
-            _tenantContext.GetTemporalConfig().FlowServerUrl,
-            _tenantContext.GetTemporalConfig().FlowServerNamespace
-        });
+        return new FlowServerSettings {
+            FlowServerUrl = _tenantContext.GetTemporalConfig().FlowServerUrl ?? throw new Exception($"FlowServerUrl not found for Tenant:{_tenantContext.TenantId}"),
+            FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
+            FlowServerCertBase64 = GetFlowServerCertBase64(),
+            FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
+            OpenAIApiKey = _openAIClientService.GetApiKey()
+        };
     }
 
 

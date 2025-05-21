@@ -5,6 +5,7 @@ using XiansAi.Server.Features.AgentApi.Repositories;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using XiansAi.Server.Features.AgentApi.Endpoints;
 using Features.AgentApi.Repositories;
+using Shared.Services;
 
 namespace Features.AgentApi.Configuration;
 
@@ -21,6 +22,7 @@ public static class AgentApiConfiguration
         builder.Services.AddHttpClient();
 
         // Register Lib API specific services
+        builder.Services.AddScoped<CertificateService>();
         builder.Services.AddScoped<IActivityHistoryService, ActivityHistoryService>();
         builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
         builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
@@ -63,6 +65,7 @@ public static class AgentApiConfiguration
         WebhookEndpoints.MapWebhookEndpoints(app);
         ConversationEndpoints.MapConversationEndpoints(app);
         LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
+        SettingsEndpoints.MapSettingsEndpoints(app);
         
         return app;
     }

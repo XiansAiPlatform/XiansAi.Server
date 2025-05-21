@@ -1,8 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Linq;
 
-namespace XiansAi.Server.Auth;
+namespace Shared.Utils;
 
 public class CertificateGenerator
 {

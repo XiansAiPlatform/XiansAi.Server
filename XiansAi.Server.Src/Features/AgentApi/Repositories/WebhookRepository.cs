@@ -2,6 +2,7 @@ using MongoDB.Driver;
 using XiansAi.Server.Features.AgentApi.Models;
 using XiansAi.Server.Shared.Data.Models;
 using XiansAi.Server.Shared.Data;
+using Shared.Data;
 
 namespace XiansAi.Server.Features.AgentApi.Repositories
 {

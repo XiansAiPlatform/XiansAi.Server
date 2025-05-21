@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using Shared.Data;
 
 namespace Shared.Repositories;
 

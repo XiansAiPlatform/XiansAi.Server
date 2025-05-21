@@ -22,7 +22,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<WorkflowEventsService>();
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
         builder.Services.AddScoped<WorkflowCancelService>();
-        builder.Services.AddScoped<CertificateService>();
         builder.Services.AddScoped<LogsService>();
         builder.Services.AddScoped<DefinitionsService>();
         builder.Services.AddScoped<TenantService>();
