@@ -5,6 +5,8 @@ using Features.AgentApi.Auth;
 using Shared.Utils.Services;
 using Shared.Repositories;
 using Shared.Auth;
+using Microsoft.AspNetCore.SignalR;
+using XiansAi.Server.Shared.Websocket;
 
 namespace Features.AgentApi.Endpoints
 {
@@ -50,8 +52,22 @@ namespace Features.AgentApi.Endpoints
 
             group.MapPost("/outbound/send", async (
                 [FromBody] MessageRequest request, 
-                [FromServices] IMessageService messageService) => {
+                [FromServices] IMessageService messageService,
+                [FromServices] IHubContext<ChatHub> hubContext,
+                [FromServices] ClientConnectionManager connectionManager) => {
                 var result = await messageService.ProcessOutgoingMessage(request);
+                var connectionId = connectionManager.GetConnectionId(result.Data);
+                if (connectionId != null)
+                {
+                    await hubContext.Clients.Client(connectionId).SendAsync("ReceiveMessage", request.Content);
+                    Console.WriteLine($"Sent message to thread {result.Data}");
+                }
+                else
+                {
+                    Console.WriteLine($"No client connection for thread {request.ThreadId}");
+                }
+
+                Console.WriteLine($"-----------/outbound/send--{result.Data}");
                 return result.ToHttpResult();
             })
             .WithName("Process Outbound Message from Agent")
