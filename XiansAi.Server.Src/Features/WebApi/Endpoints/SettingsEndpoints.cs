@@ -9,16 +9,15 @@ public static class SettingsEndpoints
     public static void MapSettingsEndpoints(this WebApplication app)
     {
         // Map certificate endpoints with common attributes
-        var certificatesGroup = app.MapGroup("/api/client/certificates")
+        var settingsGroup = app.MapGroup("/api/client/settings")
             .WithTags("WebAPI - Settings")
             .RequiresValidTenant();
 
-        certificatesGroup.MapPost("/generate/base64", (
+        settingsGroup.MapPost("/appserver/base64cert", (
             HttpContext context,
-            [FromBody] CertRequest request,
             [FromServices] CertificateService endpoint) =>
         {
-            return endpoint.GenerateClientCertificateBase64(request);
+            return endpoint.GenerateClientCertificateBase64();
         })
         .WithName("Generate Client Certificate Base64")
         .WithOpenApi(operation => {
@@ -27,21 +26,7 @@ public static class SettingsEndpoints
             return operation;
         });
 
-        certificatesGroup.MapPost("/generate", async (
-            HttpContext context,
-            [FromBody] CertRequest request,
-            [FromServices] CertificateService endpoint) =>
-        {
-            return await endpoint.GenerateClientCertificate(request);
-        })
-        .WithName("Generate Client Certificate")
-        .WithOpenApi(operation => {
-            operation.Summary = "Generate a new client certificate";
-            operation.Description = "Generates and returns a new client certificate in PFX format";
-            return operation;
-        });
-
-        certificatesGroup.MapGet("/flowserver/base64", (
+        settingsGroup.MapGet("/flowserver/base64cert", (
             [FromServices] CertificateService endpoint) =>
         {
             var cert = endpoint.GetFlowServerCertBase64();
@@ -53,10 +38,6 @@ public static class SettingsEndpoints
         .WithName("Get Flow Server Certificate Base64")
         .WithOpenApi();
 
-        // Map settings endpoints with common attributes
-        var settingsGroup = app.MapGroup("/api/client/settings")
-            .WithTags("WebAPI - Settings")
-            .RequiresValidTenant();
 
         settingsGroup.MapGet("/flowserver", (
             [FromServices] CertificateService endpoint) =>

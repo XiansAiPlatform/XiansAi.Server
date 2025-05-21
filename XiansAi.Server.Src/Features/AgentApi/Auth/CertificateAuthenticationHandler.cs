@@ -1,156 +1,224 @@
+// Features/AgentApi/Auth/CertificateAuthenticationHandler.cs
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Encodings.Web;
-using Shared.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using Features.AgentApi.Repositories;
+using System.Security.Cryptography;
+using Features.AgentApi.Models;
 using XiansAi.Server.Auth;
+using Microsoft.AspNetCore.Authentication.Certificate;
+using System.Collections.Concurrent;
+using System.Linq;
+using Shared.Auth;
 
 namespace Features.AgentApi.Auth;
-
-public class CertificateAuthenticationOptions : AuthenticationSchemeOptions
-{
-    public const string DefaultScheme = "Certificate";
-    public string AuthenticationType => DefaultScheme;
-}
 
 public class CertificateAuthenticationHandler : AuthenticationHandler<CertificateAuthenticationOptions>
 {
     private readonly ILogger<CertificateAuthenticationHandler> _logger;
     private readonly IConfiguration _configuration;
     private readonly CertificateGenerator _certificateGenerator;
+    private readonly ICertificateRepository _certificateRepository;
+    private readonly ITenantContext _tenantContext;
+    private static readonly ConcurrentDictionary<string, (DateTime ValidatedAt, bool IsValid)> _certValidationCache = 
+        new();
+    private const int CertValidationCacheMinutes = 10;
 
     public CertificateAuthenticationHandler(
         IOptionsMonitor<CertificateAuthenticationOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
         CertificateGenerator certificateGenerator,
-        IConfiguration configuration) : base(options, logger, encoder)
+        ICertificateRepository certificateRepository,
+        IConfiguration configuration,
+        ITenantContext tenantContext) 
+        : base(options, logger, encoder)
     {
         _logger = logger.CreateLogger<CertificateAuthenticationHandler>();
         _configuration = configuration;
         _certificateGenerator = certificateGenerator;
+        _certificateRepository = certificateRepository;
+        _tenantContext = tenantContext;
     }
 
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        _logger.LogInformation("Handling certificate authentication for {Path}", Request.Path);
-
-        // Get the client certificate from the Authorization header
-        if (!Request.Headers.TryGetValue("Authorization", out var authHeader) || string.IsNullOrEmpty(authHeader))
+        try
         {
-            _logger.LogInformation("No authorization header found");
-            return Task.FromResult(AuthenticateResult.Fail("No authorization header found"));
+            _logger.LogDebug("Handling certificate authentication for {Path}", Request.Path);
+
+            var certHeader = await ExtractCertificateFromHeader();
+            if (certHeader == null)
+            {
+                return AuthenticateResult.Fail("No valid certificate found in request");
+            }
+
+            var certBytes = Convert.FromBase64String(certHeader);
+            using var cert = X509CertificateLoader.LoadCertificate(certBytes);
+
+            // Check validation cache
+            if (_certValidationCache.TryGetValue(cert.Thumbprint, out var cacheEntry))
+            {
+                if (DateTime.UtcNow.Subtract(cacheEntry.ValidatedAt).TotalMinutes < CertValidationCacheMinutes)
+                {
+                    if (!cacheEntry.IsValid)
+                    {
+                        return AuthenticateResult.Fail("Certificate validation failed (cached result)");
+                    }
+                    return await CreateAuthenticationTicket(cert);
+                }
+            }
+
+            var validationResult = await ValidateCertificateAsync(cert);
+            if (!validationResult.IsValid)
+            {
+                _certValidationCache.TryAdd(cert.Thumbprint, (DateTime.UtcNow, false));
+                return AuthenticateResult.Fail(string.Join(", ", validationResult.Errors));
+            }
+
+            _certValidationCache.TryAdd(cert.Thumbprint, (DateTime.UtcNow, true));
+            return await CreateAuthenticationTicket(cert);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Certificate authentication failed");
+            return AuthenticateResult.Fail("Certificate authentication failed");
+        }
+    }
+
+    private Task<string?> ExtractCertificateFromHeader()
+    {
+        if (!Request.Headers.TryGetValue("Authorization", out var authHeader) || 
+            string.IsNullOrEmpty(authHeader))
+        {
+            _logger.LogDebug("No authorization header found");
+            return Task.FromResult<string?>(null);
         }
 
         var authHeaderValue = authHeader.ToString();
         if (!authHeaderValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogInformation("Authorization header is not in Bearer format");
-            return Task.FromResult(AuthenticateResult.Fail("Authorization header is not in Bearer format"));
+            _logger.LogDebug("Authorization header is not in Bearer format");
+            return Task.FromResult<string?>(null);
         }
 
-        var certHeader = authHeaderValue.Substring("Bearer ".Length).Trim();
-        if (string.IsNullOrEmpty(certHeader))
-        {
-            _logger.LogInformation("No client certificate found in Bearer token");
-            return Task.FromResult(AuthenticateResult.Fail("No client certificate found in Bearer token"));
-        }
+        return Task.FromResult<string?>(authHeaderValue["Bearer ".Length..].Trim());
+    }
+
+    private string? GetSubjectValue(string subject, string key)
+    {
+        return subject.Split(',')
+            .FirstOrDefault(x => x.Trim().StartsWith($"{key}="))
+            ?.Split('=')[1];
+    }
+
+    private async Task<CertificateValidationResult> ValidateCertificateAsync(X509Certificate2 cert)
+    {
+        var result = new CertificateValidationResult();
 
         try
         {
-            var rootCertificate = _certificateGenerator.GetRootCertificate();
-
-            var certBytes = Convert.FromBase64String(certHeader);
-#pragma warning disable SYSLIB0057 // Type or member is obsolete
-            var cert = new X509Certificate2(certBytes);
-#pragma warning restore SYSLIB0057 // Type or member is obsolete
-
-            // Validate certificate chain
-            var chain = new X509Chain();
-            chain.ChainPolicy.ExtraStore.Add(rootCertificate);
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-
-            if (!chain.Build(cert))
+            // Check if certificate is revoked
+            if (await _certificateRepository.IsRevokedAsync(cert.Thumbprint))
             {
-                _logger.LogInformation("Certificate chain validation failed");
-                return Task.FromResult(AuthenticateResult.Fail("Certificate chain validation failed"));
+                result.AddError("Certificate has been revoked");
+                return result;
             }
 
-            // Verify that the certificate was issued by our root certificate
-            bool validRoot = false;
-            for (int i = 0; i < chain.ChainElements.Count; i++)
-            {
-                if (chain.ChainElements[i].Certificate.Thumbprint == rootCertificate.Thumbprint)
-                {
-                    validRoot = true;
-                    break;
-                }
-            }
-
-            if (!validRoot)
-            {
-                _logger.LogInformation("Certificate was not issued by the expected root certificate");
-                return Task.FromResult(AuthenticateResult.Fail("Certificate was not issued by the expected root certificate"));
-            }
-
-            // Validate tenant name from certificate subject
-            var certSubject = cert.Subject;
-            var distinguishedName = new X500DistinguishedName(certSubject);
-            var tenantNameFromCert = distinguishedName.Format(multiLine: false)
-                .Split(',')
-                .FirstOrDefault(x => x.Trim().StartsWith("O="))
-                ?.Split('=')[1];
-
-            var userNameFromCert = distinguishedName.Format(multiLine: false)
-                .Split(',')
-                .FirstOrDefault(x => x.Trim().StartsWith("OU="))
-                ?.Split('=')[1];
+            // Get root certificate
+            var rootCert = _certificateGenerator.GetRootCertificate();
             
-            if (string.IsNullOrEmpty(tenantNameFromCert))
+            // Create chain
+            using var chain = new X509Chain();
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck; // Disable CRL checking for now
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+            chain.ChainPolicy.ExtraStore.Add(rootCert);
+            
+            var isValid = chain.Build(cert);
+            
+            if (!isValid)
             {
-                _logger.LogInformation("Certificate does not contain Tenant name");
-                return Task.FromResult(AuthenticateResult.Fail("Certificate does not contain Tenant name"));
+                var errors = chain.ChainStatus
+                    .Select(s => $"Chain validation error: {s.StatusInformation}")
+                    .ToList();
+                result.Errors.AddRange(errors);
+                return result;
             }
 
-            if (string.IsNullOrEmpty(userNameFromCert))
+            // Verify the chain terminates with our root certificate
+            var chainRoot = chain.ChainElements[chain.ChainElements.Count - 1].Certificate;
+            if (!chainRoot.Thumbprint.Equals(rootCert.Thumbprint, StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogInformation("Certificate does not contain User name");
-                return Task.FromResult(AuthenticateResult.Fail("Certificate does not contain User name"));
+                result.AddError("Certificate is not signed by the expected root CA");
+                return result;
             }
 
-            if (!_configuration.GetSection($"Tenants:{tenantNameFromCert}").Exists())
+            // Validate certificate purpose
+            var enhancedKeyUsage = cert.Extensions
+                .OfType<X509EnhancedKeyUsageExtension>()
+                .FirstOrDefault();
+                
+            if (enhancedKeyUsage == null || !HasClientAuthenticationPurpose(enhancedKeyUsage))
             {
-                _logger.LogInformation($"Tenant name from certificate is not a valid tenant - Tenant:{tenantNameFromCert}");
-                return Task.FromResult(AuthenticateResult.Fail($"Tenant name from certificate is not a valid tenant - Tenant:{tenantNameFromCert}"));
+                result.AddError("Certificate does not have client authentication purpose");
+                return result;
             }
 
-            // Set up tenant context - this will be handled via DI and request scoping
-            var httpContext = Context;
-            var scope = httpContext.RequestServices;
-            var tenantContext = scope.GetRequiredService<ITenantContext>();
-            tenantContext.TenantId = tenantNameFromCert;
-            tenantContext.LoggedInUser = userNameFromCert;
+            // Validate tenant
+            var tenantId = GetSubjectValue(cert.Subject, "O");
 
-            // Create the claims for authentication
-            var claims = new[]
+            if (string.IsNullOrEmpty(tenantId) || !_configuration.GetSection($"Tenants:{tenantId}").Exists())
             {
-                new Claim(ClaimTypes.Name, userNameFromCert),
-                new Claim("Tenant", tenantNameFromCert)
-            };
+                result.AddError($"Invalid tenant: {tenantId}");
+                return result;
+            }
 
-            var identity = new ClaimsIdentity(claims, Scheme.Name);
-            var principal = new ClaimsPrincipal(identity);
-            var ticket = new AuthenticationTicket(principal, Scheme.Name);
-
-            _logger.LogInformation("Certificate validation successful for tenant {Tenant} and user {User}", tenantNameFromCert, userNameFromCert);
-            return Task.FromResult(AuthenticateResult.Success(ticket));
+            result.IsValid = true;
+            return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError("Certificate validation failed due to exception {Exception}", ex);
-            return Task.FromResult(AuthenticateResult.Fail($"Certificate validation failed: {ex.Message}"));
+            _logger.LogError(ex, "Error validating certificate");
+            result.Errors.Add($"Certificate validation error: {ex.Message}");
+            return result;
         }
     }
-} 
+
+    private bool HasClientAuthenticationPurpose(X509EnhancedKeyUsageExtension extension)
+    {
+        return extension.EnhancedKeyUsages.Cast<Oid>()
+            .Any(oid => oid.Value == "1.3.6.1.5.5.7.3.2"); // Client Authentication OID
+    }
+
+    private Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert)
+    {
+        var tenantId = GetSubjectValue(cert.Subject, "O");
+        var userId = GetSubjectValue(cert.Subject, "OU");
+
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(userId))
+        {
+            return Task.FromResult(AuthenticateResult.Fail("Invalid certificate subject format"));
+        }
+
+        // Set up TenantContext
+        _tenantContext.TenantId = tenantId;
+        _tenantContext.LoggedInUser = userId;
+        _tenantContext.UserRoles = new[] { "Agent" }; // Agents get the "Agent" role
+        _tenantContext.AuthorizedTenantIds = new[] { tenantId }; // Agents can only access their own tenant
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.Name, userId),
+            new Claim(ClaimTypes.Role, "Agent"),
+            new Claim("Tenant", tenantId)
+        };
+
+        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var principal = new ClaimsPrincipal(identity);
+        var ticket = new AuthenticationTicket(principal, Scheme.Name);
+
+        return Task.FromResult(AuthenticateResult.Success(ticket));
+    }
+}

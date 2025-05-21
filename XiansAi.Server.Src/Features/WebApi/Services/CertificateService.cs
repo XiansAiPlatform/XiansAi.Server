@@ -2,6 +2,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
 using XiansAi.Server.Auth;
 using Shared.Auth;
+using Features.AgentApi.Repositories;
+using Features.AgentApi.Models;
 
 namespace Features.WebApi.Services;
 
@@ -11,12 +13,14 @@ public class CertificateService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
+    private readonly ICertificateRepository _certificateRepository;
     private readonly IConfiguration _configuration;
     public CertificateService(
         ILogger<CertificateService> logger,
         IHttpContextAccessor httpContextAccessor,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
+        ICertificateRepository certificateRepository,
         IConfiguration configuration)
     {
         _configuration = configuration;
@@ -24,6 +28,7 @@ public class CertificateService
         _httpContextAccessor = httpContextAccessor;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
+        _certificateRepository = certificateRepository;
     }
 
     public IResult GetFlowServerSettings() {
@@ -45,56 +50,82 @@ public class CertificateService
         return temporalConfig.PrivateKeyBase64 ?? throw new Exception($"Temporal private key configuration not found for setting Tenants:{_tenantContext.TenantId}");
     }
 
-
-    public async Task<IResult> GenerateClientCertificate(CertRequest request)
+    private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId)
     {
-        try
+        // Revoke previous certificates for this user
+        var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
+        foreach (var prevCert in previousCerts)
         {
-            var user = _httpContextAccessor.HttpContext?.User;
-            _logger.LogDebug("Generating client certificate for {requestName}, {tenantId}", request.Name, _tenantContext.TenantId);
-            var userId = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value ?? "unknown";  
-            _logger.LogDebug("User Name: {userName}", userId);
-            var cert = _certificateGenerator.GenerateClientCertificate(request.Name, _tenantContext.TenantId, userId);
-            var certBytes = cert.Export(X509ContentType.Pfx, request.Password);
-            
-            return await Task.FromResult(Results.File(
-                certBytes,
-                "application/x-pkcs12",
-                $"{request.Name}-{_tenantContext.TenantId}.pfx"
-            ));
+            if (!prevCert.IsRevoked)
+            {
+                prevCert.IsRevoked = true;
+                prevCert.RevokedAt = DateTime.UtcNow;
+                await _certificateRepository.UpdateAsync(prevCert);
+                _logger.LogInformation(
+                    "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
+                    prevCert.Thumbprint, 
+                    userId);
+            }
         }
-        catch (Exception ex)
+
+        // Generate new certificate
+        var cert = _certificateGenerator.GenerateClientCertificate(
+            name, 
+            _tenantContext.TenantId, 
+            userId);
+
+        // Store certificate metadata
+        await _certificateRepository.CreateAsync(new Certificate
         {
-            Console.WriteLine(ex);
-            _logger.LogError(ex, "Failed to generate certificate");
-            return Results.Problem($"Failed to generate certificate. {ex.Message}", statusCode: 500);
-        }
+            Thumbprint = cert.Thumbprint,
+            SubjectName = cert.Subject,
+            TenantId = _tenantContext.TenantId,
+            IssuedTo = userId,
+            IssuedAt = DateTime.UtcNow,
+            ExpiresAt = cert.NotAfter.ToUniversalTime(),
+            IsRevoked = false
+        });
+
+        _logger.LogInformation(
+            "Generated new certificate. Name: {Name}, Thumbprint: {Thumbprint}, User: {UserId}", 
+            name, 
+            cert.Thumbprint,
+            userId);
+
+        return cert;
     }
 
-    public IResult GenerateClientCertificateBase64(CertRequest request)
+    public async Task<IResult> GenerateClientCertificateBase64()
     {
         try
         {
-            var user = _httpContextAccessor.HttpContext?.User;
-            _logger.LogDebug("Generating client certificate (PEM) for {requestName}, {tenantId}", request.Name, _tenantContext.TenantId);
-            var userId = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value ?? "unknown";  
-            _logger.LogDebug("User Name: {userName}", userId);
-            
-            var cert = _certificateGenerator.GenerateClientCertificate(request.Name, _tenantContext.TenantId, userId);
-            
-            // Export as PEM format
-            var pemBytes = cert.Export(X509ContentType.Cert);
-            var base64String = Convert.ToBase64String(pemBytes);
-            
-            return Results.Ok(new { 
-                certificate = base64String
-            });
+            var certName = "XiansAi-Client-Certificate";
+            var userId = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value 
+                ?? throw new UnauthorizedAccessException("User not authenticated");
+
+            _logger.LogInformation(
+                "Generating base64 client certificate for {Name}, Tenant: {TenantId}, User: {UserId}", 
+                certName, 
+                _tenantContext.TenantId, 
+                userId);
+
+            var cert = await GenerateAndStoreCertificate(certName, userId);
+            var certBytes = cert.Export(X509ContentType.Cert);
+            var base64String = Convert.ToBase64String(certBytes);
+
+            return Results.Ok(new { certificate = base64String });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unauthorized certificate generation attempt");
+            return Results.Unauthorized();
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex);
-            _logger.LogError(ex, "Failed to generate PEM certificate");
-            return Results.Problem($"Failed to generate PEM certificate. {ex.Message}", statusCode: 500);
+            _logger.LogError(ex, "Failed to generate base64 certificate");
+            return Results.Problem(
+                "An error occurred while generating the certificate",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 }
@@ -102,5 +133,4 @@ public class CertificateService
 public class CertRequest
 {
     public string Name { get; set; } = "DefaultCertificate";
-    public string? Password { get; set; }
 }

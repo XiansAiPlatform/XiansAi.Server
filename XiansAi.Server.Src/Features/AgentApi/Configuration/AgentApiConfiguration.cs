@@ -16,7 +16,7 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IActivityHistoryRepository, ActivityHistoryRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
-
+        builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
         // Register HttpClient for webhook service
         builder.Services.AddHttpClient();
 
