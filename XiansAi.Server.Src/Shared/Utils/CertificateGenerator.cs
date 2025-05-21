@@ -32,7 +32,7 @@ public class CertificateGenerator
         // Create certificate from PFX data with preserved storage provider
         var limits = new Pkcs12LoaderLimits { PreserveStorageProvider = true };
         return X509CertificateLoader.LoadPkcs12(pfxBytes, password,
-            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable,
+            X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.Exportable,
             limits);
     }
 
@@ -91,7 +91,7 @@ public class CertificateGenerator
 
         // Load using X509CertificateLoader with proper flags and limits
         return X509CertificateLoader.LoadPkcs12(pfxBytes, null, 
-            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable,
+            X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.Exportable,
             limits);
     }
 }
