@@ -1,9 +1,8 @@
-using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Data;
 
-namespace Features.WebApi.Repositories;
+namespace Shared.Repositories;
 
 public interface IFlowDefinitionRepository
 {

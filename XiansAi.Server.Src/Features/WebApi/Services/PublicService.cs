@@ -148,8 +148,7 @@ public class PublicService
         
         string cacheKey = GetVerificationCacheKey(email);
         await _cache.SetStringAsync(cacheKey, code, options);
-        _logger.LogDebug("Stored verification code in cache with key: {CacheKey}, expiration: {ExpirationMinutes} minutes", 
-            cacheKey, CODE_EXPIRATION_MINUTES);
+        _logger.LogDebug($"Stored verification code {code} in cache with key: {cacheKey}, expiration: {CODE_EXPIRATION_MINUTES} minutes");
 
         return code;
     }

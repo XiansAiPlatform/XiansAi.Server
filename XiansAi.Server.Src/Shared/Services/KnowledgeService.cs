@@ -6,7 +6,7 @@ using XiansAi.Server.Utils;
 using System.Security;
 using System.Text.Json.Serialization;
 using System.Text.Json;
-using Features.WebApi.Repositories;
+using Shared.Repositories;
 
 namespace XiansAi.Server.Shared.Services;
 

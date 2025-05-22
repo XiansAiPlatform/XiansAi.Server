@@ -35,7 +35,6 @@ public static class WebApiConfiguration
         
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
-        builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
