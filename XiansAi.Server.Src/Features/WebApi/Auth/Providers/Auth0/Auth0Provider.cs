@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.Json;
+using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
 
@@ -11,11 +12,13 @@ public class Auth0Provider : IAuthProvider
     private readonly ILogger<Auth0Provider> _logger;
     private RestClient _client;
     private Auth0Config? _auth0Config;
+    private readonly Auth0TokenService _tokenService;
 
-    public Auth0Provider(ILogger<Auth0Provider> logger)
+    public Auth0Provider(ILogger<Auth0Provider> logger, Auth0TokenService tokenService)
     {
         _logger = logger;
         _client = new RestClient();
+        _tokenService = tokenService;
     }
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
@@ -45,37 +48,7 @@ public class Auth0Provider : IAuthProvider
 
     public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
     {
-        try
-        {
-            var handler = new JwtSecurityTokenHandler();
-            var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
-
-            if (jsonToken == null)
-            {
-                _logger.LogWarning("Invalid JWT token format");
-                return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
-            }
-
-            var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-            
-            if (string.IsNullOrEmpty(userId))
-            {
-                _logger.LogWarning("No user identifier found in token");
-                return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
-            }
-
-            var tenantIds = jsonToken.Claims
-                .Where(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)
-                .Select(c => c.Value)
-                .ToList();
-            
-            return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((true, userId, tenantIds));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error processing JWT token");
-            return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
-        }
+        return _tokenService.ProcessToken(token);
     }
 
     public async Task<UserInfo> GetUserInfo(string userId)
@@ -138,33 +111,7 @@ public class Auth0Provider : IAuthProvider
 
     private async Task<string> GetManagementApiToken()
     {
-        try
-        {
-            if (_auth0Config == null || _auth0Config.ManagementApi == null)
-                throw new InvalidOperationException("Auth0 configuration is not initialized");
-
-            _client = new RestClient($"https://{_auth0Config.Domain}");
-            var request = new RestRequest("/oauth/token", Method.Post);
-            request.AddHeader("content-type", "application/x-www-form-urlencoded");
-
-            request.AddParameter("grant_type", "client_credentials");
-            request.AddParameter("client_id", _auth0Config.ManagementApi.ClientId ?? 
-                throw new ArgumentException("Management API client ID is missing"));
-            request.AddParameter("client_secret", _auth0Config.ManagementApi.ClientSecret ?? 
-                throw new ArgumentException("Management API client secret is missing"));
-            request.AddParameter("audience", $"https://{_auth0Config.Domain}/api/v2/");
-
-            var response = await _client.ExecuteAsync(request);
-            EnsureSuccessfulResponse(response, "get management API token");
-
-            var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response.Content!);
-            return tokenResponse?.AccessToken ?? throw new Exception("No access token in response");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get management API token");
-            throw;
-        }
+        return await _tokenService.GetManagementApiToken();
     }
 
     private RestRequest CreateAuthenticatedRequest(string resource, Method method, string token)

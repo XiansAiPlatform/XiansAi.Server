@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.Json;
 using Features.WebApi.Auth.Providers.Auth0;
+using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
 
@@ -12,12 +13,13 @@ public class AzureB2CProvider : IAuthProvider
     private readonly ILogger<AzureB2CProvider> _logger;
     private RestClient _client;
     private AzureB2CConfig? _azureB2CConfig;
-    private readonly string _tenantClaimType = "extension_tenants";
+    private readonly AzureB2CTokenService _tokenService;
 
-    public AzureB2CProvider(ILogger<AzureB2CProvider> logger)
+    public AzureB2CProvider(ILogger<AzureB2CProvider> logger, AzureB2CTokenService tokenService)
     {
         _logger = logger;
         _client = new RestClient();
+        _tokenService = tokenService;
     }
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
@@ -50,37 +52,7 @@ public class AzureB2CProvider : IAuthProvider
 
     public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
     {
-        try
-        {
-            var handler = new JwtSecurityTokenHandler();
-            var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
-
-            if (jsonToken == null)
-            {
-                _logger.LogWarning("Invalid JWT token format");
-                return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
-            }
-
-            var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
-            
-            if (string.IsNullOrEmpty(userId))
-            {
-                _logger.LogWarning("No user identifier found in token");
-                return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
-            }
-
-            var tenantIds = jsonToken.Claims
-                .Where(c => c.Type == _tenantClaimType)
-                .Select(c => c.Value)
-                .ToList();
-            
-            return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((true, userId, tenantIds));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error processing JWT token");
-            return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
-        }
+        return _tokenService.ProcessToken(token);
     }
 
     public async Task<UserInfo> GetUserInfo(string userId)
@@ -189,38 +161,6 @@ public class AzureB2CProvider : IAuthProvider
 
     private async Task<string> GetMsGraphApiToken()
     {
-        try
-        {
-            if (_azureB2CConfig == null || _azureB2CConfig.ManagementApi == null)
-                throw new InvalidOperationException("Azure B2C configuration is not initialized");
-
-            _client = new RestClient($"https://login.microsoftonline.com/{_azureB2CConfig.TenantId}/oauth2/v2.0/token");
-            
-            var request = new RestRequest("", Method.Post);
-            request.AddHeader("Content-Type", "application/x-www-form-urlencoded");
-            
-            request.AddParameter("grant_type", "client_credentials");
-            request.AddParameter("client_id", _azureB2CConfig.ManagementApi.ClientId ?? 
-                throw new ArgumentException("Management API client ID is missing"));
-            request.AddParameter("client_secret", _azureB2CConfig.ManagementApi.ClientSecret ?? 
-                throw new ArgumentException("Management API client secret is missing"));
-            request.AddParameter("scope", "https://graph.microsoft.com/.default");
-            
-            var response = await _client.ExecuteAsync(request);
-            
-            if (!response.IsSuccessful)
-            {
-                _logger.LogError("Failed to get MS Graph API token: {ErrorMessage}", response.ErrorMessage);
-                throw new Exception($"Failed to get MS Graph API token: {response.ErrorMessage}");
-            }
-            
-            var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response.Content!);
-            return tokenResponse?.AccessToken ?? throw new Exception("No access token in response");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get MS Graph API token");
-            throw;
-        }
+        return await _tokenService.GetManagementApiToken();
     }
 } 
