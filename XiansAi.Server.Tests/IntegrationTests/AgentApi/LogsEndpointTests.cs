@@ -24,7 +24,9 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
             Message = "Test log message",
             Level = LogLevel.Information,
             WorkflowId = ObjectId.GenerateNewId().ToString(),
-            WorkflowRunId = ObjectId.GenerateNewId().ToString()
+            WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+            WorkflowType = "TestWorkflow",
+            Agent = "TestAgent"
         };
 
         // Act
@@ -52,14 +54,18 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
                 Message = "First log message",
                 Level = Microsoft.Extensions.Logging.LogLevel.Information,
                 WorkflowId = ObjectId.GenerateNewId().ToString(),
-                WorkflowRunId = ObjectId.GenerateNewId().ToString()
+                WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+                WorkflowType = "TestWorkflow",
+                Agent = "TestAgent"
             },
             new LogRequest
             {
                 Message = "Second log message",
                 Level = Microsoft.Extensions.Logging.LogLevel.Warning,
                 WorkflowId = ObjectId.GenerateNewId().ToString(),
-                WorkflowRunId = ObjectId.GenerateNewId().ToString()
+                WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+                WorkflowType = "TestWorkflow",
+                Agent = "TestAgent"
             }
         };
 
@@ -93,7 +99,9 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
             Message = "Test log message",
             Level = Microsoft.Extensions.Logging.LogLevel.Information,
             WorkflowId = null!, // This should trigger validation
-            WorkflowRunId = ObjectId.GenerateNewId().ToString()
+            WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+            WorkflowType = "TestWorkflow",
+            Agent = "TestAgent"
         };
 
         // Act
