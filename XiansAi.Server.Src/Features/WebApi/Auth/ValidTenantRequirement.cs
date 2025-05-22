@@ -1,5 +1,6 @@
 using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
+using Features.WebApi.Auth.Providers;
 
 namespace Features.WebApi.Auth;
 
@@ -17,13 +18,14 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
     public ValidTenantHandler(
         ILogger<ValidTenantHandler> logger, 
         ITenantContext tenantContext,
-        IConfiguration configuration)
-        : base(logger, tenantContext)
+        IConfiguration configuration,
+        IAuthProviderFactory authProviderFactory)
+        : base(logger, tenantContext, authProviderFactory)
     {
         _configuration = configuration;
     }
 
-    protected override Task HandleRequirementAsync(
+    protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         ValidTenantRequirement requirement)
     {
@@ -34,22 +36,22 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
         {
             _logger.LogWarning("No Tenant ID found in X-Tenant-Id header");
             context.Fail(new AuthorizationFailureReason(this, "No Tenant ID found in X-Tenant-Id header"));
-            return Task.CompletedTask;
+            return;
         }
 
-        var (success, loggedInUser, authorizedTenantIds) = ValidateToken(context);
+        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(context);
         if (!success)
         {
             _logger.LogWarning("Token validation failed");
             context.Fail(new AuthorizationFailureReason(this, "Token validation failed"));
-            return Task.CompletedTask;
+            return;
         }
 
         if (authorizedTenantIds == null || !authorizedTenantIds.Contains(currentTenantId))
         {
             _logger.LogWarning($"Tenant ID {currentTenantId} is not authorized for this token holder");
             context.Fail(new AuthorizationFailureReason(this, $"Tenant {currentTenantId} is not authorized for this token holder"));
-            return Task.CompletedTask;
+            return;
         }
 
         var tenantSection = _configuration.GetSection($"Tenants:{currentTenantId}");
@@ -57,7 +59,7 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
         {
             _logger.LogWarning("Tenant configuration not found for tenant ID: {currentTenantId}", currentTenantId);
             context.Fail(new AuthorizationFailureReason(this, $"Tenant {currentTenantId} configuration not found"));
-            return Task.CompletedTask;
+            return;
         }
 
         // set tenant context and succeed
@@ -66,6 +68,5 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
 
         context.Succeed(requirement);
-        return Task.CompletedTask;
     }
 }
