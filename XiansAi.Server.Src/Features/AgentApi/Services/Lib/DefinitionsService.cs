@@ -7,9 +7,9 @@ using MongoDB.Driver;
 using XiansAi.Server.GenAi;
 using Shared.Auth;
 using Shared.Data.Models;
-using XiansAi.Server.Features.WebApi.Models;
 using Shared.Data;
 using Shared.Utils.GenAi;
+using Features.WebApi.Repositories;
 
 namespace Features.AgentApi.Services.Lib;
 
@@ -74,12 +74,14 @@ public class DefinitionsService : IDefinitionsService
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMarkdownService _markdownService; 
+    private readonly IAgentPermissionRepository _agentPermissionRepository;
     public DefinitionsService(
         IFlowDefinitionRepository flowDefinitionRepository,
         ILogger<DefinitionsService> logger,
         IOpenAIClientService openAIClientService,
         ITenantContext tenantContext,
-        IMarkdownService markdownService
+        IMarkdownService markdownService,
+        IAgentPermissionRepository agentPermissionRepository
     )
     {
         _flowDefinitionRepository = flowDefinitionRepository;
@@ -87,24 +89,53 @@ public class DefinitionsService : IDefinitionsService
         _openAIClientService = openAIClientService;
         _tenantContext = tenantContext;
         _markdownService = markdownService;
+        _agentPermissionRepository = agentPermissionRepository;
     }
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
     {
+        if (string.IsNullOrEmpty(request.Agent))
+        {
+            _logger.LogWarning("Agent name is empty or null");
+            return Results.Json(
+                new { message = "Agent name is required." }, 
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Check if the user has permissions for this agent
+        var permissions = await _agentPermissionRepository.GetAgentPermissionsAsync(request.Agent);
+        _logger.LogInformation("Permissions: {Permissions}", permissions);
+        var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
+        
+        if (permissions != null && !permissions.HasPermission(currentUser, _tenantContext.UserRoles, PermissionLevel.Write))
+        {
+            var warningMessage = @$"User `{currentUser}` does not have write permission 
+                for agent `{request.Agent}` which is owned by another user. 
+                Please use a different name or ask the owner to share 
+                the agent with you with write permission.";
+            _logger.LogWarning(warningMessage);
+            return Results.Json(
+                new { message = warningMessage }, 
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+        
         var existingDefinition = await _flowDefinitionRepository.GetByWorkflowTypeAsync(request.WorkflowType);
         var definition = CreateFlowDefinitionFromRequest(request, existingDefinition);
         
         if (existingDefinition != null)
         {
             if (!existingDefinition.Permissions.HasPermission(
-                _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found"),
+                currentUser,
                 _tenantContext.UserRoles, 
                 PermissionLevel.Write))
             {
-                _logger.LogWarning("User {User} attempted to update definition {WorkflowType} without write permission", 
-                    _tenantContext.LoggedInUser, definition.WorkflowType);
+                var warningMessage = @$"User `{currentUser}` 
+                    attempted to update definition `{definition.WorkflowType}` without write permission. 
+                    Another user in your tenant has already owning this definition. Use a different name 
+                    or ask them to share the definition with you with write permission.";
+                _logger.LogWarning(warningMessage);
                 return Results.Json(
-                    new { message = "You do not have permission to update this definition." }, 
+                    new { message = warningMessage }, 
                     statusCode: StatusCodes.Status403Forbidden
                 );
             }

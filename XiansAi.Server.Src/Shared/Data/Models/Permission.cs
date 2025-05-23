@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace Shared.Data;
@@ -69,5 +70,10 @@ public class Permission
     public void RevokeOwnerAccess(string userId)
     {
         OwnerAccess.Remove(userId);
+    }
+
+    public override string ToString()
+    {
+        return JsonSerializer.Serialize(this);
     }
 }

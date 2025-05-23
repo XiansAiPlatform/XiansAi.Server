@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
 using Features.WebApi.Services;
-using XiansAi.Server.Features.WebApi.Models;
+using Features.WebApi.Models;
 
 namespace Features.WebApi.Endpoints;
 

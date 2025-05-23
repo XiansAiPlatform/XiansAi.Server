@@ -1,8 +1,7 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
-using XiansAi.Server.Features.WebApi.Models;
-using XiansAi.Server.Shared.Data;
 using Features.WebApi.Models;
+using Shared.Data;
 
 namespace XiansAi.Server.Features.WebApi.Repositories;
 

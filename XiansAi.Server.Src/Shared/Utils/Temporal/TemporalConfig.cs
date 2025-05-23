@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace XiansAi.Server.Temporal;
+namespace Shared.Utils.Temporal;
 
 public class TemporalConfig
 {

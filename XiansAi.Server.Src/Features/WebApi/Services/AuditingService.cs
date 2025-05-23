@@ -1,7 +1,7 @@
 using Shared.Auth;
-using XiansAi.Server.Features.WebApi.Repositories;
-using XiansAi.Server.Features.WebApi.Models;
 using MongoDB.Driver;
+using Features.WebApi.Repositories;
+using Features.WebApi.Models;
 
 namespace Features.WebApi.Services;
 

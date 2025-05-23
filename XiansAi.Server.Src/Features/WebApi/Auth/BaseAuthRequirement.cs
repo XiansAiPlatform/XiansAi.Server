@@ -1,8 +1,7 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
-using XiansAi.Server.Auth;
+using Features.WebApi.Auth.Providers;
 
 namespace Features.WebApi.Auth;
 
@@ -19,16 +18,19 @@ public abstract class BaseAuthHandler<T> : AuthorizationHandler<T> where T : Bas
 {
     protected readonly ILogger _logger;
     protected readonly ITenantContext _tenantContext;
+    protected readonly IAuthProviderFactory _authProviderFactory;
 
     protected BaseAuthHandler(
         ILogger logger, 
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IAuthProviderFactory authProviderFactory)
     {
         _logger = logger;
         _tenantContext = tenantContext;
+        _authProviderFactory = authProviderFactory;
     }
 
-    protected virtual (bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)
+    protected virtual async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)>
         ValidateToken(AuthorizationHandlerContext context)
     {
         var httpContext = context.Resource as HttpContext;
@@ -44,32 +46,19 @@ public abstract class BaseAuthHandler<T> : AuthorizationHandler<T> where T : Bas
 
         try
         {
-            var handler = new JwtSecurityTokenHandler();
-            var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
-
-            if (jsonToken == null)
-            {
-                _logger.LogWarning("Invalid JWT token format");
-                return (false, null, null);
-            }
-
-            var loggedInUser = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+            var authProvider = _authProviderFactory.GetProvider();
+            var (success, userId, tenantIds) = await authProvider.ValidateToken(token);
             
-            if (string.IsNullOrEmpty(loggedInUser))
+            if (!success || string.IsNullOrEmpty(userId))
             {
-                _logger.LogWarning("No user identifier found in token");
+                _logger.LogWarning("Token validation failed");
                 return (false, null, null);
             }
-
-            var authorizedTenantIds = jsonToken.Claims
-                .Where(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)
-                .Select(c => c.Value)
-                .ToList();
             
             // Set the user name to the logged in user
-            httpContext?.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, loggedInUser)]));
+            httpContext?.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId)]));
 
-            return (true, loggedInUser, authorizedTenantIds);
+            return (true, userId, tenantIds);
         }
         catch (Exception ex)
         {

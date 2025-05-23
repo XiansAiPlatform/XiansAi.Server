@@ -1,8 +1,8 @@
 using System.Text.Json;
+using Shared.Utils.Temporal;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Api.History.V1;
 using Temporalio.Client;
-using XiansAi.Server.Temporal;
 
 namespace Features.WebApi.Services;
 

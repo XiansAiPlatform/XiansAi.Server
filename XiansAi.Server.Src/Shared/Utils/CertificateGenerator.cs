@@ -1,8 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Linq;
 
-namespace XiansAi.Server.Auth;
+namespace Shared.Utils;
 
 public class CertificateGenerator
 {
@@ -30,11 +29,10 @@ public class CertificateGenerator
         // Convert base64 string to byte array
         byte[] pfxBytes = Convert.FromBase64String(pfxBase64);
 
-        // Create certificate from PFX data with preserved storage provider
-        var limits = new Pkcs12LoaderLimits { PreserveStorageProvider = true };
-        return X509CertificateLoader.LoadPkcs12(pfxBytes, password,
-            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable,
-            limits);
+#pragma warning disable SYSLIB0057 // Type or member is obsolete
+        var cert = new X509Certificate2(pfxBytes, password, X509KeyStorageFlags.Exportable);
+#pragma warning restore SYSLIB0057 // Type or member is obsolete
+        return cert;
     }
 
     public X509Certificate2 GenerateClientCertificate(string certName, string tenantName, string userName)
@@ -84,16 +82,9 @@ public class CertificateGenerator
         // Export with private key and reimport to ensure proper key storage
         var pfxBytes = certWithKey.Export(X509ContentType.Pfx);
         
-        // Configure loader limits to preserve the storage provider
-        var limits = new Pkcs12LoaderLimits
-        {
-            PreserveStorageProvider = true
-        };
-
-        // Load using X509CertificateLoader with proper flags and limits
-        return X509CertificateLoader.LoadPkcs12(pfxBytes, null, 
-            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable,
-            limits);
+#pragma warning disable SYSLIB0057 // Type or member is obsolete
+        return new X509Certificate2(pfxBytes);
+#pragma warning restore SYSLIB0057 // Type or member is obsolete
     }
 }
 

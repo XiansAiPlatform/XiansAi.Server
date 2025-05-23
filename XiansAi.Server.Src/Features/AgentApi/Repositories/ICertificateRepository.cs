@@ -1,6 +1,7 @@
 // Features/AgentApi/Repositories/ICertificateRepository.cs
 using Features.AgentApi.Models;
 using MongoDB.Driver;
+using Shared.Data;
 using XiansAi.Server.Shared.Data;
 
 namespace Features.AgentApi.Repositories;

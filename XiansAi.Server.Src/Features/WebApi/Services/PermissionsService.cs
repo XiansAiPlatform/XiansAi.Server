@@ -3,6 +3,7 @@ using XiansAi.Server.Features.WebApi.Repositories;
 using Shared.Data;
 using Shared.Auth;
 using Shared.Utils.Services;
+using Features.WebApi.Repositories;
 
 namespace Features.WebApi.Services;
 
@@ -51,6 +52,11 @@ public class PermissionsService
         _logger.LogInformation("Getting permissions for agent: {AgentName}", agentName);
         
         var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
+        if (permissions == null)
+        {
+            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            return ServiceResult<PermissionDto>.NotFound("No permissions found for this agent");
+        }
         
         return ServiceResult<PermissionDto>.Success(new PermissionDto
         {
@@ -84,7 +90,7 @@ public class PermissionsService
         
         // Check if user has owner permission
         var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (!currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -127,7 +133,7 @@ public class PermissionsService
         
         // Check if user has owner permission
         var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (!currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -163,7 +169,7 @@ public class PermissionsService
         
         // Check if user has owner permission
         var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (!currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -199,7 +205,7 @@ public class PermissionsService
         
         // Check if user has owner permission
         var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (!currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to update user permission for agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);

@@ -53,7 +53,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
     private string GetTemporalQueueName(string workFlowType, string? queueName)
     {
-        workFlowType = workFlowType.ToLower().Replace(" ", "").Replace("-", "").Trim();
+        //workFlowType = workFlowType.ToLower().Replace(" ", "").Replace("-", "").Trim();
         var queueFullName = string.IsNullOrEmpty(queueName) ? workFlowType : queueName + "--" + workFlowType;
         return queueFullName;
     }

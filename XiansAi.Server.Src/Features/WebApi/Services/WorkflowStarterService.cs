@@ -1,11 +1,8 @@
-using XiansAi.Server.Temporal;
 using Temporalio.Client;
-using XiansAi.Server.Auth;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
-using Temporalio.Common;
 using Shared.Auth;
-using Shared.Utils;
+using Shared.Utils.Temporal;
 
 namespace Features.WebApi.Services;
 

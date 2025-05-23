@@ -1,12 +1,11 @@
 using OpenAI.Chat;
-using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
-using XiansAi.Server.Auth;
 using Shared.Auth;
-namespace XiansAi.Server.GenAi;
+namespace Shared.Utils.GenAi;
 
 public interface IOpenAIClientService
 {
+    string GetApiKey();
     Task<string> GetChatCompletionAsync(List<ChatMessage> messages);
 }
 
@@ -26,16 +25,21 @@ public class OpenAIClientService : IOpenAIClientService
         _tenantContext = tenantContext;
     }
 
+    public string GetApiKey()
+    {
+        var apiKey = _config.ApiKey;
+        if (string.IsNullOrEmpty(apiKey))
+            throw new Exception("OpenAI ApiKey is not set");
+
+        return apiKey;
+    }
+
     public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages)
     {
         var tenantId = _tenantContext.TenantId;
         var chatClient = _clients.GetOrAdd(tenantId, _ =>
         {
-            var apiKey = _config.ApiKey;
-
-            if (string.IsNullOrEmpty(apiKey))
-                throw new Exception("OpenAI ApiKey is not set");
-
+            var apiKey = GetApiKey();
             return new ChatClient(_config.Model, apiKey);
         });
 

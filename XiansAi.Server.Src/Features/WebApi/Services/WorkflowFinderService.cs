@@ -2,12 +2,12 @@ using Shared.Auth;
 using Shared.Utils;
 using Temporalio.Client;
 using Temporalio.Converters;
-using XiansAi.Server.Temporal;
-using XiansAi.Server.Features.WebApi.Repositories;
-using XiansAi.Server.Shared.Data;
 using System.Text.Json;
 using Temporalio.Api.WorkflowService.V1;
 using Temporalio.Api.TaskQueue.V1;
+using Shared.Utils.Temporal;
+using Shared.Data;
+using Features.WebApi.Repositories;
 
 namespace Features.WebApi.Services;
 

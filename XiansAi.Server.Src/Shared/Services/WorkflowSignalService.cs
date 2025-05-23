@@ -1,7 +1,7 @@
-using XiansAi.Server.Temporal;
 using Shared.Auth;
 using Shared.Utils;
 using System.Text.Json.Serialization;
+using Shared.Utils.Temporal;
 
 namespace Shared.Services;
 

@@ -1,6 +1,4 @@
 using Microsoft.Extensions.Caching.Distributed;
-using XiansAi.Server.Auth;
-using XiansAi.Server.Temporal;
 using Features.WebApi.Auth;
 using Shared.Auth;
 
@@ -11,7 +9,7 @@ namespace Features.WebApi.Services;
 /// </summary>
 public class PublicService 
 {
-    private readonly IAuth0MgtAPIConnect _auth0MgtAPIConnect;
+    private readonly IAuthMgtConnect _authMgtConnect;
     private readonly ILogger<PublicService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IDistributedCache _cache;
@@ -27,7 +25,7 @@ public class PublicService
     /// <summary>
     /// Initializes a new instance of the <see cref="PublicService"/> class.
     /// </summary>
-    /// <param name="auth0MgtAPIConnect">Service for Auth0 Management API operations</param>
+    /// <param name="authMgtConnect">Service for Auth0 Management API operations</param>
     /// <param name="logger">Logger for this class</param>
     /// <param name="tenantContext">Context for tenant operations</param>
     /// <param name="cache">Distributed cache for storing verification codes</param>
@@ -35,14 +33,14 @@ public class PublicService
     /// <param name="configuration">Application configuration</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
-        IAuth0MgtAPIConnect auth0MgtAPIConnect, 
+        IAuthMgtConnect authMgtConnect, 
         ILogger<PublicService> logger,
         ITenantContext tenantContext,
         IDistributedCache cache, 
         IEmailService emailService,
         IConfiguration configuration)
     {
-        _auth0MgtAPIConnect = auth0MgtAPIConnect ?? throw new ArgumentNullException(nameof(auth0MgtAPIConnect));
+        _authMgtConnect = authMgtConnect ?? throw new ArgumentNullException(nameof(authMgtConnect));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -150,8 +148,7 @@ public class PublicService
         
         string cacheKey = GetVerificationCacheKey(email);
         await _cache.SetStringAsync(cacheKey, code, options);
-        _logger.LogDebug("Stored verification code in cache with key: {CacheKey}, expiration: {ExpirationMinutes} minutes", 
-            cacheKey, CODE_EXPIRATION_MINUTES);
+        _logger.LogDebug($"Stored verification code {code} in cache with key: {cacheKey}, expiration: {CODE_EXPIRATION_MINUTES} minutes");
 
         return code;
     }
@@ -235,7 +232,7 @@ The Xians.ai Team";
                 var tenantId = GenerateTenantId(email);
                 _logger.LogDebug("Setting tenant {TenantId} for user {UserId}", tenantId, user);
                 
-                await _auth0MgtAPIConnect.SetNewTenant(user, tenantId);
+                await _authMgtConnect.SetNewTenant(user, tenantId);
                 _logger.LogInformation("Successfully set tenant {TenantId} for user {UserId}", tenantId, user);
             }
             catch (Exception ex)

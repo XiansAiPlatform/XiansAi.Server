@@ -1,15 +1,12 @@
-using System.Text.Json;
 using Temporalio.Client;
 using System.Collections.Concurrent;
-using XiansAi.Server.Auth;
 using Temporalio.Api.Cloud.CloudService.V1;
 using Temporalio.Api.Cloud.Namespace.V1;
 using Temporalio.Api.Cloud.Identity.V1;
-using Google.Protobuf.Collections;
 using Google.Protobuf.WellKnownTypes;
 using Shared.Auth;
 
-namespace XiansAi.Server.Temporal;
+namespace Shared.Utils.Temporal;
 
 public interface ITemporalClientService
 {

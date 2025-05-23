@@ -1,48 +1,64 @@
-using RestSharp;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text.Json;
+using Features.WebApi.Auth.Providers.Tokens;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using RestSharp;
 
-namespace Features.WebApi.Auth;
+namespace Features.WebApi.Auth.Providers.Auth0;
 
-public interface IAuth0MgtAPIConnect    
+public class Auth0Provider : IAuthProvider
 {
-    /// <summary>
-    /// Gets the Auth0 Management API token
-    /// </summary>
-    Task<string> GetManagementApiToken();
-    
-    /// <summary>
-    /// Adds a new tenant to the user's app_metadata
-    /// </summary>
-    Task<string> SetNewTenant(string userId, string tenantId);
-    
-    /// <summary>
-    /// Gets user information from Auth0
-    /// </summary>
-    Task<UserInfo> GetUserInfo(string userId);
-}
+    private readonly ILogger<Auth0Provider> _logger;
+    private RestClient _client;
+    private Auth0Config? _auth0Config;
+    private readonly Auth0TokenService _tokenService;
 
-public class Auth0MgtAPIConnect : IAuth0MgtAPIConnect
-{
-    private readonly Auth0Config _auth0Config;
-    private readonly ILogger<Auth0MgtAPIConnect> _logger;
-    private readonly RestClient _client;
-
-    public Auth0MgtAPIConnect(IConfiguration configuration, ILogger<Auth0MgtAPIConnect> logger)
+    public Auth0Provider(ILogger<Auth0Provider> logger, Auth0TokenService tokenService)
     {
         _logger = logger;
+        _client = new RestClient();
+        _tokenService = tokenService;
+    }
+
+    public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
+    {
         _auth0Config = configuration.GetSection("Auth0").Get<Auth0Config>() ?? 
             throw new ArgumentException("Auth0 configuration is missing");
-        
+            
         if (string.IsNullOrEmpty(_auth0Config.Domain))
             throw new ArgumentException("Auth0 domain is missing");
             
-        _client = new RestClient($"https://{_auth0Config.Domain}");
+        options.RequireHttpsMetadata = false;
+        options.Authority = _auth0Config.Domain;
+        options.Audience = _auth0Config.Audience;
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                if (context.Principal?.Identity is ClaimsIdentity identity)
+                {
+                    // Set the User property of HttpContext
+                    context.HttpContext.User = context.Principal;
+                }
+                return Task.CompletedTask;
+            }
+        };
+    }
+
+    public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
+    {
+        return _tokenService.ProcessToken(token);
     }
 
     public async Task<UserInfo> GetUserInfo(string userId)
     {
         try
         {
+            if (_auth0Config == null)
+                throw new InvalidOperationException("Auth0 configuration is not initialized");
+
+            _client = new RestClient($"https://{_auth0Config.Domain}");
             var token = await GetManagementApiToken();
             var request = CreateAuthenticatedRequest($"/api/v2/users/{userId}", Method.Get, token);
 
@@ -71,6 +87,10 @@ public class Auth0MgtAPIConnect : IAuth0MgtAPIConnect
                 return "Tenant already exists";
             }
 
+            if (_auth0Config == null)
+                throw new InvalidOperationException("Auth0 configuration is not initialized");
+
+            _client = new RestClient($"https://{_auth0Config.Domain}");
             var token = await GetManagementApiToken();
             var request = CreateAuthenticatedRequest($"/api/v2/users/{userId}", Method.Patch, token);
 
@@ -89,31 +109,9 @@ public class Auth0MgtAPIConnect : IAuth0MgtAPIConnect
         }
     }
 
-    public async Task<string> GetManagementApiToken()
+    private async Task<string> GetManagementApiToken()
     {
-        try
-        {
-            var request = new RestRequest("/oauth/token", Method.Post);
-            request.AddHeader("content-type", "application/x-www-form-urlencoded");
-
-            request.AddParameter("grant_type", "client_credentials");
-            request.AddParameter("client_id", _auth0Config.ManagementApi?.ClientId ?? 
-                throw new ArgumentException("Management API client ID is missing"));
-            request.AddParameter("client_secret", _auth0Config.ManagementApi?.ClientSecret ?? 
-                throw new ArgumentException("Management API client secret is missing"));
-            request.AddParameter("audience", $"https://{_auth0Config.Domain}/api/v2/");
-
-            var response = await _client.ExecuteAsync(request);
-            EnsureSuccessfulResponse(response, "get management API token");
-
-            var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response.Content!);
-            return tokenResponse?.AccessToken ?? throw new Exception("No access token in response");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get management API token");
-            throw;
-        }
+        return await _tokenService.GetManagementApiToken();
     }
 
     private RestRequest CreateAuthenticatedRequest(string resource, Method method, string token)
@@ -132,4 +130,4 @@ public class Auth0MgtAPIConnect : IAuth0MgtAPIConnect
             throw new Exception($"Failed to {operation}: {response.ErrorMessage}");
         }
     }
-}
+} 

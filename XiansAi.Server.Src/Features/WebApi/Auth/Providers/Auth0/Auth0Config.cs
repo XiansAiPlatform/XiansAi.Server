@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Features.WebApi.Auth;
+namespace Features.WebApi.Auth.Providers.Auth0;
 
 public class Auth0Config
 {

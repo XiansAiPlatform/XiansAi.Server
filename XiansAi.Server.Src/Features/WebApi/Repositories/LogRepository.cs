@@ -1,8 +1,8 @@
+using Features.WebApi.Models;
 using MongoDB.Driver;
-using XiansAi.Server.Features.WebApi.Models;
-using XiansAi.Server.Shared.Data;
+using Shared.Data;
 
-namespace XiansAi.Server.Features.WebApi.Repositories;
+namespace Features.WebApi.Repositories;
 
 public interface ILogRepository
 {

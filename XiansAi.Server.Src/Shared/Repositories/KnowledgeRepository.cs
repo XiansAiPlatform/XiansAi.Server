@@ -1,10 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
 using XiansAi.Server.Shared.Data.Models;
-using XiansAi.Server.Features.WebApi.Models;
-using XiansAi.Server.Shared.Data;
-using Microsoft.Extensions.Logging;
-using System.Linq;
+using Shared.Data;
 
 namespace XiansAi.Server.Shared.Repositories;
 

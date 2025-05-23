@@ -1,7 +1,6 @@
 using Shared.Auth;
-using XiansAi.Server.Features.WebApi.Repositories;
-using XiansAi.Server.Shared.Data;
 using Shared.Data;
+using Shared.Repositories;
 
 namespace Features.WebApi.Services;
 
@@ -21,7 +20,7 @@ public class DefinitionsService
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     public DefinitionsService(
-        XiansAi.Server.Features.WebApi.Repositories.IFlowDefinitionRepository definitionRepository,
+        IFlowDefinitionRepository definitionRepository,
         ILogger<DefinitionsService> logger,
         ITenantContext tenantContext
     )

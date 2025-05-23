@@ -1,13 +1,12 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
-using XiansAi.Server.Shared.Data;
 using Shared.Data;
 
-namespace XiansAi.Server.Features.WebApi.Repositories;
+namespace Features.WebApi.Repositories;
 
 public interface IAgentPermissionRepository
 {
-    Task<Permission> GetAgentPermissionsAsync(string agentName);
+    Task<Permission?> GetAgentPermissionsAsync(string agentName);
     Task<bool> UpdateAgentPermissionsAsync(string agentName, Permission permissions);
     Task<bool> AddUserToAgentAsync(string agentName, string userId, PermissionLevel permissionLevel);
     Task<bool> RemoveUserFromAgentAsync(string agentName, string userId);
@@ -26,7 +25,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         _logger = logger;
     }
 
-    public async Task<Permission> GetAgentPermissionsAsync(string agentName)
+    public async Task<Permission?> GetAgentPermissionsAsync(string agentName)
     {
         _logger.LogInformation("Getting permissions for agent: {AgentName}", agentName);
         
@@ -36,7 +35,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         if (!definitions.Any())
         {
             _logger.LogWarning("No flow definitions found for agent: {AgentName}", agentName);
-            return new Permission();
+            return null;
         }
 
         // Merge permissions from all flow definitions

@@ -6,12 +6,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Features.AgentApi.Repositories;
 using System.Security.Cryptography;
-using Features.AgentApi.Models;
-using XiansAi.Server.Auth;
-using Microsoft.AspNetCore.Authentication.Certificate;
 using System.Collections.Concurrent;
-using System.Linq;
 using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.AgentApi.Auth;
 
