@@ -130,24 +130,12 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
                     .Include(x => x.Agent)
                     .Include(x => x.WorkflowType)
                     .Include(x => x.CreatedAt)
-                    .Include(x => x.UpdatedAt))
+                    .Include(x => x.UpdatedAt)
+                    .Include(x => x.Permissions))
                 .ToListAsync();
         }
 
-        return await findFluent
-            .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
-                .Include(x => x.Agent)
-                .Include(x => x.WorkflowType)
-                .Include(x => x.CreatedAt)
-                .Include(x => x.Permissions)
-                .Include(x => x.ParameterDefinitions)
-                .Include(x => x.ActivityDefinitions)
-                .Include(x => x.Id)
-                .Include(x => x.Source)
-                .Include(x => x.Markdown)
-                .Include(x => x.WorkflowType)
-                .Include(x => x.UpdatedAt))
-            .ToListAsync();
+        return await findFluent.ToListAsync();
     }
 }
 
