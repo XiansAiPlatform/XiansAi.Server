@@ -23,7 +23,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
         builder.Services.AddScoped<WorkflowCancelService>();
         builder.Services.AddScoped<LogsService>();
-        builder.Services.AddScoped<DefinitionsService>();
         builder.Services.AddScoped<TenantService>();
         builder.Services.AddScoped<WebhookService>();
         builder.Services.AddScoped<ActivitiesService>();
@@ -51,7 +50,6 @@ public static class WebApiConfiguration
         LogsEndpoints.MapLogsEndpoints(app);
         ActivityEndpoints.MapActivityEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
-        DefinitionsEndpoints.MapDefinitionsEndpoints(app);
         TenantEndpoints.MapTenantEndpoints(app);
         WebhookEndpoints.MapWebhookEndpoints(app);
         PublicEndpoints.MapPublicEndpoints(app);

@@ -10,6 +10,7 @@ public interface IFlowDefinitionRepository
     Task<FlowDefinition?> GetByWorkflowTypeAsync(string workflowType);
     Task<bool> UpdateAsync(string id, FlowDefinition definition);
     Task CreateAsync(FlowDefinition definition);
+    Task<bool> DeleteAsync(string id);
 }
 
 public class FlowDefinitionRepository : IFlowDefinitionRepository
@@ -37,5 +38,11 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
     {
         var result = await _definitions.ReplaceOneAsync(x => x.Id == id, definition);
         return result.ModifiedCount > 0;
+    }
+
+    public async Task<bool> DeleteAsync(string id)
+    {
+        var result = await _definitions.DeleteOneAsync(x => x.Id == id);
+        return result.DeletedCount > 0;
     }
 } 

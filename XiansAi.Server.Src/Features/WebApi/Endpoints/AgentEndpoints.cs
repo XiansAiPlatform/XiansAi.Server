@@ -12,8 +12,7 @@ public static class AgentEndpoints
             .WithTags("WebAPI - Agents")
             .RequiresValidTenant();
 
-        
-        agentGroup.MapGet("/all", async (
+        agentGroup.MapGet("/names", async (
             [FromServices] IAgentService service) =>
         {
             return await service.GetAgentNames();
@@ -25,7 +24,7 @@ public static class AgentEndpoints
             return operation;
         });
 
-        agentGroup.MapGet("/workflows/all", async (
+        agentGroup.MapGet("/definitions/", async (
             [FromServices] IAgentService service) =>
         {
             return await service.GetGroupedDefinitions();
@@ -34,6 +33,19 @@ public static class AgentEndpoints
         .WithOpenApi(operation => {
             operation.Summary = "Get grouped definitions";
             operation.Description = "Retrieves grouped definitions";
+            return operation;
+        });
+    
+        agentGroup.MapGet("/{agentName}/definitions/basic", async (
+            string agentName,
+            [FromServices] IAgentService service) =>
+        {
+            return await service.GetDefinitions(agentName, true);
+        })
+        .WithName("Get Grouped Definitions Basic Info")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get grouped definitions basic info";
+            operation.Description = "Retrieves grouped definitions basic info";
             return operation;
         });
 
@@ -48,6 +60,19 @@ public static class AgentEndpoints
         .WithOpenApi(operation => {
             operation.Summary = "Get workflow instances";
             operation.Description = "Retrieves workflow instances";
+            return operation;
+        });
+
+        agentGroup.MapDelete("/{agentName}", async (
+            string agentName,
+            [FromServices] IAgentService service) =>
+        {
+            return await service.DeleteAgent(agentName);
+        })
+        .WithName("Delete Agent")
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete agent";
+            operation.Description = "Deletes an agent and all its associated flow definitions. Requires owner permission.";
             return operation;
         });
     }

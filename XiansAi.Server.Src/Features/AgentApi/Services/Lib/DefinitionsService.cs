@@ -10,6 +10,7 @@ using Shared.Data.Models;
 using Shared.Data;
 using Shared.Utils.GenAi;
 using Features.WebApi.Repositories;
+using Shared.Repositories;
 
 namespace Features.AgentApi.Services.Lib;
 
@@ -71,12 +72,15 @@ public class DefinitionsService : IDefinitionsService
 {
     private readonly ILogger<DefinitionsService> _logger;
     private readonly IOpenAIClientService _openAIClientService;
-    private readonly IFlowDefinitionRepository _flowDefinitionRepository;
+    private readonly Repositories.IFlowDefinitionRepository _flowDefinitionRepository;
+    private readonly IAgentRepository _agentRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IMarkdownService _markdownService; 
     private readonly IAgentPermissionRepository _agentPermissionRepository;
+    
     public DefinitionsService(
-        IFlowDefinitionRepository flowDefinitionRepository,
+        Repositories.IFlowDefinitionRepository flowDefinitionRepository,
+        IAgentRepository agentRepository,
         ILogger<DefinitionsService> logger,
         IOpenAIClientService openAIClientService,
         ITenantContext tenantContext,
@@ -85,6 +89,7 @@ public class DefinitionsService : IDefinitionsService
     )
     {
         _flowDefinitionRepository = flowDefinitionRepository;
+        _agentRepository = agentRepository;
         _logger = logger;
         _openAIClientService = openAIClientService;
         _tenantContext = tenantContext;
@@ -102,10 +107,14 @@ public class DefinitionsService : IDefinitionsService
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
+        
+        // Ensure agent exists and check permissions
+        await EnsureAgentExistsAsync(request.Agent, currentUser);
+        
         // Check if the user has permissions for this agent
         var permissions = await _agentPermissionRepository.GetAgentPermissionsAsync(request.Agent);
         _logger.LogInformation("Permissions: {Permissions}", permissions);
-        var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
         
         if (permissions != null && !permissions.HasPermission(currentUser, _tenantContext.UserRoles, PermissionLevel.Write))
         {
@@ -124,27 +133,15 @@ public class DefinitionsService : IDefinitionsService
         
         if (existingDefinition != null)
         {
-            if (!existingDefinition.Permissions.HasPermission(
-                currentUser,
-                _tenantContext.UserRoles, 
-                PermissionLevel.Write))
-            {
-                var warningMessage = @$"User `{currentUser}` 
-                    attempted to update definition `{definition.WorkflowType}` without write permission. 
-                    Another user in your tenant has already owning this definition. Use a different name 
-                    or ask them to share the definition with you with write permission.";
-                _logger.LogWarning(warningMessage);
-                return Results.Json(
-                    new { message = warningMessage }, 
-                    statusCode: StatusCodes.Status403Forbidden
-                );
-            }
-
             if (existingDefinition.Hash != definition.Hash)
             {
+                _logger.LogInformation("Flow definition with workflow type {WorkflowType} has changed hash. Deleting existing and creating new one.", request.WorkflowType);
+                await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id);
                 await GenerateMarkdown(definition);
-                await _flowDefinitionRepository.UpdateAsync(existingDefinition.Id, definition);
-                return Results.Ok("Definition updated successfully");
+                // Create new definition with fresh ID
+                definition.Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
+                await _flowDefinitionRepository.CreateAsync(definition);
+                return Results.Ok("Definition deleted and recreated successfully");
             }
             
             return Results.Ok("Definition already up to date");
@@ -154,6 +151,28 @@ public class DefinitionsService : IDefinitionsService
         await GenerateMarkdown(definition);
         await _flowDefinitionRepository.CreateAsync(definition);
         return Results.Ok("New definition created successfully");
+    }
+
+    private async Task EnsureAgentExistsAsync(string agentName, string currentUser)
+    {
+        var existingAgent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
+        if (existingAgent == null)
+        {
+            _logger.LogInformation("Creating new agent: {AgentName} for user: {UserId}", agentName, currentUser);
+            
+            var newAgent = new Agent
+            {
+                Id = ObjectId.GenerateNewId().ToString(),
+                Name = agentName,
+                Tenant = _tenantContext.TenantId,
+                CreatedBy = currentUser,
+                CreatedAt = DateTime.UtcNow,
+                Permissions = new Permission()
+            };
+            
+            newAgent.Permissions.GrantOwnerAccess(currentUser);
+            await _agentRepository.CreateAsync(newAgent);
+        }
     }
 
     private async Task GenerateMarkdown(FlowDefinition definition)
@@ -169,12 +188,6 @@ public class DefinitionsService : IDefinitionsService
     private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null)
     {
         var userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found. Check the certificate.");
-        
-        var permissions = existingDefinition?.Permissions ?? new Permission();
-        if (existingDefinition == null)
-        {
-            permissions.GrantOwnerAccess(userId);
-        }
         
         return new FlowDefinition
         {
@@ -202,8 +215,7 @@ public class DefinitionsService : IDefinitionsService
             }).ToList(),
             CreatedAt = existingDefinition?.CreatedAt ?? DateTime.UtcNow,
             CreatedBy = existingDefinition?.CreatedBy ?? userId,
-            UpdatedAt = DateTime.UtcNow,
-            Permissions = permissions
+            UpdatedAt = DateTime.UtcNow
         };
     }
 

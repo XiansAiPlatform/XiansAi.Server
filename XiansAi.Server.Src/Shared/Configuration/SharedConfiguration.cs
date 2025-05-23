@@ -38,6 +38,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
+        builder.Services.AddScoped<IAgentRepository, AgentRepository>();
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();

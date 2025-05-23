@@ -1,6 +1,8 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Data;
+using Shared.Repositories;
+using Shared.Auth;
 
 namespace Features.WebApi.Repositories;
 
@@ -15,64 +17,50 @@ public interface IAgentPermissionRepository
 
 public class AgentPermissionRepository : IAgentPermissionRepository
 {
-    private readonly IMongoCollection<FlowDefinition> _definitions;
+    private readonly IAgentRepository _agentRepository;
+    private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly ILogger<AgentPermissionRepository> _logger;
+    private readonly ITenantContext _tenantContext;
 
-    public AgentPermissionRepository(IDatabaseService databaseService, ILogger<AgentPermissionRepository> logger)
+    public AgentPermissionRepository(
+        IAgentRepository agentRepository,
+        IFlowDefinitionRepository flowDefinitionRepository,
+        ILogger<AgentPermissionRepository> logger,
+        ITenantContext tenantContext)
     {
-        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
-        _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
+        _agentRepository = agentRepository;
+        _flowDefinitionRepository = flowDefinitionRepository;
         _logger = logger;
+        _tenantContext = tenantContext;
     }
 
     public async Task<Permission?> GetAgentPermissionsAsync(string agentName)
     {
         _logger.LogInformation("Getting permissions for agent: {AgentName}", agentName);
         
-        // Get all flow definitions for the agent
-        var definitions = await _definitions.Find(x => x.Agent == agentName).ToListAsync();
-        
-        if (!definitions.Any())
-        {
-            _logger.LogWarning("No flow definitions found for agent: {AgentName}", agentName);
-            return null;
-        }
-
-        // Merge permissions from all flow definitions
-        var mergedPermissions = new Permission();
-        foreach (var definition in definitions)
-        {
-            mergedPermissions.OwnerAccess = mergedPermissions.OwnerAccess.Union(definition.Permissions.OwnerAccess).ToList();
-            mergedPermissions.WriteAccess = mergedPermissions.WriteAccess.Union(definition.Permissions.WriteAccess).ToList();
-            mergedPermissions.ReadAccess = mergedPermissions.ReadAccess.Union(definition.Permissions.ReadAccess).ToList();
-        }
-
-        return mergedPermissions;
+        var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
+        return agent?.Permissions;
     }
 
     public async Task<bool> UpdateAgentPermissionsAsync(string agentName, Permission permissions)
     {
         _logger.LogInformation("Updating permissions for agent: {AgentName}", agentName);
         
-        // Get all flow definitions for the agent
-        var definitions = await _definitions.Find(x => x.Agent == agentName).ToListAsync();
+        // Use permission-aware method that checks if user has owner permission
+        var agentUpdated = await _agentRepository.UpdatePermissionsAsync(
+            agentName, 
+            _tenantContext.TenantId, 
+            CleanPermissionLevels(permissions),
+            _tenantContext.LoggedInUser,
+            _tenantContext.UserRoles);
         
-        if (!definitions.Any())
+        if (!agentUpdated)
         {
-            _logger.LogWarning("No flow definitions found for agent: {AgentName}", agentName);
+            _logger.LogWarning("Failed to update permissions for agent {AgentName} - either not found or insufficient permissions", agentName);
             return false;
         }
 
-        // Ensure users are only in one permission level
-        var cleanedPermissions = CleanPermissionLevels(permissions);
-
-        // Update permissions for all flow definitions
-        var updateResult = await _definitions.UpdateManyAsync(
-            x => x.Agent == agentName,
-            Builders<FlowDefinition>.Update.Set(x => x.Permissions, cleanedPermissions)
-        );
-
-        return updateResult.ModifiedCount > 0;
+        return true;
     }
 
     public async Task<bool> AddUserToAgentAsync(string agentName, string userId, PermissionLevel permissionLevel)
@@ -80,70 +68,76 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         _logger.LogInformation("Adding user {UserId} to agent {AgentName} with permission level {PermissionLevel}", 
             userId, agentName, permissionLevel);
         
-        // Get all flow definitions for the agent
-        var definitions = await _definitions.Find(x => x.Agent == agentName).ToListAsync();
-        
-        if (!definitions.Any())
+        // Get the agent without permission check first, then check owner permission explicitly
+        var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
+        if (agent == null)
         {
-            _logger.LogWarning("No flow definitions found for agent: {AgentName}", agentName);
+            _logger.LogWarning("Agent not found: {AgentName}", agentName);
             return false;
         }
 
-        var updateBuilder = Builders<FlowDefinition>.Update;
-        var filter = Builders<FlowDefinition>.Filter.Eq(x => x.Agent, agentName);
+        // Check if user has owner permission (required to add users)
+        if (!agent.Permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        {
+            _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission", 
+                _tenantContext.LoggedInUser, agentName);
+            return false;
+        }
 
-        // First remove user from all permission levels
-        var removeUpdate = updateBuilder
-            .Pull(x => x.Permissions.OwnerAccess, userId)
-            .Pull(x => x.Permissions.WriteAccess, userId)
-            .Pull(x => x.Permissions.ReadAccess, userId);
+        // Remove user from all permission levels first
+        agent.Permissions.OwnerAccess.Remove(userId);
+        agent.Permissions.WriteAccess.Remove(userId);
+        agent.Permissions.ReadAccess.Remove(userId);
 
-        await _definitions.UpdateManyAsync(filter, removeUpdate);
-
-        // Then add user to the appropriate level
+        // Add user to the appropriate level
         switch (permissionLevel)
         {
             case PermissionLevel.Owner:
-                var ownerUpdate = updateBuilder.AddToSet(x => x.Permissions.OwnerAccess, userId);
-                await _definitions.UpdateManyAsync(filter, ownerUpdate);
+                agent.Permissions.GrantOwnerAccess(userId);
                 break;
             case PermissionLevel.Write:
-                var writeUpdate = updateBuilder.AddToSet(x => x.Permissions.WriteAccess, userId);
-                await _definitions.UpdateManyAsync(filter, writeUpdate);
+                agent.Permissions.GrantWriteAccess(userId);
                 break;
             case PermissionLevel.Read:
-                var readUpdate = updateBuilder.AddToSet(x => x.Permissions.ReadAccess, userId);
-                await _definitions.UpdateManyAsync(filter, readUpdate);
+                agent.Permissions.GrantReadAccess(userId);
                 break;
         }
 
-        return true;
+        // Use the internal update method since we've already verified permissions
+        var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
+        
+        return result;
     }
 
     public async Task<bool> RemoveUserFromAgentAsync(string agentName, string userId)
     {
         _logger.LogInformation("Removing user {UserId} from agent {AgentName}", userId, agentName);
         
-        // Get all flow definitions for the agent
-        var definitions = await _definitions.Find(x => x.Agent == agentName).ToListAsync();
-        
-        if (!definitions.Any())
+        // Get the agent without permission check first, then check owner permission explicitly
+        var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
+        if (agent == null)
         {
-            _logger.LogWarning("No flow definitions found for agent: {AgentName}", agentName);
+            _logger.LogWarning("Agent not found: {AgentName}", agentName);
             return false;
         }
 
-        var updateBuilder = Builders<FlowDefinition>.Update;
-        var filter = Builders<FlowDefinition>.Filter.Eq(x => x.Agent, agentName);
+        // Check if user has owner permission (required to remove users)
+        if (!agent.Permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        {
+            _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission", 
+                _tenantContext.LoggedInUser, agentName);
+            return false;
+        }
 
         // Remove user from all permission levels
-        var update = updateBuilder
-            .Pull(x => x.Permissions.OwnerAccess, userId)
-            .Pull(x => x.Permissions.WriteAccess, userId)
-            .Pull(x => x.Permissions.ReadAccess, userId);
+        agent.Permissions.RevokeOwnerAccess(userId);
+        agent.Permissions.RevokeWriteAccess(userId);
+        agent.Permissions.RevokeReadAccess(userId);
 
-        var result = await _definitions.UpdateManyAsync(filter, update);
-        return result.ModifiedCount > 0;
+        // Use the internal update method since we've already verified permissions
+        var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
+        
+        return result;
     }
 
     public async Task<bool> UpdateUserPermissionAsync(string agentName, string userId, PermissionLevel newPermissionLevel)
@@ -156,6 +150,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         
         // Then add them with the new permission level
         return await AddUserToAgentAsync(agentName, userId, newPermissionLevel);
+    }
+
+    private void SyncPermissionsToFlowDefinitions(string agentName, Permission permissions)
+    {
+        // Flow definitions no longer have permissions - they inherit from agent permissions
+        // This method is no longer needed but kept for backward compatibility
+        _logger.LogInformation("Permission sync to flow definitions is no longer needed for agent {AgentName}", agentName);
     }
 
     private Permission CleanPermissionLevels(Permission permissions)

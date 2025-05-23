@@ -23,7 +23,7 @@ public class MessagingService : IMessagingService
     private readonly IConversationThreadRepository _threadRepository;
     private readonly IConversationMessageRepository _messageRepository;
     /// <summary>
-    /// Initializes a new instance of the <see cref="DefinitionsService"/> class.
+    /// Initializes a new instance of the <see cref="MessagingService"/> class.
     /// </summary>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>

@@ -11,29 +11,24 @@ public class CreateIndexes
         var database = await databaseService.GetDatabase();
         var collection = database.GetCollection<FlowDefinition>("flow_definitions");
 
-        // Create indexes for permission fields
-        await collection.Indexes.CreateOneAsync(
-            new CreateIndexModel<FlowDefinition>(
-                Builders<FlowDefinition>.IndexKeys.Ascending(x => x.Permissions.ReadAccess)
-            )
-        );
-
-        await collection.Indexes.CreateOneAsync(
-            new CreateIndexModel<FlowDefinition>(
-                Builders<FlowDefinition>.IndexKeys.Ascending(x => x.Permissions.WriteAccess)
-            )
-        );
-
-        await collection.Indexes.CreateOneAsync(
-            new CreateIndexModel<FlowDefinition>(
-                Builders<FlowDefinition>.IndexKeys.Ascending(x => x.Permissions.OwnerAccess)
-            )
-        );
-
         // Create index for sorting by creation date
         await collection.Indexes.CreateOneAsync(
             new CreateIndexModel<FlowDefinition>(
                 Builders<FlowDefinition>.IndexKeys.Descending(x => x.CreatedAt)
+            )
+        );
+
+        // Create index for agent field (used for querying by agent)
+        await collection.Indexes.CreateOneAsync(
+            new CreateIndexModel<FlowDefinition>(
+                Builders<FlowDefinition>.IndexKeys.Ascending(x => x.Agent)
+            )
+        );
+
+        // Create index for workflow type
+        await collection.Indexes.CreateOneAsync(
+            new CreateIndexModel<FlowDefinition>(
+                Builders<FlowDefinition>.IndexKeys.Ascending(x => x.WorkflowType)
             )
         );
 

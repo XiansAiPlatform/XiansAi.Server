@@ -47,18 +47,19 @@ public class KnowledgeService : IKnowledgeService
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly ILogger<KnowledgeService> _logger;
     private readonly ITenantContext _tenantContext;
-    private readonly IFlowDefinitionRepository _definitionRepository;
+    private readonly IAgentRepository _agentRepository;
+    
     public KnowledgeService(
         IKnowledgeRepository knowledgeRepository,
         ILogger<KnowledgeService> logger,
         ITenantContext tenantContext,
-        IFlowDefinitionRepository definitionRepository
+        IAgentRepository agentRepository
     )
     {
         _knowledgeRepository = knowledgeRepository;
         _logger = logger;
         _tenantContext = tenantContext;
-        _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
+        _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
     }
 
     // Validate that knowledge belongs to the user's tenant or is global
@@ -72,13 +73,19 @@ public class KnowledgeService : IKnowledgeService
         }
     }
 
+    private async Task<List<string>> GetUserAgentNamesAsync()
+    {
+        var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+        return agents.Select(a => a.Name).ToList();
+    }
+
     public async Task<IResult> GetById(string id)
     {
         var knowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(id);
-        var agents = await _definitionRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser);
+        var agentNames = await GetUserAgentNamesAsync();
         // Check if the agent is in the list of agents with permission
         if (knowledge != null && !string.IsNullOrWhiteSpace(knowledge.Agent) &&
-            agents.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
+            agentNames.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
         {
             knowledge.PermissionLevel = "edit";
         }
@@ -115,8 +122,8 @@ public class KnowledgeService : IKnowledgeService
         var knowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(id);
         if (knowledge == null)
             return Results.NotFound("Knowledge not found");
-        var agents = await _definitionRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser);
-        if (!agents.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
+        var agentNames = await GetUserAgentNamesAsync();
+        if (!agentNames.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
                 knowledge.Agent, _tenantContext.LoggedInUser);
@@ -142,8 +149,8 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request)
     {
-        var agents = await _definitionRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser);
-        if (!agents.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
+        var agentNames = await GetUserAgentNamesAsync();
+        if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
                 request.Agent, _tenantContext.LoggedInUser);
@@ -161,16 +168,16 @@ public class KnowledgeService : IKnowledgeService
     {
         var knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId);
 
-        var agents = await _definitionRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser);
+        var agentNames = await GetUserAgentNamesAsync();
 
-        Console.WriteLine(JsonSerializer.Serialize(agents));
+        Console.WriteLine(JsonSerializer.Serialize(agentNames));
 
         _logger.LogInformation("Found {Count} knowledge items", knowledge.Count);
 
         foreach (var item in knowledge)
         {
             if (!string.IsNullOrWhiteSpace(item.Agent) &&
-                agents.Contains(item.Agent, StringComparer.OrdinalIgnoreCase))
+                agentNames.Contains(item.Agent, StringComparer.OrdinalIgnoreCase))
             {
                 item.PermissionLevel = "edit";
             }
@@ -181,7 +188,6 @@ public class KnowledgeService : IKnowledgeService
         }
         return Results.Ok(knowledge);
     }
-
 
     public async Task<IResult> GetLatestByName(string name, string agent)
     {
@@ -201,8 +207,8 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> Create(KnowledgeRequest request)
     {
-        var agents = await _definitionRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser);
-        if (!agents.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
+        var agentNames = await GetUserAgentNamesAsync();
+        if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
                 request.Agent, _tenantContext.LoggedInUser);
