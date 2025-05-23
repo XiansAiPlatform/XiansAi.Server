@@ -73,7 +73,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             string recentWorkerCount = await GetRecentWorkerCount(client, workflowDescription.TaskQueue!);
 
             var fetchHistory = await workflowHandle.FetchHistoryAsync();
-            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, recentWorkerCount);
+            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, recentWorkerCount, workflowDescription.TaskQueue!);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -335,8 +335,9 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="workflow">The workflow execution to map.</param>
     /// <param name="fetchHistory">Optional workflow history to analyze for current activity.</param>
     /// <param name="numberOfWorkers">The number of workers associated with the workflow.</param>
+    /// <param name="taskQueue">The task queue associated with the workflow.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string numberOfWorkers = "N/A")
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string numberOfWorkers = "N/A", string taskQueue = "N/A")
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
@@ -376,7 +377,8 @@ public class WorkflowFinderService : IWorkflowFinderService
             Owner = userId,
             HistoryLength = workflow.HistoryLength,
             CurrentActivity = currentActivity,
-            NumOfWorkers = numberOfWorkers
+            NumOfWorkers = numberOfWorkers,
+            TaskQueue = taskQueue
         };
     }
 
@@ -484,6 +486,11 @@ public class WorkflowFinderService : IWorkflowFinderService
         /// Gets or sets the number of workers associated with the workflow.
         /// </summary>
         public string? NumOfWorkers { get; set; }
+
+        /// <summary>
+        /// Gets or sets the task queue associated with the workflow.
+        /// </summary>
+        public string? TaskQueue { get; set; }
 
         /// <summary>
         /// Gets or sets the time when the workflow started.
