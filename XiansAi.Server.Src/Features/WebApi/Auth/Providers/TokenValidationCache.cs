@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Features.WebApi.Auth.Providers;
 
@@ -79,9 +81,11 @@ public class MemoryTokenValidationCache : ITokenValidationCache
     
     private string GetCacheKey(string token)
     {
-        // Only use the first 8 chars of the token for the cache key to avoid logging the full token
-        var truncatedToken = token.Length > 8 ? token.Substring(0, 8) : token;
-        return $"token_validation:{truncatedToken}";
+        // Use SHA256 hash of the full token to ensure uniqueness while avoiding logging the full token
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(token));
+        var hashString = Convert.ToHexString(hashBytes);
+        return $"token_validation:{hashString}";
     }
     
     private class CachedValidation
