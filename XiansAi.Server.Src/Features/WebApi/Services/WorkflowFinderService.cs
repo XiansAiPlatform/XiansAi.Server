@@ -31,7 +31,8 @@ public class WorkflowFinderService : IWorkflowFinderService
     private readonly ILogger<WorkflowFinderService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IDatabaseService _databaseService;
-
+    private readonly IAgentRepository _agentRepository;
+    private readonly IPermissionsService _permissionsService;
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderService"/> class.
     /// </summary>
@@ -39,17 +40,23 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="logger">Logger for recording operational events.</param>
     /// <param name="tenantContext">Context containing tenant-specific information.</param>
     /// <param name="databaseService">The database service for accessing workflow logs.</param>
+    /// <param name="agentRepository">The agent repository for accessing agent information.</param>
+    /// <param name="permissionsService">The permissions service for checking permissions.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
         ITemporalClientService clientService,
         ILogger<WorkflowFinderService> logger,
         ITenantContext tenantContext,
-        IDatabaseService databaseService)
+        IDatabaseService databaseService,
+        IAgentRepository agentRepository,
+        IPermissionsService permissionsService)
     {
         _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _databaseService = databaseService;
+        _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
+        _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
     }
 
     /// <summary>
@@ -71,13 +78,22 @@ public class WorkflowFinderService : IWorkflowFinderService
             _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", workflowId, workflowRunId);
             var client = _clientService.GetClient();
             var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
+
             var workflowDescription = await workflowHandle.DescribeAsync();
+
+            var agent = ExtractMemoValue(workflowDescription.Memo, Constants.AgentKey) ?? throw new Exception("Agent not found");
+            var hasReadPermission = await _permissionsService.HasReadPermission(agent);
+            if (!hasReadPermission.Data)
+            {
+                return ServiceResult<WorkflowResponse>.BadRequest("You do not have read permission to this agent");
+            }
+
             //log the workflow description object
             _logger.LogDebug("Workflow description: {Description}", JsonSerializer.Serialize(workflowDescription));
             string recentWorkerCount = await GetRecentWorkerCount(client, workflowDescription.TaskQueue!);
 
-            var fetchHistory = await workflowHandle.FetchHistoryAsync();
-            var workflow = MapWorkflowToResponse(workflowDescription, fetchHistory, recentWorkerCount, workflowDescription.TaskQueue!);
+            var history = await workflowHandle.FetchHistoryAsync();
+            var workflow = MapWorkflowToResponse(workflowDescription, history, recentWorkerCount, workflowDescription.TaskQueue!);
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
                 workflow.WorkflowId, workflow.WorkflowType);
@@ -104,11 +120,15 @@ public class WorkflowFinderService : IWorkflowFinderService
         _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}",
             startTime, endTime, owner ?? "null", status ?? "null");
 
+        var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+        var agentNames = agents.Select(a => a.Name).ToArray();
+        var workflows = new List<WorkflowResponse>();
+
         try
         {
             var client = _clientService.GetClient();
-            var workflows = new List<WorkflowResponse>();
-            var listQuery = BuildQuery(startTime, endTime, status, owner);
+
+            var listQuery = BuildQuery(agentNames, startTime, endTime, status, owner);
 
             _logger.LogDebug("Executing workflow query: {Query}", string.IsNullOrEmpty(listQuery) ? "No date filters" : listQuery);
 
@@ -139,13 +159,18 @@ public class WorkflowFinderService : IWorkflowFinderService
                     workflow.LastLog = lastLog;
                 }
             }
-            return ServiceResult<List<WorkflowResponse>>.Success(workflows);
+
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve workflows. Error: {ErrorMessage}", ex.Message);
             return ServiceResult<List<WorkflowResponse>>.BadRequest("Failed to retrieve workflows: " + ex.Message);
         }
+
+
+
+        return ServiceResult<List<WorkflowResponse>>.Success(workflows);
+
     }
 
     /// <summary>
@@ -205,12 +230,13 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <summary>
     /// Builds a date range query string for filtering workflows.
     /// </summary>
+    /// <param name="agent">The agent name to filter workflows by.</param>
     /// <param name="startTime">The start time of the range.</param>
     /// <param name="endTime">The end time of the range.</param>
     /// <param name="status">Optional status filter for workflows.</param>
     /// <param name="owner">Optional owner filter for workflows.</param>
     /// <returns>A query string for temporal workflow filtering.</returns>
-    private string BuildQuery(DateTime? startTime, DateTime? endTime, string? status, string? owner)
+    private string BuildQuery(string[] agent, DateTime? startTime, DateTime? endTime, string? status, string? owner)
     {
         var queryParts = new List<string>();
         const string dateFormat = "yyyy-MM-ddTHH:mm:sszzz";
@@ -230,6 +256,8 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         // Add tenantId filter
         queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
+
+        queryParts.Add($"{Constants.AgentKey} in ({string.Join(",", agent.Select(a => "'" + a + "'"))})");
 
         // Add userId filter if current owner is requested
         if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase))
@@ -325,20 +353,20 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// Maps a Temporal workflow execution to a client-friendly response object.
     /// </summary>
     /// <param name="workflow">The workflow execution to map.</param>
-    /// <param name="fetchHistory">Optional workflow history to analyze for current activity.</param>
+    /// <param name="history">Optional workflow history to analyze for current activity.</param>
     /// <param name="numberOfWorkers">The number of workers associated with the workflow.</param>
     /// <param name="taskQueue">The task queue associated with the workflow.</param>
     /// <returns>A WorkflowResponse containing the mapped data.</returns>
-    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, Temporalio.Common.WorkflowHistory? fetchHistory = null, string numberOfWorkers = "N/A", string taskQueue = "N/A")
+    private WorkflowResponse MapWorkflowToResponse(WorkflowExecution workflow, WorkflowHistory? history = null, string numberOfWorkers = "N/A", string taskQueue = "N/A")
     {
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
-        var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey) ?? workflow.WorkflowType;
+        var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey);
         Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? currentActivity = null;
 
-        if (fetchHistory != null)
+        if (history != null)
         {
-            var eventsList = fetchHistory.Events.ToList(); // Convert to a list for indexing
+            var eventsList = history.Events.ToList(); // Convert to a list for indexing
 
             currentActivity = IdentifyCurrentActivity(eventsList);
 
@@ -409,7 +437,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             };
 
             var describeQueueResponse = await client.WorkflowService.DescribeTaskQueueAsync(describeQueueRequest);
-            
+
             var currentTime = DateTime.UtcNow;
             var oneMinuteAgo = currentTime.AddMinutes(-1);
             var recentWorkers = describeQueueResponse.Pollers

@@ -27,7 +27,7 @@ public static class WorkflowEndpoints
 
         workflowsGroup.MapPost("/", async (
             [FromBody] WorkflowRequest request,
-            [FromServices] WorkflowStarterService endpoint) =>
+            [FromServices] IWorkflowStarterService endpoint) =>
         {
             return await endpoint.HandleStartWorkflow(request);
         })
@@ -36,7 +36,7 @@ public static class WorkflowEndpoints
 
         workflowsGroup.MapGet("/{workflowId}/events", async (
             string workflowId,
-            [FromServices] WorkflowEventsService endpoint) =>
+            [FromServices] IWorkflowEventsService endpoint) =>
         {
             return await endpoint.GetWorkflowEvents(workflowId);
         })
@@ -63,7 +63,7 @@ public static class WorkflowEndpoints
         workflowsGroup.MapPost("/{workflowId}/cancel", async (
             string workflowId,
             [FromQuery] bool force,
-            [FromServices] WorkflowCancelService endpoint) =>
+            [FromServices] IWorkflowCancelService endpoint) =>
         {
             return await endpoint.CancelWorkflow(workflowId, force);
         })
@@ -71,7 +71,7 @@ public static class WorkflowEndpoints
         .WithOpenApi();
 
         workflowsGroup.MapGet("/{workflowId}/events/stream", (
-            [FromServices] WorkflowEventsService endpoint,
+            [FromServices] IWorkflowEventsService endpoint,
             string workflowId) =>
         {
             return endpoint.StreamWorkflowEvents(workflowId);

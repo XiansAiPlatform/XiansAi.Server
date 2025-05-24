@@ -48,7 +48,6 @@ public static class WebApiConfiguration
         WorkflowEndpoints.MapWorkflowEndpoints(app);
         KnowledgeEndpoints.MapKnowledgeEndpoints(app);
         LogsEndpoints.MapLogsEndpoints(app);
-        ActivityEndpoints.MapActivityEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
         TenantEndpoints.MapTenantEndpoints(app);
         WebhookEndpoints.MapWebhookEndpoints(app);

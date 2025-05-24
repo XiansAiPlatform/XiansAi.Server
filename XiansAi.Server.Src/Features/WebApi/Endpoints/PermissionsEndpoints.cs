@@ -15,7 +15,7 @@ public static class PermissionsEndpoints
 
         permissionsGroup.MapGet("/agent/{agentName}", async (
             string agentName,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.GetPermissions(agentName);
         })
@@ -29,7 +29,7 @@ public static class PermissionsEndpoints
         permissionsGroup.MapPut("/agent/{agentName}", async (
             string agentName,
             [FromBody] PermissionDto permissions,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.UpdatePermissions(agentName, permissions);
         })
@@ -43,7 +43,7 @@ public static class PermissionsEndpoints
         permissionsGroup.MapPost("/agent/{agentName}/users", async (
             string agentName,
             [FromBody] UserPermissionDto userPermission,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.AddUser(agentName, userPermission.UserId, userPermission.PermissionLevel);
         })
@@ -57,7 +57,7 @@ public static class PermissionsEndpoints
         permissionsGroup.MapDelete("/agent/{agentName}/users/{userId}", async (
             string agentName,
             string userId,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.RemoveUser(agentName, userId);
         })
@@ -72,7 +72,7 @@ public static class PermissionsEndpoints
             string agentName,
             string userId,
             string newPermissionLevel,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.UpdateUserPermission(agentName, userId, newPermissionLevel);
         })
@@ -85,7 +85,7 @@ public static class PermissionsEndpoints
 
         permissionsGroup.MapGet("/agent/{agentName}/check/read", async (
             string agentName,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.HasReadPermission(agentName);
         })
@@ -98,7 +98,7 @@ public static class PermissionsEndpoints
 
         permissionsGroup.MapGet("/agent/{agentName}/check/write", async (
             string agentName,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.HasWritePermission(agentName);
         })
@@ -111,7 +111,7 @@ public static class PermissionsEndpoints
 
         permissionsGroup.MapGet("/agent/{agentName}/check/owner", async (
             string agentName,
-            [FromServices] PermissionsService endpoint) =>
+            [FromServices] IPermissionsService endpoint) =>
         {
             return await endpoint.HasOwnerPermission(agentName);
         })
