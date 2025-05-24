@@ -1,10 +1,8 @@
-using MongoDB.Driver;
-using Shared.Data.Models;
+
 using Shared.Data;
-using Shared.Repositories;
 using Shared.Auth;
 
-namespace Features.WebApi.Repositories;
+namespace Shared.Repositories;
 
 public interface IAgentPermissionRepository
 {

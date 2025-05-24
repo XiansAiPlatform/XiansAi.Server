@@ -221,7 +221,7 @@ public class AuditingService : IAuditingService
                 var workflowTypesResult = await GetWorkflowTypesAsync(agent);
                 if (workflowTypesResult.IsSuccess && workflowTypesResult.Data != null)
                 {
-                    result.Add(agent, workflowTypesResult.Data);
+                    result.TryAdd(agent, workflowTypesResult.Data);
                 }
                 else
                 {

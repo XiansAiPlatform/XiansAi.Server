@@ -39,6 +39,8 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
+        builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
+
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();
@@ -47,6 +49,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
+        builder.Services.AddScoped<IPermissionsService, PermissionsService>();
 
         
         return builder;

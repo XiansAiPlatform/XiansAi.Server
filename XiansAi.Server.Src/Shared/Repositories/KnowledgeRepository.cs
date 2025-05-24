@@ -17,7 +17,7 @@ public interface IKnowledgeRepository
     Task<bool> UpdateAsync<T>(string id, T knowledge) where T : IKnowledge;
     Task<T?> GetByNameVersionAsync<T>(string name, string version, string agent, string tenantId) where T : IKnowledge;
     Task<List<T>> SearchAsync<T>(string searchTerm, string tenantId) where T : IKnowledge;
-    Task<List<T>> GetUniqueLatestAsync<T>(string tenantId) where T : IKnowledge;
+    Task<List<T>> GetUniqueLatestAsync<T>(string tenantId, List<string> agentNames) where T : IKnowledge;
     Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge;
 }
 
@@ -217,17 +217,26 @@ public class KnowledgeRepository : IKnowledgeRepository
             .ToListAsync();
     }
 
-    public async Task<List<T>> GetUniqueLatestAsync<T>(string tenantId) where T : IKnowledge
+    public async Task<List<T>> GetUniqueLatestAsync<T>(string tenantId, List<string> agentNames) where T : IKnowledge
     {
         var collection = GetTypedCollection<T>();
         
-        // Get both tenant-specific and global (null tenant) knowledge
-        var filter = Builders<T>.Filter.Or(
+        // Create tenant filter for both tenant-specific and global (null tenant) knowledge
+        var tenantFilter = Builders<T>.Filter.Or(
             Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
             Builders<T>.Filter.Eq(x => x.TenantId, null)
         );
         
-        // Define projection to exclude Content field using BsonDocument approach
+        // Create agent filter that matches any of the specified agents 
+        var agentFilters = agentNames.Select(agent => 
+                Builders<T>.Filter.Eq(x => x.Agent, agent)).ToList();
+        var agentFilter = Builders<T>.Filter.Or(agentFilters);
+        
+        
+        // Combine the filters
+        var filter = Builders<T>.Filter.And(tenantFilter, agentFilter);
+        
+        // Define projection to exclude Content field
         var projection = Builders<T>.Projection.Exclude("Content");
         
         // Get all items sorted by creation date
@@ -240,7 +249,9 @@ public class KnowledgeRepository : IKnowledgeRepository
         // prioritizing tenant-specific knowledge
         return allItems
             .GroupBy(x => new { x.Name, x.Agent })
-            .Select(g => g.OrderByDescending(x => x.TenantId != null).ThenByDescending(x => x.CreatedAt).First())
+            .Select(group => group
+                .OrderByDescending(x => x.CreatedAt)
+                .First())
             .ToList();
     }
 

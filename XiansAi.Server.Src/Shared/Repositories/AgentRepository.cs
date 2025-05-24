@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using MongoDB.Bson;
 using Shared.Data.Models;
 using Shared.Data;
 
@@ -25,6 +26,7 @@ public interface IAgentRepository
     // Internal methods without permission checking (for system use)
     Task<Agent?> GetByNameInternalAsync(string name, string tenant);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
+    Task<Agent> UpsertAgentAsync(string agentName, string tenant, string createdBy);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
 
@@ -42,6 +44,35 @@ public class AgentRepository : IAgentRepository
         _agents = database.GetCollection<Agent>("agents");
         _logger = logger;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
+        
+        // Ensure unique index exists for thread-safe agent creation
+        _ = Task.Run(EnsureIndexesAsync);
+    }
+
+    private async Task EnsureIndexesAsync()
+    {
+        try
+        {
+            // Create unique compound index on Name and Tenant
+            var indexOptions = new CreateIndexOptions { Unique = true };
+            var indexDefinition = Builders<Agent>.IndexKeys
+                .Ascending(x => x.Name)
+                .Ascending(x => x.Tenant);
+            
+            await _agents.Indexes.CreateOneAsync(
+                new CreateIndexModel<Agent>(indexDefinition, indexOptions));
+            
+            _logger.LogInformation("Unique index on (Name, Tenant) ensured for agents collection");
+        }
+        catch (MongoCommandException ex) when (ex.CodeName == "IndexOptionsConflict")
+        {
+            // Index already exists with different options, that's fine
+            _logger.LogDebug("Index already exists on agents collection");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to create unique index on agents collection");
+        }
     }
 
     public async Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles)
@@ -227,5 +258,50 @@ public class AgentRepository : IAgentRepository
 
         _logger.LogInformation("Returning {Count} agents with their definitions for user {UserId}", result.Count, userId);
         return result;
+    }
+
+    public async Task<Agent> UpsertAgentAsync(string agentName, string tenant, string createdBy)
+    {
+        _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}", agentName, createdBy, tenant);
+        
+        // Create new agent object
+        var newAgent = new Agent
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            Name = agentName,
+            Tenant = tenant,
+            CreatedBy = createdBy,
+            CreatedAt = DateTime.UtcNow,
+            Permissions = new Permission()
+        };
+        newAgent.Permissions.GrantOwnerAccess(createdBy);
+
+        try
+        {
+            // Try to insert the new agent - will fail if duplicate exists due to unique index
+            await _agents.InsertOneAsync(newAgent);
+            _logger.LogInformation("Agent {AgentName} created successfully", agentName);
+            return newAgent;
+        }
+        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
+        {
+            _logger.LogInformation("Agent {AgentName} already exists, retrieving existing agent", agentName);
+            
+            // Agent already exists, get the existing one
+            var existingAgent = await GetByNameInternalAsync(agentName, tenant);
+            if (existingAgent != null)
+            {
+                return existingAgent;
+            }
+            
+            // This shouldn't happen, but if it does, throw the original exception
+            _logger.LogError(ex, "Agent {AgentName} duplicate key error but could not retrieve existing agent", agentName);
+            throw new InvalidOperationException($"Agent {agentName} creation failed due to duplicate key, but existing agent could not be retrieved", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while upserting agent {AgentName}", agentName);
+            throw;
+        }
     }
 } 

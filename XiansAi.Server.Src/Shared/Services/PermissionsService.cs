@@ -1,11 +1,11 @@
 using System.Text.Json.Serialization;
-using XiansAi.Server.Features.WebApi.Repositories;
 using Shared.Data;
 using Shared.Auth;
 using Shared.Utils.Services;
 using Features.WebApi.Repositories;
+using Shared.Repositories;
 
-namespace Features.WebApi.Services;
+namespace Shared.Services;
 
 public class UserPermissionDto
 {

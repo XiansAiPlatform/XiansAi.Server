@@ -38,7 +38,6 @@ public interface IKnowledgeService
     Task<IResult> DeleteById(string id);
     Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request);
     Task<IResult> GetLatestAll();
-    Task<IResult> GetAll();
     Task<IResult> Create(KnowledgeRequest request);
 }
 
@@ -166,11 +165,11 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> GetLatestAll()
     {
-        var knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId);
+        var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+        var agentNames = agents.Select(a => a.Name).ToList();
 
-        var agentNames = await GetUserAgentNamesAsync();
+        var knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId, agentNames);
 
-        Console.WriteLine(JsonSerializer.Serialize(agentNames));
 
         _logger.LogInformation("Found {Count} knowledge items", knowledge.Count);
 
@@ -195,13 +194,6 @@ public class KnowledgeService : IKnowledgeService
         if (knowledge == null)
             return Results.NotFound("Knowledge not found");
 
-        return Results.Ok(knowledge);
-    }
-
-    public async Task<IResult> GetAll()
-    {
-        var knowledge = await _knowledgeRepository.GetAllAsync<Knowledge>(_tenantContext.TenantId);
-        _logger.LogInformation("Found {Count} knowledge items", knowledge.Count);
         return Results.Ok(knowledge);
     }
 

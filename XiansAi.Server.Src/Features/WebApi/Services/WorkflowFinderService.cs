@@ -13,6 +13,7 @@ using Shared.Utils.Services;
 using Features.WebApi.Models;
 using Temporalio.Common;
 using Temporalio.Api.History.V1;
+using Shared.Services;
 
 namespace Features.WebApi.Services;
 

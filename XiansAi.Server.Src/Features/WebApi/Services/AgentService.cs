@@ -4,6 +4,7 @@ using Shared.Data;
 using Shared.Data.Models;
 using Shared.Utils.Services;
 using Features.WebApi.Models;
+using Shared.Services;
 
 namespace Features.WebApi.Services;
 

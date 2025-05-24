@@ -109,8 +109,8 @@ public class DefinitionsService : IDefinitionsService
 
         var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
         
-        // Ensure agent exists and check permissions
-        await EnsureAgentExistsAsync(request.Agent, currentUser);
+        // Ensure agent exists using thread-safe upsert operation
+        var agent = await _agentRepository.UpsertAgentAsync(request.Agent, _tenantContext.TenantId, currentUser);
         
         // Check if the user has permissions for this agent
         var permissions = await _agentPermissionRepository.GetAgentPermissionsAsync(request.Agent);
@@ -151,28 +151,6 @@ public class DefinitionsService : IDefinitionsService
         await GenerateMarkdown(definition);
         await _flowDefinitionRepository.CreateAsync(definition);
         return Results.Ok("New definition created successfully");
-    }
-
-    private async Task EnsureAgentExistsAsync(string agentName, string currentUser)
-    {
-        var existingAgent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
-        if (existingAgent == null)
-        {
-            _logger.LogInformation("Creating new agent: {AgentName} for user: {UserId}", agentName, currentUser);
-            
-            var newAgent = new Agent
-            {
-                Id = ObjectId.GenerateNewId().ToString(),
-                Name = agentName,
-                Tenant = _tenantContext.TenantId,
-                CreatedBy = currentUser,
-                CreatedAt = DateTime.UtcNow,
-                Permissions = new Permission()
-            };
-            
-            newAgent.Permissions.GrantOwnerAccess(currentUser);
-            await _agentRepository.CreateAsync(newAgent);
-        }
     }
 
     private async Task GenerateMarkdown(FlowDefinition definition)

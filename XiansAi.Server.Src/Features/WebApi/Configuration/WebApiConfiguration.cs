@@ -28,7 +28,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
-        builder.Services.AddScoped<IPermissionsService, PermissionsService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IPublicService, PublicService>();
         
@@ -37,7 +36,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
-        builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
         
         return builder;
     }
