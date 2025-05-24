@@ -25,6 +25,7 @@ public class AgentService : IAgentService
     private readonly ILogger<AgentService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IWorkflowFinderService _workflowFinderService;
+    private readonly IPermissionsService _permissionsService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AgentService"/> class.
@@ -34,12 +35,14 @@ public class AgentService : IAgentService
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     /// <param name="workflowFinderService">Service for workflow finder operations.</param>
+    /// <param name="permissionsService">Service for permission operations.</param>
     public AgentService(
         IFlowDefinitionRepository definitionRepository,
         IAgentRepository agentRepository,
         ILogger<AgentService> logger,
         ITenantContext tenantContext,
-        IWorkflowFinderService workflowFinderService
+        IWorkflowFinderService workflowFinderService,
+        IPermissionsService permissionsService
     )
     {
         _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
@@ -47,6 +50,7 @@ public class AgentService : IAgentService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _workflowFinderService = workflowFinderService ?? throw new ArgumentNullException(nameof(workflowFinderService));
+        _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
     }
 
     public async Task<ServiceResult<List<string>>> GetAgentNames()
@@ -82,6 +86,27 @@ public class AgentService : IAgentService
     {
         try
         {
+            // Check if user has read permission for the agent if agentName is provided
+            if (!string.IsNullOrWhiteSpace(agentName))
+            {
+                var readPermissionResult = await _permissionsService.HasReadPermission(agentName);
+                if (!readPermissionResult.IsSuccess)
+                {
+                    if (readPermissionResult.StatusCode == StatusCode.NotFound)
+                    {
+                        return ServiceResult<List<WorkflowResponse>>.NotFound("Agent not found");
+                    }
+                    return ServiceResult<List<WorkflowResponse>>.BadRequest(readPermissionResult.ErrorMessage ?? "Failed to check permissions");
+                }
+
+                if (!readPermissionResult.Data)
+                {
+                    _logger.LogWarning("User {UserId} attempted to access workflows for agent {AgentName} without read permission", 
+                        _tenantContext.LoggedInUser, agentName);
+                    return ServiceResult<List<WorkflowResponse>>.Forbidden("You do not have permission to access workflows for this agent");
+                }
+            }
+
             // Call the refactored workflow service which now returns ServiceResult<List<WorkflowResponse>>
             var workflowResult = await _workflowFinderService.GetRunningWorkflowsByAgentAndType(agentName, typeName);
             
@@ -113,20 +138,30 @@ public class AgentService : IAgentService
                 return ServiceResult<AgentDeleteResult>.BadRequest("Agent name is required");
             }
 
-            // Get the agent to check if it exists and verify permissions
+            // Check if user has owner permission using PermissionsService
+            var ownerPermissionResult = await _permissionsService.HasOwnerPermission(agentName);
+            if (!ownerPermissionResult.IsSuccess)
+            {
+                if (ownerPermissionResult.StatusCode == StatusCode.NotFound)
+                {
+                    return ServiceResult<AgentDeleteResult>.NotFound("Agent not found");
+                }
+                return ServiceResult<AgentDeleteResult>.BadRequest(ownerPermissionResult.ErrorMessage ?? "Failed to check permissions");
+            }
+
+            if (!ownerPermissionResult.Data)
+            {
+                _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", 
+                    _tenantContext.LoggedInUser, agentName);
+                return ServiceResult<AgentDeleteResult>.Forbidden("You must have owner permission to delete this agent");
+            }
+
+            // Get the agent to retrieve its ID for deletion
             var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
             if (agent == null)
             {
                 _logger.LogWarning("Agent {AgentName} not found for deletion", agentName);
                 return ServiceResult<AgentDeleteResult>.NotFound("Agent not found");
-            }
-
-            // Check if user has owner permission
-            if (!agent.Permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
-            {
-                _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", 
-                    _tenantContext.LoggedInUser, agentName);
-                return ServiceResult<AgentDeleteResult>.Forbidden("You must have owner permission to delete this agent");
             }
 
             // Delete all flow definitions for this agent
@@ -169,16 +204,18 @@ public class AgentService : IAgentService
                 return ServiceResult<List<FlowDefinition>>.BadRequest("Agent name is required");
             }
 
-            // Get the agent to check if it exists and verify permissions
-            var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
-            if (agent == null)
+            // Check if user has read permission using PermissionsService
+            var readPermissionResult = await _permissionsService.HasReadPermission(agentName);
+            if (!readPermissionResult.IsSuccess)
             {
-                _logger.LogWarning("Agent {AgentName} not found", agentName);
-                return ServiceResult<List<FlowDefinition>>.NotFound("Agent not found");
+                if (readPermissionResult.StatusCode == StatusCode.NotFound)
+                {
+                    return ServiceResult<List<FlowDefinition>>.NotFound("Agent not found");
+                }
+                return ServiceResult<List<FlowDefinition>>.BadRequest(readPermissionResult.ErrorMessage ?? "Failed to check permissions");
             }
 
-            // Check if user has permission to access this agent
-            if (!agent.Permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Read))
+            if (!readPermissionResult.Data)
             {
                 _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission", 
                     _tenantContext.LoggedInUser, agentName);

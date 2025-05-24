@@ -82,5 +82,44 @@ public static class PermissionsEndpoints
             operation.Description = "Updates the permission level of a user for a specific agent";
             return operation;
         });
+
+        permissionsGroup.MapGet("/agent/{agentName}/check/read", async (
+            string agentName,
+            [FromServices] PermissionsService endpoint) =>
+        {
+            return await endpoint.HasReadPermission(agentName);
+        })
+        .WithName("Check Read Permission")
+        .WithOpenApi(operation => {
+            operation.Summary = "Check if current user has read permission";
+            operation.Description = "Checks if the current user has read permission for the specified agent";
+            return operation;
+        });
+
+        permissionsGroup.MapGet("/agent/{agentName}/check/write", async (
+            string agentName,
+            [FromServices] PermissionsService endpoint) =>
+        {
+            return await endpoint.HasWritePermission(agentName);
+        })
+        .WithName("Check Write Permission")
+        .WithOpenApi(operation => {
+            operation.Summary = "Check if current user has write permission";
+            operation.Description = "Checks if the current user has write permission for the specified agent";
+            return operation;
+        });
+
+        permissionsGroup.MapGet("/agent/{agentName}/check/owner", async (
+            string agentName,
+            [FromServices] PermissionsService endpoint) =>
+        {
+            return await endpoint.HasOwnerPermission(agentName);
+        })
+        .WithName("Check Owner Permission")
+        .WithOpenApi(operation => {
+            operation.Summary = "Check if current user has owner permission";
+            operation.Description = "Checks if the current user has owner permission for the specified agent";
+            return operation;
+        });
     }
 }

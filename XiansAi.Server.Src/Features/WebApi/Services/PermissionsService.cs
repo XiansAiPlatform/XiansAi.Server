@@ -35,6 +35,9 @@ public interface IPermissionsService
     Task<ServiceResult<bool>> AddUser(string agentName, string userId, string permissionLevel);
     Task<ServiceResult<bool>> RemoveUser(string agentName, string userId);
     Task<ServiceResult<bool>> UpdateUserPermission(string agentName, string userId, string newPermissionLevel);
+    Task<ServiceResult<bool>> HasReadPermission(string agentName);
+    Task<ServiceResult<bool>> HasWritePermission(string agentName);
+    Task<ServiceResult<bool>> HasOwnerPermission(string agentName);
 }
 
 public class PermissionsService : IPermissionsService
@@ -230,6 +233,69 @@ public class PermissionsService : IPermissionsService
 
         var result = await _permissionRepository.UpdateUserPermissionAsync(agentName, userId, level.Value);
         return ServiceResult<bool>.Success(result);
+    }
+
+    public async Task<ServiceResult<bool>> HasReadPermission(string agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            _logger.LogWarning("Invalid agent name provided");
+            return ServiceResult<bool>.BadRequest("Agent name is required");
+        }
+
+        _logger.LogInformation("Checking read permission for agent: {AgentName}", agentName);
+        
+        var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
+        if (permissions == null)
+        {
+            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            return ServiceResult<bool>.NotFound("Agent not found");
+        }
+
+        var hasReadPermission = permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Read);
+        return ServiceResult<bool>.Success(hasReadPermission);
+    }
+
+    public async Task<ServiceResult<bool>> HasWritePermission(string agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            _logger.LogWarning("Invalid agent name provided");
+            return ServiceResult<bool>.BadRequest("Agent name is required");
+        }
+
+        _logger.LogInformation("Checking write permission for agent: {AgentName}", agentName);
+        
+        var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
+        if (permissions == null)
+        {
+            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            return ServiceResult<bool>.NotFound("Agent not found");
+        }
+
+        var hasWritePermission = permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Write);
+        return ServiceResult<bool>.Success(hasWritePermission);
+    }
+
+    public async Task<ServiceResult<bool>> HasOwnerPermission(string agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            _logger.LogWarning("Invalid agent name provided");
+            return ServiceResult<bool>.BadRequest("Agent name is required");
+        }
+
+        _logger.LogInformation("Checking owner permission for agent: {AgentName}", agentName);
+        
+        var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
+        if (permissions == null)
+        {
+            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            return ServiceResult<bool>.NotFound("Agent not found");
+        }
+
+        var hasOwnerPermission = permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner);
+        return ServiceResult<bool>.Success(hasOwnerPermission);
     }
 
     private PermissionLevel? NormalizePermissionLevel(string permissionLevel)
