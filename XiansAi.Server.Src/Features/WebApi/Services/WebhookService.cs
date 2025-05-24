@@ -65,7 +65,7 @@ public class WebhookService : IWebhookService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving all webhooks");
-            return ServiceResult<List<Webhook>>.BadRequest("Failed to retrieve webhooks");
+            return ServiceResult<List<Webhook>>.InternalServerError("Failed to retrieve webhooks");
         }
     }
 
@@ -80,7 +80,7 @@ public class WebhookService : IWebhookService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving webhooks for workflow {WorkflowId}", workflowId);
-            return ServiceResult<List<Webhook>>.BadRequest("Failed to retrieve webhooks");
+            return ServiceResult<List<Webhook>>.InternalServerError("Failed to retrieve webhooks");
         }
     }
 
@@ -99,7 +99,7 @@ public class WebhookService : IWebhookService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving webhook {WebhookId}", webhookId);
-            return ServiceResult<Webhook>.BadRequest("Failed to retrieve webhook");
+            return ServiceResult<Webhook>.InternalServerError("Failed to retrieve webhook");
         }
     }
 
@@ -133,7 +133,7 @@ public class WebhookService : IWebhookService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating webhook");
-            return ServiceResult<WebhookCreatedResult>.BadRequest("Failed to create webhook");
+            return ServiceResult<WebhookCreatedResult>.InternalServerError("Failed to create webhook");
         }
     }
 
@@ -169,7 +169,7 @@ public class WebhookService : IWebhookService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating webhook {WebhookId}", webhookId);
-            return ServiceResult<Webhook>.BadRequest("Failed to update webhook");
+            return ServiceResult<Webhook>.InternalServerError("Failed to update webhook");
         }
     }
 
@@ -188,7 +188,7 @@ public class WebhookService : IWebhookService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting webhook {WebhookId}", webhookId);
-            return ServiceResult<bool>.BadRequest("Failed to delete webhook");
+            return ServiceResult<bool>.InternalServerError("Failed to delete webhook");
         }
     }
 

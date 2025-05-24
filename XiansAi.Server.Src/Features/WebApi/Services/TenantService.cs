@@ -80,7 +80,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tenant with ID {Id}", id);
-            return ServiceResult<Tenant>.BadRequest("An error occurred while retrieving the tenant.");
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }
 
@@ -100,7 +100,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tenant with domain {Domain}", domain);
-            return ServiceResult<Tenant>.BadRequest("An error occurred while retrieving the tenant.");
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }
 
@@ -120,7 +120,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tenant with tenant ID {TenantId}", tenantId);
-            return ServiceResult<Tenant>.BadRequest("An error occurred while retrieving the tenant.");
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }
 
@@ -134,7 +134,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving all tenants");
-            return ServiceResult<List<Tenant>>.BadRequest("An error occurred while retrieving tenants.");
+            return ServiceResult<List<Tenant>>.InternalServerError("An error occurred while retrieving tenants.");
         }
     }
 
@@ -169,7 +169,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating tenant");
-            return ServiceResult<TenantCreatedResult>.BadRequest("An error occurred while creating the tenant.");
+            return ServiceResult<TenantCreatedResult>.InternalServerError("An error occurred while creating the tenant.");
         }
     }
 
@@ -217,7 +217,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating tenant with ID {Id}", id);
-            return ServiceResult<Tenant>.BadRequest("An error occurred while updating the tenant.");
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while updating the tenant.");
         }
     }
 
@@ -240,7 +240,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting tenant with ID {Id}", id);
-            return ServiceResult<bool>.BadRequest("An error occurred while deleting the tenant.");
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the tenant.");
         }
     }
 
@@ -267,7 +267,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error adding agent {AgentName} to tenant {TenantId}", agent.Name, tenantId);
-            return ServiceResult<bool>.BadRequest("An error occurred while adding the agent.");
+            return ServiceResult<bool>.InternalServerError("An error occurred while adding the agent.");
         }
     }
 
@@ -291,7 +291,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating agent {AgentName} in tenant {TenantId}", agentName, tenantId);
-            return ServiceResult<bool>.BadRequest("An error occurred while updating the agent.");
+            return ServiceResult<bool>.InternalServerError("An error occurred while updating the agent.");
         }
     }
 
@@ -314,7 +314,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error removing agent {AgentName} from tenant {TenantId}", agentName, tenantId);
-            return ServiceResult<bool>.BadRequest("An error occurred while removing the agent.");
+            return ServiceResult<bool>.InternalServerError("An error occurred while removing the agent.");
         }
     }
 
@@ -341,7 +341,7 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error adding flow {FlowName} to agent {AgentName} in tenant {TenantId}", flow.Name, agentName, tenantId);
-            return ServiceResult<bool>.BadRequest("An error occurred while adding the flow.");
+            return ServiceResult<bool>.InternalServerError("An error occurred while adding the flow.");
         }
     }
 } 

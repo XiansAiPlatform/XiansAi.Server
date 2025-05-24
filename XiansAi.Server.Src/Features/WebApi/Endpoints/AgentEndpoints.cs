@@ -16,7 +16,8 @@ public static class AgentEndpoints
         agentGroup.MapGet("/names", async (
             [FromServices] IAgentService service) =>
         {
-            return await service.GetAgentNames();
+            var result = await service.GetAgentNames();
+            return result.ToHttpResult();
         })
         .WithName("Get Agent Names")
         .WithOpenApi(operation => {

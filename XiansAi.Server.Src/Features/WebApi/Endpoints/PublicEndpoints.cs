@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Features.WebApi.Models;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 public static class PublicEndpoints
@@ -14,18 +16,19 @@ public static class PublicEndpoints
 
         registrationGroup.MapPost("/verification/send", async (
             [FromBody] string email,
-            [FromServices] PublicService endpoint) =>
+            [FromServices] IPublicService publicService) =>
         {
-            return await endpoint.SendVerificationCode(email);
+            var result = await publicService.SendVerificationCode(email);
+            return result.ToHttpResult();
         })
         .WithName("Send Verification Code")
         .WithOpenApi();
 
         registrationGroup.MapPost("/verification/validate", async (
             [FromBody] ValidateCodeRequest request,
-            [FromServices] PublicService endpoint) =>
+            [FromServices] IPublicService publicService) =>
         {
-            var isValid = await endpoint.ValidateCode(request.Email, request.Code);
+            var isValid = await publicService.ValidateCode(request.Email, request.Code);
             return Results.Ok(new { isValid });
         })
         .WithName("Validate Verification Code")

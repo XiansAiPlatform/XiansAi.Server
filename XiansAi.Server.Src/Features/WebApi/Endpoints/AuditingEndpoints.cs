@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
 using Features.WebApi.Services;
 using Features.WebApi.Models;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -21,17 +22,14 @@ public static class AuditingEndpoints
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
-            if (page < 1)
+            var participantsResult = await auditingService.GetParticipantsForAgentAsync(agent, page, pageSize);
+            
+            if (!participantsResult.IsSuccess)
             {
-                page = 1;
+                return participantsResult.ToHttpResult();
             }
 
-            if (pageSize < 1 || pageSize > 100)
-            {
-                pageSize = 20;
-            }
-
-            var (participants, totalCount) = await auditingService.GetParticipantsForAgentAsync(agent, page, pageSize);
+            var (participants, totalCount) = participantsResult.Data;
             
             var result = new
             {
@@ -56,8 +54,8 @@ public static class AuditingEndpoints
             [FromServices] IAuditingService auditingService,
             [FromQuery] string? participantId) =>
         {
-            var workflowTypes = await auditingService.GetWorkflowTypesAsync(agent, participantId);
-            return Results.Ok(workflowTypes);
+            var result = await auditingService.GetWorkflowTypesAsync(agent, participantId);
+            return result.ToHttpResult();
         })
         .WithName("GetAuditingWorkflowTypes")
         .WithOpenApi(operation => {
@@ -73,8 +71,8 @@ public static class AuditingEndpoints
             [FromServices] IAuditingService auditingService,
             [FromQuery] string? participantId) =>
         {
-            var workflowIds = await auditingService.GetWorkflowIdsForWorkflowTypeAsync(agent, workflowType, participantId);
-            return Results.Ok(workflowIds);
+            var result = await auditingService.GetWorkflowIdsForWorkflowTypeAsync(agent, workflowType, participantId);
+            return result.ToHttpResult();
         })
         .WithName("GetWorkflowIdsForWorkflowType")
         .WithOpenApi(operation => {
@@ -96,22 +94,7 @@ public static class AuditingEndpoints
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
-            if (string.IsNullOrEmpty(agent))
-            {
-                return Results.BadRequest("Agent is required");
-            }
-
-            if (page < 1)
-            {
-                page = 1;
-            }
-
-            if (pageSize < 1 || pageSize > 100)
-            {
-                pageSize = 20;
-            }
-
-            var (logs, totalCount) = await auditingService.GetLogsAsync(
+            var logsResult = await auditingService.GetLogsAsync(
                 agent, 
                 participantId, 
                 workflowType, 
@@ -121,6 +104,13 @@ public static class AuditingEndpoints
                 endTime,
                 page, 
                 pageSize);
+
+            if (!logsResult.IsSuccess)
+            {
+                return logsResult.ToHttpResult();
+            }
+
+            var (logs, totalCount) = logsResult.Data;
 
             var result = new
             {
@@ -149,18 +139,19 @@ public static class AuditingEndpoints
             [FromQuery] DateTime? endTime = null) =>
         {
             // Get all agents the user has access to
-            var agentNames = await agentService.GetAgentNames();
+            var agentNamesResult = await agentService.GetAgentNames();
             
-            if (agentNames == null || !agentNames.Any())
+            if (!agentNamesResult.IsSuccess || agentNamesResult.Data == null || !agentNamesResult.Data.Any())
             {
                 return Results.Ok(new List<AgentCriticalGroup>());
             }
 
-            var groupedCriticalLogs = await auditingService.GetGroupedCriticalLogsAsync(
-                agentNames,
+            var groupedCriticalLogsResult = await auditingService.GetGroupedCriticalLogsAsync(
+                agentNamesResult.Data,
                 startTime,
                 endTime);
-            return Results.Ok(groupedCriticalLogs);
+            
+            return groupedCriticalLogsResult.ToHttpResult();
         })
         .WithName("GetLastCriticalLogsByWorkflowRunAcrossAgents")
         .WithOpenApi(operation => {

@@ -28,7 +28,16 @@ public class PermissionDto
     public List<string> WriteAccess { get; set; } = new();
 }
 
-public class PermissionsService
+public interface IPermissionsService
+{
+    Task<ServiceResult<PermissionDto>> GetPermissions(string agentName);
+    Task<ServiceResult<bool>> UpdatePermissions(string agentName, PermissionDto permissions);
+    Task<ServiceResult<bool>> AddUser(string agentName, string userId, string permissionLevel);
+    Task<ServiceResult<bool>> RemoveUser(string agentName, string userId);
+    Task<ServiceResult<bool>> UpdateUserPermission(string agentName, string userId, string newPermissionLevel);
+}
+
+public class PermissionsService : IPermissionsService
 {
     private readonly IAgentPermissionRepository _permissionRepository;
     private readonly ILogger<PermissionsService> _logger;

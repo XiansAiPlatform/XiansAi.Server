@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -8,7 +9,6 @@ public static class ActivityEndpoints
 {
     public static void MapActivityEndpoints(this WebApplication app)
     {
-
         var group = app.MapGroup("/api/client/workflows/{workflowId}/activities")
             .WithTags("WebAPI - Activities")
             .RequiresValidTenant();
@@ -16,9 +16,10 @@ public static class ActivityEndpoints
         group.MapGet("/{activityId}", async (
             string workflowId,
             string activityId,
-            [FromServices] ActivitiesService endpoint) =>
+            [FromServices] IActivitiesService endpoint) =>
         {
-            return await endpoint.GetActivity(workflowId, activityId);
+            var result = await endpoint.GetActivity(workflowId, activityId);
+            return result.ToHttpResult();
         }).WithName("Get Activity of Workflow")
         .RequiresValidTenant()
         .WithOpenApi();

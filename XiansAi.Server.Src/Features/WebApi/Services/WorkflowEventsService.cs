@@ -166,7 +166,7 @@ public class WorkflowEventsService : IWorkflowEventsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error fetching workflow events for workflow {WorkflowId}", workflowId);
-            return ServiceResult<List<WorkflowActivityEvent>>.BadRequest($"Failed to fetch workflow events: {ex.Message}");
+            return ServiceResult<List<WorkflowActivityEvent>>.InternalServerError($"Failed to fetch workflow events: {ex.Message}");
         }
     }
 

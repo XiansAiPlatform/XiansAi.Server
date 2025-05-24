@@ -9,7 +9,7 @@ namespace Features.WebApi.Services;
 
 public interface IAgentService
 {
-    Task<List<string>> GetAgentNames();
+    Task<ServiceResult<List<string>>> GetAgentNames();
     Task<ServiceResult<List<AgentWithDefinitions>>> GetGroupedDefinitions(bool basicDataOnly = false);
     Task<ServiceResult<List<FlowDefinition>>> GetDefinitions(string agentName, bool basicDataOnly = false);
     Task<ServiceResult<List<WorkflowResponse>>> GetWorkflowInstances(string? agentName, string? typeName);
@@ -49,10 +49,19 @@ public class AgentService : IAgentService
         _workflowFinderService = workflowFinderService ?? throw new ArgumentNullException(nameof(workflowFinderService));
     }
 
-    public async Task<List<string>> GetAgentNames()
+    public async Task<ServiceResult<List<string>>> GetAgentNames()
     {
-        var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
-        return agents.Select(a => a.Name).ToList();
+        try
+        {
+            var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+            var agentNames = agents.Select(a => a.Name).ToList();
+            return ServiceResult<List<string>>.Success(agentNames);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving agent names");
+            return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving agent names. Error: " + ex.Message);
+        }
     }
 
     public async Task<ServiceResult<List<AgentWithDefinitions>>> GetGroupedDefinitions(bool basicDataOnly = false)
@@ -65,7 +74,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving definitions");
-            return ServiceResult<List<AgentWithDefinitions>>.BadRequest("An error occurred while retrieving definitions.");
+            return ServiceResult<List<AgentWithDefinitions>>.InternalServerError("An error occurred while retrieving definitions. Error: " + ex.Message);
         }
     }
 
@@ -90,7 +99,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflows");
-            return ServiceResult<List<WorkflowResponse>>.BadRequest("An error occurred while retrieving workflows.");
+            return ServiceResult<List<WorkflowResponse>>.InternalServerError("An error occurred while retrieving workflows. Error: " + ex.Message);
         }
     }
 
@@ -146,7 +155,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting agent {AgentName}", agentName);
-            return ServiceResult<AgentDeleteResult>.BadRequest("An error occurred while deleting the agent.");
+            return ServiceResult<AgentDeleteResult>.InternalServerError("An error occurred while deleting the agent. Error: " + ex.Message);
         }
     }
 
@@ -184,7 +193,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving definitions for agent {AgentName}", agentName);
-            return ServiceResult<List<FlowDefinition>>.BadRequest("An error occurred while retrieving agent definitions.");
+            return ServiceResult<List<FlowDefinition>>.InternalServerError("An error occurred while retrieving agent definitions. Error: " + ex.Message);
         }
     }
 } 

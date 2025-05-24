@@ -59,7 +59,7 @@ public class WorkflowCancelService : IWorkflowCancelService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error canceling or terminating workflow");
-            return ServiceResult<WorkflowCancelResult>.BadRequest($"Error canceling or terminating workflow: {ex.Message}");
+            return ServiceResult<WorkflowCancelResult>.InternalServerError($"Error canceling or terminating workflow: {ex.Message}");
         }
     }
 }

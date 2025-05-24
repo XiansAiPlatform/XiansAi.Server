@@ -2,15 +2,16 @@ using Shared.Auth;
 using MongoDB.Driver;
 using Features.WebApi.Repositories;
 using Features.WebApi.Models;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Services;
 
 public interface IAuditingService
 {
-    Task<(IEnumerable<string?> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20);
-    Task<IEnumerable<string>> GetWorkflowTypesAsync(string agent, string? participantId = null);
-    Task<IEnumerable<string>> GetWorkflowIdsForWorkflowTypeAsync(string agent, string workflowType, string? participantId = null);
-    Task<(IEnumerable<Log> logs, long totalCount)> GetLogsAsync(
+    Task<ServiceResult<(IEnumerable<string?> participants, long totalCount)>> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20);
+    Task<ServiceResult<IEnumerable<string>>> GetWorkflowTypesAsync(string agent, string? participantId = null);
+    Task<ServiceResult<IEnumerable<string>>> GetWorkflowIdsForWorkflowTypeAsync(string agent, string workflowType, string? participantId = null);
+    Task<ServiceResult<(IEnumerable<Log> logs, long totalCount)>> GetLogsAsync(
         string agent, 
         string? participantId, 
         string? workflowType, 
@@ -20,8 +21,8 @@ public interface IAuditingService
         DateTime? endTime = null,
         int page = 1, 
         int pageSize = 20);
-    Task<Dictionary<string, IEnumerable<string>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents);
-    Task<List<AgentCriticalGroup>> GetGroupedCriticalLogsAsync(IEnumerable<string> agents, DateTime? startTime = null, DateTime? endTime = null);
+    Task<ServiceResult<Dictionary<string, IEnumerable<string>>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents);
+    Task<ServiceResult<List<AgentCriticalGroup>>> GetGroupedCriticalLogsAsync(IEnumerable<string> agents, DateTime? startTime = null, DateTime? endTime = null);
 } 
 
 /// <summary>
@@ -49,67 +50,107 @@ public class AuditingService : IAuditingService
         _logRepository = logRepository ?? throw new ArgumentNullException(nameof(logRepository));
     }
 
-    public async Task<(IEnumerable<string?> participants, long totalCount)> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20)
+    public async Task<ServiceResult<(IEnumerable<string?> participants, long totalCount)>> GetParticipantsForAgentAsync(string agent, int page = 1, int pageSize = 20)
     {
         try
         {
-            return await _logRepository.GetDistinctParticipantsForAgentAsync(
+            if (string.IsNullOrWhiteSpace(agent))
+            {
+                _logger.LogWarning("Invalid agent name provided for getting participants");
+                return ServiceResult<(IEnumerable<string?> participants, long totalCount)>.BadRequest("Agent name is required");
+            }
+
+            if (page < 1)
+            {
+                page = 1;
+            }
+
+            if (pageSize < 1 || pageSize > 100)
+            {
+                pageSize = 20;
+            }
+
+            var result = await _logRepository.GetDistinctParticipantsForAgentAsync(
                 _tenantContext.TenantId, 
                 agent, 
                 page, 
                 pageSize);
+
+            return ServiceResult<(IEnumerable<string?> participants, long totalCount)>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving participants for agent {Agent}", agent);
-            throw;
+            return ServiceResult<(IEnumerable<string?> participants, long totalCount)>.InternalServerError("An error occurred while retrieving participants. Error: " + ex.Message);
         }
     }
 
     /// <summary>
     /// Gets a list of workflow types for a specific agent and optional participant
     /// </summary>
-    public async Task<IEnumerable<string>> GetWorkflowTypesAsync(string agent, string? participantId = null)
+    public async Task<ServiceResult<IEnumerable<string>>> GetWorkflowTypesAsync(string agent, string? participantId = null)
     {
         try
         {
-            return await _logRepository.GetDistinctWorkflowTypesAsync(
+            if (string.IsNullOrWhiteSpace(agent))
+            {
+                _logger.LogWarning("Invalid agent name provided for getting workflow types");
+                return ServiceResult<IEnumerable<string>>.BadRequest("Agent name is required");
+            }
+
+            var result = await _logRepository.GetDistinctWorkflowTypesAsync(
                 _tenantContext.TenantId,
                 agent,
                 participantId);
+
+            return ServiceResult<IEnumerable<string>>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflow types for agent {Agent} and participant {ParticipantId}", agent, participantId);
-            throw;
+            return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow types. Error: " + ex.Message);
         }
     }
 
     /// <summary>
     /// Gets a list of workflowIds for a specific workflowType and agent with optional participant filter
     /// </summary>
-    public async Task<IEnumerable<string>> GetWorkflowIdsForWorkflowTypeAsync(string agent, string workflowType, string? participantId = null)
+    public async Task<ServiceResult<IEnumerable<string>>> GetWorkflowIdsForWorkflowTypeAsync(string agent, string workflowType, string? participantId = null)
     {
         try
         {
-            return await _logRepository.GetDistinctWorkflowIdsForTypeAsync(
+            if (string.IsNullOrWhiteSpace(agent))
+            {
+                _logger.LogWarning("Invalid agent name provided for getting workflow IDs");
+                return ServiceResult<IEnumerable<string>>.BadRequest("Agent name is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(workflowType))
+            {
+                _logger.LogWarning("Invalid workflow type provided for getting workflow IDs");
+                return ServiceResult<IEnumerable<string>>.BadRequest("Workflow type is required");
+            }
+
+            var result = await _logRepository.GetDistinctWorkflowIdsForTypeAsync(
                 _tenantContext.TenantId,
                 agent,
                 workflowType,
                 participantId);
+
+            return ServiceResult<IEnumerable<string>>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflow IDs for agent {Agent}, workflow type {WorkflowType}, and participant {ParticipantId}", 
                 agent, workflowType, participantId);
-            throw;
+            return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow IDs. Error: " + ex.Message);
         }
     }
 
     /// <summary>
     /// Gets logs filtered by agent, participant, workflow type, workflow ID, and log level with pagination
     /// </summary>
-    public async Task<(IEnumerable<Log> logs, long totalCount)> GetLogsAsync(
+    public async Task<ServiceResult<(IEnumerable<Log> logs, long totalCount)>> GetLogsAsync(
         string agent, 
         string? participantId, 
         string? workflowType, 
@@ -122,7 +163,23 @@ public class AuditingService : IAuditingService
     {
         try
         {
-            return await _logRepository.GetFilteredLogsAsync(
+            if (string.IsNullOrWhiteSpace(agent))
+            {
+                _logger.LogWarning("Invalid agent name provided for getting logs");
+                return ServiceResult<(IEnumerable<Log> logs, long totalCount)>.BadRequest("Agent name is required");
+            }
+
+            if (page < 1)
+            {
+                page = 1;
+            }
+
+            if (pageSize < 1 || pageSize > 100)
+            {
+                pageSize = 20;
+            }
+
+            var result = await _logRepository.GetFilteredLogsAsync(
                 _tenantContext.TenantId,
                 agent,
                 participantId,
@@ -133,11 +190,13 @@ public class AuditingService : IAuditingService
                 endTime,
                 page,
                 pageSize);
+
+            return ServiceResult<(IEnumerable<Log> logs, long totalCount)>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving logs for agent {Agent}", agent);
-            throw;
+            return ServiceResult<(IEnumerable<Log> logs, long totalCount)>.InternalServerError("An error occurred while retrieving logs. Error: " + ex.Message);
         }
     }
     
@@ -145,44 +204,68 @@ public class AuditingService : IAuditingService
     /// <summary>
     /// Gets the workflow types for a list of agents
     /// </summary>
-    public async Task<Dictionary<string, IEnumerable<string>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents)
+    public async Task<ServiceResult<Dictionary<string, IEnumerable<string>>>> GetWorkflowTypesByAgentsAsync(IEnumerable<string> agents)
     {
         try
         {
+            if (agents == null || !agents.Any())
+            {
+                _logger.LogWarning("No agents provided for getting workflow types");
+                return ServiceResult<Dictionary<string, IEnumerable<string>>>.BadRequest("At least one agent is required");
+            }
+
             var result = new Dictionary<string, IEnumerable<string>>();
             
             foreach (var agent in agents)
             {
-                var workflowTypes = await _logRepository.GetDistinctWorkflowTypesAsync(
-                    _tenantContext.TenantId,
-                    agent);
-                    
-                result.Add(agent, workflowTypes);
+                var workflowTypesResult = await GetWorkflowTypesAsync(agent);
+                if (workflowTypesResult.IsSuccess && workflowTypesResult.Data != null)
+                {
+                    result.Add(agent, workflowTypesResult.Data);
+                }
+                else
+                {
+                    // Add empty list for agents that failed or have no workflow types
+                    result.Add(agent, new List<string>());
+                }
             }
             
-            return result;
+            return ServiceResult<Dictionary<string, IEnumerable<string>>>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflow types for multiple agents");
-            throw;
+            return ServiceResult<Dictionary<string, IEnumerable<string>>>.InternalServerError("An error occurred while retrieving workflow types. Error: " + ex.Message);
         }
     }
     
     /// <summary>
     /// Gets error logs grouped by agent, workflow type, workflow, and workflow run
     /// </summary>
-    public async Task<List<AgentCriticalGroup>> GetGroupedCriticalLogsAsync(
+    public async Task<ServiceResult<List<AgentCriticalGroup>>> GetGroupedCriticalLogsAsync(
         IEnumerable<string> agents, 
         DateTime? startTime = null, 
         DateTime? endTime = null)
     {
         try
         {
+            if (agents == null || !agents.Any())
+            {
+                _logger.LogWarning("No agents provided for getting critical logs");
+                return ServiceResult<List<AgentCriticalGroup>>.BadRequest("At least one agent is required");
+            }
+
             var result = new List<AgentCriticalGroup>();
             
             // Get workflow types by agent
-            var agentToWorkflowTypes = await GetWorkflowTypesByAgentsAsync(agents);
+            var agentToWorkflowTypesResult = await GetWorkflowTypesByAgentsAsync(agents);
+            if (!agentToWorkflowTypesResult.IsSuccess || agentToWorkflowTypesResult.Data == null)
+            {
+                _logger.LogWarning("Failed to get workflow types for agents");
+                return ServiceResult<List<AgentCriticalGroup>>.BadRequest("Failed to retrieve workflow types for agents");
+            }
+
+            var agentToWorkflowTypes = agentToWorkflowTypesResult.Data;
             
             foreach (var agentEntry in agentToWorkflowTypes)
             {
@@ -237,12 +320,12 @@ public class AuditingService : IAuditingService
                 result.Add(agentGroup);
             }
             
-            return result;
+            return ServiceResult<List<AgentCriticalGroup>>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving grouped error logs");
-            throw;
+            return ServiceResult<List<AgentCriticalGroup>>.InternalServerError("An error occurred while retrieving grouped error logs. Error: " + ex.Message);
         }
     }
 } 

@@ -1,6 +1,3 @@
-using XiansAi.Server.Features.WebApi.Repositories;
-using XiansAi.Server.Shared.Data;
-using Shared.Auth;
 using Features.WebApi.Repositories;
 using Shared.Data;
 using Shared.Utils.Services;
@@ -59,7 +56,7 @@ public class LogsService : ILogsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting log by id: {Id}", id);
-            return ServiceResult<Log>.BadRequest("An error occurred while retrieving the log");
+            return ServiceResult<Log>.InternalServerError("An error occurred while retrieving the log. Error: " + ex.Message);
         }
     }
 
@@ -79,7 +76,7 @@ public class LogsService : ILogsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting logs by workflow run id: {WorkflowRunId}", request.WorkflowRunId);
-            return ServiceResult<List<Log>>.BadRequest("An error occurred while retrieving the logs");
+            return ServiceResult<List<Log>>.InternalServerError("An error occurred while retrieving the logs. Error: " + ex.Message);
         }
     }
 
@@ -96,7 +93,7 @@ public class LogsService : ILogsService
         {
             _logger.LogError(ex, "Error getting logs by date range: {StartDate} to {EndDate}", 
                 request.StartDate, request.EndDate);
-            return ServiceResult<List<Log>>.BadRequest("An error occurred while retrieving the logs");
+            return ServiceResult<List<Log>>.InternalServerError("An error occurred while retrieving the logs. Error: " + ex.Message);
         }
     }
 
@@ -116,7 +113,7 @@ public class LogsService : ILogsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting log: {Id}", id);
-            return ServiceResult<bool>.BadRequest("An error occurred while deleting the log");
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the log. Error: " + ex.Message);
         }
     }
 }

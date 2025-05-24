@@ -22,15 +22,15 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<WorkflowEventsService>();
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
         builder.Services.AddScoped<WorkflowCancelService>();
-        builder.Services.AddScoped<LogsService>();
+        builder.Services.AddScoped<ILogsService, LogsService>();
         builder.Services.AddScoped<TenantService>();
         builder.Services.AddScoped<WebhookService>();
-        builder.Services.AddScoped<ActivitiesService>();
+        builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
-        builder.Services.AddScoped<PermissionsService>();
+        builder.Services.AddScoped<IPermissionsService, PermissionsService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
-        builder.Services.AddScoped<PublicService>();
+        builder.Services.AddScoped<IPublicService, PublicService>();
         
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();

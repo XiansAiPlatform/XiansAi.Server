@@ -8,6 +8,7 @@ public enum StatusCode
     Forbidden = 403,
     NotFound = 404,
     Conflict = 409,
+    InternalServerError = 500,
 }
 
 /// <summary>
@@ -58,6 +59,11 @@ public class ServiceResult<T>
     {
         return new ServiceResult<T>(false, default, errorMessage, statusCode);
     }
+
+    public static ServiceResult<T> InternalServerError(string errorMessage, StatusCode statusCode = StatusCode.InternalServerError)
+    {
+        return new ServiceResult<T>(false, default, errorMessage, statusCode);
+    }
 }
 
 // Non-generic version for operations without return data
@@ -65,21 +71,26 @@ public class ServiceResult
 {
     public bool IsSuccess { get; }
     public string? ErrorMessage { get; }
-    public int StatusCode { get; }
+    public StatusCode StatusCode { get; }
 
-    private ServiceResult(bool isSuccess, string? errorMessage, int statusCode)
+    private ServiceResult(bool isSuccess, string? errorMessage, StatusCode statusCode)
     {
         IsSuccess = isSuccess;
         ErrorMessage = errorMessage;
         StatusCode = statusCode;
     }
 
-    public static ServiceResult Success(int statusCode = 200)
+    public static ServiceResult Success(StatusCode statusCode = StatusCode.Ok)
     {
         return new ServiceResult(true, null, statusCode);
     }
 
-    public static ServiceResult Failure(string errorMessage, int statusCode = 400)
+    public static ServiceResult Failure(string errorMessage, StatusCode statusCode = StatusCode.BadRequest)
+    {
+        return new ServiceResult(false, errorMessage, statusCode);
+    }
+
+    public static ServiceResult InternalServerError(string errorMessage, StatusCode statusCode = StatusCode.InternalServerError)
     {
         return new ServiceResult(false, errorMessage, statusCode);
     }
