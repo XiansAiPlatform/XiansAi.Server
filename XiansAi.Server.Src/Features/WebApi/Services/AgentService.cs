@@ -1,16 +1,19 @@
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Data;
+using Shared.Data.Models;
+using Shared.Utils.Services;
+using Features.WebApi.Models;
 
 namespace Features.WebApi.Services;
 
 public interface IAgentService
 {
     Task<List<string>> GetAgentNames();
-    Task<IResult> GetGroupedDefinitions(bool basicDataOnly = false);
-    Task<IResult> GetDefinitions(string agentName, bool basicDataOnly = false);
-    Task<IResult> GetWorkflowInstances(string? agentName, string? typeName);
-    Task<IResult> DeleteAgent(string agentName);
+    Task<ServiceResult<List<AgentWithDefinitions>>> GetGroupedDefinitions(bool basicDataOnly = false);
+    Task<ServiceResult<List<FlowDefinition>>> GetDefinitions(string agentName, bool basicDataOnly = false);
+    Task<ServiceResult<List<WorkflowResponse>>> GetWorkflowInstances(string? agentName, string? typeName);
+    Task<ServiceResult<AgentDeleteResult>> DeleteAgent(string agentName);
 } 
 /// <summary>
 /// Service for managing agent definitions and workflows.
@@ -52,42 +55,53 @@ public class AgentService : IAgentService
         return agents.Select(a => a.Name).ToList();
     }
 
-    public async Task<IResult> GetGroupedDefinitions(bool basicDataOnly = false)
+    public async Task<ServiceResult<List<AgentWithDefinitions>>> GetGroupedDefinitions(bool basicDataOnly = false)
     {
         try
         {
             var definitions = await _agentRepository.GetAgentsWithDefinitionsAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId, null, null, basicDataOnly: basicDataOnly);
-            return Results.Ok(definitions);
+            return ServiceResult<List<AgentWithDefinitions>>.Success(definitions);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving definitions");
-            return Results.Problem("An error occurred while retrieving definitions.", statusCode: StatusCodes.Status500InternalServerError);
+            return ServiceResult<List<AgentWithDefinitions>>.BadRequest("An error occurred while retrieving definitions.");
         }
     }
 
-    public async Task<IResult> GetWorkflowInstances(string? agentName, string? typeName)
+    public async Task<ServiceResult<List<WorkflowResponse>>> GetWorkflowInstances(string? agentName, string? typeName)
     {
         try
         {
-            var workflows = await _workflowFinderService.GetRunningWorkflowsByAgentAndType(agentName, typeName);
-            return Results.Ok(workflows);
+            // Call the refactored workflow service which now returns ServiceResult<List<WorkflowResponse>>
+            var workflowResult = await _workflowFinderService.GetRunningWorkflowsByAgentAndType(agentName, typeName);
+            
+            if (workflowResult.IsSuccess)
+            {
+                return ServiceResult<List<WorkflowResponse>>.Success(workflowResult.Data ?? new List<Features.WebApi.Models.WorkflowResponse>());
+            }
+            else
+            {
+                _logger.LogWarning("Workflow service returned error for agent {AgentName} and type {TypeName}: {Error}", 
+                    agentName, typeName, workflowResult.ErrorMessage);
+                return ServiceResult<List<WorkflowResponse>>.BadRequest(workflowResult.ErrorMessage ?? "Failed to retrieve workflows");
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflows");
-            return Results.Problem("An error occurred while retrieving workflows.", statusCode: StatusCodes.Status500InternalServerError);
+            return ServiceResult<List<WorkflowResponse>>.BadRequest("An error occurred while retrieving workflows.");
         }
     }
 
-    public async Task<IResult> DeleteAgent(string agentName)
+    public async Task<ServiceResult<AgentDeleteResult>> DeleteAgent(string agentName)
     {
         try
         {
             if (string.IsNullOrWhiteSpace(agentName))
             {
                 _logger.LogWarning("Invalid agent name provided for deletion");
-                return Results.BadRequest("Agent name is required");
+                return ServiceResult<AgentDeleteResult>.BadRequest("Agent name is required");
             }
 
             // Get the agent to check if it exists and verify permissions
@@ -95,7 +109,7 @@ public class AgentService : IAgentService
             if (agent == null)
             {
                 _logger.LogWarning("Agent {AgentName} not found for deletion", agentName);
-                return Results.NotFound("Agent not found");
+                return ServiceResult<AgentDeleteResult>.NotFound("Agent not found");
             }
 
             // Check if user has owner permission
@@ -103,11 +117,11 @@ public class AgentService : IAgentService
             {
                 _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", 
                     _tenantContext.LoggedInUser, agentName);
-                return Results.Problem("You must have owner permission to delete this agent", statusCode: StatusCodes.Status403Forbidden);
+                return ServiceResult<AgentDeleteResult>.Forbidden("You must have owner permission to delete this agent");
             }
 
             // Delete all flow definitions for this agent
-            var deletedDefinitionsCount = await _definitionRepository.DeleteByAgentAsync(agentName);
+            var deletedDefinitionsCount = (int)await _definitionRepository.DeleteByAgentAsync(agentName);
             _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", deletedDefinitionsCount, agentName);
 
             // Delete the agent itself
@@ -115,32 +129,35 @@ public class AgentService : IAgentService
             if (!agentDeleted)
             {
                 _logger.LogError("Failed to delete agent {AgentName} with ID {AgentId}", agentName, agent.Id);
-                return Results.Problem("Failed to delete the agent", statusCode: StatusCodes.Status500InternalServerError);
+                return ServiceResult<AgentDeleteResult>.BadRequest("Failed to delete the agent");
             }
 
             _logger.LogInformation("Successfully deleted agent {AgentName} and {Count} associated flow definitions", 
                 agentName, deletedDefinitionsCount);
             
-            return Results.Ok(new { 
-                message = "Agent deleted successfully",
-                deletedFlowDefinitions = deletedDefinitionsCount 
-            });
+            var result = new AgentDeleteResult
+            {
+                Message = "Agent deleted successfully",
+                DeletedFlowDefinitions = deletedDefinitionsCount
+            };
+            
+            return ServiceResult<AgentDeleteResult>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting agent {AgentName}", agentName);
-            return Results.Problem("An error occurred while deleting the agent.", statusCode: StatusCodes.Status500InternalServerError);
+            return ServiceResult<AgentDeleteResult>.BadRequest("An error occurred while deleting the agent.");
         }
     }
 
-    public async Task<IResult> GetDefinitions(string agentName, bool basicDataOnly = false)
+    public async Task<ServiceResult<List<FlowDefinition>>> GetDefinitions(string agentName, bool basicDataOnly = false)
     {
         try
         {
             if (string.IsNullOrWhiteSpace(agentName))
             {
                 _logger.LogWarning("Invalid agent name provided for getting definitions");
-                return Results.BadRequest("Agent name is required");
+                return ServiceResult<List<FlowDefinition>>.BadRequest("Agent name is required");
             }
 
             // Get the agent to check if it exists and verify permissions
@@ -148,7 +165,7 @@ public class AgentService : IAgentService
             if (agent == null)
             {
                 _logger.LogWarning("Agent {AgentName} not found", agentName);
-                return Results.NotFound("Agent not found");
+                return ServiceResult<List<FlowDefinition>>.NotFound("Agent not found");
             }
 
             // Check if user has permission to access this agent
@@ -156,18 +173,18 @@ public class AgentService : IAgentService
             {
                 _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission", 
                     _tenantContext.LoggedInUser, agentName);
-                return Results.Problem("You do not have permission to access this agent", statusCode: StatusCodes.Status403Forbidden);
+                return ServiceResult<List<FlowDefinition>>.Forbidden("You do not have permission to access this agent");
             }
 
             // Get definitions for the specific agent directly from the definition repository
             var definitions = await _definitionRepository.GetByNameAsync(agentName);
 
-            return Results.Ok(definitions);
+            return ServiceResult<List<FlowDefinition>>.Success(definitions);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving definitions for agent {AgentName}", agentName);
-            return Results.Problem("An error occurred while retrieving agent definitions.", statusCode: StatusCodes.Status500InternalServerError);
+            return ServiceResult<List<FlowDefinition>>.BadRequest("An error occurred while retrieving agent definitions.");
         }
     }
 } 

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 using Shared.Utils.Temporal;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Services;
 
@@ -29,13 +30,23 @@ public class WorkflowRequest
     public string? QueueName { get; set; }
 }
 
+public class WorkflowStartResult
+{
+    public string Message { get; set; } = string.Empty;
+    public string WorkflowId { get; set; } = string.Empty;
+    public string WorkflowType { get; set; } = string.Empty;
+}
+
+public interface IWorkflowStarterService
+{
+    Task<ServiceResult<WorkflowStartResult>> HandleStartWorkflow(WorkflowRequest request);
+}
 
 /// <summary>
 /// Handles the creation and initialization of workflows in the Temporal service.
 /// </summary>
-public class WorkflowStarterService
+public class WorkflowStarterService : IWorkflowStarterService
 {
-
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowStarterService> _logger;
     private readonly ITenantContext _tenantContext;
@@ -58,18 +69,18 @@ public class WorkflowStarterService
     }
 
     /// <summary>
-    /// Handles the HTTP request to start a workflow.
+    /// Handles the request to start a workflow.
     /// </summary>
     /// <param name="request">The workflow request containing workflow configuration.</param>
-    /// <returns>An IResult representing the HTTP response.</returns>
-    public async Task<IResult> HandleStartWorkflow(WorkflowRequest request)
+    /// <returns>A ServiceResult containing the workflow start result.</returns>
+    public async Task<ServiceResult<WorkflowStartResult>> HandleStartWorkflow(WorkflowRequest request)
     {
         _logger.LogInformation("Received workflow start request of type {WorkflowType} with data {Request}", 
             request?.WorkflowType ?? "null", JsonSerializer.Serialize(request));
         
         if (request == null)
         {
-            return Results.BadRequest(new { errors = new[] { "HandleStartWorkflow request body cannot be null" } });
+            return ServiceResult<WorkflowStartResult>.BadRequest("HandleStartWorkflow request body cannot be null");
         }
         
         try
@@ -79,7 +90,7 @@ public class WorkflowStarterService
             {
                 _logger.LogWarning("Invalid workflow request: {Errors}", 
                     string.Join(", ", validationResults));
-                return Results.BadRequest(new { errors = validationResults });
+                return ServiceResult<WorkflowStartResult>.BadRequest(string.Join(", ", validationResults));
             }
 
             var agentName = request!.AgentName ?? request.WorkflowType;
@@ -94,20 +105,19 @@ public class WorkflowStarterService
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
             var handle = await StartWorkflowAsync(request, options);
             
-            return Results.Ok(new { 
-                message = "Workflow started successfully", 
-                workflowId = handle.Id,
-                workflowType = request.WorkflowType
-            });
+            var result = new WorkflowStartResult
+            {
+                Message = "Workflow started successfully",
+                WorkflowId = handle.Id,
+                WorkflowType = request.WorkflowType
+            };
+            
+            return ServiceResult<WorkflowStartResult>.Success(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error starting workflow of type {WorkflowType}", request?.WorkflowType);
-            return Results.Problem(
-                title: "Workflow Start Failed",
-                detail: ex.Message,
-                statusCode: StatusCodes.Status500InternalServerError
-            );
+            return ServiceResult<WorkflowStartResult>.BadRequest($"Workflow Start Failed: {ex.Message}");
         }
     }
 

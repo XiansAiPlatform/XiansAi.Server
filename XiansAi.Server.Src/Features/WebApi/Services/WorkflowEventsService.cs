@@ -3,6 +3,8 @@ using Shared.Utils.Temporal;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Api.History.V1;
 using Temporalio.Client;
+using Shared.Services;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Services;
 
@@ -16,7 +18,14 @@ public record WorkflowActivityEvent
     public string? Result { get; init; }
     public string? ActivityId { get; init; }
 }
-public class WorkflowEventsService
+
+public interface IWorkflowEventsService
+{
+    IResult StreamWorkflowEvents(string? workflowId);
+    Task<ServiceResult<List<WorkflowActivityEvent>>> GetWorkflowEvents(string? workflowId);
+}
+
+public class WorkflowEventsService : IWorkflowEventsService
 {
     private readonly ITemporalClientService _clientService;
     private readonly ILogger<WorkflowEventsService> _logger;
@@ -128,14 +137,14 @@ public class WorkflowEventsService
     /**
     curl -X GET "http://localhost:5257/api/workflows/ProspectingWorkflow-79b8f89d-2c00-43a7-a3aa-50292ffdc65d/events"
     */
-    public async Task<IResult> GetWorkflowEvents(string? workflowId)
+    public async Task<ServiceResult<List<WorkflowActivityEvent>>> GetWorkflowEvents(string? workflowId)
     {
-        
         if (string.IsNullOrEmpty(workflowId))
         {
             _logger.LogWarning("Attempted to get events with empty workflow ID");
-            return Results.BadRequest("WorkflowId is required");
+            return ServiceResult<List<WorkflowActivityEvent>>.BadRequest("WorkflowId is required");
         }
+        
         try
         {
             var client = _clientService.GetClient();
@@ -147,22 +156,17 @@ public class WorkflowEventsService
                 events.Add(historyEvent);
             }
 
-
             var activityEvents = ExtractActivityEvents(events);
 
             _logger.LogInformation("Successfully extracted {Count} activity events for workflow {WorkflowId}", 
                 activityEvents.Count, workflowId);
 
-            return Results.Ok(activityEvents);
+            return ServiceResult<List<WorkflowActivityEvent>>.Success(activityEvents);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error fetching workflow events for workflow {WorkflowId}", workflowId);
-            return Results.Problem(
-                title: "Failed to fetch workflow events",
-                detail: ex.Message,
-                statusCode: StatusCodes.Status500InternalServerError
-            );
+            return ServiceResult<List<WorkflowActivityEvent>>.BadRequest($"Failed to fetch workflow events: {ex.Message}");
         }
     }
 

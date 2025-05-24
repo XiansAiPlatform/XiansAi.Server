@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -18,7 +19,8 @@ public static class WorkflowEndpoints
             string? runId,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
-            return await endpoint.GetWorkflow(workflowId, runId);
+            var result = await endpoint.GetWorkflow(workflowId, runId);
+            return result.ToHttpResult();
         })
         .WithName("Get Workflow")
         .WithOpenApi();
@@ -48,7 +50,8 @@ public static class WorkflowEndpoints
             [FromQuery] string? status,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
-            return await endpoint.GetWorkflows(startTime, endTime, owner, status);
+            var result = await endpoint.GetWorkflows(startTime, endTime, owner, status);
+            return result.ToHttpResult();
         })
         .WithName("Get Workflows")
         .WithOpenApi(operation => {

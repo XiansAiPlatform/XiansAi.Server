@@ -1,6 +1,7 @@
 using Features.WebApi.Auth;
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Utils.Services;
 
 namespace XiansAi.Server.Features.WebApi.Endpoints;
 
@@ -17,22 +18,23 @@ public static class AgentEndpoints
         {
             return await service.GetAgentNames();
         })
-        .WithName("Get All Agents")
+        .WithName("Get Agent Names")
         .WithOpenApi(operation => {
-            operation.Summary = "Get all agents";
-            operation.Description = "Retrieves all agents";
+            operation.Summary = "Get agent names";
+            operation.Description = "Retrieves all agent names";
             return operation;
         });
 
-        agentGroup.MapGet("/definitions/", async (
+        agentGroup.MapGet("/all", async (
             [FromServices] IAgentService service) =>
         {
-            return await service.GetGroupedDefinitions();
+            var result = await service.GetGroupedDefinitions();
+            return result.ToHttpResult();
         })
-        .WithName("Get Grouped Definitions")
+        .WithName("Get Grouped Definitions by Agent")
         .WithOpenApi(operation => {
-            operation.Summary = "Get grouped definitions";
-            operation.Description = "Retrieves grouped definitions";
+            operation.Summary = "Get grouped definitions by agent";
+            operation.Description = "Retrieves grouped definitions by agent";
             return operation;
         });
     
@@ -40,26 +42,28 @@ public static class AgentEndpoints
             string agentName,
             [FromServices] IAgentService service) =>
         {
-            return await service.GetDefinitions(agentName, true);
+            var result = await service.GetDefinitions(agentName, true);
+            return result.ToHttpResult();
         })
-        .WithName("Get Grouped Definitions Basic Info")
+        .WithName("Get Grouped Definitions Basic Info by Agent")
         .WithOpenApi(operation => {
-            operation.Summary = "Get grouped definitions basic info";
-            operation.Description = "Retrieves grouped definitions basic info";
+            operation.Summary = "Get grouped definitions basic info by agent";
+            operation.Description = "Retrieves grouped definitions basic info by agent";
             return operation;
         });
 
-        agentGroup.MapGet("/workflows", async (
-            [FromQuery] string? agentName,
-            [FromQuery] string? typeName,
+        agentGroup.MapGet("/{agentName}/{typeName}/runs", async (
+            string agentName,
+            string typeName,
             [FromServices] IAgentService service) =>
         {
-            return await service.GetWorkflowInstances(agentName, typeName);
+            var result = await service.GetWorkflowInstances(agentName, typeName);
+            return result.ToHttpResult();
         })
-        .WithName("Get Workflow Instances")
+        .WithName("Get Run Instances by Agent and Type")
         .WithOpenApi(operation => {
-            operation.Summary = "Get workflow instances";
-            operation.Description = "Retrieves workflow instances";
+            operation.Summary = "Get run instances by agent and type";
+            operation.Description = "Retrieves run instances by agent and type";
             return operation;
         });
 
@@ -67,7 +71,8 @@ public static class AgentEndpoints
             string agentName,
             [FromServices] IAgentService service) =>
         {
-            return await service.DeleteAgent(agentName);
+            var result = await service.DeleteAgent(agentName);
+            return result.ToHttpResult();
         })
         .WithName("Delete Agent")
         .WithOpenApi(operation => {

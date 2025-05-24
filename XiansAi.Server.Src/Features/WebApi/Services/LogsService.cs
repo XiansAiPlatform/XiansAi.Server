@@ -3,6 +3,8 @@ using XiansAi.Server.Shared.Data;
 using Shared.Auth;
 using Features.WebApi.Repositories;
 using Shared.Data;
+using Shared.Utils.Services;
+using Features.WebApi.Models;
 
 namespace Features.WebApi.Services;
 
@@ -20,7 +22,15 @@ public class LogsByDateRangeRequest
     public required DateTime EndDate { get; set; }
 }
 
-public class LogsService
+public interface ILogsService
+{
+    Task<ServiceResult<Log>> GetLogById(string id);
+    Task<ServiceResult<List<Log>>> GetLogsByWorkflowRunId(LogsByWorkflowRequest request);
+    Task<ServiceResult<List<Log>>> GetLogsByDateRange(LogsByDateRangeRequest request);
+    Task<ServiceResult<bool>> DeleteLog(string id);
+}
+
+public class LogsService : ILogsService
 {
     private readonly LogRepository _logRepository;
     private readonly ILogger<LogsService> _logger;
@@ -34,7 +44,7 @@ public class LogsService
         _logger = logger;
     }
 
-    public async Task<IResult> GetLogById(string id)
+    public async Task<ServiceResult<Log>> GetLogById(string id)
     {
         try
         {
@@ -42,22 +52,21 @@ public class LogsService
             if (log is null)
             {
                 _logger.LogWarning("Log with ID {Id} not found", id);
-                return Results.NotFound();
+                return ServiceResult<Log>.NotFound("Log not found");
             }
-            return Results.Ok(log);
+            return ServiceResult<Log>.Success(log);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting log by id: {Id}", id);
-            return Results.Problem("An error occurred while retrieving the log");
+            return ServiceResult<Log>.BadRequest("An error occurred while retrieving the log");
         }
     }
 
-    public async Task<IResult> GetLogsByWorkflowRunId(LogsByWorkflowRequest request)
+    public async Task<ServiceResult<List<Log>>> GetLogsByWorkflowRunId(LogsByWorkflowRequest request)
     {
         try
         {
-
             var logs = await _logRepository.GetByWorkflowRunIdAsync(
                 request.WorkflowRunId, 
                 request.Skip, 
@@ -65,32 +74,33 @@ public class LogsService
                 request.LogLevel
             );
             _logger.LogInformation("Found {Count} logs for workflow {WorkflowRunId}", logs.Count, request.WorkflowRunId);
-            return Results.Ok(logs);
+            return ServiceResult<List<Log>>.Success(logs);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting logs by workflow run id: {WorkflowRunId}", request.WorkflowRunId);
-            return Results.Problem("An error occurred while retrieving the logs");
+            return ServiceResult<List<Log>>.BadRequest("An error occurred while retrieving the logs");
         }
     }
 
-    public async Task<IResult> GetLogsByDateRange(LogsByDateRangeRequest request)
+    public async Task<ServiceResult<List<Log>>> GetLogsByDateRange(LogsByDateRangeRequest request)
     {
         try
         {
             var logs = await _logRepository.GetByDateRangeAsync(request.StartDate, request.EndDate);
             _logger.LogInformation("Found {Count} logs between {StartDate} and {EndDate}", 
                 logs.Count, request.StartDate, request.EndDate);
-            return Results.Ok(logs);
+            return ServiceResult<List<Log>>.Success(logs);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting logs by date range: {StartDate} to {EndDate}", 
                 request.StartDate, request.EndDate);
-            return Results.Problem("An error occurred while retrieving the logs");
+            return ServiceResult<List<Log>>.BadRequest("An error occurred while retrieving the logs");
         }
     }
-    public async Task<IResult> DeleteLog(string id)
+
+    public async Task<ServiceResult<bool>> DeleteLog(string id)
     {
         try
         {
@@ -98,15 +108,15 @@ public class LogsService
             if (!result)
             {
                 _logger.LogWarning("Log with ID {Id} not found for deletion", id);
-                return Results.NotFound();
+                return ServiceResult<bool>.NotFound("Log not found");
             }
             _logger.LogInformation("Deleted log: {Id}", id);
-            return Results.Ok();
+            return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting log: {Id}", id);
-            return Results.Problem("An error occurred while deleting the log");
+            return ServiceResult<bool>.BadRequest("An error occurred while deleting the log");
         }
     }
 }
