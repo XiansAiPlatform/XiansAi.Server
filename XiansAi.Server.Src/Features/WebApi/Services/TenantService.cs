@@ -4,6 +4,7 @@ using XiansAi.Server.Shared.Data;
 using Shared.Auth;
 using Features.WebApi.Models;
 using Shared.Utils.Services;
+using Shared.Data.Models;
 
 namespace Features.WebApi.Services;
 
@@ -249,7 +250,6 @@ public class TenantService : ITenantService
         try
         {
             agent.CreatedAt = DateTime.UtcNow;
-            agent.UpdatedAt = DateTime.UtcNow;
             agent.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
 
             var success = await _tenantRepository.AddAgentAsync(tenantId, agent);
@@ -275,7 +275,6 @@ public class TenantService : ITenantService
     {
         try
         {
-            agent.UpdatedAt = DateTime.UtcNow;
             var success = await _tenantRepository.UpdateAgentAsync(tenantId, agentName, agent);
             if (success)
             {

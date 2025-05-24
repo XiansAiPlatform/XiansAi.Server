@@ -12,13 +12,14 @@ using Shared.Repositories;
 using Shared.Utils.Services;
 using Features.WebApi.Models;
 using Temporalio.Common;
+using Temporalio.Api.History.V1;
 
 namespace Features.WebApi.Services;
 
 public interface IWorkflowFinderService
 {
     Task<ServiceResult<WorkflowResponse>> GetWorkflow(string workflowId, string? runId = null);
-    Task<ServiceResult<List<WorkflowResponse>>> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status);
+    Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status);
     Task<ServiceResult<List<WorkflowResponse>>> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName);
 }
 
@@ -115,14 +116,14 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="owner">Optional owner filter for workflows.</param>
     /// <param name="status">Optional status filter for workflows.</param>
     /// <returns>A result containing the list of filtered workflows.</returns>
-    public async Task<ServiceResult<List<WorkflowResponse>>> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status)
+    public async Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status)
     {
         _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}",
             startTime, endTime, owner ?? "null", status ?? "null");
 
         var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
         var agentNames = agents.Select(a => a.Name).ToArray();
-        var workflows = new List<WorkflowResponse>();
+        var allWorkflowResponses = new List<WorkflowResponse>();
 
         try
         {
@@ -141,14 +142,14 @@ public class WorkflowFinderService : IWorkflowFinderService
                     continue;
                 }
 
-                workflows.Add(mappedWorkflow);
+                allWorkflowResponses.Add(mappedWorkflow);
             }
-            _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", workflows.Count);
+            _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", allWorkflowResponses.Count);
 
             // retrieve last logs for each workflow run
             var logRepository = new LogRepository(_databaseService);
             var logs = await logRepository.GetLastLogAsync(startTime, endTime);
-            foreach (var workflow in workflows)
+            foreach (var workflow in allWorkflowResponses)
             {
                 var workflowId = workflow.WorkflowId;
                 var workflowRunId = workflow.RunId;
@@ -160,17 +161,27 @@ public class WorkflowFinderService : IWorkflowFinderService
                 }
             }
 
+            // Group workflows by agent
+            var workflowsGroupedByAgent = allWorkflowResponses
+                .GroupBy(w => w.Agent)
+                .Select(group => 
+                {
+                    var dbAgent = agents.First(a => a.Name == group.Key);
+                    return new WorkflowsWithAgent
+                    {
+                        Agent = dbAgent,
+                        Workflows = group.ToList()
+                    };
+                })
+                .ToList();
+
+            return ServiceResult<List<WorkflowsWithAgent>>.Success(workflowsGroupedByAgent);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve workflows. Error: {ErrorMessage}", ex.Message);
-            return ServiceResult<List<WorkflowResponse>>.BadRequest("Failed to retrieve workflows: " + ex.Message);
+            return ServiceResult<List<WorkflowsWithAgent>>.InternalServerError("Failed to retrieve workflows: " + ex.Message);
         }
-
-
-
-        return ServiceResult<List<WorkflowResponse>>.Success(workflows);
-
     }
 
     /// <summary>
@@ -362,7 +373,8 @@ public class WorkflowFinderService : IWorkflowFinderService
         var tenantId = ExtractMemoValue(workflow.Memo, Constants.TenantIdKey);
         var userId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var agent = ExtractMemoValue(workflow.Memo, Constants.AgentKey);
-        Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? currentActivity = null;
+
+        ActivityTaskScheduledEventAttributes? currentActivity = null;
 
         if (history != null)
         {
@@ -383,7 +395,7 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         return new WorkflowResponse
         {
-            Agent = agent,
+            Agent = agent ?? throw new Exception("Agent not found"),
             ParentId = workflow.ParentId,
             ParentRunId = workflow.ParentRunId,
             WorkflowId = workflow.Id,

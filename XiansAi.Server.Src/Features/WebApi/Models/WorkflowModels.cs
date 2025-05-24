@@ -1,4 +1,13 @@
+using Shared.Data.Models;
+
 namespace Features.WebApi.Models;
+
+public class WorkflowsWithAgent
+{
+    public required Agent Agent { get; set; }
+    public required List<WorkflowResponse> Workflows { get; set; }
+}
+
 
 /// <summary>
 /// Represents a workflow response object containing workflow execution details.
@@ -8,7 +17,7 @@ public class WorkflowResponse
     /// <summary>
     /// Gets or sets the agent associated with the workflow.
     /// </summary>
-    public string? Agent { get; set; }
+    public required string Agent { get; set; }
 
     /// <summary>
     /// Gets or sets the tenant identifier associated with the workflow.

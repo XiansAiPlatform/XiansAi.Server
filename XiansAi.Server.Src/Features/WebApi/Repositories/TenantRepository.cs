@@ -2,6 +2,7 @@ using MongoDB.Driver;
 using MongoDB.Bson;
 using Features.WebApi.Models;
 using Shared.Data;
+using Shared.Data.Models;
 
 namespace XiansAi.Server.Features.WebApi.Repositories;
 
@@ -16,7 +17,6 @@ public interface ITenantRepository
     Task<bool> DeleteAsync(string id);
     Task<List<Tenant>> SearchAsync(string searchTerm);
     Task<List<Tenant>> GetTenantsByCreatorAsync(string createdBy);
-    Task<List<Tenant>> GetTenantsWithActiveAgentsAsync();
     Task<bool> AddAgentAsync(string tenantId, Agent agent);
     Task<bool> UpdateAgentAsync(string tenantId, string agentName, Agent updatedAgent);
     Task<bool> RemoveAgentAsync(string tenantId, string agentName);
@@ -99,13 +99,6 @@ public class TenantRepository : ITenantRepository
         return await _collection.Find(tenant => tenant.CreatedBy == createdBy).ToListAsync();
     }
 
-    public async Task<List<Tenant>> GetTenantsWithActiveAgentsAsync()
-    {
-        var filter = Builders<Tenant>.Filter.ElemMatch(x => x.Agents, 
-            Builders<Agent>.Filter.Eq(a => a.IsActive, true));
-        return await _collection.Find(filter).ToListAsync();
-    }
-
     public async Task<bool> AddAgentAsync(string tenantId, Agent agent)
     {
         var filter = Builders<Tenant>.Filter.Eq(t => t.Id, tenantId);
@@ -150,11 +143,7 @@ public class TenantRepository : ITenantRepository
         
         var agent = tenant.Agents?.FirstOrDefault(a => a.Name == agentName);
         if (agent == null) return false;
-        
-        if (agent.Flows == null)
-            agent.Flows = new List<Flow>();
-            
-        agent.Flows.Add(flow);
+    
         
         return await UpdateAsync(tenantId, tenant);
     }
