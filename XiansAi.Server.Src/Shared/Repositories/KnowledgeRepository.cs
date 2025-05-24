@@ -221,17 +221,20 @@ public class KnowledgeRepository : IKnowledgeRepository
     {
         var collection = GetTypedCollection<T>();
         
-        // Create tenant filter for both tenant-specific and global (null tenant) knowledge
-        var tenantFilter = Builders<T>.Filter.Or(
-            Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<T>.Filter.Eq(x => x.TenantId, null)
-        );
+        // Handle case where agentNames is empty or null - return empty list
+        // Repository should never return global knowledge for tenant-specific queries
+        if (agentNames == null || agentNames.Count == 0)
+        {
+            return new List<T>();
+        }
+        
+        // Create tenant filter - only for specific tenant, never global (null)
+        var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
         
         // Create agent filter that matches any of the specified agents 
         var agentFilters = agentNames.Select(agent => 
                 Builders<T>.Filter.Eq(x => x.Agent, agent)).ToList();
         var agentFilter = Builders<T>.Filter.Or(agentFilters);
-        
         
         // Combine the filters
         var filter = Builders<T>.Filter.And(tenantFilter, agentFilter);
@@ -245,8 +248,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
             
-        // Process in memory to get the latest for each name/agent combination,
-        // prioritizing tenant-specific knowledge
+        // Process in memory to get the latest for each name/agent combination
         return allItems
             .GroupBy(x => new { x.Name, x.Agent })
             .Select(group => group

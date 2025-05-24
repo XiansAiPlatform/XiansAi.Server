@@ -269,7 +269,10 @@ public class WorkflowFinderService : IWorkflowFinderService
         // Add tenantId filter
         queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
 
-        queryParts.Add($"{Constants.AgentKey} in ({string.Join(",", agent.Select(a => "'" + a + "'"))})");
+        if (agent.Length > 0)
+        {
+            queryParts.Add($"{Constants.AgentKey} in ({string.Join(",", agent.Select(a => "'" + a + "'"))})");
+        }
 
         // Add userId filter if current owner is requested
         if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase))
