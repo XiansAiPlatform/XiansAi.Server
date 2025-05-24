@@ -1,5 +1,3 @@
-
-
 namespace Shared.Utils.Services;
 
 /// <summary>
@@ -40,12 +38,12 @@ public static class ServiceResultExtensions
 
         return result.StatusCode switch
         {
-            400 => Results.BadRequest(result.ErrorMessage),
-            401 => Results.Unauthorized(),
-            403 => Results.Forbid(),
-            404 => Results.NotFound(result.ErrorMessage),
-            409 => Results.Conflict(result.ErrorMessage),
-            _ => Results.StatusCode(result.StatusCode)
+            StatusCode.BadRequest => Results.BadRequest(result.ErrorMessage),
+            StatusCode.Unauthorized => Results.Unauthorized(),
+            StatusCode.Forbidden => Results.Forbid(),
+            StatusCode.NotFound => Results.NotFound(result.ErrorMessage),
+            StatusCode.Conflict => Results.Conflict(result.ErrorMessage),
+            _ => Results.StatusCode((int)result.StatusCode)
         };
     }
 } 

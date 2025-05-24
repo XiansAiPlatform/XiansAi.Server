@@ -40,6 +40,4 @@ public class FlowDefinition
     [BsonElement("created_by")]
     public required string CreatedBy { get; set; }
 
-    [BsonElement("permissions")]
-    public required Permission Permissions { get; set; }
 }

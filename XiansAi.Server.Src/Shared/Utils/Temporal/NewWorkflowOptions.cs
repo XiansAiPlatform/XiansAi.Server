@@ -14,7 +14,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
         if (string.IsNullOrEmpty(proposedId))
         {
-            proposedId = GenerateNewWorkflowId(agentName, workFlowType, tenantContext);
+            proposedId = GenerateNewWorkflowId(workFlowType, tenantContext);
         }
         else
         {
@@ -53,7 +53,6 @@ public class NewWorkflowOptions : WorkflowOptions
 
     private string GetTemporalQueueName(string workFlowType, string? queueName)
     {
-        //workFlowType = workFlowType.ToLower().Replace(" ", "").Replace("-", "").Trim();
         var queueFullName = string.IsNullOrEmpty(queueName) ? workFlowType : queueName + "--" + workFlowType;
         return queueFullName;
     }
@@ -73,10 +72,10 @@ public class NewWorkflowOptions : WorkflowOptions
         return memo;
     }
 
-    public static string GenerateNewWorkflowId(string agentName, string workflowType, ITenantContext tenantContext)
+    public static string GenerateNewWorkflowId(string workflowType, ITenantContext tenantContext)
     {
-        var id = $"{agentName}:{workflowType}:{Guid.NewGuid()}";
-        var tenantWorkflowId = tenantContext.TenantId + ":" + id.Replace(" ", "");
+        var id = $"{workflowType}:{Guid.NewGuid()}";
+        var tenantWorkflowId = tenantContext.TenantId + ":" + id;
         return tenantWorkflowId;
     }
 }

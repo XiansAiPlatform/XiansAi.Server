@@ -103,13 +103,41 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             return;
         }
         
+        // Try authorization with cache first, then retry without cache if needed
+        var success = await TryAuthorizeWithRetry(context, httpContext, requirement);
+        if (!success)
+        {
+            return; // Context.Fail() already called in TryAuthorize methods
+        }
+        
+        _logger.LogInformation("Authorization requirement succeeded for tenant {TenantId}", _tenantContext.TenantId);
+        context.Succeed(requirement);
+    }
+    
+    private async Task<bool> TryAuthorizeWithRetry(AuthorizationHandlerContext context, HttpContext httpContext, AuthRequirement requirement)
+    {
+        // First attempt with cache
+        var success = await TryAuthorize(context, httpContext, requirement, bypassCache: false);
+        
+        // If authorization failed, retry with fresh token validation
+        if (!success)
+        {
+            _logger.LogInformation("Authorization failed with cached data, retrying with fresh validation");
+            success = await TryAuthorize(context, httpContext, requirement, bypassCache: true);
+        }
+        
+        return success;
+    }
+    
+    private async Task<bool> TryAuthorize(AuthorizationHandlerContext context, HttpContext httpContext, AuthRequirement requirement, bool bypassCache)
+    {
         // Always validate token
-        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(httpContext);
+        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(httpContext, bypassCache);
         if (!success)
         {
             _logger.LogWarning("Token validation failed");
             context.Fail(new AuthorizationFailureReason(this, "Token validation failed"));
-            return;
+            return false;
         }
         
         // Set user info to tenant context
@@ -120,8 +148,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         if (!requirement.Options.RequireTenant)
         {
             _logger.LogInformation("Token validation succeeded, tenant validation not required");
-            context.Succeed(requirement);
-            return;
+            return true;
         }
         
         // Extract and validate tenant ID
@@ -130,17 +157,25 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         {
             _logger.LogWarning("No Tenant ID found in X-Tenant-Id header");
             context.Fail(new AuthorizationFailureReason(this, "No Tenant ID found in X-Tenant-Id header"));
-            return;
+            return false;
         }
         
         // Verify user has access to this tenant
         if (authorizedTenantIds == null || !authorizedTenantIds.Contains(currentTenantId))
         {
-            _logger.LogWarning("Tenant ID {TenantId} is not authorized for user {UserId}", 
-                currentTenantId, loggedInUser);
-            context.Fail(new AuthorizationFailureReason(this, 
-                $"Tenant {currentTenantId} is not authorized for this token holder"));
-            return;
+            var logMessage = bypassCache 
+                ? "Tenant ID {TenantId} is not authorized for user {UserId} even after fresh token validation"
+                : "Tenant ID {TenantId} is not authorized for user {UserId} (cached result)";
+            
+            _logger.LogWarning(logMessage, currentTenantId, loggedInUser);
+            
+            // Only fail permanently if this was already a retry
+            if (bypassCache)
+            {
+                context.Fail(new AuthorizationFailureReason(this, 
+                    $"Tenant {currentTenantId} is not authorized for this token holder"));
+            }
+            return false;
         }
         
         // Validate tenant configuration if required
@@ -152,19 +187,17 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
                 context.Fail(new AuthorizationFailureReason(this, 
                     $"Tenant {currentTenantId} configuration not found"));
-                return;
+                return false;
             }
         }
         
         // Set tenant ID in context
         _tenantContext.TenantId = currentTenantId;
-        
-        _logger.LogInformation("Authorization requirement succeeded for tenant {TenantId}", currentTenantId);
-        context.Succeed(requirement);
+        return true;
     }
     
     private async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)> 
-        ValidateToken(HttpContext httpContext)
+        ValidateToken(HttpContext httpContext, bool bypassCache = false)
     {
         var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
         
@@ -176,17 +209,25 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
 
         var token = authHeader.Substring("Bearer ".Length);
         
-        // Try to get validation result from cache
-        var (found, valid, userId, tenantIds) = await _tokenCache.GetValidation(token);
-        if (found)
+        // Try to get validation result from cache (unless bypassing)
+        if (!bypassCache)
         {
-            if (valid)
+            var (found, valid, userId, tenantIds) = await _tokenCache.GetValidation(token);
+            if (found)
             {
-                // Set the user name to the logged in user from cache
-                httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
-                return (true, userId, tenantIds);
+                if (valid)
+                {
+                    // Set the user name to the logged in user from cache
+                    httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
+                    return (true, userId, tenantIds);
+                }
+                // Don't immediately return false for invalid cached results - let retry logic handle this
+                _logger.LogDebug("Found invalid token in cache, will proceed to fresh validation");
             }
-            return (false, null, null);
+        }
+        else
+        {
+            _logger.LogInformation("Bypassing token cache for fresh validation");
         }
 
         try
@@ -195,12 +236,12 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             var authProvider = _authProviderFactory.GetProvider();
             var (success, tokenUserId, tokenTenantIds) = await authProvider.ValidateToken(token);
             
-            // Cache the result
+            // Cache the result (always cache fresh validation results)
             await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
             
             if (!success || string.IsNullOrEmpty(tokenUserId))
             {
-                _logger.LogWarning("Token validation failed");
+                _logger.LogWarning("Token validation failed from auth provider");
                 return (false, null, null);
             }
             

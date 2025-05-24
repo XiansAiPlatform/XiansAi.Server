@@ -1,13 +1,36 @@
 using Microsoft.Extensions.Caching.Distributed;
 using Features.WebApi.Auth;
+using Features.WebApi.Models;
 using Shared.Auth;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Services;
 
 /// <summary>
+/// Interface for user registration and email verification processes.
+/// </summary>
+public interface IPublicService
+{
+    /// <summary>
+    /// Validates a verification code for the specified email.
+    /// </summary>
+    /// <param name="email">The email address to validate the code for</param>
+    /// <param name="code">The verification code to validate</param>
+    /// <returns>True if the code is valid, false otherwise</returns>
+    Task<bool> ValidateCode(string email, string code);
+
+    /// <summary>
+    /// Sends a verification code to the specified email address.
+    /// </summary>
+    /// <param name="email">The email address to send the verification code to</param>
+    /// <returns>A ServiceResult indicating success or failure</returns>
+    Task<ServiceResult<SendVerificationCodeResult>> SendVerificationCode(string email);
+}
+
+/// <summary>
 /// Handles user registration and email verification processes.
 /// </summary>
-public class PublicService 
+public class PublicService : IPublicService
 {
     private readonly IAuthMgtConnect _authMgtConnect;
     private readonly ILogger<PublicService> _logger;
@@ -72,15 +95,15 @@ public class PublicService
     /// Sends a verification code to the specified email address.
     /// </summary>
     /// <param name="email">The email address to send the verification code to</param>
-    /// <returns>An IResult indicating success or failure</returns>
-    public async Task<IResult> SendVerificationCode(string email)
+    /// <returns>A ServiceResult indicating success or failure</returns>
+    public async Task<ServiceResult<SendVerificationCodeResult>> SendVerificationCode(string email)
     {
         _logger.LogInformation("Received request to send verification code to email: {Email}", email);
         
         if (string.IsNullOrWhiteSpace(email))
         {
             _logger.LogWarning("SendVerificationCode failed: Email is empty or null");
-            return Results.BadRequest("Email is required");
+            return ServiceResult<SendVerificationCodeResult>.BadRequest("Email is required");
         }
 
         try
@@ -93,7 +116,7 @@ public class PublicService
             if (!IsValidTenantId(tenantId))
             {
                 _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
-                return Results.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
+                return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
             }
 
             // Generate and send verification code
@@ -104,17 +127,20 @@ public class PublicService
             await _emailService.SendEmailAsync(email, EMAIL_SUBJECT, GetEmailBody(code), false);
             _logger.LogInformation("Verification code sent successfully to: {Email}", email);
 
-            return Results.Ok($"Verification code sent to {email}");
+            return ServiceResult<SendVerificationCodeResult>.Success(new SendVerificationCodeResult 
+            { 
+                Message = $"Verification code sent to {email}" 
+            });
         }
         catch (ArgumentException ex)
         {
             _logger.LogError(ex, "Invalid argument when sending verification code to {Email}: {Message}", email, ex.Message);
-            return Results.BadRequest(ex.Message);
+            return ServiceResult<SendVerificationCodeResult>.BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error when sending verification code to {Email}: {Message}", email, ex.Message);
-            return Results.StatusCode(500);
+            return ServiceResult<SendVerificationCodeResult>.InternalServerError("An error occurred while sending verification code. Error: " + ex.Message);
         }
     }
 
@@ -272,46 +298,4 @@ The Xians.ai Team";
     /// <param name="email">The email address to generate a cache key for</param>
     /// <returns>The cache key for the email</returns>
     private static string GetVerificationCacheKey(string email) => $"{VERIFICATION_CACHE_PREFIX}{email}";
-}
-
-/// <summary>
-/// Request model for registering a new tenant.
-/// </summary>
-public class RegisterTenantRequest
-{
-    /// <summary>
-    /// The company email address.
-    /// </summary>
-    public required string CompanyEmail { get; set; }
-    
-    /// <summary>
-    /// The company website URL.
-    /// </summary>
-    public required string CompanyUrl { get; set; }
-    
-    /// <summary>
-    /// The tenant identifier.
-    /// </summary>
-    public required string TenantId { get; set; }
-    
-    /// <summary>
-    /// The subscription type for the tenant.
-    /// </summary>
-    public required string SubscriptionType { get; set; }
-}
-
-/// <summary>
-/// Request model for validating a verification code.
-/// </summary>
-public class ValidateCodeRequest
-{
-    /// <summary>
-    /// The email address to validate the code for.
-    /// </summary>
-    public required string Email { get; set; }
-    
-    /// <summary>
-    /// The verification code to validate.
-    /// </summary>
-    public required string Code { get; set; }
 }

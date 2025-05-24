@@ -23,7 +23,7 @@ public class MessagingService : IMessagingService
     private readonly IConversationThreadRepository _threadRepository;
     private readonly IConversationMessageRepository _messageRepository;
     /// <summary>
-    /// Initializes a new instance of the <see cref="DefinitionsService"/> class.
+    /// Initializes a new instance of the <see cref="MessagingService"/> class.
     /// </summary>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
@@ -95,7 +95,7 @@ public class MessagingService : IMessagingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting thread {ThreadId}", threadId);
-            return ServiceResult<bool>.BadRequest("An error occurred while deleting the thread");
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread. Error: " + ex.Message);
         }
     }
 }

@@ -14,7 +14,7 @@ public static class TenantEndpoints
             .RequiresValidTenant();
 
         tenantsGroup.MapGet("/", async (
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             return await endpoint.GetAllTenants();
         })
@@ -27,7 +27,7 @@ public static class TenantEndpoints
 
         tenantsGroup.MapGet("/{id}", async (
             string id,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             return await endpoint.GetTenantById(id);
         })
@@ -40,7 +40,7 @@ public static class TenantEndpoints
 
         tenantsGroup.MapGet("/by-tenant-id/{tenantId}", async (
             string tenantId,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             return await endpoint.GetTenantByTenantId(tenantId);
         })
@@ -53,7 +53,7 @@ public static class TenantEndpoints
 
         tenantsGroup.MapGet("/by-domain/{domain}", async (
             string domain,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             return await endpoint.GetTenantByDomain(domain);
         })
@@ -67,7 +67,7 @@ public static class TenantEndpoints
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,
             HttpContext httpContext,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             var userIdClaim = httpContext.User.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
             var createdBy = userIdClaim ?? "system";
@@ -83,7 +83,7 @@ public static class TenantEndpoints
         tenantsGroup.MapPut("/{id}", async (
             string id,
             [FromBody] UpdateTenantRequest request,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             return await endpoint.UpdateTenant(id, request);
         })
@@ -96,7 +96,7 @@ public static class TenantEndpoints
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             return await endpoint.DeleteTenant(id);
         })
