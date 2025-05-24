@@ -18,13 +18,13 @@ public static class WebApiConfiguration
 
         // Register Web API specific services
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
-        builder.Services.AddScoped<WorkflowStarterService>();
-        builder.Services.AddScoped<WorkflowEventsService>();
+        builder.Services.AddScoped<IWorkflowStarterService, WorkflowStarterService>();
+        builder.Services.AddScoped<IWorkflowEventsService, WorkflowEventsService>();
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
-        builder.Services.AddScoped<WorkflowCancelService>();
+        builder.Services.AddScoped<IWorkflowCancelService, WorkflowCancelService>();
         builder.Services.AddScoped<ILogsService, LogsService>();
-        builder.Services.AddScoped<TenantService>();
-        builder.Services.AddScoped<WebhookService>();
+        builder.Services.AddScoped<ITenantService, TenantService>();
+        builder.Services.AddScoped<IWebhookService, WebhookService>();
         builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
