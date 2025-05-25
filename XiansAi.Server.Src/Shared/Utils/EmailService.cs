@@ -1,68 +1,101 @@
-using Azure;
-using Azure.Communication.Email;
+using XiansAi.Server.Providers;
 
+namespace Shared.Utils;
 
+/// <summary>
+/// Email service that uses the provider pattern for flexible email implementations
+/// </summary>
 public class EmailService : IEmailService
 {
-    private readonly EmailClient? _emailClient;
-    private readonly string? _senderAddress;
+    private readonly IEmailProvider _emailProvider;
     private readonly ILogger<EmailService> _logger;
 
-    public EmailService(IConfiguration configuration, ILogger<EmailService> logger, IHostEnvironment env)
+    /// <summary>
+    /// Creates a new instance of the EmailService
+    /// </summary>
+    /// <param name="emailProviderFactory">Factory for creating email providers</param>
+    /// <param name="logger">Logger for the service</param>
+    public EmailService(
+        IEmailProviderFactory emailProviderFactory,
+        ILogger<EmailService> logger)
     {
-        _logger = logger;
-        var connectionString = configuration["CommunicationServices:ConnectionString"];
-        _senderAddress = configuration["CommunicationServices:SenderEmail"];
-
-        if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(_senderAddress))
-        {
-            _logger.LogError("CommunicationServices:ConnectionString or SenderEmail is not set");
-            if (env.IsProduction()) {
-                throw new InvalidOperationException("Email service is not properly configured. Please check CommunicationServices settings in configuration.");
-            }
-        } else {
-            _emailClient = new EmailClient(connectionString);
-        }
+        _emailProvider = emailProviderFactory?.CreateEmailProvider() ?? throw new ArgumentNullException(nameof(emailProviderFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// Sends an email message
+    /// </summary>
+    /// <param name="to">The recipient email address</param>
+    /// <param name="subject">The email subject</param>
+    /// <param name="body">The email body content</param>
+    /// <param name="isHtml">Whether the body content is HTML formatted</param>
+    /// <returns>Task representing the async operation</returns>
     public async Task SendEmailAsync(string to, string subject, string body, bool isHtml = false)
     {
         try
         {
-            var emailContent = new EmailContent(subject)
+            var success = await _emailProvider.SendEmailAsync(to, subject, body, isHtml);
+            if (!success)
             {
-                PlainText = !isHtml ? body : null,
-                Html = isHtml ? body : null
-            };
-
-            var emailMessage = new EmailMessage(
-                senderAddress: _senderAddress,
-                recipientAddress: to,
-                content: emailContent
-            );
-
-            if (_emailClient == null) {
-                throw new InvalidOperationException("Email service is not properly configured. Please check CommunicationServices settings in configuration.");
-            }
-
-            var response = await _emailClient.SendAsync(
-                wait: WaitUntil.Completed,
-                message: emailMessage);
-
-            if (response.Value.Status != EmailSendStatus.Succeeded)
-            {
-                throw new Exception($"Failed to send email: {response.Value.Status}");
+                throw new InvalidOperationException("Failed to send email through the configured provider.");
             }
         }
         catch (Exception ex)
         {
-            // Log the exception or handle it according to your needs
+            _logger.LogError(ex, "Error sending email to {Recipient} with subject '{Subject}'", to, subject);
+            throw new Exception("Error sending email", ex);
+        }
+    }
+
+    /// <summary>
+    /// Sends an email message to multiple recipients
+    /// </summary>
+    /// <param name="to">The list of recipient email addresses</param>
+    /// <param name="subject">The email subject</param>
+    /// <param name="body">The email body content</param>
+    /// <param name="isHtml">Whether the body content is HTML formatted</param>
+    /// <returns>Task representing the async operation</returns>
+    public async Task SendEmailAsync(IEnumerable<string> to, string subject, string body, bool isHtml = false)
+    {
+        try
+        {
+            var success = await _emailProvider.SendEmailAsync(to, subject, body, isHtml);
+            if (!success)
+            {
+                throw new InvalidOperationException("Failed to send email through the configured provider.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending email to {RecipientCount} recipients with subject '{Subject}'", to.Count(), subject);
             throw new Exception("Error sending email", ex);
         }
     }
 }
 
+/// <summary>
+/// Interface for email service operations
+/// </summary>
 public interface IEmailService
 {
+    /// <summary>
+    /// Sends an email message
+    /// </summary>
+    /// <param name="to">The recipient email address</param>
+    /// <param name="subject">The email subject</param>
+    /// <param name="body">The email body content</param>
+    /// <param name="isHtml">Whether the body content is HTML formatted</param>
+    /// <returns>Task representing the async operation</returns>
     Task SendEmailAsync(string to, string subject, string body, bool isHtml = false);
+
+    /// <summary>
+    /// Sends an email message to multiple recipients
+    /// </summary>
+    /// <param name="to">The list of recipient email addresses</param>
+    /// <param name="subject">The email subject</param>
+    /// <param name="body">The email body content</param>
+    /// <param name="isHtml">Whether the body content is HTML formatted</param>
+    /// <returns>Task representing the async operation</returns>
+    Task SendEmailAsync(IEnumerable<string> to, string subject, string body, bool isHtml = false);
 }

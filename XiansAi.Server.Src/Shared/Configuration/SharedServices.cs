@@ -13,7 +13,10 @@ public static class SharedServices
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
         // Register cache services using the combined factory
-        RegisterCacheServices(services, configuration);
+        RegisterCacheProviders(services, configuration);
+
+        // Register email services using the combined factory
+        RegisterEmailProviders(services, configuration);
 
         // Register core services
         services.AddSingleton<CertificateGenerator>();
@@ -61,12 +64,26 @@ public static class SharedServices
     /// </summary>
     /// <param name="services">Service collection</param>
     /// <param name="configuration">Application configuration</param>
-    private static void RegisterCacheServices(IServiceCollection services, IConfiguration configuration)
+    private static void RegisterCacheProviders(IServiceCollection services, IConfiguration configuration)
     {
         // Register all available cache providers
         CacheProviderFactory.RegisterProviders(services, configuration);
 
         // Register the cache provider factory
         services.AddSingleton<ICacheProviderFactory, CacheProviderFactory>();
+    }
+
+    /// <summary>
+    /// Registers email services using the combined factory
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterEmailProviders(IServiceCollection services, IConfiguration configuration)
+    {
+        // Register all available email providers
+        EmailProviderFactory.RegisterProviders(services, configuration);
+
+        // Register the email provider factory
+        services.AddSingleton<IEmailProviderFactory, EmailProviderFactory>();
     }
 } 
