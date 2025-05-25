@@ -26,7 +26,7 @@ public class NewWorkflowOptions : WorkflowOptions
         }
 
         Id = proposedId;
-        TaskQueue = GetTemporalQueueName(workFlowType, queueName);
+        TaskQueue = GetTemporalQueueName(workFlowType, queueName, tenantContext);
         Memo = GetMemo(tenantContext, queueName, agentName);
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName);
     }
@@ -51,9 +51,14 @@ public class NewWorkflowOptions : WorkflowOptions
         return searchAttributesBuilder.ToSearchAttributeCollection();
     }
 
-    private string GetTemporalQueueName(string workFlowType, string? queueName)
+    private string GetTemporalQueueName(string workFlowType, string? queueName, ITenantContext tenantContext)
     {
-        var queueFullName = string.IsNullOrEmpty(queueName) ? workFlowType : queueName + "--" + workFlowType;
+        var queueFullName = workFlowType;
+        if (!string.IsNullOrEmpty(queueName))
+        {
+            queueFullName = queueName + ":" + workFlowType;
+        }
+        queueFullName =  tenantContext.TenantId + ":" + queueFullName;
         return queueFullName;
     }
 
