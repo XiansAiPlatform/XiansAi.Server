@@ -128,7 +128,7 @@ public class PublicService : IPublicService
 
             // Send email with verification code
             await _emailService.SendEmailAsync(email, EMAIL_SUBJECT, GetEmailBody(code), false);
-            _logger.LogInformation("Verification code sent successfully to: {Email}", email);
+            _logger.LogInformation("##### Verification code {Code} sent successfully to: {Email}", code, email);
 
             return ServiceResult<SendVerificationCodeResult>.Success(new SendVerificationCodeResult 
             { 
