@@ -14,13 +14,13 @@ public class ObjectCache
     /// <summary>
     /// Creates a new instance of the ObjectCacheService
     /// </summary>
-    /// <param name="cacheProviderFactory">Factory for creating cache providers</param>
+    /// <param name="cacheProvider">Cache provider</param>
     /// <param name="logger">Logger for the service</param>
     public ObjectCache(
-        ICacheProviderFactory cacheProviderFactory,
+        ICacheProvider cacheProvider,
         ILogger<ObjectCache> logger)
     {
-        _cacheProvider = cacheProviderFactory?.CreateCacheProvider() ?? throw new ArgumentNullException(nameof(cacheProviderFactory));
+        _cacheProvider = cacheProvider ?? throw new ArgumentNullException(nameof(cacheProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _defaultExpiration = TimeSpan.FromHours(24);
     }

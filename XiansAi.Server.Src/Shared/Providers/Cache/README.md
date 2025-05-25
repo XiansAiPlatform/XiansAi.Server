@@ -2,19 +2,18 @@
 
 ## Overview
 
-The Cache Provider Pattern in XiansAi.Server provides a flexible, priority-based caching system that automatically selects the best available cache provider. The system gracefully falls back from high-performance distributed caching (Redis) to in-memory caching when Redis is unavailable.
+The Cache Provider Pattern in XiansAi.Server provides a simple, configuration-based caching system that selects the appropriate cache provider based on application settings. The system supports Redis for distributed caching and in-memory caching for development or single-instance scenarios.
 
 ## Architecture
 
 ### Core Components
 
-``` text
+```text
 Shared/Providers/Cache/
 ├── ICacheProvider.cs              # Main cache abstraction
-├── ICacheProviderRegistration.cs  # Self-registration interface
 ├── RedisCacheProvider.cs          # Redis implementation
 ├── InMemoryCacheProvider.cs       # In-memory implementation
-└── CacheProviderFactory.cs        # Factory with priority-based selection
+└── CacheProviderFactory.cs        # Simple factory with configuration-based selection
 ```
 
 ### 1. Cache Provider Interface
@@ -23,76 +22,99 @@ Shared/Providers/Cache/
 public interface ICacheProvider
 {
     Task<T?> GetAsync<T>(string key);
-    Task SetAsync<T>(string key, T value, TimeSpan? expiration = null);
-    Task RemoveAsync(string key);
-    Task<bool> ExistsAsync(string key);
+    Task<bool> SetAsync<T>(string key, T value, TimeSpan? absoluteExpiration = null, TimeSpan? slidingExpiration = null);
+    Task<bool> RemoveAsync(string key);
 }
 ```
 
-### 2. Provider Registration Interface
+### 2. Provider Implementations
 
-```csharp
-public interface ICacheProviderRegistration
-{
-    static abstract string ProviderName { get; }
-    static abstract int Priority { get; }
-    static abstract bool CanRegister(IConfiguration configuration);
-    static abstract void RegisterServices(IServiceCollection services, IConfiguration configuration);
-}
-```
+#### Redis Provider
 
-### 3. Provider Implementations
-
-#### Redis Provider (Priority: 1)
-
-- **High Priority**: Preferred when available
 - **Distributed**: Shared across multiple application instances
-- **Persistent**: Survives application restarts
+- **Persistent**: Survives application restarts (depending on Redis configuration)
+- **Production Ready**: Suitable for production environments
 - **Configuration Required**: Redis connection string
 
-#### In-Memory Provider (Priority: 100)
+#### In-Memory Provider
 
-- **Fallback**: Used when Redis is unavailable
 - **Single Instance**: Not shared across instances
 - **Volatile**: Lost on application restart
-- **Always Available**: No external dependencies
-
-## Priority System
-
-### How Priorities Work
-
-- **Lower numbers = Higher priority**
-- **Registration**: Providers register in priority order
-- **Creation**: Factory tries providers in priority order until one succeeds
-
-### Current Priorities
-
-| Provider | Priority | Use Case |
-|----------|----------|----------|
-| Redis | 1 | Production, distributed scenarios |
-| InMemory | 100 | Development, fallback, single-instance |
-
-### Priority Ranges (Convention)
-
-- **1-10**: High-priority external services (Redis, Memcached)
-- **50-99**: Medium-priority services (specialized caches)
-- **100+**: Fallback services (InMemory, NullCache)
+- **Development/Testing**: Useful for development and testing scenarios
+- **No Dependencies**: Always available
 
 ## Configuration
 
-### Redis Configuration
+### Cache Provider Configuration
 
 ```json
 {
-  "RedisCache": {
-    "ConnectionString": "localhost:6379"
+  "Cache": {
+    "Provider": "redis", // or "memory"/"inmemory"
+    "Redis": {
+      "ConnectionString": "localhost:6379"
+    }
   }
 }
 ```
 
-### No Configuration Required for InMemory
+### Configuration Options
 
-The in-memory provider is always available as a fallback.
+| Provider | Configuration Key | Required Settings |
+|----------|------------------|-------------------|
+| Redis | `"redis"` | `Cache:Redis:ConnectionString` |
+| In-Memory | `"memory"` or `"inmemory"` | None |
+
+### Redis Configuration Examples
+
+#### Local Development
+
+```json
+{
+  "Cache": {
+    "Provider": "redis",
+    "Redis": {
+      "ConnectionString": "localhost:6379"
+    }
+  }
+}
+```
+
+#### Production with Authentication
+
+```json
+{
+  "Cache": {
+    "Provider": "redis",
+    "Redis": {
+      "ConnectionString": "your-redis-server:6379,password=your-password,ssl=true"
+    }
+  }
+}
+```
+
+#### Azure Redis Cache
+
+```json
+{
+  "Cache": {
+    "Provider": "redis",
+    "Redis": {
+      "ConnectionString": "your-cache-name.redis.cache.windows.net:6380,password=your-access-key,ssl=True,abortConnect=False"
+    }
+  }
+}
+```
+
+### In-Memory Configuration
+
+```json
+{
+  "Cache": {
+    "Provider": "memory"
+  }
+}
+```
 
 ## Usage
 
@@ -100,8 +122,11 @@ The in-memory provider is always available as a fallback.
 
 ```csharp
 // In Program.cs or Startup.cs
-CacheProviderFactory.RegisterProviders(services, configuration);
-services.AddSingleton<ICacheProviderFactory, CacheProviderFactory>();
+// Cache providers are automatically registered when you call:
+services.AddInfrastructureServices(configuration);
+
+// This automatically handles:
+// - CacheProviderFactory.RegisterProvider(services, configuration);
 ```
 
 ### Service Usage
@@ -111,20 +136,71 @@ public class MyService
 {
     private readonly ICacheProvider _cache;
 
-    public MyService(ICacheProviderFactory factory)
+    public MyService(ICacheProvider cache)
     {
-        _cache = factory.CreateCacheProvider();
+        _cache = cache;
     }
 
     public async Task<string> GetDataAsync(string key)
     {
-        // Same API regardless of underlying provider
+        // Try to get from cache first
         var cached = await _cache.GetAsync<string>(key);
-        if (cached != null) return cached;
+        if (cached != null) 
+            return cached;
 
+        // Load from database if not in cache
         var data = await LoadDataFromDatabase(key);
+        
+        // Cache for 15 minutes
         await _cache.SetAsync(key, data, TimeSpan.FromMinutes(15));
+        
         return data;
+    }
+
+    public async Task<UserProfile> GetUserProfileAsync(int userId)
+    {
+        var cacheKey = $"user_profile_{userId}";
+        
+        // Check cache first
+        var profile = await _cache.GetAsync<UserProfile>(cacheKey);
+        if (profile != null)
+            return profile;
+
+        // Load from database
+        profile = await LoadUserProfileFromDatabase(userId);
+        
+        // Cache with sliding expiration (extends on access)
+        await _cache.SetAsync(cacheKey, profile, 
+            absoluteExpiration: TimeSpan.FromHours(1),
+            slidingExpiration: TimeSpan.FromMinutes(20));
+        
+        return profile;
+    }
+
+    public async Task InvalidateUserCacheAsync(int userId)
+    {
+        var cacheKey = $"user_profile_{userId}";
+        await _cache.RemoveAsync(cacheKey);
+    }
+}
+```
+
+### Using the Factory (Advanced)
+
+```csharp
+public class AdvancedCacheService
+{
+    private readonly ICacheProvider _cache;
+
+    public AdvancedCacheService(ICacheProviderFactory factory)
+    {
+        _cache = factory.CreateCacheProvider();
+    }
+
+    public async Task<bool> TrySetCacheAsync<T>(string key, T value, TimeSpan expiration)
+    {
+        // Direct cache usage with success/failure handling
+        return await _cache.SetAsync(key, value, expiration);
     }
 }
 ```
@@ -134,60 +210,99 @@ public class MyService
 ### Step 1: Implement the Provider
 
 ```csharp
-public class MemcachedProvider : ICacheProvider, ICacheProviderRegistration
+public class MemcachedProvider : ICacheProvider
 {
-    public static string ProviderName => "Memcached";
-    public static int Priority => 50; // Between Redis and InMemory
+    private readonly IMemcachedClient _client;
+    private readonly ILogger<MemcachedProvider> _logger;
 
-    public static bool CanRegister(IConfiguration configuration)
+    public MemcachedProvider(IMemcachedClient client, ILogger<MemcachedProvider> logger)
     {
-        return !string.IsNullOrEmpty(configuration.GetConnectionString("Memcached"));
+        _client = client;
+        _logger = logger;
     }
 
-    public static void RegisterServices(IServiceCollection services, IConfiguration configuration)
+    public async Task<T?> GetAsync<T>(string key)
     {
-        services.AddMemcached(options => {
-            options.Servers = configuration.GetConnectionString("Memcached");
-        });
+        // Implement Memcached get logic
+        // ...
     }
 
-    // Implement ICacheProvider methods...
+    public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? absoluteExpiration = null, TimeSpan? slidingExpiration = null)
+    {
+        // Implement Memcached set logic
+        // ...
+    }
+
+    public async Task<bool> RemoveAsync(string key)
+    {
+        // Implement Memcached remove logic
+        // ...
+    }
 }
 ```
 
 ### Step 2: Add to Factory
 
 ```csharp
-private static readonly CacheProviderDefinition[] Providers = new[]
-{
-    // Existing providers...
-    new CacheProviderDefinition
+// In CacheProviderFactory.RegisterProvider method, add a new case:
+case "memcached":
+    var servers = configuration["Cache:Memcached:Servers"];
+    if (string.IsNullOrEmpty(servers))
     {
-        Name = MemcachedProvider.ProviderName,
-        Priority = MemcachedProvider.Priority,
-        CanRegister = MemcachedProvider.CanRegister,
-        RegisterServices = MemcachedProvider.RegisterServices,
-        CreateProvider = serviceProvider => {
-            var memcached = serviceProvider.GetService<IMemcachedClient>();
-            if (memcached != null)
-            {
-                var logger = serviceProvider.GetRequiredService<ILogger<MemcachedProvider>>();
-                return new MemcachedProvider(memcached, logger);
-            }
-            return null;
-        }
+        throw new InvalidOperationException("Memcached cache provider requires Cache:Memcached:Servers");
     }
-};
+    services.AddMemcached(options => options.Servers = servers);
+    services.AddScoped<ICacheProvider, MemcachedProvider>();
+    break;
 ```
 
 ### Step 3: Add Configuration
 
 ```json
 {
-  "ConnectionStrings": {
-    "Memcached": "localhost:11211"
+  "Cache": {
+    "Provider": "memcached",
+    "Memcached": {
+      "Servers": "localhost:11211"
+    }
   }
 }
 ```
 
-**Result**: Memcached will automatically be tried after Redis but before InMemory.
+## Cache Expiration Strategies
+
+### Absolute Expiration
+```csharp
+// Cache expires after exactly 1 hour, regardless of access
+await _cache.SetAsync("key", value, TimeSpan.FromHours(1));
+```
+
+### Sliding Expiration
+```csharp
+// Cache expires 30 minutes after last access
+await _cache.SetAsync("key", value, 
+    absoluteExpiration: null, 
+    slidingExpiration: TimeSpan.FromMinutes(30));
+```
+
+### Combined Expiration
+```csharp
+// Cache expires after 2 hours OR 30 minutes of inactivity, whichever comes first
+await _cache.SetAsync("key", value, 
+    absoluteExpiration: TimeSpan.FromHours(2), 
+    slidingExpiration: TimeSpan.FromMinutes(30));
+```
+
+## Best Practices
+
+1. **Use Meaningful Keys**: Include context in cache keys (e.g., `"user_profile_123"`, `"product_details_456"`)
+
+2. **Set Appropriate Expiration**: Balance between performance and data freshness
+
+3. **Handle Cache Misses Gracefully**: Always have a fallback to load data from the source
+
+4. **Consider Cache Invalidation**: Remove or update cached data when the underlying data changes
+
+5. **Monitor Cache Performance**: Log cache hit/miss ratios to optimize caching strategy
+
+6. **Use Consistent Serialization**: The providers use JSON serialization by default

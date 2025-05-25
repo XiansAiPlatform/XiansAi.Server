@@ -204,11 +204,11 @@ public class PublicService : IPublicService
     /// <returns>The formatted email body</returns>
     private string GetEmailBody(string code)
     {
-        return $@"Hello,
+        return $@"Hi there,
 
-Your verification code for Xians.ai is: {code}
+Your Xians.ai verification code is: {code}
 
-This code will expire in {CODE_EXPIRATION_MINUTES} minutes. If you didn't request this code, please ignore this email.
+This code expires in {CODE_EXPIRATION_MINUTES} minutes.
 
 Best regards,
 The Xians.ai Team";
@@ -286,7 +286,7 @@ The Xians.ai Team";
             
         // Extract domain part and remove all non-alphanumeric characters
         var domain = email.Split('@')[1];
-        var tenantId = new string(domain.Where(char.IsLetterOrDigit).ToArray());
+        var tenantId = domain.ToLowerInvariant().Trim();
         return tenantId;
     }
     

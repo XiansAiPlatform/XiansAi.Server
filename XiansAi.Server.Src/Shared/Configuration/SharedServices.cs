@@ -64,11 +64,8 @@ public static class SharedServices
     /// <param name="configuration">Application configuration</param>
     private static void RegisterCacheProviders(IServiceCollection services, IConfiguration configuration)
     {
-        // Register all available cache providers
-        CacheProviderFactory.RegisterProviders(services, configuration);
-
-        // Register the cache provider factory
-        services.AddSingleton<ICacheProviderFactory, CacheProviderFactory>();
+        // Register the active cache provider and the factory itself
+        CacheProviderFactory.RegisterProvider(services, configuration);
     }
 
     /// <summary>

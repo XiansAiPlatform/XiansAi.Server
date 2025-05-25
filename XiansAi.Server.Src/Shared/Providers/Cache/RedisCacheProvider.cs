@@ -6,20 +6,10 @@ namespace XiansAi.Server.Providers;
 /// <summary>
 /// Redis implementation of the cache provider using IDistributedCache
 /// </summary>
-public class RedisCacheProvider : ICacheProvider, ICacheProviderRegistration
+public class RedisCacheProvider : ICacheProvider
 {
     private readonly IDistributedCache _cache;
     private readonly ILogger<RedisCacheProvider> _logger;
-
-    /// <summary>
-    /// Gets the name of this provider
-    /// </summary>
-    public static string ProviderName => "Redis";
-
-    /// <summary>
-    /// Gets the priority of this provider (lower numbers = higher priority)
-    /// </summary>
-    public static int Priority => 1;
 
     /// <summary>
     /// Creates a new instance of the RedisCacheProvider
@@ -32,35 +22,6 @@ public class RedisCacheProvider : ICacheProvider, ICacheProviderRegistration
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
-    /// <summary>
-    /// Determines if this provider can be registered with the given configuration
-    /// </summary>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>True if the provider can be registered, false otherwise</returns>
-    public static bool CanRegister(IConfiguration configuration)
-    {
-        var connectionString = configuration.GetSection("RedisCache:ConnectionString")?.Value;
-        return !string.IsNullOrWhiteSpace(connectionString);
-    }
-
-    /// <summary>
-    /// Registers the services required by this provider
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Application configuration</param>
-    public static void RegisterServices(IServiceCollection services, IConfiguration configuration)
-    {
-        var connectionString = configuration.GetSection("RedisCache:ConnectionString")?.Value;
-        if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            services.AddStackExchangeRedisCache(options =>
-            {
-                options.Configuration = connectionString;
-                options.InstanceName = configuration.GetSection("RedisCache:InstanceName")?.Value ?? "XiansAi";
-            });
-        }
     }
 
     /// <summary>

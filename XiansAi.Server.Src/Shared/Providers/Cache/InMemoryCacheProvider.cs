@@ -7,21 +7,11 @@ namespace XiansAi.Server.Providers;
 /// <summary>
 /// In-memory implementation of the cache provider using MemoryCache
 /// </summary>
-public class InMemoryCacheProvider : ICacheProvider, ICacheProviderRegistration
+public class InMemoryCacheProvider : ICacheProvider
 {
     private readonly IMemoryCache _cache;
     private readonly ILogger<InMemoryCacheProvider> _logger;
     private readonly ConcurrentDictionary<string, Timer> _timers;
-
-    /// <summary>
-    /// Gets the name of this provider
-    /// </summary>
-    public static string ProviderName => "InMemory";
-
-    /// <summary>
-    /// Gets the priority of this provider (lower numbers = higher priority)
-    /// </summary>
-    public static int Priority => 100; // Lower priority than Redis
 
     /// <summary>
     /// Creates a new instance of the InMemoryCacheProvider
@@ -35,28 +25,6 @@ public class InMemoryCacheProvider : ICacheProvider, ICacheProviderRegistration
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _timers = new ConcurrentDictionary<string, Timer>();
-    }
-
-    /// <summary>
-    /// Determines if this provider can be registered with the given configuration
-    /// </summary>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>True if the provider can be registered, false otherwise</returns>
-    public static bool CanRegister(IConfiguration configuration)
-    {
-        // In-memory cache can always be registered as it has no external dependencies
-        return true;
-    }
-
-    /// <summary>
-    /// Registers the services required by this provider
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Application configuration</param>
-    public static void RegisterServices(IServiceCollection services, IConfiguration configuration)
-    {
-        // Register the in-memory cache service
-        services.AddMemoryCache();
     }
 
     /// <summary>

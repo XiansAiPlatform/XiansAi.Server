@@ -3,22 +3,11 @@ using Shared.Utils.GenAi;
 
 namespace XiansAi.Server.Providers;
 
-/// <summary>
-/// Factory for creating LLM providers based on configuration
-/// </summary>
-public interface ILlmProviderFactory
-{
-    /// <summary>
-    /// Creates an LLM provider based on the current configuration
-    /// </summary>
-    /// <returns>The appropriate LLM provider implementation</returns>
-    ILlmProvider CreateLlmProvider();
-}
 
 /// <summary>
 /// Implementation of LLM provider factory
 /// </summary>
-public class LlmProviderFactory : ILlmProviderFactory
+public class LlmProviderFactory 
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<LlmProviderFactory> _logger;
@@ -61,12 +50,4 @@ public class LlmProviderFactory : ILlmProviderFactory
         }
     }
 
-    /// <summary>
-    /// Creates an LLM provider based on the configured provider type
-    /// </summary>
-    /// <returns>The appropriate LLM provider implementation</returns>
-    public ILlmProvider CreateLlmProvider()
-    {
-        return _serviceProvider.GetRequiredService<ILlmProvider>();
-    }
 } 
