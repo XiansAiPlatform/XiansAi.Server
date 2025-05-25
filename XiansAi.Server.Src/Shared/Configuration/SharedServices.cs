@@ -5,6 +5,7 @@ using Shared.Utils;
 using Shared.Utils.GenAi;
 using Shared.Utils.Temporal;
 using Shared.Data;
+using Shared.Services;
 
 namespace Features.Shared.Configuration;
 
@@ -18,12 +19,16 @@ public static class SharedServices
         // Register email services using the combined factory
         RegisterEmailProviders(services, configuration);
 
+        // Register LLM services using the combined factory
+        RegisterLlmProviders(services, configuration);
+
         // Register core services
         services.AddSingleton<CertificateGenerator>();
         
         // Register business services
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<ILlmService, LlmService>();
 
         services.AddSingleton<IMongoDbContext>(sp =>
             new MongoDbContext(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ILogger<MongoDbContext>>()));
@@ -40,13 +45,6 @@ public static class SharedServices
         services.AddScoped<ITemporalClientService>(sp =>
             new TemporalClientService(
                 sp.GetRequiredService<ILogger<TemporalClientService>>(),
-                sp.GetRequiredService<ITenantContext>()));
-                
-        // Register OpenAI client
-        services.AddScoped<IOpenAIClientService, OpenAIClientService>(sp =>
-            new OpenAIClientService(
-                sp.GetRequiredService<ITenantContext>().GetOpenAIConfig(),
-                sp.GetRequiredService<ILogger<OpenAIClientService>>(),
                 sp.GetRequiredService<ITenantContext>()));
                 
         // Register cache service
@@ -85,5 +83,16 @@ public static class SharedServices
 
         // Register the email provider factory
         services.AddSingleton<IEmailProviderFactory, EmailProviderFactory>();
+    }
+
+    /// <summary>
+    /// Registers LLM services using the combined factory
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterLlmProviders(IServiceCollection services, IConfiguration configuration)
+    {
+        // Register the active LLM provider and the factory itself
+        LlmProviderFactory.RegisterProvider(services, configuration);
     }
 } 

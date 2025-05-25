@@ -1,8 +1,7 @@
-using Shared.Utils.GenAi;
 using Shared.Utils.Temporal;
 
-namespace Shared.Auth
-{
+namespace Shared.Auth;
+
     public interface ITenantContext
     {
         string TenantId { get; set; }   
@@ -11,7 +10,6 @@ namespace Shared.Auth
         IEnumerable<string> AuthorizedTenantIds { get; set; }
         
         TemporalConfig GetTemporalConfig();
-        OpenAIConfig GetOpenAIConfig();
     }
 
     public class TenantContext : ITenantContext
@@ -32,7 +30,8 @@ namespace Shared.Auth
 
         public TemporalConfig GetTemporalConfig() 
         { 
-            ValidateTenantId();
+            if (string.IsNullOrEmpty(TenantId)) 
+                 throw new InvalidOperationException("TenantId is required");
 
             // get the temporal config for the tenant
             var temporalConfig = _configuration.GetSection($"Tenants:{TenantId}:Temporal").Get<TemporalConfig>();
@@ -55,32 +54,4 @@ namespace Shared.Auth
             
             return temporalConfig;
         }
-
-        public OpenAIConfig GetOpenAIConfig() 
-        { 
-            ValidateTenantId();
-
-            var openAIConfig = _configuration.GetSection($"Tenants:{TenantId}:OpenAI").Get<OpenAIConfig>();
-
-            if (openAIConfig == null) {
-                // if tenant is not using a different api key, use the root config
-                openAIConfig = _configuration.GetSection("OpenAI").Get<OpenAIConfig>() 
-                    ?? throw new InvalidOperationException("OpenAI configuration not found");
-                return openAIConfig;
-            } else {
-                // if tenant is using a different api key, use the tenant config
-                if (openAIConfig.ApiKey == null) {
-                    openAIConfig.ApiKey = _configuration.GetSection("OpenAI:ApiKey").Value
-                        ?? throw new InvalidOperationException("OpenAI api key not found");
-                }
-                return openAIConfig;
-            }
-        }
-
-        private void ValidateTenantId()
-        {
-            if (string.IsNullOrEmpty(TenantId)) 
-                throw new InvalidOperationException("TenantId is required");
-        }
-    }
-} 
+     }

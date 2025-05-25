@@ -5,6 +5,7 @@ using Shared.Auth;
 using Shared.Utils.Services;
 using Shared.Utils;
 using XiansAi.Server.Utils;
+using Shared.Services;
 
 namespace Features.WebApi.Services;
 

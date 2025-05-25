@@ -2,15 +2,12 @@ using System.Text.Json;
 using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using Features.AgentApi.Repositories;
 using MongoDB.Driver;
-using XiansAi.Server.GenAi;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Data;
-using Shared.Utils.GenAi;
-using Features.WebApi.Repositories;
 using Shared.Repositories;
+using Shared.Services;
 
 namespace Features.AgentApi.Services.Lib;
 
@@ -71,7 +68,6 @@ public interface IDefinitionsService
 public class DefinitionsService : IDefinitionsService
 {
     private readonly ILogger<DefinitionsService> _logger;
-    private readonly IOpenAIClientService _openAIClientService;
     private readonly Repositories.IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IAgentRepository _agentRepository;
     private readonly ITenantContext _tenantContext;
@@ -82,7 +78,6 @@ public class DefinitionsService : IDefinitionsService
         Repositories.IFlowDefinitionRepository flowDefinitionRepository,
         IAgentRepository agentRepository,
         ILogger<DefinitionsService> logger,
-        IOpenAIClientService openAIClientService,
         ITenantContext tenantContext,
         IMarkdownService markdownService,
         IAgentPermissionRepository agentPermissionRepository
@@ -91,7 +86,6 @@ public class DefinitionsService : IDefinitionsService
         _flowDefinitionRepository = flowDefinitionRepository;
         _agentRepository = agentRepository;
         _logger = logger;
-        _openAIClientService = openAIClientService;
         _tenantContext = tenantContext;
         _markdownService = markdownService;
         _agentPermissionRepository = agentPermissionRepository;

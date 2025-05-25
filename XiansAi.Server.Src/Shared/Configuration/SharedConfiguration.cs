@@ -1,7 +1,6 @@
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.GenAi;
-using XiansAi.Server.GenAi;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
 

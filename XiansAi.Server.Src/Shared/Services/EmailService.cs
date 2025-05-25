@@ -1,6 +1,6 @@
 using XiansAi.Server.Providers;
 
-namespace Shared.Utils;
+namespace Shared.Services;
 
 /// <summary>
 /// Email service that uses the provider pattern for flexible email implementations

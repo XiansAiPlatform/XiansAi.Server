@@ -24,21 +24,22 @@ public class CertificateService
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
-    private readonly IOpenAIClientService _openAIClientService;
+    private readonly ILlmService _llmService;
+    
     public CertificateService(
         ILogger<CertificateService> logger,
         IHttpContextAccessor httpContextAccessor,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        IOpenAIClientService openAIClientService)
+        ILlmService llmService)
     {
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
-        _openAIClientService = openAIClientService;
+        _llmService = llmService;
     }
 
     public FlowServerSettings GetFlowServerSettings() {
@@ -48,7 +49,7 @@ public class CertificateService
             FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerCertBase64 = GetFlowServerCertBase64(),
             FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
-            OpenAIApiKey = _openAIClientService.GetApiKey()
+            OpenAIApiKey = _llmService.GetApiKey()
         };
     }
 

@@ -1,12 +1,9 @@
-using System.Xml;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
-using OpenAI.Chat;
 using Shared.Auth;
-using XiansAi.Server.GenAi;
+using Shared.Services;
 using XiansAi.Server.Shared.Data.Models;
 using XiansAi.Server.Shared.Repositories;
 
-namespace Shared.Utils.GenAi;
+namespace Shared.Services;
 
 public interface IMarkdownService
 {
@@ -15,18 +12,19 @@ public interface IMarkdownService
 
 public class MarkdownService : IMarkdownService
 {
-    private readonly IOpenAIClientService _openAIClientService;
+    private readonly ILlmService _llmService;
     private readonly ILogger<MarkdownService> _logger;
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly ITenantContext _tenantContext;
     private readonly string _model = "gpt-4o-mini";
-    public MarkdownService(IOpenAIClientService openAIClientService, 
+    
+    public MarkdownService(ILlmService llmService, 
         IKnowledgeRepository knowledgeRepository, 
         ITenantContext tenantContext, 
         ILogger<MarkdownService> logger)
     {
         _logger = logger;
-        _openAIClientService = openAIClientService;
+        _llmService = llmService;
         _tenantContext = tenantContext;
         _knowledgeRepository = knowledgeRepository;
     }
@@ -48,12 +46,14 @@ public class MarkdownService : IMarkdownService
         {
             return null;
         }
-        var messages = new List<ChatMessage>
+        
+        var messages = new List<XiansAi.Server.Providers.ChatMessage>
         {
-            new SystemChatMessage(instruction.Content),
-            new UserChatMessage("Workflow code:\n" + source)
+            new XiansAi.Server.Providers.ChatMessage { Role = "system", Content = instruction.Content },
+            new XiansAi.Server.Providers.ChatMessage { Role = "user", Content = "Workflow code:\n" + source }
         };
-        var markdown = await _openAIClientService.GetChatCompletionAsync(messages, _model);
+        
+        var markdown = await _llmService.GetChatCompletionAsync(messages, _model);
 
         // Remove spaces between classes to make it valid mermaid code
         markdown = markdown.Replace(", ", ",");
