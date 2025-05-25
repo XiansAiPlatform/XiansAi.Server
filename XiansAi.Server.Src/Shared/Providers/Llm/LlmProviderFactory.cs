@@ -44,8 +44,8 @@ public class LlmProviderFactory : ILlmProviderFactory
             throw new InvalidOperationException("Llm configuration is missing or Provider is not specified");
         }
 
-        // Register the factory
-        services.AddSingleton<ILlmProviderFactory, LlmProviderFactory>();
+        // Register the config
+        services.AddSingleton(llmConfig);
 
         // Register the appropriate provider based on configuration
         switch (llmConfig.Provider.ToLowerInvariant())

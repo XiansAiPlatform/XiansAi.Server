@@ -66,8 +66,25 @@ public class CertificateService
 
     private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId)
     {
-        // Revoke previous certificates for this user
+        // Generate new certificate
+        var cert = _certificateGenerator.GenerateClientCertificate(
+            name, 
+            _tenantContext.TenantId, 
+            userId);
+
         var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
+        // Store certificate metadata
+        await _certificateRepository.CreateAsync(new Certificate
+        {
+            Thumbprint = cert.Thumbprint,
+            SubjectName = cert.Subject,
+            TenantId = _tenantContext.TenantId,
+            IssuedTo = userId,
+            IssuedAt = DateTime.UtcNow,
+            ExpiresAt = cert.NotAfter.ToUniversalTime(),
+            IsRevoked = false
+        });
+        // Revoke previous certificates for this user
         foreach (var prevCert in previousCerts)
         {
             if (!prevCert.IsRevoked)
@@ -81,25 +98,6 @@ public class CertificateService
                     userId);
             }
         }
-
-        // Generate new certificate
-        var cert = _certificateGenerator.GenerateClientCertificate(
-            name, 
-            _tenantContext.TenantId, 
-            userId);
-
-        // Store certificate metadata
-        await _certificateRepository.CreateAsync(new Certificate
-        {
-            Thumbprint = cert.Thumbprint,
-            SubjectName = cert.Subject,
-            TenantId = _tenantContext.TenantId,
-            IssuedTo = userId,
-            IssuedAt = DateTime.UtcNow,
-            ExpiresAt = cert.NotAfter.ToUniversalTime(),
-            IsRevoked = false
-        });
-
         _logger.LogInformation(
             "Generated new certificate. Name: {Name}, Thumbprint: {Thumbprint}, User: {UserId}", 
             name, 

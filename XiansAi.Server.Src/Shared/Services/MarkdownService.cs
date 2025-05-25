@@ -31,25 +31,11 @@ public class MarkdownService : IMarkdownService
 
     public async Task<string?> GenerateMarkdown(string? source)
     {
-        var agent = "--SYSTEM--";
-        var knowledgeName = "How to generate Mermaid chart for Agent Visualization";
-        string? tenantId = _tenantContext.TenantId;
-        var instruction = await _knowledgeRepository.GetLatestByNameAsync<Knowledge>(knowledgeName, agent, tenantId);
-        
-        _logger.LogInformation("Generating new  markdown for source");
-        if (instruction == null)
-        {
-            throw new Exception($"Mermaid generation instruction `{knowledgeName}` of agent `{agent}` not found");
-        }
-
-        if (string.IsNullOrEmpty(source))
-        {
-            return null;
-        }
+        var instruction = MarkDownPrompt.Value;
         
         var messages = new List<XiansAi.Server.Providers.ChatMessage>
         {
-            new XiansAi.Server.Providers.ChatMessage { Role = "system", Content = instruction.Content },
+            new XiansAi.Server.Providers.ChatMessage { Role = "system", Content = instruction },
             new XiansAi.Server.Providers.ChatMessage { Role = "user", Content = "Workflow code:\n" + source }
         };
         

@@ -78,11 +78,8 @@ public static class SharedServices
     /// <param name="configuration">Application configuration</param>
     private static void RegisterEmailProviders(IServiceCollection services, IConfiguration configuration)
     {
-        // Register all available email providers
-        EmailProviderFactory.RegisterProviders(services, configuration);
-
-        // Register the email provider factory
-        services.AddSingleton<IEmailProviderFactory, EmailProviderFactory>();
+        // Register the active email provider and the factory itself
+        EmailProviderFactory.RegisterProvider(services, configuration);
     }
 
     /// <summary>

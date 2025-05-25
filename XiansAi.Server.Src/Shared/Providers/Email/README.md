@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Email Provider Pattern in XiansAi.Server provides a flexible, priority-based email system that automatically selects the best available email provider. The system gracefully falls back from production email services (Azure Communication Services) to development/testing providers (Console) when the production service is unavailable.
+The Email Provider Pattern in XiansAi.Server provides a simple, configuration-based email system that selects the appropriate email provider based on application settings. The system supports multiple email providers including Azure Communication Services for production and Console provider for development/testing.
 
 ## Architecture
 
@@ -11,10 +11,9 @@ The Email Provider Pattern in XiansAi.Server provides a flexible, priority-based
 ```text
 Shared/Providers/Email/
 ├── IEmailProvider.cs                    # Main email abstraction
-├── IEmailProviderRegistration.cs        # Self-registration interface
 ├── AzureCommunicationEmailProvider.cs   # Azure Communication Services implementation
 ├── ConsoleEmailProvider.cs              # Console/dummy implementation
-└── EmailProviderFactory.cs              # Factory with priority-based selection
+└── EmailProviderFactory.cs              # Simple factory with configuration-based selection
 ```
 
 ### 1. Email Provider Interface
@@ -27,19 +26,7 @@ public interface IEmailProvider
 }
 ```
 
-### 2. Provider Registration Interface
-
-```csharp
-public interface IEmailProviderRegistration
-{
-    static abstract string ProviderName { get; }
-    static abstract int Priority { get; }
-    static abstract bool CanRegister(IConfiguration configuration);
-    static abstract void RegisterServices(IServiceCollection services, IConfiguration configuration);
-}
-```
-
-### 3. Email Service Interface
+### 2. Email Service Interface
 
 ```csharp
 public interface IEmailService
@@ -49,53 +36,42 @@ public interface IEmailService
 }
 ```
 
-### 4. Provider Implementations
+### 3. Provider Implementations
 
-#### Azure Communication Services Provider (Priority: 1)
+#### Azure Communication Services Provider
 
-- **High Priority**: Preferred when available
 - **Production Ready**: Suitable for production environments
 - **External Service**: Requires Azure Communication Services configuration
 - **Configuration Required**: Connection string and sender email
 
-#### Console Provider (Priority: 100)
+#### Console Provider
 
-- **Fallback**: Used when Azure Communication Services is unavailable
 - **Development/Testing**: Prints emails to console instead of sending
 - **No Dependencies**: Always available
 - **Debugging**: Useful for development and testing scenarios
 
-## Priority System
-
-### How Priorities Work
-
-- **Lower numbers = Higher priority**
-- **Registration**: Providers register in priority order
-- **Creation**: Factory tries providers in priority order until one succeeds
-
-### Current Priorities
-
-| Provider | Priority | Use Case |
-|----------|----------|----------|
-| Azure Communication Services | 1 | Production, real email sending |
-| Console | 100 | Development, testing, fallback |
-
 ## Configuration
 
-### Azure Communication Services Configuration
+### Email Provider Configuration
 
 ```json
 {
-  "CommunicationServices": {
-    "ConnectionString": "endpoint=https://your-resource.communication.azure.com/;accesskey=your-access-key",
-    "SenderEmail": "noreply@yourdomain.com"
+  "Email": {
+    "Provider": "azure", // or "console"
+    "Azure": {
+      "ConnectionString": "endpoint=https://your-resource.communication.azure.com/;accesskey=your-access-key",
+      "SenderEmail": "noreply@yourdomain.com"
+    }
   }
 }
 ```
 
-### No Configuration Required for Console
+### Configuration Options
 
-The console provider is always available as a fallback and requires no configuration.
+| Provider | Configuration Key | Required Settings |
+|----------|------------------|-------------------|
+| Azure Communication Services | `"azure"` | `Email:Azure:ConnectionString`, `Email:Azure:SenderEmail` |
+| Console | `"console"` | None |
 
 ## Usage
 
@@ -107,8 +83,7 @@ The console provider is always available as a fallback and requires no configura
 services.AddInfrastructureServices(configuration);
 
 // This automatically handles:
-// - EmailProviderFactory.RegisterProviders(services, configuration);
-// - services.AddSingleton<IEmailProviderFactory, EmailProviderFactory>();
+// - EmailProviderFactory.RegisterProvider(services, configuration);
 // - services.AddScoped<IEmailService, EmailService>();
 ```
 
@@ -143,88 +118,72 @@ public class MyService
 }
 ```
 
-### Direct Provider Usage (Advanced)
-
-```csharp
-public class AdvancedEmailService
-{
-    private readonly IEmailProvider _emailProvider;
-
-    public AdvancedEmailService(IEmailProviderFactory factory)
-    {
-        _emailProvider = factory.CreateEmailProvider();
-    }
-
-    public async Task<bool> TrySendEmailAsync(string to, string subject, string body)
-    {
-        // Direct provider usage with success/failure handling
-        return await _emailProvider.SendEmailAsync(to, subject, body);
-    }
-}
-```
-
 ## Adding New Providers
 
 ### Step 1: Implement the Provider
 
 ```csharp
-public class SendGridEmailProvider : IEmailProvider, IEmailProviderRegistration
+public class SendGridEmailProvider : IEmailProvider
 {
-    public static string ProviderName => "SendGrid";
-    public static int Priority => 2; // Between Azure and Console
+    private readonly ISendGridClient _sendGridClient;
+    private readonly string _senderEmail;
+    private readonly ILogger<SendGridEmailProvider> _logger;
 
-    public static bool CanRegister(IConfiguration configuration)
+    public SendGridEmailProvider(
+        ISendGridClient sendGridClient, 
+        string senderEmail,
+        ILogger<SendGridEmailProvider> logger)
     {
-        return !string.IsNullOrEmpty(configuration["SendGrid:ApiKey"]);
+        _sendGridClient = sendGridClient;
+        _senderEmail = senderEmail;
+        _logger = logger;
     }
 
-    public static void RegisterServices(IServiceCollection services, IConfiguration configuration)
+    public async Task<bool> SendEmailAsync(string to, string subject, string body, bool isHtml = false)
     {
-        var apiKey = configuration["SendGrid:ApiKey"];
-        if (!string.IsNullOrEmpty(apiKey))
-        {
-            services.AddSingleton<ISendGridClient>(sp => new SendGridClient(apiKey));
-        }
+        // Implement SendGrid email sending logic
+        // ...
     }
 
-    // Implement IEmailProvider methods...
+    public async Task<bool> SendEmailAsync(IEnumerable<string> to, string subject, string body, bool isHtml = false)
+    {
+        // Implement SendGrid bulk email sending logic
+        // ...
+    }
 }
 ```
 
 ### Step 2: Add to Factory
 
 ```csharp
-private static readonly EmailProviderDefinition[] Providers = new[]
-{
-    // Existing providers...
-    new EmailProviderDefinition
+// In EmailProviderFactory.RegisterProvider method, add a new case:
+case "sendgrid":
+    var apiKey = configuration["Email:SendGrid:ApiKey"];
+    var senderEmail = configuration["Email:SendGrid:SenderEmail"];
+    if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(senderEmail))
     {
-        Name = SendGridEmailProvider.ProviderName,
-        Priority = SendGridEmailProvider.Priority,
-        CanRegister = SendGridEmailProvider.CanRegister,
-        RegisterServices = SendGridEmailProvider.RegisterServices,
-        CreateProvider = serviceProvider => {
-            var sendGridClient = serviceProvider.GetService<ISendGridClient>();
-            if (sendGridClient != null)
-            {
-                var logger = serviceProvider.GetRequiredService<ILogger<SendGridEmailProvider>>();
-                return new SendGridEmailProvider(sendGridClient, logger);
-            }
-            return null;
-        }
+        throw new InvalidOperationException("SendGrid email provider requires Email:SendGrid:ApiKey and Email:SendGrid:SenderEmail");
     }
-};
+    services.AddSingleton<ISendGridClient>(sp => new SendGridClient(apiKey));
+    services.AddScoped<IEmailProvider, SendGridEmailProvider>(sp =>
+    {
+        var sendGridClient = sp.GetRequiredService<ISendGridClient>();
+        var logger = sp.GetRequiredService<ILogger<SendGridEmailProvider>>();
+        return new SendGridEmailProvider(sendGridClient, senderEmail, logger);
+    });
+    break;
 ```
 
 ### Step 3: Add Configuration
 
 ```json
 {
-  "SendGrid": {
-    "ApiKey": "your-sendgrid-api-key",
-    "SenderEmail": "noreply@yourdomain.com"
+  "Email": {
+    "Provider": "sendgrid",
+    "SendGrid": {
+      "ApiKey": "your-sendgrid-api-key",
+      "SenderEmail": "noreply@yourdomain.com"
+    }
   }
 }
 ```
-
-**Result**: SendGrid will automatically be tried after Azure Communication Services but before Console.

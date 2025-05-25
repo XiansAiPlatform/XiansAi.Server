@@ -33,13 +33,13 @@ public class LlmService : ILlmService
     /// <summary>
     /// Creates a new instance of the LlmService
     /// </summary>
-    /// <param name="llmProviderFactory">Factory for creating LLM providers</param>
+    /// <param name="llmProvider">Factory for creating LLM providers</param>
     /// <param name="logger">Logger for the service</param>
     public LlmService(
-        ILlmProviderFactory llmProviderFactory,
+        ILlmProvider llmProvider,
         ILogger<LlmService> logger)
     {
-        _llmProvider = llmProviderFactory?.CreateLlmProvider() ?? throw new ArgumentNullException(nameof(llmProviderFactory));
+        _llmProvider = llmProvider ?? throw new ArgumentNullException(nameof(llmProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

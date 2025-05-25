@@ -6,21 +6,11 @@ namespace XiansAi.Server.Providers;
 /// <summary>
 /// Azure Communication Services implementation of the email provider
 /// </summary>
-public class AzureCommunicationEmailProvider : IEmailProvider, IEmailProviderRegistration
+public class AzureCommunicationEmailProvider : IEmailProvider
 {
     private readonly EmailClient? _emailClient;
     private readonly string? _senderAddress;
     private readonly ILogger<AzureCommunicationEmailProvider> _logger;
-
-    /// <summary>
-    /// Gets the name of this provider
-    /// </summary>
-    public static string ProviderName => "AzureCommunicationServices";
-
-    /// <summary>
-    /// Gets the priority of this provider (lower numbers = higher priority)
-    /// </summary>
-    public static int Priority => 1;
 
     /// <summary>
     /// Creates a new instance of the AzureCommunicationEmailProvider
@@ -36,34 +26,6 @@ public class AzureCommunicationEmailProvider : IEmailProvider, IEmailProviderReg
         _emailClient = emailClient;
         _senderAddress = senderAddress;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
-    /// <summary>
-    /// Determines if this provider can be registered with the given configuration
-    /// </summary>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>True if the provider can be registered, false otherwise</returns>
-    public static bool CanRegister(IConfiguration configuration)
-    {
-        var connectionString = configuration["CommunicationServices:ConnectionString"];
-        var senderEmail = configuration["CommunicationServices:SenderEmail"];
-        return !string.IsNullOrEmpty(connectionString) && !string.IsNullOrEmpty(senderEmail);
-    }
-
-    /// <summary>
-    /// Registers the services required by this provider
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Application configuration</param>
-    public static void RegisterServices(IServiceCollection services, IConfiguration configuration)
-    {
-        var connectionString = configuration["CommunicationServices:ConnectionString"];
-        var senderEmail = configuration["CommunicationServices:SenderEmail"];
-
-        if (!string.IsNullOrEmpty(connectionString) && !string.IsNullOrEmpty(senderEmail))
-        {
-            services.AddSingleton<EmailClient>(sp => new EmailClient(connectionString));
-        }
     }
 
     /// <summary>
@@ -93,7 +55,7 @@ public class AzureCommunicationEmailProvider : IEmailProvider, IEmailProviderReg
         {
             if (_emailClient == null || string.IsNullOrEmpty(_senderAddress))
             {
-                _logger.LogError("Email service is not properly configured. Please check CommunicationServices settings in configuration.");
+                _logger.LogError("Email service is not properly configured. Please check Email:Azure settings in configuration.");
                 return false;
             }
 

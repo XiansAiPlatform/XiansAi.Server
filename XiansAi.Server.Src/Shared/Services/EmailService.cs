@@ -13,13 +13,13 @@ public class EmailService : IEmailService
     /// <summary>
     /// Creates a new instance of the EmailService
     /// </summary>
-    /// <param name="emailProviderFactory">Factory for creating email providers</param>
+    /// <param name="emailProvider">Factory for creating email providers</param>
     /// <param name="logger">Logger for the service</param>
     public EmailService(
-        IEmailProviderFactory emailProviderFactory,
+        IEmailProvider emailProvider,
         ILogger<EmailService> logger)
     {
-        _emailProvider = emailProviderFactory?.CreateEmailProvider() ?? throw new ArgumentNullException(nameof(emailProviderFactory));
+        _emailProvider = emailProvider ?? throw new ArgumentNullException(nameof(emailProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
