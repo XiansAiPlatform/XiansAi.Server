@@ -6,6 +6,7 @@ using XiansAi.Server.Tests.TestUtils;
 using XiansAi.Server.Features.AgentApi.Models;
 using Features.AgentApi.Services.Lib;
 
+
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 
 public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
@@ -24,7 +25,9 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
             Message = "Test log message",
             Level = LogLevel.Information,
             WorkflowId = ObjectId.GenerateNewId().ToString(),
-            WorkflowRunId = ObjectId.GenerateNewId().ToString()
+            WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+            WorkflowType = "TestWorkflowType",
+            Agent = "TestAgent"
         };
 
         // Act
@@ -52,14 +55,18 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
                 Message = "First log message",
                 Level = Microsoft.Extensions.Logging.LogLevel.Information,
                 WorkflowId = ObjectId.GenerateNewId().ToString(),
-                WorkflowRunId = ObjectId.GenerateNewId().ToString()
+                WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+                WorkflowType = "TestWorkflowType1",
+                Agent = "TestAgent1"
             },
             new LogRequest
             {
                 Message = "Second log message",
                 Level = Microsoft.Extensions.Logging.LogLevel.Warning,
                 WorkflowId = ObjectId.GenerateNewId().ToString(),
-                WorkflowRunId = ObjectId.GenerateNewId().ToString()
+                WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+                WorkflowType = "TestWorkflowType2",
+                Agent = "TestAgent2"
             }
         };
 
@@ -93,7 +100,9 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
             Message = "Test log message",
             Level = Microsoft.Extensions.Logging.LogLevel.Information,
             WorkflowId = null!, // This should trigger validation
-            WorkflowRunId = ObjectId.GenerateNewId().ToString()
+            WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+            WorkflowType = "TestWorkflowType",
+            Agent = "TestAgent"
         };
 
         // Act

@@ -1,4 +1,5 @@
 using System.Xml;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using OpenAI.Chat;
 using Shared.Auth;
 using XiansAi.Server.GenAi;
@@ -18,6 +19,7 @@ public class MarkdownService : IMarkdownService
     private readonly ILogger<MarkdownService> _logger;
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly string _model = "gpt-4o-mini";
     public MarkdownService(IOpenAIClientService openAIClientService, 
         IKnowledgeRepository knowledgeRepository, 
         ITenantContext tenantContext, 
@@ -51,7 +53,7 @@ public class MarkdownService : IMarkdownService
             new SystemChatMessage(instruction.Content),
             new UserChatMessage("Workflow code:\n" + source)
         };
-        var markdown = await _openAIClientService.GetChatCompletionAsync(messages);
+        var markdown = await _openAIClientService.GetChatCompletionAsync(messages, _model);
 
         // Remove spaces between classes to make it valid mermaid code
         markdown = markdown.Replace(", ", ",");

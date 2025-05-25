@@ -1,6 +1,6 @@
 using Mongo2Go;
 using MongoDB.Driver;
-using XiansAi.Server.Shared.Data;
+using Shared.Data;
 
 namespace XiansAi.Server.Tests.TestUtils;
 

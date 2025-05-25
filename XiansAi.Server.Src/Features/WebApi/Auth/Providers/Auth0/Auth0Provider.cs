@@ -30,7 +30,9 @@ public class Auth0Provider : IAuthProvider
             throw new ArgumentException("Auth0 domain is missing");
             
         options.RequireHttpsMetadata = false;
-        options.Authority = _auth0Config.Domain;
+        options.Authority = _auth0Config.Domain.StartsWith("https://") 
+            ? _auth0Config.Domain 
+            : $"https://{_auth0Config.Domain}/";
         options.Audience = _auth0Config.Audience;
         options.Events = new JwtBearerEvents
         {
@@ -58,7 +60,12 @@ public class Auth0Provider : IAuthProvider
             if (_auth0Config == null)
                 throw new InvalidOperationException("Auth0 configuration is not initialized");
 
-            _client = new RestClient($"https://{_auth0Config.Domain}");
+            // Extract domain name from URL if it's a full URL
+            var domainName = _auth0Config.Domain?.StartsWith("https://") == true 
+                ? _auth0Config.Domain.Replace("https://", "").TrimEnd('/')
+                : _auth0Config.Domain;
+
+            _client = new RestClient($"https://{domainName}");
             var token = await GetManagementApiToken();
             var request = CreateAuthenticatedRequest($"/api/v2/users/{userId}", Method.Get, token);
 
@@ -90,7 +97,12 @@ public class Auth0Provider : IAuthProvider
             if (_auth0Config == null)
                 throw new InvalidOperationException("Auth0 configuration is not initialized");
 
-            _client = new RestClient($"https://{_auth0Config.Domain}");
+            // Extract domain name from URL if it's a full URL
+            var domainName = _auth0Config.Domain?.StartsWith("https://") == true 
+                ? _auth0Config.Domain.Replace("https://", "").TrimEnd('/')
+                : _auth0Config.Domain;
+
+            _client = new RestClient($"https://{domainName}");
             var token = await GetManagementApiToken();
             var request = CreateAuthenticatedRequest($"/api/v2/users/{userId}", Method.Patch, token);
 

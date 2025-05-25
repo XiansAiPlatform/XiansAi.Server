@@ -3,6 +3,7 @@ using Features.WebApi.Auth;
 using Features.WebApi.Models;
 using Shared.Auth;
 using Shared.Utils.Services;
+using XiansAi.Server.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -35,7 +36,7 @@ public class PublicService : IPublicService
     private readonly IAuthMgtConnect _authMgtConnect;
     private readonly ILogger<PublicService> _logger;
     private readonly ITenantContext _tenantContext;
-    private readonly IDistributedCache _cache;
+    private readonly ObjectCache _cache;
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly Random _random;
@@ -51,7 +52,7 @@ public class PublicService : IPublicService
     /// <param name="authMgtConnect">Service for Auth0 Management API operations</param>
     /// <param name="logger">Logger for this class</param>
     /// <param name="tenantContext">Context for tenant operations</param>
-    /// <param name="cache">Distributed cache for storing verification codes</param>
+    /// <param name="cache">Object cache service for storing verification codes</param>
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
@@ -59,7 +60,7 @@ public class PublicService : IPublicService
         IAuthMgtConnect authMgtConnect, 
         ILogger<PublicService> logger,
         ITenantContext tenantContext,
-        IDistributedCache cache, 
+        ObjectCache cache, 
         IEmailService emailService,
         IConfiguration configuration)
     {
@@ -167,13 +168,8 @@ public class PublicService : IPublicService
         _logger.LogDebug("Generated verification code for {Email}", email);
         
         // Store in cache with expiration
-        var options = new DistributedCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(CODE_EXPIRATION_MINUTES)
-        };
-        
         string cacheKey = GetVerificationCacheKey(email);
-        await _cache.SetStringAsync(cacheKey, code, options);
+        await _cache.SetAsync(cacheKey, code, TimeSpan.FromMinutes(CODE_EXPIRATION_MINUTES));
         _logger.LogDebug($"Stored verification code {code} in cache with key: {cacheKey}, expiration: {CODE_EXPIRATION_MINUTES} minutes");
 
         return code;
@@ -229,7 +225,7 @@ The Xians.ai Team";
 
         // Retrieve stored code from cache
         string cacheKey = GetVerificationCacheKey(email);
-        string? storedCode = await _cache.GetStringAsync(cacheKey);
+        string? storedCode = await _cache.GetAsync<string>(cacheKey);
 
         // Check if code exists
         if (string.IsNullOrEmpty(storedCode))

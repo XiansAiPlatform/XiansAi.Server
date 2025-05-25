@@ -73,11 +73,6 @@ namespace Shared.Auth
                     openAIConfig.ApiKey = _configuration.GetSection("OpenAI:ApiKey").Value
                         ?? throw new InvalidOperationException("OpenAI api key not found");
                 }
-
-                if (openAIConfig.Model == null) {
-                    openAIConfig.Model = _configuration.GetSection("OpenAI:Model").Value
-                        ?? throw new InvalidOperationException("OpenAI model not found");
-                }
                 return openAIConfig;
             }
         }

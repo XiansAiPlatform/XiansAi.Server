@@ -6,7 +6,7 @@ namespace Shared.Utils.GenAi;
 public interface IOpenAIClientService
 {
     string GetApiKey();
-    Task<string> GetChatCompletionAsync(List<ChatMessage> messages);
+    Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model);
 }
 
 public class OpenAIClientService : IOpenAIClientService
@@ -34,13 +34,13 @@ public class OpenAIClientService : IOpenAIClientService
         return apiKey;
     }
 
-    public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages)
+    public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model = "gpt-4o-mini")
     {
         var tenantId = _tenantContext.TenantId;
         var chatClient = _clients.GetOrAdd(tenantId, _ =>
         {
             var apiKey = GetApiKey();
-            return new ChatClient(_config.Model, apiKey);
+            return new ChatClient(model, apiKey);
         });
 
         var completion = await chatClient.CompleteChatAsync(messages);

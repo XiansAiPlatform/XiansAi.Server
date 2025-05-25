@@ -1,7 +1,6 @@
 using Shared.Auth;
-using XiansAi.Server.GenAi;
 using XiansAi.Server.Utils;
-using XiansAi.Server.Shared.Data;
+using XiansAi.Server.Providers;
 using Shared.Utils;
 using Shared.Utils.GenAi;
 using Shared.Utils.Temporal;
@@ -13,12 +12,8 @@ public static class SharedServices
 {
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
-        // Register Redis cache
-        services.AddStackExchangeRedisCache(options =>
-        {
-            options.Configuration = configuration.GetRequiredSection("RedisCache:ConnectionString").Value;
-            options.InstanceName = configuration.GetRequiredSection("RedisCache:InstanceName").Value;
-        });
+        // Register cache services using the combined factory
+        RegisterCacheServices(services, configuration);
 
         // Register core services
         services.AddSingleton<CertificateGenerator>();
@@ -59,5 +54,19 @@ public static class SharedServices
         services.AddHostedService(sp => (BackgroundTaskService)sp.GetRequiredService<IBackgroundTaskService>());
         
         return services;
+    }
+
+    /// <summary>
+    /// Registers cache services using the combined factory
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterCacheServices(IServiceCollection services, IConfiguration configuration)
+    {
+        // Register all available cache providers
+        CacheProviderFactory.RegisterProviders(services, configuration);
+
+        // Register the cache provider factory
+        services.AddSingleton<ICacheProviderFactory, CacheProviderFactory>();
     }
 } 

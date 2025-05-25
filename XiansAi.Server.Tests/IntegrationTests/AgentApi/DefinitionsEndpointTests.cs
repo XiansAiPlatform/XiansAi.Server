@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using XiansAi.Server.Utils;
 using MongoDB.Driver;
 using Shared.Data.Models;
-using XiansAi.Server.Features.WebApi.Models;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
 
@@ -32,7 +31,6 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
             WorkflowType = uniqueTypeName,
             Agent = "Test Agent",
             Source = "Example source code",
-            KnowledgeIds = new List<string> { "instruction1" },
             ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
                 new ActivityDefinitionRequest
@@ -107,7 +105,6 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
             WorkflowType = uniqueTypeName,
             Agent = "Test Agent",
             Source = "Example source code",
-            KnowledgeIds = new List<string> { "instruction1" },
             ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
                 new ActivityDefinitionRequest
@@ -191,7 +188,6 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
             WorkflowType = uniqueTypeName,
             Agent = "Test Agent",
             Source = "Example source code",
-            KnowledgeIds = new List<string> { "instruction1" },
             ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
                 new ActivityDefinitionRequest
@@ -217,7 +213,6 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
             WorkflowType = uniqueTypeName,
             Agent = "Updated Test Agent",
             Source = "Updated example source code",
-            KnowledgeIds = new List<string> { "instruction1", "instruction2" },
             ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
                 new ActivityDefinitionRequest
@@ -288,7 +283,6 @@ public class DefinitionsEndpointTests : IntegrationTestBase, IClassFixture<Mongo
             WorkflowType = uniqueTypeName,
             Agent = "Test Agent",   
             Source = "Example source code",
-            KnowledgeIds = new List<string> { "instruction1" },
             ActivityDefinitions = new List<ActivityDefinitionRequest>
             {
                 new ActivityDefinitionRequest

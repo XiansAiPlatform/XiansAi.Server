@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using XiansAi.Server.Shared.Data;
 using Shared.Utils.GenAi;
 using Moq;
+using Shared.Data;
 
 namespace XiansAi.Server.Tests.TestUtils;
 
@@ -12,14 +14,51 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly MongoDbFixture _mongoFixture;
     private const string TestTenantId = "test-tenant";
+    private readonly string? _environment;
 
-    public XiansAiWebApplicationFactory(MongoDbFixture mongoFixture)
+    public XiansAiWebApplicationFactory(MongoDbFixture mongoFixture, string? environment = null)
     {
         _mongoFixture = mongoFixture;
+        _environment = environment;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Set the environment if specified
+        if (!string.IsNullOrEmpty(_environment))
+        {
+            builder.UseEnvironment(_environment);
+        }
+
+        // Configure additional configuration sources for testing
+        builder.ConfigureAppConfiguration((context, config) =>
+        {
+            // Clear existing configuration sources to ensure test configuration takes precedence
+            config.Sources.Clear();
+            
+            // Add base configuration
+            config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
+            
+            // Add environment-specific configuration
+            var env = context.HostingEnvironment.EnvironmentName;
+            config.AddJsonFile($"appsettings.{env}.json", optional: true, reloadOnChange: false);
+            
+            // Add test-specific overrides
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                // Override MongoDB settings to use test database
+                ["MongoDB:ConnectionString"] = _mongoFixture.MongoConfig.ConnectionString,
+                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName,
+                
+                // Override other settings for testing as needed
+                ["Logging:LogLevel:Default"] = "Information",
+                ["Logging:LogLevel:Microsoft.AspNetCore"] = "Warning"
+            });
+            
+            // Add environment variables
+            config.AddEnvironmentVariables();
+        });
+
         builder.ConfigureTestServices(services =>
         {
             // Remove existing MongoDB services
@@ -54,6 +93,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
         }
     }
 }
+
 public class TestHttpMessageHandler : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

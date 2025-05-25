@@ -71,7 +71,12 @@ public class Auth0TokenService : ITokenService
             if (_auth0Config == null || _auth0Config.ManagementApi == null)
                 throw new InvalidOperationException("Auth0 configuration is not initialized");
 
-            _client = new RestClient($"https://{_auth0Config.Domain}");
+            // Extract domain name from URL if it's a full URL
+            var domainName = _auth0Config.Domain?.StartsWith("https://") == true 
+                ? _auth0Config.Domain.Replace("https://", "").TrimEnd('/')
+                : _auth0Config.Domain;
+
+            _client = new RestClient($"https://{domainName}");
             var request = new RestRequest("/oauth/token", Method.Post);
             request.AddHeader("content-type", "application/x-www-form-urlencoded");
 
@@ -80,7 +85,7 @@ public class Auth0TokenService : ITokenService
                 throw new ArgumentException("Management API client ID is missing"));
             request.AddParameter("client_secret", _auth0Config.ManagementApi.ClientSecret ?? 
                 throw new ArgumentException("Management API client secret is missing"));
-            request.AddParameter("audience", $"https://{_auth0Config.Domain}/api/v2/");
+            request.AddParameter("audience", $"https://{domainName}/api/v2/");
 
             var response = await _client.ExecuteAsync(request);
             EnsureSuccessfulResponse(response, "get management API token");

@@ -28,6 +28,9 @@ public class CacheEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixt
         Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /*
+    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
+    */
     [Fact]
     public async Task SetAndGetCacheValue_ReturnsExpectedResult()
     {
