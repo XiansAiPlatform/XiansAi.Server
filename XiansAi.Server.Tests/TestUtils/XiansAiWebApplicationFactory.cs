@@ -7,6 +7,7 @@ using XiansAi.Server.Shared.Data;
 using Shared.Utils.GenAi;
 using Moq;
 using Shared.Data;
+using Shared.Services;
 
 namespace XiansAi.Server.Tests.TestUtils;
 
