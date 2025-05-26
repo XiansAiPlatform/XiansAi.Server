@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Shared.Services;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -18,7 +19,8 @@ public static class PermissionsEndpoints
             string agentName,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.GetPermissions(agentName);
+            var result = await endpoint.GetPermissions(agentName);
+            return result.ToHttpResult();
         })
         .WithName("Get Permissions")
         .WithOpenApi(operation => {
@@ -32,7 +34,8 @@ public static class PermissionsEndpoints
             [FromBody] PermissionDto permissions,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.UpdatePermissions(agentName, permissions);
+            var result = await endpoint.UpdatePermissions(agentName, permissions);
+            return result.ToHttpResult();
         })
         .WithName("Update Permissions")
         .WithOpenApi(operation => {
@@ -46,7 +49,8 @@ public static class PermissionsEndpoints
             [FromBody] UserPermissionDto userPermission,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.AddUser(agentName, userPermission.UserId, userPermission.PermissionLevel);
+            var result = await endpoint.AddUser(agentName, userPermission.UserId, userPermission.PermissionLevel);
+            return result.ToHttpResult();
         })
         .WithName("Add User")
         .WithOpenApi(operation => {
@@ -60,7 +64,8 @@ public static class PermissionsEndpoints
             string userId,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.RemoveUser(agentName, userId);
+            var result = await endpoint.RemoveUser(agentName, userId);
+            return result.ToHttpResult();
         })
         .WithName("Remove User")
         .WithOpenApi(operation => {
@@ -75,7 +80,8 @@ public static class PermissionsEndpoints
             string newPermissionLevel,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.UpdateUserPermission(agentName, userId, newPermissionLevel);
+            var result = await endpoint.UpdateUserPermission(agentName, userId, newPermissionLevel);
+            return result.ToHttpResult();
         })
         .WithName("Update User Permission")
         .WithOpenApi(operation => {
@@ -88,7 +94,8 @@ public static class PermissionsEndpoints
             string agentName,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.HasReadPermission(agentName);
+            var result = await endpoint.HasReadPermission(agentName);
+            return result.ToHttpResult();
         })
         .WithName("Check Read Permission")
         .WithOpenApi(operation => {
@@ -101,7 +108,8 @@ public static class PermissionsEndpoints
             string agentName,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.HasWritePermission(agentName);
+            var result = await endpoint.HasWritePermission(agentName);
+            return result.ToHttpResult();
         })
         .WithName("Check Write Permission")
         .WithOpenApi(operation => {
@@ -114,7 +122,8 @@ public static class PermissionsEndpoints
             string agentName,
             [FromServices] IPermissionsService endpoint) =>
         {
-            return await endpoint.HasOwnerPermission(agentName);
+            var result = await endpoint.HasOwnerPermission(agentName);
+            return result.ToHttpResult();
         })
         .WithName("Check Owner Permission")
         .WithOpenApi(operation => {

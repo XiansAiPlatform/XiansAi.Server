@@ -29,7 +29,8 @@ public static class WorkflowEndpoints
             [FromBody] WorkflowRequest request,
             [FromServices] IWorkflowStarterService endpoint) =>
         {
-            return await endpoint.HandleStartWorkflow(request);
+            var result = await endpoint.HandleStartWorkflow(request);
+            return result.ToHttpResult();
         })
         .WithName("Create New Workflow")
         .WithOpenApi();
@@ -38,7 +39,8 @@ public static class WorkflowEndpoints
             string workflowId,
             [FromServices] IWorkflowEventsService endpoint) =>
         {
-            return await endpoint.GetWorkflowEvents(workflowId);
+            var result = await endpoint.GetWorkflowEvents(workflowId);
+            return result.ToHttpResult();
         })
         .WithName("Get Workflow Events")
         .WithOpenApi();
@@ -65,7 +67,8 @@ public static class WorkflowEndpoints
             [FromQuery] bool force,
             [FromServices] IWorkflowCancelService endpoint) =>
         {
-            return await endpoint.CancelWorkflow(workflowId, force);
+            var result = await endpoint.CancelWorkflow(workflowId, force);
+            return result.ToHttpResult();
         })
         .WithName("Cancel Workflow")
         .WithOpenApi();

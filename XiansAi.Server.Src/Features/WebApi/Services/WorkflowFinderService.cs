@@ -7,6 +7,7 @@ using Temporalio.Api.WorkflowService.V1;
 using Temporalio.Api.TaskQueue.V1;
 using Shared.Utils.Temporal;
 using Shared.Data;
+using Shared.Data.Models;
 using Features.WebApi.Repositories;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -14,6 +15,7 @@ using Features.WebApi.Models;
 using Temporalio.Common;
 using Temporalio.Api.History.V1;
 using Shared.Services;
+using MongoDB.Bson;
 
 namespace Features.WebApi.Services;
 
@@ -167,7 +169,21 @@ public class WorkflowFinderService : IWorkflowFinderService
                 .GroupBy(w => w.Agent)
                 .Select(group => 
                 {
-                    var dbAgent = agents.First(a => a.Name == group.Key);
+                    var dbAgent = agents.FirstOrDefault(a => a.Name == group.Key);
+                    if (dbAgent == null)
+                    {
+                        // Create a minimal agent object with just the name when no database record exists
+                        dbAgent = new Agent
+                        {
+                            Id = "-deleted-" + Guid.NewGuid().ToString(),
+                            Name = group.Key,
+                            Tenant = _tenantContext.TenantId,
+                            CreatedBy = "unknown-agent", // Default value for unknown agents
+                            CreatedAt = DateTime.MinValue,
+                            Permissions = new Permission()
+                        };
+                    }
+                    
                     return new WorkflowsWithAgent
                     {
                         Agent = dbAgent,
@@ -242,42 +258,35 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <summary>
     /// Builds a date range query string for filtering workflows.
     /// </summary>
-    /// <param name="agent">The agent name to filter workflows by.</param>
+    /// <param name="agents">The agent name to filter workflows by.</param>
     /// <param name="startTime">The start time of the range.</param>
     /// <param name="endTime">The end time of the range.</param>
     /// <param name="status">Optional status filter for workflows.</param>
     /// <param name="owner">Optional owner filter for workflows.</param>
     /// <returns>A query string for temporal workflow filtering.</returns>
-    private string BuildQuery(string[] agent, DateTime? startTime, DateTime? endTime, string? status, string? owner)
+    private string BuildQuery(string[] agents, DateTime? startTime, DateTime? endTime, string? status, string? owner)
     {
-        var queryParts = new List<string>();
-        const string dateFormat = "yyyy-MM-ddTHH:mm:sszzz";
-
-        // Add time-based filters
-        if (startTime != null && endTime != null)
+        var queryParts = new List<string>
         {
-            queryParts.Add($"ExecutionTime between '{startTime.Value.ToUniversalTime().ToString(dateFormat)}' and '{endTime.Value.ToUniversalTime().ToString(dateFormat)}'");
-        }
-        else if (startTime != null)
-        {
-            queryParts.Add($"ExecutionTime >= '{startTime.Value.ToUniversalTime().ToString(dateFormat)}'");
-        }
-        else if (endTime != null)
-        {
-            queryParts.Add($"ExecutionTime <= '{endTime.Value.ToUniversalTime().ToString(dateFormat)}'");
-        }
-        // Add tenantId filter
-        queryParts.Add($"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'");
-
-        if (agent.Length > 0)
-        {
-            queryParts.Add($"{Constants.AgentKey} in ({string.Join(",", agent.Select(a => "'" + a + "'"))})");
-        }
+            // Add tenantId filter
+            $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'"
+        };    
 
         // Add userId filter if current owner is requested
         if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase))
         {
             queryParts.Add($"{Constants.UserIdKey} = '{_tenantContext.LoggedInUser}'");
+        }
+        else // show other's workflows too
+        {
+            if (agents.Length > 0) 
+            {
+                queryParts.Add($"({Constants.UserIdKey} = '{_tenantContext.LoggedInUser}' OR {Constants.AgentKey} in ({string.Join(",", agents.Select(a => "'" + a + "'"))})");
+            }
+            else // no other agent access
+            {
+                queryParts.Add($"{Constants.UserIdKey} = '{_tenantContext.LoggedInUser}'");
+            }
         }
 
         // Add status filter if specified
@@ -301,7 +310,11 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
 
         // Join all query parts with AND operator
-        return string.Join(" and ", queryParts);
+        var andParts = string.Join(" and ", queryParts);
+
+        _logger.LogDebug("Built query: {Query}", andParts);
+
+        return andParts;
     }
 
     /// <summary>
