@@ -1,8 +1,10 @@
+using Features.WebApi.Auth;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.GenAi;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
+using XiansAi.Server.Shared.Websocket;
 
 namespace Features.Shared.Configuration;
 
@@ -31,6 +33,10 @@ public static class SharedConfiguration
         
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
+
+        // Add SignalR services
+        builder.Services.AddSignalR();
+        builder.Services.AddSingleton<ClientConnectionManager>();
 
         // Register repositories
         builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
@@ -74,7 +80,11 @@ public static class SharedConfiguration
         app.UseCors(corsSettings.PolicyName);
         app.UseAuthentication();
         app.UseAuthorization();
-        
+
+        // Configure Websocket middleware
+        app.UseMiddleware<SignalRAuthMiddleware>();
+        app.MapHub<ChatHub>("/ws/chat");
+
         return app;
     }
 } 
