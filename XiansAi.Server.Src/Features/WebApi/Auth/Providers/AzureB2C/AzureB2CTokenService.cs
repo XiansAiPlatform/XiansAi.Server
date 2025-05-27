@@ -11,6 +11,7 @@ public class AzureB2CTokenService : ITokenService
     private readonly ILogger<AzureB2CTokenService> _logger;
     private RestClient _client;
     private AzureB2CConfig? _azureB2CConfig;
+    private readonly string _tenantClaimType;
 
     public AzureB2CTokenService(ILogger<AzureB2CTokenService> logger, IConfiguration configuration)
     {
@@ -18,6 +19,10 @@ public class AzureB2CTokenService : ITokenService
         _client = new RestClient();
         _azureB2CConfig = configuration.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
             throw new ArgumentException("Azure B2C configuration is missing");
+        
+        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
+            new AuthProviderConfig();
+        _tenantClaimType = authProviderConfig.TenantClaimType;
     }
 
     public string? ExtractUserId(JwtSecurityToken token)
@@ -28,7 +33,7 @@ public class AzureB2CTokenService : ITokenService
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)
     {
         return token.Claims
-            .Where(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)
+            .Where(c => c.Type == _tenantClaimType)
             .Select(c => c.Value)
             .ToList();
     }

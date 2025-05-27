@@ -7,8 +7,6 @@ namespace Features.WebApi.Auth;
 
 public abstract class BaseAuthRequirement : IAuthorizationRequirement
 {
-    public static string TENANT_CLAIM_TYPE = "https://xians.ai/tenants";
-    
     public BaseAuthRequirement(IConfiguration configuration)
     {
     }
