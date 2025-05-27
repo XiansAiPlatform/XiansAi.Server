@@ -16,12 +16,15 @@ namespace XiansAi.Server.Shared.Websocket
         private readonly ITenantContext _tenantContext;
         private readonly ITenantContext _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
         public ChatHub(ClientConnectionManager connectionManager, IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
         {
             _connectionManager = connectionManager;
             _messageService = messageService;
-            var httpContext = httpContextAccessor.HttpContext;
+            _httpContextAccessor = httpContextAccessor;
+            var httpContext = _httpContextAccessor.HttpContext;
+
             if (httpContext != null)
             {
                 var scopedTenantContext = httpContext.RequestServices.GetService<ITenantContext>();
@@ -42,9 +45,14 @@ namespace XiansAi.Server.Shared.Websocket
                 if (string.IsNullOrEmpty(_tenantContext.TenantId) || string.IsNullOrEmpty(_tenantContext.LoggedInUser))
                 {
                     _logger.LogError("TenantContext not properly initialized");
-                    throw new InvalidOperationException("TenantContext not properly initialized");
+                    await Clients.Caller.SendAsync("ConnectionError", new { 
+                        StatusCode = StatusCodes.Status401Unauthorized, 
+                        Message = "Invalid tenant context" 
+                    });
+                    Context.Abort();
+                    return;
                 }
-                // The tenant context should have been set by our custom middleware
+
                 _logger.LogInformation("SignalR Connection established for user: {UserId}, Tenant: {TenantId}",
                     _tenantContext.LoggedInUser, _tenantContext.TenantId);
 
@@ -53,6 +61,10 @@ namespace XiansAi.Server.Shared.Websocket
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in OnConnectedAsync");
+                await Clients.Caller.SendAsync("ConnectionError", new { 
+                    StatusCode = StatusCodes.Status500InternalServerError, 
+                    Message = "Internal server error" 
+                });
                 Context.Abort();
             }
         }

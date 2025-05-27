@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Shared.Auth;
+using Microsoft.Extensions.Configuration;
 
 namespace Features.WebApi.Auth;
 
@@ -13,11 +14,13 @@ public class SignalRAuthMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<SignalRAuthMiddleware> _logger;
+    private readonly IConfiguration _configuration;
 
-    public SignalRAuthMiddleware(RequestDelegate next, ILogger<SignalRAuthMiddleware> logger)
+    public SignalRAuthMiddleware(RequestDelegate next, ILogger<SignalRAuthMiddleware> logger, IConfiguration configuration)
     {
         _next = next;
         _logger = logger;
+        _configuration = configuration;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -26,11 +29,28 @@ public class SignalRAuthMiddleware
         if (context.Request.Path.StartsWithSegments("/ws"))
         {
             _logger.LogDebug("Processing SignalR request: {Path}", context.Request.Path);
-            // Resolve ITenantContext from the request scope
             var tenantContext = context.RequestServices.GetService<ITenantContext>();
             if (tenantContext == null)
             {
                 _logger.LogError("Failed to resolve ITenantContext from request scope");
+                await _next(context);
+                return;
+            }
+
+            // Check if WebSockets are enabled in configuration
+            var websocketConfig = _configuration.GetSection("WebSockets");
+            if (!websocketConfig.GetValue<bool>("Enabled"))
+            {
+                _logger.LogWarning("WebSockets are not enabled in configuration");
+                await _next(context);
+                return;
+            }
+
+            // Get tenantId from query string
+            var tenantId = context.Request.Query["tenantId"].ToString();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                _logger.LogWarning("No tenantId provided in query string");
                 await _next(context);
                 return;
             }
@@ -51,68 +71,53 @@ public class SignalRAuthMiddleware
             {
                 try
                 {
-                    // Validate and process the token manually
-                    var handler = new JwtSecurityTokenHandler();
-                    var jsonToken = handler.ReadToken(accessToken) as JwtSecurityToken;
-
-                    if (jsonToken != null)
+                    // Get the secrets section
+                    var secrets = websocketConfig.GetSection("Secrets").Get<Dictionary<string, string>>();
+                    // Check if the secrets section is null
+                    if (secrets == null)
                     {
-                        // Extract user claims
-                        var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+                        _logger.LogWarning("WebSocket Secrets not found in configuration");
+                        await _next(context);
+                        return;
+                    }  
+                    // Check if the provided tenantId exists in configuration
+                    if (!secrets.ContainsKey(tenantId))
+                    {
+                        _logger.LogWarning("Provided tenantId {TenantId} not found in configuration", tenantId);
+                        await _next(context);
+                        return;
+                    }
+
+                    // Get the expected secret for this tenant
+                    var expectedSecret = secrets[tenantId];
+                    
+                    // Verify if the provided access token matches the expected secret
+                    if (accessToken == expectedSecret)
+                    {
+                        // Set the WebSocket user ID from configuration
+                        var websocketUserId = websocketConfig.GetValue<string>("UserId");
+                        if (websocketUserId == null)
+                        {
+                            _logger.LogWarning("WebSocket UserId not found in configuration");
+                            await _next(context);
+                            return;
+                        }
+                        tenantContext.LoggedInUser = websocketUserId;
+                        tenantContext.TenantId = tenantId;
+                        tenantContext.AuthorizedTenantIds = new[] { tenantId };
+
                         
-                        // Try multiple possible tenant claim names
-                        var tenantId = jsonToken.Claims.FirstOrDefault(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)?.Value
-                            ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "tenant_id")?.Value
-                            ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "https://xians.ai/tenants")?.Value;
-
-                        if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(tenantId))
-                        {
-                            // Set tenant context
-                            tenantContext.TenantId = tenantId;
-                            tenantContext.LoggedInUser = userId;
-                            tenantContext.AuthorizedTenantIds = new[] { tenantId };
-                            
-                            // Create claims identity and principal
-                            var claims = new List<Claim>
-                            {
-                                new Claim(ClaimTypes.NameIdentifier, userId),
-                                new Claim("sub", userId),
-                                new Claim("tenant_id", tenantId),
-                                new Claim(BaseAuthRequirement.TENANT_CLAIM_TYPE, tenantId)
-                            };
-
-                            // Add all original claims from the token
-                            foreach (var claim in jsonToken.Claims)
-                            {
-                                if (!claims.Any(c => c.Type == claim.Type && c.Value == claim.Value))
-                                {
-                                    claims.Add(claim);
-                                }
-                            }
-
-                            var identity = new ClaimsIdentity(claims, JwtBearerDefaults.AuthenticationScheme);
-                            var principal = new ClaimsPrincipal(identity);
-                            
-                            // Set the user on the HttpContext
-                            context.User = principal;
-                            
-                            _logger.LogInformation("Successfully authenticated SignalR connection: User={UserId}, Tenant={TenantId}", 
-                                userId, tenantId);
-                        }
-                        else
-                        {
-                            _logger.LogWarning("Missing required claims in token: UserId={UserId}, TenantId={TenantId}", 
-                                userId, tenantId);
-                        }
+                        _logger.LogInformation("Successfully authenticated SignalR connection: User={UserId}, Tenant={TenantId}", 
+                            websocketUserId, tenantId);
                     }
                     else
                     {
-                        _logger.LogWarning("Invalid JWT token format");
+                        _logger.LogWarning("Access token does not match the expected secret for tenant {TenantId}", tenantId);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing JWT token for SignalR connection");
+                    _logger.LogError(ex, "Error processing access token for SignalR connection");
                 }
             }
             else
