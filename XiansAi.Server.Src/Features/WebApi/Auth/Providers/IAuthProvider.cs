@@ -44,4 +44,5 @@ public enum AuthProviderType
 public class AuthProviderConfig
 {
     public AuthProviderType Provider { get; set; } = AuthProviderType.Auth0;
+    public string TenantClaimType { get; set; } = "https://xians.ai/tenants";
 } 

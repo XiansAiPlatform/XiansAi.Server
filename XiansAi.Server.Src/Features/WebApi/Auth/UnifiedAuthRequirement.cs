@@ -53,8 +53,6 @@ public class AuthRequirementOptions
 /// </summary>
 public class AuthRequirement : IAuthorizationRequirement
 {
-    public static string TENANT_CLAIM_TYPE = "https://xians.ai/tenants";
-    
     /// <summary>
     /// Options for configuring the behavior of this requirement
     /// </summary>
