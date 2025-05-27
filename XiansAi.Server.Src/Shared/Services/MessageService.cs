@@ -35,7 +35,7 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessOutgoingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessHandover(HandoverRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string workflowType, string participantId, int page, int pageSize);
 }
 
 public class MessageService : IMessageService
@@ -49,7 +49,7 @@ public class MessageService : IMessageService
 
     private readonly IWorkflowSignalService _workflowSignalService;
 
-    public MessageService(
+        public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
         IConversationThreadRepository threadRepository,
@@ -113,7 +113,7 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string participantId, int page, int pageSize)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string workflowType, string participantId, int page, int pageSize)
     {
         try
         {
@@ -126,6 +126,12 @@ public class MessageService : IMessageService
                 return ServiceResult<List<ConversationMessage>>.BadRequest("Agent and ParticipantId are required");
             }
 
+            if (string.IsNullOrEmpty(workflowType))
+            {
+                _logger.LogWarning("Invalid request: missing required fields");
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType is required");
+            }
+
             if (page < 1 || pageSize < 1)
             {
                 _logger.LogWarning("Invalid request: page and pageSize must be greater than 0");
@@ -133,7 +139,7 @@ public class MessageService : IMessageService
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, agent, participantId, page, pageSize);
+            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, agent, workflowType, participantId, page, pageSize);
 
             _logger.LogInformation("Found {Count} messages for agent {Agent} and participant {ParticipantId}",
                 messages.Count, agent, participantId);

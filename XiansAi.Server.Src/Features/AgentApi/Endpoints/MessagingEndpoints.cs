@@ -1,10 +1,7 @@
 using Shared.Services;
-using Shared.Utils;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Utils.Services;
-using Shared.Repositories;
-using Shared.Auth;
 using Microsoft.AspNetCore.SignalR;
 using XiansAi.Server.Shared.Websocket;
 
@@ -20,12 +17,13 @@ namespace Features.AgentApi.Endpoints
 
             group.MapGet("/history", async (
                 [FromQuery] string agent,
+                [FromQuery] string workflowType,
                 [FromQuery] string participantId,
                 [FromQuery] int page,
                 [FromQuery] int pageSize,
                 [FromServices] IMessageService messageService) => {
                 
-                var result = await messageService.GetThreadHistoryAsync(agent, participantId, page, pageSize);
+                var result = await messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
                 return result.ToHttpResult();
             })
             .WithName("Get Conversation History")

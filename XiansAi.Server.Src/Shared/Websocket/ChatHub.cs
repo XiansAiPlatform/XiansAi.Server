@@ -1,11 +1,6 @@
-﻿using Features.WebApi.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.SignalR;
+﻿using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
 using Shared.Services;
-using System.Threading;
-
 
 namespace XiansAi.Server.Shared.Websocket
 {   
@@ -14,7 +9,7 @@ namespace XiansAi.Server.Shared.Websocket
         private readonly ClientConnectionManager _connectionManager;
         private readonly IMessageService _messageService;
         private readonly ITenantContext _tenantContext;
-        private readonly ITenantContext _tempTenantContext;
+        private readonly ITenantContext? _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
@@ -71,6 +66,8 @@ namespace XiansAi.Server.Shared.Websocket
 
         private void EnsureTenantContext()
         {
+            if (_tempTenantContext == null) throw new InvalidOperationException("TenantContext not properly initialized");
+
             _tempTenantContext.UserRoles = _tenantContext.UserRoles;
             _tempTenantContext.TenantId = _tenantContext.TenantId;
             _tempTenantContext.LoggedInUser = _tenantContext.LoggedInUser;
@@ -84,14 +81,14 @@ namespace XiansAi.Server.Shared.Websocket
             }
         }
 
-        public async Task RegisterThread(string threadId)
+        public void RegisterThread(string threadId)
         {
             EnsureTenantContext();
             _connectionManager.AddConnection(threadId, Context.ConnectionId);
             Console.WriteLine($"Registered thread {threadId} with connection {Context.ConnectionId}");
         }
 
-        public async Task DisconnectThread(string threadId)
+        public void DisconnectThread(string threadId)
         {
             if (_connectionManager.GetConnectionId(threadId)==Context.ConnectionId)
             {

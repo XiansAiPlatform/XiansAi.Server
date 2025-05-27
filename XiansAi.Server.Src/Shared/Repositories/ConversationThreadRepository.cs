@@ -52,16 +52,8 @@ public class ConversationThread
 
 public interface IConversationThreadRepository
 {
-    Task<ConversationThread?> GetByIdAsync(string id);
-    Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string workflowId, string participantId);
-    Task<List<ConversationThread>> GetByWorkflowIdAsync(string tenantId, string workflowId);
     Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null);
-    Task<List<ConversationThread>> GetByTenantAndParticipantAsync(string tenantId, string participantId, int? page = null, int? pageSize = null);
-    Task<List<ConversationThread>> GetByStatusAsync(string tenantId, ConversationThreadStatus status, int? page = null, int? pageSize = null);
     Task<string> CreateOrGetAsync(ConversationThread thread);
-    Task<bool> UpdateAsync(ConversationThread thread);
-    Task<bool> UpdateStatusAsync(string id, ConversationThreadStatus status);
-    Task<bool> UpdateLastActivityAsync(string id, DateTime timestamp);
     Task<bool> UpdateWorkflowIdAndTypeAsync(string id, string workflowId, string workflowType);
     Task<bool> DeleteAsync(string id);
 }
@@ -81,10 +73,21 @@ public class ConversationThreadRepository : IConversationThreadRepository
 
     private void CreateIndexes()
     {
-        // Composite key index (tenant_id, workflow_id, participant_id)
+        try
+        {
+            // Drop existing index if it exists
+            _collection.Indexes.DropOne("thread_composite_key");
+        }
+        catch (MongoCommandException)
+        {
+            // Index might not exist, ignore the error
+        }
+
+        // Composite key index (tenant_id, agent, workflow_type, participant_id)
         var compositeKeyIndex = Builders<ConversationThread>.IndexKeys
             .Ascending(x => x.TenantId)
             .Ascending(x => x.Agent)
+            .Ascending(x => x.WorkflowType)
             .Ascending(x => x.ParticipantId);
         
         var compositeKeyIndexModel = new CreateIndexModel<ConversationThread>(
@@ -128,23 +131,12 @@ public class ConversationThreadRepository : IConversationThreadRepository
         return result.ModifiedCount > 0;
     }
 
-    public async Task<List<ConversationThread>> GetByWorkflowIdAsync(string tenantId, string workflowId)
-    {
-        return await _collection.Find(x => x.TenantId == tenantId && x.WorkflowId == workflowId)
-            .Sort(Builders<ConversationThread>.Sort.Descending(x => x.UpdatedAt))
-            .ToListAsync();
-    }
-    
-    public async Task<ConversationThread?> GetByIdAsync(string id)
-    {
-        return await _collection.Find(x => x.Id == id).FirstOrDefaultAsync();
-    }
-
-    public async Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string agent, string participantId)
+    private async Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string agent, string workflowType, string participantId)
     {
         var filter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
             Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
+            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, workflowType),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
 
@@ -168,81 +160,16 @@ public class ConversationThreadRepository : IConversationThreadRepository
         return await query.ToListAsync();
     }
 
-    public async Task<List<ConversationThread>> GetByTenantAndParticipantAsync(string tenantId, string participantId, int? page = null, int? pageSize = null)
-    {
-        var filter = Builders<ConversationThread>.Filter.And(
-            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
-        );
-
-        var query = _collection.Find(filter).Sort(Builders<ConversationThread>.Sort.Descending(x => x.UpdatedAt));
-
-        if (page.HasValue && pageSize.HasValue)
-        {
-            query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
-        }
-
-        return await query.ToListAsync();
-    }
-
-    public async Task<List<ConversationThread>> GetByStatusAsync(string tenantId, ConversationThreadStatus status, int? page = null, int? pageSize = null)
-    {
-        var filter = Builders<ConversationThread>.Filter.And(
-            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Status, status)
-        );
-
-        var query = _collection.Find(filter).Sort(Builders<ConversationThread>.Sort.Descending(x => x.UpdatedAt));
-
-        if (page.HasValue && pageSize.HasValue)
-        {
-            query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
-        }
-
-        return await query.ToListAsync();
-    }
 
     public async Task<string> CreateOrGetAsync(ConversationThread thread)
     {
-        var existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.Agent, thread.ParticipantId);
+        var existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.Agent, thread.WorkflowType, thread.ParticipantId);
         if (existingThread != null)
         {
             return existingThread.Id;
         }
         await _collection.InsertOneAsync(thread);
         return thread.Id;
-    }
-
-    public async Task<bool> UpdateAsync(ConversationThread thread)
-    {
-        thread.UpdatedAt = DateTime.UtcNow;
-        var result = await _collection.ReplaceOneAsync(x => x.Id == thread.Id, thread);
-        return result.ModifiedCount > 0;
-    }
-
-    public async Task<bool> UpdateStatusAsync(string id, ConversationThreadStatus status)
-    {
-        var update = Builders<ConversationThread>.Update
-            .Set(x => x.Status, status)
-            .Set(x => x.UpdatedAt, DateTime.UtcNow);
-
-        var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-        return result.ModifiedCount > 0;
-    }
-
-    /// <summary>
-    /// Updates the thread's UpdatedAt timestamp to indicate new activity
-    /// </summary>
-    /// <param name="id">The thread ID</param>
-    /// <param name="timestamp">The timestamp to set</param>
-    /// <returns>True if the update was successful, false otherwise</returns>
-    public async Task<bool> UpdateLastActivityAsync(string id, DateTime timestamp)
-    {
-        var update = Builders<ConversationThread>.Update
-            .Set(x => x.UpdatedAt, timestamp);
-        
-        var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-        return result.ModifiedCount > 0;
     }
 
     public async Task<bool> DeleteAsync(string id)
