@@ -14,8 +14,8 @@ public static class AuthConfigurationExtensions
         // Register memory cache if not already registered
         builder.Services.AddMemoryCache();
         
-        // Register token validation cache
-        builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
+        // Register token validation cache - using no-op implementation to disable caching
+        builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
         
         // Register token services
         builder.Services.AddScoped<Auth0TokenService>();

@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+
 namespace Shared.Utils.Services;
 
 /// <summary>
@@ -17,12 +19,27 @@ public static class ServiceResultExtensions
 
         return result.StatusCode switch
         {
-            StatusCode.BadRequest => Results.BadRequest(result.ErrorMessage),
-            StatusCode.Unauthorized => Results.Unauthorized(),
-            StatusCode.Forbidden => Results.Forbid(),
-            StatusCode.NotFound => Results.NotFound(result.ErrorMessage),
-            StatusCode.Conflict => Results.Conflict(result.ErrorMessage),
-            _ => Results.StatusCode((int)result.StatusCode)
+            StatusCode.BadRequest => Results.Json(
+                new { error = result.ErrorMessage ?? "Bad request" }, 
+                statusCode: StatusCodes.Status400BadRequest),
+            StatusCode.Unauthorized => Results.Json(
+                new { error = result.ErrorMessage ?? "Unauthorized" }, 
+                statusCode: StatusCodes.Status401Unauthorized),
+            StatusCode.Forbidden => Results.Json(
+                new { error = result.ErrorMessage ?? "Forbidden" }, 
+                statusCode: StatusCodes.Status403Forbidden),
+            StatusCode.NotFound => Results.Json(
+                new { error = result.ErrorMessage ?? "Not found" }, 
+                statusCode: StatusCodes.Status404NotFound),
+            StatusCode.Conflict => Results.Json(
+                new { error = result.ErrorMessage ?? "Conflict" }, 
+                statusCode: StatusCodes.Status409Conflict),
+            StatusCode.InternalServerError => Results.Json(
+                new { error = result.ErrorMessage ?? "Internal server error" }, 
+                statusCode: StatusCodes.Status500InternalServerError),
+            _ => Results.Json(
+                new { error = result.ErrorMessage ?? "An error occurred" }, 
+                statusCode: (int)result.StatusCode)
         };
     }
 
@@ -38,12 +55,27 @@ public static class ServiceResultExtensions
 
         return result.StatusCode switch
         {
-            StatusCode.BadRequest => Results.BadRequest(result.ErrorMessage),
-            StatusCode.Unauthorized => Results.Unauthorized(),
-            StatusCode.Forbidden => Results.Forbid(),
-            StatusCode.NotFound => Results.NotFound(result.ErrorMessage),
-            StatusCode.Conflict => Results.Conflict(result.ErrorMessage),
-            _ => Results.StatusCode((int)result.StatusCode)
+            StatusCode.BadRequest => Results.Json(
+                new { error = result.ErrorMessage ?? "Bad request" }, 
+                statusCode: StatusCodes.Status400BadRequest),
+            StatusCode.Unauthorized => Results.Json(
+                new { error = result.ErrorMessage ?? "Unauthorized" }, 
+                statusCode: StatusCodes.Status401Unauthorized),
+            StatusCode.Forbidden => Results.Json(
+                new { error = result.ErrorMessage ?? "Forbidden" }, 
+                statusCode: StatusCodes.Status403Forbidden),
+            StatusCode.NotFound => Results.Json(
+                new { error = result.ErrorMessage ?? "Not found" }, 
+                statusCode: StatusCodes.Status404NotFound),
+            StatusCode.Conflict => Results.Json(
+                new { error = result.ErrorMessage ?? "Conflict" }, 
+                statusCode: StatusCodes.Status409Conflict),
+            StatusCode.InternalServerError => Results.Json(
+                new { error = result.ErrorMessage ?? "Internal server error" }, 
+                statusCode: StatusCodes.Status500InternalServerError),
+            _ => Results.Json(
+                new { error = result.ErrorMessage ?? "An error occurred" }, 
+                statusCode: (int)result.StatusCode)
         };
     }
 } 

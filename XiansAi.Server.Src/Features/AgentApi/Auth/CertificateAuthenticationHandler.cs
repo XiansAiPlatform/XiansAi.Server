@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Features.AgentApi.Repositories;
 using System.Security.Cryptography;
-using System.Collections.Concurrent;
 using Shared.Auth;
 using Shared.Utils;
 
@@ -19,9 +18,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
     private readonly ITenantContext _tenantContext;
-    private static readonly ConcurrentDictionary<string, (DateTime ValidatedAt, bool IsValid)> _certValidationCache = 
-        new();
-    private const int CertValidationCacheMinutes = 10;
+    private readonly ICertificateValidationCache _certValidationCache;
 
     public CertificateAuthenticationHandler(
         IOptionsMonitor<CertificateAuthenticationOptions> options,
@@ -30,7 +27,8 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
         IConfiguration configuration,
-        ITenantContext tenantContext) 
+        ITenantContext tenantContext,
+        ICertificateValidationCache certValidationCache) 
         : base(options, logger, encoder)
     {
         _logger = logger.CreateLogger<CertificateAuthenticationHandler>();
@@ -38,6 +36,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
         _tenantContext = tenantContext;
+        _certValidationCache = certValidationCache;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -56,26 +55,24 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             using var cert = X509CertificateLoader.LoadCertificate(certBytes);
 
             // Check validation cache
-            if (_certValidationCache.TryGetValue(cert.Thumbprint, out var cacheEntry))
+            var (found, isValid) = _certValidationCache.GetValidation(cert.Thumbprint);
+            if (found)
             {
-                if (DateTime.UtcNow.Subtract(cacheEntry.ValidatedAt).TotalMinutes < CertValidationCacheMinutes)
+                if (!isValid)
                 {
-                    if (!cacheEntry.IsValid)
-                    {
-                        return AuthenticateResult.Fail("Certificate validation failed (cached result)");
-                    }
-                    return await CreateAuthenticationTicket(cert);
+                    return AuthenticateResult.Fail("Certificate validation failed (cached result)");
                 }
+                return await CreateAuthenticationTicket(cert);
             }
 
             var validationResult = await ValidateCertificateAsync(cert);
             if (!validationResult.IsValid)
             {
-                _certValidationCache.TryAdd(cert.Thumbprint, (DateTime.UtcNow, false));
+                _certValidationCache.CacheValidation(cert.Thumbprint, false);
                 return AuthenticateResult.Fail(string.Join(", ", validationResult.Errors));
             }
 
-            _certValidationCache.TryAdd(cert.Thumbprint, (DateTime.UtcNow, true));
+            _certValidationCache.CacheValidation(cert.Thumbprint, true);
             return await CreateAuthenticationTicket(cert);
         }
         catch (Exception ex)

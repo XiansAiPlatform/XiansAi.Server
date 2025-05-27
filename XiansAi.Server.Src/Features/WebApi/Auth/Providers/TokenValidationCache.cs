@@ -90,4 +90,29 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         public string? UserId { get; set; }
         public IEnumerable<string> TenantIds { get; set; } = new List<string>();
     }
+}
+
+/// <summary>
+/// No-op implementation of token validation cache that disables caching
+/// </summary>
+public class NoOpTokenValidationCache : ITokenValidationCache
+{
+    private readonly ILogger<NoOpTokenValidationCache> _logger;
+    
+    public NoOpTokenValidationCache(ILogger<NoOpTokenValidationCache> logger)
+    {
+        _logger = logger;
+    }
+    
+    public Task<(bool found, bool valid, string? userId, IEnumerable<string>? tenantIds)> GetValidation(string token)
+    {
+        _logger.LogDebug("Token validation cache disabled - returning cache miss");
+        return Task.FromResult((false, false, (string?)null, (IEnumerable<string>?)null));
+    }
+    
+    public Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds)
+    {
+        _logger.LogDebug("Token validation cache disabled - not caching result");
+        return Task.CompletedTask;
+    }
 } 
