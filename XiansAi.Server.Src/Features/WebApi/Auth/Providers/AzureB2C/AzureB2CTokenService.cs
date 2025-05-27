@@ -11,7 +11,6 @@ public class AzureB2CTokenService : ITokenService
     private readonly ILogger<AzureB2CTokenService> _logger;
     private RestClient _client;
     private AzureB2CConfig? _azureB2CConfig;
-    private readonly string _tenantClaimType = "extension_tenants";
 
     public AzureB2CTokenService(ILogger<AzureB2CTokenService> logger, IConfiguration configuration)
     {
@@ -29,7 +28,7 @@ public class AzureB2CTokenService : ITokenService
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)
     {
         return token.Claims
-            .Where(c => c.Type == _tenantClaimType)
+            .Where(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)
             .Select(c => c.Value)
             .ToList();
     }
