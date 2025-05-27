@@ -108,6 +108,13 @@ namespace XiansAi.Server.Shared.Websocket
             return base.OnDisconnectedAsync(exception);
         }
 
+        public async Task GetThreadHistory(string agent, string participantId, int page, int pageSize)
+        {
+            EnsureTenantContext();
+            var result = await _messageService.GetThreadHistoryAsync(agent, participantId, page, pageSize);
+            await Clients.Caller.SendAsync("ThreadHistory", result.Data);           
+        }
+
         public async Task SendInboundMessage(MessageRequest request)
         {
             EnsureTenantContext();
