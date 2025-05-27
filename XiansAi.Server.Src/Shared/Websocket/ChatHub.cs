@@ -8,8 +8,7 @@ using System.Threading;
 
 
 namespace XiansAi.Server.Shared.Websocket
-{
-    
+{   
     public class ChatHub : Hub
     {
         private readonly ClientConnectionManager _connectionManager;
@@ -34,8 +33,8 @@ namespace XiansAi.Server.Shared.Websocket
             }
             _tenantContext ??= tenantContext;
             _logger = logger;
-
         }
+
         public override async Task OnConnectedAsync()
         {
             try
@@ -57,6 +56,7 @@ namespace XiansAi.Server.Shared.Websocket
                 Context.Abort();
             }
         }
+
         private void EnsureTenantContext()
         {
             _tempTenantContext.UserRoles = _tenantContext.UserRoles;
@@ -78,6 +78,7 @@ namespace XiansAi.Server.Shared.Websocket
             _connectionManager.AddConnection(threadId, Context.ConnectionId);
             Console.WriteLine($"Registered thread {threadId} with connection {Context.ConnectionId}");
         }
+
         public async Task DisconnectThread(string threadId)
         {
             if (_connectionManager.GetConnectionId(threadId)==Context.ConnectionId)
@@ -113,7 +114,6 @@ namespace XiansAi.Server.Shared.Websocket
 
             // Optional: Notify client message was received
             await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
-
         }
     }
 }

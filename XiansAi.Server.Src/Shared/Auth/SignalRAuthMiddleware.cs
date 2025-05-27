@@ -13,13 +13,11 @@ public class SignalRAuthMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<SignalRAuthMiddleware> _logger;
-    //private readonly ITenantContext _tenantContext;
 
     public SignalRAuthMiddleware(RequestDelegate next, ILogger<SignalRAuthMiddleware> logger)
     {
         _next = next;
         _logger = logger;
-        //_tenantContext = tenantContext;
     }
 
     public async Task InvokeAsync(HttpContext context)

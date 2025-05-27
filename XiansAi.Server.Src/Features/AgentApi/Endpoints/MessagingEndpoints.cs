@@ -59,15 +59,8 @@ namespace Features.AgentApi.Endpoints
                 var connectionId = connectionManager.GetConnectionId(result.Data);
                 if (connectionId != null)
                 {
-                    await hubContext.Clients.Client(connectionId).SendAsync("ReceiveMessage", request.Content);
-                    Console.WriteLine($"Sent message to thread {result.Data}");
+                    await hubContext.Clients.Client(connectionId).SendAsync("ReceiveMessage", request.Content);                    
                 }
-                else
-                {
-                    Console.WriteLine($"No client connection for thread {request.ThreadId}");
-                }
-
-                Console.WriteLine($"-----------/outbound/send--{result.Data}");
                 return result.ToHttpResult();
             })
             .WithName("Process Outbound Message from Agent")
