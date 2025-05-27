@@ -10,6 +10,7 @@ public class Auth0TokenService : ITokenService
     private readonly ILogger<Auth0TokenService> _logger;
     private RestClient _client;
     private Auth0Config? _auth0Config;
+    private readonly string _tenantClaimType;
 
     public Auth0TokenService(ILogger<Auth0TokenService> logger, IConfiguration configuration)
     {
@@ -17,6 +18,10 @@ public class Auth0TokenService : ITokenService
         _client = new RestClient();
         _auth0Config = configuration.GetSection("Auth0").Get<Auth0Config>() ?? 
             throw new ArgumentException("Auth0 configuration is missing");
+        
+        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
+            new AuthProviderConfig();
+        _tenantClaimType = authProviderConfig.TenantClaimType;
     }
 
     public string? ExtractUserId(JwtSecurityToken token)
@@ -27,7 +32,7 @@ public class Auth0TokenService : ITokenService
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)
     {
         return token.Claims
-            .Where(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)
+            .Where(c => c.Type == _tenantClaimType)
             .Select(c => c.Value)
             .ToList();
     }
