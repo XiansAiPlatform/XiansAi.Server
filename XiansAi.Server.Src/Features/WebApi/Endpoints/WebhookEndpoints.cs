@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Shared.Utils.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Endpoints;
 
@@ -59,6 +60,20 @@ public static class WebhookEndpoints
             [FromBody] WebhookCreateRequest request,
             [FromServices] IWebhookService endpoint) =>
         {
+            // Validate the model manually
+            var validationResults = new List<ValidationResult>();
+            var validationContext = new ValidationContext(request);
+            
+            if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
+            {
+                var errors = validationResults.Select(vr => vr.ErrorMessage).ToList();
+                return Results.BadRequest(new
+                {
+                    error = "Validation failed",
+                    errors = errors
+                });
+            }
+            
             var result = await endpoint.CreateWebhook(request);
             if (result.IsSuccess && result.Data != null)
             {
@@ -78,6 +93,20 @@ public static class WebhookEndpoints
             [FromBody] WebhookUpdateRequest request,
             [FromServices] IWebhookService endpoint) =>
         {
+            // Validate the model manually for update requests
+            var validationResults = new List<ValidationResult>();
+            var validationContext = new ValidationContext(request);
+            
+            if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
+            {
+                var errors = validationResults.Select(vr => vr.ErrorMessage).ToList();
+                return Results.BadRequest(new
+                {
+                    error = "Validation failed",
+                    errors = errors
+                });
+            }
+            
             var result = await endpoint.UpdateWebhook(webhookId, request);
             return result.ToHttpResult();
         })
