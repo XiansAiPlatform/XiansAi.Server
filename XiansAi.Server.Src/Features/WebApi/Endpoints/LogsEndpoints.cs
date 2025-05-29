@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -15,16 +16,17 @@ public static class LogsEndpoints
 
         logsGroup.MapGet("/{id}", async (
             string id,
-            [FromServices] LogsService service) =>
+            [FromServices] ILogsService service) =>
         {
-            return await service.GetLogById(id);
+            var result = await service.GetLogById(id);
+            return result.ToHttpResult();
         })
         .WithName("Get Log")
         .WithOpenApi();
 
         logsGroup.MapGet("/workflow", async (
             [FromQuery] string workflowRunId,
-            [FromServices] LogsService service,
+            [FromServices] ILogsService service,
             [FromQuery] int skip = 0,
             [FromQuery] int limit = 50,
             [FromQuery] int? logLevel = null) =>
@@ -36,7 +38,8 @@ public static class LogsEndpoints
                 Limit = limit,
                 LogLevel = logLevel
             };
-            return await service.GetLogsByWorkflowRunId(request);
+            var result = await service.GetLogsByWorkflowRunId(request);
+            return result.ToHttpResult();
         })
         .WithName("Get Logs by Workflow")
         .WithOpenApi();
@@ -44,23 +47,29 @@ public static class LogsEndpoints
         logsGroup.MapGet("/date-range", async (
             [FromQuery] DateTime startDate,
             [FromQuery] DateTime endDate,
-            [FromServices] LogsService service) =>
+            [FromServices] ILogsService service) =>
         {
             var request = new LogsByDateRangeRequest
             {
                 StartDate = startDate,
                 EndDate = endDate
             };
-            return await service.GetLogsByDateRange(request);
+            var result = await service.GetLogsByDateRange(request);
+            return result.ToHttpResult();
         })
         .WithName("Get Logs by Date Range")
         .WithOpenApi();
 
         logsGroup.MapDelete("/{id}", async (
             string id,
-            [FromServices] LogsService service) =>
+            [FromServices] ILogsService service) =>
         {
-            return await service.DeleteLog(id);
+            var result = await service.DeleteLog(id);
+            if (result.IsSuccess)
+            {
+                return Results.NoContent();
+            }
+            return result.ToHttpResult();
         })
         .WithName("Delete Log")
         .WithOpenApi();

@@ -1,18 +1,44 @@
 using Microsoft.Extensions.Caching.Distributed;
 using Features.WebApi.Auth;
+using Features.WebApi.Models;
 using Shared.Auth;
+using Shared.Utils.Services;
+using Shared.Utils;
+using XiansAi.Server.Utils;
+using Shared.Services;
 
 namespace Features.WebApi.Services;
 
 /// <summary>
+/// Interface for user registration and email verification processes.
+/// </summary>
+public interface IPublicService
+{
+    /// <summary>
+    /// Validates a verification code for the specified email.
+    /// </summary>
+    /// <param name="email">The email address to validate the code for</param>
+    /// <param name="code">The verification code to validate</param>
+    /// <returns>True if the code is valid, false otherwise</returns>
+    Task<bool> ValidateCode(string email, string code);
+
+    /// <summary>
+    /// Sends a verification code to the specified email address.
+    /// </summary>
+    /// <param name="email">The email address to send the verification code to</param>
+    /// <returns>A ServiceResult indicating success or failure</returns>
+    Task<ServiceResult<SendVerificationCodeResult>> SendVerificationCode(string email);
+}
+
+/// <summary>
 /// Handles user registration and email verification processes.
 /// </summary>
-public class PublicService 
+public class PublicService : IPublicService
 {
     private readonly IAuthMgtConnect _authMgtConnect;
     private readonly ILogger<PublicService> _logger;
     private readonly ITenantContext _tenantContext;
-    private readonly IDistributedCache _cache;
+    private readonly ObjectCache _cache;
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly Random _random;
@@ -28,7 +54,7 @@ public class PublicService
     /// <param name="authMgtConnect">Service for Auth0 Management API operations</param>
     /// <param name="logger">Logger for this class</param>
     /// <param name="tenantContext">Context for tenant operations</param>
-    /// <param name="cache">Distributed cache for storing verification codes</param>
+    /// <param name="cache">Object cache service for storing verification codes</param>
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
@@ -36,7 +62,7 @@ public class PublicService
         IAuthMgtConnect authMgtConnect, 
         ILogger<PublicService> logger,
         ITenantContext tenantContext,
-        IDistributedCache cache, 
+        ObjectCache cache, 
         IEmailService emailService,
         IConfiguration configuration)
     {
@@ -72,15 +98,15 @@ public class PublicService
     /// Sends a verification code to the specified email address.
     /// </summary>
     /// <param name="email">The email address to send the verification code to</param>
-    /// <returns>An IResult indicating success or failure</returns>
-    public async Task<IResult> SendVerificationCode(string email)
+    /// <returns>A ServiceResult indicating success or failure</returns>
+    public async Task<ServiceResult<SendVerificationCodeResult>> SendVerificationCode(string email)
     {
         _logger.LogInformation("Received request to send verification code to email: {Email}", email);
         
         if (string.IsNullOrWhiteSpace(email))
         {
             _logger.LogWarning("SendVerificationCode failed: Email is empty or null");
-            return Results.BadRequest("Email is required");
+            return ServiceResult<SendVerificationCodeResult>.BadRequest("Email is required");
         }
 
         try
@@ -93,7 +119,7 @@ public class PublicService
             if (!IsValidTenantId(tenantId))
             {
                 _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
-                return Results.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
+                return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
             }
 
             // Generate and send verification code
@@ -102,19 +128,22 @@ public class PublicService
 
             // Send email with verification code
             await _emailService.SendEmailAsync(email, EMAIL_SUBJECT, GetEmailBody(code), false);
-            _logger.LogInformation("Verification code sent successfully to: {Email}", email);
+            _logger.LogInformation("##### Verification code {Code} sent successfully to: {Email}", code, email);
 
-            return Results.Ok($"Verification code sent to {email}");
+            return ServiceResult<SendVerificationCodeResult>.Success(new SendVerificationCodeResult 
+            { 
+                Message = $"Verification code sent to {email}" 
+            });
         }
         catch (ArgumentException ex)
         {
             _logger.LogError(ex, "Invalid argument when sending verification code to {Email}: {Message}", email, ex.Message);
-            return Results.BadRequest(ex.Message);
+            return ServiceResult<SendVerificationCodeResult>.BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error when sending verification code to {Email}: {Message}", email, ex.Message);
-            return Results.StatusCode(500);
+            return ServiceResult<SendVerificationCodeResult>.InternalServerError("An error occurred while sending verification code. Error: " + ex.Message);
         }
     }
 
@@ -141,13 +170,8 @@ public class PublicService
         _logger.LogDebug("Generated verification code for {Email}", email);
         
         // Store in cache with expiration
-        var options = new DistributedCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(CODE_EXPIRATION_MINUTES)
-        };
-        
         string cacheKey = GetVerificationCacheKey(email);
-        await _cache.SetStringAsync(cacheKey, code, options);
+        await _cache.SetAsync(cacheKey, code, TimeSpan.FromMinutes(CODE_EXPIRATION_MINUTES));
         _logger.LogDebug($"Stored verification code {code} in cache with key: {cacheKey}, expiration: {CODE_EXPIRATION_MINUTES} minutes");
 
         return code;
@@ -180,11 +204,11 @@ public class PublicService
     /// <returns>The formatted email body</returns>
     private string GetEmailBody(string code)
     {
-        return $@"Hello,
+        return $@"Hi there,
 
-Your verification code for Xians.ai is: {code}
+Your Xians.ai verification code is: {code}
 
-This code will expire in {CODE_EXPIRATION_MINUTES} minutes. If you didn't request this code, please ignore this email.
+This code expires in {CODE_EXPIRATION_MINUTES} minutes.
 
 Best regards,
 The Xians.ai Team";
@@ -203,7 +227,7 @@ The Xians.ai Team";
 
         // Retrieve stored code from cache
         string cacheKey = GetVerificationCacheKey(email);
-        string? storedCode = await _cache.GetStringAsync(cacheKey);
+        string? storedCode = await _cache.GetAsync<string>(cacheKey);
 
         // Check if code exists
         if (string.IsNullOrEmpty(storedCode))
@@ -262,7 +286,7 @@ The Xians.ai Team";
             
         // Extract domain part and remove all non-alphanumeric characters
         var domain = email.Split('@')[1];
-        var tenantId = new string(domain.Where(char.IsLetterOrDigit).ToArray());
+        var tenantId = domain.ToLowerInvariant().Trim();
         return tenantId;
     }
     
@@ -272,46 +296,4 @@ The Xians.ai Team";
     /// <param name="email">The email address to generate a cache key for</param>
     /// <returns>The cache key for the email</returns>
     private static string GetVerificationCacheKey(string email) => $"{VERIFICATION_CACHE_PREFIX}{email}";
-}
-
-/// <summary>
-/// Request model for registering a new tenant.
-/// </summary>
-public class RegisterTenantRequest
-{
-    /// <summary>
-    /// The company email address.
-    /// </summary>
-    public required string CompanyEmail { get; set; }
-    
-    /// <summary>
-    /// The company website URL.
-    /// </summary>
-    public required string CompanyUrl { get; set; }
-    
-    /// <summary>
-    /// The tenant identifier.
-    /// </summary>
-    public required string TenantId { get; set; }
-    
-    /// <summary>
-    /// The subscription type for the tenant.
-    /// </summary>
-    public required string SubscriptionType { get; set; }
-}
-
-/// <summary>
-/// Request model for validating a verification code.
-/// </summary>
-public class ValidateCodeRequest
-{
-    /// <summary>
-    /// The email address to validate the code for.
-    /// </summary>
-    public required string Email { get; set; }
-    
-    /// <summary>
-    /// The verification code to validate.
-    /// </summary>
-    public required string Code { get; set; }
 }

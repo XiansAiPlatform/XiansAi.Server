@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -14,9 +15,10 @@ public static class WebhookEndpoints
             .RequiresValidTenant();
 
         webhooksGroup.MapGet("/", async (
-            [FromServices] WebhookService endpoint) =>
+            [FromServices] IWebhookService endpoint) =>
         {
-            return await endpoint.GetAllWebhooks();
+            var result = await endpoint.GetAllWebhooks();
+            return result.ToHttpResult();
         })
         .WithName("Get All Webhooks")
         .WithOpenApi(operation => {
@@ -27,9 +29,10 @@ public static class WebhookEndpoints
 
         webhooksGroup.MapGet("/workflow/{workflowId}", async (
             string workflowId,
-            [FromServices] WebhookService endpoint) =>
+            [FromServices] IWebhookService endpoint) =>
         {
-            return await endpoint.GetWebhooksByWorkflow(workflowId);
+            var result = await endpoint.GetWebhooksByWorkflow(workflowId);
+            return result.ToHttpResult();
         })
         .WithName("Get Webhooks By Workflow")
         .WithOpenApi(operation => {
@@ -40,9 +43,10 @@ public static class WebhookEndpoints
 
         webhooksGroup.MapGet("/{webhookId}", async (
             string webhookId,
-            [FromServices] WebhookService endpoint) =>
+            [FromServices] IWebhookService endpoint) =>
         {
-            return await endpoint.GetWebhook(webhookId);
+            var result = await endpoint.GetWebhook(webhookId);
+            return result.ToHttpResult();
         })
         .WithName("Get Webhook")
         .WithOpenApi(operation => {
@@ -53,9 +57,14 @@ public static class WebhookEndpoints
 
         webhooksGroup.MapPost("/", async (
             [FromBody] WebhookCreateRequest request,
-            [FromServices] WebhookService endpoint) =>
+            [FromServices] IWebhookService endpoint) =>
         {
-            return await endpoint.CreateWebhook(request);
+            var result = await endpoint.CreateWebhook(request);
+            if (result.IsSuccess && result.Data != null)
+            {
+                return Results.Created(result.Data.Location, result.Data.Webhook);
+            }
+            return result.ToHttpResult();
         })
         .WithName("Create Webhook")
         .WithOpenApi(operation => {
@@ -67,9 +76,10 @@ public static class WebhookEndpoints
         webhooksGroup.MapPut("/{webhookId}", async (
             string webhookId,
             [FromBody] WebhookUpdateRequest request,
-            [FromServices] WebhookService endpoint) =>
+            [FromServices] IWebhookService endpoint) =>
         {
-            return await endpoint.UpdateWebhook(webhookId, request);
+            var result = await endpoint.UpdateWebhook(webhookId, request);
+            return result.ToHttpResult();
         })
         .WithName("Update Webhook")
         .WithOpenApi(operation => {
@@ -80,9 +90,14 @@ public static class WebhookEndpoints
 
         webhooksGroup.MapDelete("/{webhookId}", async (
             string webhookId,
-            [FromServices] WebhookService endpoint) =>
+            [FromServices] IWebhookService endpoint) =>
         {
-            return await endpoint.DeleteWebhook(webhookId);
+            var result = await endpoint.DeleteWebhook(webhookId);
+            if (result.IsSuccess)
+            {
+                return Results.NoContent();
+            }
+            return result.ToHttpResult();
         })
         .WithName("Delete Webhook")
         .WithOpenApi(operation => {

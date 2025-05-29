@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -14,9 +15,10 @@ public static class TenantEndpoints
             .RequiresValidTenant();
 
         tenantsGroup.MapGet("/", async (
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
-            return await endpoint.GetAllTenants();
+            var result = await endpoint.GetAllTenants();
+            return result.ToHttpResult();
         })
         .WithName("Get Tenants")
         .WithOpenApi(operation => {
@@ -27,9 +29,10 @@ public static class TenantEndpoints
 
         tenantsGroup.MapGet("/{id}", async (
             string id,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
-            return await endpoint.GetTenantById(id);
+            var result = await endpoint.GetTenantById(id);
+            return result.ToHttpResult();
         })
         .WithName("Get Tenant")
         .WithOpenApi(operation => {
@@ -40,9 +43,10 @@ public static class TenantEndpoints
 
         tenantsGroup.MapGet("/by-tenant-id/{tenantId}", async (
             string tenantId,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
-            return await endpoint.GetTenantByTenantId(tenantId);
+            var result = await endpoint.GetTenantByTenantId(tenantId);
+            return result.ToHttpResult();
         })
         .WithName("Get Tenant By TenantId")
         .WithOpenApi(operation => {
@@ -53,9 +57,10 @@ public static class TenantEndpoints
 
         tenantsGroup.MapGet("/by-domain/{domain}", async (
             string domain,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
-            return await endpoint.GetTenantByDomain(domain);
+            var result = await endpoint.GetTenantByDomain(domain);
+            return result.ToHttpResult();
         })
         .WithName("Get Tenant By Domain")
         .WithOpenApi(operation => {
@@ -67,11 +72,12 @@ public static class TenantEndpoints
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,
             HttpContext httpContext,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
             var userIdClaim = httpContext.User.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
             var createdBy = userIdClaim ?? "system";
-            return await endpoint.CreateTenant(request);
+            var result = await endpoint.CreateTenant(request);
+            return result.ToHttpResult();
         })
         .WithName("Create Tenant")
         .WithOpenApi(operation => {
@@ -83,9 +89,10 @@ public static class TenantEndpoints
         tenantsGroup.MapPut("/{id}", async (
             string id,
             [FromBody] UpdateTenantRequest request,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
-            return await endpoint.UpdateTenant(id, request);
+            var result = await endpoint.UpdateTenant(id, request);
+            return result.ToHttpResult();
         })
         .WithName("Update Tenant")
         .WithOpenApi(operation => {
@@ -96,9 +103,10 @@ public static class TenantEndpoints
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
-            [FromServices] TenantService endpoint) =>
+            [FromServices] ITenantService endpoint) =>
         {
-            return await endpoint.DeleteTenant(id);
+            var result = await endpoint.DeleteTenant(id);
+            return result.ToHttpResult();
         })
         .WithName("Delete Tenant")
         .WithOpenApi(operation => {

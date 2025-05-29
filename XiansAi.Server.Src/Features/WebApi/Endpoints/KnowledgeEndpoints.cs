@@ -13,6 +13,14 @@ public static class KnowledgeEndpoints
             .WithTags("WebAPI - Knowledge")
             .RequiresValidTenant();
 
+        knowledgeGroup.MapGet("/latest/all", async (
+            [FromServices] IKnowledgeService endpoint) =>
+        {
+            return await endpoint.GetLatestAll();
+        })
+        .WithName("Get Latest Instructions")
+        .WithOpenApi();
+        
         knowledgeGroup.MapGet("/{id}", async (
             string id,
             [FromServices] IKnowledgeService endpoint) =>
@@ -20,14 +28,6 @@ public static class KnowledgeEndpoints
             return await endpoint.GetById(id);
         })
         .WithName("Get Instruction")
-        .WithOpenApi();
-
-        knowledgeGroup.MapGet("/", async (
-            [FromServices] IKnowledgeService endpoint) =>
-        {
-            return await endpoint.GetAll();
-        })
-        .WithName("Get Knowledge")
         .WithOpenApi();
 
         knowledgeGroup.MapPost("/", async (
@@ -47,14 +47,6 @@ public static class KnowledgeEndpoints
             return await endpoint.GetLatestByName(name, agent);
         })
         .WithName("Get Latest Instruction")
-        .WithOpenApi();
-
-        knowledgeGroup.MapGet("/latest/all", async (
-            [FromServices] IKnowledgeService endpoint) =>
-        {
-            return await endpoint.GetLatestAll();
-        })
-        .WithName("Get Latest Instructions")
         .WithOpenApi();
 
         knowledgeGroup.MapDelete("/{id}", async (

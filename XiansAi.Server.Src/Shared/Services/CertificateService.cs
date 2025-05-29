@@ -24,21 +24,22 @@ public class CertificateService
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
-    private readonly IOpenAIClientService _openAIClientService;
+    private readonly ILlmService _llmService;
+    
     public CertificateService(
         ILogger<CertificateService> logger,
         IHttpContextAccessor httpContextAccessor,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        IOpenAIClientService openAIClientService)
+        ILlmService llmService)
     {
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
-        _openAIClientService = openAIClientService;
+        _llmService = llmService;
     }
 
     public FlowServerSettings GetFlowServerSettings() {
@@ -48,7 +49,7 @@ public class CertificateService
             FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerCertBase64 = GetFlowServerCertBase64(),
             FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
-            OpenAIApiKey = _openAIClientService.GetApiKey()
+            OpenAIApiKey = _llmService.GetApiKey()
         };
     }
 
@@ -65,8 +66,25 @@ public class CertificateService
 
     private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId)
     {
-        // Revoke previous certificates for this user
+        // Generate new certificate
+        var cert = _certificateGenerator.GenerateClientCertificate(
+            name, 
+            _tenantContext.TenantId, 
+            userId);
+
         var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
+        // Store certificate metadata
+        await _certificateRepository.CreateAsync(new Certificate
+        {
+            Thumbprint = cert.Thumbprint,
+            SubjectName = cert.Subject,
+            TenantId = _tenantContext.TenantId,
+            IssuedTo = userId,
+            IssuedAt = DateTime.UtcNow,
+            ExpiresAt = cert.NotAfter.ToUniversalTime(),
+            IsRevoked = false
+        });
+        // Revoke previous certificates for this user
         foreach (var prevCert in previousCerts)
         {
             if (!prevCert.IsRevoked)
@@ -80,25 +98,6 @@ public class CertificateService
                     userId);
             }
         }
-
-        // Generate new certificate
-        var cert = _certificateGenerator.GenerateClientCertificate(
-            name, 
-            _tenantContext.TenantId, 
-            userId);
-
-        // Store certificate metadata
-        await _certificateRepository.CreateAsync(new Certificate
-        {
-            Thumbprint = cert.Thumbprint,
-            SubjectName = cert.Subject,
-            TenantId = _tenantContext.TenantId,
-            IssuedTo = userId,
-            IssuedAt = DateTime.UtcNow,
-            ExpiresAt = cert.NotAfter.ToUniversalTime(),
-            IsRevoked = false
-        });
-
         _logger.LogInformation(
             "Generated new certificate. Name: {Name}, Thumbprint: {Thumbprint}, User: {UserId}", 
             name, 

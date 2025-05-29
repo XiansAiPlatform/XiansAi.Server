@@ -30,7 +30,7 @@ public class CertificateGenerator
         byte[] pfxBytes = Convert.FromBase64String(pfxBase64);
 
 #pragma warning disable SYSLIB0057 // Type or member is obsolete
-        var cert = new X509Certificate2(pfxBytes, password, X509KeyStorageFlags.Exportable);
+        var cert = new X509Certificate2(pfxBytes, password);
 #pragma warning restore SYSLIB0057 // Type or member is obsolete
         return cert;
     }
@@ -83,7 +83,7 @@ public class CertificateGenerator
         var pfxBytes = certWithKey.Export(X509ContentType.Pfx);
         
 #pragma warning disable SYSLIB0057 // Type or member is obsolete
-        return new X509Certificate2(pfxBytes);
+        return new X509Certificate2(pfxBytes, (string?)null);
 #pragma warning restore SYSLIB0057 // Type or member is obsolete
     }
 }

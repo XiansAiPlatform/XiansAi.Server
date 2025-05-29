@@ -14,7 +14,7 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
     protected RetryHttpClient _client;
     protected IMongoDatabase _database;
 
-    protected IntegrationTestBase(MongoDbFixture mongoFixture)
+    protected IntegrationTestBase(MongoDbFixture mongoFixture, string? environment = null)
     {
         _mongoFixture = mongoFixture;
         
@@ -22,7 +22,7 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         // This should be done before creating the factory to ensure proper configuration
         TestCertificateHelper.Initialize();
         
-        _factory = new XiansAiWebApplicationFactory(mongoFixture);
+        _factory = new XiansAiWebApplicationFactory(mongoFixture, environment);
         
         var httpClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -110,5 +110,35 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         }
 
         return response;
+    }
+}
+
+/// <summary>
+/// Base class for integration tests that run with Production environment configuration
+/// </summary>
+public abstract class ProductionIntegrationTestBase : IntegrationTestBase
+{
+    protected ProductionIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture, "Production")
+    {
+    }
+}
+
+/// <summary>
+/// Base class for integration tests that run with Staging environment configuration
+/// </summary>
+public abstract class StagingIntegrationTestBase : IntegrationTestBase
+{
+    protected StagingIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture, "Staging")
+    {
+    }
+}
+
+/// <summary>
+/// Base class for integration tests that run with Development environment configuration
+/// </summary>
+public abstract class DevelopmentIntegrationTestBase : IntegrationTestBase
+{
+    protected DevelopmentIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture, "Development")
+    {
     }
 } 

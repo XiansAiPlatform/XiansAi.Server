@@ -11,26 +11,26 @@ public interface IFlowDefinitionRepository
     Task<FlowDefinition> GetLatestFlowDefinitionAsync(string workflowType);
     Task<FlowDefinition> GetByIdAsync(string id);
     Task<FlowDefinition> GetByHashAsync(string hash, string workflowType);
-    Task<List<FlowDefinition>> GetByNameAsync(string name);
+    Task<List<FlowDefinition>> GetByNameAsync(string agentName);
     Task<List<FlowDefinition>> GetAllAsync();
     Task CreateAsync(FlowDefinition definition);
     Task<bool> DeleteAsync(string id);
+    Task<long> DeleteByAgentAsync(string agentName);
     Task<bool> UpdateAsync(string id, FlowDefinition definition);
     Task<FlowDefinition> GetByNameHashAsync(string workflowType, string hash);
-    Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
-    Task<List<string>> GetAgentsWithPermissionAsync(string userId);
 }
 
 public class FlowDefinitionRepository : IFlowDefinitionRepository
 {
     private readonly IMongoCollection<FlowDefinition> _definitions;
+    private readonly IAgentRepository _agentRepository;
+    private readonly ILogger<FlowDefinitionRepository> _logger;
 
-    private readonly ILogger<FlowDefinitionRepository> _logger ;
-
-    public FlowDefinitionRepository(IDatabaseService databaseService, ILogger<FlowDefinitionRepository> logger)
+    public FlowDefinitionRepository(IDatabaseService databaseService, IAgentRepository agentRepository, ILogger<FlowDefinitionRepository> logger)
     {
         var database = databaseService.GetDatabase().Result;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
+        _agentRepository = agentRepository;
         _logger = logger;
     }
 
@@ -51,9 +51,9 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
         return await _definitions.Find(x => x.Hash == hash && x.WorkflowType == workflowType).FirstOrDefaultAsync();
     }
 
-    public async Task<List<FlowDefinition>> GetByNameAsync(string name)
+    public async Task<List<FlowDefinition>> GetByNameAsync(string agentName)
     {
-        return await _definitions.Find(x => x.WorkflowType == name)
+        return await _definitions.Find(x => x.Agent == agentName)
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
     }
@@ -75,6 +75,14 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
         return result.DeletedCount > 0;
     }
 
+    public async Task<long> DeleteByAgentAsync(string agentName)
+    {
+        _logger.LogInformation("Deleting all flow definitions for agent: {AgentName}", agentName);
+        var result = await _definitions.DeleteManyAsync(x => x.Agent == agentName);
+        _logger.LogInformation("Deleted {Count} flow definitions for agent: {AgentName}", result.DeletedCount, agentName);
+        return result.DeletedCount;
+    }
+
     public async Task<bool> UpdateAsync(string id, FlowDefinition definition)
     {
         var result = await _definitions.ReplaceOneAsync(x => x.Id == id, definition);
@@ -87,68 +95,7 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
             .FirstOrDefaultAsync();
     }
 
-    public async Task<List<string>> GetAgentsWithPermissionAsync(string userId)
-    {
-        var definitions = await GetDefinitionsWithPermissionAsync(userId, null, null, basicDataOnly: true);
-        return definitions.Select(x => x.Agent).Distinct().ToList();
-    }
 
-    public async Task<List<FlowDefinition>> GetDefinitionsWithPermissionAsync(string userId, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false)
-    {
-        _logger.LogInformation("Getting definitions with permission for user: {UserId} and start time: {StartTime} and end time: {EndTime}", userId, startTime, endTime);
-
-        var filterBuilder = Builders<FlowDefinition>.Filter;
-        
-        // Create permission filter using the simplified model
-        var permissionFilters = new List<FilterDefinition<FlowDefinition>>
-        {
-            // Check if user is owner
-            filterBuilder.AnyEq("permissions.owner_access", userId),
-            // Check if user has read access
-            filterBuilder.AnyEq("permissions.read_access", userId),
-            // Check if user has write access (which includes read)
-            filterBuilder.AnyEq("permissions.write_access", userId)
-        };
-
-        var permissionFilter = filterBuilder.Or(permissionFilters);
-
-        // Create time filter
-        var timeFilter = filterBuilder.And(
-            startTime == null ? filterBuilder.Empty : filterBuilder.Gte(x => x.UpdatedAt, startTime.Value),
-            endTime == null ? filterBuilder.Empty : filterBuilder.Lte(x => x.UpdatedAt, endTime.Value)
-        );
-
-        // Combine filters
-        var finalFilter = filterBuilder.And(permissionFilter, timeFilter);
-
-        var findFluent = _definitions.Find(finalFilter).SortByDescending(x => x.UpdatedAt);
-
-        if (basicDataOnly)
-        {
-            return await findFluent
-                .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
-                    .Include(x => x.Agent)
-                    .Include(x => x.WorkflowType)
-                    .Include(x => x.CreatedAt)
-                    .Include(x => x.UpdatedAt))
-                .ToListAsync();
-        }
-
-        return await findFluent
-            .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
-                .Include(x => x.Agent)
-                .Include(x => x.WorkflowType)
-                .Include(x => x.CreatedAt)
-                .Include(x => x.Permissions)
-                .Include(x => x.ParameterDefinitions)
-                .Include(x => x.ActivityDefinitions)
-                .Include(x => x.Id)
-                .Include(x => x.Source)
-                .Include(x => x.Markdown)
-                .Include(x => x.WorkflowType)
-                .Include(x => x.UpdatedAt))
-            .ToListAsync();
-    }
 }
 
 

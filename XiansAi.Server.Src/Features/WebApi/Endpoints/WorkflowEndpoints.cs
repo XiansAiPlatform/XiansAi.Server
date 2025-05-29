@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -18,25 +19,28 @@ public static class WorkflowEndpoints
             string? runId,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
-            return await endpoint.GetWorkflow(workflowId, runId);
+            var result = await endpoint.GetWorkflow(workflowId, runId);
+            return result.ToHttpResult();
         })
         .WithName("Get Workflow")
         .WithOpenApi();
 
         workflowsGroup.MapPost("/", async (
             [FromBody] WorkflowRequest request,
-            [FromServices] WorkflowStarterService endpoint) =>
+            [FromServices] IWorkflowStarterService endpoint) =>
         {
-            return await endpoint.HandleStartWorkflow(request);
+            var result = await endpoint.HandleStartWorkflow(request);
+            return result.ToHttpResult();
         })
         .WithName("Create New Workflow")
         .WithOpenApi();
 
         workflowsGroup.MapGet("/{workflowId}/events", async (
             string workflowId,
-            [FromServices] WorkflowEventsService endpoint) =>
+            [FromServices] IWorkflowEventsService endpoint) =>
         {
-            return await endpoint.GetWorkflowEvents(workflowId);
+            var result = await endpoint.GetWorkflowEvents(workflowId);
+            return result.ToHttpResult();
         })
         .WithName("Get Workflow Events")
         .WithOpenApi();
@@ -48,7 +52,8 @@ public static class WorkflowEndpoints
             [FromQuery] string? status,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
-            return await endpoint.GetWorkflows(startTime, endTime, owner, status);
+            var result = await endpoint.GetWorkflows(startTime, endTime, owner, status);
+            return result.ToHttpResult();
         })
         .WithName("Get Workflows")
         .WithOpenApi(operation => {
@@ -60,15 +65,16 @@ public static class WorkflowEndpoints
         workflowsGroup.MapPost("/{workflowId}/cancel", async (
             string workflowId,
             [FromQuery] bool force,
-            [FromServices] WorkflowCancelService endpoint) =>
+            [FromServices] IWorkflowCancelService endpoint) =>
         {
-            return await endpoint.CancelWorkflow(workflowId, force);
+            var result = await endpoint.CancelWorkflow(workflowId, force);
+            return result.ToHttpResult();
         })
         .WithName("Cancel Workflow")
         .WithOpenApi();
 
         workflowsGroup.MapGet("/{workflowId}/events/stream", (
-            [FromServices] WorkflowEventsService endpoint,
+            [FromServices] IWorkflowEventsService endpoint,
             string workflowId) =>
         {
             return endpoint.StreamWorkflowEvents(workflowId);

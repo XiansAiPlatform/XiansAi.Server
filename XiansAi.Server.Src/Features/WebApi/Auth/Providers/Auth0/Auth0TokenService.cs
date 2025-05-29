@@ -10,6 +10,7 @@ public class Auth0TokenService : ITokenService
     private readonly ILogger<Auth0TokenService> _logger;
     private RestClient _client;
     private Auth0Config? _auth0Config;
+    private readonly string _tenantClaimType;
 
     public Auth0TokenService(ILogger<Auth0TokenService> logger, IConfiguration configuration)
     {
@@ -17,6 +18,10 @@ public class Auth0TokenService : ITokenService
         _client = new RestClient();
         _auth0Config = configuration.GetSection("Auth0").Get<Auth0Config>() ?? 
             throw new ArgumentException("Auth0 configuration is missing");
+        
+        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
+            new AuthProviderConfig();
+        _tenantClaimType = authProviderConfig.TenantClaimType;
     }
 
     public string? ExtractUserId(JwtSecurityToken token)
@@ -27,7 +32,7 @@ public class Auth0TokenService : ITokenService
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)
     {
         return token.Claims
-            .Where(c => c.Type == BaseAuthRequirement.TENANT_CLAIM_TYPE)
+            .Where(c => c.Type == _tenantClaimType)
             .Select(c => c.Value)
             .ToList();
     }
@@ -71,7 +76,12 @@ public class Auth0TokenService : ITokenService
             if (_auth0Config == null || _auth0Config.ManagementApi == null)
                 throw new InvalidOperationException("Auth0 configuration is not initialized");
 
-            _client = new RestClient($"https://{_auth0Config.Domain}");
+            // Extract domain name from URL if it's a full URL
+            var domainName = _auth0Config.Domain?.StartsWith("https://") == true 
+                ? _auth0Config.Domain.Replace("https://", "").TrimEnd('/')
+                : _auth0Config.Domain;
+
+            _client = new RestClient($"https://{domainName}");
             var request = new RestRequest("/oauth/token", Method.Post);
             request.AddHeader("content-type", "application/x-www-form-urlencoded");
 
@@ -80,7 +90,7 @@ public class Auth0TokenService : ITokenService
                 throw new ArgumentException("Management API client ID is missing"));
             request.AddParameter("client_secret", _auth0Config.ManagementApi.ClientSecret ?? 
                 throw new ArgumentException("Management API client secret is missing"));
-            request.AddParameter("audience", $"https://{_auth0Config.Domain}/api/v2/");
+            request.AddParameter("audience", $"https://{domainName}/api/v2/");
 
             var response = await _client.ExecuteAsync(request);
             EnsureSuccessfulResponse(response, "get management API token");

@@ -1,8 +1,19 @@
 using Shared.Utils.Temporal;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Services;
 
-public class WorkflowCancelService
+public class WorkflowCancelResult
+{
+    public string Message { get; set; } = string.Empty;
+}
+
+public interface IWorkflowCancelService
+{
+    Task<ServiceResult<WorkflowCancelResult>> CancelWorkflow(string workflowId, bool force);
+}
+
+public class WorkflowCancelService : IWorkflowCancelService
 {
     private readonly ITemporalClientService _temporalClientService;
     private readonly ILogger<WorkflowCancelService> _logger;
@@ -16,7 +27,7 @@ public class WorkflowCancelService
     /*
     curl -X POST "http://localhost:5000/api/workflows/{workflowId}/cancel?force=true"
     */
-    public async Task<IResult> CancelWorkflow(string workflowId, bool force)
+    public async Task<ServiceResult<WorkflowCancelResult>> CancelWorkflow(string workflowId, bool force)
     {
         try
         {
@@ -24,30 +35,31 @@ public class WorkflowCancelService
             
             if (string.IsNullOrEmpty(workflowId))
             {
-                return Results.BadRequest("WorkflowId is required");
+                return ServiceResult<WorkflowCancelResult>.BadRequest("WorkflowId is required");
             }
 
             var client = _temporalClientService.GetClient();
             var handle = client.GetWorkflowHandle(workflowId);
             
+            var result = new WorkflowCancelResult();
+            
             if (force)
             {
                 await handle.TerminateAsync("Terminated by user request");
-                return Results.Ok(new { message = $"Workflow {workflowId} termination requested" });
+                result.Message = $"Workflow {workflowId} termination requested";
             }
             else
             {
                 await handle.CancelAsync();
-                return Results.Ok(new { message = $"Workflow {workflowId} cancellation requested" });
+                result.Message = $"Workflow {workflowId} cancellation requested";
             }
+            
+            return ServiceResult<WorkflowCancelResult>.Success(result);
         } 
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error canceling or terminating workflow");
-            return Results.Problem(
-                detail: $"Error canceling or terminating workflow: {ex.Message}",
-                statusCode: 500
-            );
+            return ServiceResult<WorkflowCancelResult>.InternalServerError($"Error canceling or terminating workflow: {ex.Message}");
         }
     }
 }

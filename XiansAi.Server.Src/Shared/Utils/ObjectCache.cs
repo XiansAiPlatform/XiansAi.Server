@@ -1,5 +1,4 @@
-using System.Text.Json;
-using Microsoft.Extensions.Caching.Distributed;
+using XiansAi.Server.Providers;
 
 namespace XiansAi.Server.Utils;
 
@@ -8,25 +7,22 @@ namespace XiansAi.Server.Utils;
 /// </summary>
 public class ObjectCache
 {
-    private readonly IDistributedCache _cache;
+    private readonly ICacheProvider _cacheProvider;
     private readonly ILogger<ObjectCache> _logger;
-    private readonly DistributedCacheEntryOptions _defaultCacheOptions;
+    private readonly TimeSpan _defaultExpiration;
 
     /// <summary>
     /// Creates a new instance of the ObjectCacheService
     /// </summary>
-    /// <param name="cache">The distributed cache implementation</param>
+    /// <param name="cacheProvider">Cache provider</param>
     /// <param name="logger">Logger for the service</param>
     public ObjectCache(
-        IDistributedCache cache,
+        ICacheProvider cacheProvider,
         ILogger<ObjectCache> logger)
     {
-        _cache = cache;
-        _logger = logger;
-        _defaultCacheOptions = new DistributedCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24)
-        };
+        _cacheProvider = cacheProvider ?? throw new ArgumentNullException(nameof(cacheProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _defaultExpiration = TimeSpan.FromHours(24);
     }
 
     /// <summary>
@@ -39,11 +35,7 @@ public class ObjectCache
     {
         try
         {
-            var value = await _cache.GetStringAsync(key);
-            if (string.IsNullOrEmpty(value))
-                return default;
-
-            return JsonSerializer.Deserialize<T>(value);
+            return await _cacheProvider.GetAsync<T>(key);
         }
         catch (Exception ex)
         {
@@ -65,26 +57,8 @@ public class ObjectCache
     {
         try
         {
-            var cacheOptions = new DistributedCacheEntryOptions();
-            
-            if (relativeExpiration.HasValue)
-            {
-                cacheOptions.AbsoluteExpirationRelativeToNow = relativeExpiration.Value;
-            }
-            else if (!slidingExpiration.HasValue)
-            {
-                // If neither option is provided, use the default relative expiration
-                cacheOptions.AbsoluteExpirationRelativeToNow = _defaultCacheOptions.AbsoluteExpirationRelativeToNow;
-            }
-            
-            if (slidingExpiration.HasValue)
-            {
-                cacheOptions.SlidingExpiration = slidingExpiration.Value;
-            }
-            
-            var serializedValue = JsonSerializer.Serialize(value);
-            await _cache.SetStringAsync(key, serializedValue, cacheOptions);
-            return true;
+            var absoluteExpiration = relativeExpiration ?? (slidingExpiration.HasValue ? null : _defaultExpiration);
+            return await _cacheProvider.SetAsync(key, value, absoluteExpiration, slidingExpiration);
         }
         catch (Exception ex)
         {
@@ -102,8 +76,7 @@ public class ObjectCache
     {
         try
         {
-            await _cache.RemoveAsync(key);
-            return true;
+            return await _cacheProvider.RemoveAsync(key);
         }
         catch (Exception ex)
         {

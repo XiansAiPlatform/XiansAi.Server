@@ -12,18 +12,16 @@ public class AzureB2CProvider : IAuthProvider
 {
     private readonly ILogger<AzureB2CProvider> _logger;
     private RestClient _client;
-    private AzureB2CConfig? _azureB2CConfig;
+    private AzureB2CConfig _azureB2CConfig;
     private readonly AzureB2CTokenService _tokenService;
 
-    public AzureB2CProvider(ILogger<AzureB2CProvider> logger, AzureB2CTokenService tokenService)
+    public AzureB2CProvider(ILogger<AzureB2CProvider> logger, AzureB2CTokenService tokenService, IConfiguration configuration)
     {
         _logger = logger;
         _client = new RestClient();
         _tokenService = tokenService;
-    }
-
-    public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
-    {
+        
+        // Initialize Azure B2C configuration in constructor to ensure it's always available
         _azureB2CConfig = configuration.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
             throw new ArgumentException("Azure B2C configuration is missing");
 
@@ -32,7 +30,11 @@ public class AzureB2CProvider : IAuthProvider
 
         if (string.IsNullOrEmpty(_azureB2CConfig.Domain))
             throw new ArgumentException("Azure B2C domain is missing");
+    }
 
+    public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
+    {
+        // Configuration is already initialized in constructor
         options.Authority = $"{_azureB2CConfig.Instance}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
         options.Audience = _azureB2CConfig.Audience;
         options.TokenValidationParameters.NameClaimType = "name";
@@ -59,7 +61,7 @@ public class AzureB2CProvider : IAuthProvider
     {
         try
         {
-            if (_azureB2CConfig == null || _azureB2CConfig.ManagementApi == null)
+            if (_azureB2CConfig.ManagementApi == null)
                 throw new InvalidOperationException("Azure B2C configuration is not initialized");
 
             var azureUserInfo = await GetAzureB2CUserInfo(userId);
@@ -88,7 +90,7 @@ public class AzureB2CProvider : IAuthProvider
     {
         try
         {
-            if (_azureB2CConfig == null || _azureB2CConfig.ManagementApi == null)
+            if (_azureB2CConfig.ManagementApi == null)
                 throw new InvalidOperationException("Azure B2C configuration is not initialized");
 
             var azureUserInfo = await GetAzureB2CUserInfo(userId);

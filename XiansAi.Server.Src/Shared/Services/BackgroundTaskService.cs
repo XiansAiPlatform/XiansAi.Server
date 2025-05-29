@@ -1,8 +1,6 @@
 using System.Threading.Channels;
-using System.Threading.Tasks;
-using System.Threading;
 
-namespace XiansAi.Server.Utils;
+namespace Shared.Services;
 
 /// <summary>
 /// Interface for the background task service

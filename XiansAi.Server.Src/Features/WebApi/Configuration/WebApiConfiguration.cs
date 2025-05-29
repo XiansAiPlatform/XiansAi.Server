@@ -18,27 +18,24 @@ public static class WebApiConfiguration
 
         // Register Web API specific services
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
-        builder.Services.AddScoped<WorkflowStarterService>();
-        builder.Services.AddScoped<WorkflowEventsService>();
+        builder.Services.AddScoped<IWorkflowStarterService, WorkflowStarterService>();
+        builder.Services.AddScoped<IWorkflowEventsService, WorkflowEventsService>();
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
-        builder.Services.AddScoped<WorkflowCancelService>();
-        builder.Services.AddScoped<LogsService>();
-        builder.Services.AddScoped<DefinitionsService>();
-        builder.Services.AddScoped<TenantService>();
-        builder.Services.AddScoped<WebhookService>();
-        builder.Services.AddScoped<ActivitiesService>();
+        builder.Services.AddScoped<IWorkflowCancelService, WorkflowCancelService>();
+        builder.Services.AddScoped<ILogsService, LogsService>();
+        builder.Services.AddScoped<ITenantService, TenantService>();
+        builder.Services.AddScoped<IWebhookService, WebhookService>();
+        builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
-        builder.Services.AddScoped<PermissionsService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
-        builder.Services.AddScoped<PublicService>();
+        builder.Services.AddScoped<IPublicService, PublicService>();
         
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
-        builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
         
         return builder;
     }
@@ -49,9 +46,7 @@ public static class WebApiConfiguration
         WorkflowEndpoints.MapWorkflowEndpoints(app);
         KnowledgeEndpoints.MapKnowledgeEndpoints(app);
         LogsEndpoints.MapLogsEndpoints(app);
-        ActivityEndpoints.MapActivityEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
-        DefinitionsEndpoints.MapDefinitionsEndpoints(app);
         TenantEndpoints.MapTenantEndpoints(app);
         WebhookEndpoints.MapWebhookEndpoints(app);
         PublicEndpoints.MapPublicEndpoints(app);

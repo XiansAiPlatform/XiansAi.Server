@@ -1,11 +1,11 @@
 using Shared.Auth;
-using XiansAi.Server.GenAi;
 using XiansAi.Server.Utils;
-using XiansAi.Server.Shared.Data;
+using XiansAi.Server.Providers;
 using Shared.Utils;
 using Shared.Utils.GenAi;
 using Shared.Utils.Temporal;
 using Shared.Data;
+using Shared.Services;
 
 namespace Features.Shared.Configuration;
 
@@ -13,12 +13,14 @@ public static class SharedServices
 {
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
-        // Register Redis cache
-        services.AddStackExchangeRedisCache(options =>
-        {
-            options.Configuration = configuration.GetRequiredSection("RedisCache:ConnectionString").Value;
-            options.InstanceName = configuration.GetRequiredSection("RedisCache:InstanceName").Value;
-        });
+        // Register cache services using the combined factory
+        RegisterCacheProviders(services, configuration);
+
+        // Register email services using the combined factory
+        RegisterEmailProviders(services, configuration);
+
+        // Register LLM services using the combined factory
+        RegisterLlmProviders(services, configuration);
 
         // Register core services
         services.AddSingleton<CertificateGenerator>();
@@ -26,6 +28,7 @@ public static class SharedServices
         // Register business services
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<ILlmService, LlmService>();
 
         services.AddSingleton<IMongoDbContext>(sp =>
             new MongoDbContext(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ILogger<MongoDbContext>>()));
@@ -44,13 +47,6 @@ public static class SharedServices
                 sp.GetRequiredService<ILogger<TemporalClientService>>(),
                 sp.GetRequiredService<ITenantContext>()));
                 
-        // Register OpenAI client
-        services.AddScoped<IOpenAIClientService, OpenAIClientService>(sp =>
-            new OpenAIClientService(
-                sp.GetRequiredService<ITenantContext>().GetOpenAIConfig(),
-                sp.GetRequiredService<ILogger<OpenAIClientService>>(),
-                sp.GetRequiredService<ITenantContext>()));
-                
         // Register cache service
         services.AddScoped<ObjectCache>();
         
@@ -59,5 +55,38 @@ public static class SharedServices
         services.AddHostedService(sp => (BackgroundTaskService)sp.GetRequiredService<IBackgroundTaskService>());
         
         return services;
+    }
+
+    /// <summary>
+    /// Registers cache services using the combined factory
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterCacheProviders(IServiceCollection services, IConfiguration configuration)
+    {
+        // Register the active cache provider and the factory itself
+        CacheProviderFactory.RegisterProvider(services, configuration);
+    }
+
+    /// <summary>
+    /// Registers email services using the combined factory
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterEmailProviders(IServiceCollection services, IConfiguration configuration)
+    {
+        // Register the active email provider and the factory itself
+        EmailProviderFactory.RegisterProvider(services, configuration);
+    }
+
+    /// <summary>
+    /// Registers LLM services using the combined factory
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterLlmProviders(IServiceCollection services, IConfiguration configuration)
+    {
+        // Register the active LLM provider and the factory itself
+        LlmProviderFactory.RegisterProvider(services, configuration);
     }
 } 

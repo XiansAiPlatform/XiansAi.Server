@@ -14,7 +14,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
         if (string.IsNullOrEmpty(proposedId))
         {
-            proposedId = GenerateNewWorkflowId(agentName, workFlowType, tenantContext);
+            proposedId = GenerateNewWorkflowId(workFlowType, tenantContext);
         }
         else
         {
@@ -26,7 +26,7 @@ public class NewWorkflowOptions : WorkflowOptions
         }
 
         Id = proposedId;
-        TaskQueue = GetTemporalQueueName(workFlowType, queueName);
+        TaskQueue = GetTemporalQueueName(workFlowType, queueName, tenantContext);
         Memo = GetMemo(tenantContext, queueName, agentName);
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName);
     }
@@ -51,10 +51,14 @@ public class NewWorkflowOptions : WorkflowOptions
         return searchAttributesBuilder.ToSearchAttributeCollection();
     }
 
-    private string GetTemporalQueueName(string workFlowType, string? queueName)
+    private string GetTemporalQueueName(string workFlowType, string? queueName, ITenantContext tenantContext)
     {
-        //workFlowType = workFlowType.ToLower().Replace(" ", "").Replace("-", "").Trim();
-        var queueFullName = string.IsNullOrEmpty(queueName) ? workFlowType : queueName + "--" + workFlowType;
+        var queueFullName = workFlowType;
+        if (!string.IsNullOrEmpty(queueName))
+        {
+            queueFullName = queueName + ":" + workFlowType;
+        }
+        queueFullName =  tenantContext.TenantId + ":" + queueFullName;
         return queueFullName;
     }
 
@@ -73,10 +77,10 @@ public class NewWorkflowOptions : WorkflowOptions
         return memo;
     }
 
-    public static string GenerateNewWorkflowId(string agentName, string workflowType, ITenantContext tenantContext)
+    public static string GenerateNewWorkflowId(string workflowType, ITenantContext tenantContext)
     {
-        var id = $"{agentName}:{workflowType}:{Guid.NewGuid()}";
-        var tenantWorkflowId = tenantContext.TenantId + ":" + id.Replace(" ", "");
+        var id = $"{workflowType}:{Guid.NewGuid()}";
+        var tenantWorkflowId = tenantContext.TenantId + ":" + id;
         return tenantWorkflowId;
     }
 }

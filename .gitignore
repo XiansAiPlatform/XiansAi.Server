@@ -9,7 +9,7 @@ publish.zip
 
 # dotenv files
 .env
-appsettings.json
+appsettings.*
 .certs
 
 # User-specific files
