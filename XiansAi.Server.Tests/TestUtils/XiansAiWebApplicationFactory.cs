@@ -8,6 +8,9 @@ using Shared.Utils.GenAi;
 using Moq;
 using Shared.Data;
 using Shared.Services;
+using Microsoft.AspNetCore.Authentication;
+using Shared.Auth;
+using Microsoft.Extensions.Logging;
 
 namespace XiansAi.Server.Tests.TestUtils;
 
@@ -82,6 +85,24 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             mockMarkdownService.Setup(m => m.GenerateMarkdown(It.IsAny<string>()))
                 .ReturnsAsync("```mermaid\ngraph TD\n    A[Start] --> B[End]\n```");
             services.AddSingleton<IMarkdownService>(mockMarkdownService.Object);
+
+            // Override JWT authentication with test authentication for WebApi endpoints
+            services.AddAuthentication("Test")
+                .AddScheme<TestAuthenticationOptions, TestAuthHandler>("Test", options => { });
+
+            // Override TenantContext for testing
+            services.AddScoped<ITenantContext>(sp => 
+            {
+                var configuration = sp.GetRequiredService<IConfiguration>();
+                var logger = sp.GetRequiredService<ILogger<TenantContext>>();
+                return new TenantContext(configuration, logger)
+                {
+                    TenantId = TestTenantId,
+                    LoggedInUser = "test-user",
+                    UserRoles = new[] { "User" },
+                    AuthorizedTenantIds = new[] { TestTenantId }
+                };
+            });
         });
     }
 

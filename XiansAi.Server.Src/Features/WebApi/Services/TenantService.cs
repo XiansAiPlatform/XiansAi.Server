@@ -5,6 +5,8 @@ using Shared.Auth;
 using Features.WebApi.Models;
 using Shared.Utils.Services;
 using Shared.Data.Models;
+using System.ComponentModel.DataAnnotations;
+using MongoDB.Driver;
 
 namespace Features.WebApi.Services;
 
@@ -166,6 +168,11 @@ public class TenantService : ITenantService
                 Location = $"/api/tenants/{tenant.Id}"
             };
             return ServiceResult<TenantCreatedResult>.Success(result);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
+        {
+            _logger.LogWarning("Duplicate tenant ID or domain: {TenantId}", request.TenantId);
+            return ServiceResult<TenantCreatedResult>.BadRequest("A tenant with this ID or domain already exists.");
         }
         catch (Exception ex)
         {
