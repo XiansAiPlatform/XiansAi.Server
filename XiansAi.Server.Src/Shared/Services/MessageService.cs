@@ -1,4 +1,3 @@
-
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Utils;
@@ -35,7 +34,7 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessOutgoingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessHandover(HandoverRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string workflowType, string participantId, int page, int pageSize);
 }
 
 public class MessageService : IMessageService
@@ -49,7 +48,7 @@ public class MessageService : IMessageService
 
     private readonly IWorkflowSignalService _workflowSignalService;
 
-    public MessageService(
+        public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
         IConversationThreadRepository threadRepository,
@@ -83,37 +82,67 @@ public class MessageService : IMessageService
             // Add the tenantId to the workflowId
             request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowId}";
 
-            // update message thread's workflowId and workflowType
-            await _threadRepository.UpdateWorkflowIdAndTypeAsync(request.ThreadId, request.WorkflowId, request.WorkflowType);
+            // Instead of updating the existing thread's workflow type (which might violate unique constraints),
+            // we should create or get a thread for the target workflow type
+            var targetThread = new ConversationThread
+            {
+                TenantId = _tenantContext.TenantId,
+                WorkflowId = request.WorkflowId,
+                WorkflowType = request.WorkflowType,
+                Agent = request.Agent,
+                ParticipantId = request.ParticipantId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                CreatedBy = _tenantContext.LoggedInUser,
+                Status = ConversationThreadStatus.Active,
+                IsInternalThread = false
+            };
+
+            // This will either create a new thread or return the existing one
+            var targetThreadId = await _threadRepository.CreateOrGetAsync(targetThread);
 
             var messageRequest = new MessageRequest
             {
-                ThreadId = request.ThreadId,
+                ThreadId = targetThreadId,  // Use the target thread ID
                 ParticipantId = request.ParticipantId,
                 WorkflowId = request.WorkflowId,
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
                 Content = $"{request.FromWorkflowType} -> {request.WorkflowType}",
                 Metadata = new {
-                    HandoverInitiated = true
+                    HandoverInitiated = true,
+                    SourceThreadId = request.ThreadId  // Keep track of the source thread
                 }
             };
 
             await SaveMessage(messageRequest, MessageDirection.Handover);
 
             messageRequest.Content = request.UserRequest;
-            await SignalWorkflowAsync(messageRequest);
+            //await SignalWorkflowAsync(messageRequest);
+            await ProcessIncomingMessage(new MessageRequest
+            {
+                ThreadId = targetThreadId,  // Use the target thread ID
+                ParticipantId = request.ParticipantId,
+                WorkflowId = request.WorkflowId,
+                WorkflowType = request.WorkflowType,
+                Agent = request.Agent,
+                Content = request.UserRequest,
+                Metadata = new {
+                    HandoverFrom = request.FromWorkflowType,
+                    SourceThreadId = request.ThreadId  // Keep track of the source thread
+                }
+            });
 
-            return ServiceResult<string>.Success(request.ThreadId);
+            return ServiceResult<string>.Success(targetThreadId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing outbound message");
+            _logger.LogError(ex, "Error processing handover");
             throw;
         }
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string participantId, int page, int pageSize)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string workflowType, string participantId, int page, int pageSize)
     {
         try
         {
@@ -126,6 +155,12 @@ public class MessageService : IMessageService
                 return ServiceResult<List<ConversationMessage>>.BadRequest("Agent and ParticipantId are required");
             }
 
+            if (string.IsNullOrEmpty(workflowType))
+            {
+                _logger.LogWarning("Invalid request: missing required fields");
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType is required");
+            }
+
             if (page < 1 || pageSize < 1)
             {
                 _logger.LogWarning("Invalid request: page and pageSize must be greater than 0");
@@ -133,7 +168,7 @@ public class MessageService : IMessageService
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, agent, participantId, page, pageSize);
+            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, agent, workflowType, participantId, page, pageSize);
 
             _logger.LogInformation("Found {Count} messages for agent {Agent} and participant {ParticipantId}",
                 messages.Count, agent, participantId);
