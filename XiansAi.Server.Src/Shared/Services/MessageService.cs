@@ -1,4 +1,3 @@
-
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Utils;
@@ -83,32 +82,62 @@ public class MessageService : IMessageService
             // Add the tenantId to the workflowId
             request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowId}";
 
-            // update message thread's workflowId and workflowType
-            await _threadRepository.UpdateWorkflowIdAndTypeAsync(request.ThreadId, request.WorkflowId, request.WorkflowType);
+            // Instead of updating the existing thread's workflow type (which might violate unique constraints),
+            // we should create or get a thread for the target workflow type
+            var targetThread = new ConversationThread
+            {
+                TenantId = _tenantContext.TenantId,
+                WorkflowId = request.WorkflowId,
+                WorkflowType = request.WorkflowType,
+                Agent = request.Agent,
+                ParticipantId = request.ParticipantId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                CreatedBy = _tenantContext.LoggedInUser,
+                Status = ConversationThreadStatus.Active,
+                IsInternalThread = false
+            };
+
+            // This will either create a new thread or return the existing one
+            var targetThreadId = await _threadRepository.CreateOrGetAsync(targetThread);
 
             var messageRequest = new MessageRequest
             {
-                ThreadId = request.ThreadId,
+                ThreadId = targetThreadId,  // Use the target thread ID
                 ParticipantId = request.ParticipantId,
                 WorkflowId = request.WorkflowId,
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
                 Content = $"{request.FromWorkflowType} -> {request.WorkflowType}",
                 Metadata = new {
-                    HandoverInitiated = true
+                    HandoverInitiated = true,
+                    SourceThreadId = request.ThreadId  // Keep track of the source thread
                 }
             };
 
             await SaveMessage(messageRequest, MessageDirection.Handover);
 
             messageRequest.Content = request.UserRequest;
-            await SignalWorkflowAsync(messageRequest);
+            //await SignalWorkflowAsync(messageRequest);
+            await ProcessIncomingMessage(new MessageRequest
+            {
+                ThreadId = targetThreadId,  // Use the target thread ID
+                ParticipantId = request.ParticipantId,
+                WorkflowId = request.WorkflowId,
+                WorkflowType = request.WorkflowType,
+                Agent = request.Agent,
+                Content = request.UserRequest,
+                Metadata = new {
+                    HandoverFrom = request.FromWorkflowType,
+                    SourceThreadId = request.ThreadId  // Keep track of the source thread
+                }
+            });
 
-            return ServiceResult<string>.Success(request.ThreadId);
+            return ServiceResult<string>.Success(targetThreadId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing outbound message");
+            _logger.LogError(ex, "Error processing handover");
             throw;
         }
     }

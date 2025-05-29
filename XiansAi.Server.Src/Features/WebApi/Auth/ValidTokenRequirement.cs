@@ -37,7 +37,6 @@ public class TokenClientHandler : BaseAuthHandler<ValidTokenRequirement>
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
         
-        _logger.LogInformation("Authorization requirement succeeded");
         context.Succeed(requirement);
     }
 }

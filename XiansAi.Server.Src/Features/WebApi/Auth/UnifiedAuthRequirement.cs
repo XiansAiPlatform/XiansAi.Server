@@ -108,7 +108,6 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             return; // Context.Fail() already called in TryAuthorize methods
         }
         
-        _logger.LogInformation("Authorization requirement succeeded for tenant {TenantId}", _tenantContext.TenantId);
         context.Succeed(requirement);
     }
     

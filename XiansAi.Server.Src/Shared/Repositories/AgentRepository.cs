@@ -100,8 +100,6 @@ public class AgentRepository : IAgentRepository
 
     public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant)
     {
-        _logger.LogInformation("Getting agents with permission for user: {UserId} and tenant: {Tenant}", userId, tenant);
-
         var filterBuilder = Builders<Agent>.Filter;
         
         // Create permission filter
