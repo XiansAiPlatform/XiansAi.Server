@@ -45,7 +45,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
         builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
-
+        builder.Services.AddScoped<IConversationChangeListener, ConversationChangeListener>();
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();

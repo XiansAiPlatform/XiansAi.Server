@@ -50,15 +50,8 @@ namespace Features.AgentApi.Endpoints
 
             group.MapPost("/outbound/send", async (
                 [FromBody] MessageRequest request, 
-                [FromServices] IMessageService messageService,
-                [FromServices] IHubContext<ChatHub> hubContext,
-                [FromServices] ClientConnectionManager connectionManager) => {
+                [FromServices] IMessageService messageService) => {
                 var result = await messageService.ProcessOutgoingMessage(request);
-                var connectionId = connectionManager.GetConnectionId(result.Data);
-                if (connectionId != null)
-                {
-                    await hubContext.Clients.Client(connectionId).SendAsync("ReceiveMessage", request.Content);                    
-                }
                 return result.ToHttpResult();
             })
             .WithName("Process Outbound Message from Agent")

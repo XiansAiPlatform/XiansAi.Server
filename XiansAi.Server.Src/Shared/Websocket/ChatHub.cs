@@ -105,10 +105,10 @@ namespace XiansAi.Server.Shared.Websocket
             return base.OnDisconnectedAsync(exception);
         }
 
-        public async Task GetThreadHistory(string agent, string participantId, int page, int pageSize)
+        public async Task GetThreadHistory(string agent, string workflowType, string participantId, int page, int pageSize)
         {
             EnsureTenantContext();
-            var result = await _messageService.GetThreadHistoryAsync(agent, participantId, page, pageSize);
+            var result = await _messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
             await Clients.Caller.SendAsync("ThreadHistory", result.Data);           
         }
 
@@ -117,16 +117,18 @@ namespace XiansAi.Server.Shared.Websocket
             EnsureTenantContext();
             // Step 1: Process inbound
             var inboundResult = await _messageService.ProcessIncomingMessage(request);
+            
             if (inboundResult.Data != null)
             {
                 _connectionManager.AddConnection(inboundResult.Data, Context.ConnectionId);
+                var result = await _messageService.GetLatestConversationMessageAsync(inboundResult.Data, request.Agent, request.WorkflowType, request.ParticipantId, request.WorkflowId);
+                await Clients.Caller.SendAsync("ReceiveMessage", result.Data);
             }
             else
             {
                 await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
                 Context.Abort();
             }
-            Console.WriteLine($"[Hub] Processed inbound message: {inboundResult.Data}");
 
             // Optional: Notify client message was received
             await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
