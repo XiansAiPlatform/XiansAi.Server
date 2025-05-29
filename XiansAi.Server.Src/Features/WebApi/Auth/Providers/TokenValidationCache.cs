@@ -106,13 +106,11 @@ public class NoOpTokenValidationCache : ITokenValidationCache
     
     public Task<(bool found, bool valid, string? userId, IEnumerable<string>? tenantIds)> GetValidation(string token)
     {
-        _logger.LogDebug("Token validation cache disabled - returning cache miss");
         return Task.FromResult((false, false, (string?)null, (IEnumerable<string>?)null));
     }
     
     public Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds)
     {
-        _logger.LogDebug("Token validation cache disabled - not caching result");
         return Task.CompletedTask;
     }
 } 

@@ -32,12 +32,8 @@ public static class AuthConfigurationExtensions
         var providerConfig = builder.Configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
             new AuthProviderConfig();
 
-        // Add Authentication
-        builder.Services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = "JWT";
-            options.DefaultChallengeScheme = "JWT";
-        })
+        // Add Authentication - don't set defaults to avoid conflicts with other authentication schemes
+        builder.Services.AddAuthentication()
         .AddJwtBearer("JWT", options =>
         {
             // Use the service provider to get the appropriate provider

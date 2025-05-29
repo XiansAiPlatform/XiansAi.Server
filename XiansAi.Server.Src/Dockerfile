@@ -1,29 +1,28 @@
-FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
+# Base image for runtime
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 WORKDIR /app
+USER app
 
-# Copy csproj and restore dependencies
-COPY *.csproj ./
-RUN dotnet restore
+# Build stage
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+ARG configuration=Release
+WORKDIR /src
 
-# Copy the rest of the files and build
-COPY . ./
-RUN dotnet publish -c Release -o out
+# Copy only the .csproj file and restore dependencies
+COPY XiansAi.Server.csproj .
+RUN dotnet restore XiansAi.Server.csproj
 
-# Build runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:7.0
+# Copy all other source files and build the app
+COPY . .
+RUN dotnet build XiansAi.Server.csproj -c $configuration -o /app/build
+
+# Publish stage
+FROM build AS publish
+ARG configuration=Release
+RUN dotnet publish XiansAi.Server.csproj -c $configuration -o /app/publish /p:UseAppHost=false
+
+# Final runtime image
+FROM base AS final
 WORKDIR /app
-COPY --from=build /app/out .
-
-# Environment variable to specify which service to run
-ENV SERVICE_TYPE="--all"
-
-# Expose ports
-EXPOSE 80
-EXPOSE 443
-
-# Make entrypoint.sh script
-RUN echo '#!/bin/bash\ndotnet XiansAi.Server.dll $SERVICE_TYPE' > /app/entrypoint.sh \
-    && chmod +x /app/entrypoint.sh
-
-# Set the entry point
-ENTRYPOINT ["/app/entrypoint.sh"] 
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "XiansAi.Server.dll"]

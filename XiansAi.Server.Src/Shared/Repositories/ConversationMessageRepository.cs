@@ -97,7 +97,7 @@ public interface IConversationMessageRepository
     Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
 
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
-    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string participantId, int? page = null, int? pageSize = null);
+    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -593,7 +593,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
         }
     }
 
-    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string participantId, int? page = null, int? pageSize = null)
+    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null)
     {
         _logger.LogDebug("Querying messages directly by agent {Agent} and participantId {ParticipantId}", agent, participantId);
         
@@ -601,6 +601,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
         var threadFilter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
             Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
+            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, workflowType),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
         

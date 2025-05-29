@@ -123,7 +123,7 @@ public class LogsService : ILogsService
             };
 
             await _logRepository.CreateAsync(log);
-            _logger.LogInformation("Created log: {Log}", log.ToJson());
+            _logger.LogDebug("Created log: {Log}", log.ToJson());
             return Results.Ok(log);
         }
         catch (Exception ex)
