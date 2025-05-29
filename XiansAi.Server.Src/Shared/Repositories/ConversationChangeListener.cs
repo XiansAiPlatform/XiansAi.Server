@@ -29,7 +29,6 @@ namespace Shared.Repositories
             _database = database;
             _collection = database.GetCollection<ConversationMessage>("conversation_message");
             _threadCollection = database.GetCollection<ConversationThread>("conversation_thread");
-            //ChangeStreamDocument<ConversationMessage> cursor = await _collection.WatchAsync();
             // Create indexes
             CreateIndexes();
         }
@@ -72,14 +71,13 @@ namespace Shared.Repositories
             messageLookupIndexModel,
             channelLookupIndexModel,
             messageStatusIndexModel
-        });
+            });
         }
 
         public async Task<ConversationMessage> GetLatestConversationMessage(string tenantId, string threadId, string agent, string workflowType, string participantId, string workflowId)
         {
             try
             {
-
                 _logger.LogInformation("Received request with parameters: TenantId={TenantId}, ThreadId={ThreadId}, Agent={Agent}, WorkflowType={WorkflowType}, ParticipantId={ParticipantId}, WorkflowId={WorkflowId}",
     tenantId, threadId, agent, workflowType, participantId, workflowId);
                 var pipeline = new EmptyPipelineDefinition<ChangeStreamDocument<ConversationMessage>>()
