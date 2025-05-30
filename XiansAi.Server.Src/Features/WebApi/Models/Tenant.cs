@@ -48,7 +48,10 @@ public class Tenant
 public class Logo
 {
     [BsonElement("url")]
-    public required string Url { get; set; }
+    public string? Url { get; set; }
+
+    [BsonElement("img_base64")]
+    public string? ImgBase64 { get; set; }
 
     [BsonElement("width")]
     public required int Width { get; set; }
