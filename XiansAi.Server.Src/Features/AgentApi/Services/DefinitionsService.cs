@@ -104,7 +104,7 @@ public class DefinitionsService : IDefinitionsService
         var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
         
         // Ensure agent exists using thread-safe upsert operation
-        var agent = await _agentRepository.UpsertAgentAsync(request.Agent, _tenantContext.TenantId, currentUser);
+        await _agentRepository.UpsertAgentAsync(request.Agent, _tenantContext.TenantId, currentUser);
         
         // Check if the user has permissions for this agent
         var permissions = await _agentPermissionRepository.GetAgentPermissionsAsync(request.Agent);

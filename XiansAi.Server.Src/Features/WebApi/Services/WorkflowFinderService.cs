@@ -180,7 +180,9 @@ public class WorkflowFinderService : IWorkflowFinderService
                             Tenant = _tenantContext.TenantId,
                             CreatedBy = "unknown-agent", // Default value for unknown agents
                             CreatedAt = DateTime.MinValue,
-                            Permissions = new Permission()
+                            OwnerAccess = new List<string>(),
+                            ReadAccess = new List<string>(),
+                            WriteAccess = new List<string>()
                         };
                     }
                     

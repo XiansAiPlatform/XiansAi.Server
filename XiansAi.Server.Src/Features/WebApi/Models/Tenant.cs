@@ -32,9 +32,6 @@ public class Tenant
     [BsonElement("agents")]
     public List<Agent>? Agents { get; set; }
 
-    [BsonElement("permissions")]
-    public List<Permission>? Permissions { get; set; }
-
     [BsonElement("created_at")]
     public required DateTime CreatedAt { get; set; }
 
@@ -56,27 +53,6 @@ public class Logo
     [BsonElement("height")]
     public required int Height { get; set; }
 }
-
-// public class Agent
-// {
-//     [BsonElement("name")]
-//     public required string Name { get; set; }
-
-//     [BsonElement("is_active")]
-//     public required bool IsActive { get; set; }
-
-//     [BsonElement("flows")]
-//     public List<Flow>? Flows { get; set; }
-
-//     [BsonElement("created_at")]
-//     public required DateTime CreatedAt { get; set; }
-
-//     [BsonElement("updated_at")]
-//     public DateTime? UpdatedAt { get; set; }
-
-//     [BsonElement("created_by")]
-//     public required string CreatedBy { get; set; }
-// }
 
 public class Flow
 {
