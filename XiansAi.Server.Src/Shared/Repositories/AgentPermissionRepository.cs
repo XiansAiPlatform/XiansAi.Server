@@ -1,4 +1,3 @@
-
 using Shared.Data;
 using Shared.Auth;
 
@@ -127,6 +126,11 @@ public class AgentPermissionRepository : IAgentPermissionRepository
             return false;
         }
 
+        // Track if any changes were made (for logging purposes)
+        bool wasUserFound = agent.Permissions.OwnerAccess.Contains(userId) || 
+                           agent.Permissions.WriteAccess.Contains(userId) || 
+                           agent.Permissions.ReadAccess.Contains(userId);
+
         // Remove user from all permission levels
         agent.Permissions.RevokeOwnerAccess(userId);
         agent.Permissions.RevokeWriteAccess(userId);
@@ -134,6 +138,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
         // Use the internal update method since we've already verified permissions
         var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
+        
+        // If the user wasn't found in any permission list, still consider it successful (idempotent operation)
+        if (!wasUserFound)
+        {
+            _logger.LogInformation("User {UserId} was not found in any permission lists for agent {AgentName}, operation considered successful", userId, agentName);
+            return true;
+        }
         
         return result;
     }

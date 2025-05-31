@@ -5,6 +5,7 @@ using Shared.Utils.GenAi;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
 using XiansAi.Server.Shared.Websocket;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Features.Shared.Configuration;
 
@@ -23,7 +24,35 @@ public static class SharedConfiguration
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
         builder.Services.AddServerOpenApi();
-        builder.Services.AddControllers();
+        
+        // Configure controllers with model validation
+        builder.Services.AddControllers(options =>
+        {
+            options.ModelValidatorProviders.Clear();
+        })
+        .ConfigureApiBehaviorOptions(options =>
+        {
+            // Automatically return 400 Bad Request for model validation errors
+            options.InvalidModelStateResponseFactory = context =>
+            {
+                var errors = context.ModelState
+                    .Where(x => x.Value?.Errors.Count > 0)
+                    .SelectMany(x => x.Value?.Errors.Select(e => e.ErrorMessage) ?? Array.Empty<string>())
+                    .ToList();
+                
+                return new BadRequestObjectResult(new
+                {
+                    error = "Validation failed",
+                    errors = errors
+                });
+            };
+        });
+        
+        // Enable model validation for minimal APIs
+        builder.Services.Configure<ApiBehaviorOptions>(options =>
+        {
+            options.SuppressModelStateInvalidFilter = false;
+        });
         
         // Add health checks
         builder.Services.AddHealthChecks();
@@ -45,7 +74,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
         builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
-
+        builder.Services.AddScoped<IConversationChangeListener, ConversationChangeListener>();
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();

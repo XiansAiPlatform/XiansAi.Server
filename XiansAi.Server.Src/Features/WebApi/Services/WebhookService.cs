@@ -4,21 +4,35 @@ using Features.WebApi.Repositories;
 using MongoDB.Bson;
 using XiansAi.Server.Shared.Data;
 using Shared.Utils.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Services;
 
 public class WebhookCreateRequest
 {
+    [Required(ErrorMessage = "WorkflowId is required")]
+    [StringLength(100, MinimumLength = 1, ErrorMessage = "WorkflowId must be between 1 and 100 characters")]
     public required string WorkflowId { get; set; }
+    
+    [Required(ErrorMessage = "CallbackUrl is required")]
+    [Url(ErrorMessage = "CallbackUrl must be a valid URL")]
     public required string CallbackUrl { get; set; }
+    
+    [Required(ErrorMessage = "EventType is required")]
+    [StringLength(100, MinimumLength = 1, ErrorMessage = "EventType must be between 1 and 100 characters")]
     public required string EventType { get; set; }
+    
     public bool IsActive { get; set; } = true;
 }
 
 public class WebhookUpdateRequest
 {
+    [Url(ErrorMessage = "CallbackUrl must be a valid URL")]
     public string? CallbackUrl { get; set; }
+    
+    [StringLength(100, MinimumLength = 1, ErrorMessage = "EventType must be between 1 and 100 characters")]
     public string? EventType { get; set; }
+    
     public bool? IsActive { get; set; }
 }
 
