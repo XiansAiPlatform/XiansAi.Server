@@ -5,6 +5,7 @@ using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -61,7 +62,7 @@ public class ConversationMessage
     public required MessageDirection Direction { get; set; }
 
     [BsonElement("content")]
-    public required string Content { get; set; }
+    public string? Content { get; set; }
 
     [BsonElement("status")]
     [BsonRepresentation(BsonType.String)]
@@ -318,35 +319,34 @@ public class ConversationMessageRepository : IConversationMessageRepository
             message.Metadata = ConvertToBsonDocument(message.Metadata);
         }
 
-        // Use a session to perform both operations in a transaction
-        using var session = await _database.Client.StartSessionAsync();
-        string messageId = "";
-
-        try
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
+            // Use a session to perform both operations in a transaction
+            using var session = await _database.Client.StartSessionAsync();
+            
             session.StartTransaction();
 
-            // Insert the message
-            await _collection.InsertOneAsync(session, message);
-            messageId = message.Id;
+            try
+            {
+                // Insert the message
+                await _collection.InsertOneAsync(session, message);
+                var messageId = message.Id;
 
-            // Update the thread's last activity timestamp
-            var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
-            var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
-            await _threadCollection.UpdateOneAsync(session, filter, update);
+                // Update the thread's last activity timestamp
+                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
+                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+                await _threadCollection.UpdateOneAsync(session, filter, update);
 
-            // Commit the transaction
-            await session.CommitTransactionAsync();
-            _logger.LogDebug("Successfully created message and updated thread timestamp in a transaction");
-        }
-        catch (Exception ex)
-        {
-            await session.AbortTransactionAsync();
-            _logger.LogError(ex, "Error in CreateAndUpdateThreadAsync transaction, rolling back");
-            throw;
-        }
-
-        return messageId;
+                // Commit the transaction
+                await session.CommitTransactionAsync();
+                return messageId;
+            }
+            catch
+            {
+                await session.AbortTransactionAsync();
+                throw;
+            }
+        }, _logger, operationName: "CreateAndUpdateThreadAsync");
     }
 
     public async Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
@@ -378,39 +378,37 @@ public class ConversationMessageRepository : IConversationMessageRepository
             }
         }
 
-        // Use a session to perform all operations in a transaction
-        using var session = await _database.Client.StartSessionAsync();
-        List<string> messageIds = new List<string>();
-
-        try
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
+            // Use a session to perform all operations in a transaction
+            using var session = await _database.Client.StartSessionAsync();
+            
             session.StartTransaction();
 
-            // Insert all messages in a single operation
-            await _collection.InsertManyAsync(session, messages);
-            messageIds = messages.Select(m => m.Id).ToList();
-
-            // Update all thread timestamps
-            foreach (var threadUpdate in threadTimestamps)
+            try
             {
-                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
-                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
-                await _threadCollection.UpdateOneAsync(session, filter, update);
+                // Insert all messages in a single operation
+                await _collection.InsertManyAsync(session, messages);
+                var messageIds = messages.Select(m => m.Id).ToList();
+
+                // Update all thread timestamps
+                foreach (var threadUpdate in threadTimestamps)
+                {
+                    var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
+                    var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
+                    await _threadCollection.UpdateOneAsync(session, filter, update);
+                }
+
+                // Commit the transaction
+                await session.CommitTransactionAsync();
+                return messageIds;
             }
-
-            // Commit the transaction
-            await session.CommitTransactionAsync();
-            _logger.LogDebug("Successfully created {Count} messages and updated {ThreadCount} thread timestamps in a transaction", 
-                messages.Count, threadTimestamps.Count);
-        }
-        catch (Exception ex)
-        {
-            await session.AbortTransactionAsync();
-            _logger.LogError(ex, "Error in CreateManyAndUpdateThreadsAsync transaction, rolling back");
-            throw;
-        }
-
-        return messageIds;
+            catch
+            {
+                await session.AbortTransactionAsync();
+                throw;
+            }
+        }, _logger, operationName: "CreateManyAndUpdateThreadsAsync");
     }
 
     // Helper method to convert any object to BsonDocument
@@ -520,26 +518,32 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<bool> UpdateStatusAsync(string id, MessageStatus status)
     {
-        var update = Builders<ConversationMessage>.Update
-            .Set(x => x.Status, status)
-            .Push(x => x.Logs, new MessageLogEvent
-            {
-                Timestamp = DateTime.UtcNow,
-                Event = status.ToString()
-            });
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var update = Builders<ConversationMessage>.Update
+                .Set(x => x.Status, status)
+                .Push(x => x.Logs, new MessageLogEvent
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Event = status.ToString()
+                });
 
-        var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-        return result.ModifiedCount > 0;
+            var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
+            return result.ModifiedCount > 0;
+        }, _logger, operationName: "UpdateStatusAsync");
     }
 
     public async Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent)
     {
-        var update = Builders<ConversationMessage>.Update
-            .Push(x => x.Logs, logEvent)
-            .Set(x => x.UpdatedAt, DateTime.UtcNow);
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var update = Builders<ConversationMessage>.Update
+                .Push(x => x.Logs, logEvent)
+                .Set(x => x.UpdatedAt, DateTime.UtcNow);
 
-        var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-        return result.ModifiedCount > 0;
+            var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
+            return result.ModifiedCount > 0;
+        }, _logger, operationName: "AddMessageLogAsync");
     }
 
     // Helper method to convert BsonDocument metadata back to the original object format

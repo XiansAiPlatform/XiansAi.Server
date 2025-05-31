@@ -12,6 +12,12 @@ public interface ILlmProvider
     string GetApiKey();
 
     /// <summary>
+    /// Gets the model for the LLM provider
+    /// </summary>
+    /// <returns>The model</returns>
+    string GetModel();
+
+    /// <summary>
     /// Gets a chat completion from the LLM provider
     /// </summary>
     /// <param name="messages">The chat messages</param>

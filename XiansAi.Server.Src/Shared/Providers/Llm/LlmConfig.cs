@@ -11,6 +11,11 @@ public class LlmConfig
     public required string ApiKey { get; set; }
 
     /// <summary>
+    /// The model to use for the LLM provider
+    /// </summary>
+    public required string Model { get; set; }
+
+    /// <summary>
     /// The provider type (e.g., "OpenAI", "Anthropic", etc.)
     /// </summary>
     public string Provider { get; set; } = "OpenAI";
