@@ -4,6 +4,8 @@ using MongoDB.Bson.Serialization.Attributes;
 using XiansAi.Server.Shared.Data;
 using Shared.Data;
 using System.Linq;
+using Shared.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Shared.Repositories;
 
@@ -62,9 +64,11 @@ public interface IConversationThreadRepository
 public class ConversationThreadRepository : IConversationThreadRepository
 {
     private readonly IMongoCollection<ConversationThread> _collection;
+    private readonly ILogger<ConversationThreadRepository> _logger;
 
-    public ConversationThreadRepository(IDatabaseService databaseService)
+    public ConversationThreadRepository(IDatabaseService databaseService, ILogger<ConversationThreadRepository> logger)
     {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _collection = database.GetCollection<ConversationThread>("conversation_thread");
     }
@@ -74,12 +78,15 @@ public class ConversationThreadRepository : IConversationThreadRepository
     {
         try
         {
-            var update = Builders<ConversationThread>.Update
-                .Set(x => x.WorkflowId, workflowId)
-                .Set(x => x.WorkflowType, workflowType)
-                .Set(x => x.UpdatedAt, DateTime.UtcNow);
-            var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-            return result.ModifiedCount > 0;
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                var update = Builders<ConversationThread>.Update
+                    .Set(x => x.WorkflowId, workflowId)
+                    .Set(x => x.WorkflowType, workflowType)
+                    .Set(x => x.UpdatedAt, DateTime.UtcNow);
+                var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
+                return result.ModifiedCount > 0;
+            }, _logger, operationName: "UpdateWorkflowIdAndTypeAsync");
         }
         catch (MongoBulkWriteException ex)
         {

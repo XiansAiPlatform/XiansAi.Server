@@ -12,7 +12,7 @@ public class MessageRequest
     public required string WorkflowType { get; set; }
     public required string Agent { get; set; }
     public object? Metadata { get; set; }
-    public required string Content { get; set; }
+    public string? Content { get; set; }
     public string? ThreadId { get; set; }
     public string? QueueName { get; set; }
     public string? Assignment { get; set; }
@@ -26,7 +26,8 @@ public class HandoverRequest
     public required string ThreadId { get; set; }
     public required string FromWorkflowType { get; set; }
     public required string ParticipantId { get; set; }
-    public required string UserRequest { get; set; }
+    public required string Content { get; set; }
+    public object? Metadata { get; set; }
 }
 
 public interface IMessageService
@@ -113,15 +114,12 @@ public class MessageService : IMessageService
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
                 Content = $"{request.FromWorkflowType} -> {request.WorkflowType}",
-                Metadata = new {
-                    HandoverInitiated = true,
-                    SourceThreadId = request.ThreadId  // Keep track of the source thread
-                }
+                Metadata = request.Metadata
             };
 
             await SaveMessage(messageRequest, MessageDirection.Handover);
 
-            messageRequest.Content = request.UserRequest;
+            messageRequest.Content = request.Content;
             //await SignalWorkflowAsync(messageRequest);
             await ProcessIncomingMessage(new MessageRequest
             {
@@ -130,11 +128,8 @@ public class MessageService : IMessageService
                 WorkflowId = request.WorkflowId,
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
-                Content = request.UserRequest,
-                Metadata = new {
-                    HandoverFrom = request.FromWorkflowType,
-                    SourceThreadId = request.ThreadId  // Keep track of the source thread
-                }
+                Content = request.Content,
+                Metadata = request.Metadata
             });
 
             return ServiceResult<string>.Success(targetThreadId);

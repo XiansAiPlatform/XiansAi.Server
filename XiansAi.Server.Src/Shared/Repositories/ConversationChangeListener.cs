@@ -10,7 +10,7 @@ namespace Shared.Repositories
 {
     public interface IConversationChangeListener
     {
-        Task<ConversationMessage> GetLatestConversationMessage(string tenantId, string threadId, string agent, string workflowType, string participantId, string workflowId);
+        Task<ConversationMessage?> GetLatestConversationMessage(string tenantId, string threadId, string agent, string workflowType, string participantId, string workflowId);
     }
 
     public class ConversationChangeListener : IConversationChangeListener
@@ -74,7 +74,7 @@ namespace Shared.Repositories
             });
         }
 
-        public async Task<ConversationMessage> GetLatestConversationMessage(string tenantId, string threadId, string agent, string workflowType, string participantId, string workflowId)
+        public async Task<ConversationMessage?> GetLatestConversationMessage(string tenantId, string threadId, string agent, string workflowType, string participantId, string workflowId)
         {
             try
             {
