@@ -67,6 +67,9 @@ public static class SharedConfiguration
         builder.Services.AddSignalR();
         builder.Services.AddSingleton<ClientConnectionManager>();
 
+        builder.Services.AddSingleton<MongoChangeStreamService>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
+
         // Register repositories
         builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
         builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
@@ -85,7 +88,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
 
-        
+      
         return builder;
     }
     
