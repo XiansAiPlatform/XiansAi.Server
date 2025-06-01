@@ -1,6 +1,9 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
 using Shared.Services;
+using Sprache;
+using XiansAi.Server.Shared.Services;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace XiansAi.Server.Shared.Websocket
 {   
@@ -115,23 +118,38 @@ namespace XiansAi.Server.Shared.Websocket
         public async Task SendInboundMessage(MessageRequest request)
         {
             EnsureTenantContext();
-            // Step 1: Process inbound
-            var inboundResult = await _messageService.ProcessIncomingMessage(request);
-            
-            if (inboundResult.Data != null)
+            try 
             {
-                _connectionManager.AddConnection(inboundResult.Data, Context.ConnectionId);
-                var result = await _messageService.GetLatestConversationMessageAsync(inboundResult.Data, request.Agent, request.WorkflowType, request.ParticipantId, request.WorkflowId);
-                await Clients.Caller.SendAsync("ReceiveMessage", result.Data);
+                // Step 1: Process inbound
+                var inboundResult = await _messageService.ProcessIncomingMessage(request);
+                
+                if (inboundResult.Data != null)
+                {
+                    _connectionManager.AddConnection(inboundResult.Data, Context.ConnectionId);
+                                      
+                    // Notify client message was received
+                    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
+                    Context.Abort();
+                }
             }
-            else
+            catch (Exception ex)
             {
-                await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
-                Context.Abort();
+                _logger.LogError(ex, "Error processing inbound message");
+                await Clients.Caller.SendAsync("Error", "Failed to process message");
             }
+        }
+        public async Task SubscribeToAgent(string workflowId, string participantId, string TenantId)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
+        }
 
-            // Optional: Notify client message was received
-            await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
+        public async Task UnsubscribeFromAgent(string workflowId, string participantId, string TenantId)
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
         }
     }
 }
