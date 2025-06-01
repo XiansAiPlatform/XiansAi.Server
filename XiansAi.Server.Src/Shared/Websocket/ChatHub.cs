@@ -1,9 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
 using Shared.Services;
-using Sprache;
-using XiansAi.Server.Shared.Services;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace XiansAi.Server.Shared.Websocket
 {   
