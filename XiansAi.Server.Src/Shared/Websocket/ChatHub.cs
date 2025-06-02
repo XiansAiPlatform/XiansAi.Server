@@ -93,7 +93,7 @@ namespace XiansAi.Server.Shared.Websocket
             if (_connectionManager.GetConnectionId(threadId)==Context.ConnectionId)
             {
                 _connectionManager.RemoveConnection(Context.ConnectionId);
-                Console.WriteLine($"Disconnected thread {threadId} and removed connection {Context.ConnectionId}");
+                _logger.LogInformation($"Disconnected thread {threadId} and removed connection {Context.ConnectionId}");
             }
 
             Context.Abort(); // This forcibly disconnects the client from the hub           
@@ -105,15 +105,16 @@ namespace XiansAi.Server.Shared.Websocket
             return base.OnDisconnectedAsync(exception);
         }
 
-        public async Task GetThreadHistory(string agent, string workflowType, string participantId, int page, int pageSize)
+        public async Task GetThreadHistory(string workflowType, string participantId, int page, int pageSize)
         {
             EnsureTenantContext();
-            var result = await _messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
+            var result = await _messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
             await Clients.Caller.SendAsync("ThreadHistory", result.Data);           
         }
 
         public async Task SendInboundMessage(MessageRequest request)
         {
+            _logger.LogInformation("Sending inbound message for workflowType {WorkflowType}, participantId {ParticipantId}", request.WorkflowType, request.ParticipantId);
             EnsureTenantContext();
             try 
             {

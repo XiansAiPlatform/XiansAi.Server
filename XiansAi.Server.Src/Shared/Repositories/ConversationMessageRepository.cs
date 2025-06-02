@@ -1,7 +1,6 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using Shared.Data;
@@ -98,7 +97,7 @@ public interface IConversationMessageRepository
     Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
 
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
-    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null);
+    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowType, string participantId, int? page = null, int? pageSize = null);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -597,14 +596,13 @@ public class ConversationMessageRepository : IConversationMessageRepository
         }
     }
 
-    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null)
+    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId,string workflowType, string participantId, int? page = null, int? pageSize = null)
     {
-        _logger.LogDebug("Querying messages directly by agent {Agent} and participantId {ParticipantId}", agent, participantId);
+        _logger.LogDebug("Querying messages directly by participantId {ParticipantId}", participantId);
         
         // First, get the thread ID for the given workflow and participant
         var threadFilter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
             Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, workflowType),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
@@ -617,7 +615,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // If no thread exists, return empty list
         if (threadResult == null)
         {
-            _logger.LogInformation("No thread found for agent {Agent} and participantId {ParticipantId}", agent, participantId);
+            _logger.LogInformation("No thread found for workflowType {WorkflowType} and participantId {ParticipantId}", workflowType, participantId);
             return new List<ConversationMessage>();
         }
 
