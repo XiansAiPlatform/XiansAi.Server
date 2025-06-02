@@ -190,16 +190,43 @@ public class PublicService : IPublicService
             return false;
         }
             
-        var value = _configuration[$"Tenants:{tenantId}:Enable"];
-        if (!string.IsNullOrEmpty(value))
+        _logger.LogDebug("Starting tenant validation for ID: {TenantId}", tenantId);
+            
+        // Try different formats and log the results
+        var formats = new[]
         {
-            if (bool.TryParse(value, out var isEnabled))
+            $"Tenants:{tenantId}:Enable",              // JSON format with Enable
+            $"Tenants__{tenantId}__Enabled",           // Azure env var format
+            $"Tenants:{tenantId}",                     // Simple JSON format
+            $"Tenants__{tenantId}"                     // Simple env var format
+        };
+
+        foreach (var format in formats)
+        {
+            var value = _configuration[format];
+            _logger.LogDebug("Configuration check - Format: {Format}, Raw Value: {Value}, Type: {Type}", 
+                format, 
+                value ?? "null",
+                value?.GetType().Name ?? "null");
+            
+            if (!string.IsNullOrEmpty(value))
             {
-                _logger.LogDebug("Tenant ID {TenantId} found in configuration: {IsValid}", tenantId, isEnabled);
-                return isEnabled;
+                _logger.LogDebug("Attempting to parse value '{Value}' as boolean", value);
+                if (bool.TryParse(value, out var isEnabled))
+                {
+                    _logger.LogDebug("Successfully parsed tenant configuration - Format: {Format}, Value: {Value}, IsEnabled: {IsEnabled}", 
+                        format, value, isEnabled);
+                    return isEnabled;
+                }
+                else
+                {
+                    _logger.LogDebug("Failed to parse value '{Value}' as boolean for format {Format}", 
+                        value, format);
+                }
             }
         }
-        _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
+        
+        _logger.LogDebug("Tenant ID {TenantId} not found in any configuration format", tenantId);
         return false;
     }
 
