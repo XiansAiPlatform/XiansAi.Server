@@ -190,34 +190,16 @@ public class PublicService : IPublicService
             return false;
         }
             
-        // Try different formats
-        var formats = new[]
+        var value = _configuration[$"Tenants:{tenantId}:Enable"];
+        if (!string.IsNullOrEmpty(value))
         {
-            $"Tenants:{tenantId}",                    // JSON format
-            $"Tenants__{tenantId}",                   // Simple env var format
-            $"Tenants__{tenantId}__Enabled"           // Azure env var format
-        };
-
-        foreach (var format in formats)
-        {
-            var tenantSection = _configuration.GetSection(format);
-            _logger.LogDebug("Checking tenant configuration with format: {Format}, Exists: {Exists}", 
-                format, tenantSection.Exists());
-            
-            if (tenantSection.Exists())
+            if (bool.TryParse(value, out var isEnabled))
             {
-                // If using the Azure env var format, check if Enabled is true
-                if (format.EndsWith("__Enabled"))
-                {
-                    var isEnabled = tenantSection.Get<bool>();
-                    _logger.LogDebug("Tenant {TenantId} Enabled status: {IsEnabled}", tenantId, isEnabled);
-                    return isEnabled;
-                }
-                return true;
+                _logger.LogDebug("Tenant ID {TenantId} found in configuration: {IsValid}", tenantId, isEnabled);
+                return isEnabled;
             }
         }
-        
-        _logger.LogDebug("Tenant ID {TenantId} not found in any configuration format", tenantId);
+        _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
         return false;
     }
 
