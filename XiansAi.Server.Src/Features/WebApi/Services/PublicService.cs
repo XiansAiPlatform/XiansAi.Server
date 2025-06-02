@@ -190,73 +190,17 @@ public class PublicService : IPublicService
             return false;
         }
             
-        _logger.LogDebug("Starting tenant validation for ID: {TenantId}", tenantId);
-            
-        // Try different formats and log the results
-        var formats = new[]
+        var value = _configuration[$"Tenants:{tenantId}:Enabled"];
+        _logger.LogDebug("Checking configuration value for tenant {TenantId}: Tenants:{TenantId}:Enabled = {Value}", 
+            tenantId, tenantId, value ?? "null");
+        
+        if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
         {
-            $"Tenants:{tenantId}:Enabled",              // JSON format with Enabled (this is the one that exists)
-            $"Tenants__{tenantId}__Enabled",           // Azure env var format
-            $"Tenants:{tenantId}",                     // Simple JSON format
-            $"Tenants__{tenantId}"                     // Simple env var format
-        };
-
-        foreach (var format in formats)
-        {
-            // Try both direct access and section access
-            var directValue = _configuration[format];
-            var section = _configuration.GetSection(format);
-            
-            _logger.LogDebug("Configuration check - Format: {Format}", format);
-            _logger.LogDebug("  Direct access - Value: {Value}, Type: {Type}", 
-                directValue ?? "null",
-                directValue?.GetType().Name ?? "null");
-            _logger.LogDebug("  Section access - Exists: {Exists}, Value: {Value}, Type: {Type}", 
-                section.Exists(),
-                section.Value ?? "null",
-                section.Value?.GetType().Name ?? "null");
-            
-            // Try to get the value from either source
-            var value = directValue ?? section.Value;
-            
-            if (!string.IsNullOrEmpty(value))
-            {
-                _logger.LogDebug("Attempting to parse value '{Value}' as boolean", value);
-                if (bool.TryParse(value, out var isEnabled))
-                {
-                    _logger.LogDebug("Successfully parsed tenant configuration - Format: {Format}, Value: {Value}, IsEnabled: {IsEnabled}", 
-                        format, value, isEnabled);
-                    return isEnabled;
-                }
-                else
-                {
-                    _logger.LogDebug("Failed to parse value '{Value}' as boolean for format {Format}", 
-                        value, format);
-                }
-            }
+            _logger.LogDebug("Found valid Enabled value: {Value}", value);
+            return isEnabled;
         }
         
-        // Log all configuration keys for debugging
-        var allKeys = _configuration.AsEnumerable()
-            .Where(x => x.Key.StartsWith("Tenants"))
-            .Select(x => $"{x.Key} = {x.Value}");
-        _logger.LogDebug("All tenant-related configuration keys: {Keys}", 
-            string.Join(", ", allKeys));
-        
-        // Try one last time with the exact format we see in the configuration
-        var finalCheck = _configuration[$"Tenants:{tenantId}:Enabled"];
-        if (!string.IsNullOrEmpty(finalCheck))
-        {
-            _logger.LogDebug("Found configuration with exact format - Value: {Value}", finalCheck);
-            if (bool.TryParse(finalCheck, out var isEnabled))
-            {
-                _logger.LogDebug("Successfully parsed final check - Value: {Value}, IsEnabled: {IsEnabled}", 
-                    finalCheck, isEnabled);
-                return isEnabled;
-            }
-        }
-        
-        _logger.LogDebug("Tenant ID {TenantId} not found in any configuration format", tenantId);
+        _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
         return false;
     }
 
