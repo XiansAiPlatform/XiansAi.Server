@@ -195,7 +195,7 @@ public class PublicService : IPublicService
         // Try different formats and log the results
         var formats = new[]
         {
-            $"Tenants:{tenantId}:Enable",              // JSON format with Enable
+            $"Tenants:{tenantId}:Enabled",              // JSON format with Enabled
             $"Tenants__{tenantId}__Enabled",           // Azure env var format
             $"Tenants:{tenantId}",                     // Simple JSON format
             $"Tenants__{tenantId}"                     // Simple env var format
@@ -203,11 +203,21 @@ public class PublicService : IPublicService
 
         foreach (var format in formats)
         {
-            var value = _configuration[format];
-            _logger.LogDebug("Configuration check - Format: {Format}, Raw Value: {Value}, Type: {Type}", 
-                format, 
-                value ?? "null",
-                value?.GetType().Name ?? "null");
+            // Try both direct access and section access
+            var directValue = _configuration[format];
+            var section = _configuration.GetSection(format);
+            
+            _logger.LogDebug("Configuration check - Format: {Format}", format);
+            _logger.LogDebug("  Direct access - Value: {Value}, Type: {Type}", 
+                directValue ?? "null",
+                directValue?.GetType().Name ?? "null");
+            _logger.LogDebug("  Section access - Exists: {Exists}, Value: {Value}, Type: {Type}", 
+                section.Exists(),
+                section.Value ?? "null",
+                section.Value?.GetType().Name ?? "null");
+            
+            // Try to get the value from either source
+            var value = directValue ?? section.Value;
             
             if (!string.IsNullOrEmpty(value))
             {
@@ -225,6 +235,13 @@ public class PublicService : IPublicService
                 }
             }
         }
+        
+        // Log all configuration keys for debugging
+        var allKeys = _configuration.AsEnumerable()
+            .Where(x => x.Key.StartsWith("Tenants"))
+            .Select(x => $"{x.Key} = {x.Value}");
+        _logger.LogDebug("All tenant-related configuration keys: {Keys}", 
+            string.Join(", ", allKeys));
         
         _logger.LogDebug("Tenant ID {TenantId} not found in any configuration format", tenantId);
         return false;
