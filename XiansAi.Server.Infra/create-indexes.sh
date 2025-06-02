@@ -63,53 +63,32 @@ conversation_messages_indexes='[
 # Agents Collection Indexes
 agents_indexes='[
     {
-        "key": {
-            "keys": ["_id"],
-            "name": "_id_"
-        }
+        "key": { "keys": ["_id"], "name": "_id_" }
     },
     {
-        "key": {
-            "keys": ["name", "tenant"],
-            "name": "agent_name_tenant_lookup",
-            "unique": true
-        }
+        "key": { "keys": ["name", "tenant"], "name": "agent_name_tenant_lookup", "unique": true }
     },
     {
-        "key": {
-            "keys": ["tenant", "permissions.owner_access"],
-            "name": "agent_owner_lookup"
-        }
+        "key": { "keys": ["tenant", "owner_access"], "name": "tenant_owner_access_index" }
     },
     {
-        "key": {
-            "keys": ["tenant", "permissions.read_access"],
-            "name": "agent_read_access_lookup"
-        }
+        "key": { "keys": ["tenant", "read_access"], "name": "tenant_read_access_index" }
+    },
+    {
+        "key": { "keys": ["tenant", "write_access"], "name": "tenant_write_access_index" }
     }
 ]'
  
 # Flow Definitions Collection Indexes
 flow_definitions_indexes='[
     {
-        "key": {
-            "keys": ["_id"],
-            "name": "_id_"
-        }
+        "key": { "keys": ["_id"], "name": "_id_" }
     },
     {
-        "key": {
-            "keys": ["tenant_id", "agent_id"],
-            "name": "flow_agent_lookup"
-        }
-    },
-    {
-        "key": {
-            "keys": ["tenant_id", "created_at"],
-            "name": "flow_timestamp_lookup"
-        }
+        "key": { "keys": ["agent", "created_at"], "name": "agent_created_at_index" }
     }
 ]'
+
  
 # Conversation Threads Collection Indexes
 conversation_threads_indexes='[
@@ -178,12 +157,12 @@ logs_indexes='[
         }
     }
 ]'
- 
+
 # Create indexes for each collection
 #create_collection_indexes "conversation_message" "$conversation_messages_indexes"
 #create_collection_indexes "agents" "$agents_indexes"
-#create_collection_indexes "flow_definitions" "$flow_definitions_indexes"
+create_collection_indexes "flow_definitions" "$flow_definitions_indexes"
 #create_collection_indexes "conversation_thread" "$conversation_threads_indexes"
-create_collection_indexes "logs" "$logs_indexes"
- 
+#create_collection_indexes "logs" "$logs_indexes"
+
 echo "All indexes have been created successfully!"
