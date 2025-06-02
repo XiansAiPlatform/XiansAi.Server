@@ -190,17 +190,35 @@ public class PublicService : IPublicService
             return false;
         }
             
-        // Try both colon and double underscore formats
-        var tenantSection = _configuration.GetSection($"Tenants:{tenantId}");
-        if (!tenantSection.Exists())
+        // Try different formats
+        var formats = new[]
         {
-            // If colon format doesn't exist, try double underscore
-            tenantSection = _configuration.GetSection($"Tenants__{tenantId}");
+            $"Tenants:{tenantId}",                    // JSON format
+            $"Tenants__{tenantId}",                   // Simple env var format
+            $"Tenants__{tenantId}__Enabled"           // Azure env var format
+        };
+
+        foreach (var format in formats)
+        {
+            var tenantSection = _configuration.GetSection(format);
+            _logger.LogDebug("Checking tenant configuration with format: {Format}, Exists: {Exists}", 
+                format, tenantSection.Exists());
+            
+            if (tenantSection.Exists())
+            {
+                // If using the Azure env var format, check if Enabled is true
+                if (format.EndsWith("__Enabled"))
+                {
+                    var isEnabled = tenantSection.Get<bool>();
+                    _logger.LogDebug("Tenant {TenantId} Enabled status: {IsEnabled}", tenantId, isEnabled);
+                    return isEnabled;
+                }
+                return true;
+            }
         }
         
-        bool exists = tenantSection.Exists();
-        _logger.LogDebug("Tenant ID {TenantId} validation result: {IsValid}", tenantId, exists);
-        return exists;
+        _logger.LogDebug("Tenant ID {TenantId} not found in any configuration format", tenantId);
+        return false;
     }
 
     /// <summary>
