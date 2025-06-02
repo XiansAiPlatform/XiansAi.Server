@@ -321,32 +321,94 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Use a session to perform both operations in a transaction
-            using var session = await _database.Client.StartSessionAsync();
-            
-            session.StartTransaction();
-
+            // Try transaction approach first for Cosmos DB
             try
             {
-                // Insert the message
-                await _collection.InsertOneAsync(session, message);
-                var messageId = message.Id;
+                // Use a session to perform both operations in a transaction
+                using var session = await _database.Client.StartSessionAsync();
+                
+                // Simplified transaction options for Cosmos DB compatibility
+                var transactionOptions = new TransactionOptions(
+                    readConcern: ReadConcern.Local, // Use Local instead of Snapshot for Cosmos DB
+                    writeConcern: WriteConcern.W1   // Use W1 instead of WMajority for Cosmos DB
+                );
+                
+                session.StartTransaction(transactionOptions);
 
-                // Update the thread's last activity timestamp
-                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
-                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
-                await _threadCollection.UpdateOneAsync(session, filter, update);
+                try
+                {
+                    // Insert the message
+                    await _collection.InsertOneAsync(session, message);
+                    var messageId = message.Id;
 
-                // Commit the transaction
-                await session.CommitTransactionAsync();
-                return messageId;
+                    // Update the thread's last activity timestamp
+                    var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
+                    var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+                    await _threadCollection.UpdateOneAsync(session, filter, update);
+
+                    // Commit the transaction
+                    await session.CommitTransactionAsync();
+                    return messageId;
+                }
+                catch (Exception)
+                {
+                    // Abort transaction on any error
+                    try
+                    {
+                        await session.AbortTransactionAsync();
+                    }
+                    catch
+                    {
+                        // Ignore abort errors
+                    }
+                    throw;
+                }
             }
-            catch
+            catch (Exception ex) when (IsTransactionNotSupportedError(ex))
             {
-                await session.AbortTransactionAsync();
-                throw;
+                // Fallback to non-transactional approach for Cosmos DB compatibility
+                _logger.LogWarning(ex, "Transaction not supported, falling back to non-transactional operations");
+                return await CreateAndUpdateThreadNonTransactionalAsync(message, threadId, timestamp);
             }
         }, _logger, operationName: "CreateAndUpdateThreadAsync");
+    }
+
+    // Fallback non-transactional implementation
+    private async Task<string> CreateAndUpdateThreadNonTransactionalAsync(ConversationMessage message, string threadId, DateTime timestamp)
+    {
+        // Insert the message first
+        await _collection.InsertOneAsync(message);
+        var messageId = message.Id;
+
+        try
+        {
+            // Update the thread's last activity timestamp
+            var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
+            var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+            await _threadCollection.UpdateOneAsync(filter, update);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to update thread timestamp for message {MessageId}, thread {ThreadId}", messageId, threadId);
+            // Don't fail the entire operation if thread update fails
+        }
+
+        return messageId;
+    }
+
+    // Helper method to check if error is related to transaction not being supported
+    private static bool IsTransactionNotSupportedError(Exception ex)
+    {
+        if (ex is MongoWriteException mongoWriteEx)
+        {
+            var message = mongoWriteEx.Message;
+            return message.Contains("Transaction is not active") || 
+                   message.Contains("Transactions are not supported") ||
+                   message.Contains("transaction") && message.Contains("not") && message.Contains("active");
+        }
+        
+        return ex.Message.Contains("Transaction is not active") || 
+               ex.Message.Contains("Transactions are not supported");
     }
 
     public async Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
@@ -380,35 +442,84 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Use a session to perform all operations in a transaction
-            using var session = await _database.Client.StartSessionAsync();
-            
-            session.StartTransaction();
-
+            // Try transaction approach first
             try
             {
-                // Insert all messages in a single operation
-                await _collection.InsertManyAsync(session, messages);
-                var messageIds = messages.Select(m => m.Id).ToList();
+                // Use a session to perform all operations in a transaction
+                using var session = await _database.Client.StartSessionAsync();
+                
+                // Simplified transaction options for Cosmos DB compatibility
+                var transactionOptions = new TransactionOptions(
+                    readConcern: ReadConcern.Local,
+                    writeConcern: WriteConcern.W1
+                );
+                
+                session.StartTransaction(transactionOptions);
 
-                // Update all thread timestamps
-                foreach (var threadUpdate in threadTimestamps)
+                try
                 {
-                    var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
-                    var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
-                    await _threadCollection.UpdateOneAsync(session, filter, update);
-                }
+                    // Insert all messages in a single operation
+                    await _collection.InsertManyAsync(session, messages);
+                    var messageIds = messages.Select(m => m.Id).ToList();
 
-                // Commit the transaction
-                await session.CommitTransactionAsync();
-                return messageIds;
+                    // Update all thread timestamps
+                    foreach (var threadUpdate in threadTimestamps)
+                    {
+                        var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
+                        var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
+                        await _threadCollection.UpdateOneAsync(session, filter, update);
+                    }
+
+                    // Commit the transaction
+                    await session.CommitTransactionAsync();
+                    return messageIds;
+                }
+                catch (Exception)
+                {
+                    try
+                    {
+                        await session.AbortTransactionAsync();
+                    }
+                    catch
+                    {
+                        // Ignore abort errors
+                    }
+                    throw;
+                }
             }
-            catch
+            catch (Exception ex) when (IsTransactionNotSupportedError(ex))
             {
-                await session.AbortTransactionAsync();
-                throw;
+                // Fallback to non-transactional approach
+                _logger.LogWarning(ex, "Transaction not supported, falling back to non-transactional operations");
+                return await CreateManyAndUpdateThreadsNonTransactionalAsync(messages, threadTimestamps);
             }
         }, _logger, operationName: "CreateManyAndUpdateThreadsAsync");
+    }
+
+    // Fallback non-transactional implementation for bulk operations
+    private async Task<List<string>> CreateManyAndUpdateThreadsNonTransactionalAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
+    {
+        // Insert all messages in a single operation
+        await _collection.InsertManyAsync(messages);
+        var messageIds = messages.Select(m => m.Id).ToList();
+
+        // Update all thread timestamps (best effort)
+        foreach (var threadUpdate in threadTimestamps)
+        {
+            try
+            {
+                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
+                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
+                await _threadCollection.UpdateOneAsync(filter, update);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to update thread timestamp for thread {ThreadId}", threadUpdate.Key);
+                // Continue with other updates
+            }
+        }
+
+        return messageIds;
     }
 
     // Helper method to convert any object to BsonDocument
