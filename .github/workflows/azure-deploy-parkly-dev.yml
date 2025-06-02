@@ -4,8 +4,8 @@ on:
     branches: [ parkly-as ]
 
 env:
-  RESOURCE_GROUP: parklyai-server-dev
-  APP_NAME: rg-parkly-dev-ai
+  RESOURCE_GROUP: rg-parkly-dev-ai
+  APP_NAME: parklyai-server-dev
 
 jobs:
   build-and-deploy:
