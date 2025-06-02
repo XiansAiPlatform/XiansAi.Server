@@ -195,7 +195,7 @@ public class PublicService : IPublicService
         // Try different formats and log the results
         var formats = new[]
         {
-            $"Tenants:{tenantId}:Enabled",              // JSON format with Enabled
+            $"Tenants:{tenantId}:Enabled",              // JSON format with Enabled (this is the one that exists)
             $"Tenants__{tenantId}__Enabled",           // Azure env var format
             $"Tenants:{tenantId}",                     // Simple JSON format
             $"Tenants__{tenantId}"                     // Simple env var format
@@ -242,6 +242,19 @@ public class PublicService : IPublicService
             .Select(x => $"{x.Key} = {x.Value}");
         _logger.LogDebug("All tenant-related configuration keys: {Keys}", 
             string.Join(", ", allKeys));
+        
+        // Try one last time with the exact format we see in the configuration
+        var finalCheck = _configuration[$"Tenants:{tenantId}:Enabled"];
+        if (!string.IsNullOrEmpty(finalCheck))
+        {
+            _logger.LogDebug("Found configuration with exact format - Value: {Value}", finalCheck);
+            if (bool.TryParse(finalCheck, out var isEnabled))
+            {
+                _logger.LogDebug("Successfully parsed final check - Value: {Value}, IsEnabled: {IsEnabled}", 
+                    finalCheck, isEnabled);
+                return isEnabled;
+            }
+        }
         
         _logger.LogDebug("Tenant ID {TenantId} not found in any configuration format", tenantId);
         return false;
