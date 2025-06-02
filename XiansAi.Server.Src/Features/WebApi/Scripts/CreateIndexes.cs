@@ -32,6 +32,15 @@ public class CreateIndexes
             )
         );
 
+        // Create compound index for agent and UpdatedAt
+        await collection.Indexes.CreateOneAsync(
+            new CreateIndexModel<FlowDefinition>(
+                Builders<FlowDefinition>.IndexKeys
+                    .Ascending(x => x.Agent)
+                    .Descending(x => x.UpdatedAt)
+            )
+        );
+
         Console.WriteLine("Indexes created successfully!");
     }
 } 
