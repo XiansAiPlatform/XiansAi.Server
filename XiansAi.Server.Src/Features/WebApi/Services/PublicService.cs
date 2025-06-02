@@ -190,9 +190,15 @@ public class PublicService : IPublicService
             return false;
         }
             
+        // Try both colon and double underscore formats
         var tenantSection = _configuration.GetSection($"Tenants:{tenantId}");
-        bool exists = tenantSection.Exists();
+        if (!tenantSection.Exists())
+        {
+            // If colon format doesn't exist, try double underscore
+            tenantSection = _configuration.GetSection($"Tenants__{tenantId}");
+        }
         
+        bool exists = tenantSection.Exists();
         _logger.LogDebug("Tenant ID {TenantId} validation result: {IsValid}", tenantId, exists);
         return exists;
     }
