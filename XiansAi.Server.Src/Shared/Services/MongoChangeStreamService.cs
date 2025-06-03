@@ -10,62 +10,6 @@ using System.Text.Json.Serialization;
 
 namespace XiansAi.Server.Shared.Services
 {
-    // DTO for SignalR to handle metadata as a JSON string
-    public class ConversationMessageSignalRDTO
-    {
-        public string Id { get; set; } = null!;
-        public string ThreadId { get; set; } = null!;
-        public string TenantId { get; set; } = null!;
-        public DateTime CreatedAt { get; set; }
-        public DateTime? UpdatedAt { get; set; }
-        public string CreatedBy { get; set; } = null!;
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public MessageDirection Direction { get; set; }
-        public string? Content { get; set; }
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public MessageStatus? Status { get; set; }
-        public string? MetadataJson { get; set; } // Metadata as JSON string
-        public List<MessageLogEvent>? Logs { get; set; }
-        public string ParticipantId { get; set; } = null!;
-        public string WorkflowId { get; set; } = null!;
-        public string WorkflowType { get; set; } = null!;
-
-        public static ConversationMessageSignalRDTO FromConversationMessage(ConversationMessage message, ILogger logger)
-        {
-            string? metadataJson = null;
-            if (message.Metadata != null)
-            {
-                try
-                {
-                    metadataJson = System.Text.Json.JsonSerializer.Serialize(message.Metadata);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "MongoChangeStreamService: Could not serialize metadata for message {MessageId}. Sending null for MetadataJson.", message.Id);
-                    metadataJson = null;
-                }
-            }
-
-            return new ConversationMessageSignalRDTO
-            {
-                Id = message.Id,
-                ThreadId = message.ThreadId,
-                TenantId = message.TenantId,
-                CreatedAt = message.CreatedAt,
-                UpdatedAt = message.UpdatedAt,
-                CreatedBy = message.CreatedBy,
-                Direction = message.Direction,
-                Content = message.Content,
-                Status = message.Status,
-                MetadataJson = metadataJson,
-                Logs = message.Logs,
-                ParticipantId = message.ParticipantId,
-                WorkflowId = message.WorkflowId,
-                WorkflowType = message.WorkflowType
-            };
-        }
-    }
-
     public class MongoChangeStreamService : BackgroundService
     {
         private readonly IHubContext<ChatHub> _hubContext;
@@ -91,7 +35,6 @@ namespace XiansAi.Server.Shared.Services
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-                    var conversationMessageRepository = scope.ServiceProvider.GetRequiredService<IConversationMessageRepository>();
 
                     var database = await databaseService.GetDatabase();
                     var collection = database.GetCollection<ConversationMessage>("conversation_message");
@@ -119,23 +62,22 @@ namespace XiansAi.Server.Shared.Services
                             var message = changeDoc.FullDocument;
                             if (message == null) continue;
 
+                            // Convert BSON metadata to native .NET objects before sending via SignalR
                             ConvertBsonMetadataToObjectInternal(message);
 
-                            var messageDTO = ConversationMessageSignalRDTO.FromConversationMessage(message, _logger);
-
-                            if (string.IsNullOrEmpty(messageDTO.Content))
+                            if (string.IsNullOrEmpty(message.Content))
                             {
-                                await _hubContext.Clients.Group(messageDTO.WorkflowId + messageDTO.ParticipantId + messageDTO.TenantId)
-                                .SendAsync("ReceiveMetadata", messageDTO, cancellationToken: stoppingToken);
+                                await _hubContext.Clients.Group(message.WorkflowId + message.ParticipantId + message.TenantId)
+                                .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
                             }
                             else
                             {
-                                await _hubContext.Clients.Group(messageDTO.WorkflowId + messageDTO.ParticipantId + messageDTO.TenantId)
-                                    .SendAsync("ReceiveMessage", messageDTO, cancellationToken: stoppingToken);
+                                await _hubContext.Clients.Group(message.WorkflowId + message.ParticipantId + message.TenantId)
+                                    .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
                             }
 
-                            _logger.LogDebug("Sent DTO message to group {GroupId}: {MessageId}",
-                                messageDTO.WorkflowId + messageDTO.ParticipantId, messageDTO.Id);
+                            _logger.LogDebug("Sent message to group {GroupId}: {MessageId}",
+                                message.WorkflowId + message.ParticipantId, message.Id);
                         }
                     }
                 }
