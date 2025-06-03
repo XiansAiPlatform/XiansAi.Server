@@ -1,6 +1,6 @@
-
 using Shared.Data;
 using Shared.Auth;
+using Shared.Data.Models;
 
 namespace Shared.Repositories;
 
@@ -75,7 +75,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }
 
         // Check if user has owner permission (required to add users)
-        if (!agent.Permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (!agent.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -83,21 +83,21 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }
 
         // Remove user from all permission levels first
-        agent.Permissions.OwnerAccess.Remove(userId);
-        agent.Permissions.WriteAccess.Remove(userId);
-        agent.Permissions.ReadAccess.Remove(userId);
+        agent.OwnerAccess.Remove(userId);
+        agent.WriteAccess.Remove(userId);
+        agent.ReadAccess.Remove(userId);
 
         // Add user to the appropriate level
         switch (permissionLevel)
         {
             case PermissionLevel.Owner:
-                agent.Permissions.GrantOwnerAccess(userId);
+                agent.GrantOwnerAccess(userId);
                 break;
             case PermissionLevel.Write:
-                agent.Permissions.GrantWriteAccess(userId);
+                agent.GrantWriteAccess(userId);
                 break;
             case PermissionLevel.Read:
-                agent.Permissions.GrantReadAccess(userId);
+                agent.GrantReadAccess(userId);
                 break;
         }
 
@@ -120,20 +120,32 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }
 
         // Check if user has owner permission (required to remove users)
-        if (!agent.Permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (!agent.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
             return false;
         }
 
+        // Track if any changes were made (for logging purposes)
+        bool wasUserFound = agent.OwnerAccess.Contains(userId) || 
+                           agent.WriteAccess.Contains(userId) || 
+                           agent.ReadAccess.Contains(userId);
+
         // Remove user from all permission levels
-        agent.Permissions.RevokeOwnerAccess(userId);
-        agent.Permissions.RevokeWriteAccess(userId);
-        agent.Permissions.RevokeReadAccess(userId);
+        agent.RevokeOwnerAccess(userId);
+        agent.RevokeWriteAccess(userId);
+        agent.RevokeReadAccess(userId);
 
         // Use the internal update method since we've already verified permissions
         var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
+        
+        // If the user wasn't found in any permission list, still consider it successful (idempotent operation)
+        if (!wasUserFound)
+        {
+            _logger.LogInformation("User {UserId} was not found in any permission lists for agent {AgentName}, operation considered successful", userId, agentName);
+            return true;
+        }
         
         return result;
     }

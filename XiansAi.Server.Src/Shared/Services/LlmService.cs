@@ -14,6 +14,12 @@ public interface ILlmService
     string GetApiKey();
 
     /// <summary>
+    /// Gets the model for the current LLM provider
+    /// </summary>
+    /// <returns>The model</returns>
+    string GetModel();
+
+    /// <summary>
     /// Gets a chat completion from the current LLM provider
     /// </summary>
     /// <param name="messages">The chat messages</param>
@@ -61,12 +67,34 @@ public class LlmService : ILlmService
     }
 
     /// <summary>
+    /// Gets the model for the current LLM provider
+    /// </summary>
+    /// <returns>The model</returns>
+    public string GetModel()
+    {
+        try {
+            var model = _llmProvider.GetModel();
+            if (string.IsNullOrEmpty(model))
+            {
+                _logger.LogError("Model is not set for LLM provider");
+                throw new Exception("Model is not set for LLM provider");
+            }
+            return model;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting model from LLM provider");
+            throw new Exception("Error getting model from LLM provider", ex);
+        }
+    }
+
+    /// <summary>
     /// Gets a chat completion from the current LLM provider
     /// </summary>
     /// <param name="messages">The chat messages</param>
     /// <param name="model">The model to use</param>
     /// <returns>The completion response</returns>
-    public async Task<string> GetChatCompletionAsync(List<XiansAi.Server.Providers.ChatMessage> messages, string model)
+    public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model)
     {
         try
         {

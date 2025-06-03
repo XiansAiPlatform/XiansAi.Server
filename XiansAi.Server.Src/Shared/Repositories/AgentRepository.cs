@@ -84,7 +84,7 @@ public class AgentRepository : IAgentRepository
         }
 
         // Check if user has at least read permission
-        if (!agent.Permissions.HasPermission(userId, userRoles, PermissionLevel.Read))
+        if (!agent.HasPermission(userId, userRoles, PermissionLevel.Read))
         {
             _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission", userId, name);
             return null;
@@ -106,10 +106,15 @@ public class AgentRepository : IAgentRepository
         var permissionFilters = new List<FilterDefinition<Agent>>
         {
             // Check if user is owner
-            filterBuilder.AnyEq("permissions.owner_access", userId),
+            filterBuilder.AnyEq("owner_access", userId),
             // Check if user has read access
-            filterBuilder.AnyEq("permissions.read_access", userId),
+            filterBuilder.AnyEq("read_access", userId),
             // Check if user has write access (which includes read)
+            filterBuilder.AnyEq("write_access", userId),
+
+            // for backward compatibility
+            filterBuilder.AnyEq("permissions.owner_access", userId),
+            filterBuilder.AnyEq("permissions.read_access", userId),
             filterBuilder.AnyEq("permissions.write_access", userId)
         };
 
@@ -138,7 +143,7 @@ public class AgentRepository : IAgentRepository
         }
 
         // Check if user has write permission
-        if (!existingAgent.Permissions.HasPermission(userId, userRoles, PermissionLevel.Write))
+        if (!existingAgent.HasPermission(userId, userRoles, PermissionLevel.Write))
         {
             _logger.LogWarning("User {UserId} attempted to update agent {AgentName} without write permission", userId, existingAgent.Name);
             return false;
@@ -163,7 +168,7 @@ public class AgentRepository : IAgentRepository
         }
 
         // Check if user has owner permission
-        if (!agent.Permissions.HasPermission(userId, userRoles, PermissionLevel.Owner))
+        if (!agent.HasPermission(userId, userRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", userId, name);
             return false;
@@ -189,7 +194,7 @@ public class AgentRepository : IAgentRepository
         }
 
         // Check if user has owner permission
-        if (!agent.Permissions.HasPermission(userId, userRoles, PermissionLevel.Owner))
+        if (!agent.HasPermission(userId, userRoles, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", userId, agent.Name);
             return false;
@@ -270,9 +275,11 @@ public class AgentRepository : IAgentRepository
             Tenant = tenant,
             CreatedBy = createdBy,
             CreatedAt = DateTime.UtcNow,
-            Permissions = new Permission()
+            OwnerAccess = new List<string>(),
+            ReadAccess = new List<string>(),
+            WriteAccess = new List<string>()
         };
-        newAgent.Permissions.GrantOwnerAccess(createdBy);
+        newAgent.GrantOwnerAccess(createdBy);
 
         try
         {
