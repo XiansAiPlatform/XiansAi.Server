@@ -116,11 +116,11 @@ public class PublicService : IPublicService
             _logger.LogDebug("Generated tenant ID: {TenantId} from email: {Email}", tenantId, email);
 
             // Validate if the tenant ID is registered in our system
-            if (!IsValidTenantId(tenantId))
-            {
-                _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
-                return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
-            }
+            // if (!IsValidTenantId(tenantId))
+            // {
+            //     _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
+            //     return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
+            // }
 
             // Generate and send verification code
             _logger.LogInformation("Sending verification code to email: {Email}", email);
@@ -193,6 +193,18 @@ public class PublicService : IPublicService
         var value = _configuration[$"Tenants:{tenantId}:Enabled"];
         _logger.LogDebug("Checking configuration value for tenant {TenantId}: Tenants:{TenantId}:Enabled = {Value}", 
             tenantId, tenantId, value ?? "null");
+        
+        // Debug: Dump all configuration keys
+        var allConfig = _configuration.AsEnumerable()
+            .Where(x => x.Key.Contains("Tenants", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.Key)
+            .Select(x => $"{x.Key} = {x.Value}");
+            
+        _logger.LogDebug("All tenant-related configuration keys:");
+        foreach (var config in allConfig)
+        {
+            _logger.LogDebug("  {Config}", config);
+        }
         
         if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
         {
