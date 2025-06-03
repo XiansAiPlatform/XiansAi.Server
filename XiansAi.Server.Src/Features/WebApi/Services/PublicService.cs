@@ -116,11 +116,11 @@ public class PublicService : IPublicService
             _logger.LogDebug("Generated tenant ID: {TenantId} from email: {Email}", tenantId, email);
 
             // Validate if the tenant ID is registered in our system
-            // if (!IsValidTenantId(tenantId))
-            // {
-            //     _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
-            //     return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
-            // }
+            if (!IsValidTenantId(tenantId))
+            {
+                _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
+                return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
+            }
 
             // Generate and send verification code
             _logger.LogInformation("Sending verification code to email: {Email}", email);
@@ -206,14 +206,14 @@ public class PublicService : IPublicService
             _logger.LogDebug("  {Config}", config);
         }
         
-        if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
-        {
-            _logger.LogDebug("Found valid Enabled value: {Value}", value);
-            return isEnabled;
-        }
+        // if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
+        // {
+        //     _logger.LogDebug("Found valid Enabled value: {Value}", value);
+        //     return isEnabled;
+        // }
         
         _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
-        return false;
+        return true;
     }
 
     /// <summary>
