@@ -98,8 +98,7 @@ public class MessageService : IMessageService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 CreatedBy = _tenantContext.LoggedInUser,
-                Status = ConversationThreadStatus.Active,
-                IsInternalThread = false
+                Status = ConversationThreadStatus.Active
             };
 
             // This will either create a new thread or return the existing one
@@ -258,8 +257,7 @@ public class MessageService : IMessageService
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             CreatedBy = _tenantContext.LoggedInUser,
-            Status = ConversationThreadStatus.Active,
-            IsInternalThread = false
+            Status = ConversationThreadStatus.Active
         };
 
         var threadId = await _threadRepository.CreateOrGetAsync(thread);
@@ -274,6 +272,8 @@ public class MessageService : IMessageService
             throw new Exception("ThreadId is required");
         }
 
+        var originalMetadata = request.Metadata; // Store the original metadata
+
         var message = new ConversationMessage
         {
             ThreadId = request.ThreadId,
@@ -284,14 +284,17 @@ public class MessageService : IMessageService
             CreatedBy = _tenantContext.LoggedInUser,
             Direction = direction,
             Content = request.Content,
-            Metadata = request.Metadata,
+            Metadata = originalMetadata, // Assign original metadata
             WorkflowId = request.WorkflowId,
             WorkflowType = request.WorkflowType
         };
 
-        // Save message to database and update thread in a single transaction
+        // This call will modify message.Metadata within the 'message' instance to be a BsonDocument
         message.Id = await _messageRepository.CreateAndUpdateThreadAsync(message, request.ThreadId, DateTime.UtcNow);
         _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, request.ThreadId);
+
+        // Restore the metadata to its original C# object form before returning
+        message.Metadata = originalMetadata;
 
         return message;
     }

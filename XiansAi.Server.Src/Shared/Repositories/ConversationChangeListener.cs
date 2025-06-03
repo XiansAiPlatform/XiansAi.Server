@@ -103,7 +103,12 @@ namespace Shared.Repositories
                 {
                     var change = cursor.Current.First();
                     _logger.LogInformation("Found matching message in change stream");
-                    return change.FullDocument;
+                    var message = change.FullDocument;
+                    
+                    // Convert BSON metadata to native .NET types for proper JSON serialization
+                    ConvertBsonMetadataToObject(message);
+                    
+                    return message;
                 }
 
                 return null;
@@ -115,5 +120,93 @@ namespace Shared.Repositories
             }
         }
 
+        // Helper method to convert BsonDocument metadata back to the original object format
+        private void ConvertBsonMetadataToObject(ConversationMessage message)
+        {
+            if (message.Metadata is BsonDocument bsonDoc)
+            {
+                // If it's a simple wrapper with a "value" field, extract the value
+                if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
+                {
+                    var valueElement = bsonDoc["value"];
+                    if (valueElement.IsString)
+                    {
+                        // Try to deserialize if it looks like JSON
+                        string strValue = valueElement.AsString;
+                        if ((strValue.StartsWith("{") && strValue.EndsWith("}")) ||
+                            (strValue.StartsWith("[") && strValue.EndsWith("]")))
+                        {
+                            try
+                            {
+                                message.Metadata = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
+                                return;
+                            }
+                            catch
+                            {
+                                // If parsing fails, just use the string value
+                                message.Metadata = strValue;
+                                return;
+                            }
+                        }
+                        
+                        // It's just a string
+                        message.Metadata = strValue;
+                        return;
+                    }
+                }
+                
+                // Convert BsonDocument to native .NET types properly
+                message.Metadata = ConvertBsonToNativeObject(bsonDoc);
+            }
+        }
+
+        // Helper method to convert BSON types to native .NET types for proper JSON serialization
+        private object? ConvertBsonToNativeObject(BsonValue bsonValue)
+        {
+            switch (bsonValue.BsonType)
+            {
+                case BsonType.Document:
+                    var doc = bsonValue.AsBsonDocument;
+                    var dict = new Dictionary<string, object?>();
+                    foreach (var element in doc)
+                    {
+                        dict[element.Name] = ConvertBsonToNativeObject(element.Value);
+                    }
+                    return dict;
+                    
+                case BsonType.Array:
+                    var array = bsonValue.AsBsonArray;
+                    return array.Select(ConvertBsonToNativeObject).ToList();
+                    
+                case BsonType.String:
+                    return bsonValue.AsString;
+                    
+                case BsonType.Boolean:
+                    return bsonValue.AsBoolean;
+                    
+                case BsonType.Int32:
+                    return bsonValue.AsInt32;
+                    
+                case BsonType.Int64:
+                    return bsonValue.AsInt64;
+                    
+                case BsonType.Double:
+                    return bsonValue.AsDouble;
+                    
+                case BsonType.Decimal128:
+                    return bsonValue.AsDecimal;
+                    
+                case BsonType.DateTime:
+                    return bsonValue.ToUniversalTime();
+                    
+                case BsonType.Null:
+                case BsonType.Undefined:
+                    return null;
+                    
+                default:
+                    // For any other types, convert to string as fallback
+                    return bsonValue.ToString();
+            }
+        }
     }
 }

@@ -580,19 +580,57 @@ public class ConversationMessageRepository : IConversationMessageRepository
                 }
             }
             
-            // Convert the BsonDocument to a string representation then deserialize
-            string json = bsonDoc.ToJson();
-            try
-            {
-                message.Metadata = JsonSerializer.Deserialize<object>(json, new JsonSerializerOptions
+            // Convert BsonDocument to native .NET types properly
+            message.Metadata = ConvertBsonToNativeObject(bsonDoc);
+        }
+    }
+
+    // Helper method to convert BSON types to native .NET types for proper JSON serialization
+    private object? ConvertBsonToNativeObject(BsonValue bsonValue)
+    {
+        switch (bsonValue.BsonType)
+        {
+            case BsonType.Document:
+                var doc = bsonValue.AsBsonDocument;
+                var dict = new Dictionary<string, object?>();
+                foreach (var element in doc)
                 {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-            catch
-            {
-                // If all else fails, keep the original metadata
-            }
+                    dict[element.Name] = ConvertBsonToNativeObject(element.Value);
+                }
+                return dict;
+                
+            case BsonType.Array:
+                var array = bsonValue.AsBsonArray;
+                return array.Select(ConvertBsonToNativeObject).ToList();
+                
+            case BsonType.String:
+                return bsonValue.AsString;
+                
+            case BsonType.Boolean:
+                return bsonValue.AsBoolean;
+                
+            case BsonType.Int32:
+                return bsonValue.AsInt32;
+                
+            case BsonType.Int64:
+                return bsonValue.AsInt64;
+                
+            case BsonType.Double:
+                return bsonValue.AsDouble;
+                
+            case BsonType.Decimal128:
+                return bsonValue.AsDecimal;
+                
+            case BsonType.DateTime:
+                return bsonValue.ToUniversalTime();
+                
+            case BsonType.Null:
+            case BsonType.Undefined:
+                return null;
+                
+            default:
+                // For any other types, convert to string as fallback
+                return bsonValue.ToString();
         }
     }
 
