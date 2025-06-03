@@ -42,7 +42,8 @@ public class PublicService : IPublicService
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly Random _random;
-    
+    private readonly ITenantService _tenantService;
+
     // Constants for configuration
     private const int CODE_EXPIRATION_MINUTES = 15;
     private const string VERIFICATION_CACHE_PREFIX = "verification:";
@@ -57,6 +58,7 @@ public class PublicService : IPublicService
     /// <param name="cache">Object cache service for storing verification codes</param>
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
+    /// <param name="tenantService">Service for tenant operations</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
         IAuthMgtConnect authMgtConnect, 
@@ -64,7 +66,8 @@ public class PublicService : IPublicService
         ITenantContext tenantContext,
         ObjectCache cache, 
         IEmailService emailService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ITenantService tenantService)
     {
         _authMgtConnect = authMgtConnect ?? throw new ArgumentNullException(nameof(authMgtConnect));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -73,6 +76,7 @@ public class PublicService : IPublicService
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
         _random = new Random();
+        _tenantService = tenantService;
     }
 
     /// <summary>
@@ -189,9 +193,8 @@ public class PublicService : IPublicService
             _logger.LogDebug("Tenant ID validation failed: tenantId is null or empty");
             return false;
         }
-            
-        var tenantSection = _configuration.GetSection($"Tenants:{tenantId}");
-        bool exists = tenantSection.Exists();
+           
+        bool exists = _tenantService.GetTenantById(tenantId) != null;
         
         _logger.LogDebug("Tenant ID {TenantId} validation result: {IsValid}", tenantId, exists);
         return exists;
