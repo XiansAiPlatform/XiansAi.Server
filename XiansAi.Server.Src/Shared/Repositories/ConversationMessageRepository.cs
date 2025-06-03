@@ -97,7 +97,7 @@ public interface IConversationMessageRepository
     Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
 
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
-    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowType, string participantId, int? page = null, int? pageSize = null);
+    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -634,7 +634,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
         }
     }
 
-    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId,string workflowType, string participantId, int? page = null, int? pageSize = null)
+    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId,string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false)
     {
         _logger.LogDebug("Querying messages directly by participantId {ParticipantId}", participantId);
         
@@ -659,7 +659,34 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
         string threadId = threadResult["_id"].AsObjectId.ToString();
         
-        // Get messages for this thread
-        return await GetByThreadIdAsync(tenantId, threadId, page, pageSize);
+        // Build message filter
+        var messageFilter = Builders<ConversationMessage>.Filter.And(
+            Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+            Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
+        );
+
+        // If includeMetadata is false, filter out messages with null or empty content
+        if (!includeMetadata)
+        {
+            var contentFilter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Ne(x => x.Content, null),
+                Builders<ConversationMessage>.Filter.Ne(x => x.Content, "")
+            );
+            messageFilter = Builders<ConversationMessage>.Filter.And(messageFilter, contentFilter);
+        }
+
+        var query = _collection.Find(messageFilter).Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt));
+
+        if (page.HasValue && pageSize.HasValue)
+        {
+            query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
+        }
+
+        var messages = await query.ToListAsync();
+        foreach (var message in messages)
+        {
+            ConvertBsonMetadataToObject(message);
+        }
+        return messages;
     }
 }

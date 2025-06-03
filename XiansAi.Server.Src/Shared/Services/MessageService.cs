@@ -34,7 +34,7 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessOutgoingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessHandover(HandoverRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false);
     Task<ServiceResult<ConversationMessage>> GetLatestConversationMessageAsync(string threadId, string agent, string workflowType, string participantId, string workflowId);
 }
 
@@ -137,7 +137,7 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false)
     {
         try
         {
@@ -163,7 +163,7 @@ public class MessageService : IMessageService
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowType, participantId, page, pageSize);
+            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowType, participantId, page, pageSize, includeMetadata );
 
             _logger.LogInformation("Found {Count} messages for workflowType {WorkflowType} and participant {ParticipantId}",
                 messages.Count, workflowType, participantId);
