@@ -189,22 +189,33 @@ public class PublicService : IPublicService
             _logger.LogDebug("Tenant ID validation failed: tenantId is null or empty");
             return false;
         }
+
+        var safeTenantId = tenantId.Replace(".", "_"); // Azure sometimes replaces dots with underscores. So when we add teh doman to the key, make sure to put the dot in the key.
+        var value = _configuration[$"Tenants:{safeTenantId}:Enabled"];
+        if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
+        {
+            _logger.LogDebug("Tenant ID {TenantId} is enabled ? : {IsValid}", tenantId, isEnabled);
+            return isEnabled;
+        }
+        _logger.LogDebug("Tenant ID {TenantId} is disabled or not found in configuration", tenantId);
+        return false;
+
             
-        var value = _configuration[$"Tenants:{tenantId}:Enabled"];
-        _logger.LogDebug("Checking configuration value for tenant {TenantId}: Tenants:{TenantId}:Enabled = {Value}", 
-            tenantId, tenantId, value ?? "null");
+        // var value = _configuration[$"Tenants:{tenantId}:Enabled"];
+        // _logger.LogDebug("Checking configuration value for tenant {TenantId}: Tenants:{TenantId}:Enabled = {Value}", 
+        //     tenantId, tenantId, value ?? "null");
         
         // Debug: Dump all configuration keys
-        var allConfig = _configuration.AsEnumerable()
-            .Where(x => x.Key.Contains("Tenants", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(x => x.Key)
-            .Select(x => $"{x.Key} = {x.Value}");
+        // var allConfig = _configuration.AsEnumerable()
+        //     .Where(x => x.Key.Contains("Tenants", StringComparison.OrdinalIgnoreCase))
+        //     .OrderBy(x => x.Key)
+        //     .Select(x => $"{x.Key} = {x.Value}");
             
-        _logger.LogDebug("All tenant-related configuration keys:");
-        foreach (var config in allConfig)
-        {
-            _logger.LogDebug("  {Config}", config);
-        }
+        // _logger.LogDebug("All tenant-related configuration keys:");
+        // foreach (var config in allConfig)
+        // {
+        //     _logger.LogDebug("  {Config}", config);
+        // }
         
         // if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
         // {
@@ -212,8 +223,8 @@ public class PublicService : IPublicService
         //     return isEnabled;
         // }
         
-        _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
-        return true;
+        // _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
+        // return true;
     }
 
     /// <summary>
