@@ -1,9 +1,10 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Caching.Memory;
+using Features.WebApi.Auth.Providers;
 using Features.WebApi.Auth.Providers.Auth0;
 using Features.WebApi.Auth.Providers.AzureB2C;
-using Features.WebApi.Auth.Providers;
+using Features.WebApi.Auth.Providers.Keycloak;
 using Features.WebApi.Auth.Providers.Tokens;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Features.WebApi.Auth;
 
@@ -13,18 +14,20 @@ public static class AuthConfigurationExtensions
     {
         // Register memory cache if not already registered
         builder.Services.AddMemoryCache();
-        
-        // Register token validation cache - using no-op implementation to disable caching
-        builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
-        
+
+        // Register token validation cache
+        builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
+
         // Register token services
         builder.Services.AddScoped<Auth0TokenService>();
         builder.Services.AddScoped<AzureB2CTokenService>();
+        builder.Services.AddScoped<KeycloakTokenService>();
         builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
         
         // Register auth providers
         builder.Services.AddScoped<Auth0Provider>();
         builder.Services.AddScoped<AzureB2CProvider>();
+        builder.Services.AddScoped<KeycloakProvider>();
         builder.Services.AddScoped<IAuthProviderFactory, AuthProviderFactory>();
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
 

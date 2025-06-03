@@ -73,6 +73,27 @@ services:
       - ./.cert:/app/.cert
     restart: unless-stopped
 
+  # Keycloak service - Development
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.4
+    user: root
+    container_name: Keycloak
+    command: start-dev
+    environment:
+      - SERVICE_TYPE=--web
+      - ASPNETCORE_ENVIRONMENT=Development
+      - KC_HEALTH_ENABLED=true
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    ports:
+      - 18080:8080
+    networks:
+      - xiansai-network
+    volumes:
+      - ./.containers/identity:/opt/keycloak/data
+    restart: unless-stopped
+    
+
   # Combined service (all APIs)
   # Uncomment this to run all services in a single container
   # allapi:
