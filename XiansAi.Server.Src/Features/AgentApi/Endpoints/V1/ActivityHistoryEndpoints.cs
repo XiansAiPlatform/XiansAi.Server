@@ -3,25 +3,40 @@ using Features.AgentApi.Auth;
 using Features.AgentApi.Services.Lib;
 using System.Text.Json;
 
-namespace Features.AgentApi.Endpoints;
+namespace Features.AgentApi.Endpoints.V1;
 
 // Non-static class for logger type parameter
 public class ActivityHistoryEndpointLogger {}
 
-public static class ActivityHistoryEndpoints
+public static class ActivityHistoryEndpointsV1
 {
     private static ILogger<ActivityHistoryEndpointLogger> _logger = null!;
 
     public static void MapActivityHistoryEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
     {
+        var version = "v1";
         _logger = loggerFactory.CreateLogger<ActivityHistoryEndpointLogger>();
         
         // Map activity history endpoints
-        var activityHistoryGroup = app.MapGroup("/api/agent/activity-history")
-            .WithTags("AgentAPI - Activity History")
+        var activityHistoryGroup = app.MapGroup($"/api/{version}/agent/activity-history")
+            .WithTags($"AgentAPI - Activity History {version}")
             .RequiresCertificate();
-            
-        activityHistoryGroup.MapPost("", (
+
+        // If there are any routes that are common for multiple versions, add them here
+        CommonMapRoutes(activityHistoryGroup, version);
+
+        // If there are any routes that will be deleted in future versions, add them here
+        UniqueMapRoutes(activityHistoryGroup, version);
+    }
+
+    internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+    {
+        // If there are any routes that are common for multiple versions, add them here
+    }
+
+    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+    {
+        group.MapPost("", (
             [FromServices] IActivityHistoryService endpoint,
             [FromBody] ActivityHistoryRequest request,
             HttpContext context) =>

@@ -2,16 +2,31 @@ using XiansAi.Server.Features.AgentApi.Models;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using Features.AgentApi.Auth;
 
-namespace XiansAi.Server.Features.AgentApi.Endpoints
+namespace Features.AgentApi.Endpoints.V1
 {
-    public static class WebhookEndpoints
+    public static class WebhookEndpointsV1
     {
         public static void MapWebhookEndpoints(this IEndpointRouteBuilder endpoints)
         {
-            var group = endpoints.MapGroup("/api/agent/webhooks")
-                .WithTags("AgentAPI - Webhooks")
+            var version = "v1";
+            var group = endpoints.MapGroup($"/api/{version}/agent/webhooks")
+                .WithTags($"AgentAPI - Webhooks {version}")
                 .RequiresCertificate();
 
+            // If there are any routes that are common for multiple versions, add them here
+            CommonMapRoutes(group, version);
+
+            // If there are any routes that will be deleted in future versions, add them here
+            UniqueMapRoutes(group, version);
+        }
+
+        internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+        {
+            // If there are any routes that are common for multiple versions, add them here
+        }
+
+        internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+        {
             group.MapPost("/register", async (
                 WebhookRegistrationDto registration,
                 IWebhookService webhookService,
@@ -20,7 +35,7 @@ namespace XiansAi.Server.Features.AgentApi.Endpoints
                 var webhook = await webhookService.RegisterWebhookAsync(registration);
                 return Results.Ok(webhook);
             })
-            .WithName("RegisterWebhook")
+            .WithName($"{version} - RegisterWebhook")
             .WithDescription("Register a new webhook for a workflow");
 
             group.MapDelete("/{webhookId}", async (
@@ -31,7 +46,7 @@ namespace XiansAi.Server.Features.AgentApi.Endpoints
                 var result = await webhookService.DeleteWebhookAsync(webhookId);
                 return result ? Results.Ok() : Results.NotFound();
             })
-            .WithName("DeleteWebhook")
+            .WithName($"{version} - DeleteWebhook")
             .WithDescription("Delete an existing webhook");
 
             group.MapGet("/{webhookId}", async (
@@ -42,7 +57,7 @@ namespace XiansAi.Server.Features.AgentApi.Endpoints
                 var webhook = await webhookService.GetWebhookAsync(webhookId);
                 return webhook != null ? Results.Ok(webhook) : Results.NotFound();
             })
-            .WithName("GetWebhook")
+            .WithName($"{version} - GetWebhook")
             .WithDescription("Get webhook details");
 
             group.MapPost("/trigger", async (
@@ -68,7 +83,7 @@ namespace XiansAi.Server.Features.AgentApi.Endpoints
                     warnings = result.Errors.Any() ? result.Errors : null
                 });
             })
-            .WithName("TriggerWebhook")
+            .WithName($"{version} - TriggerWebhook")
             .WithDescription("Manually trigger webhooks for a specific workflow and event type");
         }
     }

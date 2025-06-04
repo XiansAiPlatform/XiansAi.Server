@@ -3,7 +3,8 @@ using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
 using XiansAi.Server.Features.AgentApi.Repositories;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
-using XiansAi.Server.Features.AgentApi.Endpoints;
+using Features.AgentApi.Endpoints.V1;
+using Features.AgentApi.Endpoints.V2;
 using Features.AgentApi.Repositories;
 using Shared.Services;
 
@@ -60,15 +61,28 @@ public static class AgentApiConfiguration
     public static WebApplication UseAgentApiEndpoints(this WebApplication app, ILoggerFactory loggerFactory)
     {
         // Map Lib API endpoints
-        CacheEndpoints.MapCacheEndpoints(app, loggerFactory);
-        KnowledgeEndpoints.MapKnowledgeEndpoints(app, loggerFactory);
-        ActivityHistoryEndpoints.MapActivityHistoryEndpoints(app, loggerFactory);
-        DefinitionsEndpoints.MapDefinitionsEndpoints(app, loggerFactory);
-        EventsEndpoints.MapEventsEndpoints(app, loggerFactory);
-        WebhookEndpoints.MapWebhookEndpoints(app);
-        ConversationEndpoints.MapConversationEndpoints(app);
-        LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
-        SettingsEndpoints.MapSettingsEndpoints(app);
+
+        //V1
+        CacheEndpointsV1.MapCacheEndpoints(app, loggerFactory);
+        KnowledgeEndpointsV1.MapKnowledgeEndpoints(app, loggerFactory);
+        ActivityHistoryEndpointsV1.MapActivityHistoryEndpoints(app, loggerFactory);
+        DefinitionsEndpointsV1.MapDefinitionsEndpoints(app, loggerFactory);
+        EventsEndpointsV1.MapEventsEndpoints(app, loggerFactory);
+        WebhookEndpointsV1.MapWebhookEndpoints(app);
+        ConversationEndpointsV1.MapConversationEndpoints(app);
+        LogsEndpointsV1.MapLogsEndpoints(app, loggerFactory);
+        SettingsEndpointsV1.MapSettingsEndpoints(app);
+
+        //V2
+        CacheEndpointsV2.MapCacheEndpoints(app, loggerFactory);
+        KnowledgeEndpointsV2.MapKnowledgeEndpoints(app, loggerFactory);
+        ActivityHistoryEndpointsV2.MapActivityHistoryEndpoints(app, loggerFactory);
+        DefinitionsEndpointsV2.MapDefinitionsEndpoints(app, loggerFactory);
+        EventsEndpointsV2.MapEventsEndpoints(app, loggerFactory);
+        WebhookEndpointsV2.MapWebhookEndpoints(app);
+        ConversationEndpointsV2.MapConversationEndpoints(app);
+        LogsEndpointsV2.MapLogsEndpoints(app, loggerFactory);
+        SettingsEndpointsV2.MapSettingsEndpoints(app);
         
         return app;
     }

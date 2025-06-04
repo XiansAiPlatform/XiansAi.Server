@@ -5,16 +5,31 @@ using Shared.Utils.Services;
 using Microsoft.AspNetCore.SignalR;
 using XiansAi.Server.Shared.Websocket;
 
-namespace Features.AgentApi.Endpoints
+namespace Features.AgentApi.Endpoints.V1
 {
-    public static class ConversationEndpoints
+    public static class ConversationEndpointsV1
     {
         public static void MapConversationEndpoints(WebApplication app)
         {
-            var group = app.MapGroup("/api/agent/conversation")
-                .WithTags("AgentAPI - Conversation")
+            var version = "v1";
+            var group = app.MapGroup($"/api/{version}/agent/conversation")
+                .WithTags($"AgentAPI - Conversation {version}")
                 .RequiresCertificate();
+            
+            // If there are any routes that are common for multiple versions, add them here
+            CommonMapRoutes(group, version);
 
+            // If there are any routes that will be deleted in future versions, add them here
+            UniqueMapRoutes(group, version);
+        }
+
+        internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+        {
+            // If there are any routes that are common for multiple versions, add them here
+        }
+
+        internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+        {
             group.MapGet("/history", async (
                 [FromQuery] string agent,
                 [FromQuery] string workflowType,
@@ -26,7 +41,7 @@ namespace Features.AgentApi.Endpoints
                 var result = await messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
                 return result.ToHttpResult();
             })
-            .WithName("Get Conversation History")
+            .WithName($"{version} - Get Conversation History")
             .WithOpenApi(operation => {
                 operation.Summary = "Get conversation history";
                 operation.Description = "Gets the conversation history for a given conversation thread with pagination support";
@@ -40,7 +55,7 @@ namespace Features.AgentApi.Endpoints
                 var result = await messageService.ProcessIncomingMessage(request);
                 return result.ToHttpResult();
             })
-            .WithName("Process Inbound Message to Agent")
+            .WithName($"{version} - Process Inbound Message to Agent")
             .WithOpenApi(operation => {
                 operation.Summary = "Process inbound message to Agent";
                 operation.Description = "Processes an inbound message for agent conversations and returns the result";
@@ -54,7 +69,7 @@ namespace Features.AgentApi.Endpoints
                 var result = await messageService.ProcessOutgoingMessage(request);
                 return result.ToHttpResult();
             })
-            .WithName("Process Outbound Message from Agent")
+            .WithName($"{version} - Process Outbound Message from Agent")
             .WithOpenApi(operation => {
                 operation.Summary = "Process outbound message to Agent";
                 operation.Description = "Processes an outbound message for agent conversations and returns the result";
@@ -67,7 +82,7 @@ namespace Features.AgentApi.Endpoints
                 var result = await messageService.ProcessHandover(request);
                 return result.ToHttpResult();
             })
-            .WithName("Process Handover Message from Agent")
+            .WithName($"{version} - Process Handover Message from Agent")
             .WithOpenApi(operation => {
                 operation.Summary = "Process handover message from Agent";
                 operation.Description = "Processes a handover message for agent conversations and returns the result";
