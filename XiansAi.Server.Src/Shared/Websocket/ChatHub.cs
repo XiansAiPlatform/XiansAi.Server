@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
 using Shared.Services;
 
@@ -114,7 +115,7 @@ namespace XiansAi.Server.Shared.Websocket
 
         public async Task SendInboundMessage(MessageRequest request)
         {
-            _logger.LogInformation("Sending inbound message for workflowType {WorkflowType}, participantId {ParticipantId}", request.WorkflowType, request.ParticipantId);
+            _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
             EnsureTenantContext();
             try 
             {

@@ -186,7 +186,7 @@ public class MessageService : IMessageService
         {
             if (request.ThreadId == null)
             {
-                request.ThreadId = await CreateThread(request);
+                request.ThreadId = await CreateOrGetThread(request);
             }
 
             var message = await SaveMessage(request, MessageDirection.Outgoing);
@@ -210,7 +210,7 @@ public class MessageService : IMessageService
         
         if (request.ThreadId == null)
         {
-            request.ThreadId = await CreateThread(request);
+            request.ThreadId = await CreateOrGetThread(request);
         }
 
         // Save the message
@@ -244,7 +244,7 @@ public class MessageService : IMessageService
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);
     }
 
-    private async Task<string> CreateThread(MessageRequest request)
+    private async Task<string> CreateOrGetThread(MessageRequest request)
     {
         var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var thread = new ConversationThread

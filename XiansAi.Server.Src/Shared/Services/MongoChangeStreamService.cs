@@ -65,14 +65,20 @@ namespace XiansAi.Server.Shared.Services
                             // Convert BSON metadata to native .NET objects before sending via SignalR
                             ConvertBsonMetadataToObjectInternal(message);
 
+                            var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
+
                             if (string.IsNullOrEmpty(message.Content))
                             {
-                                await _hubContext.Clients.Group(message.WorkflowId + message.ParticipantId + message.TenantId)
+                                _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
+                                groupId, JsonSerializer.Serialize(message));
+                                await _hubContext.Clients.Group(groupId)
                                 .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
                             }
                             else
                             {
-                                await _hubContext.Clients.Group(message.WorkflowId + message.ParticipantId + message.TenantId)
+                                _logger.LogDebug("Sending message to group {GroupId}: {Message}",
+                                groupId, JsonSerializer.Serialize(message));
+                                await _hubContext.Clients.Group(groupId)
                                     .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
                             }
 
