@@ -18,6 +18,7 @@ public class CreateTenantRequest
     public required string Domain { get; set; }
     public string? Description { get; set; }
     public Logo? Logo { get; set; }
+    public string? Theme { get; set; }
     public string? Timezone { get; set; }
 }
 
@@ -27,6 +28,7 @@ public class UpdateTenantRequest
     public string? Domain { get; set; }
     public string? Description { get; set; }
     public Logo? Logo { get; set; }
+    public string? Theme { get; set; }
     public string? Timezone { get; set; }
 }
 
@@ -153,6 +155,7 @@ public class TenantService : ITenantService
                 Domain = request.Domain,
                 Description = request.Description,
                 Logo = request.Logo,
+                Theme = request.Theme,
                 Timezone = request.Timezone,
                 CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set"),
                 CreatedAt = DateTime.UtcNow,
@@ -204,6 +207,9 @@ public class TenantService : ITenantService
             
             if (request.Logo != null)
                 existingTenant.Logo = request.Logo;
+
+            if (request.Theme != null)
+                existingTenant.Theme = request.Theme;
             
             if (request.Timezone != null)
                 existingTenant.Timezone = request.Timezone;
