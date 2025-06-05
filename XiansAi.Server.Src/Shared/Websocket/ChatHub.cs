@@ -4,7 +4,7 @@ using Shared.Auth;
 using Shared.Services;
 
 namespace XiansAi.Server.Shared.Websocket
-{   
+{
     public class ChatHub : Hub
     {
         private readonly ClientConnectionManager _connectionManager;
@@ -41,9 +41,10 @@ namespace XiansAi.Server.Shared.Websocket
                 if (string.IsNullOrEmpty(_tenantContext.TenantId) || string.IsNullOrEmpty(_tenantContext.LoggedInUser))
                 {
                     _logger.LogError("TenantContext not properly initialized");
-                    await Clients.Caller.SendAsync("ConnectionError", new { 
-                        StatusCode = StatusCodes.Status401Unauthorized, 
-                        Message = "Invalid tenant context" 
+                    await Clients.Caller.SendAsync("ConnectionError", new
+                    {
+                        StatusCode = StatusCodes.Status401Unauthorized,
+                        Message = "Invalid tenant context"
                     });
                     Context.Abort();
                     return;
@@ -57,9 +58,10 @@ namespace XiansAi.Server.Shared.Websocket
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in OnConnectedAsync");
-                await Clients.Caller.SendAsync("ConnectionError", new { 
-                    StatusCode = StatusCodes.Status500InternalServerError, 
-                    Message = "Internal server error" 
+                await Clients.Caller.SendAsync("ConnectionError", new
+                {
+                    StatusCode = StatusCodes.Status500InternalServerError,
+                    Message = "Internal server error"
                 });
                 Context.Abort();
             }
@@ -91,7 +93,7 @@ namespace XiansAi.Server.Shared.Websocket
 
         public void DisconnectThread(string threadId)
         {
-            if (_connectionManager.GetConnectionId(threadId)==Context.ConnectionId)
+            if (_connectionManager.GetConnectionId(threadId) == Context.ConnectionId)
             {
                 _connectionManager.RemoveConnection(Context.ConnectionId);
                 _logger.LogInformation($"Disconnected thread {threadId} and removed connection {Context.ConnectionId}");
@@ -110,22 +112,22 @@ namespace XiansAi.Server.Shared.Websocket
         {
             EnsureTenantContext();
             var result = await _messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
-            await Clients.Caller.SendAsync("ThreadHistory", result.Data);           
+            await Clients.Caller.SendAsync("ThreadHistory", result.Data);
         }
 
         public async Task SendInboundMessage(MessageRequest request)
         {
             _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
             EnsureTenantContext();
-            try 
+            try
             {
                 // Step 1: Process inbound
                 var inboundResult = await _messageService.ProcessIncomingMessage(request);
-                
+
                 if (inboundResult.Data != null)
                 {
                     _connectionManager.AddConnection(inboundResult.Data, Context.ConnectionId);
-                                      
+
                     // Notify client message was received
                     await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
                 }
@@ -141,6 +143,7 @@ namespace XiansAi.Server.Shared.Websocket
                 await Clients.Caller.SendAsync("Error", "Failed to process message");
             }
         }
+
         public async Task SubscribeToAgent(string workflowId, string participantId, string TenantId)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);

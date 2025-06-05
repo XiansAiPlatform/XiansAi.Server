@@ -320,31 +320,9 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Use a session to perform both operations in a transaction
-            using var session = await _database.Client.StartSessionAsync();
-            
-            session.StartTransaction();
-
-            try
-            {
-                // Insert the message
-                await _collection.InsertOneAsync(session, message);
-                var messageId = message.Id;
-
-                // Update the thread's last activity timestamp
-                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
-                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
-                await _threadCollection.UpdateOneAsync(session, filter, update);
-
-                // Commit the transaction
-                await session.CommitTransactionAsync();
-                return messageId;
-            }
-            catch
-            {
-                await session.AbortTransactionAsync();
-                throw;
-            }
+            // Only insert the message - remove thread update to avoid write conflicts
+            await _collection.InsertOneAsync(message);
+            return message.Id;
         }, _logger, operationName: "CreateAndUpdateThreadAsync");
     }
 
