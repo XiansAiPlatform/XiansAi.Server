@@ -15,6 +15,7 @@ public class FlowServerSettings
     public required string FlowServerCertBase64 { get; set; }
     public required string FlowServerPrivateKeyBase64 { get; set; }
     public required string OpenAIApiKey { get; set; }
+    public required string ModelName { get; set; }
 }
 
 public class CertificateService
@@ -49,7 +50,8 @@ public class CertificateService
             FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerCertBase64 = GetFlowServerCertBase64(),
             FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
-            OpenAIApiKey = _llmService.GetApiKey()
+            OpenAIApiKey = _llmService.GetApiKey(),
+            ModelName = _llmService.GetModel()
         };
     }
 

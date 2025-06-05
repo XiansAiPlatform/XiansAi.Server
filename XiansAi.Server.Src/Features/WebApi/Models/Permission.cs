@@ -1,15 +1,8 @@
 using System.Text.Json;
 using MongoDB.Bson.Serialization.Attributes;
+using Shared.Data.Models;
 
 namespace Shared.Data;
-
-public enum PermissionLevel
-{
-    None,
-    Read,
-    Write,
-    Owner
-}
 
 public class Permission
 {

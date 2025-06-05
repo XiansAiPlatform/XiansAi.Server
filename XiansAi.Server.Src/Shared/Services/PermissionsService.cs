@@ -4,6 +4,7 @@ using Shared.Auth;
 using Shared.Utils.Services;
 using Features.WebApi.Repositories;
 using Shared.Repositories;
+using Shared.Data.Models;
 
 namespace Shared.Services;
 

@@ -16,14 +16,13 @@ namespace Features.AgentApi.Endpoints
                 .RequiresCertificate();
 
             group.MapGet("/history", async (
-                [FromQuery] string agent,
                 [FromQuery] string workflowType,
                 [FromQuery] string participantId,
                 [FromQuery] int page,
                 [FromQuery] int pageSize,
                 [FromServices] IMessageService messageService) => {
                 
-                var result = await messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
+                var result = await messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
                 return result.ToHttpResult();
             })
             .WithName("Get Conversation History")

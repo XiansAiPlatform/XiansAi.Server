@@ -1,10 +1,10 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -61,7 +61,7 @@ public class ConversationMessage
     public required MessageDirection Direction { get; set; }
 
     [BsonElement("content")]
-    public required string Content { get; set; }
+    public string? Content { get; set; }
 
     [BsonElement("status")]
     [BsonRepresentation(BsonType.String)]
@@ -97,7 +97,7 @@ public interface IConversationMessageRepository
     Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
 
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
-    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null);
+    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -318,35 +318,12 @@ public class ConversationMessageRepository : IConversationMessageRepository
             message.Metadata = ConvertToBsonDocument(message.Metadata);
         }
 
-        // Use a session to perform both operations in a transaction
-        using var session = await _database.Client.StartSessionAsync();
-        string messageId = "";
-
-        try
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            session.StartTransaction();
-
-            // Insert the message
-            await _collection.InsertOneAsync(session, message);
-            messageId = message.Id;
-
-            // Update the thread's last activity timestamp
-            var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
-            var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
-            await _threadCollection.UpdateOneAsync(session, filter, update);
-
-            // Commit the transaction
-            await session.CommitTransactionAsync();
-            _logger.LogDebug("Successfully created message and updated thread timestamp in a transaction");
-        }
-        catch (Exception ex)
-        {
-            await session.AbortTransactionAsync();
-            _logger.LogError(ex, "Error in CreateAndUpdateThreadAsync transaction, rolling back");
-            throw;
-        }
-
-        return messageId;
+            // Only insert the message - remove thread update to avoid write conflicts
+            await _collection.InsertOneAsync(message);
+            return message.Id;
+        }, _logger, operationName: "CreateAndUpdateThreadAsync");
     }
 
     public async Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
@@ -378,39 +355,37 @@ public class ConversationMessageRepository : IConversationMessageRepository
             }
         }
 
-        // Use a session to perform all operations in a transaction
-        using var session = await _database.Client.StartSessionAsync();
-        List<string> messageIds = new List<string>();
-
-        try
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
+            // Use a session to perform all operations in a transaction
+            using var session = await _database.Client.StartSessionAsync();
+            
             session.StartTransaction();
 
-            // Insert all messages in a single operation
-            await _collection.InsertManyAsync(session, messages);
-            messageIds = messages.Select(m => m.Id).ToList();
-
-            // Update all thread timestamps
-            foreach (var threadUpdate in threadTimestamps)
+            try
             {
-                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
-                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
-                await _threadCollection.UpdateOneAsync(session, filter, update);
+                // Insert all messages in a single operation
+                await _collection.InsertManyAsync(session, messages);
+                var messageIds = messages.Select(m => m.Id).ToList();
+
+                // Update all thread timestamps
+                foreach (var threadUpdate in threadTimestamps)
+                {
+                    var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
+                    var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
+                    await _threadCollection.UpdateOneAsync(session, filter, update);
+                }
+
+                // Commit the transaction
+                await session.CommitTransactionAsync();
+                return messageIds;
             }
-
-            // Commit the transaction
-            await session.CommitTransactionAsync();
-            _logger.LogDebug("Successfully created {Count} messages and updated {ThreadCount} thread timestamps in a transaction", 
-                messages.Count, threadTimestamps.Count);
-        }
-        catch (Exception ex)
-        {
-            await session.AbortTransactionAsync();
-            _logger.LogError(ex, "Error in CreateManyAndUpdateThreadsAsync transaction, rolling back");
-            throw;
-        }
-
-        return messageIds;
+            catch
+            {
+                await session.AbortTransactionAsync();
+                throw;
+            }
+        }, _logger, operationName: "CreateManyAndUpdateThreadsAsync");
     }
 
     // Helper method to convert any object to BsonDocument
@@ -520,26 +495,32 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<bool> UpdateStatusAsync(string id, MessageStatus status)
     {
-        var update = Builders<ConversationMessage>.Update
-            .Set(x => x.Status, status)
-            .Push(x => x.Logs, new MessageLogEvent
-            {
-                Timestamp = DateTime.UtcNow,
-                Event = status.ToString()
-            });
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var update = Builders<ConversationMessage>.Update
+                .Set(x => x.Status, status)
+                .Push(x => x.Logs, new MessageLogEvent
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Event = status.ToString()
+                });
 
-        var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-        return result.ModifiedCount > 0;
+            var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
+            return result.ModifiedCount > 0;
+        }, _logger, operationName: "UpdateStatusAsync");
     }
 
     public async Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent)
     {
-        var update = Builders<ConversationMessage>.Update
-            .Push(x => x.Logs, logEvent)
-            .Set(x => x.UpdatedAt, DateTime.UtcNow);
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var update = Builders<ConversationMessage>.Update
+                .Push(x => x.Logs, logEvent)
+                .Set(x => x.UpdatedAt, DateTime.UtcNow);
 
-        var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-        return result.ModifiedCount > 0;
+            var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
+            return result.ModifiedCount > 0;
+        }, _logger, operationName: "AddMessageLogAsync");
     }
 
     // Helper method to convert BsonDocument metadata back to the original object format
@@ -577,30 +558,67 @@ public class ConversationMessageRepository : IConversationMessageRepository
                 }
             }
             
-            // Convert the BsonDocument to a string representation then deserialize
-            string json = bsonDoc.ToJson();
-            try
-            {
-                message.Metadata = JsonSerializer.Deserialize<object>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-            catch
-            {
-                // If all else fails, keep the original metadata
-            }
+            // Convert BsonDocument to native .NET types properly
+            message.Metadata = ConvertBsonToNativeObject(bsonDoc);
         }
     }
 
-    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null)
+    // Helper method to convert BSON types to native .NET types for proper JSON serialization
+    private object? ConvertBsonToNativeObject(BsonValue bsonValue)
     {
-        _logger.LogDebug("Querying messages directly by agent {Agent} and participantId {ParticipantId}", agent, participantId);
+        switch (bsonValue.BsonType)
+        {
+            case BsonType.Document:
+                var doc = bsonValue.AsBsonDocument;
+                var dict = new Dictionary<string, object?>();
+                foreach (var element in doc)
+                {
+                    dict[element.Name] = ConvertBsonToNativeObject(element.Value);
+                }
+                return dict;
+                
+            case BsonType.Array:
+                var array = bsonValue.AsBsonArray;
+                return array.Select(ConvertBsonToNativeObject).ToList();
+                
+            case BsonType.String:
+                return bsonValue.AsString;
+                
+            case BsonType.Boolean:
+                return bsonValue.AsBoolean;
+                
+            case BsonType.Int32:
+                return bsonValue.AsInt32;
+                
+            case BsonType.Int64:
+                return bsonValue.AsInt64;
+                
+            case BsonType.Double:
+                return bsonValue.AsDouble;
+                
+            case BsonType.Decimal128:
+                return bsonValue.AsDecimal;
+                
+            case BsonType.DateTime:
+                return bsonValue.ToUniversalTime();
+                
+            case BsonType.Null:
+            case BsonType.Undefined:
+                return null;
+                
+            default:
+                // For any other types, convert to string as fallback
+                return bsonValue.ToString();
+        }
+    }
+
+    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId,string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false)
+    {
+        _logger.LogDebug("Querying messages directly by participantId {ParticipantId}", participantId);
         
         // First, get the thread ID for the given workflow and participant
         var threadFilter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
             Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, workflowType),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
@@ -613,13 +631,40 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // If no thread exists, return empty list
         if (threadResult == null)
         {
-            _logger.LogInformation("No thread found for agent {Agent} and participantId {ParticipantId}", agent, participantId);
+            _logger.LogInformation("No thread found for workflowType {WorkflowType} and participantId {ParticipantId}", workflowType, participantId);
             return new List<ConversationMessage>();
         }
 
         string threadId = threadResult["_id"].AsObjectId.ToString();
         
-        // Get messages for this thread
-        return await GetByThreadIdAsync(tenantId, threadId, page, pageSize);
+        // Build message filter
+        var messageFilter = Builders<ConversationMessage>.Filter.And(
+            Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+            Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
+        );
+
+        // If includeMetadata is false, filter out messages with null or empty content
+        if (!includeMetadata)
+        {
+            var contentFilter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Ne(x => x.Content, null),
+                Builders<ConversationMessage>.Filter.Ne(x => x.Content, "")
+            );
+            messageFilter = Builders<ConversationMessage>.Filter.And(messageFilter, contentFilter);
+        }
+
+        var query = _collection.Find(messageFilter).Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt));
+
+        if (page.HasValue && pageSize.HasValue)
+        {
+            query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
+        }
+
+        var messages = await query.ToListAsync();
+        foreach (var message in messages)
+        {
+            ConvertBsonMetadataToObject(message);
+        }
+        return messages;
     }
 }

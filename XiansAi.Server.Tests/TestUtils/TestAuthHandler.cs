@@ -12,25 +12,20 @@ public class TestAuthenticationOptions : AuthenticationSchemeOptions
 
 public class TestAuthHandler : AuthenticationHandler<TestAuthenticationOptions>
 {
-#pragma warning disable CS0618 // Type or member is obsolete
-    public TestAuthHandler(
-        IOptionsMonitor<TestAuthenticationOptions> options,
-        ILoggerFactory logger,
-        UrlEncoder encoder,
-        ISystemClock clock) 
+    public TestAuthHandler(IOptionsMonitor<TestAuthenticationOptions> options,
+        ILoggerFactory logger, UrlEncoder encoder, ISystemClock clock)
         : base(options, logger, encoder, clock)
     {
     }
-#pragma warning restore CS0618 // Type or member is obsolete
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var claims = new[] {
-            new Claim(ClaimTypes.Name, "Test User"),
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.Name, "test-user"),
             new Claim(ClaimTypes.NameIdentifier, "test-user-id"),
             new Claim("tenant_id", "test-tenant"),
-            new Claim("client_id", "test-client"),
-            new Claim("thumbprint", "test-thumbprint")
+            new Claim(ClaimTypes.Role, "User")
         };
 
         var identity = new ClaimsIdentity(claims, "Test");

@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
 using Shared.Services;
@@ -40,9 +41,10 @@ namespace XiansAi.Server.Shared.Websocket
                 if (string.IsNullOrEmpty(_tenantContext.TenantId) || string.IsNullOrEmpty(_tenantContext.LoggedInUser))
                 {
                     _logger.LogError("TenantContext not properly initialized");
-                    await Clients.Caller.SendAsync("ConnectionError", new { 
-                        StatusCode = StatusCodes.Status401Unauthorized, 
-                        Message = "Invalid tenant context" 
+                    await Clients.Caller.SendAsync("ConnectionError", new
+                    {
+                        StatusCode = StatusCodes.Status401Unauthorized,
+                        Message = "Invalid tenant context"
                     });
                     Context.Abort();
                     return;
@@ -56,9 +58,10 @@ namespace XiansAi.Server.Shared.Websocket
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in OnConnectedAsync");
-                await Clients.Caller.SendAsync("ConnectionError", new { 
-                    StatusCode = StatusCodes.Status500InternalServerError, 
-                    Message = "Internal server error" 
+                await Clients.Caller.SendAsync("ConnectionError", new
+                {
+                    StatusCode = StatusCodes.Status500InternalServerError,
+                    Message = "Internal server error"
                 });
                 Context.Abort();
             }
@@ -86,21 +89,22 @@ namespace XiansAi.Server.Shared.Websocket
             return base.OnDisconnectedAsync(exception);
         }
 
-        public async Task GetThreadHistory(string agent, string workflowType, string participantId, int page, int pageSize)
+        public async Task GetThreadHistory(string workflowType, string participantId, int page, int pageSize)
         {
             EnsureTenantContext();
-            var result = await _messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
-            await Clients.Caller.SendAsync("ThreadHistory", result.Data);           
+            var result = await _messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
+            await Clients.Caller.SendAsync("ThreadHistory", result.Data);
         }
 
         public async Task SendInboundMessage(MessageRequest request)
         {
+            _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
             EnsureTenantContext();
-            try 
+            try
             {
                 // Step 1: Process inbound
                 var inboundResult = await _messageService.ProcessIncomingMessage(request);
-                
+
                 if (inboundResult.Data != null)
                 {                 
                     // Notify client message was received
@@ -118,6 +122,7 @@ namespace XiansAi.Server.Shared.Websocket
                 await Clients.Caller.SendAsync("Error", "Failed to process message");
             }
         }
+
         public async Task SubscribeToAgent(string workflowId, string participantId, string TenantId)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);

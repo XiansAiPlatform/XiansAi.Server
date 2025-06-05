@@ -42,6 +42,15 @@ public class AnthropicLlmProvider : ILlmProvider
     }
 
     /// <summary>
+    /// Gets the model for the Anthropic provider
+    /// </summary>
+    /// <returns>The model</returns>
+    public string GetModel()
+    {
+        return _config.Model;
+    }
+
+    /// <summary>
     /// Gets a chat completion from the Anthropic provider
     /// </summary>
     /// <param name="messages">The chat messages</param>

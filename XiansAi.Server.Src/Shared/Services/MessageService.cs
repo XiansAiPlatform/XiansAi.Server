@@ -10,9 +10,8 @@ public class MessageRequest
     public required string ParticipantId { get; set; }
     public required string WorkflowId { get; set; }
     public required string WorkflowType { get; set; }
-    public required string Agent { get; set; }
     public object? Metadata { get; set; }
-    public required string Content { get; set; }
+    public string? Content { get; set; }
     public string? ThreadId { get; set; }
     public string? QueueName { get; set; }
     public string? Assignment { get; set; }
@@ -26,7 +25,8 @@ public class HandoverRequest
     public required string ThreadId { get; set; }
     public required string FromWorkflowType { get; set; }
     public required string ParticipantId { get; set; }
-    public required string UserRequest { get; set; }
+    public required string Content { get; set; }
+    public object? Metadata { get; set; }
 }
 
 public interface IMessageService
@@ -34,7 +34,8 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessOutgoingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessHandover(HandoverRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string workflowType, string participantId, int page, int pageSize);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false);
+    Task<ServiceResult<ConversationMessage>> GetLatestConversationMessageAsync(string threadId, string agent, string workflowType, string participantId, string workflowId);
 }
 
 public class MessageService : IMessageService
@@ -94,8 +95,7 @@ public class MessageService : IMessageService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 CreatedBy = _tenantContext.LoggedInUser,
-                Status = ConversationThreadStatus.Active,
-                IsInternalThread = false
+                Status = ConversationThreadStatus.Active
             };
 
             // This will either create a new thread or return the existing one
@@ -107,17 +107,13 @@ public class MessageService : IMessageService
                 ParticipantId = request.ParticipantId,
                 WorkflowId = request.WorkflowId,
                 WorkflowType = request.WorkflowType,
-                Agent = request.Agent,
                 Content = $"{request.FromWorkflowType} -> {request.WorkflowType}",
-                Metadata = new {
-                    HandoverInitiated = true,
-                    SourceThreadId = request.ThreadId  // Keep track of the source thread
-                }
+                Metadata = request.Metadata
             };
 
             await SaveMessage(messageRequest, MessageDirection.Handover);
 
-            messageRequest.Content = request.UserRequest;
+            messageRequest.Content = request.Content;
             //await SignalWorkflowAsync(messageRequest);
             await ProcessIncomingMessage(new MessageRequest
             {
@@ -125,12 +121,8 @@ public class MessageService : IMessageService
                 ParticipantId = request.ParticipantId,
                 WorkflowId = request.WorkflowId,
                 WorkflowType = request.WorkflowType,
-                Agent = request.Agent,
-                Content = request.UserRequest,
-                Metadata = new {
-                    HandoverFrom = request.FromWorkflowType,
-                    SourceThreadId = request.ThreadId  // Keep track of the source thread
-                }
+                Content = request.Content,
+                Metadata = request.Metadata
             });
 
             return ServiceResult<string>.Success(targetThreadId);
@@ -142,42 +134,42 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string agent, string workflowType, string participantId, int page, int pageSize)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false)
     {
         try
         {
-            _logger.LogInformation("Getting message history for agent {Agent}, participant {ParticipantId}, page {Page}, pageSize {PageSize}",
-                agent, participantId, page, pageSize);
+            _logger.LogInformation("Getting message history for workflowType {WorkflowType}, participant {ParticipantId}, page {Page}, pageSize {PageSize}",
+                workflowType, participantId, page, pageSize);
 
-            if (string.IsNullOrEmpty(agent) || string.IsNullOrEmpty(participantId))
+            if (string.IsNullOrEmpty(workflowType) || string.IsNullOrEmpty(participantId))
             {
-                _logger.LogWarning("Invalid request: missing required fields");
-                return ServiceResult<List<ConversationMessage>>.BadRequest("Agent and ParticipantId are required");
+                _logger.LogWarning("Invalid request: missing required fields workflowType {WorkflowType}, participant {ParticipantId}", workflowType, participantId);
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType and ParticipantId are required");
             }
 
             if (string.IsNullOrEmpty(workflowType))
             {
-                _logger.LogWarning("Invalid request: missing required fields");
+                _logger.LogWarning("Invalid request: missing required fields workflowType {WorkflowType}", workflowType);
                 return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType is required");
             }
 
             if (page < 1 || pageSize < 1)
             {
-                _logger.LogWarning("Invalid request: page and pageSize must be greater than 0");
+                _logger.LogWarning("Invalid request: page {Page} and pageSize {PageSize} must be greater than 0", page, pageSize);
                 return ServiceResult<List<ConversationMessage>>.BadRequest("Page and PageSize must be greater than 0");
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, agent, workflowType, participantId, page, pageSize);
+            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowType, participantId, page, pageSize, includeMetadata );
 
-            _logger.LogInformation("Found {Count} messages for agent {Agent} and participant {ParticipantId}",
-                messages.Count, agent, participantId);
+            _logger.LogInformation("Found {Count} messages for workflowType {WorkflowType} and participant {ParticipantId}",
+                messages.Count, workflowType, participantId);
 
             return ServiceResult<List<ConversationMessage>>.Success(messages);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting message history for agent {Agent}, participant {ParticipantId}", agent, participantId);
+            _logger.LogError(ex, "Error getting message history for workflowType {WorkflowType}, participant {ParticipantId}", workflowType, participantId);
             throw;
         }
     }
@@ -191,7 +183,7 @@ public class MessageService : IMessageService
         {
             if (request.ThreadId == null)
             {
-                request.ThreadId = await CreateThread(request);
+                request.ThreadId = await CreateOrGetThread(request);
             }
 
             var message = await SaveMessage(request, MessageDirection.Outgoing);
@@ -215,7 +207,7 @@ public class MessageService : IMessageService
         
         if (request.ThreadId == null)
         {
-            request.ThreadId = await CreateThread(request);
+            request.ThreadId = await CreateOrGetThread(request);
         }
 
         // Save the message
@@ -231,14 +223,15 @@ public class MessageService : IMessageService
 
     private async Task SignalWorkflowAsync(MessageRequest request)
     {
+        var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var signalRequest = new WorkflowSignalWithStartRequest
         {
             SignalName = Constants.SIGNAL_INBOUND_MESSAGE,
             TargetWorkflowId = request.WorkflowId,
             TargetWorkflowType = request.WorkflowType,            
-            SourceAgent = request.Agent,
+            SourceAgent = agent,
             Payload = new {
-                 request.Agent,
+                 Agent = agent,
                  request.ThreadId,
                  request.ParticipantId,
                  request.Content, 
@@ -248,20 +241,20 @@ public class MessageService : IMessageService
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);
     }
 
-    private async Task<string> CreateThread(MessageRequest request)
+    private async Task<string> CreateOrGetThread(MessageRequest request)
     {
+        var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var thread = new ConversationThread
         {
             TenantId = _tenantContext.TenantId,
             WorkflowId = request.WorkflowId,
             WorkflowType = request.WorkflowType,
-            Agent = request.Agent,
+            Agent = agent,
             ParticipantId = request.ParticipantId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             CreatedBy = _tenantContext.LoggedInUser,
-            Status = ConversationThreadStatus.Active,
-            IsInternalThread = false
+            Status = ConversationThreadStatus.Active
         };
 
         var threadId = await _threadRepository.CreateOrGetAsync(thread);
@@ -275,6 +268,8 @@ public class MessageService : IMessageService
             throw new Exception("ThreadId is required");
         }
 
+        var originalMetadata = request.Metadata; // Store the original metadata
+
         var message = new ConversationMessage
         {
             ThreadId = request.ThreadId,
@@ -285,14 +280,17 @@ public class MessageService : IMessageService
             CreatedBy = _tenantContext.LoggedInUser,
             Direction = direction,
             Content = request.Content,
-            Metadata = request.Metadata,
+            Metadata = originalMetadata, // Assign original metadata
             WorkflowId = request.WorkflowId,
             WorkflowType = request.WorkflowType
         };
 
-        // Save message to database and update thread in a single transaction
+        // This call will modify message.Metadata within the 'message' instance to be a BsonDocument
         message.Id = await _messageRepository.CreateAndUpdateThreadAsync(message, request.ThreadId, DateTime.UtcNow);
         _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, request.ThreadId);
+
+        // Restore the metadata to its original C# object form before returning
+        message.Metadata = originalMetadata;
 
         return message;
     }
