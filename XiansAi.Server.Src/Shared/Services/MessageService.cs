@@ -35,7 +35,6 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessOutgoingMessage(MessageRequest request);
     Task<ServiceResult<string>> ProcessHandover(HandoverRequest request);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false);
-    Task<ServiceResult<ConversationMessage>> GetLatestConversationMessageAsync(string threadId, string agent, string workflowType, string participantId, string workflowId);
 }
 
 public class MessageService : IMessageService
