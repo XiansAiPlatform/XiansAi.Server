@@ -11,7 +11,8 @@ public static class PublicEndpoints
     {
         // Map registration endpoints with common attributes
         var registrationGroup = app.MapGroup("/api/public/register")
-            .WithTags("WebAPI - Public Registration");
+            .WithTags("WebAPI - Public Registration")
+            .RequiresToken();
 
         registrationGroup.MapPost("/verification/send", async (
             [FromBody] string email,
