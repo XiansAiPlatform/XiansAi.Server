@@ -1,7 +1,11 @@
-name: Deploy to Azure
+name: Deploy to Azure XiansAI Production
 on:
   push:
     branches: [ production ]
+
+env:
+  RESOURCE_GROUP: rg-api
+  APP_NAME: xiansai-server
 
 jobs:
   build-and-deploy:
@@ -16,13 +20,19 @@ jobs:
         
     - name: Build and publish
       run: |
+        cd XiansAi.Server.Src
+        dotnet clean
         dotnet restore
         dotnet build --configuration Release
-        dotnet publish -c Release -o ./publish
+        dotnet publish XiansAi.Server.csproj -c Release -o ./bin/publish
         
-    - name: Deploy to Azure
+    - name: Zip published files
+      run: |
+        cd XiansAi.Server.Src/bin/publish && zip -r ../publish.zip . && cd ../../..
+        
+    - name: Deploy to XiansAI Production
       uses: azure/webapps-deploy@v2
       with:
-        app-name: '<your-app-name>'
+        app-name: ${{ env.APP_NAME }}
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: ./publish 
+        package: ./XiansAi.Server.Src/bin/publish.zip 
