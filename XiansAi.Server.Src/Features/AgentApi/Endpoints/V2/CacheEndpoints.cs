@@ -31,6 +31,5 @@ public static class CacheEndpointsV2
     internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
     {
         // You can add new routes specific to v2 here if needed
-        // For now, we are reusing the v1 mappings
     }
 } 
