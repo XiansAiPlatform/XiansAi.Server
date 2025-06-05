@@ -1,17 +1,11 @@
-﻿using Features.WebApi.Auth;
-using Microsoft.ApplicationInsights.Extensibility.Implementation;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Options;
+﻿using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
 using System.Security.Claims;
-using XiansAi.Server.Shared.Services;
 
 namespace XiansAi.Server.Shared.Auth
 {
     public class ValidWebsocketAccessHandler : AuthorizationHandler<ValidWebsocketAccessRequirement>
     {
-        private readonly IHttpContextAccessor _httpContextAccessor;
-        //private readonly AuthSettings _authSettings;
         private readonly ILogger<ValidWebsocketAccessHandler> _logger;
         private readonly IConfiguration _configuration;
         private readonly ITenantContext _tenantContext;
@@ -21,7 +15,6 @@ namespace XiansAi.Server.Shared.Auth
             ITenantContext tenantContext,
             ILogger<ValidWebsocketAccessHandler> logger)
         {
-            _httpContextAccessor = httpContextAccessor;
             _configuration = configuration;
             _tenantContext = tenantContext;
             _logger = logger;

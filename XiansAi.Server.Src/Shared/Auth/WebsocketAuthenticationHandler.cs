@@ -1,9 +1,5 @@
-﻿using Features.AgentApi.Auth;
-using Features.WebApi.Models;
-using Microsoft.ApplicationInsights.Extensibility.Implementation;
-using Microsoft.AspNetCore.Authentication;
+﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
-using Polly;
 using Shared.Auth;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
