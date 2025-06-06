@@ -1,7 +1,10 @@
 using Features.WebApi.Auth;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.GenAi;
+using XiansAi.Server.Shared.Auth;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
 using XiansAi.Server.Shared.Websocket;
@@ -63,9 +66,23 @@ public static class SharedConfiguration
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
 
+        builder.Services.AddAuthentication() // ? No parameter here = no default scheme set
+            .AddScheme<AuthenticationSchemeOptions, WebsocketAuthenticationHandler>(
+                "WebSocketApiKeyScheme", options => { });
+
+        builder.Services.AddScoped<IAuthorizationHandler, ValidWebsocketAccessHandler>();
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("WebsocketAuthPolicy", policy =>
+            {
+                policy.AddAuthenticationSchemes("WebSocketApiKeyScheme");
+                policy.RequireAuthenticatedUser();
+                policy.Requirements.Add(new ValidWebsocketAccessRequirement());
+            });
+        });
+
         // Add SignalR services
         builder.Services.AddSignalR();
-        builder.Services.AddSingleton<ClientConnectionManager>();
 
         builder.Services.AddSingleton<MongoChangeStreamService>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
@@ -77,7 +94,6 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
         builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
-        builder.Services.AddScoped<IConversationChangeListener, ConversationChangeListener>();
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();
@@ -113,8 +129,7 @@ public static class SharedConfiguration
         app.UseAuthentication();
         app.UseAuthorization();
 
-        // Configure Websocket middleware
-        app.UseMiddleware<SignalRAuthMiddleware>();
+        // Configure Websocket
         app.MapHub<ChatHub>("/ws/chat");
 
         return app;
