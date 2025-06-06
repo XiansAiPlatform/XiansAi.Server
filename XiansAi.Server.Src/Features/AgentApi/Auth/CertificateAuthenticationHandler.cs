@@ -8,6 +8,7 @@ using Features.AgentApi.Repositories;
 using System.Security.Cryptography;
 using Shared.Auth;
 using Shared.Utils;
+using Features.WebApi.Services;
 
 namespace Features.AgentApi.Auth;
 
@@ -19,6 +20,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     private readonly ICertificateRepository _certificateRepository;
     private readonly ITenantContext _tenantContext;
     private readonly ICertificateValidationCache _certValidationCache;
+    private readonly ITenantService _tenantService;
 
     public CertificateAuthenticationHandler(
         IOptionsMonitor<CertificateAuthenticationOptions> options,
@@ -28,7 +30,8 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         ICertificateRepository certificateRepository,
         IConfiguration configuration,
         ITenantContext tenantContext,
-        ICertificateValidationCache certValidationCache) 
+        ICertificateValidationCache certValidationCache,
+        ITenantService tenantService) 
         : base(options, logger, encoder)
     {
         _logger = logger.CreateLogger<CertificateAuthenticationHandler>();
@@ -37,6 +40,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         _certificateRepository = certificateRepository;
         _tenantContext = tenantContext;
         _certValidationCache = certValidationCache;
+        _tenantService = tenantService;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -163,7 +167,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             // Validate tenant
             var tenantId = GetSubjectValue(cert.Subject, "O");
 
-            if (string.IsNullOrEmpty(tenantId) || !_configuration.GetSection($"Tenants:{tenantId}").Exists())
+            if (string.IsNullOrEmpty(tenantId) || _tenantService.GetTenantById(tenantId) == null)
             {
                 result.AddError($"Invalid tenant: {tenantId}");
                 return result;

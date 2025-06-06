@@ -27,7 +27,6 @@ namespace Features.AgentApi.Endpoints.V1
             if (registeredPaths.Add(RouteKey("GET", "/history")))
             {
                 group.MapGet("/history", async (
-                [FromQuery] string agent,
                 [FromQuery] string workflowType,
                 [FromQuery] string participantId,
                 [FromQuery] int page,
@@ -35,7 +34,7 @@ namespace Features.AgentApi.Endpoints.V1
                 [FromServices] IMessageService messageService) =>
                 {
 
-                    var result = await messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
+                    var result = await messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
                     return result.ToHttpResult();
                 })
                 .WithName($"{version} - Get Conversation History")
