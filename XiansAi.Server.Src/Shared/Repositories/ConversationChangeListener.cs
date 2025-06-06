@@ -123,7 +123,7 @@ namespace Shared.Repositories
         // Helper method to convert BsonDocument metadata back to the original object format
         private void ConvertBsonMetadataToObject(ConversationMessage message)
         {
-            if (message.Metadata is BsonDocument bsonDoc)
+            if (message.Data is BsonDocument bsonDoc)
             {
                 // If it's a simple wrapper with a "value" field, extract the value
                 if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
@@ -138,25 +138,25 @@ namespace Shared.Repositories
                         {
                             try
                             {
-                                message.Metadata = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
+                                message.Data = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
                                 return;
                             }
                             catch
                             {
                                 // If parsing fails, just use the string value
-                                message.Metadata = strValue;
+                                message.Data = strValue;
                                 return;
                             }
                         }
                         
                         // It's just a string
-                        message.Metadata = strValue;
+                        message.Data = strValue;
                         return;
                     }
                 }
                 
                 // Convert BsonDocument to native .NET types properly
-                message.Metadata = ConvertBsonToNativeObject(bsonDoc);
+                message.Data = ConvertBsonToNativeObject(bsonDoc);
             }
         }
 

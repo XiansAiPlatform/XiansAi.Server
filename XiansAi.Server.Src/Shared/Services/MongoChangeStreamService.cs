@@ -7,6 +7,7 @@ using MongoDB.Bson;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
 using System.Text.Json.Serialization;
+using Shared.Services;
 
 namespace XiansAi.Server.Shared.Services
 {
@@ -67,7 +68,7 @@ namespace XiansAi.Server.Shared.Services
 
                             var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
 
-                            if (string.IsNullOrEmpty(message.Content))
+                            if (message.MessageType == MessageType.Data)
                             {
                                 _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
                                 groupId, JsonSerializer.Serialize(message));
@@ -107,7 +108,7 @@ namespace XiansAi.Server.Shared.Services
 
         private void ConvertBsonMetadataToObjectInternal(ConversationMessage message)
         {
-            if (message.Metadata is BsonDocument bsonDoc)
+            if (message.Data is BsonDocument bsonDoc)
             {
                 if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
                 {
@@ -120,23 +121,23 @@ namespace XiansAi.Server.Shared.Services
                         {
                             try
                             {
-                                message.Metadata = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
+                                message.Data = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
                                 return;
                             }
                             catch(Exception ex)
                             {
                                 _logger.LogWarning(ex, "MongoChangeStreamService: Failed to deserialize string metadata value for message {MessageId}. Using raw string.", message.Id);
-                                message.Metadata = strValue;
+                                message.Data = strValue;
                                 return;
                             }
                         }
-                        message.Metadata = strValue;
+                        message.Data = strValue;
                         return;
                     }
-                    message.Metadata = ConvertBsonToNativeObjectInternal(valueElement);
+                    message.Data = ConvertBsonToNativeObjectInternal(valueElement);
                     return;
                 }
-                message.Metadata = ConvertBsonToNativeObjectInternal(bsonDoc);
+                message.Data = ConvertBsonToNativeObjectInternal(bsonDoc);
             }
         }
 

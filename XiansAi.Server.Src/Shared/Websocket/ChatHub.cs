@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
+using Shared.Repositories;
 using Shared.Services;
 
 namespace XiansAi.Server.Shared.Websocket
@@ -115,14 +116,16 @@ namespace XiansAi.Server.Shared.Websocket
             await Clients.Caller.SendAsync("ThreadHistory", result.Data);
         }
 
-        public async Task SendInboundMessage(MessageRequest request)
+        //TODO: This is a temporary method to send inbound messages to the client. We need to refactor this to use the new messaging endpoints.
+        public async Task SendInboundMessage(ChatOrDataRequest request, string messageType)
         {
             _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
             EnsureTenantContext();
             try
             {
+                var messageTypeEnum = Enum.Parse<MessageType>(messageType);
                 // Step 1: Process inbound
-                var inboundResult = await _messageService.ProcessIncomingMessage(request);
+                var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
                 if (inboundResult.Data != null)
                 {
