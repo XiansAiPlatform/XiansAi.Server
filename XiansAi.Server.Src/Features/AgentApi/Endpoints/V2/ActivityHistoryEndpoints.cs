@@ -26,8 +26,8 @@ public static class ActivityHistoryEndpointsV2
 
         var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Reuse v1 mappings
         MapRoutes(activityHistoryGroup, version, registeredPaths);
+        // Reuse v1 mappings
         V1.ActivityHistoryEndpointsV1.MapRoutes(activityHistoryGroup, version, registeredPaths);
     }
 

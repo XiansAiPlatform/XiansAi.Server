@@ -21,7 +21,8 @@ public static class DefinitionsEndpointsV1
             .WithTags($"AgentAPI - Definitions {version}")
             .RequiresCertificate();
         
-        MapRoutes(definitionsGroup, version, new HashSet<string>());
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(definitionsGroup, version, registeredPaths);
     }
 
     internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)

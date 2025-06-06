@@ -17,9 +17,9 @@ public static class SettingsEndpointsV2
             .RequiresCertificate();
 
         var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(settingsGroup, version, registeredPaths);
 
         // Reuse v1 mappings
-        MapRoutes(settingsGroup, version, registeredPaths);
         V1.SettingsEndpointsV1.MapRoutes(settingsGroup, version, registeredPaths);
     }
 

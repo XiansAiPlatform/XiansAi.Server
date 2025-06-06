@@ -23,7 +23,8 @@ public static class CacheEndpointsV1
             .WithTags($"AgentAPI - Cache {version}")
             .RequiresCertificate();
 
-        MapRoutes(cacheGroup, version, new HashSet<string>());
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(cacheGroup, version, registeredPaths);
     }
     
     internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)

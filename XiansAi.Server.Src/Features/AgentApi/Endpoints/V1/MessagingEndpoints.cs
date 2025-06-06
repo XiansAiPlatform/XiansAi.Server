@@ -16,7 +16,8 @@ namespace Features.AgentApi.Endpoints.V1
                 .WithTags($"AgentAPI - Conversation {version}")
                 .RequiresCertificate();
 
-            MapRoutes(group, version, new HashSet<string>());
+            var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            MapRoutes(group, version, registeredPaths);
         }
 
         internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)

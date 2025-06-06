@@ -21,7 +21,8 @@ public static class KnowledgeEndpointsV1
             .WithTags($"AgentAPI - Knowledge {version}")
             .RequiresCertificate();
 
-        MapRoutes(knowledgeGroup, version, new HashSet<string>());
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(knowledgeGroup, version, registeredPaths);
     }
     
     internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)

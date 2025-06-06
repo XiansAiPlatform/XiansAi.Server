@@ -22,9 +22,9 @@ public static class EventsEndpointsV2
             .RequiresCertificate();
 
         var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(signalGroup, version, registeredPaths);
 
         // Reuse v1 mappings
-        MapRoutes(signalGroup, version, registeredPaths);
         V1.EventsEndpointsV1.MapRoutes(signalGroup, version, registeredPaths);
     }
 

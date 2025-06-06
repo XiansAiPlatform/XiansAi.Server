@@ -29,7 +29,8 @@ public static class EventsEndpointsV1
             .WithTags($"AgentAPI - Events {version}")
             .RequiresCertificate();
 
-        MapRoutes(signalGroup, version, new HashSet<string>());
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(signalGroup, version, registeredPaths);
     }
 
     internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)

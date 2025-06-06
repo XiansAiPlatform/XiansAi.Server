@@ -19,9 +19,9 @@ namespace Features.AgentApi.Endpoints.V2
                 .RequiresCertificate();
 
             var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            MapRoutes(group, version, registeredPaths);
 
             // Reuse v1 mappings
-            MapRoutes(group, version, registeredPaths);
             V1.ConversationEndpointsV1.MapRoutes(group, version, registeredPaths);
         }
 

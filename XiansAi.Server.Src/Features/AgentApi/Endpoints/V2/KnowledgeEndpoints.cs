@@ -23,9 +23,9 @@ public static class KnowledgeEndpointsV2
             .RequiresCertificate();
 
         var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(knowledgeGroup, version, registeredPaths);
 
         // Reuse v1 mappings
-        MapRoutes(knowledgeGroup, version, registeredPaths);
         V1.KnowledgeEndpointsV1.MapRoutes(knowledgeGroup, version, registeredPaths);
     }
 

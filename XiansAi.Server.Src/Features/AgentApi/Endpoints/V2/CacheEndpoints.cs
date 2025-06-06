@@ -23,10 +23,9 @@ public static class CacheEndpointsV2
             .WithTags($"AgentAPI - Cache {version}")
             .RequiresCertificate();
 
-        // Reuse v1 mappings
         var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         MapRoutes(cacheGroup, version, registeredPaths);
+        // Reuse v1 mappings
         V1.CacheEndpointsV1.MapRoutes(cacheGroup, version, registeredPaths);
     }
 

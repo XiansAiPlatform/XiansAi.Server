@@ -15,10 +15,10 @@ namespace Features.AgentApi.Endpoints.V2
                 .WithTags($"AgentAPI - Webhooks {version}")
                 .RequiresCertificate();
 
-            // Reuse v1 mappings
             var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
             MapRoutes(group, version, registeredPaths);
+
+            // Reuse v1 mappings
             V1.WebhookEndpointsV1.MapRoutes(group, version, registeredPaths);
         }
 

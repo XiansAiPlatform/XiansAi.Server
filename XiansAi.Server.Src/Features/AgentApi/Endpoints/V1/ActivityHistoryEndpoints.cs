@@ -22,7 +22,8 @@ public static class ActivityHistoryEndpointsV1
             .WithTags($"AgentAPI - Activity History {version}")
             .RequiresCertificate();
 
-        MapRoutes(activityHistoryGroup, version, new HashSet<string>());
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(activityHistoryGroup, version, registeredPaths);
     }
 
     internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)

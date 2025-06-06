@@ -19,9 +19,9 @@ public static class LogsEndpointsV2
             .RequiresCertificate();
 
         var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(logsGroup, version, registeredPaths);
 
         // Reuse v1 mappings
-        MapRoutes(logsGroup, version, registeredPaths);
         V1.LogsEndpointsV1.MapRoutes(logsGroup, version, registeredPaths);
     }
 

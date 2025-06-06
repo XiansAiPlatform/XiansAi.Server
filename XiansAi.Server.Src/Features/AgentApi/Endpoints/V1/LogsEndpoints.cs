@@ -16,7 +16,8 @@ public static class LogsEndpointsV1
             .WithTags($"AgentAPI - Logs {version}")
             .RequiresCertificate();
 
-        MapRoutes(logsGroup, version, new HashSet<string>());
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MapRoutes(logsGroup, version, registeredPaths);
     }
 
     internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)

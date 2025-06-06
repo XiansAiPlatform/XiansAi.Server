@@ -23,8 +23,9 @@ public static class DefinitionsEndpointsV2
             .RequiresCertificate();
 
         var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        // Reuse v1 mappings
         MapRoutes(definitionsGroup, version, registeredPaths);
+        
+        // Reuse v1 mappings
         V1.DefinitionsEndpointsV1.MapRoutes(definitionsGroup, version, registeredPaths);
     }
 
