@@ -13,7 +13,6 @@ namespace Features.AgentApi.Endpoints.V1
                 .WithTags($"AgentAPI - Webhooks {version}")
                 .RequiresCertificate();
 
-            // If there are any routes that will be deleted in future versions, add them here
             MapRoutes(group, version, new HashSet<string>());
         }
 

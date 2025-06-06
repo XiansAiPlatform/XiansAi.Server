@@ -21,7 +21,6 @@ public static class DefinitionsEndpointsV1
             .WithTags($"AgentAPI - Definitions {version}")
             .RequiresCertificate();
         
-        // If there are any routes that are common for multiple versions, add them here
         MapRoutes(definitionsGroup, version, new HashSet<string>());
     }
 

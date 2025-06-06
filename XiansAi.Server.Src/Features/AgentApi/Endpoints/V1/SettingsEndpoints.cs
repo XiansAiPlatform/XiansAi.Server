@@ -22,7 +22,6 @@ public static class SettingsEndpointsV1
             .WithTags($"AgentAPI - Settings {version}")
             .RequiresCertificate();
 
-        // If there are any routes that will be deleted in future versions, add them here
         MapRoutes(settingsGroup, version, new HashSet<string>());
     }
 

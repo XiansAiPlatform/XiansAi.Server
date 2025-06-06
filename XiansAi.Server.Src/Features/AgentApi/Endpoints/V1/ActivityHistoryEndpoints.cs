@@ -22,7 +22,6 @@ public static class ActivityHistoryEndpointsV1
             .WithTags($"AgentAPI - Activity History {version}")
             .RequiresCertificate();
 
-        // If there are any routes that will be deleted in future versions, add them here
         MapRoutes(activityHistoryGroup, version, new HashSet<string>());
     }
 
