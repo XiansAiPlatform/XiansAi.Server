@@ -77,7 +77,7 @@ public class TenantService : ITenantService
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with ID {Id} not found", id);
-                return ServiceResult<Tenant>.NotFound("Tenant not found");
+                return ServiceResult<Tenant>.Forbidden("Tenant not found");
             }
 
             return ServiceResult<Tenant>.Success(tenant);
