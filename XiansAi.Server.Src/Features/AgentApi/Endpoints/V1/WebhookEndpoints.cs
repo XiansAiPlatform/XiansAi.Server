@@ -55,12 +55,12 @@ namespace Features.AgentApi.Endpoints.V1
                 string webhookId,
                 IWebhookService webhookService,
                 HttpContext context) =>
-            {
-                var webhook = await webhookService.GetWebhookAsync(webhookId);
-                return webhook != null ? Results.Ok(webhook) : Results.NotFound();
-            })
-            .WithName($"{version} - GetWebhook")
-            .WithDescription("Get webhook details");
+                {
+                    var webhook = await webhookService.GetWebhookAsync(webhookId);
+                    return webhook != null ? Results.Ok(webhook) : Results.NotFound();
+                })
+                .WithName($"{version} - GetWebhook")
+                .WithDescription("Get webhook details");
             }
 
             if (registeredPaths.Add(RouteKey("POST", "/trigger")))
@@ -69,27 +69,27 @@ namespace Features.AgentApi.Endpoints.V1
                 WebhookTriggerDto triggerDto,
                 IWebhookService webhookService,
                 HttpContext context) =>
-            {
-                var result = await webhookService.ManuallyTriggerWebhookAsync(triggerDto);
-                
-                if (!result.Success)
                 {
-                    return Results.BadRequest(new
+                    var result = await webhookService.ManuallyTriggerWebhookAsync(triggerDto);
+                    
+                    if (!result.Success)
                     {
-                        success = false,
-                        errors = result.Errors
-                    });
-                }
+                        return Results.BadRequest(new
+                        {
+                            success = false,
+                            errors = result.Errors
+                        });
+                    }
 
-                return Results.Ok(new
-                {
-                    success = true,
-                    webhooksTriggered = result.WebhooksTriggered,
-                    warnings = result.Errors.Any() ? result.Errors : null
-                });
-            })
-            .WithName($"{version} - TriggerWebhook")
-            .WithDescription("Manually trigger webhooks for a specific workflow and event type");
+                    return Results.Ok(new
+                    {
+                        success = true,
+                        webhooksTriggered = result.WebhooksTriggered,
+                        warnings = result.Errors.Any() ? result.Errors : null
+                    });
+                })
+                .WithName($"{version} - TriggerWebhook")
+                .WithDescription("Manually trigger webhooks for a specific workflow and event type");
             }
         }
     }

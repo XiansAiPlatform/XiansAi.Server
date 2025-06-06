@@ -35,16 +35,16 @@ public static class KnowledgeEndpointsV1
             [FromQuery] string name,
             [FromQuery] string agent,
             [FromServices] IKnowledgeService endpoint) =>
-        {
-            _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}", name, agent);
-            return await endpoint.GetLatestByName(name, agent);
-        })
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get latest knowledge";
-            operation.Description = "Retrieves the most recent knowledge for the specified name and agent";
-            return operation;
-        });
+            {
+                _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}", name, agent);
+                return await endpoint.GetLatestByName(name, agent);
+            })
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Get latest knowledge";
+                operation.Description = "Retrieves the most recent knowledge for the specified name and agent";
+                return operation;
+            });
         }
 
 
