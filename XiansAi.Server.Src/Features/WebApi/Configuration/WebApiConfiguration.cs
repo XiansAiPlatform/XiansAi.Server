@@ -30,6 +30,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IPublicService, PublicService>();
+        builder.Services.AddScoped<IAuthorizationCacheService, AuthorizationCacheService>();
         
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
