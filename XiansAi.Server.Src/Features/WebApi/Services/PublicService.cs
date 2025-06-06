@@ -194,7 +194,7 @@ public class PublicService : IPublicService
             return false;
         }
            
-        bool exists = _tenantService.GetTenantById(tenantId) != null;
+        bool exists = _tenantService.GetTenantByTenantId(tenantId) != null;
         
         _logger.LogDebug("Tenant ID {TenantId} validation result: {IsValid}", tenantId, exists);
         return exists;

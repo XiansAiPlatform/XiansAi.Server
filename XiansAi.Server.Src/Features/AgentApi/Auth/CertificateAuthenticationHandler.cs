@@ -167,7 +167,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             // Validate tenant
             var tenantId = GetSubjectValue(cert.Subject, "O");
 
-            if (string.IsNullOrEmpty(tenantId) || _tenantService.GetTenantById(tenantId) == null)
+            if (string.IsNullOrEmpty(tenantId) || _tenantService.GetTenantByTenantId(tenantId) == null)
             {
                 result.AddError($"Invalid tenant: {tenantId}");
                 return result;
