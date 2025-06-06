@@ -110,6 +110,7 @@ public interface IConversationMessageRepository
     Task<bool> UpdateStatusAsync(string id, MessageStatus status);
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
     Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false);
+    Task<string> CreateAndUpdateThreadWithOptimisticConcurrencyAsync(ConversationMessage message, string threadId, DateTime timestamp);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -287,19 +288,46 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<string> CreateAndUpdateThreadAsync(ConversationMessage message, string threadId, DateTime timestamp)
     {
-
         // Convert metadata to BsonDocument if needed
         if (message.Data != null)
         {
             message.Data = ConvertToBsonDocument(message.Data);
         }
 
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        // Critical operation: Create the message with retry logic
+        var messageId = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Only insert the message - remove thread update to avoid write conflicts
             await _collection.InsertOneAsync(message);
             return message.Id;
-        }, _logger, operationName: "CreateAndUpdateThreadAsync");
+        }, _logger, operationName: "CreateMessage");
+
+        // Best effort: Update thread timestamp (non-critical)
+        // Use fire-and-forget pattern to avoid blocking the message creation result
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+                {
+                    var threadFilter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
+                    var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+                    var result = await _threadCollection.UpdateOneAsync(threadFilter, threadUpdate);
+                    
+                    if (result.MatchedCount == 0)
+                    {
+                        _logger.LogDebug("Thread {ThreadId} not found during timestamp update", threadId);
+                    }
+                }, _logger, maxRetries: 2, operationName: "UpdateThreadTimestamp");
+            }
+            catch (Exception ex)
+            {
+                // Log but don't throw - this is non-critical
+                _logger.LogWarning(ex, "Failed to update thread {ThreadId} timestamp after message creation, but message {MessageId} was created successfully", 
+                    threadId, messageId);
+            }
+        });
+
+        return messageId;
     }
 
     public async Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
@@ -612,5 +640,51 @@ public class ConversationMessageRepository : IConversationMessageRepository
             ConvertBsonMetadataToObject(message);
         }
         return messages;
+    }
+
+    /// <summary>
+    /// Alternative approach using optimistic concurrency control
+    /// </summary>
+    public async Task<string> CreateAndUpdateThreadWithOptimisticConcurrencyAsync(ConversationMessage message, string threadId, DateTime timestamp)
+    {
+        // Convert metadata to BsonDocument if needed
+        if (message.Data != null)
+        {
+            message.Data = ConvertToBsonDocument(message.Data);
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            // First, get the current thread to check its current UpdatedAt
+            var currentThread = await _threadCollection.Find(t => t.Id == threadId)
+                .Project(t => new { t.Id, t.UpdatedAt })
+                .FirstOrDefaultAsync();
+            
+            if (currentThread == null)
+            {
+                _logger.LogWarning("Thread {ThreadId} not found during message creation", threadId);
+                // Still create the message even if thread doesn't exist
+                await _collection.InsertOneAsync(message);
+                return message.Id;
+            }
+
+            // Create the message first
+            await _collection.InsertOneAsync(message);
+            
+            // Update thread only if UpdatedAt hasn't changed (optimistic concurrency)
+            var threadFilter = Builders<ConversationThread>.Filter.And(
+                Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId),
+                Builders<ConversationThread>.Filter.Eq(t => t.UpdatedAt, currentThread.UpdatedAt)
+            );
+            var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+            var threadResult = await _threadCollection.UpdateOneAsync(threadFilter, threadUpdate);
+            
+            if (threadResult.MatchedCount == 0)
+            {
+                _logger.LogDebug("Thread {ThreadId} was modified by another operation, timestamp update skipped", threadId);
+            }
+
+            return message.Id;
+        }, _logger, operationName: "CreateAndUpdateThreadWithOptimisticConcurrencyAsync");
     }
 }
