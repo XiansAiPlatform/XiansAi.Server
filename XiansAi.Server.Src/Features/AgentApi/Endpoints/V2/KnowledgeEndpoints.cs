@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using XiansAi.Server.Shared.Services;
 
+//Boilerplate code for future versions
+
 namespace Features.AgentApi.Endpoints.V2;
 
 public class KnowledgeEndpointLogger {}
@@ -29,62 +31,28 @@ public static class KnowledgeEndpointsV2
 
     internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        string RouteKey(string method, string path) => $"{method}:{path}";
+        // string RouteKey(string method, string path) => $"{method}:{path}";
 
-        // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+        // If v2 has the same endpoint with changes, we can overwrite it, before v1 is called this method will be called and hashset will record that it is already called
         // Hence v1 would not register the same endpoint again
 
-        var latestPath = "/latest";
-        if (registeredPaths.Add(RouteKey("GET", latestPath)))
-        {
-            group.MapGet(latestPath, async (
-                [FromQuery] string name,
-                [FromQuery] string agent,
-                [FromServices] IKnowledgeService endpoint) =>
-            {
-                _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}", name, agent);
-                return await endpoint.GetLatestByName(name, agent);
-            })
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Get latest knowledge";
-                operation.Description = "Retrieves the most recent knowledge for the specified name and agent";
-                return operation;
-            });
-        }
-
-        var createPath = "/";
-        if (registeredPaths.Add(RouteKey("POST", createPath)))
-        {
-            group.MapPost(createPath, async (
-                [FromBody] KnowledgeCreateRequest request,
-                [FromServices] IKnowledgeService endpoint) =>
-            {
-                _logger.LogInformation("Creating new knowledge with name: {Name}, agent: {Agent}", request.Name, request.Agent);
-                var knowledgeRequest = new KnowledgeRequest
-                {
-                    Name = request.Name,
-                    Content = request.Content,
-                    Agent = request.Agent,
-                    Type = request.Type
-                };
-                var result = await endpoint.Create(knowledgeRequest);
-                return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
-            })
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Create knowledge";
-                operation.Description = "Creates a new knowledge entity";
-                return operation;
-            });
-        }
+        // var latestPath = "/latest";
+        // if (registeredPaths.Add(RouteKey("GET", latestPath)))
+        // {
+        //     group.MapGet(latestPath, async (
+        //         [FromQuery] string name,
+        //         [FromQuery] string agent,
+        //         [FromServices] IKnowledgeService endpoint) =>
+        //     {
+        //         _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}", name, agent);
+        //         return await endpoint.GetLatestByName(name, agent);
+        //     })
+        //     .WithOpenApi(operation =>
+        //     {
+        //         operation.Summary = "Get latest knowledge";
+        //         operation.Description = "Retrieves the most recent knowledge for the specified name and agent";
+        //         return operation;
+        //     });
+        // }
     }
 }
-
-public record KnowledgeCreateRequest
-{
-    public required string Name { get; init; }
-    public required string Content { get; init; }
-    public required string Agent { get; init; }
-    public required string Type { get; init; }
-} 

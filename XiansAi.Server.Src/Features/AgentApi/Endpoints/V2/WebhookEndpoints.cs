@@ -2,6 +2,8 @@ using XiansAi.Server.Features.AgentApi.Models;
 using XiansAi.Server.Features.AgentApi.Services.Agent;
 using Features.AgentApi.Auth;
 
+//Boilerplate code for future versions
+
 namespace Features.AgentApi.Endpoints.V2
 {
     public static class WebhookEndpointsV2
@@ -22,25 +24,25 @@ namespace Features.AgentApi.Endpoints.V2
 
         internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
         {
-            string RouteKey(string method, string path) => $"{method}:{path}";
+            // string RouteKey(string method, string path) => $"{method}:{path}";
 
-            // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+            // If v2 has the same endpoint with changes, we can overwrite it, before v1 is called this method will be called and hashset will record that it is already called
             // Hence v1 would not register the same endpoint again
             
-            var regiserPath = "/register";
-            if (registeredPaths.Add(RouteKey("POST", regiserPath)))
-            {
-                group.MapPost(regiserPath, async (
-                    WebhookRegistrationDto registration,
-                    IWebhookService webhookService,
-                    HttpContext context) =>
-                {
-                    var webhook = await webhookService.RegisterWebhookAsync(registration);
-                    return Results.Ok(webhook);
-                })
-                .WithName($"{version} - RegisterWebhook")
-                .WithDescription("Register a new webhook for a workflow");
-            }
+            // var regiserPath = "/register";
+            // if (registeredPaths.Add(RouteKey("POST", regiserPath)))
+            // {
+            //     group.MapPost(regiserPath, async (
+            //         WebhookRegistrationDto registration,
+            //         IWebhookService webhookService,
+            //         HttpContext context) =>
+            //     {
+            //         var webhook = await webhookService.RegisterWebhookAsync(registration);
+            //         return Results.Ok(webhook);
+            //     })
+            //     .WithName($"{version} - RegisterWebhook")
+            //     .WithDescription("Register a new webhook for a workflow");
+            // }
         }
     }
 } 

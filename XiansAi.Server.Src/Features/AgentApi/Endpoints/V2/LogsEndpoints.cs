@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Services.Lib;
 
+//Boilerplate code for future versions
+
 namespace Features.AgentApi.Endpoints.V2;
 
 public static class LogsEndpointsV2
@@ -27,23 +29,23 @@ public static class LogsEndpointsV2
     {
         string RouteKey(string method, string path) => $"{method}:{path}";
 
-        // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+        // If v2 has the same endpoint with changes, we can overwrite it, before v1 is called this method will be called and hashset will record that it is already called
         // Hence v1 would not register the same endpoint again
 
-        var createPath = "/";
-        if (registeredPaths.Add(RouteKey("POST", createPath)))
-        {
-            group.MapPost(createPath, async (
-                [FromBody] LogRequest[] requests,
-                [FromServices] ILogsService service) =>
-            {
-                return await service.CreateLogs(requests);
-            })
-            .WithOpenApi(operation => {
-                operation.Summary = "Create multiple logs";
-                operation.Description = "Creates multiple log entries for workflow monitoring";
-                return operation;
-            });
-        }
+        // var createPath = "/";
+        // if (registeredPaths.Add(RouteKey("POST", createPath)))
+        // {
+        //     group.MapPost(createPath, async (
+        //         [FromBody] LogRequest[] requests,
+        //         [FromServices] ILogsService service) =>
+        //     {
+        //         return await service.CreateLogs(requests);
+        //     })
+        //     .WithOpenApi(operation => {
+        //         operation.Summary = "Create multiple logs";
+        //         operation.Description = "Creates multiple log entries for workflow monitoring";
+        //         return operation;
+        //     });
+        // }
     }
 } 

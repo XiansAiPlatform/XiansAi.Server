@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Services.Lib;
 using System.Text.Json;
 
+//Boilerplate code for future versions
 
 namespace Features.AgentApi.Endpoints.V2;
 
@@ -34,9 +35,9 @@ public static class ActivityHistoryEndpointsV2
     {
         string RouteKey(string method, string path) => $"{method}:{path}";
 
-        // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+        // If v2 has the same endpoint with changes, we can overwrite it, before v1 is called this method will be called and hashset will record that it is already called
         // Hence v1 would not register the same endpoint again
-        
+
         var historyPath = "/";
         if (registeredPaths.Add(RouteKey("POST", historyPath)))
         {
@@ -65,25 +66,26 @@ public static class ActivityHistoryEndpointsV2
                 operation.Description = "Creates a new activity history record in the system";
                 return operation;
             });
-
-
-            // If there deprecated routes in v2 which are in v1 but would not be in v2, overwrite them.
-            // Example of a deprecated route that might be removed in future versions
-            
-            // if (registeredPaths.Add(RouteKey("POST", "/old-endpoint")))
-            // {
-            //     group.MapPost("/old-endpoint", async (
-            //     OldRequestDto request,
-            //     [FromServices] ISomeService service,
-            //     HttpContext context) =>
-            //     {
-            //         context.Response.Headers.Add("X-Deprecated", "This endpoint is deprecated and will be removed in v2.");
-            //         var result = await service.HandleAsync(request);
-            //         return Results.Ok(result);
-            //     })
-            //     .WithName($"{version} - OldEndpoint")
-            //     .WithDescription("Deprecated: This endpoint will be removed in the next version.");
-            // }
         }
+
+
+        // If there deprecated routes in v2 which are in v1 but would not be in v2, overwrite them.
+        // Example of a deprecated route that might be removed in future versions
+
+        // if (registeredPaths.Add(RouteKey("POST", "/old-endpoint")))
+        // {
+        //     group.MapPost("/old-endpoint", async (
+        //     OldRequestDto request,
+        //     [FromServices] ISomeService service,
+        //     HttpContext context) =>
+        //     {
+        //         context.Response.Headers.Add("X-Deprecated", "This endpoint is deprecated and will be removed in v2.");
+        //         var result = await service.HandleAsync(request);
+        //         return Results.Ok(result);
+        //     })
+        //     .WithName($"{version} - OldEndpoint")
+        //     .WithDescription("Deprecated: This endpoint will be removed in the next version.");
+        // }
+
     }
 } 
