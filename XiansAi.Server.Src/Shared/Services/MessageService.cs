@@ -36,7 +36,6 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false);
-    Task<ServiceResult<ConversationMessage>> GetLatestConversationMessageAsync(string threadId, string agent, string workflowType, string participantId, string workflowId);
 }
 
 public class MessageService : IMessageService
@@ -47,7 +46,6 @@ public class MessageService : IMessageService
 
     private readonly IConversationThreadRepository _threadRepository;
     private readonly IConversationMessageRepository _messageRepository;
-    private readonly IConversationChangeListener _conversationChangeListener;
     private readonly IWorkflowSignalService _workflowSignalService;
 
         public MessageService(
@@ -55,8 +53,7 @@ public class MessageService : IMessageService
         ITenantContext tenantContext,
         IConversationThreadRepository threadRepository,
         IConversationMessageRepository messageRepository,
-        IWorkflowSignalService workflowSignalService,
-        IConversationChangeListener conversationChangeListener
+        IWorkflowSignalService workflowSignalService
         )
     {
         _logger = logger;
@@ -64,7 +61,6 @@ public class MessageService : IMessageService
         _threadRepository = threadRepository;
         _messageRepository = messageRepository;
         _workflowSignalService = workflowSignalService;
-        _conversationChangeListener = conversationChangeListener;
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -299,45 +295,6 @@ public class MessageService : IMessageService
         _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, request.ThreadId);
 
         return message;
-    }
-
-    public async Task<ServiceResult<ConversationMessage>> GetLatestConversationMessageAsync(string threadId, string agent, string workflowType, string participantId, string workflowId)
-    {
-        try
-        {
-            _logger.LogInformation("Getting latest conversation message for agent {Agent}, workflowType {WorkflowType}, participant {ParticipantId}",
-                agent, workflowType, participantId);
-
-            if (string.IsNullOrEmpty(agent) || string.IsNullOrEmpty(workflowType) || string.IsNullOrEmpty(participantId))
-            {
-                _logger.LogWarning("Invalid request: missing required fields");
-                return ServiceResult<ConversationMessage>.BadRequest("Agent, WorkflowType, and ParticipantId are required");
-            }
-            // Get the latest message from the repository
-            var latestMessage = await _conversationChangeListener.GetLatestConversationMessage(
-                _tenantContext.TenantId,
-                threadId,
-                agent,
-                workflowType,
-                participantId,
-                workflowId
-            );
-
-            if (latestMessage == null)
-            {
-                _logger.LogInformation("No existing message found for agent {Agent}, workflowType {WorkflowType}, participant {ParticipantId}",
-                    agent, workflowType, participantId);
-                return ServiceResult<ConversationMessage>.NotFound("No messages found");
-            }
-
-            return ServiceResult<ConversationMessage>.Success(latestMessage);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting latest conversation message for agent {Agent}, workflowType {WorkflowType}, participant {ParticipantId}",
-                agent, workflowType, participantId);
-            throw;
-        }
     }
 
 }
