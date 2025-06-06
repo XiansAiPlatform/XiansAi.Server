@@ -21,21 +21,17 @@ public static class KnowledgeEndpointsV1
             .WithTags($"AgentAPI - Knowledge {version}")
             .RequiresCertificate();
 
-        // If there are any routes that are common for multiple versions, add them here
-        CommonMapRoutes(knowledgeGroup, version);
-
         // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(knowledgeGroup, version);
+        MapRoutes(knowledgeGroup, version, new HashSet<string>());
     }
-
-    internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+    
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // If there are any routes that are common for multiple versions, add them here
-    }
+        string RouteKey(string method, string path) => $"{method}:{path}";
 
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
-    {    
-        group.MapGet("/latest", async (
+        if (registeredPaths.Add(RouteKey("GET", "/latest")))
+        {
+            group.MapGet("/latest", async (
             [FromQuery] string name,
             [FromQuery] string agent,
             [FromServices] IKnowledgeService endpoint) =>
@@ -43,32 +39,40 @@ public static class KnowledgeEndpointsV1
             _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}", name, agent);
             return await endpoint.GetLatestByName(name, agent);
         })
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get latest knowledge";
             operation.Description = "Retrieves the most recent knowledge for the specified name and agent";
             return operation;
         });
+        }
 
-        group.MapPost("/", async (
+
+        if (registeredPaths.Add(RouteKey("POST", "/")))
+        {
+            group.MapPost("/", async (
             [FromBody] KnowledgeCreateRequest request,
             [FromServices] IKnowledgeService endpoint) =>
-        {
-            _logger.LogInformation("Creating new knowledge with name: {Name}, agent: {Agent}", request.Name, request.Agent);
-            var knowledgeRequest = new KnowledgeRequest 
             {
-                Name = request.Name,
-                Content = request.Content,
-                Agent = request.Agent,
-                Type = request.Type
-            };
-            var result = await endpoint.Create(knowledgeRequest);
-            return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
-        })
-        .WithOpenApi(operation => {
-            operation.Summary = "Create knowledge";
-            operation.Description = "Creates a new knowledge entity";
-            return operation;
-        });
+                _logger.LogInformation("Creating new knowledge with name: {Name}, agent: {Agent}", request.Name, request.Agent);
+                var knowledgeRequest = new KnowledgeRequest
+                {
+                    Name = request.Name,
+                    Content = request.Content,
+                    Agent = request.Agent,
+                    Type = request.Type
+                };
+                var result = await endpoint.Create(knowledgeRequest);
+                return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
+            })
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Create knowledge";
+                operation.Description = "Creates a new knowledge entity";
+                return operation;
+            });
+        }
+
     }
 } 
 

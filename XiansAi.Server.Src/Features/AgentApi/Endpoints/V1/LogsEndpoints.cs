@@ -16,42 +16,44 @@ public static class LogsEndpointsV1
             .WithTags($"AgentAPI - Logs {version}")
             .RequiresCertificate();
 
-        // If there are any routes that are common for multiple versions, add them here
-        CommonMapRoutes(logsGroup, version);
-
         // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(logsGroup, version);
+        MapRoutes(logsGroup, version, new HashSet<string>());
     }
 
-    internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // If there are any routes that are common for multiple versions, add them here
-    }
-
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
-    {
-        group.MapPost("/", async (
+        string RouteKey(string method, string path) => $"{method}:{path}";
+        
+        if (registeredPaths.Add(RouteKey("POST", "/")))
+        {
+            group.MapPost("/", async (
             [FromBody] LogRequest[] requests,
             [FromServices] ILogsService service) =>
-        {
-            return await service.CreateLogs(requests);
-        })
-        .WithOpenApi(operation => {
-            operation.Summary = "Create multiple logs";
-            operation.Description = "Creates multiple log entries for workflow monitoring";
-            return operation;
-        });
+            {
+                return await service.CreateLogs(requests);
+            })
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Create multiple logs";
+                operation.Description = "Creates multiple log entries for workflow monitoring";
+                return operation;
+            });
+        }
 
-        group.MapPost("/single", async (
-            [FromBody] LogRequest request,
-            [FromServices] ILogsService service) =>
+        if (registeredPaths.Add(RouteKey("POST", "/single")))
         {
-            return await service.CreateLog(request);
-        })
-        .WithOpenApi(operation => {
-            operation.Summary = "Create single log";
-            operation.Description = "Creates a single log entry for workflow monitoring";
-            return operation;
-        });
+            group.MapPost("/single", async (
+                [FromBody] LogRequest request,
+                [FromServices] ILogsService service) =>
+            {
+                return await service.CreateLog(request);
+            })
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Create single log";
+                operation.Description = "Creates a single log entry for workflow monitoring";
+                return operation;
+            });
+        }
     }
 } 

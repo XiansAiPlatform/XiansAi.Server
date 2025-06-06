@@ -22,29 +22,27 @@ public static class DefinitionsEndpointsV1
             .RequiresCertificate();
         
         // If there are any routes that are common for multiple versions, add them here
-        CommonMapRoutes(definitionsGroup, version);
-
-        // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(definitionsGroup, version);
+        MapRoutes(definitionsGroup, version, new HashSet<string>());
     }
 
-    internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // If there are any routes that are common for multiple versions, add them here
-    }
+        string RouteKey(string method, string path) => $"{method}:{path}";
 
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
-    {
-        group.MapPost("", async (
-            [FromBody] FlowDefinitionRequest request,
-            [FromServices] IDefinitionsService endpoint) =>
+        if (registeredPaths.Add(RouteKey("POST", "/")))
         {
-            return await endpoint.CreateAsync(request);
-        })
-        .WithOpenApi(operation => {
-            operation.Summary = "Create flow definition";
-            operation.Description = "Creates a new flow definition in the system";
-            return operation;
-        });
+            group.MapPost("", async (
+                [FromBody] FlowDefinitionRequest request,
+                [FromServices] IDefinitionsService endpoint) =>
+            {
+                return await endpoint.CreateAsync(request);
+            })
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Create flow definition";
+                operation.Description = "Creates a new flow definition in the system";
+                return operation;
+            });
+        }
     }
 } 

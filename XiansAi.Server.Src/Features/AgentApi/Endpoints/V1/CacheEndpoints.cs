@@ -22,65 +22,71 @@ public static class CacheEndpointsV1
         var cacheGroup = app.MapGroup($"/api/{version}/agent/cache")
             .WithTags($"AgentAPI - Cache {version}")
             .RequiresCertificate();
-        
-        // If there are any routes that are common for multiple versions, add them here
-        CommonMapRoutes(cacheGroup, version);
 
         // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(cacheGroup, version);
+        MapRoutes(cacheGroup, version, new HashSet<string>());
     }
-
-    internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+    
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // If there are any routes that are common for multiple versions, add them here
-    }
+        string RouteKey(string method, string path) => $"{method}:{path}";
 
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
-    {
-            
-        group.MapPost("/get", async (
-            [FromBody] CacheKeyRequest request,
-            [FromServices] IObjectCacheWrapperService endpoint) =>
+        if (registeredPaths.Add(RouteKey("POST", "/get")))
         {
-            return await endpoint.GetValue(request.Key);
-        })
-        .WithName($"{version} - Get Cache Value")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get a value from cache";
-            operation.Description = "Retrieves a value from the cache by its key. Returns the cached value if found, otherwise returns null.";
-            return operation;
-        });
-
-        group.MapPost("/set", async (
-            [FromBody] CacheSetRequest request,
-            [FromServices] IObjectCacheWrapperService endpoint) =>
-        {
-            var options = new CacheOptions
+            group.MapPost("/get", async (
+                [FromBody] CacheKeyRequest request,
+                [FromServices] IObjectCacheWrapperService endpoint) =>
             {
-                RelativeExpirationMinutes = request.RelativeExpirationMinutes,
-                SlidingExpirationMinutes = request.SlidingExpirationMinutes
-            };
-            
-            return await endpoint.SetValue(request.Key, request.Value, options);
-        })
-        .WithName($"{version} - Set Cache Value")
-        .WithOpenApi(operation => {
-            operation.Summary = "Set a value in cache";
-            operation.Description = "Stores a value in the cache with the specified key and optional expiration settings";
-            return operation;
-        });
+                return await endpoint.GetValue(request.Key);
+            })
+            .WithName($"{version} - Get Cache Value")
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Get a value from cache";
+                operation.Description = "Retrieves a value from the cache by its key. Returns the cached value if found, otherwise returns null.";
+                return operation;
+            });
+        }
 
-        group.MapPost("/delete", async (
-            [FromBody] CacheKeyRequest request,
-            [FromServices] IObjectCacheWrapperService endpoint) =>
+        if (registeredPaths.Add(RouteKey("POST", "/set")))
         {
-            return await endpoint.DeleteValue(request.Key);
-        })
-        .WithName($"{version} - Delete Cache Value")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a value from cache";
-            operation.Description = "Removes a value from the cache by its key";
-            return operation;
-        });
+            group.MapPost("/set", async (
+                [FromBody] CacheSetRequest request,
+                [FromServices] IObjectCacheWrapperService endpoint) =>
+            {
+                var options = new CacheOptions
+                {
+                    RelativeExpirationMinutes = request.RelativeExpirationMinutes,
+                    SlidingExpirationMinutes = request.SlidingExpirationMinutes
+                };
+
+                return await endpoint.SetValue(request.Key, request.Value, options);
+            })
+            .WithName($"{version} - Set Cache Value")
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Set a value in cache";
+                operation.Description = "Stores a value in the cache with the specified key and optional expiration settings";
+                return operation;
+            });
+
+        }
+
+        if (registeredPaths.Add(RouteKey("POST", "/delete")))
+        {
+            group.MapPost("/delete", async (
+                [FromBody] CacheKeyRequest request,
+                [FromServices] IObjectCacheWrapperService endpoint) =>
+            {
+                return await endpoint.DeleteValue(request.Key);
+            })
+            .WithName($"{version} - Delete Cache Value")
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Delete a value from cache";
+                operation.Description = "Removes a value from the cache by its key";
+                return operation;
+            });
+        }
     }
 } 

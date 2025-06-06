@@ -15,17 +15,44 @@ namespace Features.AgentApi.Endpoints.V2
             var group = app.MapGroup($"/api/{version}/agent/conversation")
                 .WithTags($"AgentAPI - Conversation {version}")
                 .RequiresCertificate();
-            
-            // Reuse v1 mappings
-            V1.ConversationEndpointsV1.CommonMapRoutes(group, version);
 
-            // If there are any routes that will be deleted in future versions, add them here
-            UniqueMapRoutes(group, version);
+            var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Reuse v1 mappings
+            MapRoutes(group, version, registeredPaths);
+            V1.ConversationEndpointsV1.MapRoutes(group, version, registeredPaths);
         }
 
-        internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+        internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
         {
-            // You can add new routes specific to v2 here if needed
+            string RouteKey(string method, string path) => $"{method}:{path}";
+
+            // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+            // Hence v1 would not register the same endpoint again
+
+            var historyPath = "/history";
+            if (registeredPaths.Add(RouteKey("GET", historyPath)))
+            {
+                group.MapGet(historyPath, async (
+                    [FromQuery] string agent,
+                    [FromQuery] string workflowType,
+                    [FromQuery] string participantId,
+                    [FromQuery] int page,
+                    [FromQuery] int pageSize,
+                    [FromServices] IMessageService messageService) =>
+                {
+
+                    var result = await messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
+                    return result.ToHttpResult();
+                })
+                .WithName($"{version} - Get Conversation History")
+                .WithOpenApi(operation =>
+                {
+                    operation.Summary = "Get conversation history";
+                    operation.Description = "Gets the conversation history for a given conversation thread with pagination support";
+                    return operation;
+                });
+            }
         }
     }
 } 

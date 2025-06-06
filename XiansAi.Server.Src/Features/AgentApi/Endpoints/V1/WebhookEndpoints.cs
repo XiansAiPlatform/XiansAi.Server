@@ -13,43 +13,45 @@ namespace Features.AgentApi.Endpoints.V1
                 .WithTags($"AgentAPI - Webhooks {version}")
                 .RequiresCertificate();
 
-            // If there are any routes that are common for multiple versions, add them here
-            CommonMapRoutes(group, version);
-
             // If there are any routes that will be deleted in future versions, add them here
-            UniqueMapRoutes(group, version);
+            MapRoutes(group, version, new HashSet<string>());
         }
 
-        internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+        internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
         {
-            // If there are any routes that are common for multiple versions, add them here
-        }
-
-        internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
-        {
-            group.MapPost("/register", async (
-                WebhookRegistrationDto registration,
-                IWebhookService webhookService,
-                HttpContext context) =>
+            string RouteKey(string method, string path) => $"{method}:{path}";
+            
+            if (registeredPaths.Add(RouteKey("POST", "/register")))
             {
-                var webhook = await webhookService.RegisterWebhookAsync(registration);
-                return Results.Ok(webhook);
-            })
-            .WithName($"{version} - RegisterWebhook")
-            .WithDescription("Register a new webhook for a workflow");
+                group.MapPost("/register", async (
+                    WebhookRegistrationDto registration,
+                    IWebhookService webhookService,
+                    HttpContext context) =>
+                {
+                    var webhook = await webhookService.RegisterWebhookAsync(registration);
+                    return Results.Ok(webhook);
+                })
+                .WithName($"{version} - RegisterWebhook")
+                .WithDescription("Register a new webhook for a workflow");
+            }
 
-            group.MapDelete("/{webhookId}", async (
-                string webhookId,
-                IWebhookService webhookService,
-                HttpContext context) =>
+            if (registeredPaths.Add(RouteKey("DELETE", "/{webhookId}")))
             {
-                var result = await webhookService.DeleteWebhookAsync(webhookId);
-                return result ? Results.Ok() : Results.NotFound();
-            })
-            .WithName($"{version} - DeleteWebhook")
-            .WithDescription("Delete an existing webhook");
+                group.MapDelete("/{webhookId}", async (
+                    string webhookId,
+                    IWebhookService webhookService,
+                    HttpContext context) =>
+                {
+                    var result = await webhookService.DeleteWebhookAsync(webhookId);
+                    return result ? Results.Ok() : Results.NotFound();
+                })
+                .WithName($"{version} - DeleteWebhook")
+                .WithDescription("Delete an existing webhook");
+            }
 
-            group.MapGet("/{webhookId}", async (
+            if (registeredPaths.Add(RouteKey("GET", "/{webhookId}")))
+            {
+                group.MapGet("/{webhookId}", async (
                 string webhookId,
                 IWebhookService webhookService,
                 HttpContext context) =>
@@ -59,8 +61,11 @@ namespace Features.AgentApi.Endpoints.V1
             })
             .WithName($"{version} - GetWebhook")
             .WithDescription("Get webhook details");
+            }
 
-            group.MapPost("/trigger", async (
+            if (registeredPaths.Add(RouteKey("POST", "/trigger")))
+            {
+                group.MapPost("/trigger", async (
                 WebhookTriggerDto triggerDto,
                 IWebhookService webhookService,
                 HttpContext context) =>
@@ -85,6 +90,7 @@ namespace Features.AgentApi.Endpoints.V1
             })
             .WithName($"{version} - TriggerWebhook")
             .WithDescription("Manually trigger webhooks for a specific workflow and event type");
+            }
         }
     }
 } 

@@ -20,15 +20,33 @@ public static class DefinitionsEndpointsV2
             .WithTags($"AgentAPI - Definitions {version}")
             .RequiresCertificate();
         
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Reuse v1 mappings
-        V1.DefinitionsEndpointsV1.CommonMapRoutes(definitionsGroup, version);
-
-        // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(definitionsGroup, version);
+        MapRoutes(definitionsGroup, version, registeredPaths);
+        V1.DefinitionsEndpointsV1.MapRoutes(definitionsGroup, version, registeredPaths);
     }
 
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // You can add new routes specific to v2 here if needed
+        string RouteKey(string method, string path) => $"{method}:{path}";
+
+        // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+        // Hence v1 would not register the same endpoint again
+
+        var routePath = "/";
+        if (registeredPaths.Add(RouteKey("POST", routePath)))
+        {
+            group.MapPost("", async (
+                [FromBody] FlowDefinitionRequest request,
+                [FromServices] IDefinitionsService endpoint) =>
+            {
+                return await endpoint.CreateAsync(request);
+            })
+            .WithOpenApi(operation => {
+                operation.Summary = "Create flow definition";
+                operation.Description = "Creates a new flow definition in the system";
+                return operation;
+            }); 
+        }
     }
 } 

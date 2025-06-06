@@ -14,15 +14,33 @@ namespace Features.AgentApi.Endpoints.V2
                 .RequiresCertificate();
 
             // Reuse v1 mappings
-            V1.WebhookEndpointsV1.CommonMapRoutes(group, version);
+            var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // If there are any routes that will be deleted in future versions, add them here
-            UniqueMapRoutes(group, version);
+            MapRoutes(group, version, registeredPaths);
+            V1.WebhookEndpointsV1.MapRoutes(group, version, registeredPaths);
         }
 
-        internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+        internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
         {
-            // You can add new routes specific to v2 here if needed
+            string RouteKey(string method, string path) => $"{method}:{path}";
+
+            // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+            // Hence v1 would not register the same endpoint again
+            
+            var regiserPath = "/register";
+            if (registeredPaths.Add(RouteKey("POST", regiserPath)))
+            {
+                group.MapPost(regiserPath, async (
+                    WebhookRegistrationDto registration,
+                    IWebhookService webhookService,
+                    HttpContext context) =>
+                {
+                    var webhook = await webhookService.RegisterWebhookAsync(registration);
+                    return Results.Ok(webhook);
+                })
+                .WithName($"{version} - RegisterWebhook")
+                .WithDescription("Register a new webhook for a workflow");
+            }
         }
     }
 } 

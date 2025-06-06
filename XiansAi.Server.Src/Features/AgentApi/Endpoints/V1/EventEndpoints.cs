@@ -29,31 +29,29 @@ public static class EventsEndpointsV1
             .WithTags($"AgentAPI - Events {version}")
             .RequiresCertificate();
 
-        // If there are any routes that are common for multiple versions, add them here
-        CommonMapRoutes(signalGroup, version);
-
         // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(signalGroup, version);
+        MapRoutes(signalGroup, version, new HashSet<string>());
     }
 
-    internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // If there are any routes that are common for multiple versions, add them here
-    }
+        string RouteKey(string method, string path) => $"{method}:{path}";
 
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
-    {
-        group.MapPost("/with-start", async (
-            [FromBody] WorkflowSignalWithStartRequest request,
-            [FromServices] IWorkflowSignalService endpoint) =>
+        if (registeredPaths.Add(RouteKey("POST", "/with-start")))
         {
-            request.SignalName = Constants.SIGNAL_INBOUND_EVENT;
-            return await endpoint.SignalWithStartWorkflow(request);
-        })
-        .WithOpenApi(operation => {
-            operation.Summary = "Signal workflow with start";
-            operation.Description = "Sends a signal to a running workflow instance and starts a new one if it doesn't exist";
-            return operation;
-        });
+            group.MapPost("/with-start", async (
+                [FromBody] WorkflowSignalWithStartRequest request,
+                [FromServices] IWorkflowSignalService endpoint) =>
+            {
+                request.SignalName = Constants.SIGNAL_INBOUND_EVENT;
+                return await endpoint.SignalWithStartWorkflow(request);
+            })
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Signal workflow with start";
+                operation.Description = "Sends a signal to a running workflow instance and starts a new one if it doesn't exist";
+                return operation;
+            });
+        }
     }
 }

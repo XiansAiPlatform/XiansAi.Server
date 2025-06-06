@@ -22,32 +22,31 @@ public static class SettingsEndpointsV1
             .WithTags($"AgentAPI - Settings {version}")
             .RequiresCertificate();
 
-        // If there are any routes that are common for multiple versions, add them here
-        CommonMapRoutes(settingsGroup, version);
-
         // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(settingsGroup, version);
+        MapRoutes(settingsGroup, version, new HashSet<string>());
     }
 
-    internal static void CommonMapRoutes(RouteGroupBuilder group, string version)
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // If there are any routes that are common for multiple versions, add them here
-    }
-
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
-    {
-        group.MapGet("/flowserver", (
-            [FromServices] CertificateService certificateService) =>
+        string RouteKey(string method, string path) => $"{method}:{path}";
+        
+        if (registeredPaths.Add(RouteKey("GET", "/flowserver")))
         {
-            // Get flow server settings
-            var settings = certificateService.GetFlowServerSettings();
-            return Results.Ok(settings);
-        })
-        .WithName($"{version} - Get Flow Server Information")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get Flow Server Information";
-            operation.Description = "Returns Flow Server settings and certificate information in a single response";
-            return operation;
-        });
+            group.MapGet("/flowserver", (
+            [FromServices] CertificateService certificateService) =>
+            {
+                // Get flow server settings
+                var settings = certificateService.GetFlowServerSettings();
+                return Results.Ok(settings);
+            })
+            .WithName($"{version} - Get Flow Server Information")
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Get Flow Server Information";
+                operation.Description = "Returns Flow Server settings and certificate information in a single response";
+                return operation;
+            });
+        }
+        
     }
 } 

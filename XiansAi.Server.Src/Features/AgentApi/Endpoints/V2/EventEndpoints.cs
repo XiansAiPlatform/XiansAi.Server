@@ -19,15 +19,35 @@ public static class EventsEndpointsV2
             .WithTags($"AgentAPI - Events {version}")
             .RequiresCertificate();
 
-        // Reuse v1 mappings
-        V1.EventsEndpointsV1.CommonMapRoutes(signalGroup, version);
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(signalGroup, version);
+        // Reuse v1 mappings
+        MapRoutes(signalGroup, version, registeredPaths);
+        V1.EventsEndpointsV1.MapRoutes(signalGroup, version, registeredPaths);
     }
 
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // You can add new routes specific to v2 here if needed
+        string RouteKey(string method, string path) => $"{method}:{path}";
+
+        // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+        // Hence v1 would not register the same endpoint again
+
+        var startPath = "/with-start";
+        if (registeredPaths.Add(RouteKey("POST", startPath)))
+        {   
+            group.MapPost(startPath, async (
+                [FromBody] WorkflowSignalWithStartRequest request,
+                [FromServices] IWorkflowSignalService endpoint) =>
+            {
+                request.SignalName = Constants.SIGNAL_INBOUND_EVENT;
+                return await endpoint.SignalWithStartWorkflow(request);
+            })
+            .WithOpenApi(operation => {
+                operation.Summary = "Signal workflow with start";
+                operation.Description = "Sends a signal to a running workflow instance and starts a new one if it doesn't exist";
+                return operation;
+            });
+        }
     }
 }

@@ -1,9 +1,13 @@
 using Features.AgentApi.Auth;
+using Microsoft.AspNetCore.Mvc;
+using Features.AgentApi.Services.Lib;
+using System.Text.Json;
+
 
 namespace Features.AgentApi.Endpoints.V2;
 
 // Non-static class for logger type parameter
-public class ActivityHistoryEndpointLogger {}
+public class ActivityHistoryEndpointLogger { }
 
 public static class ActivityHistoryEndpointsV2
 {
@@ -13,21 +17,73 @@ public static class ActivityHistoryEndpointsV2
     {
         var version = "v2";
         _logger = loggerFactory.CreateLogger<ActivityHistoryEndpointLogger>();
-         
+
         // Map activity history endpoints
         var activityHistoryGroup = app.MapGroup($"/api/{version}/agent/activity-history")
             .WithTags($"AgentAPI - Activity History {version}")
             .RequiresCertificate();
 
-        // Reuse v1 mappings
-        V1.ActivityHistoryEndpointsV1.CommonMapRoutes(activityHistoryGroup, version);
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // If there are any routes that will be deleted in future versions, add them here
-        UniqueMapRoutes(activityHistoryGroup, version);
+        // Reuse v1 mappings
+        MapRoutes(activityHistoryGroup, version, registeredPaths);
+        V1.ActivityHistoryEndpointsV1.MapRoutes(activityHistoryGroup, version, registeredPaths);
     }
 
-    internal static void UniqueMapRoutes(RouteGroupBuilder group, string version)
+    internal static void MapRoutes(RouteGroupBuilder group, string version, HashSet<string> registeredPaths = null!)
     {
-        // You can add new routes specific to v2 here if needed
+        string RouteKey(string method, string path) => $"{method}:{path}";
+
+        // If v2 has the same endpoint, we can reuse it, before v1 is called this method will be called and hashset will record that it is already called
+        // Hence v1 would not register the same endpoint again
+        
+        var historyPath = "/";
+        if (registeredPaths.Add(RouteKey("POST", historyPath)))
+        {
+            group.MapPost("", (
+            [FromServices] IActivityHistoryService endpoint,
+            [FromBody] ActivityHistoryRequest request,
+            HttpContext context) =>
+            {
+                try
+                {
+                    endpoint.Create(request);
+                    return Results.Ok("Activity history creation queued");
+                }
+                catch (JsonException)
+                {
+                    return Results.BadRequest("Invalid JSON format");
+                }
+                catch (Exception ex)
+                {
+                    return Results.Problem($"Error creating activity history: {ex.Message}");
+                }
+            })
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Create activity history";
+                operation.Description = "Creates a new activity history record in the system";
+                return operation;
+            });
+
+
+            // If there deprecated routes in v2 which are in v1 but would not be in v2, overwrite them.
+            // Example of a deprecated route that might be removed in future versions
+            
+            // if (registeredPaths.Add(RouteKey("POST", "/old-endpoint")))
+            // {
+            //     group.MapPost("/old-endpoint", async (
+            //     OldRequestDto request,
+            //     [FromServices] ISomeService service,
+            //     HttpContext context) =>
+            //     {
+            //         context.Response.Headers.Add("X-Deprecated", "This endpoint is deprecated and will be removed in v2.");
+            //         var result = await service.HandleAsync(request);
+            //         return Results.Ok(result);
+            //     })
+            //     .WithName($"{version} - OldEndpoint")
+            //     .WithDescription("Deprecated: This endpoint will be removed in the next version.");
+            // }
+        }
     }
 } 
