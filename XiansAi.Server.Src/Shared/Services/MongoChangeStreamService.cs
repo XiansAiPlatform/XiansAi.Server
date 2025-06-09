@@ -1,12 +1,12 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Repositories;
 using XiansAi.Server.Shared.Websocket;
-using MongoDB.Bson;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
-using System.Text.Json.Serialization;
+using Shared.Services;
 
 namespace XiansAi.Server.Shared.Services
 {
@@ -37,15 +37,36 @@ namespace XiansAi.Server.Shared.Services
                     var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
                     var database = await databaseService.GetDatabase();
-                    var collection = database.GetCollection<ConversationMessage>("conversation_message");
+                    var collectionName = "conversation_message";
+                    var collection = database.GetCollection<ConversationMessage>(collectionName);
+
+                    // Ensure collection exists
+                    //var filter = Builders<BsonDocument>.Filter.Empty;
+                    var collections = await database.ListCollectionNamesAsync(cancellationToken: stoppingToken);
+                    var exists = await collections.ToListAsync(stoppingToken);
+                    if (!exists.Contains(collectionName))
+                    {
+                        await database.CreateCollectionAsync(collectionName, cancellationToken: stoppingToken);
+                    }
 
                     var pipeline = new EmptyPipelineDefinition<ChangeStreamDocument<ConversationMessage>>()
-                        .Match(change =>
-                        change.OperationType == ChangeStreamOperationType.Insert &&
-                        change.FullDocument.Direction == MessageDirection.Outgoing
-                        );
+                       .Match(change =>
+                                    change.OperationType == ChangeStreamOperationType.Insert ||
+                                    change.OperationType == ChangeStreamOperationType.Update ||
+                                    change.OperationType == ChangeStreamOperationType.Replace
+                        )
+                        .Project(change => new
+                        {
+                            Id = change.ResumeToken, // this is the resume token (_id)
+                            FullDocument = change.FullDocument,
+                            OperationType = change.OperationType
+                        });
+                    var options = new ChangeStreamOptions
+                    {
+                        FullDocument = ChangeStreamFullDocumentOption.UpdateLookup
+                    };
 
-                    using var cursor = await collection.WatchAsync(pipeline, cancellationToken: stoppingToken);
+                    using var cursor = await collection.WatchAsync(pipeline, options, cancellationToken: stoppingToken);
                     
                     // Iterate using MoveNextAsync and Current
                     while (await cursor.MoveNextAsync(stoppingToken))
@@ -67,21 +88,24 @@ namespace XiansAi.Server.Shared.Services
 
                             var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
 
-                            if (string.IsNullOrEmpty(message.Content))
+                            //TODO Merge Conflict
+                            if (message.Direction == MessageDirection.Outgoing || message.MessageType == MessageType.Handoff)
                             {
-                                _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
-                                groupId, JsonSerializer.Serialize(message));
-                                await _hubContext.Clients.Group(groupId)
-                                .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
+                                if (string.IsNullOrEmpty(message.Text))
+                                {
+                                    _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
+                                    groupId, JsonSerializer.Serialize(message));
+                                    await _hubContext.Clients.Group(groupId)
+                                    .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
+                                }
+                                else
+                                {
+                                    _logger.LogDebug("Sending message to group {GroupId}: {Message}",
+                                    groupId, JsonSerializer.Serialize(message));
+                                    await _hubContext.Clients.Group(groupId)
+                                        .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
+                                }
                             }
-                            else
-                            {
-                                _logger.LogDebug("Sending message to group {GroupId}: {Message}",
-                                groupId, JsonSerializer.Serialize(message));
-                                await _hubContext.Clients.Group(groupId)
-                                    .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
-                            }
-
                             _logger.LogDebug("Sent message to group {GroupId}: {MessageId}",
                                 message.WorkflowId + message.ParticipantId, message.Id);
                         }
@@ -107,7 +131,7 @@ namespace XiansAi.Server.Shared.Services
 
         private void ConvertBsonMetadataToObjectInternal(ConversationMessage message)
         {
-            if (message.Metadata is BsonDocument bsonDoc)
+            if (message.Data is BsonDocument bsonDoc)
             {
                 if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
                 {
@@ -120,23 +144,23 @@ namespace XiansAi.Server.Shared.Services
                         {
                             try
                             {
-                                message.Metadata = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
+                                message.Data = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
                                 return;
                             }
                             catch(Exception ex)
                             {
                                 _logger.LogWarning(ex, "MongoChangeStreamService: Failed to deserialize string metadata value for message {MessageId}. Using raw string.", message.Id);
-                                message.Metadata = strValue;
+                                message.Data = strValue;
                                 return;
                             }
                         }
-                        message.Metadata = strValue;
+                        message.Data = strValue;
                         return;
                     }
-                    message.Metadata = ConvertBsonToNativeObjectInternal(valueElement);
+                    message.Data = ConvertBsonToNativeObjectInternal(valueElement);
                     return;
                 }
-                message.Metadata = ConvertBsonToNativeObjectInternal(bsonDoc);
+                message.Data = ConvertBsonToNativeObjectInternal(bsonDoc);
             }
         }
 

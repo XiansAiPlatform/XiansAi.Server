@@ -335,8 +335,7 @@ public class LogRepository : ILogRepository
             .Match(matchStage)
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
-            
-        Console.WriteLine("Critical logs: " + criticalLogs.Count());
+        
         return criticalLogs;
     }
 }

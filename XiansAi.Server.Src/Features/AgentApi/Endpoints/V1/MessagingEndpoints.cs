@@ -2,8 +2,7 @@ using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Utils.Services;
-using Microsoft.AspNetCore.SignalR;
-using XiansAi.Server.Shared.Websocket;
+using Shared.Repositories;
 
 namespace Features.AgentApi.Endpoints.V1
 {
@@ -46,54 +45,48 @@ namespace Features.AgentApi.Endpoints.V1
                 });
             }
 
-            if (registeredPaths.Add(RouteKey("POST", "/inbound")))
+            if (registeredPaths.Add(RouteKey("POST", "/outbound/chat")))
             {
-                group.MapPost("/inbound", async (
-                [FromBody] MessageRequest request,
-                [FromServices] IMessageService messageService) =>
-                {
-                    var result = await messageService.ProcessIncomingMessage(request);
+                group.MapPost("/outbound/chat", async (
+                [FromBody] ChatOrDataRequest request, 
+                [FromServices] IMessageService messageService) => {
+                    var result = await messageService.ProcessOutgoingMessage(request, MessageType.Chat);
                     return result.ToHttpResult();
                 })
-                .WithName($"{version} - Process Inbound Message to Agent")
-                .WithOpenApi(operation =>
-                {
-                    operation.Summary = "Process inbound message to Agent";
-                    operation.Description = "Processes an inbound message for agent conversations and returns the result";
+                .WithName("Process Outbound Chat from Agent")
+                .WithOpenApi(operation => {
+                    operation.Summary = "Process outbound chat from Agent";
+                    operation.Description = "Processes an outbound chat for agent conversations and returns the result";
                     return operation;
                 });
             }
 
-            if (registeredPaths.Add(RouteKey("POST", "/outbound/send")))
+            if (registeredPaths.Add(RouteKey("POST", "/outbound/data")))
             {
-                group.MapPost("/outbound/send", async (
-                    [FromBody] MessageRequest request,
-                    [FromServices] IMessageService messageService) =>
-                {
-                    var result = await messageService.ProcessOutgoingMessage(request);
+                group.MapPost("/outbound/data", async (
+                [FromBody] ChatOrDataRequest request, 
+                [FromServices] IMessageService messageService) => {
+                    var result = await messageService.ProcessOutgoingMessage(request, MessageType.Data);
                     return result.ToHttpResult();
                 })
-                .WithName($"{version} - Process Outbound Message from Agent")
-                .WithOpenApi(operation =>
-                {
-                    operation.Summary = "Process outbound message to Agent";
-                    operation.Description = "Processes an outbound message for agent conversations and returns the result";
+                .WithName("Process Outbound Data from Agent")
+                .WithOpenApi(operation => {
+                    operation.Summary = "Process outbound data from Agent";
+                    operation.Description = "Processes an outbound data for agent conversations and returns the result";
                     return operation;
                 });
             }
 
-            if (registeredPaths.Add(RouteKey("POST", "/outbound/handover")))
+            if (registeredPaths.Add(RouteKey("POST", "/outbound/handoff")))
             {
-                group.MapPost("/outbound/handover", async (
-                    [FromBody] HandoverRequest request,
-                    [FromServices] IMessageService messageService) =>
-                {
-                    var result = await messageService.ProcessHandover(request);
+                group.MapPost("/outbound/handoff", async (
+                [FromBody] HandoffRequest request, 
+                [FromServices] IMessageService messageService) => {
+                    var result = await messageService.ProcessHandoff(request);
                     return result.ToHttpResult();
                 })
-                .WithName($"{version} - Process Handover Message from Agent")
-                .WithOpenApi(operation =>
-                {
+                .WithName("Process Handover Message from Agent")
+                .WithOpenApi(operation => {
                     operation.Summary = "Process handover message from Agent";
                     operation.Description = "Processes a handover message for agent conversations and returns the result";
                     return operation;

@@ -32,7 +32,15 @@ public class WorkflowSignalWithStartRequest
 {
     [JsonPropertyName("SignalName")]
     public string? SignalName { get; set; }
+    [JsonPropertyName("SourceAgent")]
+    public required string SourceAgent { get; set; }
 
+    [JsonPropertyName("TargetWorkflowId")]
+    public string? TargetWorkflowId { get; set; }
+
+    [JsonPropertyName("TargetWorkflowType")]
+    public required string TargetWorkflowType { get; set; }
+    
     [JsonPropertyName("EventType")]
     public string? EventType { get; set; }
 
@@ -45,17 +53,8 @@ public class WorkflowSignalWithStartRequest
     [JsonPropertyName("SourceWorkflowType")]
     public string? SourceWorkflowType { get; set; }
 
-    [JsonPropertyName("SourceAgent")]
-    public required string SourceAgent { get; set; }
 
-    [JsonPropertyName("TargetWorkflowId")]
-    public string? TargetWorkflowId { get; set; }
 
-    [JsonPropertyName("TargetWorkflowType")]
-    public required string TargetWorkflowType { get; set; }
-
-    [JsonPropertyName("Timestamp")]
-    public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>
@@ -63,7 +62,6 @@ public class WorkflowSignalWithStartRequest
 /// </summary>
 public interface IWorkflowSignalService
 {
-    Task<IResult> SignalWorkflow(WorkflowSignalRequest request);
     Task<IResult> SignalWithStartWorkflow(WorkflowSignalWithStartRequest request);
 }
 
@@ -90,115 +88,11 @@ public class WorkflowSignalService : IWorkflowSignalService
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
 
-
-    /// <summary>
-    /// Handles the HTTP request to send a signal to an existing Temporal workflow.
-    /// </summary>
-    /// <param name="request">The workflow signal request containing the workflow ID, signal name, and optional payload.</param>
-    /// <returns>
-    /// HTTP response with one of the following status codes:
-    /// - 200 OK: Signal successfully sent
-    /// - 400 Bad Request: Invalid or missing required parameters
-    /// - 503 Service Unavailable: Temporal client unavailable
-    /// - 500 Internal Server Error: Unexpected error during processing
-    /// </returns>
-    public async Task<IResult> SignalWorkflow(WorkflowSignalRequest request)
-    {
-        _logger.LogInformation("Received workflow signal request for workflow {WorkflowId} with signal {SignalName} at: {Time}", 
-            request.WorkflowId, request.SignalName, DateTime.UtcNow);
-
-        if (request == null)
-        {
-            _logger.LogWarning("Received null workflow signal request");
-            return Results.BadRequest("Request cannot be null");
-        }
-
-        _logger.LogInformation("Received workflow signal request for workflow {WorkflowId} with signal {SignalName} at: {Time}", 
-            request.WorkflowId, request.SignalName, DateTime.UtcNow);
-        
-        try
-        {
-            if (!ValidateRequest(request))
-            {
-                _logger.LogWarning("Invalid workflow signal request: {WorkflowId}, {SignalName}", 
-                    request.WorkflowId, request.SignalName);
-                return Results.BadRequest("Invalid request. WorkflowId and SignalName are required.");
-            }
-
-            var client = _clientService.GetClient();
-            if (client == null)
-            {
-                _logger.LogError("Failed to get Temporal client");
-                throw new Exception("Failed to get Temporal client");
-            }
-
-            var handle = client.GetWorkflowHandle(request.WorkflowId);
-            
-            var signalPayload = request.Payload != null 
-                ? new object[] { request.Payload }
-                : Array.Empty<object>();
-
-            _logger.LogInformation("Sending signal {SignalName} to workflow {WorkflowId}", 
-                request.SignalName, request.WorkflowId);
-
-            await handle.SignalAsync(request.SignalName, signalPayload);
-            
-            _logger.LogInformation("Successfully sent signal {SignalName} to workflow: {WorkflowId}", 
-                request.SignalName, request.WorkflowId);
-            
-            return Results.Ok(new { 
-                message = "Signal sent successfully", 
-                workflowId = request.WorkflowId,
-                signalName = request.SignalName
-            });
-        }
-        catch (Temporalio.Exceptions.RpcException ex) when (ex.Message.Contains("workflow not found"))
-        {
-            _logger.LogWarning(ex, "Workflow not found: {WorkflowId}", request.WorkflowId);
-            return Results.NotFound(new {
-                message = $"Workflow with ID '{request.WorkflowId}' not found",
-                workflowId = request.WorkflowId
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowId}", 
-                request.SignalName, request.WorkflowId);
-                
-            throw;
-        }
-    }
-
     public async Task<IResult> SignalWithStartWorkflow(WorkflowSignalWithStartRequest request)
     {
-        _logger.LogInformation("Received workflow signal request for workflow {WorkflowType} with signal {SignalName} at: {Time}", 
-            request.TargetWorkflowType, request.SignalName, DateTime.UtcNow);
-
-        if (request == null)
-        {
-            _logger.LogWarning("Received null workflow signal request");
-            return Results.BadRequest("Request cannot be null");
-        }
-
-        _logger.LogInformation("Received workflow signal request for workflow {WorkflowType} with signal {SignalName} at: {Time}", 
-            request.TargetWorkflowType, request.SignalName, DateTime.UtcNow);
-        
         try
         {
-            if (!ValidateRequest(request))
-            {
-                _logger.LogWarning("Invalid workflow signal request: {WorkflowType}, {SignalName}", 
-                    request.TargetWorkflowType, request.SignalName);
-                return Results.BadRequest("Invalid request. WorkflowType and SignalName are required.");
-            }
-
-            var client = _clientService.GetClient();
-            if (client == null)
-            {
-                _logger.LogError("Failed to get Temporal client");
-                throw new Exception("Failed to get Temporal client");
-            }
-
+            var client = _clientService.GetClient() ?? throw new Exception("Failed to get Temporal client");
 
             var options = new NewWorkflowOptions(
                 request.SourceAgent, 
@@ -242,20 +136,4 @@ public class WorkflowSignalService : IWorkflowSignalService
             throw;
         }
     }
-
-    /// <summary>
-    /// Validates that the workflow signal request contains all required fields.
-    /// </summary>
-    /// <param name="request">The request to validate.</param>
-    /// <returns>True if the request is valid; otherwise, false.</returns>
-    /// <remarks>
-    /// A valid request must have non-empty values for both WorkflowId and SignalName.
-    /// </remarks>
-    private static bool ValidateRequest(WorkflowSignalRequest request) =>
-        !string.IsNullOrEmpty(request.WorkflowId) && 
-        !string.IsNullOrEmpty(request.SignalName);
-
-    private static bool ValidateRequest(WorkflowSignalWithStartRequest request) =>
-        !string.IsNullOrEmpty(request.TargetWorkflowType) && 
-        !string.IsNullOrEmpty(request.SignalName);
 }

@@ -1,22 +1,23 @@
-﻿using System.Text.Json;
+﻿using Microsoft.AspNetCore.Authorization;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
+using Shared.Repositories;
 using Shared.Services;
 
 namespace XiansAi.Server.Shared.Websocket
 {
+    [Authorize(Policy = "WebsocketAuthPolicy")]
     public class ChatHub : Hub
     {
-        private readonly ClientConnectionManager _connectionManager;
         private readonly IMessageService _messageService;
         private readonly ITenantContext _tenantContext;
         private readonly ITenantContext? _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public ChatHub(ClientConnectionManager connectionManager, IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
+        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
         {
-            _connectionManager = connectionManager;
             _messageService = messageService;
             _httpContextAccessor = httpContextAccessor;
             var httpContext = _httpContextAccessor.HttpContext;
@@ -84,27 +85,8 @@ namespace XiansAi.Server.Shared.Websocket
             }
         }
 
-        public void RegisterThread(string threadId)
-        {
-            EnsureTenantContext();
-            _connectionManager.AddConnection(threadId, Context.ConnectionId);
-            Console.WriteLine($"Registered thread {threadId} with connection {Context.ConnectionId}");
-        }
-
-        public void DisconnectThread(string threadId)
-        {
-            if (_connectionManager.GetConnectionId(threadId) == Context.ConnectionId)
-            {
-                _connectionManager.RemoveConnection(Context.ConnectionId);
-                _logger.LogInformation($"Disconnected thread {threadId} and removed connection {Context.ConnectionId}");
-            }
-
-            Context.Abort(); // This forcibly disconnects the client from the hub           
-        }
-
         public override Task OnDisconnectedAsync(Exception? exception)
         {
-            _connectionManager.RemoveConnection(Context.ConnectionId);
             return base.OnDisconnectedAsync(exception);
         }
 
@@ -115,19 +97,19 @@ namespace XiansAi.Server.Shared.Websocket
             await Clients.Caller.SendAsync("ThreadHistory", result.Data);
         }
 
-        public async Task SendInboundMessage(MessageRequest request)
+        //TODO: This is a temporary method to send inbound messages to the client. We need to refactor this to use the new messaging endpoints.
+        public async Task SendInboundMessage(ChatOrDataRequest request, string messageType)
         {
             _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
             EnsureTenantContext();
             try
             {
+                var messageTypeEnum = Enum.Parse<MessageType>(messageType);
                 // Step 1: Process inbound
-                var inboundResult = await _messageService.ProcessIncomingMessage(request);
+                var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
                 if (inboundResult.Data != null)
-                {
-                    _connectionManager.AddConnection(inboundResult.Data, Context.ConnectionId);
-
+                {                 
                     // Notify client message was received
                     await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
                 }
