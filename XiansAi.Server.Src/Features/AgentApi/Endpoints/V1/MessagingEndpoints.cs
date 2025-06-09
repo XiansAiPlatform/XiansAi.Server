@@ -53,7 +53,7 @@ namespace Features.AgentApi.Endpoints.V1
                     var result = await messageService.ProcessOutgoingMessage(request, MessageType.Chat);
                     return result.ToHttpResult();
                 })
-                .WithName("Process Outbound Chat from Agent")
+                .WithName($"{version} - Process Outbound Chat from Agent")
                 .WithOpenApi(operation => {
                     operation.Summary = "Process outbound chat from Agent";
                     operation.Description = "Processes an outbound chat for agent conversations and returns the result";
@@ -69,7 +69,7 @@ namespace Features.AgentApi.Endpoints.V1
                     var result = await messageService.ProcessOutgoingMessage(request, MessageType.Data);
                     return result.ToHttpResult();
                 })
-                .WithName("Process Outbound Data from Agent")
+                .WithName($"{version} - Process Outbound Data from Agent")
                 .WithOpenApi(operation => {
                     operation.Summary = "Process outbound data from Agent";
                     operation.Description = "Processes an outbound data for agent conversations and returns the result";
@@ -85,7 +85,7 @@ namespace Features.AgentApi.Endpoints.V1
                     var result = await messageService.ProcessHandoff(request);
                     return result.ToHttpResult();
                 })
-                .WithName("Process Handover Message from Agent")
+                .WithName($"{version} - Process Handover Message from Agent")
                 .WithOpenApi(operation => {
                     operation.Summary = "Process handover message from Agent";
                     operation.Description = "Processes a handover message for agent conversations and returns the result";
