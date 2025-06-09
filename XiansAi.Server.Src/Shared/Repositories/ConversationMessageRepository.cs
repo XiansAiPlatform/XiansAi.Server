@@ -6,12 +6,14 @@ using System.Text.Json;
 using Shared.Data;
 using Shared.Utils;
 
+
 namespace Shared.Repositories;
 
 public enum MessageDirection
 {
     Incoming,
     Outgoing,
+    [Obsolete("Use MessageDirection.Handoff instead")]
     Handover
 }
 
@@ -19,6 +21,16 @@ public enum MessageStatus
 {
     FailedToDeliverToWorkflow,
     DeliveredToWorkflow,
+}
+
+
+public enum MessageType
+{
+    Chat,
+    Data,
+    Handoff,
+    [Obsolete("Use MessageType.Handoff instead")]
+    Handover
 }
 
 public class MessageLogEvent
@@ -60,19 +72,16 @@ public class ConversationMessage
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public required MessageDirection Direction { get; set; }
 
-    [BsonElement("content")]
-    public string? Content { get; set; }
+    [BsonElement("text")]
+    public string? Text { get; set; }
 
     [BsonElement("status")]
     [BsonRepresentation(BsonType.String)]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MessageStatus? Status { get; set; }
 
-    [BsonElement("metadata")]
-    public object? Metadata { get; set; }
-
-    [BsonElement("logs")]
-    public List<MessageLogEvent>? Logs { get; set; }
+    [BsonElement("data")]
+    public object? Data { get; set; }
 
     [BsonElement("participant_id")]
     public required string ParticipantId { get; set; }
@@ -82,6 +91,11 @@ public class ConversationMessage
 
     [BsonElement("workflow_type")]
     public required string WorkflowType { get; set; }
+
+    [BsonElement("message_type")]
+    [BsonRepresentation(BsonType.String)]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MessageType? MessageType { get; set; }
 
 }
 
@@ -94,10 +108,9 @@ public interface IConversationMessageRepository
     Task<string> CreateAndUpdateThreadAsync(ConversationMessage message, string threadId, DateTime timestamp);
     Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps);
     Task<bool> UpdateStatusAsync(string id, MessageStatus status);
-    Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
-
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
     Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false);
+    Task<string> CreateAndUpdateThreadWithOptimisticConcurrencyAsync(ConversationMessage message, string threadId, DateTime timestamp);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -239,22 +252,10 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<string> CreateAsync(ConversationMessage message)
     {
-        if (message.Logs == null)
-        {
-            message.Logs = new List<MessageLogEvent>
-            {
-                new MessageLogEvent
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = "created"
-                }
-            };
-        }
-
         // Convert metadata to BsonDocument if needed
-        if (message.Metadata != null)
+        if (message.Data != null)
         {
-            message.Metadata = ConvertToBsonDocument(message.Metadata);
+            message.Data = ConvertToBsonDocument(message.Data);
         }
 
         await _collection.InsertOneAsync(message);
@@ -271,22 +272,10 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // Prepare each message for insertion
         foreach (var message in messages)
         {
-            if (message.Logs == null)
-            {
-                message.Logs = new List<MessageLogEvent>
-                {
-                    new MessageLogEvent
-                    {
-                        Timestamp = DateTime.UtcNow,
-                        Event = "created"
-                    }
-                };
-            }
-
             // Convert metadata to BsonDocument if needed
-            if (message.Metadata != null)
+            if (message.Data != null)
             {
-                message.Metadata = ConvertToBsonDocument(message.Metadata);
+                message.Data = ConvertToBsonDocument(message.Data);
             }
         }
 
@@ -299,31 +288,46 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<string> CreateAndUpdateThreadAsync(ConversationMessage message, string threadId, DateTime timestamp)
     {
-        // Prepare the message (same logic as in CreateAsync)
-        if (message.Logs == null)
-        {
-            message.Logs = new List<MessageLogEvent>
-            {
-                new MessageLogEvent
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = "created"
-                }
-            };
-        }
-
         // Convert metadata to BsonDocument if needed
-        if (message.Metadata != null)
+        if (message.Data != null)
         {
-            message.Metadata = ConvertToBsonDocument(message.Metadata);
+            message.Data = ConvertToBsonDocument(message.Data);
         }
 
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        // Critical operation: Create the message with retry logic
+        var messageId = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Only insert the message - remove thread update to avoid write conflicts
             await _collection.InsertOneAsync(message);
             return message.Id;
-        }, _logger, operationName: "CreateAndUpdateThreadAsync");
+        }, _logger, operationName: "CreateMessage");
+
+        // Best effort: Update thread timestamp (non-critical)
+        // Use fire-and-forget pattern to avoid blocking the message creation result
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+                {
+                    var threadFilter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
+                    var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+                    var result = await _threadCollection.UpdateOneAsync(threadFilter, threadUpdate);
+                    
+                    if (result.MatchedCount == 0)
+                    {
+                        _logger.LogDebug("Thread {ThreadId} not found during timestamp update", threadId);
+                    }
+                }, _logger, maxRetries: 2, operationName: "UpdateThreadTimestamp");
+            }
+            catch (Exception ex)
+            {
+                // Log but don't throw - this is non-critical
+                _logger.LogWarning(ex, "Failed to update thread {ThreadId} timestamp after message creation, but message {MessageId} was created successfully", 
+                    threadId, messageId);
+            }
+        });
+
+        return messageId;
     }
 
     public async Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
@@ -336,22 +340,10 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // Prepare each message for insertion
         foreach (var message in messages)
         {
-            if (message.Logs == null)
-            {
-                message.Logs = new List<MessageLogEvent>
-                {
-                    new MessageLogEvent
-                    {
-                        Timestamp = DateTime.UtcNow,
-                        Event = "created"
-                    }
-                };
-            }
-
             // Convert metadata to BsonDocument if needed
-            if (message.Metadata != null)
+            if (message.Data != null)
             {
-                message.Metadata = ConvertToBsonDocument(message.Metadata);
+                message.Data = ConvertToBsonDocument(message.Data);
             }
         }
 
@@ -498,35 +490,17 @@ public class ConversationMessageRepository : IConversationMessageRepository
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var update = Builders<ConversationMessage>.Update
-                .Set(x => x.Status, status)
-                .Push(x => x.Logs, new MessageLogEvent
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = status.ToString()
-                });
+                .Set(x => x.Status, status);
 
             var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
             return result.ModifiedCount > 0;
         }, _logger, operationName: "UpdateStatusAsync");
     }
 
-    public async Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var update = Builders<ConversationMessage>.Update
-                .Push(x => x.Logs, logEvent)
-                .Set(x => x.UpdatedAt, DateTime.UtcNow);
-
-            var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-            return result.ModifiedCount > 0;
-        }, _logger, operationName: "AddMessageLogAsync");
-    }
-
     // Helper method to convert BsonDocument metadata back to the original object format
     private void ConvertBsonMetadataToObject(ConversationMessage message)
     {
-        if (message.Metadata is BsonDocument bsonDoc)
+        if (message.Data is BsonDocument bsonDoc)
         {
             // If it's a simple wrapper with a "value" field, extract the value
             if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
@@ -541,25 +515,25 @@ public class ConversationMessageRepository : IConversationMessageRepository
                     {
                         try
                         {
-                            message.Metadata = JsonSerializer.Deserialize<object>(strValue);
+                            message.Data = JsonSerializer.Deserialize<object>(strValue);
                             return;
                         }
                         catch
                         {
                             // If parsing fails, just use the string value
-                            message.Metadata = strValue;
+                            message.Data = strValue;
                             return;
                         }
                     }
                     
                     // It's just a string
-                    message.Metadata = strValue;
+                    message.Data = strValue;
                     return;
                 }
             }
             
             // Convert BsonDocument to native .NET types properly
-            message.Metadata = ConvertBsonToNativeObject(bsonDoc);
+            message.Data = ConvertBsonToNativeObject(bsonDoc);
         }
     }
 
@@ -647,8 +621,8 @@ public class ConversationMessageRepository : IConversationMessageRepository
         if (!includeMetadata)
         {
             var contentFilter = Builders<ConversationMessage>.Filter.And(
-                Builders<ConversationMessage>.Filter.Ne(x => x.Content, null),
-                Builders<ConversationMessage>.Filter.Ne(x => x.Content, "")
+                Builders<ConversationMessage>.Filter.Ne(x => x.Text, null),
+                Builders<ConversationMessage>.Filter.Ne(x => x.Text, "")
             );
             messageFilter = Builders<ConversationMessage>.Filter.And(messageFilter, contentFilter);
         }
@@ -666,5 +640,51 @@ public class ConversationMessageRepository : IConversationMessageRepository
             ConvertBsonMetadataToObject(message);
         }
         return messages;
+    }
+
+    /// <summary>
+    /// Alternative approach using optimistic concurrency control
+    /// </summary>
+    public async Task<string> CreateAndUpdateThreadWithOptimisticConcurrencyAsync(ConversationMessage message, string threadId, DateTime timestamp)
+    {
+        // Convert metadata to BsonDocument if needed
+        if (message.Data != null)
+        {
+            message.Data = ConvertToBsonDocument(message.Data);
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            // First, get the current thread to check its current UpdatedAt
+            var currentThread = await _threadCollection.Find(t => t.Id == threadId)
+                .Project(t => new { t.Id, t.UpdatedAt })
+                .FirstOrDefaultAsync();
+            
+            if (currentThread == null)
+            {
+                _logger.LogWarning("Thread {ThreadId} not found during message creation", threadId);
+                // Still create the message even if thread doesn't exist
+                await _collection.InsertOneAsync(message);
+                return message.Id;
+            }
+
+            // Create the message first
+            await _collection.InsertOneAsync(message);
+            
+            // Update thread only if UpdatedAt hasn't changed (optimistic concurrency)
+            var threadFilter = Builders<ConversationThread>.Filter.And(
+                Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId),
+                Builders<ConversationThread>.Filter.Eq(t => t.UpdatedAt, currentThread.UpdatedAt)
+            );
+            var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+            var threadResult = await _threadCollection.UpdateOneAsync(threadFilter, threadUpdate);
+            
+            if (threadResult.MatchedCount == 0)
+            {
+                _logger.LogDebug("Thread {ThreadId} was modified by another operation, timestamp update skipped", threadId);
+            }
+
+            return message.Id;
+        }, _logger, operationName: "CreateAndUpdateThreadWithOptimisticConcurrencyAsync");
     }
 }

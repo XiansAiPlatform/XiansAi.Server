@@ -6,6 +6,7 @@ using Shared.Repositories;
 using XiansAi.Server.Shared.Websocket;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
+using Shared.Services;
 
 namespace XiansAi.Server.Shared.Services
 {
@@ -86,9 +87,11 @@ namespace XiansAi.Server.Shared.Services
                             ConvertBsonMetadataToObjectInternal(message);
 
                             var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
-                            if (message.Direction == MessageDirection.Outgoing || message.Direction == MessageDirection.Handover)
+
+                            //TODO Merge Conflict
+                            if (message.Direction == MessageDirection.Outgoing || message.MessageType == MessageType.Handoff)
                             {
-                                if (string.IsNullOrEmpty(message.Content))
+                                if (string.IsNullOrEmpty(message.Text))
                                 {
                                     _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
                                     groupId, JsonSerializer.Serialize(message));
@@ -128,7 +131,7 @@ namespace XiansAi.Server.Shared.Services
 
         private void ConvertBsonMetadataToObjectInternal(ConversationMessage message)
         {
-            if (message.Metadata is BsonDocument bsonDoc)
+            if (message.Data is BsonDocument bsonDoc)
             {
                 if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
                 {
@@ -141,23 +144,23 @@ namespace XiansAi.Server.Shared.Services
                         {
                             try
                             {
-                                message.Metadata = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
+                                message.Data = System.Text.Json.JsonSerializer.Deserialize<object>(strValue);
                                 return;
                             }
                             catch(Exception ex)
                             {
                                 _logger.LogWarning(ex, "MongoChangeStreamService: Failed to deserialize string metadata value for message {MessageId}. Using raw string.", message.Id);
-                                message.Metadata = strValue;
+                                message.Data = strValue;
                                 return;
                             }
                         }
-                        message.Metadata = strValue;
+                        message.Data = strValue;
                         return;
                     }
-                    message.Metadata = ConvertBsonToNativeObjectInternal(valueElement);
+                    message.Data = ConvertBsonToNativeObjectInternal(valueElement);
                     return;
                 }
-                message.Metadata = ConvertBsonToNativeObjectInternal(bsonDoc);
+                message.Data = ConvertBsonToNativeObjectInternal(bsonDoc);
             }
         }
 
