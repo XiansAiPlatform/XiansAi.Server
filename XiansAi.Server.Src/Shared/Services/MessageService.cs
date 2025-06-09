@@ -8,6 +8,7 @@ namespace Shared.Services;
 public class MessageRequest
 {
     public required string ParticipantId { get; set; }
+    public string? Authorization {get; set;}
     public required string WorkflowId { get; set; }
     public required string WorkflowType { get; set; }
     public required string Agent { get; set; }
@@ -28,6 +29,7 @@ public class HandoverRequest
     public required string ParticipantId { get; set; }
     public required string Content { get; set; }
     public object? Metadata { get; set; }
+    public string? Authorization { get; set; }
 }
 
 public interface IMessageService
@@ -114,7 +116,8 @@ public class MessageService : IMessageService
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
                 Content = $"{request.FromWorkflowType} -> {request.WorkflowType}",
-                Metadata = request.Metadata
+                Metadata = request.Metadata,
+                Authorization = request.Authorization
             };
 
             await SaveMessage(messageRequest, MessageDirection.Handover);
@@ -129,7 +132,8 @@ public class MessageService : IMessageService
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
                 Content = request.Content,
-                Metadata = request.Metadata
+                Metadata = request.Metadata,
+                Authorization = request.Authorization
             });
 
             return ServiceResult<string>.Success(targetThreadId);
@@ -213,20 +217,20 @@ public class MessageService : IMessageService
             request.WorkflowId, request.ParticipantId);
         
         if (request.ThreadId == null)
-        {
-            request.ThreadId = await CreateThread(request);
-        }
+            {
+                request.ThreadId = await CreateThread(request);
+            }
 
-        // Save the message
-        var message = await SaveMessage(request, MessageDirection.Incoming);
+            // Save the message
+            var message = await SaveMessage(request, MessageDirection.Incoming);
 
-        // Signal the workflow
-        await SignalWorkflowAsync(request);
+            // Signal the workflow
+            await SignalWorkflowAsync(request);
 
-        _logger.LogInformation("Successfully processed inbound message");
+            _logger.LogInformation("Successfully processed inbound message");
 
-        return ServiceResult<string>.Success(request.ThreadId);
-    }
+            return ServiceResult<string>.Success(request.ThreadId);
+            }
 
     private async Task SignalWorkflowAsync(MessageRequest request)
     {
@@ -240,6 +244,7 @@ public class MessageService : IMessageService
                  request.Agent,
                  request.ThreadId,
                  request.ParticipantId,
+                 request.Authorization,
                  request.Content, 
                  request.Metadata
             }

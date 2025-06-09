@@ -8,6 +8,15 @@ namespace Features.WebApi.Endpoints;
 
 public static class MessagingEndpoints
 {
+    private static async Task<string> GetAuthorizationGuid(string? requestAuth, HttpContext httpContext, IAuthorizationCacheService authorizationCacheService)
+    {
+        if (requestAuth == null)
+        {
+            requestAuth = httpContext.Request.Headers["Authorization"].ToString().Split(" ")[1];
+        }
+        return await authorizationCacheService.CacheAuthorization(requestAuth);
+    }
+
     public static void MapMessagingEndpoints(this WebApplication app)
     {
         // Map definitions endpoints with common attributes
@@ -15,10 +24,12 @@ public static class MessagingEndpoints
             .WithTags("WebAPI - Messaging")
             .RequiresValidTenant();
 
-
         messagingGroup.MapPost("/inbound", async (
             [FromBody] MessageRequest request, 
-            [FromServices] IMessageService messageService) => {
+            [FromServices] IMessageService messageService,
+            [FromServices] IAuthorizationCacheService tokenCacheService,
+            HttpContext httpContext) => {
+            request.Authorization = await GetAuthorizationGuid(request.Authorization, httpContext, tokenCacheService);
             var result = await messageService.ProcessIncomingMessage(request);
             return result.ToHttpResult();
         })

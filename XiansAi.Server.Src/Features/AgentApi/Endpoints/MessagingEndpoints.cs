@@ -2,8 +2,7 @@ using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Utils.Services;
-using Microsoft.AspNetCore.SignalR;
-using XiansAi.Server.Shared.Websocket;
+using Features.WebApi.Services;
 
 namespace Features.AgentApi.Endpoints
 {
@@ -14,6 +13,23 @@ namespace Features.AgentApi.Endpoints
             var group = app.MapGroup("/api/agent/conversation")
                 .WithTags("AgentAPI - Conversation")
                 .RequiresCertificate();
+
+            group.MapGet("/authorization/{authorizationGuid}", async (
+                [FromRoute] string authorizationGuid,
+                [FromServices] IAuthorizationCacheService authorizationCacheService) => {
+                var authorization = await authorizationCacheService.GetAuthorization(authorizationGuid);
+                if (authorization == null)
+                {
+                    return Results.NotFound($"No authorization found for GUID: {authorizationGuid}");
+                }
+                return Results.Ok(new { authorization });
+            })
+            .WithName("Get Authorization")
+            .WithOpenApi(operation => {
+                operation.Summary = "Get authorization by GUID";
+                operation.Description = "Retrieves a cached authorization using its GUID";
+                return operation;
+            });
 
             group.MapGet("/history", async (
                 [FromQuery] string agent,
