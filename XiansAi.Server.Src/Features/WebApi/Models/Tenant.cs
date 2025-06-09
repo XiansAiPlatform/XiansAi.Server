@@ -5,6 +5,7 @@ using Shared.Data.Models;
 
 namespace Features.WebApi.Models;
 
+[BsonIgnoreExtraElements]
 public class Tenant
 {
     [BsonId]
@@ -25,6 +26,9 @@ public class Tenant
 
     [BsonElement("logo")]
     public Logo? Logo { get; set; }
+
+    [BsonElement("theme")]
+    public string? Theme { get; set; }
 
     [BsonElement("timezone")]
     public string? Timezone { get; set; }
@@ -48,7 +52,10 @@ public class Tenant
 public class Logo
 {
     [BsonElement("url")]
-    public required string Url { get; set; }
+    public string? Url { get; set; }
+
+    [BsonElement("img_base64")]
+    public string? ImgBase64 { get; set; }
 
     [BsonElement("width")]
     public required int Width { get; set; }
@@ -56,27 +63,6 @@ public class Logo
     [BsonElement("height")]
     public required int Height { get; set; }
 }
-
-// public class Agent
-// {
-//     [BsonElement("name")]
-//     public required string Name { get; set; }
-
-//     [BsonElement("is_active")]
-//     public required bool IsActive { get; set; }
-
-//     [BsonElement("flows")]
-//     public List<Flow>? Flows { get; set; }
-
-//     [BsonElement("created_at")]
-//     public required DateTime CreatedAt { get; set; }
-
-//     [BsonElement("updated_at")]
-//     public DateTime? UpdatedAt { get; set; }
-
-//     [BsonElement("created_by")]
-//     public required string CreatedBy { get; set; }
-// }
 
 public class Flow
 {
