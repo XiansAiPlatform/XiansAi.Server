@@ -23,14 +23,14 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     public async Task ProcessInboundMessage_WithValidRequest_HandlesTransactionError()
     {
         // Arrange
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = "test-participant-1",
             WorkflowId = "test-workflow-1",
             WorkflowType = "TestWorkflowType",
             Agent = "test-agent-1",
-            Content = "Hello, this is a test message",
-            Metadata = new { priority = "high", source = "web" }
+            Text = "Hello, this is a test message",
+            Data = new { priority = "high", source = "web" }
         };
 
         // Act
@@ -51,14 +51,14 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         // Create a thread first
         var thread = await CreateTestThreadAsync(agent: agent, participantId: participantId);
 
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = participantId,
             WorkflowId = thread.WorkflowId,
             WorkflowType = thread.WorkflowType,
             Agent = agent,
-            Content = "Second message to existing thread",
-            Metadata = new { priority = "normal" }
+            Text = "Second message to existing thread",
+            Data = new { priority = "normal" }
         };
 
         // Act
@@ -72,14 +72,14 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     public async Task ProcessInboundMessage_WithMissingRequiredFields_HandlesTransactionError()
     {
         // Arrange - missing ParticipantId
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = "", // Empty but not null to satisfy required property
             WorkflowId = "test-workflow-1",
             WorkflowType = "TestWorkflowType",
             Agent = "test-agent-1",
-            Content = "Message with missing participant",
-            Metadata = new { priority = "high" }
+            Text = "Message with missing participant",
+            Data = new { priority = "high" }
         };
 
         // Act
@@ -242,14 +242,14 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     {
         // Arrange
         var largeContent = new string('A', 10000); // 10KB content
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = "test-participant-large",
             WorkflowId = "test-workflow-large",
             WorkflowType = "TestWorkflowType",
             Agent = "test-agent-large",
-            Content = largeContent,
-            Metadata = new { size = "large", contentLength = largeContent.Length }
+            Text = largeContent,
+            Data = new { size = "large", contentLength = largeContent.Length }
         };
 
         // Act
@@ -312,9 +312,9 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             UpdatedAt = DateTime.UtcNow,
             CreatedBy = TestUserId,
             Direction = direction,
-            Content = content,
+            Text = content,
             Status = MessageStatus.DeliveredToWorkflow,
-            Metadata = new Dictionary<string, object>
+            Data = new Dictionary<string, object>
             {
                 ["testProperty"] = "testValue"
             }

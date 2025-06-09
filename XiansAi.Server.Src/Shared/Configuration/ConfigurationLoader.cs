@@ -7,7 +7,7 @@ public static class ConfigurationLoader
     public static WebApplicationBuilder LoadServiceConfiguration(this WebApplicationBuilder builder, Program.ServiceType serviceType)
     {
         // Load base configuration
-        builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+        builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
         
         // Environment-specific configuration
         var environment = builder.Environment.EnvironmentName;

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Features.WebApi.Auth.Providers;
 using Shared.Auth;
+using Features.WebApi.Services;
 
 namespace Features.WebApi.Auth;
 
@@ -74,19 +75,21 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private readonly IAuthProviderFactory _authProviderFactory;
     private readonly ITokenValidationCache _tokenCache;
     private readonly IConfiguration _configuration;
-    
+    private readonly ITenantService _tenantService;
     public AuthRequirementHandler(
         ILogger<AuthRequirementHandler> logger,
         ITenantContext tenantContext,
         IAuthProviderFactory authProviderFactory,
         ITokenValidationCache tokenCache,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ITenantService tenantService)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _authProviderFactory = authProviderFactory;
         _tokenCache = tokenCache;
         _configuration = configuration;
+        _tenantService = tenantService;
     }
     
     protected override async Task HandleRequirementAsync(
@@ -178,8 +181,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Validate tenant configuration if required
         if (requirement.Options.ValidateTenantConfig)
         {
-            var tenantSection = _configuration.GetSection($"Tenants:{currentTenantId}");
-            if (!tenantSection.Exists())
+            var tenantResult = await _tenantService.GetTenantById(currentTenantId);
+            if (!tenantResult.IsSuccess)
             {
                 _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
                 context.Fail(new AuthorizationFailureReason(this, 

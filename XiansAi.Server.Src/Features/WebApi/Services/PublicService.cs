@@ -42,7 +42,8 @@ public class PublicService : IPublicService
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly Random _random;
-    
+    private readonly ITenantService _tenantService;
+
     // Constants for configuration
     private const int CODE_EXPIRATION_MINUTES = 15;
     private const string VERIFICATION_CACHE_PREFIX = "verification:";
@@ -57,6 +58,7 @@ public class PublicService : IPublicService
     /// <param name="cache">Object cache service for storing verification codes</param>
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
+    /// <param name="tenantService">Service for tenant operations</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
         IAuthMgtConnect authMgtConnect, 
@@ -64,7 +66,8 @@ public class PublicService : IPublicService
         ITenantContext tenantContext,
         ObjectCache cache, 
         IEmailService emailService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ITenantService tenantService)
     {
         _authMgtConnect = authMgtConnect ?? throw new ArgumentNullException(nameof(authMgtConnect));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -73,6 +76,7 @@ public class PublicService : IPublicService
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
         _random = new Random();
+        _tenantService = tenantService;
     }
 
     /// <summary>
@@ -189,12 +193,42 @@ public class PublicService : IPublicService
             _logger.LogDebug("Tenant ID validation failed: tenantId is null or empty");
             return false;
         }
+
+        var safeTenantId = tenantId.Replace(".", "_"); // Azure sometimes replaces dots with underscores. So when we add teh doman to the key, make sure to put the dot in the key.
+        var value = _configuration[$"Tenants:{safeTenantId}:Enabled"];
+        if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
+        {
+            _logger.LogDebug("Tenant ID {TenantId} is enabled ? : {IsValid}", tenantId, isEnabled);
+            return isEnabled;
+        }
+        _logger.LogDebug("Tenant ID {TenantId} is disabled or not found in configuration", tenantId);
+        return false;
+
             
-        var tenantSection = _configuration.GetSection($"Tenants:{tenantId}");
-        bool exists = tenantSection.Exists();
+        // var value = _configuration[$"Tenants:{tenantId}:Enabled"];
+        // _logger.LogDebug("Checking configuration value for tenant {TenantId}: Tenants:{TenantId}:Enabled = {Value}", 
+        //     tenantId, tenantId, value ?? "null");
         
-        _logger.LogDebug("Tenant ID {TenantId} validation result: {IsValid}", tenantId, exists);
-        return exists;
+        // Debug: Dump all configuration keys
+        // var allConfig = _configuration.AsEnumerable()
+        //     .Where(x => x.Key.Contains("Tenants", StringComparison.OrdinalIgnoreCase))
+        //     .OrderBy(x => x.Key)
+        //     .Select(x => $"{x.Key} = {x.Value}");
+            
+        // _logger.LogDebug("All tenant-related configuration keys:");
+        // foreach (var config in allConfig)
+        // {
+        //     _logger.LogDebug("  {Config}", config);
+        // }
+        
+        // if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
+        // {
+        //     _logger.LogDebug("Found valid Enabled value: {Value}", value);
+        //     return isEnabled;
+        // }
+        
+        // _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
+        // return true;
     }
 
     /// <summary>
