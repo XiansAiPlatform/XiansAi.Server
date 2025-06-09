@@ -3,6 +3,7 @@ using Features.WebApi.Auth;
 using Shared.Utils.Services;
 using Features.WebApi.Services;
 using Shared.Services;
+using Shared.Repositories;
 
 namespace Features.WebApi.Endpoints;
 
@@ -15,17 +16,29 @@ public static class MessagingEndpoints
             .WithTags("WebAPI - Messaging")
             .RequiresValidTenant();
 
-
-        messagingGroup.MapPost("/inbound", async (
-            [FromBody] MessageRequest request, 
+        messagingGroup.MapPost("/inbound/data", async (
+            [FromBody] ChatOrDataRequest request, 
             [FromServices] IMessageService messageService) => {
-            var result = await messageService.ProcessIncomingMessage(request);
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Data);
             return result.ToHttpResult();
         })
-        .WithName("Send Message to workflow")
+        .WithName("Send Data to workflow")
         .WithOpenApi(operation => {
-            operation.Summary = "Send Message to workflow";
-            operation.Description = "Send a message to a workflow";
+            operation.Summary = "Send Data to workflow";
+            operation.Description = "Send a data to a workflow";
+            return operation;
+        });
+
+        messagingGroup.MapPost("/inbound/chat", async (
+            [FromBody] ChatOrDataRequest request, 
+            [FromServices] IMessageService messageService) => {
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Chat);
+            return result.ToHttpResult();
+        })
+        .WithName("Send Chat to workflow")
+        .WithOpenApi(operation => {
+            operation.Summary = "Send Chat to workflow";
+            operation.Description = "Send a chat to a workflow";
             return operation;
         });
 
