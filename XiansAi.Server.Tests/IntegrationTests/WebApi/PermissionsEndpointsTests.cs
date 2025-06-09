@@ -660,12 +660,12 @@ public class PermissionsEndpointsTests : WebApiIntegrationTestBase, IClassFixtur
             Tenant = TestTenantId,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = TestUserId,
-            Permissions = new Permission
-            {
-                OwnerAccess = ownerUsers?.ToList() ?? new List<string>(),
-                WriteAccess = writeUsers?.ToList() ?? new List<string>(),
-                ReadAccess = readUsers?.ToList() ?? new List<string>()
-            }
+            // Permissions = new Permission
+            // {
+            //     OwnerAccess = ownerUsers?.ToList() ?? new List<string>(),
+            //     WriteAccess = writeUsers?.ToList() ?? new List<string>(),
+            //     ReadAccess = readUsers?.ToList() ?? new List<string>()
+            // }
         };
 
         // Insert directly into database

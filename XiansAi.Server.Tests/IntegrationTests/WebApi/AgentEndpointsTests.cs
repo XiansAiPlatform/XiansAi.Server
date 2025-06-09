@@ -294,12 +294,12 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
             Tenant = TestTenantId,
-            Permissions = new Permission
-            {
-                OwnerAccess = [TestUserId],
-                ReadAccess = [TestUserId],
-                WriteAccess = [TestUserId]
-            },
+            // Permissions = new Permission
+            // {
+            //     OwnerAccess = [TestUserId],
+            //     ReadAccess = [TestUserId],
+            //     WriteAccess = [TestUserId]
+            // },
             CreatedBy = TestUserId,
             CreatedAt = DateTime.UtcNow
         };
@@ -318,12 +318,12 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
             Tenant = TestTenantId,
-            Permissions = new Permission
-            {
-                OwnerAccess = [ownerId],
-                ReadAccess = [ownerId],
-                WriteAccess = [ownerId]
-            },
+            // Permissions = new Permission
+            // {
+            //     OwnerAccess = [ownerId],
+            //     ReadAccess = [ownerId],
+            //     WriteAccess = [ownerId]
+            // },
             CreatedBy = ownerId,
             CreatedAt = DateTime.UtcNow
         };

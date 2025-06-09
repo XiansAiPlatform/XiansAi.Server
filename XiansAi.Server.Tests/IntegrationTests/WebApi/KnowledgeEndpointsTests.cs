@@ -389,12 +389,12 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
             Tenant = TestTenantId,
-            Permissions = new Permission
-            {
-                OwnerAccess = [TestUserId],
-                ReadAccess = [TestUserId],
-                WriteAccess = [TestUserId]
-            },
+            // Permissions = new Permission
+            // {
+            //     OwnerAccess = [TestUserId],
+            //     ReadAccess = [TestUserId],
+            //     WriteAccess = [TestUserId]
+            // },
             CreatedBy = TestUserId,
             CreatedAt = DateTime.UtcNow
         };

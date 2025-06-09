@@ -28,7 +28,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             ParticipantId = "test-participant-1",
             WorkflowId = "test-workflow-1",
             WorkflowType = "TestWorkflowType",
-            Agent = "test-agent-1",
+            //Agent = "test-agent-1",
             Content = "Hello, this is a test message",
             Metadata = new { priority = "high", source = "web" }
         };
@@ -56,7 +56,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             ParticipantId = participantId,
             WorkflowId = thread.WorkflowId,
             WorkflowType = thread.WorkflowType,
-            Agent = agent,
+            //Agent = agent,
             Content = "Second message to existing thread",
             Metadata = new { priority = "normal" }
         };
@@ -77,7 +77,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             ParticipantId = "", // Empty but not null to satisfy required property
             WorkflowId = "test-workflow-1",
             WorkflowType = "TestWorkflowType",
-            Agent = "test-agent-1",
+            //Agent = "test-agent-1",
             Content = "Message with missing participant",
             Metadata = new { priority = "high" }
         };
@@ -247,7 +247,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             ParticipantId = "test-participant-large",
             WorkflowId = "test-workflow-large",
             WorkflowType = "TestWorkflowType",
-            Agent = "test-agent-large",
+            //Agent = "test-agent-large",
             Content = largeContent,
             Metadata = new { size = "large", contentLength = largeContent.Length }
         };
@@ -281,7 +281,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             UpdatedAt = DateTime.UtcNow,
             CreatedBy = TestUserId,
             Status = ConversationThreadStatus.Active,
-            IsInternalThread = false
+            //IsInternalThread = false
         };
 
         // Insert directly into repository

@@ -15,7 +15,7 @@ public static class AuthConfigurationExtensions
         builder.Services.AddMemoryCache();
         
         // Register token validation cache - using no-op implementation to disable caching
-        builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
+        builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
         
         // Register token services
         builder.Services.AddScoped<Auth0TokenService>();

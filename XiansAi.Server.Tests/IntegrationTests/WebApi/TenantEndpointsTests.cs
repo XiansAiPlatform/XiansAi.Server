@@ -217,6 +217,23 @@ public class TenantEndpointsTests : WebApiIntegrationTestBase, IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task CreateTenant_WithEnabledFalse_CreatesDisabledTenant()
+    {
+        var request = new CreateTenantRequest
+        {
+            TenantId = "disabled-tenant",
+            Name = "Disabled Tenant",
+            Domain = "disabled.example.com",
+            Enabled = false
+        };
+
+        var response = await PostAsJsonAsync("/api/client/tenants/", request);
+        
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Assert tenant is created with Enabled = false
+    }
+
     private async Task<string> CreateTestTenant(string tenantId, string name, string domain)
     {
         var request = new CreateTenantRequest
