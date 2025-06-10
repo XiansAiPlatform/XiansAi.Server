@@ -219,14 +219,14 @@ public class MessageService : IMessageService
         await SaveMessage(request, MessageDirection.Incoming, messageType);
 
         // Signal the workflow
-        await SignalWorkflowAsync(request);
+        await SignalWorkflowAsync(request, messageType);
 
         _logger.LogInformation("Successfully processed inbound message");
 
         return ServiceResult<string>.Success(request.ThreadId);
     }
 
-    private async Task SignalWorkflowAsync(ChatOrDataRequest request)
+    private async Task SignalWorkflowAsync(ChatOrDataRequest request, MessageType messageType)
     {
         var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var signalRequest = new WorkflowSignalWithStartRequest
@@ -240,7 +240,8 @@ public class MessageService : IMessageService
                  request.ThreadId,
                  request.ParticipantId,
                  request.Text, 
-                 request.Data
+                 request.Data,
+                 Type = messageType.ToString()
             }
         };
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);
