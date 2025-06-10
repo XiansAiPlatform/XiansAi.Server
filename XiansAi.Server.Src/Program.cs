@@ -137,11 +137,11 @@ public class Program
         // Verify critical configuration
         ValidateConfiguration(app.Configuration);
         
-        // After your services are configured
+        // Synchronize MongoDB indexes & seed default data
         using (var scope = app.Services.CreateScope())
         {
-            var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-            await CreateIndexes.CreateDefinitionIndexes(databaseService);
+            var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
+            await indexSynchronizer.EnsureIndexesAsync();
             
             // Seed default data
             await SeedData.SeedDefaultDataAsync(app.Services, _logger);
