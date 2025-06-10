@@ -22,7 +22,7 @@ namespace Features.WebApi.Repositories
 
         public WebhookRepository(IDatabaseService databaseService)
         {
-            var database = databaseService.GetDatabase().Result;
+            var database = databaseService.GetDatabaseAsync().Result;
             _webhooks = database.GetCollection<Webhook>("webhooks");
             
             // Create indexes if they don't exist

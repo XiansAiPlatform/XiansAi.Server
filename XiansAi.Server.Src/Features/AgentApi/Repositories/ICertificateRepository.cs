@@ -26,7 +26,7 @@ public class CertificateRepository : ICertificateRepository
         ILogger<CertificateRepository> logger)
     {
         _logger = logger;
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Certificate>("certificates");
         
         // Create indexes for performance

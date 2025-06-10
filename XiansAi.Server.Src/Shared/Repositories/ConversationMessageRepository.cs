@@ -125,7 +125,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
         ILogger<ConversationMessageRepository> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
+        var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _database = database;
         _collection = database.GetCollection<ConversationMessage>("conversation_message");
         _threadCollection = database.GetCollection<ConversationThread>("conversation_thread");

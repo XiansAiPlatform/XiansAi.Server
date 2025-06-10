@@ -16,7 +16,7 @@ public class LogRepository : ILogRepository
 
     public LogRepository(IDatabaseService databaseService)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _logs = database.GetCollection<Log>("logs");
     }
     public async Task CreateAsync(Log log)

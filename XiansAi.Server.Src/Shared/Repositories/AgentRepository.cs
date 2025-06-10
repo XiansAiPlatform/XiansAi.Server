@@ -40,7 +40,7 @@ public class AgentRepository : IAgentRepository
 
     public AgentRepository(IDatabaseService databaseService, ILogger<AgentRepository> logger)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _agents = database.GetCollection<Agent>("agents");
         _logger = logger;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");

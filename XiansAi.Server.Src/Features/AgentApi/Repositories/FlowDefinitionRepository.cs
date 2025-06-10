@@ -19,7 +19,7 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
 
     public FlowDefinitionRepository(IDatabaseService databaseService)
     {
-        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
+        var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
     }
 

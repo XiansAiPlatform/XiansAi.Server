@@ -341,7 +341,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
         };
 
         // Insert directly into repository to bypass service validation
-        var database = await databaseService.GetDatabase();
+        var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<Log>("logs");
         await collection.InsertOneAsync(log);
 

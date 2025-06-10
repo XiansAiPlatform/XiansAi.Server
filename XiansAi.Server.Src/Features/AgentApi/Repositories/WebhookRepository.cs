@@ -21,7 +21,7 @@ namespace XiansAi.Server.Features.AgentApi.Repositories
 
         public WebhookRepository(IDatabaseService databaseService)
         {
-            var database = databaseService.GetDatabase().GetAwaiter().GetResult();
+            var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
             _webhooks = database.GetCollection<Webhook>("webhooks");
             
             // Create indexes
