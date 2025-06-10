@@ -138,15 +138,13 @@ public class Program
         ValidateConfiguration(app.Configuration);
         
         // Synchronize MongoDB indexes & seed default data
-        using (var scope = app.Services.CreateScope())
-        {
-            var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
-            await indexSynchronizer.EnsureIndexesAsync();
-            
-            // Seed default data
-            await SeedData.SeedDefaultDataAsync(app.Services, _logger);
-        }
-        
+        using var scope = app.Services.CreateScope();
+        var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
+        await indexSynchronizer.EnsureIndexesAsync();
+
+        // Seed default data 
+        await SeedData.SeedDefaultDataAsync(app.Services, _logger);
+
         return app;
     }
     
