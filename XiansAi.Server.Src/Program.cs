@@ -136,12 +136,10 @@ public class Program
         ValidateConfiguration(app.Configuration);
         
         // Synchronize MongoDB indexes
-        using (var scope = app.Services.CreateScope())
-        {
-            var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
-            await indexSynchronizer.EnsureIndexesAsync();
-        }
-        
+        using var scope = app.Services.CreateScope();
+        var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
+        await indexSynchronizer.EnsureIndexesAsync();
+
         return app;
     }
     

@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MongoDB Indexes Configuration",
+  "description": "Schema for defining MongoDB indexes per collection",
+  "type": "object",
+  "patternProperties": {
+    "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+      "type": "array",
+      "description": "Collection name and its index definitions",
+      "items": {
+        "$ref": "#/definitions/IndexDefinition"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "IndexDefinition": {
+      "type": "object",
+      "description": "MongoDB index definition",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name for the index",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "keys": {
+          "type": "object",
+          "description": "Index key specification where field names map to sort direction (asc for ascending, desc for descending)",
+          "patternProperties": {
+            "^[a-zA-Z_][a-zA-Z0-9_.]*$": {
+              "type": "string",
+              "enum": ["asc", "desc"],
+              "description": "Sort direction: asc for ascending, desc for descending"
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
+        },
+        "unique": {
+          "type": "boolean",
+          "description": "Whether the index should enforce uniqueness constraint"
+        },
+        "sparse": {
+          "type": "boolean",
+          "description": "Whether the index should be sparse (only index documents that have the indexed field)"
+        },
+        "background": {
+          "type": "boolean",
+          "description": "Whether the index should be built in the background (deprecated in newer MongoDB versions)"
+        }
+      },
+      "required": ["name", "keys"],
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+             "agents": [
+         {
+           "name": "name_1_tenant_1",
+           "keys": {
+             "name": "asc",
+             "tenant": "asc"
+           },
+           "unique": true
+         }
+       ],
+       "logs": [
+         {
+           "name": "level_1_tenant_id_1_created_at_-1",
+           "keys": {
+             "level": "asc",
+             "tenant_id": "asc",
+             "created_at": "desc"
+           }
+         }
+       ]
+    }
+  ]
+} 

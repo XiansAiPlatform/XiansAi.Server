@@ -1,4 +1,6 @@
 using MongoDB.Driver;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace Shared.Data;
 
@@ -7,19 +9,40 @@ public interface IMongoIndexSynchronizer
     Task EnsureIndexesAsync();
 }
 
+public class MongoIndexDefinition
+{
+    public required string Name { get; init; }
+    public required Dictionary<string, string> Keys { get; init; } = [];
+    public bool? Unique { get; init; }
+    public bool? Sparse { get; init; }
+    public bool? Background { get; init; }
+}
+
 public class MongoIndexSynchronizer(
     IDatabaseService databaseService,
     ILogger<MongoIndexSynchronizer> logger) : IMongoIndexSynchronizer
 { 
+    private static readonly string IndexDefinitionPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mongodb-indexes.yaml");
+
     public async Task EnsureIndexesAsync()
     { 
         var database = await databaseService.GetDatabaseAsync();
         
-        var expectedIndexes = GetExpectedIndexes();
+        var collectionsCursor = await database.ListCollectionNamesAsync();
+        var collections = await collectionsCursor.ToListAsync();
+
+        var expectedIndexes = await GetExpectedIndexesAsync();
         foreach (var (collectionName, indexes) in expectedIndexes)
         {
             try
             {
+                // Check if collection exists
+                if (!collections.Contains(collectionName))
+                {
+                    logger.LogInformation("Creating collection {CollectionName} before ensuring indexes", collectionName);
+                    await database.CreateCollectionAsync(collectionName);
+                }
+
                 var collection = database.GetCollection<object>(collectionName);
                 
                 // Get existing indexes
@@ -44,7 +67,7 @@ public class MongoIndexSynchronizer(
                     .Where(i => !existingIndexNames.Contains(i.Options.Name))
                     .ToList();
 
-                if (indexesToCreate.Any())
+                if (indexesToCreate.Count != 0)
                 {
                     logger.LogInformation("Creating {Count} indexes for collection {CollectionName}", 
                         indexesToCreate.Count, collectionName);
@@ -59,161 +82,39 @@ public class MongoIndexSynchronizer(
         }
     }
 
-    private static Dictionary<string, List<CreateIndexModel<object>>> GetExpectedIndexes()
+    private async Task<Dictionary<string, List<CreateIndexModel<object>>>> GetExpectedIndexesAsync()
     {
-        return new Dictionary<string, List<CreateIndexModel<object>>>
+        if (!File.Exists(IndexDefinitionPath))
         {
+            throw new FileNotFoundException($"MongoDB index definition file not found at: {IndexDefinitionPath}");
+        }
+
+        var yamlContent = await File.ReadAllTextAsync(IndexDefinitionPath);
+        
+        var deserializer = new DeserializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .Build();
+
+        var indexDefinitions = deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
+
+        return indexDefinitions.OrderBy(kvp => kvp.Key).ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(def =>
             {
-                "agents",
-                [
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("name")
-                            .Ascending("tenant"),
-                        new CreateIndexOptions { Unique = true, Name = "name_1_tenant_1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Descending("tenant"),
-                        new CreateIndexOptions { Name = "tenant_-1" }
-                    )
-                ]
-            },
-            {
-                "flow_definitions",
-                [
-                    new(
-                        Builders<object>.IndexKeys.Descending("created_at"),
-                        new CreateIndexOptions { Name = "created_at_-1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Ascending("agent"),
-                        new CreateIndexOptions { Name = "agent_1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Ascending("workflow_type"),
-                        new CreateIndexOptions { Name = "workflow_type_1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Descending("updated_at"),
-                        new CreateIndexOptions { Name = "updated_at_-1" }
-                    )
-                ]
-            },
-            {
-                "conversation_message",
-                [
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("tenant_id")
-                            .Ascending("thread_id")
-                            .Ascending("participant_id")
-                            .Descending("created_at"),
-                        new CreateIndexOptions { Name = "thread_participant_message_lookup" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Ascending("tenant_id"),
-                        new CreateIndexOptions { Name = "tenant_lookup" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("tenant_id")
-                            .Ascending("status"),
-                        new CreateIndexOptions { Name = "message_status" }
-                    )
-                ]
-            },
-            {
-                "conversation_thread",
-                [
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("tenant_id")
-                            .Ascending("status"),
-                        new CreateIndexOptions { Name = "thread_status_lookup" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Descending("updated_at"),
-                        new CreateIndexOptions { Name = "thread_updated_at" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("tenant_id")
-                            .Ascending("agent")
-                            .Ascending("workflow_type")
-                            .Ascending("participant_id"),
-                        new CreateIndexOptions { Unique = true, Name = "thread_composite_key" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("tenant_id")
-                            .Ascending("agent"),
-                        new CreateIndexOptions { Name = "tenant_agent_lookup" }
-                    )
-                ]
-            },
-            {
-                "webhooks",
-                [
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("tenant_id"),
-                        new CreateIndexOptions { Name = "tenant_id_1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("workflow_id")
-                            .Ascending("tenant_id"),
-                        new CreateIndexOptions { Name = "workflow_id_1_tenant_id_1", Sparse = true }
-                    )
-                ]
-            },
-            {
-                "certificates",
-                [
-                    new(
-                        Builders<object>.IndexKeys.Ascending("Thumbprint"),
-                        new CreateIndexOptions { Unique = true, Name = "Thumbprint_1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Ascending("TenantId"),
-                        new CreateIndexOptions { Name = "TenantId_1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Ascending("ExpiresAt"),
-                        new CreateIndexOptions { Name = "ExpiresAt_1" }
-                    )
-                ]
-            },
-            {
-                "logs",
-                [
-                    new(
-                        Builders<object>.IndexKeys
-                            .Ascending("level")
-                            .Ascending("tenant_id")
-                            .Descending("created_at")
-                            .Ascending("workflow_type"),
-                        new CreateIndexOptions { Name = "level_1_tenant_id_1_created_at_-1_workflow_type_1_autocreated" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Ascending("workflow_run_id"),
-                        new CreateIndexOptions { Name = "workflow_run_id_1_autocreated" }
-                    )
-                ]
-            },
-            {
-                "tenants",
-                [
-                    new(
-                        Builders<object>.IndexKeys.Ascending("tenant_id"),
-                        new CreateIndexOptions { Unique = true, Name = "tenant_id_1" }
-                    ),
-                    new(
-                        Builders<object>.IndexKeys.Ascending("domain"),
-                        new CreateIndexOptions { Unique = true, Name = "domain_1" }
-                    )
-                ]
-            }
-        };
+                var indexKeysBuilder = new IndexKeysDefinitionBuilder<object>();
+                var indexKeys = indexKeysBuilder.Combine(
+                    def.Keys.Select(k => k.Value == "asc"
+                        ? indexKeysBuilder.Ascending(k.Key)
+                        : indexKeysBuilder.Descending(k.Key))
+                );
+
+                var options = new CreateIndexOptions { Name = def.Name };
+                if (def.Unique.HasValue) options.Unique = def.Unique.Value;
+                if (def.Sparse.HasValue) options.Sparse = def.Sparse.Value;
+                if (def.Background.HasValue) options.Background = def.Background.Value;
+
+                return new CreateIndexModel<object>(indexKeys, options);
+            }).ToList()
+        );
     }
 } 
