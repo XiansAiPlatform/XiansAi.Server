@@ -8,7 +8,7 @@ public class CreateIndexes
 {
     public static async Task CreateDefinitionIndexes(IDatabaseService databaseService)
     {
-        var database = await databaseService.GetDatabase();
+        var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<FlowDefinition>("flow_definitions");
 
         // Create index for sorting by creation date

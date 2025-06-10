@@ -15,7 +15,7 @@ public class LogRepository : ILogRepository
 
     public LogRepository(IDatabaseService databaseService)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _logs = database.GetCollection<Log>("logs");
         
         // Create TTL index for automatic log expiration

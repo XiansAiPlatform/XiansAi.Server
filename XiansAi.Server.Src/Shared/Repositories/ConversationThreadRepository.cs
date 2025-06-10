@@ -70,7 +70,7 @@ public class ConversationThreadRepository : IConversationThreadRepository
     public ConversationThreadRepository(IDatabaseService databaseService, ILogger<ConversationThreadRepository> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
+        var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _collection = database.GetCollection<ConversationThread>("conversation_thread");
 
         // Initialize indexes asynchronously without blocking constructor

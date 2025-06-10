@@ -30,7 +30,7 @@ public class TenantRepository : ITenantRepository
 
     public TenantRepository(IDatabaseService databaseService)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Tenant>("tenants");
         
         // Create indexes only if they don't exist

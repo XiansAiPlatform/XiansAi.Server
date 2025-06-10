@@ -3,20 +3,13 @@ using MongoDB.Driver;
 namespace Shared.Data;
 public interface IDatabaseService
 {
-    Task<IMongoDatabase> GetDatabase();
+    Task<IMongoDatabase> GetDatabaseAsync();
 }
 
-public class DatabaseService : IDatabaseService
+public class DatabaseService(IMongoDbClientService mongoDbClientService) : IDatabaseService
 {
-    private readonly IMongoDbClientService _mongoDbClientService;
-
-    public DatabaseService(IMongoDbClientService mongoDbClientService)
+    public async Task<IMongoDatabase> GetDatabaseAsync()
     {
-        _mongoDbClientService = mongoDbClientService;
-    }
-
-    public async Task<IMongoDatabase> GetDatabase()
-    {
-        return await Task.FromResult(_mongoDbClientService.GetDatabase());
+        return await Task.FromResult(mongoDbClientService.GetDatabase());
     }
 }
