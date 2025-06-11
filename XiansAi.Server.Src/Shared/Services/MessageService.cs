@@ -14,6 +14,7 @@ public class ChatOrDataRequest
     public object? Data { get; set; }
     public string? Text { get; set; }
     public string? ThreadId { get; set; }
+    public string? Authorization { get; set; }
 }
 
 public class HandoffRequest
@@ -27,15 +28,17 @@ public class HandoffRequest
     public required string ParticipantId { get; set; }
     public required string Text { get; set; }
     public object? Data { get; set; }
+    public string? Authorization { get; set; }
 }
 
 
 public interface IMessageService
 {
-    Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType);
+    Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType, HttpContext? context = null);
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
-    Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
+    Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request, HttpContext? context = null);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false);
+    Task<ServiceResult<string>> GetAuthorization(string authorizationGuid);
 }
 
 public class MessageService : IMessageService
@@ -47,13 +50,15 @@ public class MessageService : IMessageService
     private readonly IConversationThreadRepository _threadRepository;
     private readonly IConversationMessageRepository _messageRepository;
     private readonly IWorkflowSignalService _workflowSignalService;
+    private readonly IAuthorizationCacheService _authorizationCacheService;
 
         public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
         IConversationThreadRepository threadRepository,
         IConversationMessageRepository messageRepository,
-        IWorkflowSignalService workflowSignalService
+        IWorkflowSignalService workflowSignalService,
+        IAuthorizationCacheService authorizationCacheService
         )
     {
         _logger = logger;
@@ -61,9 +66,10 @@ public class MessageService : IMessageService
         _threadRepository = threadRepository;
         _messageRepository = messageRepository;
         _workflowSignalService = workflowSignalService;
+        _authorizationCacheService = authorizationCacheService;
     }
 
-    public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
+    public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request, HttpContext? context = null)
     {
         _logger.LogInformation("Processing handover for thread {ThreadId}", request.ThreadId);
 
@@ -112,7 +118,8 @@ public class MessageService : IMessageService
                 WorkflowType = request.TargetWorkflowType,
                 Text = $"{request.SourceWorkflowType} -> {request.TargetWorkflowType}",
                 Data = request.Data,
-                Agent = request.SourceAgent
+                Agent = request.SourceAgent,
+                Authorization = request.Authorization
             };
 
             await SaveMessage(messageRequest, MessageDirection.Outgoing, MessageType.Handoff);
@@ -127,8 +134,9 @@ public class MessageService : IMessageService
                 WorkflowType = request.TargetWorkflowType,
                 Text = request.Text,
                 Data = request.Data,
-                Agent = request.SourceAgent
-            }, MessageType.Chat);
+                Agent = request.SourceAgent,
+                Authorization = request.Authorization
+            }, MessageType.Chat, context);
 
             return ServiceResult<string>.Success(targetThreadId);
         }
@@ -205,11 +213,13 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType)
+    public async Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType, HttpContext? context = null)
     {
         _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
         
+        await HandleAuthorization(request, context);
+
         if (request.ThreadId == null)
         {
             request.ThreadId = await CreateOrGetThread(request);
@@ -226,6 +236,24 @@ public class MessageService : IMessageService
         return ServiceResult<string>.Success(request.ThreadId);
     }
 
+    private async Task HandleAuthorization(ChatOrDataRequest request, HttpContext? context = null)
+    {
+        if (request.Authorization == null && context != null)
+        {
+            var authorizationHeader = context.Request.Headers["Authorization"].ToString();
+            if (!string.IsNullOrEmpty(authorizationHeader) && authorizationHeader.StartsWith("Bearer "))
+            {
+                request.Authorization = authorizationHeader.Substring("Bearer ".Length).Trim();
+            }
+        }
+         
+        if (request.Authorization != null)
+        {
+            var authorizationGuid = await _authorizationCacheService.CacheAuthorization(request.Authorization);
+            request.Authorization = authorizationGuid;
+        }
+    }
+
     private async Task SignalWorkflowAsync(ChatOrDataRequest request)
     {
         var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
@@ -240,7 +268,8 @@ public class MessageService : IMessageService
                  request.ThreadId,
                  request.ParticipantId,
                  request.Text, 
-                 request.Data
+                 request.Data,
+                 request.Authorization
             }
         };
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);
@@ -266,7 +295,6 @@ public class MessageService : IMessageService
         return threadId;
     }
     
-
     private async Task<ConversationMessage> SaveMessage(ChatOrDataRequest request, MessageDirection direction, MessageType messageType)
     {
         if (request.ThreadId == null)
@@ -297,4 +325,13 @@ public class MessageService : IMessageService
         return message;
     }
 
+    public async Task<ServiceResult<string>> GetAuthorization(string authorizationGuid)
+    {
+       var authorization = await _authorizationCacheService.GetAuthorization(authorizationGuid);
+       if (authorization == null)
+       {
+        return ServiceResult<string>.NotFound("Authorization not found");
+       }
+       return ServiceResult<string>.Success(authorization);
+    }
 }

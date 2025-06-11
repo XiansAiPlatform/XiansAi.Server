@@ -17,9 +17,10 @@ public static class MessagingEndpoints
             .RequiresValidTenant();
 
         messagingGroup.MapPost("/inbound/data", async (
-            [FromBody] ChatOrDataRequest request, 
-            [FromServices] IMessageService messageService) => {
-            var result = await messageService.ProcessIncomingMessage(request, MessageType.Data);
+            [FromBody] ChatOrDataRequest request,
+            [FromServices] IMessageService messageService,
+            HttpContext context) => {
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Data, context);
             return result.ToHttpResult();
         })
         .WithName("Send Data to workflow")
@@ -31,8 +32,9 @@ public static class MessagingEndpoints
 
         messagingGroup.MapPost("/inbound/chat", async (
             [FromBody] ChatOrDataRequest request, 
-            [FromServices] IMessageService messageService) => {
-            var result = await messageService.ProcessIncomingMessage(request, MessageType.Chat);
+            [FromServices] IMessageService messageService,
+            HttpContext context) => {
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Chat, context);
             return result.ToHttpResult();
         })
         .WithName("Send Chat to workflow")

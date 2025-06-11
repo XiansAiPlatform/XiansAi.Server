@@ -31,6 +31,19 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
+            group.MapGet("authorization/{authorizationGuid}", async (
+                [FromRoute] string authorizationGuid,
+                [FromServices] IMessageService messageService) => {
+                var result = await messageService.GetAuthorization(authorizationGuid);
+                return result.ToHttpResult();
+            })
+            .WithName("Get Authorization")
+            .WithOpenApi(operation => {
+                operation.Summary = "Get authorization by GUID";
+                operation.Description = "Retrieves a cached authorization using its GUID";
+                return operation;
+            });
+
             group.MapPost("/outbound/chat", async (
                 [FromBody] ChatOrDataRequest request, 
                 [FromServices] IMessageService messageService) => {
@@ -43,7 +56,6 @@ namespace Features.AgentApi.Endpoints
                 operation.Description = "Processes an outbound chat for agent conversations and returns the result";
                 return operation;
             });
-
 
             group.MapPost("/outbound/data", async (
                 [FromBody] ChatOrDataRequest request, 
@@ -60,8 +72,9 @@ namespace Features.AgentApi.Endpoints
 
             group.MapPost("/outbound/handoff", async (
                 [FromBody] HandoffRequest request, 
-                [FromServices] IMessageService messageService) => {
-                var result = await messageService.ProcessHandoff(request);
+                [FromServices] IMessageService messageService,
+                HttpContext context) => {
+                var result = await messageService.ProcessHandoff(request, context);
                 return result.ToHttpResult();
             })
             .WithName("Process Handover Message from Agent")
@@ -70,7 +83,6 @@ namespace Features.AgentApi.Endpoints
                 operation.Description = "Processes a handover message for agent conversations and returns the result";
                 return operation;
             });
-
         }
     }
 } 
