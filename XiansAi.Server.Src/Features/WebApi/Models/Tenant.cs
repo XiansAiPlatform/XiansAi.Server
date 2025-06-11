@@ -5,6 +5,7 @@ using Shared.Data.Models;
 
 namespace Features.WebApi.Models;
 
+[BsonIgnoreExtraElements]
 public class Tenant
 {
     [BsonId]

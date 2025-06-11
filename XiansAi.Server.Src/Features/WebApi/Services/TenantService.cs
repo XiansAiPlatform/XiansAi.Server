@@ -75,11 +75,11 @@ public class TenantService : ITenantService
     {
         try
         {
-            var tenant = await _tenantRepository.GetByIdAsync(id);
+            var tenant = await _tenantRepository.GetByTenantIdAsync(id);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with ID {Id} not found", id);
-                return ServiceResult<Tenant>.NotFound("Tenant not found");
+                return ServiceResult<Tenant>.Forbidden("Tenant not found");
             }
 
             return ServiceResult<Tenant>.Success(tenant);

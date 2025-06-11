@@ -23,7 +23,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     public async Task ProcessInboundMessage_WithValidRequest_HandlesTransactionError()
     {
         // Arrange
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = "test-participant-1",
             WorkflowId = "test-workflow-1",
@@ -51,7 +51,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         // Create a thread first
         var thread = await CreateTestThreadAsync(agent: agent, participantId: participantId);
 
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = participantId,
             WorkflowId = thread.WorkflowId,
@@ -72,7 +72,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     public async Task ProcessInboundMessage_WithMissingRequiredFields_HandlesTransactionError()
     {
         // Arrange - missing ParticipantId
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = "", // Empty but not null to satisfy required property
             WorkflowId = "test-workflow-1",
@@ -242,7 +242,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     {
         // Arrange
         var largeContent = new string('A', 10000); // 10KB content
-        var request = new MessageRequest
+        var request = new ChatOrDataRequest
         {
             ParticipantId = "test-participant-large",
             WorkflowId = "test-workflow-large",
@@ -312,9 +312,9 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             UpdatedAt = DateTime.UtcNow,
             CreatedBy = TestUserId,
             Direction = direction,
-            Content = content,
+            Text = content,
             Status = MessageStatus.DeliveredToWorkflow,
-            Metadata = new Dictionary<string, object>
+            Data = new Dictionary<string, object>
             {
                 ["testProperty"] = "testValue"
             }
