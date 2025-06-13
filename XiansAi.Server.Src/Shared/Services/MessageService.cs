@@ -14,6 +14,9 @@ public class ChatOrDataRequest
     public object? Data { get; set; }
     public string? Text { get; set; }
     public string? ThreadId { get; set; }
+    public string? Token { get; set; }
+    public string? AuthProvider { get; set; }
+
 }
 
 public class HandoffRequest
@@ -27,6 +30,8 @@ public class HandoffRequest
     public required string ParticipantId { get; set; }
     public required string Text { get; set; }
     public object? Data { get; set; }
+    public string? Token { get; set; }
+    public string? AuthProvider { get; set; }
 }
 
 
@@ -47,20 +52,23 @@ public class MessageService : IMessageService
     private readonly IConversationThreadRepository _threadRepository;
     private readonly IConversationMessageRepository _messageRepository;
     private readonly IWorkflowSignalService _workflowSignalService;
+    private readonly IConfiguration _configuration;
 
-        public MessageService(
-        ILogger<MessageService> logger,
-        ITenantContext tenantContext,
-        IConversationThreadRepository threadRepository,
-        IConversationMessageRepository messageRepository,
-        IWorkflowSignalService workflowSignalService
-        )
+    public MessageService(
+    ILogger<MessageService> logger,
+    ITenantContext tenantContext,
+    IConversationThreadRepository threadRepository,
+    IConversationMessageRepository messageRepository,
+    IWorkflowSignalService workflowSignalService,
+    IConfiguration configuration
+    )
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _threadRepository = threadRepository;
         _messageRepository = messageRepository;
         _workflowSignalService = workflowSignalService;
+        _configuration = configuration;
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -233,15 +241,19 @@ public class MessageService : IMessageService
         {
             SignalName = Constants.SIGNAL_INBOUND_CHAT_OR_DATA,
             TargetWorkflowId = request.WorkflowId,
-            TargetWorkflowType = request.WorkflowType,            
+            TargetWorkflowType = request.WorkflowType,
             SourceAgent = agent,
-            Payload = new {
-                 Agent = agent,
-                 request.ThreadId,
-                 request.ParticipantId,
-                 request.Text, 
-                 request.Data,
-                 Type = messageType.ToString()
+            Payload = new
+            {
+                Agent = agent,
+                request.ThreadId,
+                request.ParticipantId,
+                request.Text,
+                request.Data,
+                Type = messageType.ToString(),
+                request.Token,
+                AuthProvider = _configuration.GetValue<string>("AuthProvider:Provider") ?? "Keycloak",
+
             }
         };
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);

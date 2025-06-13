@@ -15,8 +15,9 @@ namespace XiansAi.Server.Shared.Websocket
         private readonly ITenantContext? _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IConfiguration _configuration;
 
-        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
+        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger, IConfiguration configuration)
         {
             _messageService = messageService;
             _httpContextAccessor = httpContextAccessor;
@@ -33,6 +34,7 @@ namespace XiansAi.Server.Shared.Websocket
             }
             _tenantContext ??= tenantContext;
             _logger = logger;
+            _configuration = configuration;
         }
 
         public override async Task OnConnectedAsync()
@@ -104,6 +106,16 @@ namespace XiansAi.Server.Shared.Websocket
             EnsureTenantContext();
             try
             {
+                if (request.Token == null)
+                {
+                    _logger.LogError("Request does not have Token");
+                    await Clients.Caller.SendAsync("Error", "Request must include token");
+                    Context.Abort();
+                    return;
+                }
+                // set Auth attribute for the request
+                request.AuthProvider = _configuration.GetValue<string>("AuthProvider:Provider") ?? "Auth0";
+
                 var messageTypeEnum = Enum.Parse<MessageType>(messageType);
                 // Step 1: Process inbound
                 var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);

@@ -17,8 +17,12 @@ public static class MessagingEndpoints
             .RequiresValidTenant();
 
         messagingGroup.MapPost("/inbound/data", async (
-            [FromBody] ChatOrDataRequest request, 
-            [FromServices] IMessageService messageService) => {
+            [FromBody] ChatOrDataRequest request,
+            [FromServices] IMessageService messageService, HttpContext context) =>
+        {
+            // Get the Authorization header
+            var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+            request.Token = authHeader;
             var result = await messageService.ProcessIncomingMessage(request, MessageType.Data);
             return result.ToHttpResult();
         })
@@ -30,8 +34,13 @@ public static class MessagingEndpoints
         });
 
         messagingGroup.MapPost("/inbound/chat", async (
-            [FromBody] ChatOrDataRequest request, 
-            [FromServices] IMessageService messageService) => {
+            [FromBody] ChatOrDataRequest request,
+            [FromServices] IMessageService messageService,
+            HttpContext context) =>
+        {
+            // Get the Authorization header
+            var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+            request.Token = authHeader;
             var result = await messageService.ProcessIncomingMessage(request, MessageType.Chat);
             return result.ToHttpResult();
         })

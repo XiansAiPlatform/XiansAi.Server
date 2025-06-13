@@ -59,8 +59,20 @@ namespace Features.AgentApi.Endpoints
             });
 
             group.MapPost("/outbound/handoff", async (
-                [FromBody] HandoffRequest request, 
-                [FromServices] IMessageService messageService) => {
+                [FromBody] HandoffRequest request,
+                [FromServices] IMessageService messageService,
+                HttpContext context) =>
+            {
+                // Extract certificate from the Authorization header (Base64 encoded)
+                var certHeader = context.Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase);
+
+                if (!string.IsNullOrEmpty(certHeader))
+                {
+                    // Store the certificate in the request
+                    request.Token = certHeader;
+                    request.AuthProvider = "Certificate";
+                }
+
                 var result = await messageService.ProcessHandoff(request);
                 return result.ToHttpResult();
             })
