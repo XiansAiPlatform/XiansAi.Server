@@ -8,6 +8,18 @@ namespace Features.AgentApi.Endpoints
 {
     public static class ConversationEndpoints
     {
+        private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
+        {
+            if (request.Authorization == null)
+            {
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+                {
+                    request.Authorization = authHeader.Substring("Bearer ".Length).Trim();
+                }
+            }
+        }
+
         public static void MapConversationEndpoints(WebApplication app)
         {
             var group = app.MapGroup("/api/agent/conversation")
@@ -74,7 +86,8 @@ namespace Features.AgentApi.Endpoints
                 [FromBody] HandoffRequest request, 
                 [FromServices] IMessageService messageService,
                 HttpContext context) => {
-                var result = await messageService.ProcessHandoff(request, context);
+                SetAuthorizationFromHeader(request, context);
+                var result = await messageService.ProcessHandoff(request);
                 return result.ToHttpResult();
             })
             .WithName("Process Handover Message from Agent")

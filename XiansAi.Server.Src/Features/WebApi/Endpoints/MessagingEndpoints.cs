@@ -9,6 +9,18 @@ namespace Features.WebApi.Endpoints;
 
 public static class MessagingEndpoints
 {
+    private static void SetAuthorizationFromHeader(ChatOrDataRequest request, HttpContext context)
+    {
+        if (request.Authorization == null)
+        {
+            var authHeader = context.Request.Headers["Authorization"].ToString();
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+            {
+                request.Authorization = authHeader.Substring("Bearer ".Length).Trim();
+            }
+        }
+    }
+
     public static void MapMessagingEndpoints(this WebApplication app)
     {
         // Map definitions endpoints with common attributes
@@ -20,7 +32,8 @@ public static class MessagingEndpoints
             [FromBody] ChatOrDataRequest request,
             [FromServices] IMessageService messageService,
             HttpContext context) => {
-            var result = await messageService.ProcessIncomingMessage(request, MessageType.Data, context);
+            SetAuthorizationFromHeader(request, context);
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Data);
             return result.ToHttpResult();
         })
         .WithName("Send Data to workflow")
@@ -34,7 +47,8 @@ public static class MessagingEndpoints
             [FromBody] ChatOrDataRequest request, 
             [FromServices] IMessageService messageService,
             HttpContext context) => {
-            var result = await messageService.ProcessIncomingMessage(request, MessageType.Chat, context);
+            SetAuthorizationFromHeader(request, context);
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Chat);
             return result.ToHttpResult();
         })
         .WithName("Send Chat to workflow")
