@@ -40,9 +40,6 @@ public class WorkflowSignalWithStartRequest
 
     [JsonPropertyName("TargetWorkflowType")]
     public required string TargetWorkflowType { get; set; }
-    
-    [JsonPropertyName("EventType")]
-    public string? EventType { get; set; }
 
     [JsonPropertyName("Payload")]
     public object? Payload { get; set; }
