@@ -1,7 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Features.WebApi.Models;
+using Features.WebApi.Services;
+using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
@@ -11,8 +11,7 @@ public static class PublicEndpoints
     {
         // Map registration endpoints with common attributes
         var registrationGroup = app.MapGroup("/api/public/register")
-            .WithTags("WebAPI - Public Registration")
-            .RequiresToken();
+            .WithTags("WebAPI - Public Registration");
 
         registrationGroup.MapPost("/verification/send", async (
             [FromBody] string email,
