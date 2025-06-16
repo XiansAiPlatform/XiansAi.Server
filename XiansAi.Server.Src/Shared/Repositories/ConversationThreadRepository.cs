@@ -96,18 +96,6 @@ public class ConversationThreadRepository : IConversationThreadRepository
             new CreateIndexOptions { Background = true, Name = "thread_updated_at" }
         );
 
-        // thread_composite_key index (tenant_id, agent, workflow_type, participant_id) - unique
-        var compositeKeyIndex = Builders<ConversationThread>.IndexKeys
-            .Ascending(x => x.TenantId)
-            .Ascending(x => x.Agent)
-            .Ascending(x => x.WorkflowType)
-            .Ascending(x => x.ParticipantId);
-        
-        var compositeKeyIndexModel = new CreateIndexModel<ConversationThread>(
-            compositeKeyIndex, 
-            new CreateIndexOptions { Background = true, Name = "thread_composite_key", Unique = true }
-        );
-
         // tenant_agent_lookup index (tenant_id, agent)
         var tenantAgentLookupIndex = Builders<ConversationThread>.IndexKeys
             .Ascending(x => x.TenantId)
@@ -122,7 +110,6 @@ public class ConversationThreadRepository : IConversationThreadRepository
         await _collection.Indexes.CreateManyAsync([ 
             statusLookupIndexModel,
             updatedAtIndexModel,
-            compositeKeyIndexModel,
             tenantAgentLookupIndexModel
         ]);
     }
