@@ -11,7 +11,7 @@ public class CacheProviderFactory
     /// <summary>
     /// Gets configuration value supporting both colon and double underscore formats
     /// </summary>
-    private static string GetConfigValue(IConfiguration configuration, string key)
+    private static string? GetConfigValue(IConfiguration configuration, string key)
     {
         // Try colon format first (appsettings.json)
         var value = configuration[key];
