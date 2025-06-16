@@ -120,7 +120,7 @@ public class PublicService : IPublicService
             _logger.LogDebug("Generated tenant ID: {TenantId} from email: {Email}", tenantId, email);
 
             // Validate if the tenant ID is registered in our system
-            if (!IsValidTenantId(tenantId))
+            if (!await IsValidTenantId(tenantId))
             {
                 _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
                 return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
@@ -163,7 +163,7 @@ public class PublicService : IPublicService
         var tenantId = GenerateTenantId(email);
         
         // Double-check tenant validity
-        if (!IsValidTenantId(tenantId))
+        if (!await IsValidTenantId(tenantId))
         {
             _logger.LogWarning("Attempted to generate code for invalid tenant: {TenantId}", tenantId);
             throw new ArgumentException($"Email domain does not belong to a valid tenant. Please contact Xians.ai support to get access to the platform.");
@@ -186,7 +186,7 @@ public class PublicService : IPublicService
     /// </summary>
     /// <param name="tenantId">The tenant ID to validate</param>
     /// <returns>True if the tenant ID is valid, false otherwise</returns>
-    private bool IsValidTenantId(string tenantId)
+    private async Task<bool> IsValidTenantId(string tenantId)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
         {
@@ -194,41 +194,23 @@ public class PublicService : IPublicService
             return false;
         }
 
-        var safeTenantId = tenantId.Replace(".", "_"); // Azure sometimes replaces dots with underscores. So when we add teh doman to the key, make sure to put the dot in the key.
-        var value = _configuration[$"Tenants:{safeTenantId}:Enabled"];
-        if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
+        try
         {
-            _logger.LogDebug("Tenant ID {TenantId} is enabled ? : {IsValid}", tenantId, isEnabled);
-            return isEnabled;
+            var result = await _tenantService.GetTenantByTenantId(tenantId);
+            if (result.Success && result.Data != null)
+            {
+                _logger.LogDebug("Tenant ID {TenantId} is valid", tenantId);
+                return true;
+            }
+            
+            _logger.LogDebug("Tenant ID {TenantId} is not valid", tenantId);
+            return false;
         }
-        _logger.LogDebug("Tenant ID {TenantId} is disabled or not found in configuration", tenantId);
-        return false;
-
-            
-        // var value = _configuration[$"Tenants:{tenantId}:Enabled"];
-        // _logger.LogDebug("Checking configuration value for tenant {TenantId}: Tenants:{TenantId}:Enabled = {Value}", 
-        //     tenantId, tenantId, value ?? "null");
-        
-        // Debug: Dump all configuration keys
-        // var allConfig = _configuration.AsEnumerable()
-        //     .Where(x => x.Key.Contains("Tenants", StringComparison.OrdinalIgnoreCase))
-        //     .OrderBy(x => x.Key)
-        //     .Select(x => $"{x.Key} = {x.Value}");
-            
-        // _logger.LogDebug("All tenant-related configuration keys:");
-        // foreach (var config in allConfig)
-        // {
-        //     _logger.LogDebug("  {Config}", config);
-        // }
-        
-        // if (!string.IsNullOrEmpty(value) && bool.TryParse(value, out var isEnabled))
-        // {
-        //     _logger.LogDebug("Found valid Enabled value: {Value}", value);
-        //     return isEnabled;
-        // }
-        
-        // _logger.LogDebug("Tenant ID {TenantId} not found in configuration", tenantId);
-        // return true;
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating tenant ID {TenantId}", tenantId);
+            return false;
+        }
     }
 
     /// <summary>
