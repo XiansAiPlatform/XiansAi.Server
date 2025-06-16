@@ -34,8 +34,9 @@ public class AzureB2CProvider : IAuthProvider
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
     {
+        options.TokenValidationParameters.ValidIssuer = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/v2.0/";
         // Configuration is already initialized in constructor
-        options.Authority = $"{_azureB2CConfig.Instance}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
+        options.Authority = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
         options.Audience = _azureB2CConfig.Audience;
         options.TokenValidationParameters.NameClaimType = "name";
         options.Events = new JwtBearerEvents

@@ -8,6 +8,18 @@ namespace Features.AgentApi.Endpoints
 {
     public static class ConversationEndpoints
     {
+        private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
+        {
+            if (request.Authorization == null)
+            {
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+                {
+                    request.Authorization = authHeader.Substring("Bearer ".Length).Trim();
+                }
+            }
+        }
+
         public static void MapConversationEndpoints(WebApplication app)
         {
             var group = app.MapGroup("/api/agent/conversation")
@@ -31,6 +43,19 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
+            group.MapGet("authorization/{authorizationGuid}", async (
+                [FromRoute] string authorizationGuid,
+                [FromServices] IMessageService messageService) => {
+                var result = await messageService.GetAuthorization(authorizationGuid);
+                return result.ToHttpResult();
+            })
+            .WithName("Get Authorization")
+            .WithOpenApi(operation => {
+                operation.Summary = "Get authorization by GUID";
+                operation.Description = "Retrieves a cached authorization using its GUID";
+                return operation;
+            });
+
             group.MapPost("/outbound/chat", async (
                 [FromBody] ChatOrDataRequest request, 
                 [FromServices] IMessageService messageService) => {
@@ -43,7 +68,6 @@ namespace Features.AgentApi.Endpoints
                 operation.Description = "Processes an outbound chat for agent conversations and returns the result";
                 return operation;
             });
-
 
             group.MapPost("/outbound/data", async (
                 [FromBody] ChatOrDataRequest request, 
@@ -60,7 +84,9 @@ namespace Features.AgentApi.Endpoints
 
             group.MapPost("/outbound/handoff", async (
                 [FromBody] HandoffRequest request, 
-                [FromServices] IMessageService messageService) => {
+                [FromServices] IMessageService messageService,
+                HttpContext context) => {
+                SetAuthorizationFromHeader(request, context);
                 var result = await messageService.ProcessHandoff(request);
                 return result.ToHttpResult();
             })
@@ -70,7 +96,6 @@ namespace Features.AgentApi.Endpoints
                 operation.Description = "Processes a handover message for agent conversations and returns the result";
                 return operation;
             });
-
         }
     }
 } 
