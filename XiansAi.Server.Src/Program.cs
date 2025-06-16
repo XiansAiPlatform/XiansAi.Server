@@ -2,10 +2,8 @@ using DotNetEnv;
 using Features.AgentApi.Configuration;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
-using XiansAi.Server.Shared.Data;
 using Shared.Auth;
 using Features.WebApi.Auth;
-using XiansAi.Server.Features.WebApi.Scripts;
 using Shared.Data;
 
 /// <summary>

@@ -119,8 +119,6 @@ public class ConversationMessageRepository : IConversationMessageRepository
     private readonly IMongoCollection<ConversationThread> _threadCollection;
     private readonly IMongoDatabase _database;
     private readonly ILogger<ConversationMessageRepository> _logger;
-    private readonly Lazy<Task> _indexCreationTask;
-    private volatile bool _indexesCreated = false;
     
     public ConversationMessageRepository(
         IDatabaseService databaseService,
@@ -131,103 +129,6 @@ public class ConversationMessageRepository : IConversationMessageRepository
         _database = database;
         _collection = database.GetCollection<ConversationMessage>("conversation_message");
         _threadCollection = database.GetCollection<ConversationThread>("conversation_thread");
-
-        // Initialize indexes asynchronously without blocking constructor
-        _indexCreationTask = new Lazy<Task>(() => InitializeIndexesAsync());
-        
-        // Start index creation in background (fire and forget)
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _indexCreationTask.Value;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Background index creation failed during repository initialization");
-            }
-        });
-    }
-
-    /// <summary>
-    /// Initializes indexes asynchronously with resilient error handling.
-    /// This method won't throw exceptions and allows the application to continue running even if MongoDB is temporarily unavailable.
-    /// </summary>
-    private async Task InitializeIndexesAsync()
-    {
-        if (_indexesCreated) return;
-
-        var success = await MongoRetryHelper.ExecuteWithGracefulRetryAsync(async () =>
-        {
-            // Message lookup index (tenant_id, thread_id, created_at)
-            var messageLookupIndex = Builders<ConversationMessage>.IndexKeys
-                .Ascending(x => x.TenantId)
-                .Ascending(x => x.ThreadId)
-                .Ascending(x => x.ParticipantId)
-                .Descending(x => x.CreatedAt);
-            
-            var messageLookupIndexModel = new CreateIndexModel<ConversationMessage>(
-                messageLookupIndex, 
-                new CreateIndexOptions { Background = true, Name = "thread_participant_message_lookup" }
-            );
-
-            // Channel lookup index (tenant_id, channel, channel_key)
-            var channelLookupIndex = Builders<ConversationMessage>.IndexKeys
-                .Ascending(x => x.TenantId);
-            
-            var channelLookupIndexModel = new CreateIndexModel<ConversationMessage>(
-                channelLookupIndex,
-                new CreateIndexOptions { Background = true, Name = "tenant_lookup" }
-            );
-
-            // Message status index (tenant_id, status)
-            var messageStatusIndex = Builders<ConversationMessage>.IndexKeys
-                .Ascending(x => x.TenantId)
-                .Ascending(x => x.Status);
-            
-            var messageStatusIndexModel = new CreateIndexModel<ConversationMessage>(
-                messageStatusIndex,
-                new CreateIndexOptions { Background = true, Name = "message_status" }
-            );
-
-            // Create all indexes
-            await _collection.Indexes.CreateManyAsync(new[] { 
-                messageLookupIndexModel,
-                channelLookupIndexModel,
-                messageStatusIndexModel
-            });
-
-        }, _logger, maxRetries: 2, baseDelayMs: 2000, operationName: "CreateIndexes");
-
-        if (success)
-        {
-            _indexesCreated = true;
-            _logger.LogInformation("Successfully created indexes for ConversationMessage collection");
-        }
-        else
-        {
-            _logger.LogWarning("Failed to create indexes for ConversationMessage collection, but repository will continue to function. Indexes will be retried on next operation.");
-        }
-    }
-
-    /// <summary>
-    /// Ensures indexes are created before performing operations (lazy initialization).
-    /// This method is called by repository methods that benefit from having indexes.
-    /// </summary>
-    private async Task EnsureIndexesAsync()
-    {
-        if (!_indexesCreated)
-        {
-            try
-            {
-                await _indexCreationTask.Value;
-            }
-            catch (Exception ex)
-            {
-                // Log but don't throw - the operation can continue without indexes
-                _logger.LogDebug(ex, "Index creation not yet complete, continuing with operation");
-            }
-        }
     }
 
     public async Task<ConversationMessage?> GetByIdAsync(string id)
@@ -242,9 +143,6 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null)
     {
-        // Ensure indexes are created for optimal query performance
-        await EnsureIndexesAsync();
-        
         var filter = Builders<ConversationMessage>.Filter.And(
             Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
             Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
@@ -288,9 +186,6 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<List<ConversationMessage>> GetByStatusAsync(string tenantId, MessageStatus status, int? page = null, int? pageSize = null)
     {
-        // Ensure indexes are created for optimal query performance
-        await EnsureIndexesAsync();
-        
         var filter = Builders<ConversationMessage>.Filter.And(
             Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
             Builders<ConversationMessage>.Filter.Eq(x => x.Status, status)
@@ -649,9 +544,6 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId,string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false)
     {
-        // Ensure indexes are created for optimal query performance
-        await EnsureIndexesAsync();
-        
         _logger.LogDebug("Querying messages directly by participantId {ParticipantId}", participantId);
         
         // First, get the thread ID for the given workflow and participant
