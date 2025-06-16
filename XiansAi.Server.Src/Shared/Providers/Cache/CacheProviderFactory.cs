@@ -8,6 +8,22 @@ namespace XiansAi.Server.Providers;
 /// </summary>
 public class CacheProviderFactory
 {
+    /// <summary>
+    /// Gets configuration value supporting both colon and double underscore formats
+    /// </summary>
+    private static string GetConfigValue(IConfiguration configuration, string key)
+    {
+        // Try colon format first (appsettings.json)
+        var value = configuration[key];
+        
+        // If not found, try double underscore format (Azure environment variables)
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            value = configuration[key.Replace(":", "__")];
+        }
+        
+        return value;
+    }
 
     /// <summary>
     /// Registers the cache provider based on configuration
@@ -16,20 +32,20 @@ public class CacheProviderFactory
     /// <param name="configuration">Application configuration</param>
     public static void RegisterProvider(IServiceCollection services, IConfiguration configuration)
     {
-        var cacheProvider = configuration["Cache:Provider"];
+        var cacheProvider = GetConfigValue(configuration, "Cache:Provider");
         if (string.IsNullOrWhiteSpace(cacheProvider))
         {
-            throw new InvalidOperationException("Cache:Provider is not configured in appsettings");
+            throw new InvalidOperationException("Cache:Provider or Cache__Provider is not configured in appsettings or environment variables");
         }
 
         // Register the appropriate provider based on configuration
         switch (cacheProvider.ToLowerInvariant())
         {
             case "redis":
-                var connectionString = configuration["Cache:Redis:ConnectionString"];
+                var connectionString = GetConfigValue(configuration, "Cache:Redis:ConnectionString");
                 if (string.IsNullOrEmpty(connectionString))
                 {
-                    throw new InvalidOperationException("Redis cache provider requires Cache:Redis:ConnectionString");
+                    throw new InvalidOperationException("Redis cache provider requires Cache:Redis:ConnectionString or Cache__Redis__ConnectionString");
                 }
                 services.AddStackExchangeRedisCache(options =>
                 {
@@ -45,5 +61,4 @@ public class CacheProviderFactory
                 throw new InvalidOperationException($"Unsupported cache provider: {cacheProvider}");
         }
     }
-
 } 
