@@ -197,7 +197,7 @@ public class PublicService : IPublicService
         try
         {
             var result = await _tenantService.GetTenantByTenantId(tenantId);
-            var isValid = result.Success && result.Data != null;
+            var isValid = result.IsSuccess && result.Data != null;
             
             if (isValid)
             {
