@@ -26,6 +26,15 @@ public interface ILlmService
     /// <param name="model">The model to use</param>
     /// <returns>The completion response</returns>
     Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model);
+
+    /// <summary>
+    /// Gets a structured chat completion from the current LLM provider
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize the response to</typeparam>
+    /// <param name="messages">The chat messages</param>
+    /// <param name="model">The model to use</param>
+    /// <returns>The completion response deserialized to type T</returns>
+    Task<T> GetStructuredChatCompletionAsync<T>(List<ChatMessage> messages, string model) where T : class;
 }
 
 /// <summary>
@@ -104,6 +113,26 @@ public class LlmService : ILlmService
         {
             _logger.LogError(ex, "Error getting chat completion from LLM provider with model {Model}", model);
             throw new Exception("Error getting chat completion from LLM provider", ex);
+        }
+    }
+
+    /// <summary>
+    /// Gets a structured chat completion from the current LLM provider
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize the response to</typeparam>
+    /// <param name="messages">The chat messages</param>
+    /// <param name="model">The model to use</param>
+    /// <returns>The completion response deserialized to type T</returns>
+    public async Task<T> GetStructuredChatCompletionAsync<T>(List<ChatMessage> messages, string model) where T : class
+    {
+        try
+        {
+            return await _llmProvider.GetStructuredChatCompletionAsync<T>(messages, model);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting structured chat completion from LLM provider with model {Model} for type {TypeName}", model, typeof(T).Name);
+            throw new Exception($"Error getting structured chat completion from LLM provider for type {typeof(T).Name}", ex);
         }
     }
 } 

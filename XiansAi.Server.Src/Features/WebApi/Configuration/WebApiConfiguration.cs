@@ -30,6 +30,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IPublicService, PublicService>();
+        builder.Services.AddScoped<ICopilotService, CopilotService>();
         
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
@@ -54,6 +55,7 @@ public static class WebApiConfiguration
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);
         AgentEndpoints.MapAgentEndpoints(app);
+        CopilotEndpoints.MapCopilotEndpoints(app);
         
         return app;
     }

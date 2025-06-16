@@ -60,4 +60,16 @@ public class AnthropicLlmProvider : ILlmProvider
     {
         throw new NotImplementedException();
     }
+
+    /// <summary>
+    /// Gets a structured chat completion from the Anthropic provider
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize the response to</typeparam>
+    /// <param name="messages">The chat messages</param>
+    /// <param name="model">The model to use</param>
+    /// <returns>The completion response deserialized to type T</returns>
+    public Task<T> GetStructuredChatCompletionAsync<T>(List<ChatMessage> messages, string model) where T : class
+    {
+        throw new NotImplementedException();
+    }
 } 
