@@ -23,19 +23,6 @@ namespace XiansAi.Server.Features.AgentApi.Repositories
         {
             var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
             _webhooks = database.GetCollection<Webhook>("webhooks");
-            
-            // Create indexes
-            var indexKeysId = Builders<Webhook>.IndexKeys.Ascending(x => x.TenantId);
-            var indexOptionsId = new CreateIndexOptions { Background = true };
-            var indexModelId = new CreateIndexModel<Webhook>(indexKeysId, indexOptionsId);
-            _webhooks.Indexes.CreateOne(indexModelId);
-
-            var indexKeysWorkflow = Builders<Webhook>.IndexKeys
-                .Ascending(x => x.WorkflowId)
-                .Ascending(x => x.TenantId);
-            var indexOptionsWorkflow = new CreateIndexOptions { Background = true };
-            var indexModelWorkflow = new CreateIndexModel<Webhook>(indexKeysWorkflow, indexOptionsWorkflow);
-            _webhooks.Indexes.CreateOne(indexModelWorkflow);
         }
 
         public async Task<Webhook> GetByIdAsync(string id, string tenantId)

@@ -28,20 +28,6 @@ public class CertificateRepository : ICertificateRepository
         _logger = logger;
         var database = databaseService.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Certificate>("certificates");
-        
-        // Create indexes for performance
-        var indexModels = new[]
-        {
-            new CreateIndexModel<Certificate>(
-                Builders<Certificate>.IndexKeys.Ascending(x => x.Thumbprint),
-                new CreateIndexOptions { Unique = true }),
-            new CreateIndexModel<Certificate>(
-                Builders<Certificate>.IndexKeys.Ascending(x => x.TenantId)),
-            new CreateIndexModel<Certificate>(
-                Builders<Certificate>.IndexKeys.Ascending(x => x.ExpiresAt))
-        };
-        
-        _collection.Indexes.CreateMany(indexModels);
     }
 
     public async Task<Certificate?> GetByThumbprintAsync(string thumbprint)

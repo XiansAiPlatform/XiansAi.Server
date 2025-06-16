@@ -44,35 +44,6 @@ public class AgentRepository : IAgentRepository
         _agents = database.GetCollection<Agent>("agents");
         _logger = logger;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
-        
-        // Ensure unique index exists for thread-safe agent creation
-        _ = Task.Run(EnsureIndexesAsync);
-    }
-
-    private async Task EnsureIndexesAsync()
-    {
-        try
-        {
-            // Create unique compound index on Name and Tenant
-            var indexOptions = new CreateIndexOptions { Unique = true };
-            var indexDefinition = Builders<Agent>.IndexKeys
-                .Ascending(x => x.Name)
-                .Ascending(x => x.Tenant);
-            
-            await _agents.Indexes.CreateOneAsync(
-                new CreateIndexModel<Agent>(indexDefinition, indexOptions));
-            
-            _logger.LogInformation("Unique index on (Name, Tenant) ensured for agents collection");
-        }
-        catch (MongoCommandException ex) when (ex.CodeName == "IndexOptionsConflict")
-        {
-            // Index already exists with different options, that's fine
-            _logger.LogDebug("Index already exists on agents collection");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to create unique index on agents collection");
-        }
     }
 
     public async Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles)

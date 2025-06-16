@@ -129,50 +129,6 @@ public class ConversationMessageRepository : IConversationMessageRepository
         _database = database;
         _collection = database.GetCollection<ConversationMessage>("conversation_message");
         _threadCollection = database.GetCollection<ConversationThread>("conversation_thread");
-
-        // Create indexes
-        CreateIndexes();
-    }
-
-    private void CreateIndexes()
-    {
-        // Message lookup index (tenant_id, thread_id, created_at)
-        var messageLookupIndex = Builders<ConversationMessage>.IndexKeys
-            .Ascending(x => x.TenantId)
-            .Ascending(x => x.ThreadId)
-            .Ascending(x => x.ParticipantId)
-            .Descending(x => x.CreatedAt);
-        
-        var messageLookupIndexModel = new CreateIndexModel<ConversationMessage>(
-            messageLookupIndex, 
-            new CreateIndexOptions { Background = true, Name = "thread_participant_message_lookup" }
-        );
-
-        // Channel lookup index (tenant_id, channel, channel_key)
-        var channelLookupIndex = Builders<ConversationMessage>.IndexKeys
-            .Ascending(x => x.TenantId);
-        
-        var channelLookupIndexModel = new CreateIndexModel<ConversationMessage>(
-            channelLookupIndex,
-            new CreateIndexOptions { Background = true, Name = "tenant_lookup" }
-        );
-
-        // Message status index (tenant_id, status)
-        var messageStatusIndex = Builders<ConversationMessage>.IndexKeys
-            .Ascending(x => x.TenantId)
-            .Ascending(x => x.Status);
-        
-        var messageStatusIndexModel = new CreateIndexModel<ConversationMessage>(
-            messageStatusIndex,
-            new CreateIndexOptions { Background = true, Name = "message_status" }
-        );
-
-        // Create all indexes
-        _collection.Indexes.CreateMany(new[] { 
-            messageLookupIndexModel,
-            channelLookupIndexModel,
-            messageStatusIndexModel
-        });
     }
 
     public async Task<ConversationMessage?> GetByIdAsync(string id)
