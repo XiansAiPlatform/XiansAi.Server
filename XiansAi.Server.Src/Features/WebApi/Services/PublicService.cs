@@ -197,14 +197,18 @@ public class PublicService : IPublicService
         try
         {
             var result = await _tenantService.GetTenantByTenantId(tenantId);
-            if (result.Success && result.Data != null)
+            var isValid = result.Success && result.Data != null;
+            
+            if (isValid)
             {
                 _logger.LogDebug("Tenant ID {TenantId} is valid", tenantId);
-                return true;
+            }
+            else
+            {
+                _logger.LogDebug("Tenant ID {TenantId} is not valid", tenantId);
             }
             
-            _logger.LogDebug("Tenant ID {TenantId} is not valid", tenantId);
-            return false;
+            return isValid;
         }
         catch (Exception ex)
         {
