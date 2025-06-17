@@ -349,84 +349,35 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Try transaction approach first
+            // Use a session to perform all operations in a transaction
+            using var session = await _database.Client.StartSessionAsync();
+            
+            session.StartTransaction();
+
             try
             {
-                // Use a session to perform all operations in a transaction
-                using var session = await _database.Client.StartSessionAsync();
-                
-                // Simplified transaction options for Cosmos DB compatibility
-                var transactionOptions = new TransactionOptions(
-                    readConcern: ReadConcern.Local,
-                    writeConcern: WriteConcern.W1
-                );
-                
-                session.StartTransaction(transactionOptions);
+                // Insert all messages in a single operation
+                await _collection.InsertManyAsync(session, messages);
+                var messageIds = messages.Select(m => m.Id).ToList();
 
-                try
+                // Update all thread timestamps
+                foreach (var threadUpdate in threadTimestamps)
                 {
-                    // Insert all messages in a single operation
-                    await _collection.InsertManyAsync(session, messages);
-                    var messageIds = messages.Select(m => m.Id).ToList();
-
-                    // Update all thread timestamps
-                    foreach (var threadUpdate in threadTimestamps)
-                    {
-                        var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
-                        var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
-                        await _threadCollection.UpdateOneAsync(session, filter, update);
-                    }
-
-                    // Commit the transaction
-                    await session.CommitTransactionAsync();
-                    return messageIds;
+                    var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
+                    var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
+                    await _threadCollection.UpdateOneAsync(session, filter, update);
                 }
-                catch (Exception)
-                {
-                    try
-                    {
-                        await session.AbortTransactionAsync();
-                    }
-                    catch
-                    {
-                        // Ignore abort errors
-                    }
-                    throw;
-                }
+
+                // Commit the transaction
+                await session.CommitTransactionAsync();
+                return messageIds;
             }
-            catch (Exception ex) when (IsTransactionNotSupportedError(ex))
+            catch
             {
-                // Fallback to non-transactional approach
-                _logger.LogWarning(ex, "Transaction not supported, falling back to non-transactional operations");
-                return await CreateManyAndUpdateThreadsNonTransactionalAsync(messages, threadTimestamps);
+                await session.AbortTransactionAsync();
+                throw;
             }
         }, _logger, operationName: "CreateManyAndUpdateThreadsAsync");
-    }
-
-    // Fallback non-transactional implementation for bulk operations
-    private async Task<List<string>> CreateManyAndUpdateThreadsNonTransactionalAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
-    {
-        // Insert all messages in a single operation
-        await _collection.InsertManyAsync(messages);
-        var messageIds = messages.Select(m => m.Id).ToList();
-
-        // Update all thread timestamps (best effort)
-        foreach (var threadUpdate in threadTimestamps)
-        {
-            try
-            {
-                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
-                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
-                await _threadCollection.UpdateOneAsync(filter, update);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to update thread timestamp for thread {ThreadId}", threadUpdate.Key);
-                // Continue with other updates
-            }
-        }
-
-        return messageIds;
     }
 
     // Helper method to convert any object to BsonDocument
