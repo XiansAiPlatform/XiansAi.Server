@@ -61,11 +61,12 @@ openssl genrsa -des3 -passout pass:"$PASSWORD" -out "$OUTPUT_DIR/$CA_NAME.key" $
 
 # Generate root certificate with UTC time
 echo "Generating root certificate..."
+# Set notBefore to be 1 hour after current time to ensure it's after issuer's notBefore
 openssl req -x509 -new -nodes -key "$OUTPUT_DIR/$CA_NAME.key" -sha256 -days $DAYS \
     -passin pass:"$PASSWORD" \
     -out "$OUTPUT_DIR/$CA_NAME.crt" \
     -subj "//C=US/ST=State/L=City/O=Organization/OU=IT/CN=$CA_NAME" \
-    -set_serial $(date -u +%s)
+    -set_serial $(date -u +%s) \
 
 # Verify certificate was created
 if [ -f "$OUTPUT_DIR/$CA_NAME.crt" ]; then

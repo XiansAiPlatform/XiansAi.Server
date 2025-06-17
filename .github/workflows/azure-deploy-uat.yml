@@ -1,11 +1,11 @@
-name: Deploy to Azure XiansAI Production
+name: Deploy to Azure UAT
 on:
   push:
-    branches: [ production ]
+    branches: [ uat ]
 
 env:
-  RESOURCE_GROUP: rg-api
-  APP_NAME: xiansai-server
+  RESOURCE_GROUP: rg-xiansai-uat
+  APP_NAME: xiansai-server-uat
 
 jobs:
   build-and-deploy:
@@ -30,9 +30,9 @@ jobs:
       run: |
         cd XiansAi.Server.Src/bin/publish && zip -r ../publish.zip . && cd ../../..
         
-    - name: Deploy to XiansAI Production
+    - name: Deploy to Azure Staging
       uses: azure/webapps-deploy@v2
       with:
         app-name: ${{ env.APP_NAME }}
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        publish-profile: ${{ secrets.AZURE_WEBAPP_UAT_PUBLISH_PROFILE }}
         package: ./XiansAi.Server.Src/bin/publish.zip 

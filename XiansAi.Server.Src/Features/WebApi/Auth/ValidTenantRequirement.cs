@@ -1,6 +1,7 @@
 using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Features.WebApi.Auth.Providers;
+using Features.WebApi.Services;
 
 namespace Features.WebApi.Auth;
 
@@ -14,15 +15,17 @@ public class ValidTenantRequirement : BaseAuthRequirement
 public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
 {
     private readonly IConfiguration _configuration;
-
+    private readonly ITenantService _tenantService;
     public ValidTenantHandler(
         ILogger<ValidTenantHandler> logger, 
         ITenantContext tenantContext,
         IConfiguration configuration,
-        IAuthProviderFactory authProviderFactory)
+        IAuthProviderFactory authProviderFactory,
+        ITenantService tenantService)
         : base(logger, tenantContext, authProviderFactory)
     {
         _configuration = configuration;
+        _tenantService = tenantService;
     }
 
     protected override async Task HandleRequirementAsync(
@@ -31,6 +34,8 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
     {
         var httpContext = context.Resource as HttpContext;
         var currentTenantId = httpContext?.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
+        _logger.LogDebug("########### Current Tenant ID: {currentTenantId}", currentTenantId);
 
         if (string.IsNullOrEmpty(currentTenantId))
         {
@@ -54,11 +59,10 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
             return;
         }
 
-        var tenantSection = _configuration.GetSection($"Tenants:{currentTenantId}");
-        if (!tenantSection.Exists())
+        if (!_tenantService.GetTenantById(currentTenantId).Result.IsSuccess)
         {
-            _logger.LogWarning("Tenant configuration not found for tenant ID: {currentTenantId}", currentTenantId);
-            context.Fail(new AuthorizationFailureReason(this, $"Tenant {currentTenantId} configuration not found"));
+            _logger.LogWarning("Tenant not found for tenant ID: {currentTenantId}", currentTenantId);
+            context.Fail(new AuthorizationFailureReason(this, $"Tenant {currentTenantId} not found"));
             return;
         }
 

@@ -2,13 +2,24 @@ using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Utils.Services;
-using Microsoft.AspNetCore.SignalR;
-using XiansAi.Server.Shared.Websocket;
+using Shared.Repositories;
 
 namespace Features.AgentApi.Endpoints
 {
     public static class ConversationEndpoints
     {
+        private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
+        {
+            if (request.Authorization == null)
+            {
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+                {
+                    request.Authorization = authHeader.Substring("Bearer ".Length).Trim();
+                }
+            }
+        }
+
         public static void MapConversationEndpoints(WebApplication app)
         {
             var group = app.MapGroup("/api/agent/conversation")
@@ -16,14 +27,13 @@ namespace Features.AgentApi.Endpoints
                 .RequiresCertificate();
 
             group.MapGet("/history", async (
-                [FromQuery] string agent,
                 [FromQuery] string workflowType,
                 [FromQuery] string participantId,
                 [FromQuery] int page,
                 [FromQuery] int pageSize,
                 [FromServices] IMessageService messageService) => {
                 
-                var result = await messageService.GetThreadHistoryAsync(agent, workflowType, participantId, page, pageSize);
+                var result = await messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
                 return result.ToHttpResult();
             })
             .WithName("Get Conversation History")
@@ -33,38 +43,51 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
-
-            group.MapPost("/inbound", async (
-            [FromBody] MessageRequest request, 
-            [FromServices] IMessageService messageService) => {
-                var result = await messageService.ProcessIncomingMessage(request);
+            group.MapGet("authorization/{authorizationGuid}", async (
+                [FromRoute] string authorizationGuid,
+                [FromServices] IMessageService messageService) => {
+                var result = await messageService.GetAuthorization(authorizationGuid);
                 return result.ToHttpResult();
             })
-            .WithName("Process Inbound Message to Agent")
+            .WithName("Get Authorization")
             .WithOpenApi(operation => {
-                operation.Summary = "Process inbound message to Agent";
-                operation.Description = "Processes an inbound message for agent conversations and returns the result";
+                operation.Summary = "Get authorization by GUID";
+                operation.Description = "Retrieves a cached authorization using its GUID";
                 return operation;
             });
 
-
-            group.MapPost("/outbound/send", async (
-                [FromBody] MessageRequest request, 
+            group.MapPost("/outbound/chat", async (
+                [FromBody] ChatOrDataRequest request, 
                 [FromServices] IMessageService messageService) => {
-                var result = await messageService.ProcessOutgoingMessage(request);
+                var result = await messageService.ProcessOutgoingMessage(request, MessageType.Chat);
                 return result.ToHttpResult();
             })
-            .WithName("Process Outbound Message from Agent")
+            .WithName("Process Outbound Chat from Agent")
             .WithOpenApi(operation => {
-                operation.Summary = "Process outbound message to Agent";
-                operation.Description = "Processes an outbound message for agent conversations and returns the result";
+                operation.Summary = "Process outbound chat from Agent";
+                operation.Description = "Processes an outbound chat for agent conversations and returns the result";
                 return operation;
             });
 
-            group.MapPost("/outbound/handover", async (
-                [FromBody] HandoverRequest request, 
+            group.MapPost("/outbound/data", async (
+                [FromBody] ChatOrDataRequest request, 
                 [FromServices] IMessageService messageService) => {
-                var result = await messageService.ProcessHandover(request);
+                var result = await messageService.ProcessOutgoingMessage(request, MessageType.Data);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Outbound Data from Agent")
+            .WithOpenApi(operation => {
+                operation.Summary = "Process outbound data from Agent";
+                operation.Description = "Processes an outbound data for agent conversations and returns the result";
+                return operation;
+            });
+
+            group.MapPost("/outbound/handoff", async (
+                [FromBody] HandoffRequest request, 
+                [FromServices] IMessageService messageService,
+                HttpContext context) => {
+                SetAuthorizationFromHeader(request, context);
+                var result = await messageService.ProcessHandoff(request);
                 return result.ToHttpResult();
             })
             .WithName("Process Handover Message from Agent")
@@ -73,7 +96,6 @@ namespace Features.AgentApi.Endpoints
                 operation.Description = "Processes a handover message for agent conversations and returns the result";
                 return operation;
             });
-
         }
     }
 } 
