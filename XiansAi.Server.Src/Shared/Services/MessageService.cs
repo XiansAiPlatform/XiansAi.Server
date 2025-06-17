@@ -135,7 +135,9 @@ public class MessageService : IMessageService
                 WorkflowType = request.TargetWorkflowType,
                 Text = request.Text,
                 Data = request.Data,
-                Agent = request.SourceAgent
+                Agent = request.SourceAgent,
+                Token = request.Token,
+                AuthProvider = request.AuthProvider
             }, MessageType.Chat);
 
             return ServiceResult<string>.Success(targetThreadId);
@@ -252,7 +254,7 @@ public class MessageService : IMessageService
                 request.Data,
                 Type = messageType.ToString(),
                 request.Token,
-                AuthProvider = _configuration.GetValue<string>("AuthProvider:Provider") ?? "Keycloak",
+                AuthProvider = request.AuthProvider ?? _configuration.GetValue<string>("AuthProvider:Provider") ?? "Keycloak",
 
             }
         };
