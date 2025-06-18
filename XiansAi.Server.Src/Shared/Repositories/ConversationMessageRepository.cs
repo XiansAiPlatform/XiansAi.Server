@@ -1,11 +1,11 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using XiansAi.Server.Shared.Data;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using Shared.Data;
 using Shared.Utils;
+
 
 namespace Shared.Repositories;
 
@@ -13,6 +13,7 @@ public enum MessageDirection
 {
     Incoming,
     Outgoing,
+    [Obsolete("Use MessageDirection.Handoff instead")]
     Handover
 }
 
@@ -20,6 +21,16 @@ public enum MessageStatus
 {
     FailedToDeliverToWorkflow,
     DeliveredToWorkflow,
+}
+
+
+public enum MessageType
+{
+    Chat,
+    Data,
+    Handoff,
+    [Obsolete("Use MessageType.Handoff instead")]
+    Handover
 }
 
 public class MessageLogEvent
@@ -61,19 +72,16 @@ public class ConversationMessage
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public required MessageDirection Direction { get; set; }
 
-    [BsonElement("content")]
-    public string? Content { get; set; }
+    [BsonElement("text")]
+    public string? Text { get; set; }
 
     [BsonElement("status")]
     [BsonRepresentation(BsonType.String)]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MessageStatus? Status { get; set; }
 
-    [BsonElement("metadata")]
-    public object? Metadata { get; set; }
-
-    [BsonElement("logs")]
-    public List<MessageLogEvent>? Logs { get; set; }
+    [BsonElement("data")]
+    public object? Data { get; set; }
 
     [BsonElement("participant_id")]
     public required string ParticipantId { get; set; }
@@ -83,6 +91,11 @@ public class ConversationMessage
 
     [BsonElement("workflow_type")]
     public required string WorkflowType { get; set; }
+
+    [BsonElement("message_type")]
+    [BsonRepresentation(BsonType.String)]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MessageType? MessageType { get; set; }
 
 }
 
@@ -95,10 +108,9 @@ public interface IConversationMessageRepository
     Task<string> CreateAndUpdateThreadAsync(ConversationMessage message, string threadId, DateTime timestamp);
     Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps);
     Task<bool> UpdateStatusAsync(string id, MessageStatus status);
-    Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent);
-
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null);
-    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null);
+    Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false);
+    Task<string> CreateAndUpdateThreadWithOptimisticConcurrencyAsync(ConversationMessage message, string threadId, DateTime timestamp);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -240,22 +252,10 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<string> CreateAsync(ConversationMessage message)
     {
-        if (message.Logs == null)
-        {
-            message.Logs = new List<MessageLogEvent>
-            {
-                new MessageLogEvent
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = "created"
-                }
-            };
-        }
-
         // Convert metadata to BsonDocument if needed
-        if (message.Metadata != null)
+        if (message.Data != null)
         {
-            message.Metadata = ConvertToBsonDocument(message.Metadata);
+            message.Data = ConvertToBsonDocument(message.Data);
         }
 
         await _collection.InsertOneAsync(message);
@@ -272,22 +272,10 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // Prepare each message for insertion
         foreach (var message in messages)
         {
-            if (message.Logs == null)
-            {
-                message.Logs = new List<MessageLogEvent>
-                {
-                    new MessageLogEvent
-                    {
-                        Timestamp = DateTime.UtcNow,
-                        Event = "created"
-                    }
-                };
-            }
-
             // Convert metadata to BsonDocument if needed
-            if (message.Metadata != null)
+            if (message.Data != null)
             {
-                message.Metadata = ConvertToBsonDocument(message.Metadata);
+                message.Data = ConvertToBsonDocument(message.Data);
             }
         }
 
@@ -300,115 +288,46 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<string> CreateAndUpdateThreadAsync(ConversationMessage message, string threadId, DateTime timestamp)
     {
-        // Prepare the message (same logic as in CreateAsync)
-        if (message.Logs == null)
-        {
-            message.Logs = new List<MessageLogEvent>
-            {
-                new MessageLogEvent
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = "created"
-                }
-            };
-        }
-
         // Convert metadata to BsonDocument if needed
-        if (message.Metadata != null)
+        if (message.Data != null)
         {
-            message.Metadata = ConvertToBsonDocument(message.Metadata);
+            message.Data = ConvertToBsonDocument(message.Data);
         }
 
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        // Critical operation: Create the message with retry logic
+        var messageId = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Try transaction approach first for Cosmos DB
+            await _collection.InsertOneAsync(message);
+            return message.Id;
+        }, _logger, operationName: "CreateMessage");
+
+        // Best effort: Update thread timestamp (non-critical)
+        // Use fire-and-forget pattern to avoid blocking the message creation result
+        _ = Task.Run(async () =>
+        {
             try
             {
-                // Use a session to perform both operations in a transaction
-                using var session = await _database.Client.StartSessionAsync();
-                
-                // Simplified transaction options for Cosmos DB compatibility
-                var transactionOptions = new TransactionOptions(
-                    readConcern: ReadConcern.Local, // Use Local instead of Snapshot for Cosmos DB
-                    writeConcern: WriteConcern.W1   // Use W1 instead of WMajority for Cosmos DB
-                );
-                
-                session.StartTransaction(transactionOptions);
-
-                try
+                await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
                 {
-                    // Insert the message
-                    await _collection.InsertOneAsync(session, message);
-                    var messageId = message.Id;
-
-                    // Update the thread's last activity timestamp
-                    var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
-                    var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
-                    await _threadCollection.UpdateOneAsync(session, filter, update);
-
-                    // Commit the transaction
-                    await session.CommitTransactionAsync();
-                    return messageId;
-                }
-                catch (Exception)
-                {
-                    // Abort transaction on any error
-                    try
+                    var threadFilter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
+                    var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+                    var result = await _threadCollection.UpdateOneAsync(threadFilter, threadUpdate);
+                    
+                    if (result.MatchedCount == 0)
                     {
-                        await session.AbortTransactionAsync();
+                        _logger.LogDebug("Thread {ThreadId} not found during timestamp update", threadId);
                     }
-                    catch
-                    {
-                        // Ignore abort errors
-                    }
-                    throw;
-                }
+                }, _logger, maxRetries: 2, operationName: "UpdateThreadTimestamp");
             }
-            catch (Exception ex) when (IsTransactionNotSupportedError(ex))
+            catch (Exception ex)
             {
-                // Fallback to non-transactional approach for Cosmos DB compatibility
-                _logger.LogWarning(ex, "Transaction not supported, falling back to non-transactional operations");
-                return await CreateAndUpdateThreadNonTransactionalAsync(message, threadId, timestamp);
+                // Log but don't throw - this is non-critical
+                _logger.LogWarning(ex, "Failed to update thread {ThreadId} timestamp after message creation, but message {MessageId} was created successfully", 
+                    threadId, messageId);
             }
-        }, _logger, operationName: "CreateAndUpdateThreadAsync");
-    }
-
-    // Fallback non-transactional implementation
-    private async Task<string> CreateAndUpdateThreadNonTransactionalAsync(ConversationMessage message, string threadId, DateTime timestamp)
-    {
-        // Insert the message first
-        await _collection.InsertOneAsync(message);
-        var messageId = message.Id;
-
-        try
-        {
-            // Update the thread's last activity timestamp
-            var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
-            var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
-            await _threadCollection.UpdateOneAsync(filter, update);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to update thread timestamp for message {MessageId}, thread {ThreadId}", messageId, threadId);
-            // Don't fail the entire operation if thread update fails
-        }
+        });
 
         return messageId;
-    }
-
-    // Helper method to check if error is related to transaction not being supported
-    private static bool IsTransactionNotSupportedError(Exception ex)
-    {
-        if (ex is MongoWriteException mongoWriteEx)
-        {
-            var message = mongoWriteEx.Message;
-            return message.Contains("Transaction is not active") || 
-                   message.Contains("Transactions are not supported") ||
-                   message.Contains("transaction") && message.Contains("not") && message.Contains("active");
-        }
-        
-        return ex.Message.Contains("Transaction is not active") || 
-               ex.Message.Contains("Transactions are not supported");
     }
 
     public async Task<List<string>> CreateManyAndUpdateThreadsAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
@@ -421,105 +340,44 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // Prepare each message for insertion
         foreach (var message in messages)
         {
-            if (message.Logs == null)
-            {
-                message.Logs = new List<MessageLogEvent>
-                {
-                    new MessageLogEvent
-                    {
-                        Timestamp = DateTime.UtcNow,
-                        Event = "created"
-                    }
-                };
-            }
-
             // Convert metadata to BsonDocument if needed
-            if (message.Metadata != null)
+            if (message.Data != null)
             {
-                message.Metadata = ConvertToBsonDocument(message.Metadata);
+                message.Data = ConvertToBsonDocument(message.Data);
             }
         }
 
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Try transaction approach first
+            // Use a session to perform all operations in a transaction
+            using var session = await _database.Client.StartSessionAsync();
+            
+            session.StartTransaction();
+
             try
             {
-                // Use a session to perform all operations in a transaction
-                using var session = await _database.Client.StartSessionAsync();
-                
-                // Simplified transaction options for Cosmos DB compatibility
-                var transactionOptions = new TransactionOptions(
-                    readConcern: ReadConcern.Local,
-                    writeConcern: WriteConcern.W1
-                );
-                
-                session.StartTransaction(transactionOptions);
+                // Insert all messages in a single operation
+                await _collection.InsertManyAsync(session, messages);
+                var messageIds = messages.Select(m => m.Id).ToList();
 
-                try
+                // Update all thread timestamps
+                foreach (var threadUpdate in threadTimestamps)
                 {
-                    // Insert all messages in a single operation
-                    await _collection.InsertManyAsync(session, messages);
-                    var messageIds = messages.Select(m => m.Id).ToList();
-
-                    // Update all thread timestamps
-                    foreach (var threadUpdate in threadTimestamps)
-                    {
-                        var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
-                        var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
-                        await _threadCollection.UpdateOneAsync(session, filter, update);
-                    }
-
-                    // Commit the transaction
-                    await session.CommitTransactionAsync();
-                    return messageIds;
+                    var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
+                    var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
+                    await _threadCollection.UpdateOneAsync(session, filter, update);
                 }
-                catch (Exception)
-                {
-                    try
-                    {
-                        await session.AbortTransactionAsync();
-                    }
-                    catch
-                    {
-                        // Ignore abort errors
-                    }
-                    throw;
-                }
+
+                // Commit the transaction
+                await session.CommitTransactionAsync();
+                return messageIds;
             }
-            catch (Exception ex) when (IsTransactionNotSupportedError(ex))
+            catch
             {
-                // Fallback to non-transactional approach
-                _logger.LogWarning(ex, "Transaction not supported, falling back to non-transactional operations");
-                return await CreateManyAndUpdateThreadsNonTransactionalAsync(messages, threadTimestamps);
+                await session.AbortTransactionAsync();
+                throw;
             }
         }, _logger, operationName: "CreateManyAndUpdateThreadsAsync");
-    }
-
-    // Fallback non-transactional implementation for bulk operations
-    private async Task<List<string>> CreateManyAndUpdateThreadsNonTransactionalAsync(List<ConversationMessage> messages, Dictionary<string, DateTime> threadTimestamps)
-    {
-        // Insert all messages in a single operation
-        await _collection.InsertManyAsync(messages);
-        var messageIds = messages.Select(m => m.Id).ToList();
-
-        // Update all thread timestamps (best effort)
-        foreach (var threadUpdate in threadTimestamps)
-        {
-            try
-            {
-                var filter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadUpdate.Key);
-                var update = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, threadUpdate.Value);
-                await _threadCollection.UpdateOneAsync(filter, update);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to update thread timestamp for thread {ThreadId}", threadUpdate.Key);
-                // Continue with other updates
-            }
-        }
-
-        return messageIds;
     }
 
     // Helper method to convert any object to BsonDocument
@@ -632,35 +490,17 @@ public class ConversationMessageRepository : IConversationMessageRepository
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var update = Builders<ConversationMessage>.Update
-                .Set(x => x.Status, status)
-                .Push(x => x.Logs, new MessageLogEvent
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = status.ToString()
-                });
+                .Set(x => x.Status, status);
 
             var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
             return result.ModifiedCount > 0;
         }, _logger, operationName: "UpdateStatusAsync");
     }
 
-    public async Task<bool> AddMessageLogAsync(string id, MessageLogEvent logEvent)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var update = Builders<ConversationMessage>.Update
-                .Push(x => x.Logs, logEvent)
-                .Set(x => x.UpdatedAt, DateTime.UtcNow);
-
-            var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-            return result.ModifiedCount > 0;
-        }, _logger, operationName: "AddMessageLogAsync");
-    }
-
     // Helper method to convert BsonDocument metadata back to the original object format
     private void ConvertBsonMetadataToObject(ConversationMessage message)
     {
-        if (message.Metadata is BsonDocument bsonDoc)
+        if (message.Data is BsonDocument bsonDoc)
         {
             // If it's a simple wrapper with a "value" field, extract the value
             if (bsonDoc.Contains("value") && bsonDoc.ElementCount == 1)
@@ -675,47 +515,84 @@ public class ConversationMessageRepository : IConversationMessageRepository
                     {
                         try
                         {
-                            message.Metadata = JsonSerializer.Deserialize<object>(strValue);
+                            message.Data = JsonSerializer.Deserialize<object>(strValue);
                             return;
                         }
                         catch
                         {
                             // If parsing fails, just use the string value
-                            message.Metadata = strValue;
+                            message.Data = strValue;
                             return;
                         }
                     }
                     
                     // It's just a string
-                    message.Metadata = strValue;
+                    message.Data = strValue;
                     return;
                 }
             }
             
-            // Convert the BsonDocument to a string representation then deserialize
-            string json = bsonDoc.ToJson();
-            try
-            {
-                message.Metadata = JsonSerializer.Deserialize<object>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-            catch
-            {
-                // If all else fails, keep the original metadata
-            }
+            // Convert BsonDocument to native .NET types properly
+            message.Data = ConvertBsonToNativeObject(bsonDoc);
         }
     }
 
-    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string agent, string workflowType, string participantId, int? page = null, int? pageSize = null)
+    // Helper method to convert BSON types to native .NET types for proper JSON serialization
+    private object? ConvertBsonToNativeObject(BsonValue bsonValue)
     {
-        _logger.LogDebug("Querying messages directly by agent {Agent} and participantId {ParticipantId}", agent, participantId);
+        switch (bsonValue.BsonType)
+        {
+            case BsonType.Document:
+                var doc = bsonValue.AsBsonDocument;
+                var dict = new Dictionary<string, object?>();
+                foreach (var element in doc)
+                {
+                    dict[element.Name] = ConvertBsonToNativeObject(element.Value);
+                }
+                return dict;
+                
+            case BsonType.Array:
+                var array = bsonValue.AsBsonArray;
+                return array.Select(ConvertBsonToNativeObject).ToList();
+                
+            case BsonType.String:
+                return bsonValue.AsString;
+                
+            case BsonType.Boolean:
+                return bsonValue.AsBoolean;
+                
+            case BsonType.Int32:
+                return bsonValue.AsInt32;
+                
+            case BsonType.Int64:
+                return bsonValue.AsInt64;
+                
+            case BsonType.Double:
+                return bsonValue.AsDouble;
+                
+            case BsonType.Decimal128:
+                return bsonValue.AsDecimal;
+                
+            case BsonType.DateTime:
+                return bsonValue.ToUniversalTime();
+                
+            case BsonType.Null:
+            case BsonType.Undefined:
+                return null;
+                
+            default:
+                // For any other types, convert to string as fallback
+                return bsonValue.ToString();
+        }
+    }
+
+    public async Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId,string workflowType, string participantId, int? page = null, int? pageSize = null, bool includeMetadata = false)
+    {
+        _logger.LogDebug("Querying messages directly by participantId {ParticipantId}", participantId);
         
         // First, get the thread ID for the given workflow and participant
         var threadFilter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
             Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, workflowType),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
@@ -728,13 +605,86 @@ public class ConversationMessageRepository : IConversationMessageRepository
         // If no thread exists, return empty list
         if (threadResult == null)
         {
-            _logger.LogInformation("No thread found for agent {Agent} and participantId {ParticipantId}", agent, participantId);
+            _logger.LogInformation("No thread found for workflowType {WorkflowType} and participantId {ParticipantId}", workflowType, participantId);
             return new List<ConversationMessage>();
         }
 
         string threadId = threadResult["_id"].AsObjectId.ToString();
         
-        // Get messages for this thread
-        return await GetByThreadIdAsync(tenantId, threadId, page, pageSize);
+        // Build message filter
+        var messageFilter = Builders<ConversationMessage>.Filter.And(
+            Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+            Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
+        );
+
+        // If includeMetadata is false, filter out messages with null or empty content
+        if (!includeMetadata)
+        {
+            var contentFilter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Ne(x => x.Text, null),
+                Builders<ConversationMessage>.Filter.Ne(x => x.Text, "")
+            );
+            messageFilter = Builders<ConversationMessage>.Filter.And(messageFilter, contentFilter);
+        }
+
+        var query = _collection.Find(messageFilter).Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt));
+
+        if (page.HasValue && pageSize.HasValue)
+        {
+            query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
+        }
+
+        var messages = await query.ToListAsync();
+        foreach (var message in messages)
+        {
+            ConvertBsonMetadataToObject(message);
+        }
+        return messages;
+    }
+
+    /// <summary>
+    /// Alternative approach using optimistic concurrency control
+    /// </summary>
+    public async Task<string> CreateAndUpdateThreadWithOptimisticConcurrencyAsync(ConversationMessage message, string threadId, DateTime timestamp)
+    {
+        // Convert metadata to BsonDocument if needed
+        if (message.Data != null)
+        {
+            message.Data = ConvertToBsonDocument(message.Data);
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            // First, get the current thread to check its current UpdatedAt
+            var currentThread = await _threadCollection.Find(t => t.Id == threadId)
+                .Project(t => new { t.Id, t.UpdatedAt })
+                .FirstOrDefaultAsync();
+            
+            if (currentThread == null)
+            {
+                _logger.LogWarning("Thread {ThreadId} not found during message creation", threadId);
+                // Still create the message even if thread doesn't exist
+                await _collection.InsertOneAsync(message);
+                return message.Id;
+            }
+
+            // Create the message first
+            await _collection.InsertOneAsync(message);
+            
+            // Update thread only if UpdatedAt hasn't changed (optimistic concurrency)
+            var threadFilter = Builders<ConversationThread>.Filter.And(
+                Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId),
+                Builders<ConversationThread>.Filter.Eq(t => t.UpdatedAt, currentThread.UpdatedAt)
+            );
+            var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, timestamp);
+            var threadResult = await _threadCollection.UpdateOneAsync(threadFilter, threadUpdate);
+            
+            if (threadResult.MatchedCount == 0)
+            {
+                _logger.LogDebug("Thread {ThreadId} was modified by another operation, timestamp update skipped", threadId);
+            }
+
+            return message.Id;
+        }, _logger, operationName: "CreateAndUpdateThreadWithOptimisticConcurrencyAsync");
     }
 }

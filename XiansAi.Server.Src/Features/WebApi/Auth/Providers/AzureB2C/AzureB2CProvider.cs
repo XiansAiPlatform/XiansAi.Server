@@ -34,11 +34,9 @@ public class AzureB2CProvider : IAuthProvider
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
     {
+        options.TokenValidationParameters.ValidIssuer = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/v2.0/";
         // Configuration is already initialized in constructor
-        // Use the custom domain for issuer validation to match the actual token issuer
-        options.TokenValidationParameters.ValidIssuer = $"https://login-dev.parkly.no/{_azureB2CConfig.TenantId}/v2.0/";
-        // Use the custom domain for authority to match the issuer and enable proper key discovery
-        options.Authority = $"https://login-dev.parkly.no/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
+        options.Authority = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
         options.Audience = _azureB2CConfig.Audience;
         options.TokenValidationParameters.NameClaimType = "name";
         options.Events = new JwtBearerEvents

@@ -42,7 +42,8 @@ public class PublicService : IPublicService
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly Random _random;
-    
+    private readonly ITenantService _tenantService;
+
     // Constants for configuration
     private const int CODE_EXPIRATION_MINUTES = 15;
     private const string VERIFICATION_CACHE_PREFIX = "verification:";
@@ -57,6 +58,7 @@ public class PublicService : IPublicService
     /// <param name="cache">Object cache service for storing verification codes</param>
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
+    /// <param name="tenantService">Service for tenant operations</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
         IAuthMgtConnect authMgtConnect, 
@@ -64,7 +66,8 @@ public class PublicService : IPublicService
         ITenantContext tenantContext,
         ObjectCache cache, 
         IEmailService emailService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ITenantService tenantService)
     {
         _authMgtConnect = authMgtConnect ?? throw new ArgumentNullException(nameof(authMgtConnect));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -73,6 +76,7 @@ public class PublicService : IPublicService
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
         _random = new Random();
+        _tenantService = tenantService;
     }
 
     /// <summary>
@@ -116,7 +120,7 @@ public class PublicService : IPublicService
             _logger.LogDebug("Generated tenant ID: {TenantId} from email: {Email}", tenantId, email);
 
             // Validate if the tenant ID is registered in our system
-            if (!IsValidTenantId(tenantId))
+            if (!await IsValidTenantId(tenantId))
             {
                 _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
                 return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
@@ -159,7 +163,7 @@ public class PublicService : IPublicService
         var tenantId = GenerateTenantId(email);
         
         // Double-check tenant validity
-        if (!IsValidTenantId(tenantId))
+        if (!await IsValidTenantId(tenantId))
         {
             _logger.LogWarning("Attempted to generate code for invalid tenant: {TenantId}", tenantId);
             throw new ArgumentException($"Email domain does not belong to a valid tenant. Please contact Xians.ai support to get access to the platform.");
@@ -182,19 +186,35 @@ public class PublicService : IPublicService
     /// </summary>
     /// <param name="tenantId">The tenant ID to validate</param>
     /// <returns>True if the tenant ID is valid, false otherwise</returns>
-    private bool IsValidTenantId(string tenantId)
+    private async Task<bool> IsValidTenantId(string tenantId)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
         {
             _logger.LogDebug("Tenant ID validation failed: tenantId is null or empty");
             return false;
         }
+
+        try
+        {
+            var result = await _tenantService.GetTenantByTenantId(tenantId);
+            var isValid = result.IsSuccess && result.Data != null;
             
-        var tenantSection = _configuration.GetSection($"Tenants:{tenantId}");
-        bool exists = tenantSection.Exists();
-        
-        _logger.LogDebug("Tenant ID {TenantId} validation result: {IsValid}", tenantId, exists);
-        return exists;
+            if (isValid)
+            {
+                _logger.LogDebug("Tenant ID {TenantId} is valid", tenantId);
+            }
+            else
+            {
+                _logger.LogDebug("Tenant ID {TenantId} is not valid", tenantId);
+            }
+            
+            return isValid;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating tenant ID {TenantId}", tenantId);
+            return false;
+        }
     }
 
     /// <summary>

@@ -15,6 +15,7 @@ public enum ConversationThreadStatus
     Archived
 }
 
+[BsonIgnoreExtraElements]
 public class ConversationThread
 {
     [BsonId]
@@ -49,8 +50,6 @@ public class ConversationThread
     [BsonRepresentation(BsonType.String)]
     public required ConversationThreadStatus Status { get; set; }
 
-    [BsonElement("is_internal_thread")]
-    public bool IsInternalThread { get; set; }
 }
 
 public interface IConversationThreadRepository
@@ -71,8 +70,49 @@ public class ConversationThreadRepository : IConversationThreadRepository
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _collection = database.GetCollection<ConversationThread>("conversation_thread");
+
+        // Create indexes asynchronously
+        CreateIndexesAsync();
     }
 
+    private async void CreateIndexesAsync()
+    {
+        // thread_status_lookup index (tenant_id, status)
+        var statusLookupIndex = Builders<ConversationThread>.IndexKeys
+            .Ascending(x => x.TenantId)
+            .Ascending(x => x.Status);
+        
+        var statusLookupIndexModel = new CreateIndexModel<ConversationThread>(
+            statusLookupIndex, 
+            new CreateIndexOptions { Background = true, Name = "thread_status_lookup" }
+        );
+
+        // thread_updated_at index (updated_at descending)
+        var updatedAtIndex = Builders<ConversationThread>.IndexKeys
+            .Descending(x => x.UpdatedAt);
+        
+        var updatedAtIndexModel = new CreateIndexModel<ConversationThread>(
+            updatedAtIndex,
+            new CreateIndexOptions { Background = true, Name = "thread_updated_at" }
+        );
+
+        // tenant_agent_lookup index (tenant_id, agent)
+        var tenantAgentLookupIndex = Builders<ConversationThread>.IndexKeys
+            .Ascending(x => x.TenantId)
+            .Ascending(x => x.Agent);
+        
+        var tenantAgentLookupIndexModel = new CreateIndexModel<ConversationThread>(
+            tenantAgentLookupIndex,
+            new CreateIndexOptions { Background = true, Name = "tenant_agent_lookup" }
+        );
+
+        // Create all indexes
+        await _collection.Indexes.CreateManyAsync([ 
+            statusLookupIndexModel,
+            updatedAtIndexModel,
+            tenantAgentLookupIndexModel
+        ]);
+    }
 
     public async Task<bool> UpdateWorkflowIdAndTypeAsync(string id, string workflowId, string workflowType)
     {

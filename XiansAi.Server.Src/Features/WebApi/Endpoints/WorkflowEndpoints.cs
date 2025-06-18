@@ -46,19 +46,16 @@ public static class WorkflowEndpoints
         .WithOpenApi();
 
         workflowsGroup.MapGet("/", async (
-            [FromQuery] DateTime? startTime,
-            [FromQuery] DateTime? endTime,
-            [FromQuery] string? owner,
             [FromQuery] string? status,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
-            var result = await endpoint.GetWorkflows(startTime, endTime, owner, status);
+            var result = await endpoint.GetWorkflows(status);
             return result.ToHttpResult();
         })
         .WithName("Get Workflows")
         .WithOpenApi(operation => {
             operation.Summary = "Get workflows with optional filters";
-            operation.Description = "Retrieves workflows with optional filtering by date range and owner";
+            operation.Description = "Retrieves workflows with optional filtering by status";
             return operation;
         });
 

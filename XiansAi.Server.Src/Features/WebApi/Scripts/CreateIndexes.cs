@@ -18,6 +18,13 @@ public class CreateIndexes
             )
         );
 
+        // Create index for sorting by update date
+        await collection.Indexes.CreateOneAsync(
+            new CreateIndexModel<FlowDefinition>(
+                Builders<FlowDefinition>.IndexKeys.Descending(x => x.UpdatedAt)
+            )
+        );
+
         // Create index for agent field (used for querying by agent)
         await collection.Indexes.CreateOneAsync(
             new CreateIndexModel<FlowDefinition>(
