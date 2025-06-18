@@ -15,11 +15,13 @@ namespace XiansAi.Server.Shared.Websocket
         private readonly ITenantContext? _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IAuthorizationCacheService _authorizationCacheService;
 
-        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
+        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger, IAuthorizationCacheService authorizationCacheService)
         {
             _messageService = messageService;
             _httpContextAccessor = httpContextAccessor;
+            _authorizationCacheService = authorizationCacheService;
             var httpContext = _httpContextAccessor.HttpContext;
 
             if (httpContext != null)
@@ -67,7 +69,32 @@ namespace XiansAi.Server.Shared.Websocket
                 Context.Abort();
             }
         }
-
+        private async Task SetAuthorizationFromHeader(ChatOrDataRequest request)
+        {
+            if (request.Authorization == null)
+            {
+                var userAccessGuid = Context.User?.Claims?.FirstOrDefault(c => c.Type == "UserAccessGuid")?.Value;
+                if (!string.IsNullOrEmpty(userAccessGuid))
+                {
+                    var token = await _authorizationCacheService.GetAuthorization(userAccessGuid);
+                    _logger.LogDebug("UserAccessGuid found in context: {UserAccessGuid}", userAccessGuid);
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        request.Authorization = token;
+                        _logger.LogDebug("Authorization token set from UserAccessGuid: {Token}", token);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Token not found");
+                        Context.Abort();
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("UserAccessGuid claim not found in context");
+                }
+            }
+        }
         private void EnsureTenantContext()
         {
             if (_tempTenantContext == null) throw new InvalidOperationException("TenantContext not properly initialized");
@@ -102,22 +129,26 @@ namespace XiansAi.Server.Shared.Websocket
         {
             _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
             EnsureTenantContext();
+            // Extract UserAccessGuid from claims
+
+            await SetAuthorizationFromHeader(request);
+            //SetAuthorizationFromHeader(request, _httpContextAccessor.HttpContext!);
             try
             {
                 var messageTypeEnum = Enum.Parse<MessageType>(messageType);
                 // Step 1: Process inbound
-                var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
+                //var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
-                if (inboundResult.Data != null)
-                {                 
-                    // Notify client message was received
-                    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
-                }
-                else
-                {
-                    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
-                    Context.Abort();
-                }
+                //if (inboundResult.Data != null)
+                //{
+                //    // Notify client message was received
+                //    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
+                //}
+                //else
+                //{
+                //    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
+                //    Context.Abort();
+                //}
             }
             catch (Exception ex)
             {
