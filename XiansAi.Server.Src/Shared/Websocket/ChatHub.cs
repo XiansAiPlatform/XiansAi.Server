@@ -129,26 +129,23 @@ namespace XiansAi.Server.Shared.Websocket
         {
             _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
             EnsureTenantContext();
-            // Extract UserAccessGuid from claims
-
             await SetAuthorizationFromHeader(request);
-            //SetAuthorizationFromHeader(request, _httpContextAccessor.HttpContext!);
             try
             {
                 var messageTypeEnum = Enum.Parse<MessageType>(messageType);
                 // Step 1: Process inbound
-                //var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
+                var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
-                //if (inboundResult.Data != null)
-                //{
-                //    // Notify client message was received
-                //    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
-                //}
-                //else
-                //{
-                //    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
-                //    Context.Abort();
-                //}
+                if (inboundResult.Data != null)
+                {
+                    // Notify client message was received
+                    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
+                    Context.Abort();
+                }
             }
             catch (Exception ex)
             {
