@@ -58,10 +58,10 @@ namespace XiansAi.Server.Shared.Auth
                     return AuthenticateResult.Fail("No tenantId provided in query string");
                 }
 
-                if (string.IsNullOrEmpty(userAccessToken))
-                {
-                    return AuthenticateResult.Fail("No User Access Token provided in query string");
-                }
+                // if (string.IsNullOrEmpty(userAccessToken))
+                // {
+                //     return AuthenticateResult.Fail("No User Access Token provided in query string");
+                // }
                 //if (string.IsNullOrEmpty(accessGuid)) {
                 //    return Task.FromResult(AuthenticateResult.Fail("No User Access Token provided in query string"));
                 //}
