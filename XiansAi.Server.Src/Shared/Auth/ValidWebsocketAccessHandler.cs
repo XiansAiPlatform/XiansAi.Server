@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
+using System.Text.Json;
 using System.Security.Claims;
 
 namespace XiansAi.Server.Shared.Auth
@@ -59,6 +60,8 @@ namespace XiansAi.Server.Shared.Auth
                 {
                     // Get the secrets section
                     var secrets = websocketConfig.GetSection("Secrets").Get<Dictionary<string, string>>();
+                    _logger.LogInformation("Secrets: {Secrets}", JsonSerializer.Serialize(secrets));
+                    _logger.LogInformation("TenantId: {TenantId}", tenantId);
                     // Check if the secrets section is null
                     if (secrets != null)
                     {
