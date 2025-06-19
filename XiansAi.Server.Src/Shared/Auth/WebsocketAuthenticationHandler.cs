@@ -57,7 +57,7 @@ namespace XiansAi.Server.Shared.Auth
                 {
                     return AuthenticateResult.Fail("No tenantId provided in query string");
                 }
-
+                ////The below code is for validating the User Access token and Guid from the chache
                 // if (string.IsNullOrEmpty(userAccessToken))
                 // {
                 //     return AuthenticateResult.Fail("No User Access Token provided in query string");
