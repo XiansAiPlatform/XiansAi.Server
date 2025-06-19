@@ -68,6 +68,21 @@ public static class AuthConfigurationExtensions
                 policy.AuthenticationSchemes.Add("JWT");
                 policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.TenantWithoutConfig));
             });
+
+            //role based policies
+            options.AddPolicy("RequireSysAdmin", policy =>
+            {
+                policy.AuthenticationSchemes.Add("JWT");
+                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation));
+                policy.RequireRole(SystemRoles.SysAdmin);
+            });
+
+            options.AddPolicy("RequireTenantAdmin", policy =>
+            {
+                policy.AuthenticationSchemes.Add("JWT");
+                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation));
+                policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin);
+            });
         });
 
         // Register the unified authorization handler

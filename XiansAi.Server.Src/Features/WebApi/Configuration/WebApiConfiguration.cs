@@ -1,10 +1,11 @@
-using Features.WebApi.Endpoints;
 using Features.WebApi.Auth;
+using Features.WebApi.Endpoints;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
-using XiansAi.Server.Features.WebApi.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using XiansAi.Server.Features.WebApi.Endpoints;
+using XiansAi.Server.Features.WebApi.Repositories;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Configuration;
 
@@ -30,13 +31,16 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IPublicService, PublicService>();
-        
+        builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
+        builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
+
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
-        
+        builder.Services.AddScoped<IUserRoleRepository, UserRoleRepository>();
+
         return builder;
     }
     
@@ -54,7 +58,9 @@ public static class WebApiConfiguration
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);
         AgentEndpoints.MapAgentEndpoints(app);
-        
+        RoleManagementEndpoints.MapRoleManagementEndpoints(app);
+
+
         return app;
     }
 } 

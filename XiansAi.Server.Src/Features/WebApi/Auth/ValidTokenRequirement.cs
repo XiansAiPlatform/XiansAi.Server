@@ -1,6 +1,7 @@
 using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Features.WebApi.Auth.Providers;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth;
 
@@ -14,10 +15,11 @@ public class ValidTokenRequirement : BaseAuthRequirement
 public class TokenClientHandler : BaseAuthHandler<ValidTokenRequirement>
 {
     public TokenClientHandler(
-        ILogger<TokenClientHandler> logger, 
+        ILogger<TokenClientHandler> logger,
         ITenantContext tenantContext,
+        IRoleCacheService roleCacheService,
         IAuthProviderFactory authProviderFactory)
-        : base(logger, tenantContext, authProviderFactory)
+        : base(logger, tenantContext, roleCacheService, authProviderFactory)
     {
     }
 
@@ -25,8 +27,8 @@ public class TokenClientHandler : BaseAuthHandler<ValidTokenRequirement>
         AuthorizationHandlerContext context,
         ValidTokenRequirement requirement)
     {
-        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(context);
-        
+        var (success, loggedInUser, authorizedTenantIds, roles) = await ValidateToken(context);
+
         if (!success)
         {
             context.Fail();
@@ -36,7 +38,8 @@ public class TokenClientHandler : BaseAuthHandler<ValidTokenRequirement>
         // set tenant context and succeed
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
-        
+        _tenantContext.UserRoles = roles?.ToArray() ?? Array.Empty<string>();
+
         context.Succeed(requirement);
     }
 }
