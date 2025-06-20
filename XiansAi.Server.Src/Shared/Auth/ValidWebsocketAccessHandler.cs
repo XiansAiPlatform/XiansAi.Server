@@ -65,16 +65,28 @@ namespace XiansAi.Server.Shared.Auth
                     // Check if the secrets section is null
                     if (secrets != null)
                     {
-                        // Check if the provided tenantId exists in configuration
-                        if (!secrets.ContainsKey(tenantId))
+                        // Azure Key Vault replaces dots with underscores, so try both versions
+                        var safeTenantId = tenantId.Replace(".", "_");
+                        string? expectedSecret = null;
+                        
+                        // First try the original tenantId
+                        if (secrets.ContainsKey(tenantId))
                         {
-                            _logger.LogWarning("Provided tenantId {TenantId} not found in configuration", tenantId);
+                            expectedSecret = secrets[tenantId];
+                        }
+                        // If not found, try the underscore version (Azure Key Vault format)
+                        else if (secrets.ContainsKey(safeTenantId))
+                        {
+                            expectedSecret = secrets[safeTenantId];
+                            _logger.LogDebug("Found secret using Azure Key Vault format: {SafeTenantId}", safeTenantId);
+                        }
+                        
+                        if (expectedSecret == null)
+                        {
+                            _logger.LogWarning("Provided tenantId {TenantId} (or {SafeTenantId}) not found in configuration", tenantId, safeTenantId);
                             context.Fail();
                             return Task.CompletedTask;
                         }
-
-                        // Get the expected secret for this tenant
-                        var expectedSecret = secrets[tenantId];
 
                         // Verify if the provided access token matches the expected secret
                         if (accessToken == expectedSecret)

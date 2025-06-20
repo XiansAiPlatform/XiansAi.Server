@@ -81,21 +81,37 @@ namespace XiansAi.Server.Shared.Auth
                     {
                         // Get the secrets section
                         var secrets = websocketConfig.GetSection("Secrets").Get<Dictionary<string, string>>();
+
+                        
+
                         // Check if the secrets section is null
                         if (secrets == null)
                         {
                             _logger.LogWarning("WebSocket Secrets not found in configuration");
                             return AuthenticateResult.Fail("WebSocket Secrets not found in configuration");
                         }
-                        // Check if the provided tenantId exists in configuration
-                        if (!secrets.ContainsKey(tenantId))
+                        
+                        // Azure Key Vault replaces dots with underscores, so try both versions
+                        var safeTenantId = tenantId.Replace(".", "_");
+                        string? expectedSecret = null;
+                        
+                        // First try the original tenantId
+                        if (secrets.ContainsKey(tenantId))
                         {
-                            _logger.LogWarning("Provided tenantId {TenantId} not found in configuration", tenantId);
+                            expectedSecret = secrets[tenantId];
+                        }
+                        // If not found, try the underscore version (Azure Key Vault format)
+                        else if (secrets.ContainsKey(safeTenantId))
+                        {
+                            expectedSecret = secrets[safeTenantId];
+                            _logger.LogDebug("Found secret using Azure Key Vault format: {SafeTenantId}", safeTenantId);
+                        }
+                        
+                        if (expectedSecret == null)
+                        {
+                            _logger.LogWarning("Provided tenantId {TenantId} (or {SafeTenantId}) not found in configuration", tenantId, safeTenantId);
                             return AuthenticateResult.Fail("Provided tenantId not found in configuration");
                         }
-
-                        // Get the expected secret for this tenant
-                        var expectedSecret = secrets[tenantId];
 
                         // Verify if the provided access token matches the expected secret
                         if (accessToken == expectedSecret)
