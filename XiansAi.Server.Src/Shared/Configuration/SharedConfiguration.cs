@@ -81,15 +81,7 @@ public static class SharedConfiguration
             });
         });
 
-        // Add SignalR services with CORS support
-        var corsSettings = builder.Configuration.GetSection("Cors").Get<CorsSettings>() ?? new CorsSettings();
-        builder.Services.AddSignalR(options =>
-        {
-            options.EnableDetailedErrors = builder.Environment.IsDevelopment();
-        }).AddJsonProtocol(options =>
-        {
-            options.PayloadSerializerOptions.PropertyNamingPolicy = null;
-        });
+        builder.Services.AddSignalR();
 
         builder.Services.AddSingleton<MongoChangeStreamService>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
@@ -136,9 +128,8 @@ public static class SharedConfiguration
         app.UseAuthentication();
         app.UseAuthorization();
 
-        // Configure Websocket with CORS
-        app.MapHub<ChatHub>("/ws/chat")
-            .RequireCors(corsSettings.PolicyName);
+        // Configure Websocket
+        app.MapHub<ChatHub>("/ws/chat");
 
         return app;
     }
