@@ -50,6 +50,39 @@ public static class RoleManagementEndpoints
             Description = "Retrieves all users that have been assigned a specific role within a tenant"
         });
 
+        group.MapGet("/tenant/{tenantId}/admins", async (
+            string tenantId,
+            [FromServices] IRoleManagementService roleService) =>
+        {
+            // Get all users with the TenantAdmin role for the given tenant
+            var result = await roleService.GetUsersInfoByRoleAsync(SystemRoles.TenantAdmin, tenantId);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin))
+        .WithName("GetAllTenantAdmins")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Get all tenant admins by tenant ID",
+            Description = "Retrieves all users with the TenantAdmin role for the specified tenant"
+        });
+
+        group.MapGet("/current", async (
+            [FromServices] IRoleManagementService roleService) =>
+        {
+            var result = await roleService.GetCurrentUserRolesAsync();
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("GetCurrentUserRoles")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Get current user's roles",
+            Description = "Retrieves the roles for the currently authenticated user in the current tenant context"
+        });
+
         group.MapPost("/promote-tenant-admin", async (
             [FromBody] RolesDto request,
             [FromServices] IRoleManagementService roleService) =>

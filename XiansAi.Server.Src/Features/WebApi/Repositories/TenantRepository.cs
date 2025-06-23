@@ -1,6 +1,7 @@
-using MongoDB.Driver;
-using MongoDB.Bson;
 using Features.WebApi.Models;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
 
@@ -11,7 +12,7 @@ public interface ITenantRepository
     Task<Tenant> GetByIdAsync(string id);
     Task<Tenant> GetByTenantIdAsync(string tenantId);
     Task<Tenant> GetByDomainAsync(string domain);
-    Task<List<Tenant>> GetAllAsync();
+    Task<List<Tenant>> GetAllAsync(string? tenantId = null);
     Task CreateAsync(Tenant tenant);
     Task<bool> UpdateAsync(string id, Tenant tenant);
     Task<bool> DeleteAsync(string id);
@@ -86,8 +87,15 @@ public class TenantRepository : ITenantRepository
         return await _collection.Find(tenant => tenant.Domain == domain).FirstOrDefaultAsync();
     }
 
-    public async Task<List<Tenant>> GetAllAsync()
+    public async Task<List<Tenant>> GetAllAsync(string? tenantId = null)
     {
+        // Tenant admin: return only their own tenant
+        if (tenantId != null)
+        {
+            var tenant = await _collection.Find(t => t.TenantId == tenantId).FirstOrDefaultAsync();
+            return tenant != null ? new List<Tenant> { tenant } : new List<Tenant>();
+        }
+
         return await _collection.Find(_ => true).ToListAsync();
     }
 

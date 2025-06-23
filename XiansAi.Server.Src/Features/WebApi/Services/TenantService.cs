@@ -7,6 +7,8 @@ using Shared.Utils.Services;
 using Shared.Data.Models;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Driver;
+using Auth0.ManagementApi.Models;
+using Microsoft.AspNetCore.Authentication;
 
 namespace Features.WebApi.Services;
 
@@ -59,6 +61,7 @@ public class TenantService : ITenantService
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
 
+
     public TenantService(
         ITenantRepository tenantRepository,
         ILogger<TenantService> logger,
@@ -67,6 +70,26 @@ public class TenantService : ITenantService
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+    }
+
+    private string? EnsureTenantAccessOrThrow(string tenantId)
+    {
+        // If system admin, return null (indicating unrestricted access)
+        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        {
+            return null;
+        }
+
+        // If tenant admin and tenantId matches, return the tenant
+        if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin) &&
+            _tenantContext.TenantId == tenantId)
+        {
+            return tenantId;
+        }
+
+        // Otherwise, forbidden
+        _logger.LogWarning("Tenant admin attempted to access tenant {Id} but is restricted to their own tenant {TenantId}", tenantId, _tenantContext.TenantId);
+        throw new Exception(("Access denied: insufficient permissions"));
     }
 
     public async Task<ServiceResult<Tenant>> GetTenantById(string id)
@@ -133,7 +156,8 @@ public class TenantService : ITenantService
     {
         try
         {
-            var tenants = await _tenantRepository.GetAllAsync();
+            var tenantId = EnsureTenantAccessOrThrow(_tenantContext.TenantId);
+            var tenants = await _tenantRepository.GetAllAsync(tenantId);
             return ServiceResult<List<Tenant>>.Success(tenants);
         }
         catch (Exception ex)
@@ -188,6 +212,8 @@ public class TenantService : ITenantService
     {
         try
         {
+            EnsureTenantAccessOrThrow(id);
+
             var existingTenant = await _tenantRepository.GetByIdAsync(id);
             if (existingTenant == null)
             {

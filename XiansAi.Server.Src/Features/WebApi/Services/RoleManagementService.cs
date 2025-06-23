@@ -1,4 +1,5 @@
-﻿using Shared.Auth;
+﻿using Features.WebApi.Auth.Providers;
+using Shared.Auth;
 using Shared.Utils.Services;
 using System.Text.Json.Serialization;
 using XiansAi.Server.Features.WebApi.Models;
@@ -17,6 +18,14 @@ namespace XiansAi.Server.Features.WebApi.Services
         public List<string> Roles { get; set; } = new();
     }
 
+    public class UserInfoDto
+    {
+        [JsonPropertyName("userId")]
+        public required string UserId { get; set; }
+        [JsonPropertyName("nickname")]
+        public required string Nickname { get; set; }
+    }
+
     public interface IRoleManagementService
     {
         Task<ServiceResult<bool>> AssignRolesToUserAsync(string userId, string tenantId, List<string> roles);
@@ -24,6 +33,9 @@ namespace XiansAi.Server.Features.WebApi.Services
         Task<ServiceResult<List<string>>> GetUserRolesAsync(string userId, string tenantId);
         Task<ServiceResult<List<UserRole>>> GetUsersByRoleAsync(string role, string tenantId);
         Task<ServiceResult<bool>> PromoteToTenantAdminAsync(string userId, string tenantId);
+        Task<ServiceResult<List<string>>> GetCurrentUserRolesAsync();
+
+        Task<ServiceResult<List<UserInfoDto>>> GetUsersInfoByRoleAsync(string role, string tenantId);
     }
 
     public class RoleManagementService : IRoleManagementService
@@ -32,17 +44,20 @@ namespace XiansAi.Server.Features.WebApi.Services
         private readonly IRoleCacheService _roleCacheService;
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<RoleManagementService> _logger;
+        private readonly IAuthProviderFactory _authProviderFactory;
 
         public RoleManagementService(
             IUserRoleRepository userRoleRepository,
             IRoleCacheService roleCacheService,
             ITenantContext tenantContext,
-            ILogger<RoleManagementService> logger)
+            ILogger<RoleManagementService> logger,
+            IAuthProviderFactory authProviderFactory)
         {
             _userRoleRepository = userRoleRepository;
             _roleCacheService = roleCacheService;
             _tenantContext = tenantContext;
             _logger = logger;
+            _authProviderFactory = authProviderFactory;
         }
 
         public async Task<ServiceResult<bool>> AssignRolesToUserAsync(string userId, string tenantId, List<string> roles)
@@ -154,6 +169,35 @@ namespace XiansAi.Server.Features.WebApi.Services
             }
         }
 
+        public async Task<ServiceResult<List<UserInfoDto>>> GetUsersInfoByRoleAsync(string role, string tenantId)
+        {
+            var validationResult = ValidateTenantAccess(tenantId, "access user roles");
+            if (!validationResult.IsSuccess)
+                return ServiceResult<List<UserInfoDto>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+
+            try
+            {
+                var users = await _userRoleRepository.GetUsersByRoleAsync(role, tenantId);
+                if (users == null || !users.Any())
+                {
+                    return ServiceResult<List<UserInfoDto>>.Success(new List<UserInfoDto>());
+                }
+
+                var userInfoList = new List<UserInfoDto>();
+                foreach (var user in users)
+                {
+                    var info = await GetUserNameAndEmailAsync(user.UserId);
+                    userInfoList.Add(info);
+                }
+                return ServiceResult<List<UserInfoDto>>.Success(userInfoList);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving users by role.");
+                return ServiceResult<List<UserInfoDto>>.InternalServerError("An error occurred while retrieving users by role.");
+            }
+        }
+
         public async Task<ServiceResult<bool>> PromoteToTenantAdminAsync(string userId, string tenantId)
         {
             var validationResult = ValidateTenantAccess(tenantId, "promote to tenant admin");
@@ -175,6 +219,44 @@ namespace XiansAi.Server.Features.WebApi.Services
             {
                 _logger.LogError(ex, "Error promoting user to Tenant Admin.");
                 return ServiceResult<bool>.InternalServerError("An error occurred while promoting user to Tenant Admin.");
+            }
+        }
+
+        public async Task<ServiceResult<List<string>>> GetCurrentUserRolesAsync()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+                {
+                    _logger.LogWarning("No logged in user found in context");
+                    return ServiceResult<List<string>>.Unauthorized("No logged in user found");
+                }
+
+                if (string.IsNullOrEmpty(_tenantContext.TenantId))
+                {
+                    _logger.LogWarning("No tenant ID found in context for user {UserId}", 
+                        _tenantContext.LoggedInUser);
+                    return ServiceResult<List<string>>.BadRequest("No tenant ID found in context");
+                }
+
+                // Get roles from cache to ensure consistency with other role checks
+                var roles = await _roleCacheService.GetUserRolesAsync(
+                    _tenantContext.LoggedInUser,
+                    _tenantContext.TenantId);
+
+                _logger.LogInformation("Retrieved roles for user {UserId} in tenant {TenantId}: {@Roles}",
+                    _tenantContext.LoggedInUser,
+                    _tenantContext.TenantId,
+                    roles);
+
+                return ServiceResult<List<string>>.Success(roles);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving current user roles for user {UserId} in tenant {TenantId}",
+                    _tenantContext.LoggedInUser,
+                    _tenantContext.TenantId);
+                return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving current user roles");
             }
         }
 
@@ -202,6 +284,18 @@ namespace XiansAi.Server.Features.WebApi.Services
             _logger.LogWarning("User {UserId} attempted to {Operation} without proper permissions",
                 _tenantContext.LoggedInUser, operation);
             return ServiceResult.Failure("Insufficient permissions to manage roles", StatusCode.Forbidden);
+        }
+
+        private async Task<UserInfoDto> GetUserNameAndEmailAsync(string userId)
+        {
+            var provider = _authProviderFactory.GetProvider();
+            var user = await provider.GetUserInfo(userId);
+
+            return new UserInfoDto
+            {
+                UserId = userId,
+                Nickname = user.Nickname ?? "Unknown User",
+            };
         }
     }
 }
