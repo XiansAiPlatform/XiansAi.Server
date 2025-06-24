@@ -32,7 +32,7 @@ namespace XiansAi.Server.Features.WebApi.Services
                 roles = userRoles?.Roles ?? new List<string>();
                 _cache.Set(cacheKey, roles, _cacheDuration);
             }
-            return roles;
+            return roles ?? new List<string>();
         }
 
         public void InvalidateUserRoles(string userId, string tenantId)
