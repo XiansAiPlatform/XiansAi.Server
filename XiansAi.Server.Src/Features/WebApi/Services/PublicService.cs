@@ -1,11 +1,12 @@
-using Microsoft.Extensions.Caching.Distributed;
 using Features.WebApi.Auth;
 using Features.WebApi.Models;
+using Microsoft.Extensions.Caching.Distributed;
 using Shared.Auth;
-using Shared.Utils.Services;
-using Shared.Utils;
-using XiansAi.Server.Utils;
 using Shared.Services;
+using Shared.Utils;
+using Shared.Utils.Services;
+using XiansAi.Server.Features.WebApi.Services;
+using XiansAi.Server.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -35,7 +36,6 @@ public interface IPublicService
 /// </summary>
 public class PublicService : IPublicService
 {
-    private readonly IAuthMgtConnect _authMgtConnect;
     private readonly ILogger<PublicService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly ObjectCache _cache;
@@ -43,6 +43,7 @@ public class PublicService : IPublicService
     private readonly IConfiguration _configuration;
     private readonly Random _random;
     private readonly ITenantService _tenantService;
+    private readonly IUserTenantService _userTenantService;
 
     // Constants for configuration
     private const int CODE_EXPIRATION_MINUTES = 15;
@@ -59,6 +60,7 @@ public class PublicService : IPublicService
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
     /// <param name="tenantService">Service for tenant operations</param>
+    /// <param name="userTenantService">Service for user-tenant relationships</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
         IAuthMgtConnect authMgtConnect, 
@@ -67,9 +69,9 @@ public class PublicService : IPublicService
         ObjectCache cache, 
         IEmailService emailService,
         IConfiguration configuration,
+        IUserTenantService userTenantService,
         ITenantService tenantService)
     {
-        _authMgtConnect = authMgtConnect ?? throw new ArgumentNullException(nameof(authMgtConnect));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -77,6 +79,7 @@ public class PublicService : IPublicService
         _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
         _random = new Random();
         _tenantService = tenantService;
+        _userTenantService = userTenantService ?? throw new ArgumentNullException(nameof(userTenantService));
     }
 
     /// <summary>
@@ -276,7 +279,7 @@ The Xians.ai Team";
                 var tenantId = GenerateTenantId(email);
                 _logger.LogDebug("Setting tenant {TenantId} for user {UserId}", tenantId, user);
                 
-                await _authMgtConnect.SetNewTenant(user, tenantId);
+                await _userTenantService.AddTenantToUser(user, tenantId);
                 _logger.LogInformation("Successfully set tenant {TenantId} for user {UserId}", tenantId, user);
             }
             catch (Exception ex)
