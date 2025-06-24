@@ -53,7 +53,7 @@ public class AzureB2CProvider : IAuthProvider
         };
     }
 
-    public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
+    public Task<(bool success, string? userId)> ValidateToken(string token)
     {
         return _tokenService.ProcessToken(token);
     }

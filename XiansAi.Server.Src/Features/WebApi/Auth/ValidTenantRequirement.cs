@@ -2,6 +2,7 @@ using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Features.WebApi.Auth.Providers;
 using Features.WebApi.Services;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth;
 
@@ -16,16 +17,20 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
 {
     private readonly IConfiguration _configuration;
     private readonly ITenantService _tenantService;
+    private readonly IUserTenantCacheService _userTenantCacheService;
+
     public ValidTenantHandler(
         ILogger<ValidTenantHandler> logger, 
         ITenantContext tenantContext,
         IConfiguration configuration,
         IAuthProviderFactory authProviderFactory,
+        IUserTenantCacheService userTenantCacheService,
         ITenantService tenantService)
         : base(logger, tenantContext, authProviderFactory)
     {
         _configuration = configuration;
         _tenantService = tenantService;
+        _userTenantCacheService = userTenantCacheService;
     }
 
     protected override async Task HandleRequirementAsync(
@@ -44,7 +49,7 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
             return;
         }
 
-        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(context);
+        var (success, loggedInUser) = await ValidateToken(context);
         if (!success)
         {
             _logger.LogWarning("Token validation failed");
@@ -52,7 +57,10 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
             return;
         }
 
-        if (authorizedTenantIds == null || !authorizedTenantIds.Contains(currentTenantId))
+        // get authorized tenant IDs from cache or DB collection
+        var authorizedTenantIds = await _userTenantCacheService.GetUserTenantAsync(loggedInUser!);
+
+        if (!authorizedTenantIds.Contains(currentTenantId))
         {
             _logger.LogWarning($"Tenant ID {currentTenantId} is not authorized for this token holder");
             context.Fail(new AuthorizationFailureReason(this, $"Tenant {currentTenantId} is not authorized for this token holder"));

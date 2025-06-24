@@ -14,6 +14,7 @@ public static class WebApiConfiguration
     public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
     {
         // Register authorization handlers
+        builder.Services.AddScoped<IUserTenantCacheService, UserTenantCacheService>();
         builder.Services.AddScoped<IAuthorizationHandler, ValidTenantHandler>();
         builder.Services.AddScoped<IAuthorizationHandler, TokenClientHandler>();
 

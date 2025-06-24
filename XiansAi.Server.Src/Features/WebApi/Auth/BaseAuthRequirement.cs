@@ -28,7 +28,7 @@ public abstract class BaseAuthHandler<T> : AuthorizationHandler<T> where T : Bas
         _authProviderFactory = authProviderFactory;
     }
 
-    protected virtual async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)>
+    protected virtual async Task<(bool success, string? loggedInUser)>
         ValidateToken(AuthorizationHandlerContext context)
     {
         var httpContext = context.Resource as HttpContext;
@@ -37,7 +37,7 @@ public abstract class BaseAuthHandler<T> : AuthorizationHandler<T> where T : Bas
         if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
         {
             _logger.LogWarning("No Bearer token found in Authorization header");
-            return (false, null, null);
+            return (false, null);
         }
 
         var token = authHeader.Substring("Bearer ".Length);
@@ -45,23 +45,23 @@ public abstract class BaseAuthHandler<T> : AuthorizationHandler<T> where T : Bas
         try
         {
             var authProvider = _authProviderFactory.GetProvider();
-            var (success, userId, tenantIds) = await authProvider.ValidateToken(token);
+            var (success, userId) = await authProvider.ValidateToken(token);
             
             if (!success || string.IsNullOrEmpty(userId))
             {
                 _logger.LogWarning("Token validation failed");
-                return (false, null, null);
+                return (false, null);
             }
             
             // Set the user name to the logged in user
             httpContext?.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId)]));
 
-            return (true, userId, tenantIds);
+            return (true, userId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing JWT token");
-            return (false, null, null);
+            return (false, null);
         }
     }
 } 

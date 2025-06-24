@@ -1,8 +1,9 @@
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Features.WebApi.Auth.Providers;
-using Shared.Auth;
 using Features.WebApi.Services;
+using Microsoft.AspNetCore.Authorization;
+using Shared.Auth;
+using System.Security.Claims;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth;
 
@@ -76,12 +77,14 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private readonly ITokenValidationCache _tokenCache;
     private readonly IConfiguration _configuration;
     private readonly ITenantService _tenantService;
+    private readonly IUserTenantCacheService _userTenantCacheService;
     public AuthRequirementHandler(
         ILogger<AuthRequirementHandler> logger,
         ITenantContext tenantContext,
         IAuthProviderFactory authProviderFactory,
         ITokenValidationCache tokenCache,
         IConfiguration configuration,
+        IUserTenantCacheService userTenantCacheService,
         ITenantService tenantService)
     {
         _logger = logger;
@@ -90,6 +93,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         _tokenCache = tokenCache;
         _configuration = configuration;
         _tenantService = tenantService;
+        _userTenantCacheService = userTenantCacheService;
     }
     
     protected override async Task HandleRequirementAsync(
@@ -234,8 +238,11 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         {
             // Validate token through auth provider
             var authProvider = _authProviderFactory.GetProvider();
-            var (success, tokenUserId, tokenTenantIds) = await authProvider.ValidateToken(token);
-            
+            var (success, tokenUserId) = await authProvider.ValidateToken(token);
+
+            // get tenant IDs from DB collection
+            var tokenTenantIds = await _userTenantCacheService.GetUserTenantAsync(tokenUserId!);
+
             // Cache the result (always cache fresh validation results)
             await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
             

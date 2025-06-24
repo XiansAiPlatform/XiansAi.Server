@@ -37,7 +37,7 @@ public class Auth0TokenService : ITokenService
             .ToList();
     }
 
-    public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ProcessToken(string token)
+    public Task<(bool success, string? userId)> ProcessToken(string token)
     {
         try
         {
@@ -47,7 +47,7 @@ public class Auth0TokenService : ITokenService
             if (jsonToken == null)
             {
                 _logger.LogWarning("Invalid JWT token format");
-                return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
+                return Task.FromResult<(bool success, string? userId)>((false, null));
             }
 
             var userId = ExtractUserId(jsonToken);
@@ -55,17 +55,15 @@ public class Auth0TokenService : ITokenService
             if (string.IsNullOrEmpty(userId))
             {
                 _logger.LogWarning("No user identifier found in token");
-                return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
+                return Task.FromResult<(bool success, string? userId)>((false, null));
             }
 
-            var tenantIds = ExtractTenantIds(jsonToken);
-            
-            return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((true, userId, tenantIds));
+            return Task.FromResult<(bool success, string? userId)>((true, userId));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing JWT token");
-            return Task.FromResult<(bool success, string? userId, IEnumerable<string>? tenantIds)>((false, null, null));
+            return Task.FromResult<(bool success, string? userId)>((false, null));
         }
     }
 
