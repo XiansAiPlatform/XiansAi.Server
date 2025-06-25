@@ -154,13 +154,25 @@ namespace XiansAi.Server.Shared.Websocket
             }
         }
 
-        public async Task SubscribeToAgent(string workflowId, string participantId, string TenantId)
+        public async Task SubscribeToAgent(string subscribeId, string participantId, string TenantId)
         {
+            var workflowId = subscribeId;
+            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            {
+                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+            }
+            
             await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
         }
 
-        public async Task UnsubscribeFromAgent(string workflowId, string participantId, string TenantId)
+        public async Task UnsubscribeFromAgent(string subscribeId, string participantId, string TenantId)
         {
+            var workflowId = subscribeId;
+            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            {
+                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+            }
+
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
         }
     }
