@@ -25,8 +25,7 @@ The application loads configuration files in the following order (later files ov
 
 ```bash
 # Set environment via command line
-dotnet run --environment Production
-dotnet run --Environment=Staging
+dotnet run --launch-profile Production
 ```
 
 ### 2. Using the Convenience Script

@@ -1,0 +1,52 @@
+# Production-ready Dockerfile for DockerHub
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
+WORKDIR /app
+EXPOSE 80
+EXPOSE 443
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Build stage with multi-platform support
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+ARG BUILDPLATFORM
+ARG TARGETARCH
+ARG configuration=Release
+WORKDIR /src
+
+# Copy project file and restore dependencies
+COPY ["XiansAi.Server.csproj", "./"]
+RUN dotnet restore "XiansAi.Server.csproj" --arch $TARGETARCH
+
+# Copy source code and build
+COPY . .
+RUN dotnet build "XiansAi.Server.csproj" -c $configuration -o /app/build --arch $TARGETARCH --no-restore
+
+# Publish stage
+FROM build AS publish
+ARG configuration=Release
+RUN dotnet publish "XiansAi.Server.csproj" -c $configuration -o /app/publish --arch $TARGETARCH --no-restore /p:UseAppHost=false
+
+# Final runtime stage
+FROM base AS final
+WORKDIR /app
+
+# Create non-root user for security
+RUN groupadd -r xiansai && useradd -r -g xiansai -m xiansai
+RUN chown -R xiansai:xiansai /app
+USER xiansai
+
+# Copy published application
+COPY --from=publish --chown=xiansai:xiansai /app/publish .
+
+# Environment variables with defaults
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV SERVICE_TYPE=--all
+ENV ASPNETCORE_URLS=http://+:80
+ENV ASPNETCORE_HTTP_PORTS=80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:80/health || exit 1
+
+ENTRYPOINT ["dotnet", "XiansAi.Server.dll"] 
