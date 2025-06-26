@@ -12,13 +12,11 @@ namespace XiansAi.Server.Shared.Auth
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<WebsocketAuthenticationHandler> _logger;
         private readonly IConfiguration _configuration;
-        private readonly IAuthorizationCacheService _authorizationCacheService;
 
 
         public WebsocketAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
             ILoggerFactory logger,
-            IAuthorizationCacheService authorizationCacheService,
             UrlEncoder encoder,
             IConfiguration configuration,
             ITenantContext tenantContext)
@@ -27,7 +25,6 @@ namespace XiansAi.Server.Shared.Auth
             _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
             _tenantContext = tenantContext;
             _configuration = configuration;
-            _authorizationCacheService = authorizationCacheService;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -35,12 +32,6 @@ namespace XiansAi.Server.Shared.Auth
             // Example: validate access_token and tenant from query
             var accessToken = Request.Query["access_token"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
-            var userAccessToken = Request.Query["userAccessToken"].ToString();
-            string? accessGuid = null;
-            if (!string.IsNullOrEmpty(userAccessToken))
-            {
-                accessGuid = await _authorizationCacheService.CacheAuthorization(userAccessToken);
-            }
             
             _logger.LogDebug("Processing SignalR request: {Path}", Request.Path);
             if (_tenantContext != null)
@@ -57,14 +48,6 @@ namespace XiansAi.Server.Shared.Auth
                 {
                     return AuthenticateResult.Fail("No tenantId provided in query string");
                 }
-                ////The below code is for validating the User Access token and Guid from the chache
-                // if (string.IsNullOrEmpty(userAccessToken))
-                // {
-                //     return AuthenticateResult.Fail("No User Access Token provided in query string");
-                // }
-                //if (string.IsNullOrEmpty(accessGuid)) {
-                //    return Task.FromResult(AuthenticateResult.Fail("No User Access Token provided in query string"));
-                //}
 
                 if (string.IsNullOrEmpty(accessToken))
                 {
@@ -117,10 +100,6 @@ namespace XiansAi.Server.Shared.Auth
                                 new Claim(ClaimTypes.NameIdentifier, accessToken),
                                 new Claim("TenantId", tenantId)
                             };
-                            if (!string.IsNullOrEmpty(accessGuid))
-                            {
-                                claims.Add(new Claim("UserAccessGuid", accessGuid));
-                            }
 
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
                             var principal = new ClaimsPrincipal(identity);
