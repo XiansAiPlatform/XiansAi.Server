@@ -24,7 +24,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IWorkflowCancelService, WorkflowCancelService>();
         builder.Services.AddScoped<ILogsService, LogsService>();
         builder.Services.AddScoped<ITenantService, TenantService>();
-        builder.Services.AddScoped<IWebhookService, WebhookService>();
+        //builder.Services.AddScoped<IWebhookService, WebhookService>();
         builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
@@ -34,7 +34,7 @@ public static class WebApiConfiguration
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
-        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
+        //builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         
         return builder;
@@ -48,7 +48,7 @@ public static class WebApiConfiguration
         LogsEndpoints.MapLogsEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
         TenantEndpoints.MapTenantEndpoints(app);
-        WebhookEndpoints.MapWebhookEndpoints(app);
+        //WebhookEndpoints.MapWebhookEndpoints(app);
         PublicEndpoints.MapPublicEndpoints(app);
         MessagingEndpoints.MapMessagingEndpoints(app);
         AuditingEndpoints.MapAuditingEndpoints(app);
