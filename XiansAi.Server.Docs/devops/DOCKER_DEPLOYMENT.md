@@ -31,49 +31,26 @@ docker ps
 
 The application uses standard .NET Core environment variable naming (`SectionName__PropertyName`). All configuration is externalized through environment variables.
 
-**Required Variables:**
-- `MongoDB__ConnectionString` - Your MongoDB connection string
-- `Llm__ApiKey` - Your OpenAI or other LLM API key
-
-**Important Variables:**
-- `Auth0__Domain`, `Auth0__ClientId`, `Auth0__ClientSecret` - Auth0 configuration
-- `Cache__Redis__ConnectionString` - Redis connection for caching
-- `Email__Azure__ConnectionString` - Azure Communication Services for email
-
 See `.env.example` for all available configuration options.
-
-### Arrays in Environment Variables
-
-For arrays like CORS origins, use index notation:
-```bash
-Cors__AllowedOrigins__0=https://yourdomain.com
-Cors__AllowedOrigins__1=https://www.yourdomain.com
-Cors__AllowedOrigins__2=http://localhost:3000
-```
-
-### Service Types
-
-Control which APIs to run:
-- `SERVICE_TYPE=--web` - Web API only
-- `SERVICE_TYPE=--lib` - Agent API only  
-- `SERVICE_TYPE=--all` - Both APIs (default)
 
 ## 🏗️ Building and Publishing
 
 ### Build Docker Image
+
 ```bash
 # Make scripts executable
 chmod +x docker-build.sh docker-publish.sh
 
 # Build for DockerHub (multi-platform)
-export IMAGE_NAME=yourusername/xiansai-server
+export IMAGE_NAME=99xio/xians-arm-server
 ./docker-build.sh
 ```
 
 ### Publish to DockerHub
+
 ```bash
 # Set your DockerHub username
-export DOCKERHUB_USERNAME=yourusername
+export DOCKERHUB_USERNAME=99xio
 
 # Publish with multiple tags
 export ADDITIONAL_TAGS="v1.0.0,latest"
@@ -83,6 +60,7 @@ export ADDITIONAL_TAGS="v1.0.0,latest"
 ## 🔒 Security Considerations
 
 ### Secrets Management
+
 - **Never commit `.env` files** to version control
 - Use Docker Secrets or Kubernetes Secrets in production
 - Consider using Azure Key Vault, AWS Secrets Manager, etc.
@@ -140,7 +118,7 @@ The application automatically creates database indexes on startup. For custom mi
 # Run one-time migration container
 docker run --rm \
   --env-file .env \
-  xiansai/server:latest \
+  99xio/xians-arm-server:latest \
   dotnet XiansAi.Server.dll --migrate
 ```
 
@@ -178,7 +156,7 @@ docker port xiansai-server
 **Database connection issues:**
 ```bash
 # Test MongoDB connection
-docker run --rm --env-file .env xiansai/server:latest \
+docker run --rm --env-file .env 99xio/xians-arm-server:latest \
   dotnet XiansAi.Server.dll --test-db
 ```
 

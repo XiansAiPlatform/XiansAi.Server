@@ -20,6 +20,26 @@ dotnet run
 dotnet watch run
 ```
 
+### Running the server in production
+
+To run the server in production configuration, you can use the following command:
+
+```bash
+dotnet run --launch-profile Production
+```
+
+### Public Docker Image
+
+To run the server in production configuration using Docker, you can use the following command:
+
+```bash
+docker run --rm -it \       
+  --env-file .env \
+  -p 5001:80 \
+  --name xiansai-test \
+  99xio/xians-arm-server:latest
+```
+
 ### Running the Microservices
 
 The application can be run as two separate microservices or as a single combined service. Each microservice can be scaled independently when needed.

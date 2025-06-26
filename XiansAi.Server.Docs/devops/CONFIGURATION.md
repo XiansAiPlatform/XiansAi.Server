@@ -160,7 +160,7 @@ dotnet run --all
 
 ```bash
 # Development
-docker-compose up webapi
+docker-compose up arm-server
 
 # Production
 docker-compose --profile production up webapi-prod
