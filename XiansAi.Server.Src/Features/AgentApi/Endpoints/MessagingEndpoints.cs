@@ -43,19 +43,6 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
-            //group.MapGet("authorization/{authorizationGuid}", async (
-            //    [FromRoute] string authorizationGuid,
-            //    [FromServices] IMessageService messageService) => {
-            //    var result = await messageService.GetAuthorization(authorizationGuid);
-            //    return result.ToHttpResult();
-            //})
-            //.WithName("Get Authorization")
-            //.WithOpenApi(operation => {
-            //    operation.Summary = "Get authorization by GUID";
-            //    operation.Description = "Retrieves a cached authorization using its GUID";
-            //    return operation;
-            //});
-
             group.MapPost("/outbound/chat", async (
                 [FromBody] ChatOrDataRequest request, 
                 [FromServices] IMessageService messageService) => {
