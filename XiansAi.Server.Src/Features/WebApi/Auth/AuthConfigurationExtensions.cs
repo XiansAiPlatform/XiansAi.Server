@@ -29,8 +29,8 @@ public static class AuthConfigurationExtensions
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
 
         // Get the configured provider
-        var providerConfig = builder.Configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
-            new AuthProviderConfig();
+        // var providerConfig = builder.Configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
+        //     new AuthProviderConfig();
 
         // Add Authentication - don't set defaults to avoid conflicts with other authentication schemes
         builder.Services.AddAuthentication()

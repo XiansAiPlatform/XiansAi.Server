@@ -489,3 +489,4 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 appsettings.json
+XiansAi.Server.Src/.env.production
