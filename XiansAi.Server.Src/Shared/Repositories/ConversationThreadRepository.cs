@@ -64,6 +64,8 @@ public class ConversationThreadRepository : IConversationThreadRepository
 {
     private readonly IMongoCollection<ConversationThread> _collection;
     private readonly ILogger<ConversationThreadRepository> _logger;
+    private readonly Lazy<Task> _indexCreationTask;
+    private volatile bool _indexesCreated = false;
 
     public ConversationThreadRepository(IDatabaseService databaseService, ILogger<ConversationThreadRepository> logger)
     {
@@ -71,47 +73,100 @@ public class ConversationThreadRepository : IConversationThreadRepository
         var database = databaseService.GetDatabase().GetAwaiter().GetResult();
         _collection = database.GetCollection<ConversationThread>("conversation_thread");
 
-        // Create indexes asynchronously
-        CreateIndexesAsync();
+        // Initialize indexes asynchronously without blocking constructor
+        _indexCreationTask = new Lazy<Task>(() => InitializeIndexesAsync());
+        
+        // Start index creation in background (fire and forget)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _indexCreationTask.Value;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Background index creation failed during ConversationThreadRepository initialization");
+            }
+        });
     }
 
-    private async void CreateIndexesAsync()
+    /// <summary>
+    /// Initializes indexes asynchronously with resilient error handling.
+    /// This method won't throw exceptions and allows the application to continue running even if MongoDB is temporarily unavailable.
+    /// </summary>
+    private async Task InitializeIndexesAsync()
     {
-        // thread_status_lookup index (tenant_id, status)
-        var statusLookupIndex = Builders<ConversationThread>.IndexKeys
-            .Ascending(x => x.TenantId)
-            .Ascending(x => x.Status);
-        
-        var statusLookupIndexModel = new CreateIndexModel<ConversationThread>(
-            statusLookupIndex, 
-            new CreateIndexOptions { Background = true, Name = "thread_status_lookup" }
-        );
+        if (_indexesCreated) return;
 
-        // thread_updated_at index (updated_at descending)
-        var updatedAtIndex = Builders<ConversationThread>.IndexKeys
-            .Descending(x => x.UpdatedAt);
-        
-        var updatedAtIndexModel = new CreateIndexModel<ConversationThread>(
-            updatedAtIndex,
-            new CreateIndexOptions { Background = true, Name = "thread_updated_at" }
-        );
+        var success = await MongoRetryHelper.ExecuteWithGracefulRetryAsync(async () =>
+        {
+            // thread_status_lookup index (tenant_id, status)
+            var statusLookupIndex = Builders<ConversationThread>.IndexKeys
+                .Ascending(x => x.TenantId)
+                .Ascending(x => x.Status);
+            
+            var statusLookupIndexModel = new CreateIndexModel<ConversationThread>(
+                statusLookupIndex, 
+                new CreateIndexOptions { Background = true, Name = "thread_status_lookup" }
+            );
 
-        // tenant_agent_lookup index (tenant_id, agent)
-        var tenantAgentLookupIndex = Builders<ConversationThread>.IndexKeys
-            .Ascending(x => x.TenantId)
-            .Ascending(x => x.Agent);
-        
-        var tenantAgentLookupIndexModel = new CreateIndexModel<ConversationThread>(
-            tenantAgentLookupIndex,
-            new CreateIndexOptions { Background = true, Name = "tenant_agent_lookup" }
-        );
+            // thread_updated_at index (updated_at descending)
+            var updatedAtIndex = Builders<ConversationThread>.IndexKeys
+                .Descending(x => x.UpdatedAt);
+            
+            var updatedAtIndexModel = new CreateIndexModel<ConversationThread>(
+                updatedAtIndex,
+                new CreateIndexOptions { Background = true, Name = "thread_updated_at" }
+            );
 
-        // Create all indexes
-        await _collection.Indexes.CreateManyAsync([ 
-            statusLookupIndexModel,
-            updatedAtIndexModel,
-            tenantAgentLookupIndexModel
-        ]);
+            // tenant_agent_lookup index (tenant_id, agent)
+            var tenantAgentLookupIndex = Builders<ConversationThread>.IndexKeys
+                .Ascending(x => x.TenantId)
+                .Ascending(x => x.Agent);
+            
+            var tenantAgentLookupIndexModel = new CreateIndexModel<ConversationThread>(
+                tenantAgentLookupIndex,
+                new CreateIndexOptions { Background = true, Name = "tenant_agent_lookup" }
+            );
+
+            // Create all indexes
+            await _collection.Indexes.CreateManyAsync([ 
+                statusLookupIndexModel,
+                updatedAtIndexModel,
+                tenantAgentLookupIndexModel
+            ]);
+
+        }, _logger, maxRetries: 2, baseDelayMs: 2000, operationName: "CreateThreadIndexes");
+
+        if (success)
+        {
+            _indexesCreated = true;
+            _logger.LogInformation("Successfully created indexes for ConversationThread collection");
+        }
+        else
+        {
+            _logger.LogWarning("Failed to create indexes for ConversationThread collection, but repository will continue to function. Indexes will be retried on next operation.");
+        }
+    }
+
+    /// <summary>
+    /// Ensures indexes are created before performing operations (lazy initialization).
+    /// This method is called by repository methods that benefit from having indexes.
+    /// </summary>
+    private async Task EnsureIndexesAsync()
+    {
+        if (!_indexesCreated)
+        {
+            try
+            {
+                await _indexCreationTask.Value;
+            }
+            catch (Exception ex)
+            {
+                // Log but don't throw - the operation can continue without indexes
+                _logger.LogDebug(ex, "Index creation not yet complete, continuing with operation");
+            }
+        }
     }
 
     public async Task<bool> UpdateWorkflowIdAndTypeAsync(string id, string workflowId, string workflowType)
@@ -179,6 +234,9 @@ public class ConversationThreadRepository : IConversationThreadRepository
 
     public async Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null)
     {
+        // Ensure indexes are created for optimal query performance
+        await EnsureIndexesAsync();
+        
         var filter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
             Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent)
