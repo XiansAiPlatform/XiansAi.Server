@@ -20,6 +20,7 @@ public class CreateTenantRequest
     public Logo? Logo { get; set; }
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
+    public bool Enabled { get; set; } = true;
 }
 
 public class UpdateTenantRequest
@@ -30,6 +31,7 @@ public class UpdateTenantRequest
     public Logo? Logo { get; set; }
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
+    public bool? Enabled { get; set; }
 }
 
 public class TenantCreatedResult
@@ -157,6 +159,7 @@ public class TenantService : ITenantService
                 Logo = request.Logo,
                 Theme = request.Theme,
                 Timezone = request.Timezone,
+                Enabled = request.Enabled,
                 CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set"),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -210,6 +213,9 @@ public class TenantService : ITenantService
 
             if (request.Theme != null)
                 existingTenant.Theme = request.Theme;
+
+            if (request.Enabled.HasValue)
+                existingTenant.Enabled = request.Enabled.Value;
             
             if (request.Timezone != null)
                 existingTenant.Timezone = request.Timezone;

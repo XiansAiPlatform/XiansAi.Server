@@ -47,6 +47,9 @@ public class Tenant
 
     [BsonElement("updated_at")]
     public DateTime? UpdatedAt { get; set; }
+
+    [BsonElement("enabled")]
+    public bool Enabled { get; set; } = true;
 }
 
 public class Logo
