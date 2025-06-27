@@ -41,6 +41,9 @@
     <None Update="Properties\PublishProfiles\*.pubxml">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
+    <Content Include="Licenses\SharpCompress_MIT_License.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </Content>
   </ItemGroup>
 
 </Project>

@@ -25,4 +25,5 @@ RUN dotnet publish XiansAi.Server.csproj -c $configuration -o /app/publish /p:Us
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+COPY Licenses/ ./Licenses/
 ENTRYPOINT ["dotnet", "XiansAi.Server.dll"]
