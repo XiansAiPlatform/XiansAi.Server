@@ -27,7 +27,7 @@ namespace XiansAi.Server.Shared.Auth
             _configuration = configuration;
         }
 
-        protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             // Example: validate access_token and tenant from query
             var accessToken = Request.Query["access_token"].ToString();
@@ -41,12 +41,12 @@ namespace XiansAi.Server.Shared.Auth
                 if (!websocketConfig.GetValue<bool>("Enabled"))
                 {
                     _logger.LogWarning("WebSockets are not enabled in configuration");
-                    return AuthenticateResult.Fail("WebSockets are not enabled in configuration");
+                    return Task.FromResult(AuthenticateResult.Fail("WebSockets are not enabled in configuration"));
                 }
 
                 if (string.IsNullOrEmpty(tenantId))
                 {
-                    return AuthenticateResult.Fail("No tenantId provided in query string");
+                    return Task.FromResult(AuthenticateResult.Fail("No tenantId provided in query string"));
                 }
 
                 if (string.IsNullOrEmpty(accessToken))
@@ -68,13 +68,13 @@ namespace XiansAi.Server.Shared.Auth
                         if (secrets == null)
                         {
                             _logger.LogWarning("WebSocket Secrets not found in configuration");
-                            return AuthenticateResult.Fail("WebSocket Secrets not found in configuration");
+                            return Task.FromResult(AuthenticateResult.Fail("WebSocket Secrets not found in configuration"));
                         }
                         // Check if the provided tenantId exists in configuration
                         if (!secrets.ContainsKey(tenantId))
                         {
                             _logger.LogWarning("Provided tenantId {TenantId} not found in configuration", tenantId);
-                            return AuthenticateResult.Fail("Provided tenantId not found in configuration");
+                            return Task.FromResult(AuthenticateResult.Fail("Provided tenantId not found in configuration"));
                         }
 
                         // Get the expected secret for this tenant
@@ -89,7 +89,7 @@ namespace XiansAi.Server.Shared.Auth
                             if (websocketUserId == null)
                             {
                                 _logger.LogWarning("WebSocket UserId not found in configuration");
-                                return AuthenticateResult.Fail("WebSocket UserId not found in configuration");
+                                return Task.FromResult(AuthenticateResult.Fail("WebSocket UserId not found in configuration"));
                             }
                             _tenantContext.LoggedInUser = websocketUserId;
                             _tenantContext.TenantId = tenantId;
@@ -106,30 +106,30 @@ namespace XiansAi.Server.Shared.Auth
                             var ticket = new AuthenticationTicket(principal, Scheme.Name);
                             _logger.LogInformation("Successfully authenticated SignalR connection: User={UserId}, Tenant={TenantId}", websocketUserId, tenantId);
 
-                            return AuthenticateResult.Success(ticket);
+                            return Task.FromResult(AuthenticateResult.Success(ticket));
                         }
                         else
                         {
                             _logger.LogWarning("Access token does not match the expected secret for tenant {TenantId}", tenantId);
-                            return AuthenticateResult.Fail("Access token does not match the expected secret for tenant");
+                            return Task.FromResult(AuthenticateResult.Fail("Access token does not match the expected secret for tenant"));
                         }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error processing access token for SignalR connection");
-                        return AuthenticateResult.Fail("Error processing access token for SignalR connection");
+                        return Task.FromResult(AuthenticateResult.Fail("Error processing access token for SignalR connection"));
                     }
                 }
                 else
                 {
                     _logger.LogWarning("No access token found for SignalR connection");
-                    return AuthenticateResult.Fail("No access token found for SignalR connection");
+                    return Task.FromResult(AuthenticateResult.Fail("No access token found for SignalR connection"));
                 }
             }
             else
             {
                 _logger.LogError("Failed to resolve ITenantContext from request scope");
-                return AuthenticateResult.Fail("Failed to resolve ITenantContext from request scope");
+                return Task.FromResult(AuthenticateResult.Fail("Failed to resolve ITenantContext from request scope"));
             }
         }
     }
