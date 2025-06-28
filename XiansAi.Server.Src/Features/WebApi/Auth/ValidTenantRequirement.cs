@@ -2,6 +2,7 @@ using Shared.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Features.WebApi.Auth.Providers;
 using Features.WebApi.Services;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth;
 
@@ -16,16 +17,20 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
 {
     private readonly IConfiguration _configuration;
     private readonly ITenantService _tenantService;
+    private readonly IRoleCacheService _roleCacheService;
+
     public ValidTenantHandler(
-        ILogger<ValidTenantHandler> logger, 
+        ILogger<ValidTenantHandler> logger,
         ITenantContext tenantContext,
         IConfiguration configuration,
+        IRoleCacheService roleCacheService,
         IAuthProviderFactory authProviderFactory,
         ITenantService tenantService)
-        : base(logger, tenantContext, authProviderFactory)
+        : base(logger, tenantContext, roleCacheService, authProviderFactory)
     {
         _configuration = configuration;
         _tenantService = tenantService;
+        _roleCacheService = roleCacheService;
     }
 
     protected override async Task HandleRequirementAsync(
@@ -44,7 +49,7 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
             return;
         }
 
-        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(context);
+        var (success, loggedInUser, authorizedTenantIds, roles) = await ValidateToken(context);
         if (!success)
         {
             _logger.LogWarning("Token validation failed");
@@ -70,7 +75,7 @@ public class ValidTenantHandler : BaseAuthHandler<ValidTenantRequirement>
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds;
         _tenantContext.TenantId = currentTenantId;
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
-
+        _tenantContext.UserRoles = roles?.ToArray() ?? Array.Empty<string>();
         context.Succeed(requirement);
     }
 }
