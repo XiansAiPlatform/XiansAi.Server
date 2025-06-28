@@ -166,10 +166,16 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
 
             // Validate tenant
             var tenantId = GetSubjectValue(cert.Subject, "O");
-
-            if (string.IsNullOrEmpty(tenantId) || _tenantService.GetTenantByTenantId(tenantId) == null)
+            if (string.IsNullOrEmpty(tenantId))
             {
-                result.AddError($"Invalid tenant: {tenantId}");
+                result.AddError("Invalid tenant: No tenant ID found in certificate");
+                return result;
+            }
+
+            var tenantResult = await _tenantService.GetTenantByTenantId(tenantId);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+            {
+                result.AddError($"Invalid tenant: {tenantId}.");
                 return result;
             }
 

@@ -187,7 +187,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Validate tenant configuration if required
         if (requirement.Options.ValidateTenantConfig)
         {
-            if (_tenantService.GetTenantByTenantId(currentTenantId) == null)
+            var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
             {
                 _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
                 context.Fail(new AuthorizationFailureReason(this, 
