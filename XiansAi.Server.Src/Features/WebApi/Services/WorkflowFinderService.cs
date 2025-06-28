@@ -22,7 +22,7 @@ namespace Features.WebApi.Services;
 public interface IWorkflowFinderService
 {
     Task<ServiceResult<WorkflowResponse>> GetWorkflow(string workflowId, string? runId = null);
-    Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status);
+    Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(string? status);
     Task<ServiceResult<List<WorkflowResponse>>> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName);
 }
 
@@ -114,15 +114,11 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <summary>
     /// Retrieves a list of workflows based on specified filters.
     /// </summary>
-    /// <param name="startTime">Optional start time filter for workflow execution.</param>
-    /// <param name="endTime">Optional end time filter for workflow execution.</param>
-    /// <param name="owner">Optional owner filter for workflows.</param>
     /// <param name="status">Optional status filter for workflows.</param>
     /// <returns>A result containing the list of filtered workflows.</returns>
-    public async Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(DateTime? startTime, DateTime? endTime, string? owner, string? status)
+    public async Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(string? status)
     {
-        _logger.LogInformation("Retrieving workflows with filters - StartTime: {StartTime}, EndTime: {EndTime}, Owner: {Owner}, Status: {Status}",
-            startTime, endTime, owner ?? "null", status ?? "null");
+        _logger.LogInformation("Retrieving workflows with filters - Status: {Status}", status ?? "null");
 
         var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
         var agentNames = agents.Select(a => a.Name).ToArray();
@@ -132,26 +128,20 @@ public class WorkflowFinderService : IWorkflowFinderService
         {
             var client = _clientService.GetClient();
 
-            var listQuery = BuildQuery(agentNames, startTime, endTime, status, owner);
+            var listQuery = BuildQuery(agentNames, status);
 
             _logger.LogDebug("Executing workflow query: {Query}", string.IsNullOrEmpty(listQuery) ? "No date filters" : listQuery);
 
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
             {
                 var mappedWorkflow = MapWorkflowToResponse(workflow);
-
-                if (ShouldSkipWorkflow(owner, mappedWorkflow.Owner))
-                {
-                    continue;
-                }
-
                 allWorkflowResponses.Add(mappedWorkflow);
             }
             _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", allWorkflowResponses.Count);
 
             // retrieve last logs for each workflow run
             var logRepository = new LogRepository(_databaseService);
-            var logs = await logRepository.GetLastLogAsync(startTime, endTime);
+            var logs = await logRepository.GetLastLogAsync(null, null);
             foreach (var workflow in allWorkflowResponses)
             {
                 var workflowId = workflow.WorkflowId;
@@ -261,12 +251,9 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// Builds a date range query string for filtering workflows.
     /// </summary>
     /// <param name="agents">The agent name to filter workflows by.</param>
-    /// <param name="startTime">The start time of the range.</param>
-    /// <param name="endTime">The end time of the range.</param>
     /// <param name="status">Optional status filter for workflows.</param>
-    /// <param name="owner">Optional owner filter for workflows.</param>
     /// <returns>A query string for temporal workflow filtering.</returns>
-    private string BuildQuery(string[] agents, DateTime? startTime, DateTime? endTime, string? status, string? owner)
+    private string BuildQuery(string[] agents, string? status)
     {
         var queryParts = new List<string>
         {
@@ -274,23 +261,12 @@ public class WorkflowFinderService : IWorkflowFinderService
             $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'"
         };    
 
-        // Add userId filter if current owner is requested
-        if (Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase))
-        {
-            queryParts.Add($"{Constants.UserIdKey} = '{_tenantContext.LoggedInUser}'");
-        }
-        else // show other's workflows too
-        {
-            if (agents.Length > 0) 
-            {
-                queryParts.Add($"({Constants.UserIdKey} = '{_tenantContext.LoggedInUser}' OR {Constants.AgentKey} in ({string.Join(",", agents.Select(a => "'" + a + "'"))})");
-            }
-            else // no other agent access
-            {
-                queryParts.Add($"{Constants.UserIdKey} = '{_tenantContext.LoggedInUser}'");
-            }
-        }
 
+        if (agents.Length > 0) 
+        {
+            queryParts.Add($"{Constants.AgentKey} in ({string.Join(",", agents.Select(a => "'" + a + "'"))})");
+        }
+        
         // Add status filter if specified
         if (!string.IsNullOrEmpty(status))
         {
@@ -320,23 +296,11 @@ public class WorkflowFinderService : IWorkflowFinderService
     }
 
     /// <summary>
-    /// Determines if a workflow should be excluded based on ownership criteria.
-    /// </summary>
-    /// <param name="owner">The requested owner filter.</param>
-    /// <param name="workflowOwner">The actual workflow owner.</param>
-    /// <returns>True if the workflow should be skipped, false otherwise.</returns>
-    private bool ShouldSkipWorkflow(string? owner, string? workflowOwner)
-    {
-        return Constants.CurrentOwnerKey.Equals(owner, StringComparison.OrdinalIgnoreCase) &&
-               _tenantContext.LoggedInUser != workflowOwner;
-    }
-
-    /// <summary>
     /// Identifies the current activity from the workflow history.
     /// </summary>
     /// <param name="workflowHistory">The workflow history to analyze.</param>
     /// <returns>The current activity if found, otherwise null.</returns>
-    private Temporalio.Api.History.V1.ActivityTaskScheduledEventAttributes? IdentifyCurrentActivity(List<Temporalio.Api.History.V1.HistoryEvent> workflowHistory)
+    private ActivityTaskScheduledEventAttributes? IdentifyCurrentActivity(List<HistoryEvent> workflowHistory)
     {
         // Iterate in reverse to find the most recent unprocessed activity
         for (int i = workflowHistory.Count - 1; i >= 0; i--)

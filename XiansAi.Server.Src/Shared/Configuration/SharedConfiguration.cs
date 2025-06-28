@@ -129,6 +129,9 @@ public static class SharedConfiguration
         app.UseAuthentication();
         app.UseAuthorization();
 
+        // Map health checks
+        app.MapHealthChecks("/health");
+
         // Configure Websocket
         app.MapHub<ChatHub>("/ws/chat");
 

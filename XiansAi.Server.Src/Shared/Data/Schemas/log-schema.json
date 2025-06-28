@@ -71,6 +71,12 @@
             },
             {
                 "keys": { "tenant_id": 1, "agent": 1, "workflow_id": 1 }
+            },
+            {
+                "keys": { "created_at": 1 },
+                "expireAfterSeconds": 2592000,
+                "name": "logs_ttl_created_at",
+                "description": "TTL index to automatically expire logs after 30 days (2592000 seconds)"
             }
         ]
     }

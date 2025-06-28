@@ -120,7 +120,7 @@ public class PublicService : IPublicService
             _logger.LogDebug("Generated tenant ID: {TenantId} from email: {Email}", tenantId, email);
 
             // Validate if the tenant ID is registered in our system
-            if (!IsValidTenantId(tenantId))
+            if (!await IsValidTenantId(tenantId))
             {
                 _logger.LogWarning("Invalid tenant ID: {TenantId} for email: {Email}", tenantId, email);
                 return ServiceResult<SendVerificationCodeResult>.BadRequest("This email domain is not registered with Xians.ai. Please contact Xians.ai support to get access to the platform.");
@@ -163,7 +163,7 @@ public class PublicService : IPublicService
         var tenantId = GenerateTenantId(email);
         
         // Double-check tenant validity
-        if (!IsValidTenantId(tenantId))
+        if (!await IsValidTenantId(tenantId))
         {
             _logger.LogWarning("Attempted to generate code for invalid tenant: {TenantId}", tenantId);
             throw new ArgumentException($"Email domain does not belong to a valid tenant. Please contact Xians.ai support to get access to the platform.");
@@ -186,18 +186,35 @@ public class PublicService : IPublicService
     /// </summary>
     /// <param name="tenantId">The tenant ID to validate</param>
     /// <returns>True if the tenant ID is valid, false otherwise</returns>
-    private bool IsValidTenantId(string tenantId)
+    private async Task<bool> IsValidTenantId(string tenantId)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
         {
             _logger.LogDebug("Tenant ID validation failed: tenantId is null or empty");
             return false;
         }
-           
-        bool exists = _tenantService.GetTenantByTenantId(tenantId) != null;
-        
-        _logger.LogDebug("Tenant ID {TenantId} validation result: {IsValid}", tenantId, exists);
-        return exists;
+
+        try
+        {
+            var result = await _tenantService.GetTenantByTenantId(tenantId);
+            var isValid = result.IsSuccess && result.Data != null;
+            
+            if (isValid)
+            {
+                _logger.LogDebug("Tenant ID {TenantId} is valid", tenantId);
+            }
+            else
+            {
+                _logger.LogDebug("Tenant ID {TenantId} is not valid", tenantId);
+            }
+            
+            return isValid;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating tenant ID {TenantId}", tenantId);
+            return false;
+        }
     }
 
     /// <summary>

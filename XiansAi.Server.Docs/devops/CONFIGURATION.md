@@ -21,31 +21,14 @@ The application loads configuration files in the following order (later files ov
 
 ## Methods to Switch Configurations
 
-### 1. Using Environment Variables (Recommended)
-
-```bash
-# Development (uses appsettings.Development.json)
-export ASPNETCORE_ENVIRONMENT=Development
-dotnet run
-
-# Staging (uses appsettings.Staging.json)
-export ASPNETCORE_ENVIRONMENT=Staging
-dotnet run
-
-# Production (uses appsettings.Production.json)
-export ASPNETCORE_ENVIRONMENT=Production
-dotnet run
-```
-
-### 2. Using Command Line Arguments
+### 1. Using Command Line Arguments
 
 ```bash
 # Set environment via command line
-dotnet run --environment Production
-dotnet run --Environment=Staging
+dotnet run --launch-profile Production
 ```
 
-### 3. Using the Convenience Script
+### 2. Using the Convenience Script
 
 We've provided a helper script for easy environment switching:
 
@@ -64,7 +47,7 @@ We've provided a helper script for easy environment switching:
 ./run-environment.sh dev all
 ```
 
-### 4. Using Docker Compose
+### 3. Using Docker Compose
 
 ```bash
 # Development environment (default)
@@ -77,7 +60,7 @@ docker-compose --profile production up webapi-prod
 docker-compose --profile staging up webapi-staging
 ```
 
-### 5. Using Environment-Specific Docker Compose Files
+### 4. Using Environment-Specific Docker Compose Files
 
 You can also create separate docker-compose files:
 
@@ -177,7 +160,7 @@ dotnet run --all
 
 ```bash
 # Development
-docker-compose up webapi
+docker-compose up arm-server
 
 # Production
 docker-compose --profile production up webapi-prod

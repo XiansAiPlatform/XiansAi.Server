@@ -7,13 +7,77 @@ namespace Shared.Services;
 
 public class ChatOrDataRequest
 {
+    private string? _agent;
+    private string? _workflowType;
+    
     public required string ParticipantId { get; set; }
     public required string WorkflowId { get; set; }
-    public required string WorkflowType { get; set; }
-    public required string Agent { get; set; }
+    
+    public string WorkflowType 
+    { 
+        get 
+        {
+            if (!string.IsNullOrEmpty(_workflowType))
+            {
+                return _workflowType;
+            }
+
+            if (!string.IsNullOrEmpty(WorkflowId))
+            {
+                var parts = WorkflowId.Split(':');
+                if (parts.Length > 2)
+                {
+                    return $"{parts[1]}:{parts[2]}";
+                }
+            }
+
+            throw new InvalidOperationException("Unable to determine WorkflowType from WorkflowType or WorkflowId");
+        }
+        set 
+        {
+            _workflowType = value;
+        }
+    }
+    
+    public string Agent 
+    { 
+        get 
+        {
+            if (!string.IsNullOrEmpty(_agent))
+            {
+                return _agent;
+            }
+
+            if (!string.IsNullOrEmpty(WorkflowType))
+            {
+                var parts = WorkflowType.Split(':');
+                if (parts.Length > 0 && !string.IsNullOrEmpty(parts[0]))
+                {
+                    return parts[0];
+                }
+            }
+
+            if (!string.IsNullOrEmpty(WorkflowId))
+            {
+                var parts = WorkflowId.Split(':');
+                if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
+                {
+                    return parts[1];
+                }
+            }
+
+            throw new InvalidOperationException("Unable to determine agent name from Agent, WorkflowType, or WorkflowId");
+        }
+        set 
+        {
+            _agent = value;
+        }
+    }
+    
     public object? Data { get; set; }
     public string? Text { get; set; }
     public string? ThreadId { get; set; }
+    public string? Authorization { get; set; }
 }
 
 public class HandoffRequest
@@ -27,6 +91,7 @@ public class HandoffRequest
     public required string ParticipantId { get; set; }
     public required string Text { get; set; }
     public object? Data { get; set; }
+    public string? Authorization { get; set; }
 }
 
 
@@ -112,7 +177,8 @@ public class MessageService : IMessageService
                 WorkflowType = request.TargetWorkflowType,
                 Text = $"{request.SourceWorkflowType} -> {request.TargetWorkflowType}",
                 Data = request.Data,
-                Agent = request.SourceAgent
+                Agent = request.SourceAgent,
+                Authorization = request.Authorization
             };
 
             await SaveMessage(messageRequest, MessageDirection.Outgoing, MessageType.Handoff);
@@ -127,7 +193,8 @@ public class MessageService : IMessageService
                 WorkflowType = request.TargetWorkflowType,
                 Text = request.Text,
                 Data = request.Data,
-                Agent = request.SourceAgent
+                Agent = request.SourceAgent,
+                Authorization = request.Authorization
             }, MessageType.Chat);
 
             return ServiceResult<string>.Success(targetThreadId);
@@ -207,9 +274,27 @@ public class MessageService : IMessageService
 
     public async Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType)
     {
+        if (request.WorkflowId == null && request.WorkflowType == null)
+        {
+            throw new Exception("WorkflowId or WorkflowType is required");
+        }
+
+        if (request.WorkflowId == null && request.WorkflowType != null)
+        {
+            ExtractWorkflowId(request);
+        }
+
+        //check if starts with tenantId
+        if (!request.WorkflowId!.StartsWith(_tenantContext.TenantId + ":"))
+        {
+            throw new Exception("WorkflowId must start with tenantId");
+        }
+
         _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
         
+        //await HandleAuthorization(request);
+
         if (request.ThreadId == null)
         {
             request.ThreadId = await CreateOrGetThread(request);
@@ -219,14 +304,30 @@ public class MessageService : IMessageService
         await SaveMessage(request, MessageDirection.Incoming, messageType);
 
         // Signal the workflow
-        await SignalWorkflowAsync(request);
+        await SignalWorkflowAsync(request, messageType);
 
         _logger.LogInformation("Successfully processed inbound message");
 
         return ServiceResult<string>.Success(request.ThreadId);
     }
 
-    private async Task SignalWorkflowAsync(ChatOrDataRequest request)
+    private void ExtractWorkflowId(ChatOrDataRequest request)
+    {
+        if (request.WorkflowId != null)
+        {
+            return;
+        }
+
+        if (request.WorkflowType == null)
+        {
+            throw new Exception("WorkflowType is required when WorkflowId is not provided");
+        }
+        request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowType}";
+    }
+
+
+
+    private async Task SignalWorkflowAsync(ChatOrDataRequest request, MessageType messageType)
     {
         var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var signalRequest = new WorkflowSignalWithStartRequest
@@ -240,7 +341,9 @@ public class MessageService : IMessageService
                  request.ThreadId,
                  request.ParticipantId,
                  request.Text, 
-                 request.Data
+                 request.Data,
+                 Type = messageType.ToString(),
+                 request.Authorization
             }
         };
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);
@@ -266,7 +369,6 @@ public class MessageService : IMessageService
         return threadId;
     }
     
-
     private async Task<ConversationMessage> SaveMessage(ChatOrDataRequest request, MessageDirection direction, MessageType messageType)
     {
         if (request.ThreadId == null)

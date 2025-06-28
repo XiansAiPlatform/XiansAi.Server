@@ -1,5 +1,6 @@
 using MongoDB.Driver;
 using Microsoft.Extensions.Logging;
+using System.Net.Sockets;
 
 namespace Shared.Utils;
 
@@ -52,6 +53,30 @@ public static class MongoRetryHelper
                 await Task.Delay(delay);
                 continue;
             }
+            catch (MongoConnectionException ex) when (attempt < maxRetries)
+            {
+                var delay = CalculateConnectionDelay(baseDelay, attempt);
+                logger.LogWarning(ex, "Connection error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
+                    operationName, attempt + 1, delay.TotalMilliseconds);
+                await Task.Delay(delay);
+                continue;
+            }
+            catch (TimeoutException ex) when (attempt < maxRetries)
+            {
+                var delay = CalculateConnectionDelay(baseDelay, attempt);
+                logger.LogWarning(ex, "Timeout error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
+                    operationName, attempt + 1, delay.TotalMilliseconds);
+                await Task.Delay(delay);
+                continue;
+            }
+            catch (SocketException ex) when (attempt < maxRetries)
+            {
+                var delay = CalculateConnectionDelay(baseDelay, attempt);
+                logger.LogWarning(ex, "Socket error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
+                    operationName, attempt + 1, delay.TotalMilliseconds);
+                await Task.Delay(delay);
+                continue;
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in {OperationName} on attempt {Attempt}", operationName, attempt + 1);
@@ -83,6 +108,35 @@ public static class MongoRetryHelper
             await operation();
             return true; // Dummy return value
         }, logger, maxRetries, baseDelayMs, operationName);
+    }
+
+    /// <summary>
+    /// Executes a MongoDB operation with error handling that allows graceful failure.
+    /// This is useful for non-critical operations like index creation that shouldn't block application startup.
+    /// </summary>
+    /// <param name="operation">The operation to execute</param>
+    /// <param name="logger">Logger for logging attempts</param>
+    /// <param name="maxRetries">Maximum number of retry attempts (default: 2 for non-critical operations)</param>
+    /// <param name="baseDelayMs">Base delay in milliseconds for exponential backoff (default: 1000)</param>
+    /// <param name="operationName">Name of the operation for logging purposes</param>
+    /// <returns>True if operation succeeded, false if it failed after all retries</returns>
+    public static async Task<bool> ExecuteWithGracefulRetryAsync(
+        Func<Task> operation,
+        ILogger logger,
+        int maxRetries = 2,
+        int baseDelayMs = 1000,
+        string operationName = "MongoDB operation")
+    {
+        try
+        {
+            await ExecuteWithRetryAsync(operation, logger, maxRetries, baseDelayMs, operationName);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Non-critical operation {OperationName} failed after all retry attempts, continuing without it", operationName);
+            return false;
+        }
     }
 
     /// <summary>
@@ -163,5 +217,16 @@ public static class MongoRetryHelper
 
         // Standard exponential backoff for other errors
         return TimeSpan.FromMilliseconds(baseDelay.TotalMilliseconds * Math.Pow(2, attempt));
+    }
+
+    /// <summary>
+    /// Calculates delay for connection-related errors with longer delays
+    /// </summary>
+    private static TimeSpan CalculateConnectionDelay(TimeSpan baseDelay, int attempt)
+    {
+        // Use longer delays for connection issues as they often indicate infrastructure problems
+        var connectionDelay = TimeSpan.FromMilliseconds(Math.Max(1000, baseDelay.TotalMilliseconds) * Math.Pow(2, attempt));
+        // Cap the maximum delay at 30 seconds to avoid excessively long waits
+        return connectionDelay > TimeSpan.FromSeconds(30) ? TimeSpan.FromSeconds(30) : connectionDelay;
     }
 } 

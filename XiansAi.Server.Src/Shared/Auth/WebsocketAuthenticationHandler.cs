@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
+using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 
@@ -31,7 +32,7 @@ namespace XiansAi.Server.Shared.Auth
             // Example: validate access_token and tenant from query
             var accessToken = Request.Query["access_token"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
-
+            
             _logger.LogDebug("Processing SignalR request: {Path}", Request.Path);
             if (_tenantContext != null)
             {
@@ -84,6 +85,7 @@ namespace XiansAi.Server.Shared.Auth
                         {
                             // Set the WebSocket user ID from configuration
                             var websocketUserId = websocketConfig.GetValue<string>("UserId");
+                            
                             if (websocketUserId == null)
                             {
                                 _logger.LogWarning("WebSocket UserId not found in configuration");
@@ -93,10 +95,10 @@ namespace XiansAi.Server.Shared.Auth
                             _tenantContext.TenantId = tenantId;
                             _tenantContext.AuthorizedTenantIds = new[] { tenantId };
 
-                            var claims = new[]
+                            var claims = new List<Claim>
                             {
                                 new Claim(ClaimTypes.NameIdentifier, accessToken),
-                                new Claim("TenantId", tenantId),
+                                new Claim("TenantId", tenantId)
                             };
 
                             var identity = new ClaimsIdentity(claims, Scheme.Name);

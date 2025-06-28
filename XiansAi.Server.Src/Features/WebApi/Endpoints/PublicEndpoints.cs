@@ -21,7 +21,8 @@ public static class PublicEndpoints
             return result.ToHttpResult();
         })
         .WithName("Send Verification Code")
-        .WithOpenApi();
+        .WithOpenApi()
+        .RequiresToken();
 
         registrationGroup.MapPost("/verification/validate", async (
             [FromBody] ValidateCodeRequest request,
@@ -31,6 +32,7 @@ public static class PublicEndpoints
             return Results.Ok(new { isValid });
         })
         .WithName("Validate Verification Code")
-        .WithOpenApi();
+        .WithOpenApi()
+        .RequiresToken();
     }
 }

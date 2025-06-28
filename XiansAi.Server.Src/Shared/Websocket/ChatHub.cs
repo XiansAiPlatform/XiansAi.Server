@@ -15,11 +15,13 @@ namespace XiansAi.Server.Shared.Websocket
         private readonly ITenantContext? _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IAuthorizationCacheService _authorizationCacheService;
 
-        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
+        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger, IAuthorizationCacheService authorizationCacheService)
         {
             _messageService = messageService;
             _httpContextAccessor = httpContextAccessor;
+            _authorizationCacheService = authorizationCacheService;
             var httpContext = _httpContextAccessor.HttpContext;
 
             if (httpContext != null)
@@ -109,7 +111,7 @@ namespace XiansAi.Server.Shared.Websocket
                 var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
                 if (inboundResult.Data != null)
-                {                 
+                {
                     // Notify client message was received
                     await Clients.Caller.SendAsync("InboundProcessed", inboundResult.Data);
                 }
@@ -126,13 +128,25 @@ namespace XiansAi.Server.Shared.Websocket
             }
         }
 
-        public async Task SubscribeToAgent(string workflowId, string participantId, string TenantId)
+        public async Task SubscribeToAgent(string subscribeId, string participantId, string TenantId)
         {
+            var workflowId = subscribeId;
+            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            {
+                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+            }
+            
             await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
         }
 
-        public async Task UnsubscribeFromAgent(string workflowId, string participantId, string TenantId)
+        public async Task UnsubscribeFromAgent(string subscribeId, string participantId, string TenantId)
         {
+            var workflowId = subscribeId;
+            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            {
+                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+            }
+
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
         }
     }

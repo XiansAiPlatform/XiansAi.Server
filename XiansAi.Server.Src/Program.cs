@@ -31,19 +31,24 @@ public class Program
     {
         try
         {
-            // Load environment variables from .env file
+            // Load environment variables from the correct file based on environment
             Env.Load();
+            var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+            var envFile = envName == "Production" ? ".env.production" : ".env.development";
+            Env.Load(envFile);
 
             // Parse command line args to determine which services to run
             var serviceType = ParseServiceTypeFromArgs(args);
             var loggerFactory = LoggerFactory.Create(logBuilder => logBuilder.AddConsole());
-            
             // Initialize logger
             _logger = loggerFactory.CreateLogger<Program>();
-            _logger.LogInformation($"Starting service with type: {serviceType}");
-
+            _logger.LogInformation($"Loading environment variables from {envFile} (ASPNETCORE_ENVIRONMENT={envName})");
+            
             // Build and run the application
             var builder = CreateApplicationBuilder(args, serviceType, loggerFactory);
+
+            builder.LoadServiceConfiguration(serviceType); // best place!
+
             var app = await ConfigureApplication(builder, serviceType, loggerFactory);
             
             // Run the app
@@ -116,6 +121,10 @@ public class Program
     {
         var app = builder.Build();
 
+        // Call your extension method here, passing the ServiceType
+        builder.LoadServiceConfiguration(serviceType);
+        
+        
         // Configure shared middleware
         app.UseSharedMiddleware();
 
