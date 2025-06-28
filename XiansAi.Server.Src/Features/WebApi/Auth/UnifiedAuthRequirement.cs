@@ -224,7 +224,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         ValidateToken(HttpContext httpContext, bool bypassCache = false)
     {
         var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-        var currentTenantId = httpContext?.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+        var currentTenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
         if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
         {
@@ -240,7 +240,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             var (found, valid, userId, tenantIds) = await _tokenCache.GetValidation(token);
             if (found)
             {
-                if (valid)
+                if (valid && userId != null)
                 {
                     if (currentTenantId == null)
                     {
@@ -269,6 +269,11 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
 
         try
         {
+            if (currentTenantId == null)
+            {
+                _logger.LogWarning("No tenantId found in request header");
+                return (false, null, null, null);
+            }
             // Validate token through auth provider
             var authProvider = _authProviderFactory.GetProvider();
             var (success, tokenUserId, tokenTenantIds) = await authProvider.ValidateToken(token);

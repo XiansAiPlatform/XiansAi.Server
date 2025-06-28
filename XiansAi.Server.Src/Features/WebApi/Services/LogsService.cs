@@ -21,10 +21,7 @@ public class LogsByDateRangeRequest
 
 public interface ILogsService
 {
-    Task<ServiceResult<Log>> GetLogById(string id);
     Task<ServiceResult<List<Log>>> GetLogsByWorkflowRunId(LogsByWorkflowRequest request);
-    Task<ServiceResult<List<Log>>> GetLogsByDateRange(LogsByDateRangeRequest request);
-    Task<ServiceResult<bool>> DeleteLog(string id);
 }
 
 public class LogsService : ILogsService
@@ -39,25 +36,6 @@ public class LogsService : ILogsService
     {
         _logRepository = new LogRepository(databaseService);
         _logger = logger;
-    }
-
-    public async Task<ServiceResult<Log>> GetLogById(string id)
-    {
-        try
-        {
-            var log = await _logRepository.GetByIdAsync(id);
-            if (log is null)
-            {
-                _logger.LogWarning("Log with ID {Id} not found", id);
-                return ServiceResult<Log>.NotFound("Log not found");
-            }
-            return ServiceResult<Log>.Success(log);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting log by id: {Id}", id);
-            return ServiceResult<Log>.InternalServerError("An error occurred while retrieving the log. Error: " + ex.Message);
-        }
     }
 
     public async Task<ServiceResult<List<Log>>> GetLogsByWorkflowRunId(LogsByWorkflowRequest request)
@@ -80,40 +58,5 @@ public class LogsService : ILogsService
         }
     }
 
-    public async Task<ServiceResult<List<Log>>> GetLogsByDateRange(LogsByDateRangeRequest request)
-    {
-        try
-        {
-            var logs = await _logRepository.GetByDateRangeAsync(request.StartDate, request.EndDate);
-            _logger.LogInformation("Found {Count} logs between {StartDate} and {EndDate}", 
-                logs.Count, request.StartDate, request.EndDate);
-            return ServiceResult<List<Log>>.Success(logs);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting logs by date range: {StartDate} to {EndDate}", 
-                request.StartDate, request.EndDate);
-            return ServiceResult<List<Log>>.InternalServerError("An error occurred while retrieving the logs. Error: " + ex.Message);
-        }
-    }
 
-    public async Task<ServiceResult<bool>> DeleteLog(string id)
-    {
-        try
-        {
-            var result = await _logRepository.DeleteAsync(id);
-            if (!result)
-            {
-                _logger.LogWarning("Log with ID {Id} not found for deletion", id);
-                return ServiceResult<bool>.NotFound("Log not found");
-            }
-            _logger.LogInformation("Deleted log: {Id}", id);
-            return ServiceResult<bool>.Success(true);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting log: {Id}", id);
-            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the log. Error: " + ex.Message);
-        }
-    }
 }
