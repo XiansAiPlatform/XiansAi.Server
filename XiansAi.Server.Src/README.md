@@ -181,3 +181,75 @@ To deploy the server to Azure Production, you can use the following command. Ens
 ```bash
 ../XiansAi.Server.Infra/deploy-webapi.sh
 ```
+
+## Docker Build & Deployment
+
+### Building and Publishing Docker Images
+
+Use the unified script for building and publishing multi-platform Docker images:
+
+```bash
+# Set required environment variables
+export DOCKERHUB_USERNAME=your-username
+
+# Build and publish with default settings (latest tag)
+./docker-build-and-publish.sh
+
+# Build and publish with custom tag
+export TAG=v1.0.0
+./docker-build-and-publish.sh
+
+# Build and publish with multiple tags
+export TAG=v1.0.0
+export ADDITIONAL_TAGS="latest,beta,stable"
+./docker-build-and-publish.sh
+
+# Use custom image name
+export IMAGE_NAME=myorg/myapp
+./docker-build-and-publish.sh
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DOCKERHUB_USERNAME` | *required* | Your DockerHub username |
+| `IMAGE_NAME` | `xiansai/server` | Base image name |
+| `TAG` | `latest` | Primary image tag |
+| `ADDITIONAL_TAGS` | *(empty)* | Comma-separated additional tags |
+| `DOCKERFILE` | `Dockerfile.production` | Dockerfile to use |
+| `PLATFORM` | `linux/amd64,linux/arm64` | Target platforms |
+
+### Example Workflow
+
+```bash
+# Complete build and publish workflow
+export DOCKERHUB_USERNAME=myusername
+export TAG=v1.2.0
+export ADDITIONAL_TAGS="latest,stable"
+
+# This will build for multiple platforms and push all tags
+./docker-build-and-publish.sh
+```
+
+The script automatically:
+
+- Logs into DockerHub
+- Creates a buildx builder if needed
+- Builds for multiple platforms (AMD64 and ARM64)
+- Pushes all specified tags simultaneously
+- Provides clear feedback on what was published
+
+## Development
+
+To run the application locally:
+
+```bash
+./start.sh
+```
+
+To run with custom environment:
+
+```bash
+./run-environment.sh
+```

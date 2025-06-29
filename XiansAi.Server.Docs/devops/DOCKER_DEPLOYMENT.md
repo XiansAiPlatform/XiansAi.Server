@@ -39,12 +39,12 @@ See `.env.example` for all available configuration options.
 
 ```bash
 # Make scripts executable
-chmod +x docker-build.sh docker-publish.sh
+chmod +x docker-build-and-publish.sh
 
 # Build for DockerHub (multi-platform)
 export IMAGE_NAME=99xio/xiansai-server
-export TAGS="v1.0.0,latest"
-./docker-build.sh
+export TAG="v1.0.0"
+./docker-build-and-publish.sh
 ```
 
 ### Publish to DockerHub
@@ -52,8 +52,8 @@ export TAGS="v1.0.0,latest"
 ```bash
 # Set your DockerHub username
 export DOCKERHUB_USERNAME=99xio
-export ADDITIONAL_TAGS="v1.0.0,latest"
-./docker-publish.sh
+export ADDITIONAL_TAGS="latest"
+# No longer needed - docker-build-and-publish.sh handles everything
 ```
 
 ## 🔒 Security Considerations

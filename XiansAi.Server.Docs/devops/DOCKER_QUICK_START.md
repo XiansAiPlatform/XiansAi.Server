@@ -38,7 +38,7 @@ Auth0__ClientSecret=your-client-secret
 docker-compose -f docker-compose.production.yml up -d
 
 # OR build and deploy locally
-./docker-build.sh
+./docker-build-and-publish.sh
 docker-compose -f docker-compose.production.yml up -d
 ```
 
@@ -61,8 +61,7 @@ curl http://localhost:5000/health
 export DOCKERHUB_USERNAME=yourusername
 
 # Build and publish
-./docker-build.sh
-./docker-publish.sh
+./docker-build-and-publish.sh
 
 # Update your .env
 echo "DOCKER_IMAGE=99xio/xiansai-server:latest" >> .env

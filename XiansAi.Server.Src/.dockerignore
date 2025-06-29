@@ -89,5 +89,4 @@ yarn.lock
 Dockerfile*
 .dockerignore
 docker-compose*.yml
-docker-build.sh
-docker-publish.sh 
+docker-build-and-publish.sh 
