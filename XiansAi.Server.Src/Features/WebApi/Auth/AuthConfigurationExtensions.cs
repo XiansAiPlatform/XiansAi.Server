@@ -32,8 +32,13 @@ public static class AuthConfigurationExtensions
         // var providerConfig = builder.Configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
         //     new AuthProviderConfig();
 
-        // Add Authentication - don't set defaults to avoid conflicts with other authentication schemes
-        builder.Services.AddAuthentication()
+        // Add Authentication with JWT as the default scheme
+        builder.Services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = "JWT";
+            options.DefaultChallengeScheme = "JWT";
+            options.DefaultForbidScheme = "JWT";
+        })
         .AddJwtBearer("JWT", options =>
         {
             // Use the service provider to get the appropriate provider
@@ -87,10 +92,6 @@ public static class AuthConfigurationExtensions
 
         // Register the unified authorization handler
         builder.Services.AddScoped<IAuthorizationHandler, AuthRequirementHandler>();
-        
-        // For backward compatibility during transition, keep the old handlers registered
-        builder.Services.AddScoped<IAuthorizationHandler, ValidTenantHandler>();
-        builder.Services.AddScoped<IAuthorizationHandler, TokenClientHandler>();
 
         return builder;
     }

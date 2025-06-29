@@ -13,10 +13,6 @@ public static class WebApiConfiguration
 {
     public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
     {
-        // Register authorization handlers
-        builder.Services.AddScoped<IAuthorizationHandler, ValidTenantHandler>();
-        builder.Services.AddScoped<IAuthorizationHandler, TokenClientHandler>();
-
         // Register Web API specific services
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
         builder.Services.AddScoped<IWorkflowStarterService, WorkflowStarterService>();

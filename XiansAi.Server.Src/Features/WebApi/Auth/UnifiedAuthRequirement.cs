@@ -3,6 +3,7 @@ using Features.WebApi.Auth.Providers;
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
+using Shared.Utils;
 using System.Security.Claims;
 using XiansAi.Server.Features.WebApi.Services;
 
@@ -144,6 +145,10 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             context.Fail(new AuthorizationFailureReason(this, "Token validation failed"));
             return false;
         }
+        // If no tenant ids are returned, set the default tenant id
+        if (authorizedTenantIds == null || authorizedTenantIds.Count() == 0) {
+            authorizedTenantIds = new List<string> { Constants.DefaultTenantId };
+        }
         
         // Set user info to tenant context
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
@@ -167,7 +172,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         }
         
         // Verify user has access to this tenant
-        if (authorizedTenantIds == null || !authorizedTenantIds.Contains(currentTenantId))
+        if (currentTenantId != Constants.DefaultTenantId && !authorizedTenantIds!.Contains(currentTenantId))
         {
             var logMessage = bypassCache 
                 ? "Tenant ID {TenantId} is not authorized for user {UserId} even after fresh token validation"
