@@ -142,6 +142,9 @@ public class Program
         {
             var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
             await CreateIndexes.CreateDefinitionIndexes(databaseService);
+            
+            // Seed default data
+            await SeedData.SeedDefaultDataAsync(app.Services, _logger);
         }
         
         return app;
