@@ -48,8 +48,8 @@ public class AgentRepository : IAgentRepository
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
         _tenantContext = tenantContext;
 
-        // Ensure unique index exists for thread-safe agent creation
-        _ = Task.Run(EnsureIndexesAsync);
+        // Ensure unique index exists synchronously before repository is ready
+        EnsureIndexesAsync().GetAwaiter().GetResult();
     }
 
     private async Task EnsureIndexesAsync()
