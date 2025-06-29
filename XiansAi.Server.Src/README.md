@@ -37,7 +37,7 @@ docker run --rm -it \
   --env-file .env \
   -p 5001:80 \
   --name xiansai-test \
-  99xio/xians-arm-server:latest
+  99xio/xiansai-server:latest
 ```
 
 ### Running the Microservices

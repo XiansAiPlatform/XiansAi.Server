@@ -42,7 +42,7 @@ See `.env.example` for all available configuration options.
 chmod +x docker-build.sh docker-publish.sh
 
 # Build for DockerHub (multi-platform)
-export IMAGE_NAME=99xio/xians-arm-server
+export IMAGE_NAME=99xio/xiansai-server
 ./docker-build.sh
 ```
 
@@ -51,8 +51,6 @@ export IMAGE_NAME=99xio/xians-arm-server
 ```bash
 # Set your DockerHub username
 export DOCKERHUB_USERNAME=99xio
-
-# Publish with multiple tags
 export ADDITIONAL_TAGS="v1.0.0,latest"
 ./docker-publish.sh
 ```
@@ -118,7 +116,7 @@ The application automatically creates database indexes on startup. For custom mi
 # Run one-time migration container
 docker run --rm \
   --env-file .env \
-  99xio/xians-arm-server:latest \
+  99xio/xiansai-server:latest \
   dotnet XiansAi.Server.dll --migrate
 ```
 
@@ -156,7 +154,7 @@ docker port xiansai-server
 **Database connection issues:**
 ```bash
 # Test MongoDB connection
-docker run --rm --env-file .env 99xio/xians-arm-server:latest \
+docker run --rm --env-file .env 99xio/xiansai-server:latest \
   dotnet XiansAi.Server.dll --test-db
 ```
 

@@ -65,7 +65,7 @@ export DOCKERHUB_USERNAME=yourusername
 ./docker-publish.sh
 
 # Update your .env
-echo "DOCKER_IMAGE=99xio/xians-arm-server:latest" >> .env
+echo "DOCKER_IMAGE=99xio/xiansai-server:latest" >> .env
 ```
 
 ## 🔧 Common Commands
