@@ -35,7 +35,8 @@ public interface IAuthProvider
 public enum AuthProviderType
 {
     Auth0,
-    AzureB2C
+    AzureB2C,
+    Keycloak
 }
 
 /// <summary>
@@ -43,6 +44,6 @@ public enum AuthProviderType
 /// </summary>
 public class AuthProviderConfig
 {
-    public AuthProviderType Provider { get; set; } = AuthProviderType.Auth0;
+    public AuthProviderType Provider { get; set; } = AuthProviderType.Keycloak;
     public string TenantClaimType { get; set; } = "https://xians.ai/tenants";
-} 
+}
