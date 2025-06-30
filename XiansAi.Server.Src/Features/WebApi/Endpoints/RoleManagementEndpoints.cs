@@ -11,8 +11,7 @@ public static class RoleManagementEndpoints
     {
         var group = app.MapGroup("/api/roles")
             .WithTags("WebAPI - Role Management")
-            .RequiresValidTenant()
-            .RequireAuthorization();
+            .RequiresValidTenant();
 
         group.MapGet("/user/{userId}/tenant/{tenantId}", async (
             string userId,
