@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+using Features.WebApi.Auth.Providers.Keycloak;
 
 namespace Features.WebApi.Auth.Providers.Tokens;
 
@@ -20,13 +20,14 @@ public class TokenServiceFactory : ITokenServiceFactory
     
     public ITokenService GetTokenService()
     {
-        var providerConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
+        var providerConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
             
         return providerConfig.Provider switch
         {
             AuthProviderType.Auth0 => _serviceProvider.GetRequiredService<Auth0TokenService>(),
             AuthProviderType.AzureB2C => _serviceProvider.GetRequiredService<AzureB2CTokenService>(),
+            AuthProviderType.Keycloak => _serviceProvider.GetRequiredService<KeycloakTokenService>(),
             _ => throw new ArgumentException($"Unsupported authentication provider: {providerConfig.Provider}")
         };
     }

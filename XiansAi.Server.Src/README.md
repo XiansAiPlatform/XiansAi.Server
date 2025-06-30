@@ -100,7 +100,7 @@ Build and run using Docker Compose:
 docker-compose up -d
 ```
 
-This will start both the Web API service (ports 5000/5001) and the Library API service (ports 5010/5011) as separate containers.
+This will start both the Web API service (ports 5000/5001), the Library API service (ports 5010/5011) and the Keycloak Auth Service as separate containers.
 
 To run all services in a single container, uncomment the "allapi" service in docker-compose.yml:
 
@@ -163,6 +163,54 @@ exports.onExecutePostLogin = async (event, api) => {
 Now go to `Actions->Triggers->Post Login` and create a flow by dragging the `Send Tenants to JWT` action.
 
 `Start` -> `Send Tenants to JWT` -> `Complete`
+
+### Keycloak Configuration
+
+The Keycloak service is configured in `docker-compose.yml`. For development, the Keycloak realm `xianAI` is automatically imported on instance startup using a realm file.
+
+#### Realm File Setup
+
+- The realm file is located in the `<project folder>/keycloak-realm` directory as `keycloak-realm.json`.
+- **Important:** The realm file does not include secrets. You must obtain the required secrets (client secrets, etc.) from Azure Key Vault or your admin and replace all 4 `*****` secrets placeholders in the file before starting Keycloak.
+
+**To import the realm automatically in development:**
+
+1. Ensure the secrets are set in `keycloak-realm.json`.
+1. Start Keycloak with:
+
+```bash
+docker-compose up -d keycloak
+```
+
+1. Keycloak will be available at [http://localhost:18080](http://localhost:18080) by default (see your `docker-compose.yml` for details).
+1. You can login to Keycloak Admin Console with credentials on the `docker-compose.yml`
+
+#### Keycloak Integration in XiansAI.Server
+
+- The Keycloak configuration for the application is in the `appsettings.json` file.
+- Example configuration:
+
+    ```json
+    "Keycloak": {
+      "Realm": "xianAI",
+      "AuthServerUrl": "https://<your-keycloak-domain>",
+      "Resource": "server-api",
+      "Secret":<your-client-secret>
+      "Audience": "server-api, account",
+      "ManagementApi": {
+         "ClientId": "<your-realm-admin-cilent>",
+         "ClientSecret": "<your-adminclient-secret>"
+      }
+    }
+    ```
+
+#### Keycloak Organization Management
+
+- Organizations are managed via the Keycloak Admin REST API.
+- When a new tenant is set, the application will:
+  1. Check if an organization exists (using `/organizations/?search={tenantId}`).
+  2. Create the organization if it does not exist.
+  3. Add the user as a member to the organization.
 
 ### Running the server in production
 
