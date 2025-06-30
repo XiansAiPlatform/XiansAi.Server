@@ -47,6 +47,11 @@
         "background": {
           "type": "boolean",
           "description": "Whether the index should be built in the background (deprecated in newer MongoDB versions)"
+        },
+        "expire_after": {
+          "type": "string",
+          "description": "Specifies a TTL value for a TTL index. Can be a string like '30d', '12h', '5d 6h'",
+          "pattern": "^((\\d+)\\s*([smhdw])\\s*)+$"
         }
       },
       "required": ["name", "keys"],

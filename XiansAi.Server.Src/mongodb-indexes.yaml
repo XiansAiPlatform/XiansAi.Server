@@ -101,3 +101,16 @@ logs:
   - name: workflow_run_id_1_autocreated
     keys:
       workflow_run_id: asc
+  - name: logs_ttl_created_at
+    keys:
+      created_at: asc
+    expire_after: 30d
+    background: true
+
+user_roles:
+  - name: user_id_1_tenant_id_1
+    keys:
+      user_id: asc
+      tenant_id: asc
+    unique: true
+    background: true

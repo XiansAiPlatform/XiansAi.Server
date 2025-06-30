@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using Shared.Utils.Serialization;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -16,6 +17,7 @@ public class MongoIndexDefinition
     public bool? Unique { get; init; }
     public bool? Sparse { get; init; }
     public bool? Background { get; init; }
+    public TimeSpan? ExpireAfter { get; init; }
 }
 
 public class MongoIndexSynchronizer(
@@ -92,7 +94,8 @@ public class MongoIndexSynchronizer(
         var yamlContent = await File.ReadAllTextAsync(IndexDefinitionPath);
         
         var deserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .WithTypeConverter(new TimeSpanTypeConverter())
             .Build();
 
         var indexDefinitions = deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
@@ -112,7 +115,8 @@ public class MongoIndexSynchronizer(
                 if (def.Unique.HasValue) options.Unique = def.Unique.Value;
                 if (def.Sparse.HasValue) options.Sparse = def.Sparse.Value;
                 if (def.Background.HasValue) options.Background = def.Background.Value;
-
+                if (def.ExpireAfter.HasValue) options.ExpireAfter = def.ExpireAfter;
+                
                 return new CreateIndexModel<object>(indexKeys, options);
             }).ToList()
         );
