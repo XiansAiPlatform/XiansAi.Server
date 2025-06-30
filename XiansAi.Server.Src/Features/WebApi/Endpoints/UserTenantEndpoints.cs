@@ -20,6 +20,7 @@ public static class UserTenantEndpoints
             return Results.Ok(result);
         })
         .WithName("GetUserTenants")
+        .RequireAuthorization("RequireTokenAuth")
         .WithOpenApi(operation =>
         {
             operation.Summary = "Get all tenants for a user";
