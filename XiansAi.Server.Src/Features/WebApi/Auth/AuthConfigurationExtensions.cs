@@ -21,7 +21,13 @@ public static class AuthConfigurationExtensions
         // Register token services
         builder.Services.AddScoped<Auth0TokenService>();
         builder.Services.AddScoped<AzureB2CTokenService>();
-        builder.Services.AddScoped<KeycloakTokenService>();
+        builder.Services.AddScoped<KeycloakTokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<KeycloakTokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new KeycloakTokenService(logger, configuration, httpClient);
+        });
         builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
         
         // Register auth providers
