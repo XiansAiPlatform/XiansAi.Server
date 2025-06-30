@@ -174,18 +174,22 @@ The Keycloak service is configured in `docker-compose.yml`. For development, the
 - **Important:** The realm file does not include secrets. You must obtain the required secrets (client secrets, etc.) from Azure Key Vault or your admin and replace all 4 `*****` secrets placeholders in the file before starting Keycloak.
 
 **To import the realm automatically in development:**
+
 1. Ensure the secrets are set in `keycloak-realm.json`.
-2. Start Keycloak with:
+1. Start Keycloak with:
+
 ```bash
 docker-compose up -d keycloak
 ```
-3. Keycloak will be available at [http://localhost:18080](http://localhost:18080) by default (see your `docker-compose.yml` for details).
-4. You can login to Keycloak Admin Console with credentials on the `docker-compose.yml`
+
+1. Keycloak will be available at [http://localhost:18080](http://localhost:18080) by default (see your `docker-compose.yml` for details).
+1. You can login to Keycloak Admin Console with credentials on the `docker-compose.yml`
 
 #### Keycloak Integration in XiansAI.Server
 
 - The Keycloak configuration for the application is in the `appsettings.json` file.
 - Example configuration:
+
     ```json
     "Keycloak": {
       "Realm": "xianAI",
