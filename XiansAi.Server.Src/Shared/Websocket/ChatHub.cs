@@ -124,7 +124,7 @@ namespace XiansAi.Server.Shared.Websocket
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing inbound message");
-                await Clients.Caller.SendAsync("Error", "Failed to process message");
+                await Clients.Caller.SendAsync("Error", "Failed to process message: " + ex.Message);
             }
         }
 
