@@ -105,12 +105,10 @@ public class DefinitionsService : IDefinitionsService
         
         // Ensure agent exists using thread-safe upsert operation
         await _agentRepository.UpsertAgentAsync(request.Agent, _tenantContext.TenantId, currentUser);
-        
+
         // Check if the user has permissions for this agent
-        var permissions = await _agentPermissionRepository.GetAgentPermissionsAsync(request.Agent);
-        _logger.LogInformation("Permissions: {Permissions}", permissions);
-        
-        if (permissions != null && !permissions.HasPermission(currentUser, _tenantContext.UserRoles, PermissionLevel.Write))
+        var hasPermission = await CheckPermissions(request.Agent, PermissionLevel.Write);
+        if (!hasPermission)
         {
             var warningMessage = @$"User `{currentUser}` does not have write permission 
                 for agent `{request.Agent}` which is owned by another user. 
@@ -197,5 +195,35 @@ public class DefinitionsService : IDefinitionsService
         var bytes = System.Text.Encoding.UTF8.GetBytes(source);
         var hash = sha256.ComputeHash(bytes);
         return Convert.ToHexString(hash).ToLower();
+    }
+
+    private async Task<bool> HasSystemAccess(string agentName)
+    {
+        // System admin has access to everything
+        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            return true;
+
+        // Tenant admin has access to everything in their tenant
+        if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+        {
+            var agentTenantId = await _agentPermissionRepository.GetAgentTenantAsync(agentName);
+            return !string.IsNullOrEmpty(agentTenantId) &&
+                   _tenantContext.TenantId.Equals(agentTenantId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private async Task<bool> CheckPermissions(string agentName, PermissionLevel requiredLevel)
+    {
+        if (await HasSystemAccess(agentName))
+        {
+            return true;
+        }
+
+        var currentPermissions = await _agentPermissionRepository.GetAgentPermissionsAsync(agentName);
+        _logger.LogInformation("Permissions: {Permissions}", currentPermissions);
+
+        return currentPermissions?.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel) ?? false;
     }
 }

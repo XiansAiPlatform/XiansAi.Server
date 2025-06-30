@@ -25,8 +25,7 @@ The application loads configuration files in the following order (later files ov
 
 ```bash
 # Set environment via command line
-dotnet run --environment Production
-dotnet run --Environment=Staging
+dotnet run --launch-profile Production
 ```
 
 ### 2. Using the Convenience Script
@@ -161,7 +160,7 @@ dotnet run --all
 
 ```bash
 # Development
-docker-compose up webapi
+docker-compose up arm-server
 
 # Production
 docker-compose --profile production up webapi-prod
