@@ -1,10 +1,10 @@
-using Features.WebApi.Endpoints;
 using Features.WebApi.Auth;
+using Features.WebApi.Endpoints;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
-using XiansAi.Server.Features.WebApi.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using XiansAi.Server.Features.WebApi.Endpoints;
+using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Configuration;
@@ -13,11 +13,6 @@ public static class WebApiConfiguration
 {
     public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
     {
-        // Register authorization handlers
-        builder.Services.AddScoped<IUserTenantCacheService, UserTenantCacheService>();
-        builder.Services.AddScoped<IAuthorizationHandler, ValidTenantHandler>();
-        builder.Services.AddScoped<IAuthorizationHandler, TokenClientHandler>();
-
         // Register Web API specific services
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
         builder.Services.AddScoped<IWorkflowStarterService, WorkflowStarterService>();
@@ -33,12 +28,17 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IUserTenantService, UserTenantService>();
         builder.Services.AddScoped<IPublicService, PublicService>();
-        
+        builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
+        builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
+        builder.Services.AddScoped<IUserTenantCacheService, UserTenantCacheService>();
+
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
+        builder.Services.AddScoped<IUserRoleRepository, UserRoleRepository>();
+
         builder.Services.AddScoped<IUserTenantRepository, UserTenantRepository>();
 
         return builder;
@@ -58,6 +58,9 @@ public static class WebApiConfiguration
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);
         AgentEndpoints.MapAgentEndpoints(app);
+        RoleManagementEndpoints.MapRoleManagementEndpoints(app);
+
+
         UserTenantEndpoints.MapUserTenantEndpoints(app);
 
         return app;

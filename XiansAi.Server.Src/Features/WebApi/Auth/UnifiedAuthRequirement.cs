@@ -1,7 +1,9 @@
+using Auth0.ManagementApi.Models;
 using Features.WebApi.Auth.Providers;
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
+using Shared.Utils;
 using System.Security.Claims;
 using XiansAi.Server.Features.WebApi.Services;
 
@@ -77,6 +79,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private readonly ITokenValidationCache _tokenCache;
     private readonly IConfiguration _configuration;
     private readonly ITenantService _tenantService;
+    private readonly IRoleCacheService _roleCacheService;
     private readonly IUserTenantCacheService _userTenantCacheService;
     public AuthRequirementHandler(
         ILogger<AuthRequirementHandler> logger,
@@ -84,6 +87,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         IAuthProviderFactory authProviderFactory,
         ITokenValidationCache tokenCache,
         IConfiguration configuration,
+        IRoleCacheService roleCacheService,
         IUserTenantCacheService userTenantCacheService,
         ITenantService tenantService)
     {
@@ -93,6 +97,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         _tokenCache = tokenCache;
         _configuration = configuration;
         _tenantService = tenantService;
+        _roleCacheService = roleCacheService;
         _userTenantCacheService = userTenantCacheService;
     }
     
@@ -143,11 +148,15 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             context.Fail(new AuthorizationFailureReason(this, "Token validation failed"));
             return false;
         }
+        // If no tenant ids are returned, set the default tenant id
+        if (authorizedTenantIds == null || authorizedTenantIds.Count() == 0) {
+            authorizedTenantIds = new List<string> { Constants.DefaultTenantId };
+        }
         
         // Set user info to tenant context
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
-        
+
         // If tenant validation is not required, we're done
         if (!requirement.Options.RequireTenant)
         {
@@ -165,7 +174,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         }
         
         // Verify user has access to this tenant
-        if (authorizedTenantIds == null || !authorizedTenantIds.Contains(currentTenantId))
+        if (currentTenantId != Constants.DefaultTenantId && !authorizedTenantIds!.Contains(currentTenantId))
         {
             var logMessage = bypassCache 
                 ? "Tenant ID {TenantId} is not authorized for user {UserId} even after fresh token validation"
@@ -185,8 +194,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Validate tenant configuration if required
         if (requirement.Options.ValidateTenantConfig)
         {
-            var tenantResult = await _tenantService.GetTenantById(currentTenantId);
-            if (!tenantResult.IsSuccess)
+            var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
             {
                 _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
                 context.Fail(new AuthorizationFailureReason(this, 
@@ -194,7 +203,28 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 return false;
             }
         }
-        
+
+        var roles = await _roleCacheService.GetUserRolesAsync(loggedInUser, currentTenantId);
+        _tenantContext.UserRoles = roles?.ToArray() ?? Array.Empty<string>();
+
+        if (httpContext.User.Identity is ClaimsIdentity identity)
+        {
+            // Remove existing role claims
+            var existingRoleClaims = identity.Claims
+                .Where(c => c.Type == ClaimTypes.Role)
+                .ToList();
+            foreach (var claim in existingRoleClaims)
+            {
+                identity.RemoveClaim(claim);
+            }
+
+            // Add new role claims
+            foreach (var role in roles ?? Enumerable.Empty<string>())
+            {
+                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+            }
+        }
+
         // Set tenant ID in context
         _tenantContext.TenantId = currentTenantId;
         return true;
@@ -204,7 +234,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         ValidateToken(HttpContext httpContext, bool bypassCache = false)
     {
         var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-        
+        var currentTenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
         if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
         {
             _logger.LogWarning("No Bearer token found in Authorization header");
@@ -212,7 +243,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         }
 
         var token = authHeader.Substring("Bearer ".Length);
-        
+
         // Try to get validation result from cache (unless bypassing)
         if (!bypassCache)
         {

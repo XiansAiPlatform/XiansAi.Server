@@ -46,7 +46,7 @@ public class Auth0TokenService : ITokenService
 
             if (jsonToken == null)
             {
-                _logger.LogWarning("Invalid JWT token format");
+                _logger.LogWarning("Invalid JWT token format: {Token}", token);
                 return Task.FromResult<(bool success, string? userId)>((false, null));
             }
 
