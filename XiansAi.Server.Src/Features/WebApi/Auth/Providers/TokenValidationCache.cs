@@ -16,6 +16,11 @@ public interface ITokenValidationCache
     /// Caches validation result for future use
     /// </summary>
     Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds);
+
+    /// <summary>
+    /// Remove the cached validation for a token
+    /// </summary>
+    Task RemoveValidation(string token);
 }
 
 /// <summary>
@@ -85,7 +90,15 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         var hash = Convert.ToBase64String(hashBytes);
         return $"token_validation:{hash}";
     }
-    
+
+    public Task RemoveValidation(string token)
+    {
+        var cacheKey = GetCacheKey(token);
+        _cache.Remove(cacheKey);
+        _logger.LogDebug("Removed token validation cache entry");
+        return Task.CompletedTask;
+    }
+
     private class CachedValidation
     {
         public bool Valid { get; set; }
@@ -112,6 +125,11 @@ public class NoOpTokenValidationCache : ITokenValidationCache
     }
     
     public Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveValidation(string token)
     {
         return Task.CompletedTask;
     }

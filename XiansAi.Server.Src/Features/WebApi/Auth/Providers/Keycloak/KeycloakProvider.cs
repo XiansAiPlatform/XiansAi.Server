@@ -71,7 +71,7 @@ public class KeycloakProvider : IAuthProvider
         };
     }
 
-    public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
+    public Task<(bool success, string? userId)> ValidateToken(string token)
     {
         return _tokenService.ProcessToken(token);
     }

@@ -1,6 +1,8 @@
 using Features.WebApi.Auth;
+using Features.WebApi.Auth.Providers;
 using Features.WebApi.Models;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Identity.Client;
 using Shared.Auth;
 using Shared.Services;
 using Shared.Utils;
@@ -20,8 +22,9 @@ public interface IPublicService
     /// </summary>
     /// <param name="email">The email address to validate the code for</param>
     /// <param name="code">The verification code to validate</param>
+    /// <param name="token">Optional token for validation cache</param>
     /// <returns>True if the code is valid, false otherwise</returns>
-    Task<bool> ValidateCode(string email, string code);
+    Task<bool> ValidateCode(string email, string code, string token);
 
     /// <summary>
     /// Sends a verification code to the specified email address.
@@ -44,6 +47,7 @@ public class PublicService : IPublicService
     private readonly Random _random;
     private readonly ITenantService _tenantService;
     private readonly IUserTenantService _userTenantService;
+    private readonly ITokenValidationCache _tokenCache;
 
     // Constants for configuration
     private const int CODE_EXPIRATION_MINUTES = 15;
@@ -61,6 +65,7 @@ public class PublicService : IPublicService
     /// <param name="configuration">Application configuration</param>
     /// <param name="tenantService">Service for tenant operations</param>
     /// <param name="userTenantService">Service for user-tenant relationships</param>
+    /// <param name="tokenCache">Service for user-tenant relationships cache</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
         IAuthMgtConnect authMgtConnect, 
@@ -70,7 +75,8 @@ public class PublicService : IPublicService
         IEmailService emailService,
         IConfiguration configuration,
         IUserTenantService userTenantService,
-        ITenantService tenantService)
+        ITokenValidationCache tokenCache,
+    ITenantService tenantService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
@@ -80,6 +86,7 @@ public class PublicService : IPublicService
         _random = new Random();
         _tenantService = tenantService;
         _userTenantService = userTenantService ?? throw new ArgumentNullException(nameof(userTenantService));
+        _tokenCache = tokenCache ?? throw new ArgumentNullException(nameof(tokenCache));
     }
 
     /// <summary>
@@ -89,7 +96,7 @@ public class PublicService : IPublicService
     /// <param name="code">The verification code to validate</param>
     /// <returns>True if the code is valid, false otherwise</returns>
     /// <exception cref="ArgumentException">Thrown when email or code is null or empty</exception>
-    public async Task<bool> ValidateCode(string email, string code)
+    public async Task<bool> ValidateCode(string email, string code, string token)
     {
         if (string.IsNullOrWhiteSpace(email))
             throw new ArgumentException("Email cannot be null or empty", nameof(email));
@@ -98,7 +105,7 @@ public class PublicService : IPublicService
             throw new ArgumentException("Code cannot be null or empty", nameof(code));
         
         _logger.LogDebug("Validating code for email: {Email}", email);    
-        return await ValidateCodeAsync(email, code);
+        return await ValidateCodeAsync(email, code, token);
     }
 
     /// <summary>
@@ -244,7 +251,7 @@ The Xians.ai Team";
     /// <param name="email">The email address to validate the code for</param>
     /// <param name="code">The verification code to validate</param>
     /// <returns>True if the code is valid, false otherwise</returns>
-    private async Task<bool> ValidateCodeAsync(string email, string code)
+    private async Task<bool> ValidateCodeAsync(string email, string code, string token)
     {
         _logger.LogInformation("Validating verification code for email: {Email}", email);
 
@@ -280,6 +287,7 @@ The Xians.ai Team";
                 _logger.LogDebug("Setting tenant {TenantId} for user {UserId}", tenantId, user);
                 
                 await _userTenantService.AddTenantToUser(user, tenantId);
+                await _tokenCache.RemoveValidation(token);
                 _logger.LogInformation("Successfully set tenant {TenantId} for user {UserId}", tenantId, user);
             }
             catch (Exception ex)

@@ -30,7 +30,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IPublicService, PublicService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
-        builder.Services.AddScoped<IUserTenantCacheService, UserTenantCacheService>();
 
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
