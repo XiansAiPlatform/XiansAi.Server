@@ -45,11 +45,14 @@
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
+  
   <ItemGroup>
-    <Content Include="mongodb-indexes.yaml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <Content Remove="mongodb-indexes.yaml" />
+    <Content Remove="mongodb-indexes.schema.json" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <EmbeddedResource Include="mongodb-indexes.yaml" />
   </ItemGroup>
 
 </Project>

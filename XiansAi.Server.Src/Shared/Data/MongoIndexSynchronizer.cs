@@ -2,6 +2,7 @@ using MongoDB.Driver;
 using Shared.Utils.Serialization;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+using System.Reflection;
 
 namespace Shared.Data;
 
@@ -24,10 +25,12 @@ public class MongoIndexSynchronizer(
     IDatabaseService databaseService,
     ILogger<MongoIndexSynchronizer> logger) : IMongoIndexSynchronizer
 { 
-    private static readonly string IndexDefinitionPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mongodb-indexes.yaml");
+    private const string EmbeddedResourceFileName = "mongodb-indexes.yaml";
 
     public async Task EnsureIndexesAsync()
     { 
+        logger.LogInformation("Starting index synchronization...");
+
         var database = await databaseService.GetDatabaseAsync();
         
         var collectionsCursor = await database.ListCollectionNamesAsync();
@@ -86,19 +89,7 @@ public class MongoIndexSynchronizer(
 
     private async Task<Dictionary<string, List<CreateIndexModel<object>>>> GetExpectedIndexesAsync()
     {
-        if (!File.Exists(IndexDefinitionPath))
-        {
-            throw new FileNotFoundException($"MongoDB index definition file not found at: {IndexDefinitionPath}");
-        }
-
-        var yamlContent = await File.ReadAllTextAsync(IndexDefinitionPath);
-        
-        var deserializer = new DeserializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .WithTypeConverter(new TimeSpanTypeConverter())
-            .Build();
-
-        var indexDefinitions = deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
+        var indexDefinitions = await GetIndexDefinitionsAsync();
 
         return indexDefinitions.OrderBy(kvp => kvp.Key).ToDictionary(
             kvp => kvp.Key,
@@ -116,9 +107,28 @@ public class MongoIndexSynchronizer(
                 if (def.Sparse.HasValue) options.Sparse = def.Sparse.Value;
                 if (def.Background.HasValue) options.Background = def.Background.Value;
                 if (def.ExpireAfter.HasValue) options.ExpireAfter = def.ExpireAfter;
-                
+
                 return new CreateIndexModel<object>(indexKeys, options);
             }).ToList()
         );
+    }
+
+    private async Task<Dictionary<string, List<MongoIndexDefinition>>> GetIndexDefinitionsAsync()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var assemblyName = assembly.GetName().Name!;
+        var embeddedResourceName = $"{assemblyName}.{EmbeddedResourceFileName}";
+        await using var stream = assembly.GetManifestResourceStream(embeddedResourceName) ??
+                                 throw new InvalidOperationException($"Embedded resource '{embeddedResourceName}' not found.");
+
+        using var reader = new StreamReader(stream);
+        var yamlContent = await reader.ReadToEndAsync();
+
+        var deserializer = new DeserializerBuilder()
+            .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .WithTypeConverter(new TimeSpanTypeConverter())
+            .Build();
+
+        return deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
     }
 } 
