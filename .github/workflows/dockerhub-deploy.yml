@@ -38,8 +38,6 @@ jobs:
           type=ref,event=branch
           # Tag for version tags
           type=ref,event=tag
-          # SHA for unique identification (only for branch pushes)
-          type=sha,prefix={{branch}}-,event=branch
           # Latest for dockerhub branch
           type=raw,value=latest,enable={{is_default_branch}}
           type=raw,value=latest,enable=${{ github.ref == 'refs/heads/dockerhub' }}
