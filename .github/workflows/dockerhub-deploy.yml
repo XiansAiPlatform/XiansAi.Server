@@ -9,7 +9,7 @@ on:
 
 env:
   IMAGE_NAME: xiansai-server
-  DOCKERHUB_USERNAME: 99xio  # Change this to your DockerHub username/org
+  DOCKERHUB_USERNAME: hasithy99x  # Change this to your DockerHub username/org
 
 jobs:
   build-and-push:
@@ -46,7 +46,7 @@ jobs:
         labels: |
           org.opencontainers.image.title=${{ env.IMAGE_NAME }}
           org.opencontainers.image.description=XiansAi Server - AI workflow platform
-          org.opencontainers.image.vendor=99xio
+          org.opencontainers.image.vendor=${{ env.DOCKERHUB_USERNAME }}
           
     - name: Build and push Docker image
       uses: docker/build-push-action@v5

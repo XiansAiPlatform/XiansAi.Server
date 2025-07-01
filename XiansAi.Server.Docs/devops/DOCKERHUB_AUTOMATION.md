@@ -42,11 +42,13 @@ The workflow uses an intelligent tagging strategy that combines multiple approac
 ### Example Tag Output
 
 For a commit `abc1234` on the `dockerhub` branch:
+
 - `99xio/xiansai-server:dockerhub`
 - `99xio/xiansai-server:dockerhub-abc1234`
 - `99xio/xiansai-server:latest`
 
 For a git tag `v1.2.0`:
+
 - `99xio/xiansai-server:v1.2.0`
 - `99xio/xiansai-server:latest`
 
@@ -58,10 +60,10 @@ For a git tag `v1.2.0`:
 
 ```bash
 # Create a new version tag
-git tag -a v1.0.0 -m "Release version 1.0.0"
+git tag -a v2.0.0 -m "Release version 2.0.0"
 
 # Push the tag to trigger Docker build
-git push origin v1.0.0
+git push origin v2.0.0
 
 # Or push all tags
 git push origin --tags
@@ -79,6 +81,7 @@ The workflow supports semantic versioning tags that start with `v`:
 ### Recommended Tagging Workflow
 
 1. **Development**: Push commits to `dockerhub` branch for testing
+
    ```bash
    git checkout dockerhub
    git commit -m "feat: add new feature"
@@ -87,6 +90,7 @@ The workflow supports semantic versioning tags that start with `v`:
    ```
 
 2. **Release**: Create and push version tags
+
    ```bash
    git tag -a v1.0.0 -m "Release v1.0.0"
    git push origin v1.0.0
@@ -98,11 +102,13 @@ The workflow supports semantic versioning tags that start with `v`:
 The Docker build is triggered by:
 
 1. **Push to dockerhub branch**
+
    ```bash
    git push origin dockerhub
    ```
 
 2. **Version tags** (any tag starting with 'v')
+
    ```bash
    git tag v1.0.0
    git push origin v1.0.0
@@ -113,17 +119,22 @@ The Docker build is triggered by:
 ## 🏗️ Build Details
 
 ### Multi-Platform Support
+
 The workflow builds for multiple architectures:
+
 - `linux/amd64` (Intel/AMD 64-bit)
 - `linux/arm64` (ARM 64-bit, Apple Silicon)
 
 ### Build Context
+
 - **Context**: `./XiansAi.Server.Src`
 - **Dockerfile**: `Dockerfile.production`
 - **Build Cache**: GitHub Actions cache for faster builds
 
 ### Build Output
+
 After each successful build, you'll see a summary with:
+
 - Image name and tags
 - Docker pull commands
 - Platform information
@@ -131,16 +142,19 @@ After each successful build, you'll see a summary with:
 ## 📦 Using the Published Images
 
 ### Pull Latest Image
+
 ```bash
 docker pull 99xio/xiansai-server:latest
 ```
 
 ### Pull Specific Version
+
 ```bash
 docker pull 99xio/xiansai-server:v1.0.0
 ```
 
 ### Run the Container
+
 ```bash
 # Using environment file
 docker run --env-file .env -p 5000:80 99xio/xiansai-server:latest
@@ -152,11 +166,13 @@ docker-compose -f docker-compose.production.yml up -d
 ## 🔍 Monitoring Builds
 
 ### GitHub Actions
+
 1. Go to your repository
 2. Click **Actions** tab
 3. Look for "Build and Publish to DockerHub" workflows
 
 ### DockerHub
+
 1. Visit your DockerHub repository
 2. Check the **Tags** tab for new images
 3. View download statistics and image details
@@ -166,31 +182,38 @@ docker-compose -f docker-compose.production.yml up -d
 ### Build Failures
 
 **Authentication Error:**
+
 - Verify `DOCKERHUB_TOKEN` secret is set correctly
 - Ensure DockerHub username matches in workflow
 
 **Build Context Error:**
+
 - Check that `XiansAi.Server.Src` directory exists
 - Verify `Dockerfile.production` is present
 
 **Platform Build Error:**
+
 - Docker buildx may need initialization
 - Check platform compatibility
 
 ### Tag Issues
 
 **Missing Tags:**
+
 - Ensure git tags start with 'v' (e.g., `v1.0.0`)
 - Check that tags are pushed to GitHub: `git push origin --tags`
 
 **Wrong Tags:**
+
 - Review the metadata-action configuration
 - Check the `tags:` section in the workflow
 
 ## 🔧 Advanced Configuration
 
 ### Custom Image Names
+
 Update the workflow environment variables:
+
 ```yaml
 env:
   IMAGE_NAME: your-custom-name
@@ -198,13 +221,17 @@ env:
 ```
 
 ### Additional Platforms
+
 Add more platforms in the build step:
+
 ```yaml
 platforms: linux/amd64,linux/arm64,linux/arm/v7
 ```
 
 ### Custom Tagging Rules
+
 Modify the metadata extraction step to add custom tagging logic:
+
 ```yaml
 tags: |
   type=ref,event=branch
