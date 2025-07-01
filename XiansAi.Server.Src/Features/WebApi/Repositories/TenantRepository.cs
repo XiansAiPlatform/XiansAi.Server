@@ -30,45 +30,8 @@ public class TenantRepository : ITenantRepository
 
     public TenantRepository(IDatabaseService databaseService)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Tenant>("tenants");
-        
-        // Create indexes only if they don't exist
-        CreateIndexesIfNotExist();
-    }
-
-    private void CreateIndexesIfNotExist()
-    {
-        try
-        {
-            // Get existing indexes
-            var existingIndexes = _collection.Indexes.List().ToList();
-            var existingIndexNames = existingIndexes.Select(idx => idx["name"].AsString).ToList();
-
-            // Create TenantId index if it doesn't exist
-            if (!existingIndexNames.Contains("tenant_id_1"))
-            {
-                var indexKeys = Builders<Tenant>.IndexKeys.Ascending(x => x.TenantId);
-                var indexOptions = new CreateIndexOptions { Unique = true, Name = "tenant_id_1" };
-                var indexModel = new CreateIndexModel<Tenant>(indexKeys, indexOptions);
-                _collection.Indexes.CreateOne(indexModel);
-            }
-
-            // Create Domain index if it doesn't exist
-            if (!existingIndexNames.Contains("domain_1"))
-            {
-                var domainIndexKeys = Builders<Tenant>.IndexKeys.Ascending(x => x.Domain);
-                var domainIndexOptions = new CreateIndexOptions { Unique = true, Name = "domain_1" };
-                var domainIndexModel = new CreateIndexModel<Tenant>(domainIndexKeys, domainIndexOptions);
-                _collection.Indexes.CreateOne(domainIndexModel);
-            }
-        }
-        catch (Exception ex)
-        {
-            // Log the error but don't throw - we want the application to continue even if index creation fails
-            // The indexes might already exist or there might be permission issues
-            Console.WriteLine($"Warning: Failed to create indexes: {ex.Message}");
-        }
     }
 
     // Standard CRUD Operations
