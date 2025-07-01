@@ -9,7 +9,7 @@ on:
 
 env:
   IMAGE_NAME: xiansai-server
-  DOCKERHUB_USERNAME: hasithy  # DockerHub login username
+  DOCKERHUB_USERNAME: hasithy99x  # DockerHub login username
   DOCKERHUB_ORG: 99xio  # Organization/namespace for publishing images
 
 jobs:

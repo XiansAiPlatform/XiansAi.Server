@@ -35,25 +35,18 @@ See `.env.example` for all available configuration options.
 
 ## 🏗️ Building and Publishing
 
-### Build Docker Image
+### Build and Publish Docker Image
 
 ```bash
 # Make scripts executable
 chmod +x docker-build-and-publish.sh
 
 # Build for DockerHub (multi-platform)
+
 export IMAGE_NAME=99xio/xiansai-server
-export TAG="v1.0.0"
-./docker-build-and-publish.sh
-```
-
-### Publish to DockerHub
-
-```bash
-# Set your DockerHub username
-export DOCKERHUB_USERNAME=99xio
 export ADDITIONAL_TAGS="latest"
-# No longer needed - docker-build-and-publish.sh handles everything
+export TAG="v2.0.0"
+./docker-build-and-publish.sh
 ```
 
 ## 🔒 Security Considerations
