@@ -9,7 +9,7 @@ on:
 
 env:
   IMAGE_NAME: xiansai-server
-  DOCKERHUB_USERNAME: hasithy99x  # Change this to your DockerHub username/org
+  DOCKERHUB_USERNAME: 99xio  # Change this to your DockerHub username/org
 
 jobs:
   build-and-push:
