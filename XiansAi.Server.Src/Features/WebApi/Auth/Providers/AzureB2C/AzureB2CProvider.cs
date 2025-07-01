@@ -35,9 +35,17 @@ public class AzureB2CProvider : IAuthProvider
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
     {
-        options.TokenValidationParameters.ValidIssuer = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/v2.0/";
+        // Allow HTTP for development environments
+        options.RequireHttpsMetadata = false;
+        
+        // Ensure domain starts with https://
+        var domain = _azureB2CConfig.Domain!.StartsWith("https://") 
+            ? _azureB2CConfig.Domain 
+            : $"https://{_azureB2CConfig.Domain}";
+            
+        options.TokenValidationParameters.ValidIssuer = $"{domain}/{_azureB2CConfig.TenantId}/v2.0/";
         // Configuration is already initialized in constructor
-        options.Authority = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
+        options.Authority = $"{domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
         options.Audience = _azureB2CConfig.Audience;
         options.TokenValidationParameters.NameClaimType = "name";
         options.Events = new JwtBearerEvents

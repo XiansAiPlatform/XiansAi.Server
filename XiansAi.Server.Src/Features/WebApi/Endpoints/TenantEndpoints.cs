@@ -13,6 +13,7 @@ public static class TenantEndpoints
         var tenantsGroup = app.MapGroup("/api/client/tenants")
             .WithTags("WebAPI - Tenants")
             .RequiresValidTenant();
+        
 
         tenantsGroup.MapGet("/", async (
             [FromServices] ITenantService endpoint) =>
@@ -29,21 +30,6 @@ public static class TenantEndpoints
         })
         .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
 
-        tenantsGroup.MapGet("/{id}", async (
-            string id,
-            [FromServices] ITenantService endpoint) =>
-        {
-            var result = await endpoint.GetTenantById(id);
-            return result.ToHttpResult();
-        })
-        .WithName("Get Tenant")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get tenant by ID";
-            operation.Description = "Retrieves a tenant by its unique ID";
-            return operation;
-        })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
-
         tenantsGroup.MapGet("/by-tenant-id/{tenantId}", async (
             string tenantId,
             [FromServices] ITenantService endpoint) =>
@@ -55,20 +41,6 @@ public static class TenantEndpoints
         .WithOpenApi(operation => {
             operation.Summary = "Get tenant by tenant ID";
             operation.Description = "Retrieves a tenant by its tenant ID";
-            return operation;
-        });
-
-        tenantsGroup.MapGet("/by-domain/{domain}", async (
-            string domain,
-            [FromServices] ITenantService endpoint) =>
-        {
-            var result = await endpoint.GetTenantByDomain(domain);
-            return result.ToHttpResult();
-        })
-        .WithName("Get Tenant By Domain")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get tenant by domain";
-            operation.Description = "Retrieves a tenant by its domain";
             return operation;
         });
 
