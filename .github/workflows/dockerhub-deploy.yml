@@ -9,7 +9,8 @@ on:
 
 env:
   IMAGE_NAME: xiansai-server
-  DOCKERHUB_USERNAME: 99xio  # Change this to your DockerHub username/org
+  DOCKERHUB_USERNAME: hasithy  # DockerHub login username
+  DOCKERHUB_ORG: 99xio  # Organization/namespace for publishing images
 
 jobs:
   build-and-push:
@@ -32,7 +33,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.DOCKERHUB_ORG }}/${{ env.IMAGE_NAME }}
         tags: |
           # Branch name for non-main branches
           type=ref,event=branch
@@ -44,7 +45,7 @@ jobs:
         labels: |
           org.opencontainers.image.title=${{ env.IMAGE_NAME }}
           org.opencontainers.image.description=XiansAi Server - AI workflow platform
-          org.opencontainers.image.vendor=${{ env.DOCKERHUB_USERNAME }}
+          org.opencontainers.image.vendor=${{ env.DOCKERHUB_ORG }}
           
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -62,7 +63,7 @@ jobs:
       run: |
         echo "## 🐳 Docker Image Published Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Image:** \`${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** \`${{ env.DOCKERHUB_ORG }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
         echo '${{ steps.meta.outputs.tags }}' | sed 's/^/- `/' | sed 's/$/`/' >> $GITHUB_STEP_SUMMARY
@@ -71,5 +72,5 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Docker Pull Command:**" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "docker pull ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ${{ env.DOCKERHUB_ORG }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY 
