@@ -28,7 +28,7 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
 
     public FlowDefinitionRepository(IDatabaseService databaseService, IAgentRepository agentRepository, ILogger<FlowDefinitionRepository> logger)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
         _agentRepository = agentRepository;
         _logger = logger;

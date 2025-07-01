@@ -23,25 +23,9 @@ namespace XiansAi.Server.Features.WebApi.Repositories
             IDatabaseService databaseService,
             ILogger<UserRoleRepository> logger)
         {
-            var database = databaseService.GetDatabase().GetAwaiter().GetResult();
+            var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
             _collection = database.GetCollection<UserRole>("user_roles");
             _logger = logger;
-
-            CreateIndexes();
-        }
-
-        private void CreateIndexes()
-        {
-            var userTenantIndex = Builders<UserRole>.IndexKeys
-                .Ascending(x => x.UserId)
-                .Ascending(x => x.TenantId);
-
-            var userTenantIndexModel = new CreateIndexModel<UserRole>(
-                userTenantIndex,
-                new CreateIndexOptions { Unique = true, Background = true }
-            );
-
-            _collection.Indexes.CreateMany(new[] { userTenantIndexModel });
         }
 
         public async Task<UserRole?> GetUserRolesAsync(string userId, string tenantId)
