@@ -43,6 +43,9 @@ public static class SharedServices
         // Register database service
         services.AddScoped<IDatabaseService, DatabaseService>();
         
+        // Register MongoDB index synchronization
+        services.AddScoped<IMongoIndexSynchronizer, MongoIndexSynchronizer>();
+        
         // Register Temporal client
         services.AddScoped<ITemporalClientService>(sp =>
             new TemporalClientService(

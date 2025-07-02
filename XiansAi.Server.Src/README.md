@@ -20,6 +20,26 @@ dotnet run
 dotnet watch run
 ```
 
+### Running the server in production
+
+To run the server in production configuration, you can use the following command:
+
+```bash
+dotnet run --launch-profile Production
+```
+
+### Public Docker Image
+
+To run the server in production configuration using Docker, you can use the following command:
+
+```bash
+docker run --rm -it \       
+  --env-file .env \
+  -p 5001:80 \
+  --name xiansai-test \
+  99xio/xiansai-server:latest
+```
+
 ### Running the Microservices
 
 The application can be run as two separate microservices or as a single combined service. Each microservice can be scaled independently when needed.
@@ -80,7 +100,7 @@ Build and run using Docker Compose:
 docker-compose up -d
 ```
 
-This will start both the Web API service (ports 5000/5001) and the Library API service (ports 5010/5011) as separate containers.
+This will start both the Web API service (ports 5000/5001), the Library API service (ports 5010/5011) and the Keycloak Auth Service as separate containers.
 
 To run all services in a single container, uncomment the "allapi" service in docker-compose.yml:
 
@@ -144,6 +164,54 @@ Now go to `Actions->Triggers->Post Login` and create a flow by dragging the `Sen
 
 `Start` -> `Send Tenants to JWT` -> `Complete`
 
+### Keycloak Configuration
+
+The Keycloak service is configured in `docker-compose.yml`. For development, the Keycloak realm `xianAI` is automatically imported on instance startup using a realm file.
+
+#### Realm File Setup
+
+- The realm file is located in the `<project folder>/keycloak-realm` directory as `keycloak-realm.json`.
+- **Important:** The realm file does not include secrets. You must obtain the required secrets (client secrets, etc.) from Azure Key Vault or your admin and replace all 4 `*****` secrets placeholders in the file before starting Keycloak.
+
+**To import the realm automatically in development:**
+
+1. Ensure the secrets are set in `keycloak-realm.json`.
+1. Start Keycloak with:
+
+```bash
+docker-compose up -d keycloak
+```
+
+1. Keycloak will be available at [http://localhost:18080](http://localhost:18080) by default (see your `docker-compose.yml` for details).
+1. You can login to Keycloak Admin Console with credentials on the `docker-compose.yml`
+
+#### Keycloak Integration in XiansAI.Server
+
+- The Keycloak configuration for the application is in the `appsettings.json` file.
+- Example configuration:
+
+    ```json
+    "Keycloak": {
+      "Realm": "xianAI",
+      "AuthServerUrl": "https://<your-keycloak-domain>",
+      "Resource": "server-api",
+      "Secret":<your-client-secret>
+      "Audience": "server-api, account",
+      "ManagementApi": {
+         "ClientId": "<your-realm-admin-cilent>",
+         "ClientSecret": "<your-adminclient-secret>"
+      }
+    }
+    ```
+
+#### Keycloak Organization Management
+
+- Organizations are managed via the Keycloak Admin REST API.
+- When a new tenant is set, the application will:
+  1. Check if an organization exists (using `/organizations/?search={tenantId}`).
+  2. Create the organization if it does not exist.
+  3. Add the user as a member to the organization.
+
 ### Running the server in production
 
 To run the server in production configuration, you can use the following command:
@@ -160,4 +228,76 @@ To deploy the server to Azure Production, you can use the following command. Ens
 
 ```bash
 ../XiansAi.Server.Infra/deploy-webapi.sh
+```
+
+## Docker Build & Deployment
+
+### Building and Publishing Docker Images
+
+Use the unified script for building and publishing multi-platform Docker images:
+
+```bash
+# Set required environment variables
+export DOCKERHUB_USERNAME=your-username
+
+# Build and publish with default settings (latest tag)
+./docker-build-and-publish.sh
+
+# Build and publish with custom tag
+export TAG=v1.0.0
+./docker-build-and-publish.sh
+
+# Build and publish with multiple tags
+export TAG=v1.0.0
+export ADDITIONAL_TAGS="latest,beta,stable"
+./docker-build-and-publish.sh
+
+# Use custom image name
+export IMAGE_NAME=myorg/myapp
+./docker-build-and-publish.sh
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DOCKERHUB_USERNAME` | *required* | Your DockerHub username |
+| `IMAGE_NAME` | `xiansai/server` | Base image name |
+| `TAG` | `latest` | Primary image tag |
+| `ADDITIONAL_TAGS` | *(empty)* | Comma-separated additional tags |
+| `DOCKERFILE` | `Dockerfile.production` | Dockerfile to use |
+| `PLATFORM` | `linux/amd64,linux/arm64` | Target platforms |
+
+### Example Workflow
+
+```bash
+# Complete build and publish workflow
+export DOCKERHUB_USERNAME=myusername
+export TAG=v1.2.0
+export ADDITIONAL_TAGS="latest,stable"
+
+# This will build for multiple platforms and push all tags
+./docker-build-and-publish.sh
+```
+
+The script automatically:
+
+- Logs into DockerHub
+- Creates a buildx builder if needed
+- Builds for multiple platforms (AMD64 and ARM64)
+- Pushes all specified tags simultaneously
+- Provides clear feedback on what was published
+
+## Development
+
+To run the application locally:
+
+```bash
+./start.sh
+```
+
+To run with custom environment:
+
+```bash
+./run-environment.sh
 ```

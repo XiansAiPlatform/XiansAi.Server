@@ -79,9 +79,11 @@ public class MemoryTokenValidationCache : ITokenValidationCache
     
     private string GetCacheKey(string token)
     {
-        // Only use the first 8 chars of the token for the cache key to avoid logging the full token
-        var truncatedToken = token.Length > 8 ? token.Substring(0, 8) : token;
-        return $"token_validation:{truncatedToken}";
+        // Use SHA256 hash to avoid collisions and not log the full token
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var hashBytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(token));
+        var hash = Convert.ToBase64String(hashBytes);
+        return $"token_validation:{hash}";
     }
     
     private class CachedValidation

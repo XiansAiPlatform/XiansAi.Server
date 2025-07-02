@@ -1,7 +1,8 @@
-using MongoDB.Driver;
 using MongoDB.Bson;
-using Shared.Data.Models;
+using MongoDB.Driver;
+using Shared.Auth;
 using Shared.Data;
+using Shared.Data.Models;
 
 namespace Shared.Repositories;
 
@@ -37,42 +38,15 @@ public class AgentRepository : IAgentRepository
     private readonly IMongoCollection<Agent> _agents;
     private readonly IMongoCollection<FlowDefinition> _definitions;
     private readonly ILogger<AgentRepository> _logger;
+    private readonly ITenantContext _tenantContext;
 
-    public AgentRepository(IDatabaseService databaseService, ILogger<AgentRepository> logger)
+    public AgentRepository(IDatabaseService databaseService, ILogger<AgentRepository> logger, ITenantContext tenantContext)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _agents = database.GetCollection<Agent>("agents");
         _logger = logger;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
-        
-        // Ensure unique index exists for thread-safe agent creation
-        _ = Task.Run(EnsureIndexesAsync);
-    }
-
-    private async Task EnsureIndexesAsync()
-    {
-        try
-        {
-            // Create unique compound index on Name and Tenant
-            var indexOptions = new CreateIndexOptions { Unique = true };
-            var indexDefinition = Builders<Agent>.IndexKeys
-                .Ascending(x => x.Name)
-                .Ascending(x => x.Tenant);
-            
-            await _agents.Indexes.CreateOneAsync(
-                new CreateIndexModel<Agent>(indexDefinition, indexOptions));
-            
-            _logger.LogInformation("Unique index on (Name, Tenant) ensured for agents collection");
-        }
-        catch (MongoCommandException ex) when (ex.CodeName == "IndexOptionsConflict")
-        {
-            // Index already exists with different options, that's fine
-            _logger.LogDebug("Index already exists on agents collection");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to create unique index on agents collection");
-        }
+        _tenantContext = tenantContext; 
     }
 
     public async Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles)
@@ -84,7 +58,7 @@ public class AgentRepository : IAgentRepository
         }
 
         // Check if user has at least read permission
-        if (!agent.HasPermission(userId, userRoles, PermissionLevel.Read))
+        if (!CheckPermissions(agent, PermissionLevel.Read))
         {
             _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission", userId, name);
             return null;
@@ -101,26 +75,44 @@ public class AgentRepository : IAgentRepository
     public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant)
     {
         var filterBuilder = Builders<Agent>.Filter;
-        
-        // Create permission filter
-        var permissionFilters = new List<FilterDefinition<Agent>>
-        {
-            // Check if user is owner
-            filterBuilder.AnyEq("owner_access", userId),
-            // Check if user has read access
-            filterBuilder.AnyEq("read_access", userId),
-            // Check if user has write access (which includes read)
-            filterBuilder.AnyEq("write_access", userId),
+        var filters = new List<FilterDefinition<Agent>>();
 
-            // for backward compatibility
-            filterBuilder.AnyEq("permissions.owner_access", userId),
-            filterBuilder.AnyEq("permissions.read_access", userId),
-            filterBuilder.AnyEq("permissions.write_access", userId)
-        };
+        // System admin has access to everything in all tenants
+        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        {
+            // For system admin, we only filter by tenant if provided
+            return await _agents.Find(filterBuilder.Eq(x => x.Tenant, tenant)).ToListAsync();
+        }
+
+        // Tenant admin has access to everything in their tenant
+        if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+        {
+            // For tenant admin, we ensure they can only access their tenant
+            if (_tenantContext.TenantId.Equals(tenant, StringComparison.OrdinalIgnoreCase))
+            {
+                return await _agents.Find(filterBuilder.Eq(x => x.Tenant, tenant)).ToListAsync();
+            }
+        }
+
+        // For regular users, check explicit permissions
+        var permissionFilters = new List<FilterDefinition<Agent>>
+    {
+        // Check if user is owner
+        filterBuilder.AnyEq("owner_access", userId),
+        // Check if user has read access
+        filterBuilder.AnyEq("read_access", userId),
+        // Check if user has write access (which includes read)
+        filterBuilder.AnyEq("write_access", userId),
+
+        // for backward compatibility
+        filterBuilder.AnyEq("permissions.owner_access", userId),
+        filterBuilder.AnyEq("permissions.read_access", userId),
+        filterBuilder.AnyEq("permissions.write_access", userId)
+    };
 
         var permissionFilter = filterBuilder.Or(permissionFilters);
         var tenantFilter = filterBuilder.Eq(x => x.Tenant, tenant);
-        
+
         // Combine filters
         var finalFilter = filterBuilder.And(permissionFilter, tenantFilter);
 
@@ -143,7 +135,7 @@ public class AgentRepository : IAgentRepository
         }
 
         // Check if user has write permission
-        if (!existingAgent.HasPermission(userId, userRoles, PermissionLevel.Write))
+        if (!CheckPermissions(existingAgent, PermissionLevel.Write))
         {
             _logger.LogWarning("User {UserId} attempted to update agent {AgentName} without write permission", userId, existingAgent.Name);
             return false;
@@ -165,10 +157,10 @@ public class AgentRepository : IAgentRepository
         {
             _logger.LogWarning("Agent {AgentName} not found in tenant {Tenant}", name, tenant);
             return false;
-        }
+        }   
 
         // Check if user has owner permission
-        if (!agent.HasPermission(userId, userRoles, PermissionLevel.Owner))
+        if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", userId, name);
             return false;
@@ -194,7 +186,7 @@ public class AgentRepository : IAgentRepository
         }
 
         // Check if user has owner permission
-        if (!agent.HasPermission(userId, userRoles, PermissionLevel.Owner))
+        if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", userId, agent.Name);
             return false;
@@ -308,5 +300,31 @@ public class AgentRepository : IAgentRepository
             _logger.LogError(ex, "Unexpected error while upserting agent {AgentName}", agentName);
             throw;
         }
+    }
+
+    private bool HasSystemAccess(string agentTenantId)
+    {
+        // System admin has access to everything
+        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            return true;
+
+        // Tenant admin has access to everything in their tenant
+        if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+        {
+            return !string.IsNullOrEmpty(agentTenantId) &&
+                   _tenantContext.TenantId.Equals(agentTenantId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private bool CheckPermissions(Agent agent, PermissionLevel requiredLevel)
+    {
+        if (HasSystemAccess(agent.Tenant))
+        {
+            return true;
+        }
+
+        return agent?.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel) ?? false;
     }
 } 

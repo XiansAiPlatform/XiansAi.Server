@@ -12,8 +12,8 @@ public class FlowServerSettings
 {
     public required string FlowServerUrl { get; set; }
     public required string FlowServerNamespace { get; set; }
-    public required string FlowServerCertBase64 { get; set; }
-    public required string FlowServerPrivateKeyBase64 { get; set; }
+    public string? FlowServerCertBase64 { get; set; }
+    public string? FlowServerPrivateKeyBase64 { get; set; }
     public required string OpenAIApiKey { get; set; }
     public required string ModelName { get; set; }
 }
@@ -46,7 +46,7 @@ public class CertificateService
     public FlowServerSettings GetFlowServerSettings() {
         _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{_tenantContext.GetTemporalConfig().FlowServerUrl} FlowServerNamespace:{_tenantContext.GetTemporalConfig().FlowServerNamespace}");
         return new FlowServerSettings {
-            FlowServerUrl = _tenantContext.GetTemporalConfig().FlowServerUrl ?? throw new Exception($"FlowServerUrl not found for Tenant:{_tenantContext.TenantId}"),
+            FlowServerUrl = _tenantContext.GetTemporalConfig().FlowServerUrlExternal ?? _tenantContext.GetTemporalConfig().FlowServerUrl ?? throw new Exception($"FlowServerUrl not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerCertBase64 = GetFlowServerCertBase64(),
             FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
@@ -56,14 +56,20 @@ public class CertificateService
     }
 
 
-    public string GetFlowServerCertBase64() {
+    public string? GetFlowServerCertBase64() {
         var temporalConfig = _tenantContext.GetTemporalConfig();
-        return temporalConfig.CertificateBase64 ?? throw new Exception($"Temporal certificate configuration not found for setting Tenants:{_tenantContext.TenantId}");
+        if (temporalConfig.CertificateBase64 == null) {
+            return null;
+        }
+        return temporalConfig.CertificateBase64;
     }
 
-    public string GetFlowServerPrivateKeyBase64() {
+    public string? GetFlowServerPrivateKeyBase64() {
         var temporalConfig = _tenantContext.GetTemporalConfig();
-        return temporalConfig.PrivateKeyBase64 ?? throw new Exception($"Temporal private key configuration not found for setting Tenants:{_tenantContext.TenantId}");
+        if (temporalConfig.PrivateKeyBase64 == null) {
+            return null;
+        }
+        return temporalConfig.PrivateKeyBase64;
     }
 
     private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId)

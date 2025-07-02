@@ -1,10 +1,11 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text.Json;
 using Features.WebApi.Auth.Providers.Auth0;
 using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text.Json;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth.Providers.AzureB2C;
 
@@ -34,21 +35,48 @@ public class AzureB2CProvider : IAuthProvider
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
     {
-        options.TokenValidationParameters.ValidIssuer = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/v2.0/";
+        // Allow HTTP for development environments
+        options.RequireHttpsMetadata = false;
+        
+        // Ensure domain starts with https://
+        var domain = _azureB2CConfig.Domain!.StartsWith("https://") 
+            ? _azureB2CConfig.Domain 
+            : $"https://{_azureB2CConfig.Domain}";
+            
+        options.TokenValidationParameters.ValidIssuer = $"{domain}/{_azureB2CConfig.TenantId}/v2.0/";
         // Configuration is already initialized in constructor
-        options.Authority = $"{_azureB2CConfig.Domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
+        options.Authority = $"{domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
         options.Audience = _azureB2CConfig.Audience;
         options.TokenValidationParameters.NameClaimType = "name";
         options.Events = new JwtBearerEvents
         {
-            OnTokenValidated = context =>
+            OnTokenValidated = async context =>
             {
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
+                    // Get user roles from database or token claims
+                    var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+                        var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+                        if (!string.IsNullOrEmpty(tenantId))
+                        {
+                            using var scope = context.HttpContext.RequestServices.CreateScope();
+                            var roleCacheService = scope.ServiceProvider
+                                .GetRequiredService<IRoleCacheService>();
+
+                            var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
+
+                            foreach (var role in roles)
+                            {
+                                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                            }
+                        }
+                    }
+
                     // Set the User property of HttpContext
                     context.HttpContext.User = context.Principal;
                 }
-                return Task.CompletedTask;
             }
         };
     }

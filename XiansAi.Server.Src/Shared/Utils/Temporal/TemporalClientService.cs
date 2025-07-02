@@ -47,12 +47,15 @@ public class TemporalClientService : ITemporalClientService
                 new TemporalClientConnectOptions(new(config.FlowServerUrl))
                 {
                     Namespace = config.FlowServerNamespace!,
-                    Tls = new TlsOptions()
-                    {
-                        ClientCert = GetCertificate(),
-                        ClientPrivateKey = GetPrivateKey(),
-                    }
-                };            
+                };   
+            if (config.CertificateBase64 != null && config.PrivateKeyBase64 != null) 
+            {
+                options.Tls = new TlsOptions()
+                {
+                    ClientCert = GetCertificate(),
+                    ClientPrivateKey = GetPrivateKey(),
+                };
+            }
             
             _logger.LogInformation("Connecting to temporal server---" + config.FlowServerUrl + "---, namespace---" + config.FlowServerNamespace + "---");
 
@@ -166,15 +169,21 @@ public class TemporalClientService : ITemporalClientService
         }
     }
 
-    private byte[] GetCertificate()
+    private byte[]? GetCertificate()
     {
         var config = _tenantContext.GetTemporalConfig();
+        if (config.CertificateBase64 == null) {
+            return null;
+        }
         return Convert.FromBase64String(config.CertificateBase64 ?? throw new Exception("Certificate is not set in the configuration"));
     }
 
-    private byte[] GetPrivateKey()
+    private byte[]? GetPrivateKey()
     {
         var config = _tenantContext.GetTemporalConfig();
+        if (config.PrivateKeyBase64 == null) {
+            return null;
+        }
         return Convert.FromBase64String(config.PrivateKeyBase64 ?? throw new Exception("Private key is not set in the configuration"));
     }
 }

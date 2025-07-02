@@ -30,7 +30,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         IDatabaseService databaseService,
         ILogger<KnowledgeRepository> logger)
     {
-        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
+        var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _knowledge = database.GetCollection<BsonDocument>("knowledge");
         _logger = logger;
     }

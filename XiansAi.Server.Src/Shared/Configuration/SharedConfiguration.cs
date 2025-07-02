@@ -149,6 +149,10 @@ public static class SharedConfiguration
         app.UseCors(corsSettings.PolicyName);
         app.UseAuthentication();
         app.UseAuthorization();
+
+        // Map health checks
+        app.MapHealthChecks("/health");
+
         WebhookTriggerEndpoints.MapWebhookTriggerEndpoints(app);
         // Configure Websocket
         app.MapHub<ChatHub>("/ws/chat");

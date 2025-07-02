@@ -1,6 +1,6 @@
 using Features.WebApi.Auth.Providers.Auth0;
 using Features.WebApi.Auth.Providers.AzureB2C;
-using Microsoft.Extensions.DependencyInjection;
+using Features.WebApi.Auth.Providers.Keycloak;
 
 namespace Features.WebApi.Auth.Providers;
 
@@ -29,6 +29,7 @@ public class AuthProviderFactory : IAuthProviderFactory
         {
             AuthProviderType.Auth0 => _serviceProvider.GetRequiredService<Auth0Provider>(),
             AuthProviderType.AzureB2C => _serviceProvider.GetRequiredService<AzureB2CProvider>(),
+            AuthProviderType.Keycloak => _serviceProvider.GetRequiredService<KeycloakProvider>(),
             _ => throw new ArgumentException($"Unsupported authentication provider: {providerConfig.Provider}")
         };
     }

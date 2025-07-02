@@ -1,8 +1,11 @@
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
+using Auth0.ManagementApi.Models;
 using Features.WebApi.Auth.Providers;
-using Shared.Auth;
 using Features.WebApi.Services;
+using Microsoft.AspNetCore.Authorization;
+using Shared.Auth;
+using Shared.Utils;
+using System.Security.Claims;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth;
 
@@ -76,12 +79,14 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private readonly ITokenValidationCache _tokenCache;
     private readonly IConfiguration _configuration;
     private readonly ITenantService _tenantService;
+    private readonly IRoleCacheService _roleCacheService;
     public AuthRequirementHandler(
         ILogger<AuthRequirementHandler> logger,
         ITenantContext tenantContext,
         IAuthProviderFactory authProviderFactory,
         ITokenValidationCache tokenCache,
         IConfiguration configuration,
+        IRoleCacheService roleCacheService,
         ITenantService tenantService)
     {
         _logger = logger;
@@ -90,6 +95,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         _tokenCache = tokenCache;
         _configuration = configuration;
         _tenantService = tenantService;
+        _roleCacheService = roleCacheService;
     }
     
     protected override async Task HandleRequirementAsync(
@@ -132,18 +138,23 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private async Task<bool> TryAuthorize(AuthorizationHandlerContext context, HttpContext httpContext, AuthRequirement requirement, bool bypassCache)
     {
         // Always validate token
-        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(httpContext, bypassCache);
+        var (success, loggedInUser, authorizedTenantIds, roles) = await ValidateToken(httpContext, bypassCache);
         if (!success)
         {
             _logger.LogWarning("Token validation failed");
             context.Fail(new AuthorizationFailureReason(this, "Token validation failed"));
             return false;
         }
+        // If no tenant ids are returned, set the default tenant id
+        if (authorizedTenantIds == null || authorizedTenantIds.Count() == 0) {
+            authorizedTenantIds = new List<string> { Constants.DefaultTenantId };
+        }
         
         // Set user info to tenant context
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
-        
+        _tenantContext.UserRoles = roles?.ToArray() ?? Array.Empty<string>();
+
         // If tenant validation is not required, we're done
         if (!requirement.Options.RequireTenant)
         {
@@ -161,7 +172,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         }
         
         // Verify user has access to this tenant
-        if (authorizedTenantIds == null || !authorizedTenantIds.Contains(currentTenantId))
+        if (currentTenantId != Constants.DefaultTenantId && !authorizedTenantIds!.Contains(currentTenantId))
         {
             var logMessage = bypassCache 
                 ? "Tenant ID {TenantId} is not authorized for user {UserId} even after fresh token validation"
@@ -181,8 +192,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Validate tenant configuration if required
         if (requirement.Options.ValidateTenantConfig)
         {
-            var tenantResult = await _tenantService.GetTenantById(currentTenantId);
-            if (!tenantResult.IsSuccess)
+            var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
             {
                 _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
                 context.Fail(new AuthorizationFailureReason(this, 
@@ -190,36 +201,67 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 return false;
             }
         }
-        
+
+        if (httpContext.User.Identity is ClaimsIdentity identity)
+        {
+            // Remove existing role claims
+            var existingRoleClaims = identity.Claims
+                .Where(c => c.Type == ClaimTypes.Role)
+                .ToList();
+            foreach (var claim in existingRoleClaims)
+            {
+                identity.RemoveClaim(claim);
+            }
+
+            // Add new role claims
+            foreach (var role in roles ?? Enumerable.Empty<string>())
+            {
+                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+            }
+        }
+
         // Set tenant ID in context
         _tenantContext.TenantId = currentTenantId;
         return true;
     }
     
-    private async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)> 
+    private async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds, IEnumerable<string>? roles)> 
         ValidateToken(HttpContext httpContext, bool bypassCache = false)
     {
         var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-        
+        var currentTenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
         if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
         {
             _logger.LogWarning("No Bearer token found in Authorization header");
-            return (false, null, null);
+            return (false, null, null, null);
         }
 
         var token = authHeader.Substring("Bearer ".Length);
-        
+
         // Try to get validation result from cache (unless bypassing)
         if (!bypassCache)
         {
             var (found, valid, userId, tenantIds) = await _tokenCache.GetValidation(token);
             if (found)
             {
-                if (valid)
+                if (valid && userId != null)
                 {
+                    if (currentTenantId == null)
+                    {
+                        _logger.LogWarning("No tenantId found in request header");
+                        return (false, null, null, null);
+                    }
+
+                    var roles = await _roleCacheService.GetUserRolesAsync(userId, currentTenantId);
+                    foreach (var role in roles)
+                    {
+                        httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)]));
+                    }
+
                     // Set the user name to the logged in user from cache
                     httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
-                    return (true, userId, tenantIds);
+                    return (true, userId, tenantIds, roles);
                 }
                 // Don't immediately return false for invalid cached results - let retry logic handle this
                 _logger.LogDebug("Found invalid token in cache, will proceed to fresh validation");
@@ -232,28 +274,39 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
 
         try
         {
+            if (currentTenantId == null)
+            {
+                _logger.LogWarning("No tenantId found in request header");
+                return (false, null, null, null);
+            }
             // Validate token through auth provider
             var authProvider = _authProviderFactory.GetProvider();
             var (success, tokenUserId, tokenTenantIds) = await authProvider.ValidateToken(token);
-            
+
             // Cache the result (always cache fresh validation results)
             await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
             
             if (!success || string.IsNullOrEmpty(tokenUserId))
             {
                 _logger.LogWarning("Token validation failed from auth provider");
-                return (false, null, null);
+                return (false, null, null, null);
             }
             
             // Set the user name to the logged in user
             httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, tokenUserId)]));
 
-            return (true, tokenUserId, tokenTenantIds);
+            var roles = await _roleCacheService.GetUserRolesAsync(tokenUserId, currentTenantId);
+            foreach (var role in roles)
+            {
+                httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)]));
+            }
+
+            return (true, tokenUserId, tokenTenantIds, roles);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing JWT token");
-            return (false, null, null);
+            return (false, null, null, null);
         }
     }
 } 

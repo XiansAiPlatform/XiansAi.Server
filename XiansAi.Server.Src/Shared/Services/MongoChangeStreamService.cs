@@ -36,7 +36,7 @@ namespace XiansAi.Server.Shared.Services
                     using var scope = _scopeFactory.CreateScope();
                     var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
-                    var database = await databaseService.GetDatabase();
+                    var database = await databaseService.GetDatabaseAsync();
                     var collectionName = "conversation_message";
                     var collection = database.GetCollection<ConversationMessage>(collectionName);
 

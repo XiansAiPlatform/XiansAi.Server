@@ -2,11 +2,10 @@ using DotNetEnv;
 using Features.AgentApi.Configuration;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
-using XiansAi.Server.Shared.Data;
 using Shared.Auth;
 using Features.WebApi.Auth;
-using XiansAi.Server.Features.WebApi.Scripts;
 using Shared.Data;
+using XiansAi.Server.Features.WebApi.Scripts;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.
@@ -31,17 +30,19 @@ public class Program
     {
         try
         {
-            // Load environment variables from .env file
-            Env.Load();            
+            // Load environment variables from the correct file based on environment
+            Env.Load();
+            var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+            var envFile = envName == "Production" ? ".env.production" : ".env.development";
+            Env.Load(envFile);
 
             // Parse command line args to determine which services to run
             var serviceType = ParseServiceTypeFromArgs(args);
             var loggerFactory = LoggerFactory.Create(logBuilder => logBuilder.AddConsole());
-            
             // Initialize logger
             _logger = loggerFactory.CreateLogger<Program>();
-            _logger.LogInformation($"Starting service with type: {serviceType}");
-
+            _logger.LogInformation($"Loading environment variables from {envFile} (ASPNETCORE_ENVIRONMENT={envName})");
+            
             // Build and run the application
             var builder = CreateApplicationBuilder(args, serviceType, loggerFactory);
 
@@ -135,13 +136,14 @@ public class Program
         // Verify critical configuration
         ValidateConfiguration(app.Configuration);
         
-        // After your services are configured
-        using (var scope = app.Services.CreateScope())
-        {
-            var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-            await CreateIndexes.CreateDefinitionIndexes(databaseService);
-        }
-        
+        // Synchronize MongoDB indexes & seed default data
+        using var scope = app.Services.CreateScope();
+        var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
+        await indexSynchronizer.EnsureIndexesAsync();
+
+        // Seed default data 
+        await SeedData.SeedDefaultDataAsync(app.Services, _logger);
+
         return app;
     }
     

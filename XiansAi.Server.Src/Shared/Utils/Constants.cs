@@ -10,4 +10,5 @@ public static class Constants {
     public const string QueueNameKey = "queueName";
     public const string SIGNAL_INBOUND_CHAT_OR_DATA = "HandleInboundChatOrData";
     public const string SIGNAL_INBOUND_EVENT = "HandleInboundEvent";
+    public const string DefaultTenantId = "default";
 }
