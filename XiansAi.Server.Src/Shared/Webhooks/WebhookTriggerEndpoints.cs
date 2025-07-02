@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using Shared.Services; // For IWebhookService, WebhookCreateRequest, WebhookUpdateRequest
 //using XiansAi.Server.Features.AgentApi.Models; // For WebhookTriggerDto
 using Shared.Utils.Services; // For ToHttpResult extension methods
+using System.Text.Json;
+using Shared.Repositories;
 
 // These interfaces and DTOs should be defined elsewhere in your project.
 // Here, we just reference them as in the original endpoints.
@@ -16,13 +18,14 @@ using Shared.Utils.Services; // For ToHttpResult extension methods
 
 namespace XiansAi.Server.Shared.Webhooks
 {
-    public static class WebhookEndpoints
+    public static class WebhookTriggerEndpoints
     {
-        public static void MapWebhookEndpoints(this IEndpointRouteBuilder endpoints)
+        public static void MapWebhookTriggerEndpoints(this IEndpointRouteBuilder endpoints)
         {
             // WebAPI endpoints
             var webhooksGroup = endpoints.MapGroup("/api/webhooks")
-                .WithTags("WebAPI - Webhooks");
+                .WithTags("WebAPI - Webhooks")
+                .RequireAuthorization("WebhookAuthPolicy");
 
             webhooksGroup.MapGet("/", async (IWebhookService endpoint) =>
             {
@@ -129,8 +132,10 @@ namespace XiansAi.Server.Shared.Webhooks
             webhooksGroup.MapPost("/trigger", async (
                 WebhookTriggerDto triggerDto,
                 IWebhookService webhookService,
+                IMessageService messageService,
                 HttpContext context) =>
             {
+
                 var result = await webhookService.ManuallyTriggerWebhookAsync(triggerDto);
 
                 if (!result.Success)

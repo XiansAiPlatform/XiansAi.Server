@@ -54,6 +54,7 @@ public static class WebApiConfiguration
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);
         AgentEndpoints.MapAgentEndpoints(app);
+        ApiKeyEndpoints.MapApiKeyEndpoints(app);
         
         return app;
     }

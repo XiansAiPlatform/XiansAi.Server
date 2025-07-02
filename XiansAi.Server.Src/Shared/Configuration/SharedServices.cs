@@ -5,6 +5,7 @@ using Shared.Utils;
 using Shared.Utils.Temporal;
 using Shared.Data;
 using Shared.Services;
+using XiansAi.Server.Shared.Services;
 
 namespace Features.Shared.Configuration;
 
@@ -29,6 +30,7 @@ public static class SharedServices
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<ILlmService, LlmService>();
         services.AddScoped<IAuthorizationCacheService, AuthorizationCacheService>();
+        
 
         services.AddSingleton<IMongoDbContext>(sp =>
             new MongoDbContext(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ILogger<MongoDbContext>>()));

@@ -19,7 +19,7 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
         // Register HttpClient for webhook service
-        builder.Services.AddHttpClient();
+        //builder.Services.AddHttpClient();
 
         // Register Lib API specific services
         builder.Services.AddScoped<CertificateService>();
