@@ -3,6 +3,7 @@ using XiansAi.Server.Shared.Services;
 using Shared.Auth;
 using Microsoft.AspNetCore.Http;
 using Features.WebApi.Auth;
+using Shared.Utils.Services; // Add this if not present
 
 namespace XiansAi.Server.Features.WebApi.Endpoints
 {
@@ -22,26 +23,23 @@ namespace XiansAi.Server.Features.WebApi.Endpoints
                 HttpContext httpContext) =>
             {
                 var userId = tenantContext.LoggedInUser ?? "system";
-                try
+                var result = await apiKeyService.CreateApiKeyAsync(tenantContext.TenantId, request.Name, userId);
+                if (result.IsSuccess)
                 {
-                    var (apiKey, meta) = await apiKeyService.CreateApiKeyAsync(tenantContext.TenantId, request.Name, userId);
-                    // Return the raw key only once
+                    var (apiKey, meta) = result.Data;
                     return Results.Ok(new { apiKey, meta.Id, meta.Name, meta.CreatedAt, meta.CreatedBy });
                 }
-                catch (DuplicateApiKeyNameException ex)
+                if (result.StatusCode == StatusCode.Conflict)
                 {
-                    return Results.Problem(ex.Message, statusCode: 409, extensions: new Dictionary<string, object?>
+                    return Results.Problem(result.ErrorMessage, statusCode: 409, extensions: new Dictionary<string, object?>
                     {
-                        ["error"] = ex.Message
+                        ["error"] = result.ErrorMessage
                     });
                 }
-                catch (Exception ex)
+                return Results.Problem(result.ErrorMessage ?? "An unexpected error occurred while creating the API key.", statusCode: 500, extensions: new Dictionary<string, object?>
                 {
-                    return Results.Problem("An unexpected error occurred while creating the API key.", statusCode: 500, extensions: new Dictionary<string, object?>
-                    {
-                        ["error"] = ex.Message
-                    });
-                }
+                    ["error"] = result.ErrorMessage
+                });
             })
             .WithName("CreateApiKey")
             .WithOpenApi(op => {
@@ -55,22 +53,19 @@ namespace XiansAi.Server.Features.WebApi.Endpoints
                 [FromServices] IApiKeyService apiKeyService,
                 [FromServices] ITenantContext tenantContext) =>
             {
-                try
+                var result = await apiKeyService.GetApiKeysAsync(tenantContext.TenantId);
+                if (result.IsSuccess)
                 {
-                    var keys = await apiKeyService.GetApiKeysAsync(tenantContext.TenantId);
-                    // Never return the raw key or hash
-                    var result = keys.Select(k => new {
+                    var keys = result.Data;
+                    var response = keys.Select(k => new {
                         k.Id, k.Name, k.CreatedAt, k.CreatedBy, k.LastRotatedAt
                     });
-                    return Results.Ok(result);
+                    return Results.Ok(response);
                 }
-                catch (Exception ex)
+                return Results.Problem(result.ErrorMessage ?? "An unexpected error occurred while retrieving API keys.", statusCode: 500, extensions: new Dictionary<string, object?>
                 {
-                    return Results.Problem("An unexpected error occurred while retrieving API keys.", statusCode: 500, extensions: new Dictionary<string, object?>
-                    {
-                        ["error"] = ex.Message
-                    });
-                }
+                    ["error"] = result.ErrorMessage
+                });
             })
             .WithName("ListApiKeys")
             .WithOpenApi(op => {
@@ -85,18 +80,19 @@ namespace XiansAi.Server.Features.WebApi.Endpoints
                 [FromServices] IApiKeyService apiKeyService,
                 [FromServices] ITenantContext tenantContext) =>
             {
-                try
+                var result = await apiKeyService.RevokeApiKeyAsync(id, tenantContext.TenantId);
+                if (result.IsSuccess && result.Data)
                 {
-                    var ok = await apiKeyService.RevokeApiKeyAsync(id, tenantContext.TenantId);
-                    return ok ? Results.Ok() : Results.NotFound();
+                    return Results.Ok();
                 }
-                catch (Exception ex)
+                if (result.StatusCode == StatusCode.NotFound)
                 {
-                    return Results.Problem("An unexpected error occurred while revoking the API key.", statusCode: 500, extensions: new Dictionary<string, object?>
-                    {
-                        ["error"] = ex.Message
-                    });
+                    return Results.NotFound();
                 }
+                return Results.Problem(result.ErrorMessage ?? "An unexpected error occurred while revoking the API key.", statusCode: 500, extensions: new Dictionary<string, object?>
+                {
+                    ["error"] = result.ErrorMessage
+                });
             })
             .WithName("RevokeApiKey")
             .WithOpenApi(op => {
@@ -111,20 +107,20 @@ namespace XiansAi.Server.Features.WebApi.Endpoints
                 [FromServices] IApiKeyService apiKeyService,
                 [FromServices] ITenantContext tenantContext) =>
             {
-                try
+                var result = await apiKeyService.RotateApiKeyAsync(id, tenantContext.TenantId);
+                if (result.IsSuccess && result.Data != null)
                 {
-                    var rotated = await apiKeyService.RotateApiKeyAsync(id, tenantContext.TenantId);
-                    if (rotated == null) return Results.NotFound();
-                    var (apiKey, meta) = rotated.Value;
+                    var (apiKey, meta) = result.Data.Value;
                     return Results.Ok(new { apiKey, meta.Id, meta.Name, meta.CreatedAt, meta.CreatedBy, meta.LastRotatedAt });
                 }
-                catch (Exception ex)
+                if (result.StatusCode == StatusCode.NotFound)
                 {
-                    return Results.Problem("An unexpected error occurred while rotating the API key.", statusCode: 500, extensions: new Dictionary<string, object?>
-                    {
-                        ["error"] = ex.Message
-                    });
+                    return Results.NotFound();
                 }
+                return Results.Problem(result.ErrorMessage ?? "An unexpected error occurred while rotating the API key.", statusCode: 500, extensions: new Dictionary<string, object?>
+                {
+                    ["error"] = result.ErrorMessage
+                });
             })
             .WithName("RotateApiKey")
             .WithOpenApi(op => {
