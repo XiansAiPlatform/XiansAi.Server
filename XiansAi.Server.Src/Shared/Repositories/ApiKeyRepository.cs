@@ -55,7 +55,7 @@ namespace XiansAi.Server.Shared.Repositories
 
         public ApiKeyRepository(IDatabaseService databaseService, ILogger<ApiKeyRepository> logger)
         {
-            var database = databaseService.GetDatabase().Result;
+            var database = databaseService.GetDatabaseAsync().Result;
             _collection = database.GetCollection<ApiKey>("api_keys");
             _logger = logger;
             _indexCreationTask = new Lazy<Task>(() => InitializeIndexesAsync());
