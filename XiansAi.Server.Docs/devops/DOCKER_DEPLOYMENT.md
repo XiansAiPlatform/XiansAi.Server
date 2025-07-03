@@ -43,6 +43,7 @@ chmod +x docker-build-and-publish.sh
 
 # Build for DockerHub (multi-platform)
 
+export DOCKERHUB_USERNAME=99xio
 export IMAGE_NAME=99xio/xiansai-server
 export ADDITIONAL_TAGS="latest"
 export TAG="v2.0.0"

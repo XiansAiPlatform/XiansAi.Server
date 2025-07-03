@@ -237,8 +237,8 @@ To deploy the server to Azure Production, you can use the following command. Ens
 Use the unified script for building and publishing multi-platform Docker images:
 
 ```bash
-# Set required environment variables
-export DOCKERHUB_USERNAME=your-username
+# Set required environment variables (Change this to your DockerHub username)
+export DOCKERHUB_USERNAME=99xio
 
 # Build and publish with default settings (latest tag)
 ./docker-build-and-publish.sh
@@ -248,8 +248,8 @@ export TAG=v1.0.0
 ./docker-build-and-publish.sh
 
 # Build and publish with multiple tags
-export TAG=v1.0.0
-export ADDITIONAL_TAGS="latest,beta,stable"
+export TAG=v2.0.0
+export ADDITIONAL_TAGS="latest"
 ./docker-build-and-publish.sh
 
 # Use custom image name
