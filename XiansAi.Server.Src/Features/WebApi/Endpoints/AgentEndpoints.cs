@@ -11,7 +11,8 @@ public static class AgentEndpoints
     {
         var agentGroup = routes.MapGroup("/api/client/agents")
             .WithTags("WebAPI - Agents")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         agentGroup.MapGet("/names", async (
             [FromServices] IAgentService service) =>

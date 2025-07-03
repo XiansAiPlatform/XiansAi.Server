@@ -12,7 +12,8 @@ public static class WorkflowEndpoints
         // Map workflow endpoints with common attributes
         var workflowsGroup = app.MapGroup("/api/client/workflows")
             .WithTags("WebAPI - Workflows")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         workflowsGroup.MapGet("/{workflowId}/{runId}", async (
             string workflowId,

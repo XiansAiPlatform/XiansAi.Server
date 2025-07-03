@@ -209,6 +209,7 @@ public class KeycloakTokenService : ITokenService
                 ValidIssuer = issuerUri.ToString(),
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
+                RequireSignedTokens = true,
                 IssuerSigningKey = rsaSecurityKey,
                 ClockSkew = TimeSpan.FromMinutes(5)
             };

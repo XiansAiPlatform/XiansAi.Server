@@ -11,7 +11,8 @@ public static class KnowledgeEndpoints
         // Map instruction endpoints with common attributes
         var knowledgeGroup = app.MapGroup("/api/client/knowledge")
             .WithTags("WebAPI - Knowledge")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         knowledgeGroup.MapGet("/latest/all", async (
             [FromServices] IKnowledgeService endpoint) =>

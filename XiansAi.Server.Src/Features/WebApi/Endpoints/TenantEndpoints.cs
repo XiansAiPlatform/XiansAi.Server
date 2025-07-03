@@ -12,7 +12,8 @@ public static class TenantEndpoints
         // Map tenant endpoints with common attributes
         var tenantsGroup = app.MapGroup("/api/client/tenants")
             .WithTags("WebAPI - Tenants")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
         
 
         tenantsGroup.MapGet("/", async (
