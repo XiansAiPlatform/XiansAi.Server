@@ -1,41 +1,12 @@
 ﻿using MongoDB.Driver;
 using MongoDB.Bson;
-using MongoDB.Bson.Serialization.Attributes;
 using System.Security.Cryptography;
 using System.Text;
 using Shared.Data;
 using Shared.Data.Models;
 
-namespace XiansAi.Server.Shared.Repositories
+namespace Shared.Repositories
 {
-    public class ApiKey
-    {
-        [BsonId]
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string Id { get; set; } = null!;
-
-        [BsonElement("tenant_id")]
-        public required string TenantId { get; set; }
-
-        [BsonElement("name")]
-        public required string Name { get; set; } // Label for the key
-
-        [BsonElement("hashed_key")]
-        public required string HashedKey { get; set; }
-
-        [BsonElement("created_at")]
-        public required DateTime CreatedAt { get; set; }
-
-        [BsonElement("created_by")]
-        public required string CreatedBy { get; set; }
-
-        [BsonElement("revoked_at")]
-        public DateTime? RevokedAt { get; set; }
-
-        [BsonElement("last_rotated_at")]
-        public DateTime? LastRotatedAt { get; set; }
-    }
-
     public interface IApiKeyRepository
     {
         Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy);
@@ -226,16 +197,16 @@ namespace XiansAi.Server.Shared.Repositories
 
         private static string GenerateApiKey()
         {
-            var bytes = new byte[32];
+            var bytes = new byte[64];
             using var rng = RandomNumberGenerator.Create();
             rng.GetBytes(bytes);
-            return Convert.ToBase64String(bytes);
+            return "sk-Xnai-"+Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
         }
 
         private static string HashApiKey(string apiKey)
         {
-            using var sha256 = SHA256.Create();
-            var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
+            using var sha512 = SHA512.Create();
+            var hash = sha512.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
             return Convert.ToBase64String(hash);
         }
     }

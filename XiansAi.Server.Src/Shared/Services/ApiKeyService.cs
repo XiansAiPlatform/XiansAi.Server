@@ -1,12 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using MongoDB.Driver;
+﻿using MongoDB.Driver;
 using Shared.Utils.Services;
-using XiansAi.Server.Shared.Repositories;
-
-namespace XiansAi.Server.Shared.Services
+using Shared.Repositories;
+using Shared.Data.Models;
+namespace Shared.Services
 {
     public interface IApiKeyService
     {
@@ -43,7 +39,7 @@ namespace XiansAi.Server.Shared.Services
             catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
             {
                 _logger.LogWarning("Duplicate API key name '{Name}' for tenant {TenantId}", name, tenantId);
-                return ServiceResult<(string, ApiKey)>.Conflict($"API key name '{name}' already exists for this tenant.");
+                return ServiceResult<(string, ApiKey)>.Conflict($"API key name '{name}' was previously created for this tenant, use another name.");
             }
             catch (Exception ex)
             {

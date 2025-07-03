@@ -1,9 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.Shared.Services;
+using Shared.Services;
 using Shared.Auth;
-using Microsoft.AspNetCore.Http;
 using Features.WebApi.Auth;
-using Shared.Utils.Services; // Add this if not present
+using Shared.Utils.Services; 
 
 namespace XiansAi.Server.Features.WebApi.Endpoints
 {
@@ -13,7 +12,8 @@ namespace XiansAi.Server.Features.WebApi.Endpoints
         {
             var group = app.MapGroup("/api/client/apikeys")
                 .WithTags("WebAPI - API Keys")
-                .RequiresValidTenant();
+                .RequiresValidTenant()
+                .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
 
             // Create API key
             group.MapPost("/create", async (

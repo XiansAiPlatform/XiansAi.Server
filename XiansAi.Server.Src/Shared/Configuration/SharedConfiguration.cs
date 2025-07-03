@@ -1,15 +1,11 @@
-using Features.WebApi.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.GenAi;
-using XiansAi.Server.Shared.Auth;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
-using XiansAi.Server.Shared.Websocket;
 using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.Shared.Webhooks;
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
@@ -66,44 +62,6 @@ public static class SharedConfiguration
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
 
-        // Configure authentication with both schemes in a single call
-        builder.Services.AddAuthentication(options =>
-        {
-            // Optionally set a default scheme if desired
-            // options.DefaultScheme = "WebhookApiKeyScheme";
-        })
-        .AddScheme<AuthenticationSchemeOptions, WebsocketAuthenticationHandler>(
-            "WebSocketApiKeyScheme", options => { })
-        .AddScheme<AuthenticationSchemeOptions, WebhookAuthenticationHandler>(
-            "WebhookApiKeyScheme", options => { });
-
-        // Register both authorization handlers
-        builder.Services.AddScoped<IAuthorizationHandler, ValidWebsocketAccessHandler>();
-        builder.Services.AddScoped<IAuthorizationHandler, ValidWebhookAccessHandler>();
-
-        // Add both authorization policies
-        builder.Services.AddAuthorization(options =>
-        {
-            options.AddPolicy("WebsocketAuthPolicy", policy =>
-            {
-                policy.AddAuthenticationSchemes("WebSocketApiKeyScheme");
-                policy.RequireAuthenticatedUser();
-                policy.Requirements.Add(new ValidWebsocketAccessRequirement());
-            });
-            options.AddPolicy("WebhookAuthPolicy", policy =>
-            {
-                policy.AddAuthenticationSchemes("WebhookApiKeyScheme");
-                policy.RequireAuthenticatedUser();
-                policy.Requirements.Add(new ValidWebhookAccessRequirement());
-            });
-        });
-
-        // Add SignalR services
-        builder.Services.AddSignalR();
-
-        builder.Services.AddSingleton<MongoChangeStreamService>();
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
-
         // Register repositories
         builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
         builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
@@ -152,10 +110,6 @@ public static class SharedConfiguration
 
         // Map health checks
         app.MapHealthChecks("/health");
-
-        WebhookTriggerEndpoints.MapWebhookTriggerEndpoints(app);
-        // Configure Websocket
-        app.MapHub<ChatHub>("/ws/chat");
 
         return app;
     }

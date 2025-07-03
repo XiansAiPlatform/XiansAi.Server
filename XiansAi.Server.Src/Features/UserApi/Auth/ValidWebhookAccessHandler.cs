@@ -2,20 +2,17 @@
 using Shared.Auth;
 using System.Security.Claims;
 
-namespace XiansAi.Server.Shared.Auth
+namespace Features.UserApi.Auth
 {
     public class ValidWebhookAccessHandler : AuthorizationHandler<ValidWebhookAccessRequirement>
     {
         private readonly ILogger<ValidWebhookAccessHandler> _logger;
-        private readonly IConfiguration _configuration;
         private readonly ITenantContext _tenantContext;
         public ValidWebhookAccessHandler(
             IHttpContextAccessor httpContextAccessor,
-            IConfiguration configuration,
             ITenantContext tenantContext,
             ILogger<ValidWebhookAccessHandler> logger)
         {
-            _configuration = configuration;
             _tenantContext = tenantContext;
             _logger = logger;
         }

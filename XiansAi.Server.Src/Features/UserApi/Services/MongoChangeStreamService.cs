@@ -3,12 +3,12 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Repositories;
-using XiansAi.Server.Shared.Websocket;
+using Features.UserApi.Websocket;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
-using Shared.Services;
 
-namespace XiansAi.Server.Shared.Services
+
+namespace Features.UserApi.Services
 {
     public class MongoChangeStreamService : BackgroundService
     {

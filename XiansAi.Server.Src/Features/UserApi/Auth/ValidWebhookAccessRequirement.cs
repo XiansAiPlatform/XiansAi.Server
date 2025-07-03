@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 
-namespace XiansAi.Server.Shared.Auth
+namespace Features.UserApi.Auth
 {
     public class ValidWebhookAccessRequirement : IAuthorizationRequirement
     {

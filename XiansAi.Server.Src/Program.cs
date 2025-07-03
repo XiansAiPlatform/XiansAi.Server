@@ -6,6 +6,7 @@ using Shared.Auth;
 using Features.WebApi.Auth;
 using Shared.Data;
 using XiansAi.Server.Features.WebApi.Scripts;
+using Features.UserApi.Configuration;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.
@@ -19,6 +20,7 @@ public class Program
     {
         WebApi,
         LibApi,
+        UserApi,
         All
     }
     
@@ -102,13 +104,19 @@ public class Program
                 builder.AddAgentApiServices();
                 builder.AddAgentApiAuth();
                 break;
-            
+            case ServiceType.UserApi:
+                builder.AddUserApiServices();
+                builder.AddUserApiAuth();
+                break;
+
             case ServiceType.All:
             default:
                 builder.AddWebApiServices();
                 builder.AddAgentApiServices();
                 builder.AddAgentApiAuth();
                 builder.AddWebApiAuth();
+                builder.AddUserApiServices();
+                builder.AddUserApiAuth();
                 break;
         }
     }
@@ -161,11 +169,14 @@ public class Program
             case ServiceType.LibApi:
                 app.UseAgentApiEndpoints(loggerFactory);
                 break;
-            
+            case ServiceType.UserApi:
+                app.UseUserApiEndpoints();
+                break;
             case ServiceType.All:
             default:
                 app.UseWebApiEndpoints();
                 app.UseAgentApiEndpoints(loggerFactory);
+                app.UseUserApiEndpoints();
                 break;
         }
     }
@@ -192,6 +203,10 @@ public class Program
             else if (arg.Equals("--lib", StringComparison.OrdinalIgnoreCase))
             {
                 return ServiceType.LibApi;
+            }
+            else if (arg.Equals("--user", StringComparison.OrdinalIgnoreCase))
+            {
+                return ServiceType.UserApi;
             }
             else if (arg.Equals("--all", StringComparison.OrdinalIgnoreCase))
             {

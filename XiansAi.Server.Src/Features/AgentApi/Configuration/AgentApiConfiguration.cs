@@ -2,8 +2,6 @@ using Features.AgentApi.Endpoints;
 using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
 using XiansAi.Server.Features.AgentApi.Repositories;
-using XiansAi.Server.Features.AgentApi.Services.Agent;
-using XiansAi.Server.Features.AgentApi.Endpoints;
 using Features.AgentApi.Repositories;
 using Shared.Services;
 
@@ -15,7 +13,6 @@ public static class AgentApiConfiguration
     {
         // Register repositories
         builder.Services.AddScoped<IActivityHistoryRepository, ActivityHistoryRepository>();
-        //builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
         // Register HttpClient for webhook service
@@ -26,7 +23,6 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IActivityHistoryService, ActivityHistoryService>();
         builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
         builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
-        //builder.Services.AddScoped<IWebhookService, WebhookService>();
         builder.Services.AddScoped<ILogsService, LogsService>();
 
         return builder;
@@ -65,7 +61,6 @@ public static class AgentApiConfiguration
         ActivityHistoryEndpoints.MapActivityHistoryEndpoints(app, loggerFactory);
         DefinitionsEndpoints.MapDefinitionsEndpoints(app, loggerFactory);
         EventsEndpoints.MapEventsEndpoints(app, loggerFactory);
-        //WebhookEndpoints.MapWebhookEndpoints(app);
         ConversationEndpoints.MapConversationEndpoints(app);
         LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
         SettingsEndpoints.MapSettingsEndpoints(app);

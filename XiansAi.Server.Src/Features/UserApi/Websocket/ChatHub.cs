@@ -5,7 +5,7 @@ using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
 
-namespace XiansAi.Server.Shared.Websocket
+namespace Features.UserApi.Websocket
 {
     [Authorize(Policy = "WebsocketAuthPolicy")]
     public class ChatHub : Hub
@@ -15,13 +15,11 @@ namespace XiansAi.Server.Shared.Websocket
         private readonly ITenantContext? _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly IAuthorizationCacheService _authorizationCacheService;
 
-        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger, IAuthorizationCacheService authorizationCacheService)
+        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
         {
             _messageService = messageService;
             _httpContextAccessor = httpContextAccessor;
-            _authorizationCacheService = authorizationCacheService;
             var httpContext = _httpContextAccessor.HttpContext;
 
             if (httpContext != null)
