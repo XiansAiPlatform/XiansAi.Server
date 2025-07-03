@@ -63,6 +63,12 @@ public class AzureB2CProvider : IAuthProvider
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
                             }
+
+                            //for backward compatibility, ensure exisiting users have TenantUser role
+                            if (!roles.Contains(SystemRoles.TenantUser))
+                            {
+                                identity.AddClaim(new Claim(ClaimTypes.Role, SystemRoles.TenantUser));
+                            }
                         }
                     }
 

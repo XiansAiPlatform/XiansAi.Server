@@ -12,7 +12,7 @@ public static class TenantEndpoints
         // Map tenant endpoints with common attributes
         var tenantsGroup = app.MapGroup("/api/client/tenants")
             .WithTags("WebAPI - Tenants")
-            .RequiresValidTenant();
+            .RequiresToken();
 
         tenantsGroup.MapGet("/", async (
             [FromServices] ITenantService endpoint) =>
@@ -27,7 +27,7 @@ public static class TenantEndpoints
             operation.Description = "Retrieves all tenant records";
             return operation;
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
+        .RequiresTenantAdmin();
 
         tenantsGroup.MapGet("/{id}", async (
             string id,
@@ -37,12 +37,13 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Tenant")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get tenant by ID";
             operation.Description = "Retrieves a tenant by its unique ID";
             return operation;
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
+        .RequiresTenantAdmin();
 
         tenantsGroup.MapGet("/by-tenant-id/{tenantId}", async (
             string tenantId,
@@ -52,7 +53,8 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Tenant By TenantId")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get tenant by tenant ID";
             operation.Description = "Retrieves a tenant by its tenant ID";
             return operation;
@@ -70,7 +72,8 @@ public static class TenantEndpoints
             operation.Summary = "Get tenant by domain";
             operation.Description = "Retrieves a tenant by its domain";
             return operation;
-        });
+        })
+        .RequiresTenantAdmin();
 
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,
@@ -88,7 +91,8 @@ public static class TenantEndpoints
             operation.Summary = "Create a new tenant";
             operation.Description = "Creates a new tenant record";
             return operation;
-        }).RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin));
+        })
+        .RequiresSysAdmin();
 
         tenantsGroup.MapPut("/{id}", async (
             string id,
@@ -104,7 +108,7 @@ public static class TenantEndpoints
             operation.Description = "Updates an existing tenant record";
             return operation;
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
+        .RequiresTenantAdmin();
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
@@ -118,6 +122,8 @@ public static class TenantEndpoints
             operation.Summary = "Delete a tenant";
             operation.Description = "Deletes a tenant by its ID";
             return operation;
-        }).RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin));
+        })
+        .RequiresTenantAdmin();
+
     }
 } 

@@ -19,12 +19,12 @@ public interface IUserTenantService
 
 public class UserTenantService : IUserTenantService
 {
-    private readonly IUserTenantRepository _repo;
+    private readonly IUserRepository _userRepository;
     private readonly ILogger<UserTenantService> _logger;
 
-    public UserTenantService(IUserTenantRepository repo, ILogger<UserTenantService> logger)
+    public UserTenantService(IUserRepository userRepository, ILogger<UserTenantService> logger)
     {
-        _repo = repo;
+        _userRepository = userRepository;
         _logger = logger;
     }
 
@@ -32,7 +32,7 @@ public class UserTenantService : IUserTenantService
     {
         try
         {
-            var tenants = await _repo.GetTenantsForUserAsync(userId);
+            var tenants = await _userRepository.GetUserTenantsAsync(userId);
             return ServiceResult<List<string>>.Success(tenants);
         }
         catch (Exception ex)
@@ -46,7 +46,23 @@ public class UserTenantService : IUserTenantService
     {
         try
         {
-            var result = await _repo.AddTenantToUserAsync(userId, tenantId);
+            var user = await _userRepository.GetByUserIdAsync(userId);
+            if (user == null)
+                return ServiceResult<bool>.NotFound("User not found");
+
+            var tenantEntry = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId);
+
+            if (tenantEntry == null)
+            {
+                tenantEntry = new TenantRole
+                {
+                    Tenant = tenantId,
+                    Roles = new List<string>()
+                };
+                user.TenantRoles.Add(tenantEntry);
+            }
+
+            var result = await _userRepository.UpdateAsync(userId, user);
             return result
                 ? ServiceResult<bool>.Success(true)
                 : ServiceResult<bool>.Conflict("Tenant already assigned to user");
@@ -62,8 +78,13 @@ public class UserTenantService : IUserTenantService
     {
         try
         {
-            var result = await _repo.RemoveTenantFromUserAsync(userId, tenantId);
-            return result
+            var user = await _userRepository.GetByUserIdAsync(userId);
+            if (user == null)
+                return ServiceResult<bool>.NotFound("User not found");
+
+            var removed = user.TenantRoles.RemoveAll(tr => tr.Tenant == tenantId) > 0;
+            var result = await _userRepository.UpdateAsync(userId, user);
+            return removed && result
                 ? ServiceResult<bool>.Success(true)
                 : ServiceResult<bool>.NotFound("Tenant not assigned to user");
         }

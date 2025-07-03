@@ -40,4 +40,20 @@ public static class EndpointConventionBuilderExtensions
     {
         return builder.RequireAuthorization("RequireTokenAuth");
     }
+
+    // <summary>
+    /// Requires the SysAdmin role for the endpoint.
+    /// </summary>
+    public static T RequiresSysAdmin<T>(this T builder) where T : IEndpointConventionBuilder
+    {
+        return builder.RequireAuthorization("RequireSysAdmin");
+    }
+
+    /// <summary>
+    /// Requires the SysAdmin or TenantAdmin role for the endpoint.
+    /// </summary>
+    public static T RequiresTenantAdmin<T>(this T builder) where T : IEndpointConventionBuilder
+    {
+        return builder.RequireAuthorization("RequireTenantAdmin");
+    }
 }

@@ -7,15 +7,15 @@ using XiansAi.Server.Features.WebApi.Repositories;
 
 namespace XiansAi.Server.Features.WebApi.Services
 {
-    public class RolesDto
+    public class RoleDto
     {
         [JsonPropertyName("userId")]
         public string UserId { get; set; } = string.Empty;
 
         [JsonPropertyName("tenantId")]
         public string TenantId { get; set; } = string.Empty;
-        [JsonPropertyName("roles")]
-        public List<string> Roles { get; set; } = new();
+        [JsonPropertyName("role")]
+        public string Role { get; set; } = string.Empty;
     }
 
     public class UserInfoDto
@@ -28,11 +28,14 @@ namespace XiansAi.Server.Features.WebApi.Services
 
     public interface IRoleManagementService
     {
-        Task<ServiceResult<bool>> AssignRolesToUserAsync(string userId, string tenantId, List<string> roles);
-        Task<ServiceResult<bool>> RemoveRoleFromUserAsync(string userId, string tenantId, List<string> roles);
+        Task<ServiceResult<bool>> AssignBootstrapSysAdminRolesToUserAsync();
+        Task<ServiceResult<bool>> AssignSysAdminRolesToUserAsync(string userId);
+        Task<ServiceResult<bool>> AssignTenantRoletoUserAsync(RoleDto roleDto, bool skipValidation = false);
+        Task<ServiceResult<bool>> RemoveSysAdminRolesToUserAsync(string userId);
+        Task<ServiceResult<bool>> RemoveRoleFromUserAsync(RoleDto roleDto);
         Task<ServiceResult<List<string>>> GetUserRolesAsync(string userId, string tenantId);
-        Task<ServiceResult<List<UserRole>>> GetUsersByRoleAsync(string role, string tenantId);
-        Task<ServiceResult<bool>> PromoteToTenantAdminAsync(string userId, string tenantId);
+        Task<ServiceResult<List<UserInfoDto>>> GetSystemAdminsAsync();
+        Task<ServiceResult<List<UserInfoDto>>> GetUsersByRoleAsync(string role, string? tenantId);
         Task<ServiceResult<List<string>>> GetCurrentUserRolesAsync();
 
         Task<ServiceResult<List<UserInfoDto>>> GetUsersInfoByRoleAsync(string role, string tenantId);
@@ -40,63 +43,78 @@ namespace XiansAi.Server.Features.WebApi.Services
 
     public class RoleManagementService : IRoleManagementService
     {
-        private readonly IUserRoleRepository _userRoleRepository;
+        private readonly IUserRepository _userRepository;
         private readonly IRoleCacheService _roleCacheService;
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<RoleManagementService> _logger;
         private readonly IAuthProviderFactory _authProviderFactory;
 
         public RoleManagementService(
-            IUserRoleRepository userRoleRepository,
+            IUserRepository userRepository,
             IRoleCacheService roleCacheService,
             ITenantContext tenantContext,
             ILogger<RoleManagementService> logger,
             IAuthProviderFactory authProviderFactory)
         {
-            _userRoleRepository = userRoleRepository;
+            _userRepository = userRepository;
             _roleCacheService = roleCacheService;
             _tenantContext = tenantContext;
             _logger = logger;
             _authProviderFactory = authProviderFactory;
         }
 
-        public async Task<ServiceResult<bool>> AssignRolesToUserAsync(string userId, string tenantId, List<string> roles)
+        public async Task<ServiceResult<bool>> AssignBootstrapSysAdminRolesToUserAsync()
         {
-            var validationResult = ValidateTenantAccess(tenantId, "assign roles");
+            try
+            {
+                var existingAdmins = await _userRepository.GetSystemAdminAsync();
+                bool isBootstrapping = !existingAdmins.Any();
+
+                // If not bootstrapping, verify current user has permission
+                if (!isBootstrapping &&
+                    !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+                {
+                    return ServiceResult<bool>.Forbidden("Only system admins can create other system admins");
+                }
+
+                var user = await _userRepository.GetByUserIdAsync(_tenantContext.LoggedInUser);
+                if (user == null)
+                    return ServiceResult<bool>.NotFound("User not found");
+
+                user.IsSysAdmin = true;
+                var result = await _userRepository.UpdateAsync(_tenantContext.LoggedInUser, user);
+                _roleCacheService.InvalidateUserRoles(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+                return ServiceResult<bool>.Success(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error assigning bootstrap sysadmin roles to user {UserId}", _tenantContext.LoggedInUser);
+                return ServiceResult<bool>.InternalServerError("An error occurred while assigning bootstrap sysadmin roles.");
+            }
+        }
+
+        public async Task<ServiceResult<bool>> AssignSysAdminRolesToUserAsync(string userId)
+        {
+            var validationResult = ValidateTenantAccess("assign roles", null);
             if (!validationResult.IsSuccess)
                 return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 
             try
             {
-                // Check if this is a bootstrap scenario (no admins exist)
-                if (roles.Contains(SystemRoles.SysAdmin))
+                if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
                 {
-                    var existingAdmins = await _userRoleRepository.GetUsersByRoleAsync(SystemRoles.SysAdmin, tenantId);
-                    bool isBootstrapping = !existingAdmins.Any();
-
-                    // If not bootstrapping, verify current user has permission
-                    if (!isBootstrapping &&
-                        !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
-                    {
-                        return ServiceResult<bool>.Forbidden("Only system admins can create other system admins");
-                    }
+                    return ServiceResult<bool>.Forbidden("Insufficient permissions to assign system admin role");
                 }
 
-                // Regular tenant admin check
-                if (roles.Contains(SystemRoles.TenantAdmin) &&
-                    !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) &&
-                    !_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
-                {
-                    return ServiceResult<bool>.Forbidden("Insufficient permissions to assign tenant admin role");
-                }
+                var user = await _userRepository.GetByUserIdAsync(userId);
+                if (user == null)
+                    return ServiceResult<bool>.NotFound("User not found");
 
-                var result = await _userRoleRepository.AssignRolesAsync(
-                    userId,
-                    tenantId,
-                    roles,
-                    _tenantContext.LoggedInUser ?? "system");  // Use "system" for bootstrap case
+                user.IsSysAdmin = true;
 
-                _roleCacheService.InvalidateUserRoles(userId, tenantId);
+                var result = await _userRepository.UpdateAsync(userId, user);
+                _roleCacheService.InvalidateUserRoles(userId, _tenantContext.TenantId);
+
                 return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)
@@ -106,24 +124,60 @@ namespace XiansAi.Server.Features.WebApi.Services
             }
         }
 
-        public async Task<ServiceResult<bool>> RemoveRoleFromUserAsync(string userId, string tenantId, List<string> roles)
+        public async Task<ServiceResult<bool>> RemoveSysAdminRolesToUserAsync(string userId)
         {
-            var validationResult = ValidateTenantAccess(tenantId, "remove roles");
+            var validationResult = ValidateTenantAccess("remove roles", null);
+            if (!validationResult.IsSuccess)
+                return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+            try
+            {
+                if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+                {
+                    return ServiceResult<bool>.Forbidden("Insufficient permissions to remove system admin role");
+                }
+                var user = await _userRepository.GetByUserIdAsync(userId);
+                if (user == null)
+                    return ServiceResult<bool>.NotFound("User not found");
+                user.IsSysAdmin = false;
+                var result = await _userRepository.UpdateAsync(userId, user);
+                _roleCacheService.InvalidateUserRoles(userId, _tenantContext.TenantId);
+                return ServiceResult<bool>.Success(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error removing roles from user {UserId}", userId);
+                return ServiceResult<bool>.InternalServerError("Error removing roles");
+            }
+        }
+
+        public async Task<ServiceResult<bool>> RemoveRoleFromUserAsync(RoleDto roleDto)
+        {
+            var validationResult = ValidateTenantAccess("remove roles", roleDto.TenantId);
             if (!validationResult.IsSuccess)
                 return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 
             try
             {
-                foreach (var role in roles)
+                var user = await _userRepository.GetByUserIdAsync(roleDto.UserId);
+                if (user == null)
+                    return ServiceResult<bool>.NotFound("User not found");
+
+                var tenantEntry = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == roleDto.TenantId);
+                var roleToRemove = CheckRole(roleDto.Role);
+
+                if (tenantEntry != null)
                 {
-                    var success = await _userRoleRepository.RemoveRoleAsync(userId, tenantId, role);
-                    if (!success)
+                    tenantEntry.Roles.RemoveAll(r => r == roleToRemove);
+
+                    if (tenantEntry.Roles.Count == 0)
                     {
-                        return ServiceResult<bool>.BadRequest($"Failed to remove role: {role}.");
+                        user.TenantRoles.Remove(tenantEntry);
                     }
                 }
 
-                _roleCacheService.InvalidateUserRoles(userId, tenantId);
+                var result = await _userRepository.UpdateAsync(roleDto.UserId, user);
+
+                _roleCacheService.InvalidateUserRoles(roleDto.UserId, roleDto.TenantId);
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception ex)
@@ -135,14 +189,22 @@ namespace XiansAi.Server.Features.WebApi.Services
 
         public async Task<ServiceResult<List<string>>> GetUserRolesAsync(string userId, string tenantId)
         {
-            var validationResult = ValidateTenantAccess(tenantId, "access user roles");
+            var validationResult = ValidateTenantAccess("access user roles", tenantId);
             if (!validationResult.IsSuccess)
                 return ServiceResult<List<string>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 
             try
             {
-                var roles = await _roleCacheService.GetUserRolesAsync(userId, tenantId);
-                return ServiceResult<List<string>>.Success(roles);
+                var user = await _userRepository.GetByUserIdAsync(userId);
+                if (user == null)
+                    return ServiceResult<List<string>>.NotFound("User not found");
+
+                var tenantEntry = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId);
+
+                if (tenantEntry != null)
+                    return ServiceResult<List<string>>.Success(tenantEntry.Roles);
+
+                return ServiceResult<List<string>>.Success(new List<string>());
             }
             catch (Exception ex)
             {
@@ -151,43 +213,69 @@ namespace XiansAi.Server.Features.WebApi.Services
             }
         }
 
-        public async Task<ServiceResult<List<UserRole>>> GetUsersByRoleAsync(string role, string tenantId)
+        public async Task<ServiceResult<List<UserInfoDto>>> GetSystemAdminsAsync()
         {
-            var validationResult = ValidateTenantAccess(tenantId, "access user roles");
-            if (!validationResult.IsSuccess)
-                return ServiceResult<List<UserRole>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
-
             try
             {
-                var users = await _userRoleRepository.GetUsersByRoleAsync(role, tenantId);
-                return ServiceResult<List<UserRole>>.Success(users);
+                var admins = await _userRepository.GetSystemAdminAsync();
+                return ServiceResult<List<UserInfoDto>>.Success(admins.Select(x => new UserInfoDto
+                {
+                        UserId = x.UserId,
+                        Nickname = x.Name
+                }).ToList());
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving users by role.");
-                return ServiceResult<List<UserRole>>.InternalServerError("An error occurred while retrieving users by role.");
+                _logger.LogError(ex, "Error retrieving system admins.");
+                return ServiceResult<List<UserInfoDto>>.InternalServerError("An error occurred while retrieving system admins.");
             }
         }
 
-        public async Task<ServiceResult<List<UserInfoDto>>> GetUsersInfoByRoleAsync(string role, string tenantId)
+        public async Task<ServiceResult<List<UserInfoDto>>> GetUsersByRoleAsync(string role, string? tenantId)
         {
-            var validationResult = ValidateTenantAccess(tenantId, "access user roles");
+            var validationResult = ValidateTenantAccess("access user roles", tenantId);
             if (!validationResult.IsSuccess)
                 return ServiceResult<List<UserInfoDto>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 
             try
             {
-                var users = await _userRoleRepository.GetUsersByRoleAsync(role, tenantId);
+                var users = await _userRepository.GetUsersByRoleAsync(role, tenantId);
+                return ServiceResult<List<UserInfoDto>>.Success(users.Select(x => new UserInfoDto
+                {
+                        UserId = x.UserId,
+                        Nickname = x.Name
+                }).ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving users by role.");
+                return ServiceResult<List<UserInfoDto>>.InternalServerError("An error occurred while retrieving users by role.");
+            }
+        }
+
+        public async Task<ServiceResult<List<UserInfoDto>>> GetUsersInfoByRoleAsync(string role, string tenantId)
+        {
+            var validationResult = ValidateTenantAccess("access user roles", tenantId);
+            if (!validationResult.IsSuccess)
+                return ServiceResult<List<UserInfoDto>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+
+            try
+            {
+                var users = await _userRepository.GetUsersByRoleAsync(role, tenantId);
                 if (users == null || !users.Any())
                 {
                     return ServiceResult<List<UserInfoDto>>.Success(new List<UserInfoDto>());
                 }
 
                 var userInfoList = new List<UserInfoDto>();
+                
                 foreach (var user in users)
                 {
-                    var info = await GetUserNameAndEmailAsync(user.UserId);
-                    userInfoList.Add(info);
+                    userInfoList.Add(new UserInfoDto
+                    {
+                        UserId = user.UserId,
+                        Nickname = user.Name
+                    });
                 }
                 return ServiceResult<List<UserInfoDto>>.Success(userInfoList);
             }
@@ -198,27 +286,53 @@ namespace XiansAi.Server.Features.WebApi.Services
             }
         }
 
-        public async Task<ServiceResult<bool>> PromoteToTenantAdminAsync(string userId, string tenantId)
+        public async Task<ServiceResult<bool>> AssignTenantRoletoUserAsync(RoleDto roleDto, bool skipValidation = false)
         {
-            var validationResult = ValidateTenantAccess(tenantId, "promote to tenant admin");
-            if (!validationResult.IsSuccess)
-                return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+            if (!skipValidation)
+            {
+                var validationResult = ValidateTenantAccess("assign tenant to user", roleDto.TenantId);
+                if (!validationResult.IsSuccess)
+                    return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+            }
 
             try
             {
-                var roles = new List<string> { SystemRoles.TenantAdmin };
-                var success = await _userRoleRepository.AssignRolesAsync(userId, tenantId, roles, _tenantContext.LoggedInUser);
-                if (success)
+                var user = await _userRepository.GetByUserIdAsync(roleDto.UserId);
+                if (user == null)
+                    return ServiceResult<bool>.NotFound("User not found");
+
+                var tenantEntry = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == roleDto.TenantId);
+                var roleToAssign = CheckRole(roleDto.Role);
+
+                if (tenantEntry == null)
                 {
-                    _roleCacheService.InvalidateUserRoles(userId, tenantId);
-                    return ServiceResult<bool>.Success(true);
+                    tenantEntry = new TenantRole
+                    {
+                        Tenant = roleDto.TenantId,
+                        Roles = new List<string> { roleToAssign }
+                    };
+                    user.TenantRoles.Add(tenantEntry);
                 }
-                return ServiceResult<bool>.BadRequest("Failed to promote user to Tenant Admin.");
+                else if (tenantEntry.Roles.Contains(roleToAssign))
+                {
+                    _logger.LogWarning("Role {Role} already assigned to user {UserId} in tenant {TenantId}",
+                        roleToAssign, roleDto.UserId, roleDto.TenantId);
+                    return ServiceResult<bool>.Success(true); // Role already exists, no action needed
+                }
+                else if (!tenantEntry.Roles.Contains(roleToAssign))
+                {
+                    tenantEntry.Roles.Add(roleToAssign);
+                }
+
+
+                var result = await _userRepository.UpdateAsync(roleDto.UserId, user);
+                return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error promoting user to Tenant Admin.");
-                return ServiceResult<bool>.InternalServerError("An error occurred while promoting user to Tenant Admin.");
+                _logger.LogError(ex, "Error assigning user role.");
+                var errorMessage = "An error occurred while assigning user." + ex.Message;
+                return ServiceResult<bool>.InternalServerError(errorMessage);
             }
         }
 
@@ -234,22 +348,27 @@ namespace XiansAi.Server.Features.WebApi.Services
 
                 if (string.IsNullOrEmpty(_tenantContext.TenantId))
                 {
-                    _logger.LogWarning("No tenant ID found in context for user {UserId}", 
+                    _logger.LogWarning("No tenant ID found in context for user {UserId}",
                         _tenantContext.LoggedInUser);
                     return ServiceResult<List<string>>.BadRequest("No tenant ID found in context");
                 }
 
-                // Get roles from cache to ensure consistency with other role checks
-                var roles = await _roleCacheService.GetUserRolesAsync(
-                    _tenantContext.LoggedInUser,
-                    _tenantContext.TenantId);
+                var user = await _userRepository.GetByUserIdAsync(_tenantContext.LoggedInUser);
+                if (user == null)
+                    return ServiceResult<List<string>>.Success(new List<string> { SystemRoles.TenantUser}); // for backward compatibility with existing users
 
-                _logger.LogInformation("Retrieved roles for user {UserId} in tenant {TenantId}: {@Roles}",
-                    _tenantContext.LoggedInUser,
-                    _tenantContext.TenantId,
-                    roles);
+                var roles = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == _tenantContext.TenantId)?.Roles;
+
+                if (roles == null)
+                {
+                    roles = new List<string>();
+                }
+
+                if (user.IsSysAdmin)
+                    roles.Add(SystemRoles.SysAdmin);
 
                 return ServiceResult<List<string>>.Success(roles);
+
             }
             catch (Exception ex)
             {
@@ -260,7 +379,7 @@ namespace XiansAi.Server.Features.WebApi.Services
             }
         }
 
-        private ServiceResult ValidateTenantAccess(string tenantId, string operation)
+        private ServiceResult ValidateTenantAccess(string operation, string? tenantId)
         {
             // System admin has access to everything
             if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
@@ -269,7 +388,7 @@ namespace XiansAi.Server.Features.WebApi.Services
             }
 
             // Tenant admin can only access their own tenant
-            if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+            if (tenantId != null && _tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
             {
                 if (!_tenantContext.TenantId.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
                 {
@@ -286,16 +405,27 @@ namespace XiansAi.Server.Features.WebApi.Services
             return ServiceResult.Failure("Insufficient permissions to manage roles", StatusCode.Forbidden);
         }
 
-        private async Task<UserInfoDto> GetUserNameAndEmailAsync(string userId)
+        private string CheckRole(string role)
         {
-            var provider = _authProviderFactory.GetProvider();
-            var user = await provider.GetUserInfo(userId);
-
-            return new UserInfoDto
+            if (string.IsNullOrEmpty(role))
+                throw new ArgumentException("Role cannot be null or empty", nameof(role));
+            
+            if(role == SystemRoles.SysAdmin)
             {
-                UserId = userId,
-                Nickname = user.Nickname ?? "Unknown User",
-            };
+                return SystemRoles.SysAdmin;
+            }
+
+            if (role == SystemRoles.TenantAdmin)
+            {
+                return SystemRoles.TenantAdmin;
+            }
+
+            if (role == SystemRoles.TenantUser)
+            {
+                return SystemRoles.TenantUser;
+            }
+
+            throw new Exception($"Invalid role: {role}");
         }
     }
 }

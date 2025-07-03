@@ -205,25 +205,14 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             }
         }
 
-        var roles = await _roleCacheService.GetUserRolesAsync(loggedInUser, currentTenantId);
-        _tenantContext.UserRoles = roles?.ToArray() ?? Array.Empty<string>();
-
         if (httpContext.User.Identity is ClaimsIdentity identity)
         {
-            // Remove existing role claims
             var existingRoleClaims = identity.Claims
                 .Where(c => c.Type == ClaimTypes.Role)
-                .ToList();
-            foreach (var claim in existingRoleClaims)
-            {
-                identity.RemoveClaim(claim);
-            }
+                .Select(c => c.Value)
+                .ToArray();
 
-            // Add new role claims
-            foreach (var role in roles ?? Enumerable.Empty<string>())
-            {
-                identity.AddClaim(new Claim(ClaimTypes.Role, role));
-            }
+            _tenantContext.UserRoles = existingRoleClaims;
         }
 
         // Set tenant ID in context

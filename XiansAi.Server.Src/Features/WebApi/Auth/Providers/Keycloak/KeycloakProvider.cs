@@ -4,6 +4,7 @@ using RestSharp;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth.Providers.Keycloak;
 
@@ -56,17 +57,30 @@ public class KeycloakProvider : IAuthProvider
 
         options.RequireHttpsMetadata = false; // Set to true in production
         options.TokenValidationParameters.NameClaimType = "preferred_username";
-        options.TokenValidationParameters.RoleClaimType = "roles";
+        options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
         options.Events = new JwtBearerEvents
         {
-            OnTokenValidated = context =>
+            OnTokenValidated = async context =>
             {
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
+                    var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].ToString();
+
+                    if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(tenantId))
+                    {
+                        var roleService = context.HttpContext.RequestServices.GetRequiredService<IRoleCacheService>();
+                        var roles = await roleService.GetUserRolesAsync(userId, tenantId);
+
+                        foreach (var role in roles)
+                        {
+                            identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                        }
+                    }
+
                     // Set the User property of HttpContext
                     context.HttpContext.User = context.Principal;
                 }
-                return Task.CompletedTask;
             }
         };
     }

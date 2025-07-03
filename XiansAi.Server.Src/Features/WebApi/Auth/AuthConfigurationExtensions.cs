@@ -68,6 +68,7 @@ public static class AuthConfigurationExtensions
             {
                 policy.AuthenticationSchemes.Add("JWT");
                 policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation));
+                policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin, SystemRoles.TenantUser);
             });
             
             // Optional: Add a policy that validates token and tenant ID but not configuration

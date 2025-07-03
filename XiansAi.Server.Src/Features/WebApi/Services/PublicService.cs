@@ -7,6 +7,9 @@ using Shared.Auth;
 using Shared.Services;
 using Shared.Utils;
 using Shared.Utils.Services;
+using System.Configuration;
+using System.IdentityModel.Tokens.Jwt;
+using System.Threading.Tasks;
 using XiansAi.Server.Features.WebApi.Services;
 using XiansAi.Server.Utils;
 
@@ -46,8 +49,9 @@ public class PublicService : IPublicService
     private readonly IConfiguration _configuration;
     private readonly Random _random;
     private readonly ITenantService _tenantService;
-    private readonly IUserTenantService _userTenantService;
+    private readonly IUserManagementService _userManagementService;
     private readonly ITokenValidationCache _tokenCache;
+    private readonly IAuthMgtConnect _authMgtConnect;
 
     // Constants for configuration
     private const int CODE_EXPIRATION_MINUTES = 15;
@@ -64,7 +68,7 @@ public class PublicService : IPublicService
     /// <param name="emailService">Service for sending emails</param>
     /// <param name="configuration">Application configuration</param>
     /// <param name="tenantService">Service for tenant operations</param>
-    /// <param name="userTenantService">Service for user-tenant relationships</param>
+    /// <param name="userManagementService">Service for user management</param>
     /// <param name="tokenCache">Service for user-tenant relationships cache</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null</exception>
     public PublicService(
@@ -74,7 +78,7 @@ public class PublicService : IPublicService
         ObjectCache cache, 
         IEmailService emailService,
         IConfiguration configuration,
-        IUserTenantService userTenantService,
+        IUserManagementService userManagementService,
         ITokenValidationCache tokenCache,
     ITenantService tenantService)
     {
@@ -85,8 +89,9 @@ public class PublicService : IPublicService
         _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
         _random = new Random();
         _tenantService = tenantService;
-        _userTenantService = userTenantService ?? throw new ArgumentNullException(nameof(userTenantService));
+        _userManagementService = userManagementService ?? throw new ArgumentNullException(nameof(userManagementService));
         _tokenCache = tokenCache ?? throw new ArgumentNullException(nameof(tokenCache));
+        _authMgtConnect = authMgtConnect ?? throw new ArgumentNullException(nameof(authMgtConnect));
     }
 
     /// <summary>
@@ -285,8 +290,10 @@ The Xians.ai Team";
                     
                 var tenantId = GenerateTenantId(email);
                 _logger.LogDebug("Setting tenant {TenantId} for user {UserId}", tenantId, user);
-                
-                await _userTenantService.AddTenantToUser(user, tenantId);
+
+                var userDto = generateUserFromToken(token);
+
+                await _userManagementService.CreateNewUser(userDto);
                 await _tokenCache.RemoveValidation(token);
                 _logger.LogInformation("Successfully set tenant {TenantId} for user {UserId}", tenantId, user);
             }
@@ -302,6 +309,43 @@ The Xians.ai Team";
         }
         
         return isValid;
+    }
+
+    private async Task<UserDto> generateUserFromToken(string token)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
+
+        if (jsonToken == null)
+        {
+            _logger.LogWarning("Invalid JWT token format");
+            throw new ArgumentException("Invalid token format", nameof(token));
+        }
+
+        var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _logger.LogWarning("User ID claim not found in token");
+            throw new ArgumentException("User ID not found in token", nameof(token));
+        }
+
+        var user = await _authMgtConnect.GetUserInfo(userId);
+
+        var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
+            new AuthProviderConfig();
+        var name = user.Nickname ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
+        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
+        var tenantId = jsonToken.Claims.FirstOrDefault(c => c.Type == authProviderConfig.TenantClaimType)?.Value ?? GenerateTenantId(email);
+
+        _logger.LogDebug("Generated tenant ID: {TenantId} from email: {Email}", tenantId, email);
+
+        return new UserDto
+        {
+            UserId = userId,
+            Email = email,
+            Name = name,
+            TenantId = tenantId
+        };
     }
 
     /// <summary>
