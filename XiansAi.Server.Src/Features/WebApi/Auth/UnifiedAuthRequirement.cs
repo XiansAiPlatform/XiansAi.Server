@@ -245,26 +245,22 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             var (found, valid, userId, tenantIds) = await _tokenCache.GetValidation(token);
             if (found)
             {
-                if (valid && userId != null)
+                // Since we only cache successful validations, if found in cache it's always valid
+                if (currentTenantId == null)
                 {
-                    if (currentTenantId == null)
-                    {
-                        _logger.LogWarning("No tenantId found in request header");
-                        return (false, null, null, null);
-                    }
-
-                    var roles = await _roleCacheService.GetUserRolesAsync(userId, currentTenantId);
-                    foreach (var role in roles)
-                    {
-                        httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)]));
-                    }
-
-                    // Set the user name to the logged in user from cache
-                    httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
-                    return (true, userId, tenantIds, roles);
+                    _logger.LogWarning("No tenantId found in request header");
+                    return (false, null, null, null);
                 }
-                // Don't immediately return false for invalid cached results - let retry logic handle this
-                _logger.LogDebug("Found invalid token in cache, will proceed to fresh validation");
+
+                var roles = await _roleCacheService.GetUserRolesAsync(userId!, currentTenantId);
+                foreach (var role in roles)
+                {
+                    httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)]));
+                }
+
+                // Set the user name to the logged in user from cache
+                httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
+                return (true, userId, tenantIds, roles);
             }
         }
         else

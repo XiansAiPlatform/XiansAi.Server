@@ -6,9 +6,10 @@ namespace Features.WebApi.Auth.Providers.AzureB2C;
 public class AzureB2CConfig
 {
     public string? TenantId { get; set; }
-    public string? Domain { get; set; }
-    public string? Policy { get; set; }
     public string? Audience { get; set; }
+    public string? JwksUri { get; set; }
+    public string? Issuer { get; set; }
+
     public ManagementApiConfig? ManagementApi { get; set; }
 }
 

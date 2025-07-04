@@ -29,23 +29,30 @@ public class AzureB2CProvider : IAuthProvider
         if (string.IsNullOrEmpty(_azureB2CConfig.TenantId))
             throw new ArgumentException("Azure B2C tenant ID is missing");
 
-        if (string.IsNullOrEmpty(_azureB2CConfig.Domain))
-            throw new ArgumentException("Azure B2C domain is missing");
+        if (string.IsNullOrEmpty(_azureB2CConfig.Issuer))
+            throw new ArgumentException("Azure B2C issuer is missing");
+
+        if (string.IsNullOrEmpty(_azureB2CConfig.JwksUri))
+            throw new ArgumentException("Azure B2C JWKS URI is missing");
     }
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
     {
         // Allow HTTP for development environments
         options.RequireHttpsMetadata = false;
-        
-        // Ensure domain starts with https://
-        var domain = _azureB2CConfig.Domain!.StartsWith("https://") 
-            ? _azureB2CConfig.Domain 
-            : $"https://{_azureB2CConfig.Domain}";
+
+        // // Ensure domain starts with https://
+        // var domain = _azureB2CConfig.Domain!.StartsWith("https://") 
+        //     ? _azureB2CConfig.Domain 
+        //     : $"https://{_azureB2CConfig.Domain}";
             
-        options.TokenValidationParameters.ValidIssuer = $"{domain}/{_azureB2CConfig.TenantId}/v2.0/";
-        // Configuration is already initialized in constructor
-        options.Authority = $"{domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
+        // // Azure B2C token issuer does not include policy name, but authority URL for metadata discovery includes it
+        // var issuer = $"{domain}/{_azureB2CConfig.TenantId}/v2.0/";
+        // var authority = $"{domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
+        // options.TokenValidationParameters.ValidIssuer = issuer;
+
+        var authority = $"https://sts.windows.net/{_azureB2CConfig.TenantId}/";
+        options.Authority = authority;
         options.Audience = _azureB2CConfig.Audience;
         options.TokenValidationParameters.NameClaimType = "name";
         options.Events = new JwtBearerEvents
@@ -117,54 +124,8 @@ public class AzureB2CProvider : IAuthProvider
 
     public async Task<string> SetNewTenant(string userId, string tenantId)
     {
-        try
-        {
-            if (_azureB2CConfig.ManagementApi == null)
-                throw new InvalidOperationException("Azure B2C configuration is not initialized");
-
-            var azureUserInfo = await GetAzureB2CUserInfo(userId);
-            
-            var tenants = azureUserInfo.Tenants?.ToList() ?? new List<string>();
-            
-            if (tenants.Contains(tenantId))
-            {
-                return "Tenant already exists";
-            }
-            
-            tenants.Add(tenantId);
-            
-            // Get access token for MS Graph API
-            var token = await GetMsGraphApiToken();
-            
-            // Base URL for Microsoft Graph API
-            _client = new RestClient("https://graph.microsoft.com/v1.0");
-            
-            var request = new RestRequest($"/users/{userId}", Method.Patch);
-            request.AddHeader("Authorization", $"Bearer {token}");
-            request.AddHeader("Content-Type", "application/json");
-            
-            // Create the JSON payload with the custom extension attribute
-            // Note: The extension name must be registered in your B2C tenant
-            request.AddJsonBody(new
-            {
-                extension_tenants = tenants.ToArray()
-            });
-            
-            var response = await _client.ExecuteAsync(request);
-            
-            if (!response.IsSuccessful)
-            {
-                _logger.LogError("Failed to update user: {ErrorMessage}", response.ErrorMessage);
-                throw new Exception($"Failed to update user: {response.ErrorMessage}");
-            }
-            
-            return "Update successful";
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to set new tenant {TenantId} for Azure B2C user {UserId}", tenantId, userId);
-            throw;
-        }
+        await Task.CompletedTask;
+        throw new NotImplementedException();
     }
 
     private async Task<AzureB2CUserInfo> GetAzureB2CUserInfo(string userId)
