@@ -75,16 +75,6 @@ public class Program
     /// <param name="customEnvFile">Optional custom environment file path specified via command line.</param>
     private static void LoadEnvironmentVariables(string? customEnvFile)
     {
-        // Always load the default .env file first (if it exists)
-        try
-        {
-            Env.Load();
-        }
-        catch (FileNotFoundException)
-        {
-            // Default .env file doesn't exist, which is fine
-        }
-        
         if (!string.IsNullOrWhiteSpace(customEnvFile))
         {
             // Load custom environment file if specified
@@ -100,6 +90,16 @@ public class Program
         }
         else
         {
+            // Always load the default .env file first (if it exists)
+            try
+            {
+                Env.Load();
+            }
+            catch (FileNotFoundException)
+            {
+                // Default .env file doesn't exist, which is fine
+            }
+            
             // Fall back to environment-based file selection
             var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
             var envFile = envName == "Production" ? ".env.production" : ".env.development";
