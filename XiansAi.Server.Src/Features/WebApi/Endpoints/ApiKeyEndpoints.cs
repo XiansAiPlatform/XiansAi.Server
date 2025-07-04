@@ -57,6 +57,10 @@ namespace XiansAi.Server.Features.WebApi.Endpoints
                 if (result.IsSuccess)
                 {
                     var keys = result.Data;
+                    if (keys == null || keys.Count == 0)
+                    {
+                        return Results.Ok(new List<object>());
+                    }
                     var response = keys.Select(k => new {
                         k.Id, k.Name, k.CreatedAt, k.CreatedBy, k.LastRotatedAt
                     });

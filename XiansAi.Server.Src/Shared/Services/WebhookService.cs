@@ -282,12 +282,12 @@ public class WebhookService : IWebhookService
         ValidateTenantContext();
         if (triggerDto.EventType == "message.send")
         {
-            SendMessageWebhookDto sendMessageDto = null;
+            SendMessageWebhookDto? sendMessageDto;
             try
             {
                 // If Payload is a JsonElement or string, deserialize accordingly
                 var payloadElement = triggerDto.Payload as JsonElement?
-                    ?? JsonDocument.Parse(triggerDto.Payload.ToString()).RootElement;
+                    ?? JsonDocument.Parse(triggerDto?.Payload?.ToString() ?? "").RootElement;
 
                 sendMessageDto = JsonSerializer.Deserialize<SendMessageWebhookDto>(payloadElement.GetRawText());
             }
@@ -310,17 +310,21 @@ public class WebhookService : IWebhookService
             }
 
             var inboundResult = await _messageService.ProcessIncomingMessage(sendMessageDto.Request, sendMessageDto.MessageType);
+            
             // Optionally, handle inboundResult here
-            return await TriggerWebhookAsync(triggerDto.WorkflowId, triggerDto.EventType, inboundResult);
+            return await TriggerWebhookAsync(
+                triggerDto?.WorkflowId ?? throw new Exception("WorkflowId is required"), 
+                triggerDto.EventType ?? throw new Exception("EventType is required"), 
+                inboundResult ?? throw new Exception("Inbound result is required"));
         }
         else if (triggerDto.EventType == "message.history")
         {
-            ChatHistoryWebhookDto chatHistoryDto = null;
+            ChatHistoryWebhookDto? chatHistoryDto;
             try
             {
                 // If Payload is a JsonElement or string, deserialize accordingly
                 var payloadElement = triggerDto.Payload as JsonElement?
-                    ?? JsonDocument.Parse(triggerDto.Payload.ToString()).RootElement;
+                    ?? JsonDocument.Parse(triggerDto?.Payload?.ToString() ?? "").RootElement;
 
                 chatHistoryDto = JsonSerializer.Deserialize<ChatHistoryWebhookDto>(payloadElement.GetRawText());
             }
@@ -351,7 +355,7 @@ public class WebhookService : IWebhookService
                 };
             }
             // Trigger webhook with the chat history result
-            return await TriggerWebhookAsync(chatHistoryDto.WorkflowId, triggerDto.EventType, historyResult.Data);
+            return await TriggerWebhookAsync(chatHistoryDto.WorkflowId, triggerDto?.EventType ?? "", historyResult?.Data ?? new List<ConversationMessage>());
         }
         return await TriggerWebhookAsync(triggerDto.WorkflowId, triggerDto.EventType, triggerDto.Payload);
     }
