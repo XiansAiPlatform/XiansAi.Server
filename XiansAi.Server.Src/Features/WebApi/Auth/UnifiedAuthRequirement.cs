@@ -224,7 +224,6 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         ValidateToken(HttpContext httpContext, bool bypassCache = false)
     {
         var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-        var currentTenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
         if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
         {
@@ -261,18 +260,19 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             var authProvider = _authProviderFactory.GetProvider();
             var (success, tokenUserId) = await authProvider.ValidateToken(token);
 
-            // get tenant IDs from DB collection
-            var userTenants = await _userTenantService.GetTenantsForUser(tokenUserId!);
-            var tokenTenantIds = userTenants?.Data ?? new List<string>();
-
-            // Cache the result (always cache fresh validation results)
-            await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
-            
             if (!success || string.IsNullOrEmpty(tokenUserId))
             {
                 _logger.LogWarning("Token validation failed from auth provider");
                 return (false, null, null);
             }
+
+            // get tenant IDs from DB collection
+            _tenantContext.LoggedInUser = tokenUserId;
+            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
+            var tokenTenantIds = userTenants?.Data ?? new List<string>();
+
+            // Cache the result (always cache fresh validation results)
+            await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
             
             // Set the user name to the logged in user
             httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, tokenUserId)]));

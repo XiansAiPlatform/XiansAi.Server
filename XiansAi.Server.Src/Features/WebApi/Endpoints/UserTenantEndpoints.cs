@@ -12,6 +12,21 @@ public static class UserTenantEndpoints
             .WithTags("WebAPI - User Tenants")
             .RequiresToken();
 
+        group.MapGet("/current", async (
+            [FromServices] IUserTenantService service) =>
+        {
+            var result = await service.GetTenantsForCurrentUser();
+            return Results.Ok(result);
+        })
+        .WithName("GetCurrentUserTenants")
+        .RequireAuthorization("RequireTokenAuth")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Get all tenants for current user";
+            operation.Description = "Returns all tenant IDs assigned to current user";
+            return operation;
+        });
+
         group.MapGet("/{userId}", async (
             string userId,
             [FromServices] IUserTenantService service) =>
@@ -26,7 +41,8 @@ public static class UserTenantEndpoints
             operation.Summary = "Get all tenants for a user";
             operation.Description = "Returns all tenant IDs assigned to a user";
             return operation;
-        });
+        })
+        .RequiresSysAdmin();
 
         group.MapPost("/", async (
             [FromBody] UserTenantDto dto,
@@ -41,7 +57,8 @@ public static class UserTenantEndpoints
             operation.Summary = "Assign a tenant to a user";
             operation.Description = "Assigns a tenant to a user";
             return operation;
-        });
+        })
+        .RequiresTenantAdmin();
 
         group.MapDelete("/", async (
             [FromBody] UserTenantDto dto,
@@ -56,6 +73,7 @@ public static class UserTenantEndpoints
             operation.Summary = "Remove a tenant from a user";
             operation.Description = "Removes a tenant assignment from a user";
             return operation;
-        });
+        })
+        .RequiresTenantAdmin();
     }
 }

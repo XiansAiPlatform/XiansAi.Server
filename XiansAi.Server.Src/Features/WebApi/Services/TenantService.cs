@@ -98,6 +98,13 @@ public class TenantService : ITenantService
     {
         try
         {
+            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
+            if (accessableTenantId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt to tenant with ID {Id}", id);
+                return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+            }
+
             var tenant = await _tenantRepository.GetByTenantIdAsync(id);
             if (tenant == null)
             {

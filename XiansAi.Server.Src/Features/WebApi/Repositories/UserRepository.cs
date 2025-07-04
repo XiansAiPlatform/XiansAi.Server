@@ -17,6 +17,7 @@ public interface IUserRepository
     Task<bool> LockUserAsync(string userId, string reason, string lockedByUserId);
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
+    Task<bool> IsSysAdmin(string userId);
 }
 
 public class UserRepository : IUserRepository
@@ -150,5 +151,13 @@ public class UserRepository : IUserRepository
             .Project(x => new { x.IsLockedOut })
             .FirstOrDefaultAsync();
         return user?.IsLockedOut ?? false;
+    }
+
+    public async Task<bool> IsSysAdmin(string userId)
+    {
+        var user = await _users.Find(x => x.UserId == userId)
+            .Project(x => new { x.IsSysAdmin })
+            .FirstOrDefaultAsync();
+        return user?.IsSysAdmin ?? false;
     }
 }

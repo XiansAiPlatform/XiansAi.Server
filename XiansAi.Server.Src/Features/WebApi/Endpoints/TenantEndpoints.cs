@@ -33,7 +33,7 @@ public static class TenantEndpoints
             string id,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantById(id);
+            var result = await endpoint.GetTenantByTenantId(id);
             return result.ToHttpResult();
         })
         .WithName("Get Tenant")
@@ -49,7 +49,7 @@ public static class TenantEndpoints
             string tenantId,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantByTenantId(tenantId);
+            var result = await endpoint.GetTenantById(tenantId);
             return result.ToHttpResult();
         })
         .WithName("Get Tenant By TenantId")
