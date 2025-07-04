@@ -490,3 +490,4 @@ $RECYCLE.BIN/
 *.swp
 appsettings.json
 XiansAi.Server.Src/.env.production
+XiansAi.Server.Src/.env.parkly

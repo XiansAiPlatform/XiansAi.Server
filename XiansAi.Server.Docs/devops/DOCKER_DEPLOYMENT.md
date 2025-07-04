@@ -46,7 +46,7 @@ chmod +x docker-build-and-publish.sh
 export DOCKERHUB_USERNAME=99xio
 export IMAGE_NAME=99xio/xiansai-server
 export ADDITIONAL_TAGS="latest"
-export TAG="v2.0.0"
+export TAG="v2.0.1"
 ./docker-build-and-publish.sh
 ```
 

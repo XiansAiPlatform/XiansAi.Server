@@ -23,6 +23,15 @@ public class Program
         UserApi,
         All
     }
+
+    /// <summary>
+    /// Represents the parsed command line arguments.
+    /// </summary>
+    public class CommandLineArgs
+    {
+        public ServiceType ServiceType { get; set; } = ServiceType.All;
+        public string? CustomEnvFile { get; set; }
+    }
     
     /// <summary>
     /// Application entry point. Sets up the web application with services and middleware.
@@ -32,25 +41,22 @@ public class Program
     {
         try
         {
-            // Load environment variables from the correct file based on environment
-            Env.Load();
-            var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
-            var envFile = envName == "Production" ? ".env.production" : ".env.development";
-            Env.Load(envFile);
-
-            // Parse command line args to determine which services to run
-            var serviceType = ParseServiceTypeFromArgs(args);
+            // Parse command line arguments
+            var commandLineArgs = ParseCommandLineArgs(args);
+            
+            // Load environment variables
+            LoadEnvironmentVariables(commandLineArgs.CustomEnvFile);
+            
             var loggerFactory = LoggerFactory.Create(logBuilder => logBuilder.AddConsole());
             // Initialize logger
             _logger = loggerFactory.CreateLogger<Program>();
-            _logger.LogInformation($"Loading environment variables from {envFile} (ASPNETCORE_ENVIRONMENT={envName})");
             
             // Build and run the application
-            var builder = CreateApplicationBuilder(args, serviceType, loggerFactory);
+            var builder = CreateApplicationBuilder(args, commandLineArgs.ServiceType, loggerFactory);
 
-            builder.LoadServiceConfiguration(serviceType); // best place!
+            builder.LoadServiceConfiguration(commandLineArgs.ServiceType); // best place!
 
-            var app = await ConfigureApplication(builder, serviceType, loggerFactory);
+            var app = await ConfigureApplication(builder, commandLineArgs.ServiceType, loggerFactory);
             
             // Run the app
             _logger.LogInformation("Application configured successfully, starting server");
@@ -60,6 +66,53 @@ public class Program
         {
             _logger?.LogCritical(ex, "Application startup failed");
             throw; // Re-throw to let the runtime handle the exception
+        }
+    }
+
+    /// <summary>
+    /// Loads environment variables from the appropriate file(s).
+    /// </summary>
+    /// <param name="customEnvFile">Optional custom environment file path specified via command line.</param>
+    private static void LoadEnvironmentVariables(string? customEnvFile)
+    {
+        // Always load the default .env file first (if it exists)
+        try
+        {
+            Env.Load();
+        }
+        catch (FileNotFoundException)
+        {
+            // Default .env file doesn't exist, which is fine
+        }
+        
+        if (!string.IsNullOrWhiteSpace(customEnvFile))
+        {
+            // Load custom environment file if specified
+            if (File.Exists(customEnvFile))
+            {
+                Console.WriteLine($"Loading custom environment file: {customEnvFile}");
+                Env.Load(customEnvFile);
+            }
+            else
+            {
+                throw new FileNotFoundException($"Custom environment file not found: {customEnvFile}");
+            }
+        }
+        else
+        {
+            // Fall back to environment-based file selection
+            var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+            var envFile = envName == "Production" ? ".env.production" : ".env.development";
+            
+            try
+            {
+                Console.WriteLine($"Loading environment variables from {envFile} (ASPNETCORE_ENVIRONMENT={envName})");
+                Env.Load(envFile);
+            }
+            catch (FileNotFoundException)
+            {
+                Console.WriteLine($"Environment file {envFile} not found, continuing with existing environment variables");
+            }
         }
     }
 
@@ -182,40 +235,62 @@ public class Program
     }
 
     /// <summary>
-    /// Parses command line arguments to determine which service type to run.
+    /// Parses command line arguments to determine which service type to run and optional environment file.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
-    /// <returns>The service type to run.</returns>
-    private static ServiceType ParseServiceTypeFromArgs(string[] args)
+    /// <returns>The parsed command line arguments.</returns>
+    private static CommandLineArgs ParseCommandLineArgs(string[] args)
     {
+        var commandLineArgs = new CommandLineArgs();
+
         // Default to running all services if no arguments are provided
         if (args == null || args.Length == 0)
         {
-            return ServiceType.All;
+            return commandLineArgs;
         }
 
-        foreach (var arg in args)
+        for (int i = 0; i < args.Length; i++)
         {
+            var arg = args[i];
+
             if (arg.Equals("--web", StringComparison.OrdinalIgnoreCase))
             {
-                return ServiceType.WebApi;
+                commandLineArgs.ServiceType = ServiceType.WebApi;
             }
             else if (arg.Equals("--lib", StringComparison.OrdinalIgnoreCase))
             {
-                return ServiceType.LibApi;
+                commandLineArgs.ServiceType = ServiceType.LibApi;
             }
             else if (arg.Equals("--user", StringComparison.OrdinalIgnoreCase))
             {
-                return ServiceType.UserApi;
+                commandLineArgs.ServiceType = ServiceType.UserApi;
             }
             else if (arg.Equals("--all", StringComparison.OrdinalIgnoreCase))
             {
-                return ServiceType.All;
+                commandLineArgs.ServiceType = ServiceType.All;
+            }
+            else if (arg.StartsWith("--env-file=", StringComparison.OrdinalIgnoreCase))
+            {
+                // Handle --env-file=filepath format
+                commandLineArgs.CustomEnvFile = arg.Substring("--env-file=".Length);
+            }
+            else if (arg.Equals("--env-file", StringComparison.OrdinalIgnoreCase))
+            {
+                // Handle --env-file filepath format (separate arguments)
+                if (i + 1 < args.Length)
+                {
+                    commandLineArgs.CustomEnvFile = args[i + 1];
+                    i++; // Skip the next argument since we've processed it
+                }
+                else
+                {
+                    throw new ArgumentException("--env-file argument requires a file path");
+                }
             }
         }
 
         // Default to running all services if arguments are not recognized
-        return ServiceType.All;
+        return commandLineArgs;
     }
 
     /// <summary>
@@ -236,7 +311,13 @@ public class Program
         {
             _logger.LogWarning("MongoDB connection string is not configured");
         }
+
+        var configName = config["CONFIG_NAME"];
+        if (string.IsNullOrWhiteSpace(configName))
+        {
+            _logger.LogWarning("CONFIG_NAME is not configured");
+        }
         
-        _logger.LogInformation("Configuration loaded successfully");
+        _logger.LogInformation("Configuration loaded successfully for {ConfigName}", configName);
     }
 }
