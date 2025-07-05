@@ -31,6 +31,7 @@ public class Program
     {
         public ServiceType ServiceType { get; set; } = ServiceType.All;
         public string? CustomEnvFile { get; set; }
+        public bool ShowHelp { get; set; } = false;
     }
     
     /// <summary>
@@ -44,12 +45,22 @@ public class Program
             // Parse command line arguments
             var commandLineArgs = ParseCommandLineArgs(args);
             
+            // Show help if requested
+            if (commandLineArgs.ShowHelp)
+            {
+                ShowUsageInformation();
+                return;
+            }
+            
             // Load environment variables
             LoadEnvironmentVariables(commandLineArgs.CustomEnvFile);
             
             var loggerFactory = LoggerFactory.Create(logBuilder => logBuilder.AddConsole());
             // Initialize logger
             _logger = loggerFactory.CreateLogger<Program>();
+            
+            // Log startup information
+            LogStartupInformation(commandLineArgs);
             
             // Build and run the application
             var builder = CreateApplicationBuilder(args, commandLineArgs.ServiceType, loggerFactory);
@@ -269,6 +280,11 @@ public class Program
             {
                 commandLineArgs.ServiceType = ServiceType.All;
             }
+            else if (arg.Equals("--help", StringComparison.OrdinalIgnoreCase) || 
+                     arg.Equals("-h", StringComparison.OrdinalIgnoreCase))
+            {
+                commandLineArgs.ShowHelp = true;
+            }
             else if (arg.StartsWith("--env-file=", StringComparison.OrdinalIgnoreCase))
             {
                 // Handle --env-file=filepath format
@@ -287,9 +303,13 @@ public class Program
                     throw new ArgumentException("--env-file argument requires a file path");
                 }
             }
+            else if (arg.StartsWith("--", StringComparison.OrdinalIgnoreCase))
+            {
+                // Unknown argument starting with -- 
+                throw new ArgumentException($"Unknown argument: {arg}. Use --help to see available options.");
+            }
         }
 
-        // Default to running all services if arguments are not recognized
         return commandLineArgs;
     }
 
@@ -319,5 +339,74 @@ public class Program
         }
         
         _logger.LogInformation("Configuration loaded successfully for {ConfigName}", configName);
+    }
+
+    /// <summary>
+    /// Displays usage information for the application.
+    /// </summary>
+    private static void ShowUsageInformation()
+    {
+        Console.WriteLine("XiansAi.Server - Multi-service application");
+        Console.WriteLine();
+        Console.WriteLine("Usage:");
+        Console.WriteLine("  dotnet run [options]");
+        Console.WriteLine();
+        Console.WriteLine("Service Options:");
+        Console.WriteLine("  --web                 Start WebApi service only");
+        Console.WriteLine("  --lib                 Start LibApi (Agent API) service only");
+        Console.WriteLine("  --user                Start UserApi service only");
+        Console.WriteLine("  --all                 Start all services (default)");
+        Console.WriteLine();
+        Console.WriteLine("Environment Options:");
+        Console.WriteLine("  --env-file=<path>     Use custom environment file");
+        Console.WriteLine("  --env-file <path>     Use custom environment file (alternative syntax)");
+        Console.WriteLine();
+        Console.WriteLine("Other Options:");
+        Console.WriteLine("  --help, -h            Show this help information");
+        Console.WriteLine();
+        Console.WriteLine("Examples:");
+        Console.WriteLine("  dotnet run                              # Start all services with default env");
+        Console.WriteLine("  dotnet run --web                        # Start WebApi service only");
+        Console.WriteLine("  dotnet run --lib --env-file=.env.local  # Start LibApi with custom env file");
+        Console.WriteLine("  dotnet run --user --env-file .env.test  # Start UserApi with test environment");
+        Console.WriteLine();
+        Console.WriteLine("Environment File Loading:");
+        Console.WriteLine("  1. Custom file (if specified with --env-file)");
+        Console.WriteLine("  2. Default .env file (if exists)");
+        Console.WriteLine("  3. Environment-specific file (.env.development or .env.production)");
+        Console.WriteLine();
+        Console.WriteLine("Services:");
+        Console.WriteLine("  WebApi    - Main web API with agent management, workflows, tenants");
+        Console.WriteLine("  LibApi    - Agent API for library/agent interactions");
+        Console.WriteLine("  UserApi   - User-facing API with webhooks and websockets");
+    }
+
+    /// <summary>
+    /// Logs startup information about the selected service type and environment configuration.
+    /// </summary>
+    /// <param name="commandLineArgs">The parsed command line arguments.</param>
+    private static void LogStartupInformation(CommandLineArgs commandLineArgs)
+    {
+        var serviceDescription = commandLineArgs.ServiceType switch
+        {
+            ServiceType.WebApi => "WebApi service (Main web API)",
+            ServiceType.LibApi => "LibApi service (Agent API)",
+            ServiceType.UserApi => "UserApi service (User-facing API)",
+            ServiceType.All => "All services (WebApi, LibApi, UserApi)",
+            _ => "Unknown service type"
+        };
+
+        _logger.LogInformation("Starting XiansAi.Server with {ServiceType}: {ServiceDescription}", 
+            commandLineArgs.ServiceType, serviceDescription);
+
+        if (!string.IsNullOrWhiteSpace(commandLineArgs.CustomEnvFile))
+        {
+            _logger.LogInformation("Using custom environment file: {EnvFile}", commandLineArgs.CustomEnvFile);
+        }
+        else
+        {
+            var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+            _logger.LogInformation("Using default environment file loading for environment: {Environment}", envName);
+        }
     }
 }
