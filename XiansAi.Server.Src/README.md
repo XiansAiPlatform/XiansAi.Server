@@ -20,9 +20,14 @@ For detailed configuration and deployment information, see the [docs](./docs/) f
 
 ### Running the Application
 
+Ensure you have the correct environment file (.env.* or appsettings.json) in the root of the project.
+
 ```bash
 # Run all services (default)
 dotnet run
+
+# Run with specific environment file
+dotnet run --env-file .env.local
 
 # Run with file watching for development
 dotnet watch run
@@ -40,25 +45,12 @@ For detailed startup options and microservice configuration, see [Start Options]
 docker run --rm -it \
   --env-file .env \
   -p 5001:8080 \
-  --name xiansai-server \
+  --name xiansai-server-dev \
   99xio/xiansai-server:latest
 
-# Development with Docker Compose
-docker-compose up -d
 ```
 
 For comprehensive Docker instructions, see [Docker Documentation](./docs/DOCKER.md).
-
-## Secrets Management
-
-The secrets are stored in Azure Key Vault. The Key Vault is configured in the `appsettings.json` file.
-
-Local secrets are stored in:
-```
-~/.microsoft/usersecrets/<user_secrets_id>/secrets.json
-```
-
-For more information, see the [Microsoft documentation](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-9.0&tabs=linux).
 
 ## Architecture
 
@@ -91,18 +83,7 @@ The application supports multiple authentication providers:
 
 For complete configuration instructions, see [Authentication Configuration](./docs/AUTH_CONFIGURATION.md).
 
-## Deployment
-
-### Azure Production Deployment
-
-To deploy to Azure Production:
-
-```bash
-# Ensure you have correct permissions and clone XiansAi.Infrastructure repository
-../XiansAi.Server.Infra/deploy-webapi.sh
-```
-
-### Docker Deployment
+### DockerHub Deployment
 
 For Docker build and deployment:
 
@@ -115,33 +96,3 @@ export DOCKERHUB_USERNAME=yourusername
 ```
 
 See [Docker Documentation](./docs/DOCKER.md) for detailed build and deployment instructions.
-
-## Development
-
-### Local Development
-
-```bash
-# Start all services
-./start.sh
-
-# Start specific service
-./start.sh --web    # WebApi only
-./start.sh --lib    # LibApi only
-./start.sh --user   # UserApi only
-
-# With custom environment
-./run-environment.sh
-```
-
-### Using Docker Compose
-
-```bash
-# Start all services including dependencies
-docker-compose up -d
-
-# Start specific service
-docker-compose up -d webapi
-docker-compose up -d libapi
-```
-
-For detailed development setup and configuration options, see [Start Options](./docs/START_OPTIONS.md).
