@@ -2,7 +2,6 @@ name: Build and Publish to DockerHub
 
 on:
   push:
-    branches: [ dockerhub ]
     tags:
       - 'v*'  # This will trigger on version tags like v1.0.0, v2.1.0, etc.
   workflow_dispatch:  # Allow manual triggering
@@ -35,13 +34,14 @@ jobs:
       with:
         images: ${{ env.DOCKERHUB_ORG }}/${{ env.IMAGE_NAME }}
         tags: |
-          # Branch name for non-main branches
-          type=ref,event=branch
           # Tag for version tags
           type=ref,event=tag
-          # Latest for dockerhub branch
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/dockerhub' }}
+          # Semantic versioning tags
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          # Latest tag only for stable releases (no pre-release suffixes like -beta, -alpha, -rc)
+          type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
         labels: |
           org.opencontainers.image.title=${{ env.IMAGE_NAME }}
           org.opencontainers.image.description=XiansAi Server - AI workflow platform

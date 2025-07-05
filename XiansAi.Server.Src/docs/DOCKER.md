@@ -5,14 +5,88 @@ This document provides comprehensive instructions for building, publishing, and 
 ## Table of Contents
 
 1. [Publishing Docker Images to DockerHub](#publishing-docker-images-to-dockerhub)
-2. [Automated Publishing via DockerHub Branch](#automated-publishing-via-dockerhub-branch)
+2. [Automated Publishing via GitHub Actions](#automated-publishing-via-github-actions)
 3. [Running Published Docker Images](#running-published-docker-images)
 4. [Building and Testing Docker Images Locally](#building-and-testing-docker-images-locally)
 5. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Publishing Docker Images to DockerHub
+## Automated Publishing via GitHub Actions
+
+### Overview
+
+The repository includes GitHub Actions automation that automatically builds and publishes Docker images to DockerHub when you create version tags.
+
+### Quick Start
+
+```bash
+# Push the changes to the dockerhub branch
+git add .
+git commit -m "feat: add new feature"
+git push origin dockerhub
+
+# Define the version
+export VERSION=1.0.0 # or 1.0.0-beta for pre-release
+
+# Create and push a version tag
+git tag -a v$VERSION -m "Release v$VERSION"
+git push origin v$VERSION
+```
+
+**Delete existing tag (optional)**
+
+```bash
+git tag -d v1.0.0
+git push origin :refs/tags/v1.0.0
+```
+
+### Merge to main
+
+It is important to merge to main after creating a tag to keep the main branch in sync with the dockerhub.
+
+```bash
+git checkout main
+git merge dockerhub
+git push origin main
+```
+
+### What Gets Published
+
+The automation publishes to: `99xio/xiansai-server`
+
+**Tags created for stable releases (e.g., `v2.0.0`):**
+
+- `v2.0.0` - Exact version tag
+- `2.0.0` - Semantic version
+- `2.0` - Major.minor version
+- `2` - Major version
+- `latest` - Points to the most recent stable release
+
+**Tags created for pre-releases (e.g., `v2.0.0-beta`):**
+
+- `v2.0.0-beta` - Exact version tag
+- `2.0.0-beta` - Semantic version
+- `2.0` - Major.minor version
+- `2` - Major version
+- **No `latest` tag** - Pre-releases don't get tagged as latest
+
+### Multi-Platform Support
+
+Images are automatically built for:
+
+- `linux/amd64` (Intel/AMD 64-bit)
+- `linux/arm64` (ARM 64-bit, Apple Silicon)
+
+### Monitoring Builds
+
+1. Go to the repository's **Actions** tab on GitHub
+2. Look for "Build and Publish to DockerHub" workflows
+3. Check DockerHub for newly published images
+
+---
+
+## Manual Publishing Docker Images to DockerHub (not recommended)
 
 ### Prerequisites
 
@@ -63,65 +137,6 @@ The `docker-build-and-publish.sh` script performs the following actions:
 | `ADDITIONAL_TAGS` | Comma-separated additional tags | `latest,stable` | No |
 | `DOCKERFILE` | Dockerfile to use | `Dockerfile.production` | No (defaults to `Dockerfile.production`) |
 | `PLATFORM` | Target platforms | `linux/amd64,linux/arm64` | No (defaults to both) |
-
----
-
-## Automated Publishing via DockerHub Branch
-
-### Overview
-
-The repository includes GitHub Actions automation that automatically builds and publishes Docker images to DockerHub whenever you push to the `dockerhub` branch or create version tags.
-
-### Quick Start
-
-**For development builds:**
-
-```bash
-# Switch to dockerhub branch
-git checkout dockerhub
-
-# Make your changes and commit
-git add .
-git commit -m "feat: add new feature"
-
-# Push to trigger automatic build
-git push origin dockerhub
-```
-
-**For version releases:**
-
-```bash
-# Delete existing tag
-git tag -d v1.0.0
-git push origin :refs/tags/v1.0.0
-
-# Create and push a version tag
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
-```
-
-### What Gets Published
-
-The automation publishes to: `99xio/xiansai-server`
-
-**Tags created:**
-
-- `latest` - Always points to the most recent build
-- `dockerhub` - For commits to dockerhub branch
-- `v1.0.0` - For version tags (e.g., v1.0.0, v2.1.0)
-
-### Multi-Platform Support
-
-Images are automatically built for:
-
-- `linux/amd64` (Intel/AMD 64-bit)
-- `linux/arm64` (ARM 64-bit, Apple Silicon)
-
-### Monitoring Builds
-
-1. Go to the repository's **Actions** tab on GitHub
-2. Look for "Build and Publish to DockerHub" workflows
-3. Check DockerHub for newly published images
 
 ---
 
