@@ -91,6 +91,10 @@ git push origin dockerhub
 **For version releases:**
 
 ```bash
+# Delete existing tag
+git tag -d v1.0.0
+git push origin :refs/tags/v1.0.0
+
 # Create and push a version tag
 git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin v1.0.0
