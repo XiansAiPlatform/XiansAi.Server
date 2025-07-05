@@ -12,7 +12,7 @@ publish.zip
 .env.*
 !.env.example
 appsettings.*
-.certs
+.secrets/
 
 # User-specific files
 *.rsuser
