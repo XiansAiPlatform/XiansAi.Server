@@ -9,7 +9,7 @@ set -e
 # Default values
 DEFAULT_CA_NAME="XiansAi Root CA"
 DEFAULT_DAYS=3650
-OUTPUT_DIR="./.certs"
+OUTPUT_DIR="./.secrets/temp"
 KEY_SIZE=4096
 
 # Display usage information

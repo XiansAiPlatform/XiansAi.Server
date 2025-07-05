@@ -200,8 +200,7 @@ public class KeycloakTokenService : ITokenService
             };
 
             // Set up token validation parameters
-            var baseUri = new Uri(_keycloakConfig.AuthServerUrl ?? throw new InvalidOperationException("Keycloak configuration is missing"));
-            var issuerUri = new Uri(baseUri, $"realms/{_keycloakConfig.Realm}");
+            var issuerUri = new Uri(_keycloakConfig.ValidIssuer ?? throw new InvalidOperationException("Keycloak configuration ValidIssuer is missing"));
             var validationParameters = new TokenValidationParameters
             {
                 ValidateAudience = false,
