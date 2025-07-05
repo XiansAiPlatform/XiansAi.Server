@@ -4,8 +4,8 @@ This document provides comprehensive instructions for building, publishing, and 
 
 ## Table of Contents
 
-1. [Publishing Docker Images to DockerHub](#publishing-docker-images-to-dockerhub)
-2. [Automated Publishing via GitHub Actions](#automated-publishing-via-github-actions)
+1. [Automated Publishing via GitHub Actions](#automated-publishing-via-github-actions)
+2. [Manual Publishing Docker Images to DockerHub (not recommended)](#manual-publishing-docker-images-to-dockerhub-not-recommended)
 3. [Running Published Docker Images](#running-published-docker-images)
 4. [Building and Testing Docker Images Locally](#building-and-testing-docker-images-locally)
 5. [Troubleshooting](#troubleshooting)
@@ -34,7 +34,7 @@ git tag -a v$VERSION -m "Release v$VERSION"
 git push origin v$VERSION
 ```
 
-**Delete existing tag (optional)**
+### Delete existing tag (optional)
 
 ```bash
 git tag -d v1.0.0
