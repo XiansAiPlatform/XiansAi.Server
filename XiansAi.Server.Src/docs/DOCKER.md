@@ -32,8 +32,8 @@ git push origin v$VERSION
 ### Delete existing tag (optional)
 
 ```bash
-git tag -d v1.0.0
-git push origin :refs/tags/v1.0.0
+git tag -d v$VERSION
+git push origin :refs/tags/v$VERSION
 ```
 
 ### What Gets Published
