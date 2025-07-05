@@ -21,11 +21,6 @@ The repository includes GitHub Actions automation that automatically builds and 
 ### Quick Start
 
 ```bash
-# Push the changes to the dockerhub branch
-git add .
-git commit -m "feat: add new feature"
-git push origin dockerhub
-
 # Define the version
 export VERSION=1.0.0 # or 1.0.0-beta for pre-release
 
@@ -39,16 +34,6 @@ git push origin v$VERSION
 ```bash
 git tag -d v1.0.0
 git push origin :refs/tags/v1.0.0
-```
-
-### Merge to main
-
-It is important to merge to main after creating a tag to keep the main branch in sync with the dockerhub.
-
-```bash
-git checkout main
-git merge dockerhub
-git push origin main
 ```
 
 ### What Gets Published
