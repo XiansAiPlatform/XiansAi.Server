@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Shared.Utils.Services;
+using System.Security.Claims;
 
 namespace Features.WebApi.Endpoints;
 
@@ -16,6 +17,7 @@ public static class TenantEndpoints
         
 
         tenantsGroup.MapGet("/", async (
+            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
             var result = await endpoint.GetAllTenants();
@@ -27,10 +29,10 @@ public static class TenantEndpoints
             operation.Summary = "Get all tenants";
             operation.Description = "Retrieves all tenant records";
             return operation;
-        })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
+        }).RequiresValidSysAdmin();
 
         tenantsGroup.MapGet("/by-tenant-id/{tenantId}", async (
+            HttpContext httpContext,
             string tenantId,
             [FromServices] ITenantService endpoint) =>
         {
@@ -42,7 +44,7 @@ public static class TenantEndpoints
             operation.Summary = "Get tenant by tenant ID";
             operation.Description = "Retrieves a tenant by its tenant ID";
             return operation;
-        });
+        }).RequiresValidTenant();
 
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,
@@ -60,7 +62,7 @@ public static class TenantEndpoints
             operation.Summary = "Create a new tenant";
             operation.Description = "Creates a new tenant record";
             return operation;
-        }).RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin));
+        }).RequiresValidSysAdmin();
 
         tenantsGroup.MapPut("/{id}", async (
             string id,
@@ -75,8 +77,7 @@ public static class TenantEndpoints
             operation.Summary = "Update a tenant";
             operation.Description = "Updates an existing tenant record";
             return operation;
-        })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
+        }).RequiresValidSysAdmin();
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
@@ -90,6 +91,6 @@ public static class TenantEndpoints
             operation.Summary = "Delete a tenant";
             operation.Description = "Deletes a tenant by its ID";
             return operation;
-        }).RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin));
+        }).RequiresValidSysAdmin();
     }
 } 
