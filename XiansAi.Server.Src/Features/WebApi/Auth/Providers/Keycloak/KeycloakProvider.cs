@@ -5,6 +5,7 @@ using Shared.Utils;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth.Providers.Keycloak;
 
@@ -41,18 +42,6 @@ public class KeycloakProvider : IAuthProvider
         options.RequireHttpsMetadata = false; // Set to true in production
         options.TokenValidationParameters.NameClaimType = "preferred_username";
         options.TokenValidationParameters.RoleClaimType = "roles";
-        options.Events = new JwtBearerEvents
-        {
-            OnTokenValidated = context =>
-            {
-                if (context.Principal?.Identity is ClaimsIdentity identity)
-                {
-                    // Set the User property of HttpContext
-                    context.HttpContext.User = context.Principal;
-                }
-                return Task.CompletedTask;
-            }
-        };
     }
 
     public async Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)

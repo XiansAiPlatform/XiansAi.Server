@@ -202,9 +202,9 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             }
         }
 
-        if (httpContext.User.Identity is ClaimsIdentity identity)
+        // Remove existing role claims from all identities
+        foreach (var identity in httpContext.User.Identities.OfType<ClaimsIdentity>())
         {
-            // Remove existing role claims
             var existingRoleClaims = identity.Claims
                 .Where(c => c.Type == ClaimTypes.Role)
                 .ToList();
@@ -212,11 +212,14 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             {
                 identity.RemoveClaim(claim);
             }
+        }
 
-            // Add new role claims
+        // Add new role claims to the primary identity
+        if (httpContext.User.Identity is ClaimsIdentity primaryIdentity)
+        {
             foreach (var role in roles ?? Enumerable.Empty<string>())
             {
-                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                primaryIdentity.AddClaim(new Claim(ClaimTypes.Role, role));
             }
         }
 
@@ -253,10 +256,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 }
 
                 var roles = await _roleCacheService.GetUserRolesAsync(userId!, currentTenantId);
-                foreach (var role in roles)
-                {
-                    httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)]));
-                }
+                // Don't add roles here - they will be added in TryAuthorize method
 
                 // Set the user name to the logged in user from cache
                 httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
@@ -292,10 +292,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, tokenUserId)]));
 
             var roles = await _roleCacheService.GetUserRolesAsync(tokenUserId, currentTenantId);
-            foreach (var role in roles)
-            {
-                httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)]));
-            }
+            // Don't add roles here - they will be added in TryAuthorize method
 
             return (true, tokenUserId, tokenTenantIds, roles);
         }

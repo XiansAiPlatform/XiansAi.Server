@@ -131,6 +131,7 @@ AuthProvider__Provider=Keycloak
 # Keycloak Configuration
 Keycloak__AuthServerUrl=https://your-keycloak-server/
 Keycloak__Realm=your-realm-name
+Keycloak__ValidIssuer=https://your-keycloak-server/realms/your-realm-name
 ```
 
 **Key Features:**
