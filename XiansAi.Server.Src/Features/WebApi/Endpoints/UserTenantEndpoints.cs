@@ -13,9 +13,11 @@ public static class UserTenantEndpoints
             .RequiresToken();
 
         group.MapGet("/current", async (
-            [FromServices] IUserTenantService service) =>
+            [FromServices] IUserTenantService service,
+            HttpContext httpContext) =>
         {
-            var result = await service.GetTenantsForCurrentUser();
+            var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
+            var result = await service.GetCurrentUserTenants(authHeader!.Substring("Bearer ".Length));
             return Results.Ok(result);
         })
         .WithName("GetCurrentUserTenants")
@@ -43,6 +45,38 @@ public static class UserTenantEndpoints
             return operation;
         })
         .RequiresSysAdmin();
+
+        group.MapGet("/unapprovedUsers", async (
+            [FromServices] IUserTenantService service) =>
+        {
+            var result = await service.GetUnapprovedUsers();
+            return Results.Ok(result);
+        })
+        .WithName("GetUnapprovedUsers")
+        .RequireAuthorization("RequireTokenAuth")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Get list of your without a tenant";
+            operation.Description = "Returns all user without tenant, excluding sysAdmin users";
+            return operation;
+        })
+        .RequiresSysAdmin();
+
+        group.MapPost("/approveUser", async (
+            [FromBody] UserTenantDto dto,
+            [FromServices] IUserTenantService service) =>
+        {
+            var result = await service.ApproveUser(dto.UserId, dto.TenantId);
+            return Results.Ok(result);
+        })
+        .WithName("ApproveUser")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Approve user";
+            operation.Description = "Approve user by assigning a tenant and role to user";
+            return operation;
+        })
+        .RequiresTenantAdmin();
 
         group.MapPost("/", async (
             [FromBody] UserTenantDto dto,

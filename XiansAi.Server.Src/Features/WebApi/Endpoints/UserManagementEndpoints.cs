@@ -76,6 +76,7 @@ public static class UserManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
+        .RequiresTenantAdmin()
         .WithName("GetUser")
         .WithOpenApi(operation => {
             operation.Summary = "Get user details";
@@ -83,19 +84,55 @@ public static class UserManagementEndpoints
             return operation;
         });
 
-        group.MapGet("/debug-auth", (HttpContext context) =>
+        group.MapPost("/invite", async (
+            [FromBody] InviteUserDto invite,
+            [FromServices] IUserManagementService userManagementService) =>
         {
-            var identity = context.User.Identity as ClaimsIdentity;
+            var result = await userManagementService.InviteUserAsync(invite);
+            return result.IsSuccess
+                ? Results.Ok(new { token = result.Data })
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .RequiresTenantAdmin()
+        .WithName("InviteUser")
+        .WithOpenApi(operation => {
+            operation.Summary = "Invite a user";
+            operation.Description = "Invites a user to join a tenant and assigns roles.";
+            return operation;
+        });
 
-            Console.WriteLine($"IsInRole(SysAdmin): {context.User.IsInRole("SysAdmin")}");
+        group.MapGet("/invitation", async (
+            [FromServices] IUserManagementService userManagementService,
+            HttpContext httpContext) =>
+        {
+            var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
+            var result = await userManagementService.GetInviteByUserEmailAsync(authHeader!.Substring("Bearer ".Length));
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("GetInvitationByEmail")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get invitation by email";
+            operation.Description = "Retrieves an invitation by the user's email address.";
+            return operation;
+        });
 
-            return Results.Ok(new
-            {
-                IsAuthenticated = identity?.IsAuthenticated,
-                RoleClaimType = identity?.RoleClaimType,
-                Roles = identity?.FindAll(identity.RoleClaimType ?? "").Select(c => c.Value).ToList(),
-                IsInRole_SysAdmin = context.User.IsInRole("SysAdmin")
-            });
+        group.MapPost("/accept-invitation/{token}", async (
+           string token,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.AcceptInvitationAsync(token);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("AcceptInvitation")
+        .RequiresToken()
+        .WithOpenApi(operation => {
+            operation.Summary = "Accept a user invitation";
+            operation.Description = "Accepts an invitation using the invitation token and creates the user account.";
+            return operation;
         });
     }
 }

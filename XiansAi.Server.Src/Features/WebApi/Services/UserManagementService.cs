@@ -1,5 +1,9 @@
+using Features.WebApi.Auth;
+using Features.WebApi.Auth.Providers;
 using Shared.Auth;
+using Shared.Services;
 using Shared.Utils.Services;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json.Serialization;
 using XiansAi.Server.Features.WebApi.Models;
 using XiansAi.Server.Features.WebApi.Repositories;
@@ -18,6 +22,26 @@ public class UserDto
     public string TenantId { get; set; } = string.Empty;
 }
 
+public class InviteUserDto
+{
+    [JsonPropertyName("email")]
+    public required string Email { get; set; }
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+    [JsonPropertyName("tenantId")]
+    public required string TenantId { get; set; }
+    [JsonPropertyName("roles")]
+    public List<string> Roles { get; set; } = new List<string> { SystemRoles.TenantUser };
+}
+
+public class InviteDto
+{
+    [JsonPropertyName("email")]
+    public required string Email { get; set; }
+    [JsonPropertyName("token")]
+    public required string Token { get; set; }
+}
+
 public interface IUserManagementService
 {
     Task<ServiceResult<bool>> LockUserAsync(string userId, string reason);
@@ -25,6 +49,10 @@ public interface IUserManagementService
     Task<ServiceResult<bool>> IsUserLockedOutAsync(string userId);
     Task<ServiceResult<User>> GetUserAsync(string userId);
     Task<ServiceResult<bool>> CreateNewUser(UserDto user);
+    Task<ServiceResult<bool>> CreateUserIfNotExist(string userId, string token);
+    Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite);
+    Task<ServiceResult<InviteDto>> GetInviteByUserEmailAsync(string token);
+    Task<ServiceResult<bool>> AcceptInvitationAsync(string invitationToken);
 }
 
 public class UserManagementService : IUserManagementService
@@ -32,15 +60,29 @@ public class UserManagementService : IUserManagementService
     private readonly IUserRepository _userRepository;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<UserManagementService> _logger;
+    private readonly IAuthMgtConnect _authMgtConnect;
+    private readonly IConfiguration _configuration;
+    private readonly IInvitationRepository _invitationRepository;
+    private readonly IEmailService _emailService;
+
+    private const string EMAIL_SUBJECT = "Xians.ai - Invitation";
 
     public UserManagementService(
         IUserRepository userRepository,
         ITenantContext tenantContext,
+        IAuthMgtConnect authMgtConnect,
+        IConfiguration configuration,
+        IInvitationRepository invitationRepository,
+        IEmailService emailService,
         ILogger<UserManagementService> logger)
     {
         _userRepository = userRepository;
         _tenantContext = tenantContext;
         _logger = logger;
+        _authMgtConnect = authMgtConnect;
+        _configuration = configuration;
+        _invitationRepository = invitationRepository;
+        _emailService = emailService;
     }
 
     public async Task<ServiceResult<bool>> LockUserAsync(string userId, string reason)
@@ -163,5 +205,199 @@ public class UserManagementService : IUserManagementService
             _logger.LogError(ex, "Error creating new user {UserId}", userDto.UserId);
             return ServiceResult<bool>.InternalServerError("An error occurred while creating the new user");
         }
+    }
+
+    public async Task<ServiceResult<bool>> CreateUserIfNotExist(string userId, string token)
+    {
+        try
+        {
+            var existingUser = await _userRepository.GetByUserIdAsync(userId);
+            if (existingUser != null)
+            {
+                return ServiceResult<bool>.Success(true);
+            }
+
+            var userDto = await generateUserFromToken(token);
+            var user = await CreateNewUser(userDto);
+
+            if (!user.IsSuccess)
+            {
+                return ServiceResult<bool>.InternalServerError("Failed to create user from token");
+            }
+            _logger.LogInformation("User created from token: {UserId}", userId);
+
+            return ServiceResult<bool>.Success(true);
+
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating or retrieving user {UserId}", userId);
+            return ServiceResult<bool>.InternalServerError("An error occurred while creating or retrieving the user");
+        }
+    }
+
+    public async Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite)
+    {
+        try
+        {
+            var existingUser = await _userRepository.GetByUserEmailAsync(invite.Email);
+            if (existingUser != null)
+                return ServiceResult<string>.Conflict("User already exists");
+
+            var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+            var invitation = new Invitation
+            {
+                Email = invite.Email,
+                TenantId = invite.TenantId,
+                Roles = invite.Roles,
+                Token = token,
+                ExpiresAt = DateTime.UtcNow.AddDays(7)
+            };
+            await _invitationRepository.CreateAsync(invitation);
+            await _emailService.SendEmailAsync(invite.Email, EMAIL_SUBJECT, GetEmailBody(invitation.ExpiresAt.ToString("f")), false);
+
+            _logger.LogInformation("Invitation created for {Email} (tenant: {TenantId})", invite.Email, invite.TenantId);
+            return ServiceResult<string>.Success(token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error inviting user {Email}", invite.Email);
+            return ServiceResult<string>.InternalServerError("An error occurred while inviting the user");
+        }
+    }
+
+    public async Task<ServiceResult<InviteDto>> GetInviteByUserEmailAsync(string token)
+    {
+        try
+        {
+            var email = getUserEmailfromToken(token);
+            var invitation = await _invitationRepository.GetByEmailAsync(email);
+            if (invitation == null)
+            {
+                return ServiceResult<InviteDto>.NotFound("Invitation not found for the provided email");
+            }
+
+            if (invitation.ExpiresAt < DateTime.UtcNow)
+            {
+                if (invitation?.ExpiresAt < DateTime.UtcNow)
+                {
+                    await _invitationRepository.MarkAsExpiredAsync(invitation.Token);
+                }
+                return ServiceResult<InviteDto>.NotFound("Invitation not found for the provided email");
+            }
+            return ServiceResult<InviteDto>.Success(new InviteDto { Email = email, Token = invitation.Token});
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving invitation for user {userId}", _tenantContext.LoggedInUser);
+            return ServiceResult<InviteDto>.InternalServerError("An error occurred while retrieving the invitation");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> AcceptInvitationAsync(string invitationToken)
+    {
+        try
+        {
+            var invitation = await _invitationRepository.GetByTokenAsync(invitationToken);
+            if (invitation == null || invitation.Status != Status.Pending || invitation.ExpiresAt < DateTime.UtcNow)
+            {
+                if (invitation?.ExpiresAt < DateTime.UtcNow)
+                {
+                    await _invitationRepository.MarkAsExpiredAsync(invitationToken);
+                }
+                return ServiceResult<bool>.NotFound("Invalid or expired invitation token");
+            }
+
+            var existingUser = await _userRepository.GetByUserIdAsync(_tenantContext.LoggedInUser);
+            if (existingUser == null)
+            {
+                return ServiceResult<bool>.Conflict("User not exist");
+            }
+
+            existingUser.TenantRoles.Add(new TenantRole
+            {
+                Tenant = invitation.TenantId,
+                Roles = invitation.Roles
+            });
+
+            var user = await _userRepository.UpdateAsync(_tenantContext.LoggedInUser, existingUser);
+
+
+            if (!user)
+                return ServiceResult<bool>.InternalServerError("Failed to accept user invitation");
+
+            await _invitationRepository.MarkAsAcceptedAsync(invitationToken);
+
+            _logger.LogInformation("User {UserId} accepted invitation for tenant {TenantId}", _tenantContext.LoggedInUser, invitation.TenantId);
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error accepting invitation for user {UserId}", _tenantContext.LoggedInUser);
+            return ServiceResult<bool>.InternalServerError("An error occurred while accepting the invitation");
+        }
+    }
+
+    private async Task<UserDto> generateUserFromToken(string token)
+    {
+        var handler = new JwtSecurityTokenHandler(); 
+        var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
+
+        if (jsonToken == null)
+        {
+            _logger.LogWarning("Invalid JWT token format");
+            throw new ArgumentException("Invalid token format", nameof(token));
+        }
+
+        var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _logger.LogWarning("User ID claim not found in token");
+            throw new ArgumentException("User ID not found in token", nameof(token));
+        }
+
+        var user = await _authMgtConnect.GetUserInfo(userId);
+
+        var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
+            new AuthProviderConfig();
+        var name = user.Nickname ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
+        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
+
+        return new UserDto
+        {
+            UserId = userId,
+            Email = email,
+            Name = name,
+        };
+    }
+
+    private string getUserEmailfromToken(string token)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
+        if (jsonToken == null)
+        {
+            _logger.LogWarning("Invalid JWT token format");
+            throw new ArgumentException("Invalid token format", nameof(token));
+        }
+        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            _logger.LogWarning("Email claim not found in token");
+            throw new ArgumentException("Email not found in token", nameof(token));
+        }
+        return email ?? "hanifa@99x.io";
+    }
+
+    private string GetEmailBody(string expiry)
+    {
+        return $@"Hi there,
+
+You have been invited to Xians.ai. Please login to the portal and accept the invitation.
+
+This invitation will expires on {expiry}.
+
+Best regards,
+The Xians.ai Team";
     }
 }

@@ -38,6 +38,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
+        builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
 
         return builder;
     }

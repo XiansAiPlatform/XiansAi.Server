@@ -7,8 +7,10 @@ namespace XiansAi.Server.Features.WebApi.Repositories;
 public interface IUserRepository
 {
     Task<List<User>> GetSystemAdminAsync();
+    Task<List<User>> GetUsersWithNoTenantAsync();
     Task<List<User>> GetUsersByRoleAsync(string roleName, string tenantId);
     Task<User?> GetByUserIdAsync(string userId);
+    Task<User?> GetByUserEmailAsync(string email);
     Task<List<string>> GetUserTenantsAsync(string userId);
     Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
     Task<User?> GetAnyUserAsync();
@@ -37,6 +39,18 @@ public class UserRepository : IUserRepository
         return await _users.Find(x => x.IsSysAdmin == true).ToListAsync();
     }
 
+    public async Task<List<User>> GetUsersWithNoTenantAsync()
+    {
+        var filter = Builders<User>.Filter.And(
+            Builders<User>.Filter.Or(
+                Builders<User>.Filter.Eq(u => u.TenantRoles, null),
+                Builders<User>.Filter.Size(u => u.TenantRoles, 0)
+            ),
+            Builders<User>.Filter.Eq(u => u.IsSysAdmin, false)
+        );
+        return await _users.Find(filter).ToListAsync();
+    }
+
     public async Task<List<User>> GetUsersByRoleAsync(string roleName, string tenantId)
     {
         if (roleName == SystemRoles.SysAdmin)
@@ -56,6 +70,11 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByUserIdAsync(string userId)
     {
         return await _users.Find(x => x.UserId == userId).FirstOrDefaultAsync();
+    }
+
+    public async Task<User?> GetByUserEmailAsync(string email)
+    {
+        return await _users.Find(x => x.Email == email).FirstOrDefaultAsync();
     }
 
     public async Task<List<string>> GetUserTenantsAsync(string userId)
