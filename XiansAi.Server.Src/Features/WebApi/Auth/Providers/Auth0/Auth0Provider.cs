@@ -60,12 +60,6 @@ public class Auth0Provider : IAuthProvider
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
                             }
-
-                            //for backward compatibility, ensure exisiting users have TenantUser role
-                            if (!roles.Contains(SystemRoles.TenantUser))
-                            {
-                                identity.AddClaim(new Claim(ClaimTypes.Role, SystemRoles.TenantUser));
-                            }
                         }
                     }
 
@@ -141,6 +135,14 @@ public class Auth0Provider : IAuthProvider
             _logger.LogError(ex, "Failed to set new tenant {TenantId} for user {UserId}", tenantId, userId);
             throw;
         }
+    }
+
+    public async Task<List<string>> GetUserTenants(string userId)
+    {
+        var userInfo = await GetUserInfo(userId);
+        var appMetadata = userInfo.AppMetadata ?? new AppMetadata { Tenants = Array.Empty<string>() };
+
+        return appMetadata.Tenants.ToList();
     }
 
     private async Task<string> GetManagementApiToken()

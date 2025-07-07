@@ -291,7 +291,7 @@ The Xians.ai Team";
                 var tenantId = GenerateTenantId(email);
                 _logger.LogDebug("Setting tenant {TenantId} for user {UserId}", tenantId, user);
 
-                var userDto = generateUserFromToken(token);
+                var userDto = await generateUserFromToken(token);
 
                 await _userManagementService.CreateNewUser(userDto);
                 await _tokenCache.RemoveValidation(token);

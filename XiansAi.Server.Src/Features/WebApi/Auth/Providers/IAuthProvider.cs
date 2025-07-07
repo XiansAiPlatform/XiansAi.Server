@@ -22,7 +22,9 @@ public interface IAuthProvider
     /// Get user information from the provider
     /// </summary>
     Task<UserInfo> GetUserInfo(string userId);
-    
+
+    Task<List<string>> GetUserTenants(string userId);
+
     /// <summary>
     /// Set a new tenant for the user
     /// </summary>

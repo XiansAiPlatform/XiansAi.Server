@@ -63,12 +63,6 @@ public class AzureB2CProvider : IAuthProvider
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
                             }
-
-                            //for backward compatibility, ensure exisiting users have TenantUser role
-                            if (!roles.Contains(SystemRoles.TenantUser))
-                            {
-                                identity.AddClaim(new Claim(ClaimTypes.Role, SystemRoles.TenantUser));
-                            }
                         }
                     }
 
@@ -191,5 +185,11 @@ public class AzureB2CProvider : IAuthProvider
     private async Task<string> GetMsGraphApiToken()
     {
         return await _tokenService.GetManagementApiToken();
+    }
+
+    //Only Valid for Auth0 for backward compatibility. To be removed.
+    public Task<List<string>> GetUserTenants(string userId)
+    {
+        return Task.FromResult(new List<string>());
     }
 } 

@@ -355,7 +355,7 @@ namespace XiansAi.Server.Features.WebApi.Services
 
                 var user = await _userRepository.GetByUserIdAsync(_tenantContext.LoggedInUser);
                 if (user == null)
-                    return ServiceResult<List<string>>.Success(new List<string> { SystemRoles.TenantUser}); // for backward compatibility with existing users
+                    return ServiceResult<List<string>>.Success(new List<string>());
 
                 var roles = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == _tenantContext.TenantId)?.Roles;
 

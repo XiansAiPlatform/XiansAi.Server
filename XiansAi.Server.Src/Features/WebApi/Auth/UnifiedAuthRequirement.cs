@@ -78,17 +78,13 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private readonly ITenantContext _tenantContext;
     private readonly IAuthProviderFactory _authProviderFactory;
     private readonly ITokenValidationCache _tokenCache;
-    private readonly IConfiguration _configuration;
     private readonly ITenantService _tenantService;
-    private readonly IRoleCacheService _roleCacheService;
     private readonly IUserTenantService _userTenantService;
     public AuthRequirementHandler(
         ILogger<AuthRequirementHandler> logger,
         ITenantContext tenantContext,
         IAuthProviderFactory authProviderFactory,
         ITokenValidationCache tokenCache,
-        IConfiguration configuration,
-        IRoleCacheService roleCacheService,
         IUserTenantService userTenantService,
         ITenantService tenantService)
     {
@@ -96,9 +92,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         _tenantContext = tenantContext;
         _authProviderFactory = authProviderFactory;
         _tokenCache = tokenCache;
-        _configuration = configuration;
         _tenantService = tenantService;
-        _roleCacheService = roleCacheService;
         _userTenantService = userTenantService;
     }
     

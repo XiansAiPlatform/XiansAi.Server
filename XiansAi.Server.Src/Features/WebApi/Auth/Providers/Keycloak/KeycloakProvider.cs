@@ -192,6 +192,12 @@ public class KeycloakProvider : IAuthProvider
         }
     }
 
+    //Only Valid for Auth0 for backward compatibility. To be removed.
+    public Task<List<string>> GetUserTenants(string userId)
+    {
+        return Task.FromResult(new List<string>());
+    }
+
     private async Task<Tuple<bool, string>> CheckOrganizationExists(string token, string organizationName)
     {
         try
