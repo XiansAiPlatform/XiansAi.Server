@@ -101,15 +101,13 @@ public static class AuthConfigurationExtensions
             options.AddPolicy("RequireSysAdmin", policy =>
             {
                 policy.AuthenticationSchemes.Add("JWT");
-                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation));
-                policy.RequireRole(SystemRoles.SysAdmin);
+                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation, SystemRoles.SysAdmin));
             });
 
             options.AddPolicy("RequireTenantAdmin", policy =>
             {
                 policy.AuthenticationSchemes.Add("JWT");
-                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation));
-                policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin);
+                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation, SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
             });
         });
 

@@ -62,9 +62,15 @@ public class AuthRequirement : IAuthorizationRequirement
     /// </summary>
     public AuthRequirementOptions Options { get; }
     
-    public AuthRequirement(AuthRequirementOptions options)
+    /// <summary>
+    /// Required roles (optional)
+    /// </summary>
+    public string[]? RequiredRoles { get; }
+    
+    public AuthRequirement(AuthRequirementOptions options, params string[]? requiredRoles)
     {
         Options = options;
+        RequiredRoles = requiredRoles;
     }
 }
 
@@ -114,9 +120,11 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         var success = await TryAuthorizeWithRetry(context, httpContext, requirement);
         if (!success)
         {
+            _logger.LogWarning("Authorization failed for requirement: {RequirementType}", requirement.GetType().Name);
             return; // Context.Fail() already called in TryAuthorize methods
         }
         
+        _logger.LogInformation("Authorization succeeded for requirement: {RequirementType}", requirement.GetType().Name);
         context.Succeed(requirement);
     }
     
@@ -220,7 +228,35 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             foreach (var role in roles ?? Enumerable.Empty<string>())
             {
                 primaryIdentity.AddClaim(new Claim(ClaimTypes.Role, role));
+                _logger.LogInformation("Added role claim: {Role} for user {UserId}", role, loggedInUser);
             }
+            
+            // Log system role constants for comparison
+            _logger.LogInformation("SystemRoles.SysAdmin constant: '{SysAdminRole}'", SystemRoles.SysAdmin);
+        }
+
+        // Log all current claims for debugging
+        var allClaims = httpContext.User.Claims.Select(c => $"{c.Type}={c.Value}").ToList();
+        _logger.LogInformation("All user claims after role assignment: {Claims}", string.Join(", ", allClaims));
+
+        // Check required roles if specified
+        if (requirement.RequiredRoles != null && requirement.RequiredRoles.Length > 0)
+        {
+            var userRoles = roles?.ToList() ?? new List<string>();
+            var hasRequiredRole = requirement.RequiredRoles.Any(requiredRole => 
+                userRoles.Contains(requiredRole, StringComparer.OrdinalIgnoreCase));
+            
+            if (!hasRequiredRole)
+            {
+                _logger.LogWarning("User {UserId} does not have any of the required roles: {RequiredRoles}. User roles: {UserRoles}", 
+                    loggedInUser, string.Join(", ", requirement.RequiredRoles), string.Join(", ", userRoles));
+                context.Fail(new AuthorizationFailureReason(this, 
+                    $"User does not have required role. Required: {string.Join(" or ", requirement.RequiredRoles)}"));
+                return false;
+            }
+            
+            _logger.LogInformation("User {UserId} has required role. Required: {RequiredRoles}, User has: {UserRoles}", 
+                loggedInUser, string.Join(", ", requirement.RequiredRoles), string.Join(", ", userRoles));
         }
 
         // Set tenant ID in context

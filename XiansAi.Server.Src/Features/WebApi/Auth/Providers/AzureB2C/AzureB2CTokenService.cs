@@ -4,6 +4,7 @@ using RestSharp;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.JsonWebTokens;
 using System.Security.Cryptography;
+using Shared.Utils;
 
 namespace Features.WebApi.Auth.Providers.Tokens;
 
@@ -35,10 +36,18 @@ public class AzureB2CTokenService : ITokenService
 
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)
     {
-        return token.Claims
+        var tenantIds = token.Claims
             .Where(c => c.Type == _tenantClaimType)
             .Select(c => c.Value)
             .ToList();
+
+        if (tenantIds.Count == 0)
+        {
+            _logger.LogWarning("No tenant IDs found in token");
+            return new List<string> { Constants.DefaultTenantId };
+        }
+
+        return tenantIds;
     }
 
     public async Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ProcessToken(string token)
@@ -71,6 +80,7 @@ public class AzureB2CTokenService : ITokenService
             }
 
             var tenantIds = ExtractTenantIds(jsonToken);
+            _logger.LogInformation("Tenant IDs: {TenantIds}", string.Join(", ", tenantIds));
             
             return (true, userId, tenantIds);
         }
