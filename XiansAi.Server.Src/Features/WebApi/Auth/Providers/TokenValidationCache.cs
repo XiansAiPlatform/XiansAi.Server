@@ -60,6 +60,14 @@ public class MemoryTokenValidationCache : ITokenValidationCache
     
     public Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds)
     {
+        // SECURITY IMPROVEMENT: Only cache successful validations to prevent cache pollution
+        // and reduce the attack surface. Failed validations should always be re-validated.
+        if (!valid || string.IsNullOrEmpty(userId))
+        {
+            _logger.LogDebug("Skipping cache for invalid token validation result");
+            return Task.CompletedTask;
+        }
+
         var cacheKey = GetCacheKey(token);
         
         var cacheOptions = new MemoryCacheEntryOptions()
@@ -73,15 +81,17 @@ public class MemoryTokenValidationCache : ITokenValidationCache
             TenantIds = tenantIds?.ToList() ?? new List<string>()
         }, cacheOptions);
         
-        _logger.LogDebug("Cached token validation result");
+        _logger.LogDebug("Cached successful token validation result");
         return Task.CompletedTask;
     }
     
     private string GetCacheKey(string token)
     {
-        // Only use the first 8 chars of the token for the cache key to avoid logging the full token
-        var truncatedToken = token.Length > 8 ? token.Substring(0, 8) : token;
-        return $"token_validation:{truncatedToken}";
+        // Use SHA256 hash to avoid collisions and not log the full token
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var hashBytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(token));
+        var hash = Convert.ToBase64String(hashBytes);
+        return $"token_validation:{hash}";
     }
     
     private class CachedValidation

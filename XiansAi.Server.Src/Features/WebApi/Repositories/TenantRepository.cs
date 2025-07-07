@@ -1,6 +1,7 @@
-using MongoDB.Driver;
-using MongoDB.Bson;
 using Features.WebApi.Models;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
 
@@ -11,7 +12,7 @@ public interface ITenantRepository
     Task<Tenant> GetByIdAsync(string id);
     Task<Tenant> GetByTenantIdAsync(string tenantId);
     Task<Tenant> GetByDomainAsync(string domain);
-    Task<List<Tenant>> GetAllAsync();
+    Task<List<Tenant>> GetAllAsync(string? tenantId = null);
     Task CreateAsync(Tenant tenant);
     Task<bool> UpdateAsync(string id, Tenant tenant);
     Task<bool> DeleteAsync(string id);
@@ -29,45 +30,8 @@ public class TenantRepository : ITenantRepository
 
     public TenantRepository(IDatabaseService databaseService)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Tenant>("tenants");
-        
-        // Create indexes only if they don't exist
-        CreateIndexesIfNotExist();
-    }
-
-    private void CreateIndexesIfNotExist()
-    {
-        try
-        {
-            // Get existing indexes
-            var existingIndexes = _collection.Indexes.List().ToList();
-            var existingIndexNames = existingIndexes.Select(idx => idx["name"].AsString).ToList();
-
-            // Create TenantId index if it doesn't exist
-            if (!existingIndexNames.Contains("tenant_id_1"))
-            {
-                var indexKeys = Builders<Tenant>.IndexKeys.Ascending(x => x.TenantId);
-                var indexOptions = new CreateIndexOptions { Unique = true, Name = "tenant_id_1" };
-                var indexModel = new CreateIndexModel<Tenant>(indexKeys, indexOptions);
-                _collection.Indexes.CreateOne(indexModel);
-            }
-
-            // Create Domain index if it doesn't exist
-            if (!existingIndexNames.Contains("domain_1"))
-            {
-                var domainIndexKeys = Builders<Tenant>.IndexKeys.Ascending(x => x.Domain);
-                var domainIndexOptions = new CreateIndexOptions { Unique = true, Name = "domain_1" };
-                var domainIndexModel = new CreateIndexModel<Tenant>(domainIndexKeys, domainIndexOptions);
-                _collection.Indexes.CreateOne(domainIndexModel);
-            }
-        }
-        catch (Exception ex)
-        {
-            // Log the error but don't throw - we want the application to continue even if index creation fails
-            // The indexes might already exist or there might be permission issues
-            Console.WriteLine($"Warning: Failed to create indexes: {ex.Message}");
-        }
     }
 
     // Standard CRUD Operations
@@ -86,8 +50,15 @@ public class TenantRepository : ITenantRepository
         return await _collection.Find(tenant => tenant.Domain == domain).FirstOrDefaultAsync();
     }
 
-    public async Task<List<Tenant>> GetAllAsync()
+    public async Task<List<Tenant>> GetAllAsync(string? tenantId = null)
     {
+        // Tenant admin: return only their own tenant
+        if (tenantId != null)
+        {
+            var tenant = await _collection.Find(t => t.TenantId == tenantId).FirstOrDefaultAsync();
+            return tenant != null ? new List<Tenant> { tenant } : new List<Tenant>();
+        }
+
         return await _collection.Find(_ => true).ToListAsync();
     }
 

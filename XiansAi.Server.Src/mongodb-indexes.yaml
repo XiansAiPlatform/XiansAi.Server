@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=./mongodb-indexes.schema.json
+
+agents:
+  - name: name_1_tenant_1
+    keys:
+      name: asc
+      tenant: asc
+    unique: true
+  - name: tenant_-1
+    keys:
+      tenant: desc
+
+flow_definitions:
+  - name: created_at_-1
+    keys:
+      created_at: desc
+  - name: agent_1
+    keys:
+      agent: asc
+  - name: workflow_type_1
+    keys:
+      workflow_type: asc
+  - name: updated_at_-1
+    keys:
+      updated_at: desc
+
+conversation_message:
+  - name: thread_participant_message_lookup
+    keys:
+      tenant_id: asc
+      thread_id: asc
+      participant_id: asc
+      created_at: desc
+  - name: tenant_lookup
+    keys:
+      tenant_id: asc
+  - name: message_status
+    keys:
+      tenant_id: asc
+      status: asc
+
+conversation_thread:
+  - name: thread_status_lookup
+    keys:
+      tenant_id: asc
+      status: asc
+  - name: thread_updated_at
+    keys:
+      updated_at: desc
+  - name: thread_composite_key
+    keys:
+      tenant_id: asc
+      agent: asc
+      workflow_type: asc
+      participant_id: asc
+    unique: true
+  - name: tenant_agent_lookup
+    keys:
+      tenant_id: asc
+      agent: asc
+
+webhooks:
+  - name: tenant_id_1
+    keys:
+      tenant_id: asc
+  - name: workflow_id_1_tenant_id_1
+    keys:
+      workflow_id: asc
+      tenant_id: asc
+    sparse: true
+
+certificates:
+  - name: Thumbprint_1
+    keys:
+      Thumbprint: asc
+    unique: true
+  - name: TenantId_1
+    keys:
+      TenantId: asc
+  - name: ExpiresAt_1
+    keys:
+      ExpiresAt: asc
+
+tenants:
+  - name: tenant_id_1
+    keys:
+      tenant_id: asc
+    unique: true
+  - name: domain_1
+    keys:
+      domain: asc
+    unique: true
+
+logs:
+  - name: level_1_tenant_id_1_created_at_-1_workflow_type_1_autocreated
+    keys:
+      level: asc
+      tenant_id: asc
+      created_at: desc
+      workflow_type: asc
+  - name: workflow_run_id_1_autocreated
+    keys:
+      workflow_run_id: asc
+  - name: logs_ttl_created_at
+    keys:
+      created_at: asc
+    expire_after: 30d
+    background: true
+
+user_roles:
+  - name: user_id_1_tenant_id_1
+    keys:
+      user_id: asc
+      tenant_id: asc
+    unique: true
+    background: true

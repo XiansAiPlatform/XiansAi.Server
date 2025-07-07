@@ -11,7 +11,7 @@ public class ChatOrDataRequest
     private string? _workflowType;
     
     public required string ParticipantId { get; set; }
-    public required string WorkflowId { get; set; }
+    public string? WorkflowId { get; set; }
     
     public string WorkflowType 
     { 
@@ -355,7 +355,7 @@ public class MessageService : IMessageService
         var thread = new ConversationThread
         {
             TenantId = _tenantContext.TenantId,
-            WorkflowId = request.WorkflowId,
+            WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType,
             Agent = agent,
             ParticipantId = request.ParticipantId,
@@ -387,7 +387,7 @@ public class MessageService : IMessageService
             Direction = direction,
             Text = request.Text,
             Data = request.Data, // Assign original metadata
-            WorkflowId = request.WorkflowId,
+            WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType,
             MessageType = messageType
         };

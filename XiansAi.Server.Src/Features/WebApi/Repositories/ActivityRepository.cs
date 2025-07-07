@@ -26,7 +26,7 @@ public class ActivityRepository : IActivityRepository
 
     public ActivityRepository(IDatabaseService databaseService)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _activities = database.GetCollection<Activity>("activity_history");
     }
 

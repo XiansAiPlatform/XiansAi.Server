@@ -669,7 +669,7 @@ public class PermissionsEndpointsTests : WebApiIntegrationTestBase, IClassFixtur
         };
 
         // Insert directly into database
-        var database = await databaseService.GetDatabase();
+        var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<Agent>("agents");
         await collection.InsertOneAsync(agent);
 
@@ -680,7 +680,7 @@ public class PermissionsEndpointsTests : WebApiIntegrationTestBase, IClassFixtur
     {
         using var scope = _factory.Services.CreateScope();
         var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-        var database = await databaseService.GetDatabase();
+        var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<Agent>("agents");
         
         return await collection.Find(a => a.Name == agentName && a.Tenant == TestTenantId).FirstOrDefaultAsync();
