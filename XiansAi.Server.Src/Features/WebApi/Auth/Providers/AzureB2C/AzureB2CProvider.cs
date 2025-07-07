@@ -2,7 +2,6 @@ using Features.WebApi.Auth.Providers.Auth0;
 using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.Json;
 using XiansAi.Server.Features.WebApi.Services;
@@ -41,20 +40,15 @@ public class AzureB2CProvider : IAuthProvider
         // Allow HTTP for development environments
         options.RequireHttpsMetadata = false;
 
-        // // Ensure domain starts with https://
-        // var domain = _azureB2CConfig.Domain!.StartsWith("https://") 
-        //     ? _azureB2CConfig.Domain 
-        //     : $"https://{_azureB2CConfig.Domain}";
-            
-        // // Azure B2C token issuer does not include policy name, but authority URL for metadata discovery includes it
-        // var issuer = $"{domain}/{_azureB2CConfig.TenantId}/v2.0/";
-        // var authority = $"{domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/v2.0/";
-        // options.TokenValidationParameters.ValidIssuer = issuer;
-
-        var authority = $"https://sts.windows.net/{_azureB2CConfig.TenantId}/";
-        options.Authority = authority;
+        // Extract policy name from JWKS URI for Azure B2C authority
+        // JWKS URI format: https://domain/tenant/policy/discovery/v2.0/keys
+        // Authority should be: https://domain/tenant/policy/v2.0/
+        
+        options.Authority = _azureB2CConfig.Authority;
+        options.TokenValidationParameters.ValidIssuer = _azureB2CConfig.Issuer;
         options.Audience = _azureB2CConfig.Audience;
         options.TokenValidationParameters.NameClaimType = "name";
+
         options.Events = new JwtBearerEvents
         {
             OnTokenValidated = async context =>

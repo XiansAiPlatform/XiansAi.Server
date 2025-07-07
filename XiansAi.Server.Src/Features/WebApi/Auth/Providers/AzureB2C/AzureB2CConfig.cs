@@ -9,6 +9,7 @@ public class AzureB2CConfig
     public string? Audience { get; set; }
     public string? JwksUri { get; set; }
     public string? Issuer { get; set; }
+    public string? Authority { get; set; }
 
     public ManagementApiConfig? ManagementApi { get; set; }
 }
