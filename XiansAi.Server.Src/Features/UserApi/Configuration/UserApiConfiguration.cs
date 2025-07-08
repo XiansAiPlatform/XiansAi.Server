@@ -67,6 +67,7 @@ namespace Features.UserApi.Configuration
             MessagingEndpoints.MapMessagingEndpoints(app);
             // Configure Websocket
             app.MapHub<ChatHub>("/ws/chat");
+            app.MapHub<TenantChatHub>("/ws/tenant/chat");
 
             return app;
         }

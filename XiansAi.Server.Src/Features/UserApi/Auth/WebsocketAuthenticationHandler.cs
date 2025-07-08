@@ -102,6 +102,12 @@ namespace Features.UserApi.Auth
                         }
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
+                                // Treat as JWT
+                            if (Request.Path.HasValue && Request.Path.Value.Contains("/ws/tenant/chat", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _logger.LogInformation("Skipping JWT validation for /ws/tenant/chat endpoint");
+                                return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
+                            }
                             // Treat as JWT
                             // TODO: Need to add jwt validation logic here
                             _logger.LogWarning("JWT authentication not implemented");

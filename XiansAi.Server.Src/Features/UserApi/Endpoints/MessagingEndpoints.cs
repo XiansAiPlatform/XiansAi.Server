@@ -19,7 +19,7 @@ namespace Features.UserApi.Endpoints
                 [FromQuery] string workflowId,
                 [FromQuery] string type,
                 [FromQuery] string apikey,
-                [FromQuery] string? participantId,
+                [FromQuery] string participantId,
                 [FromBody] JsonElement request,
                 [FromServices] IMessageService messageService,
                 [FromServices] ITenantContext tenantContext,
