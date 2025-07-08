@@ -3,6 +3,7 @@ using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -74,6 +75,11 @@ public class AgentRepository : IAgentRepository
 
     public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant)
     {
+        // Validate inputs using centralized validation utils
+        InputValidationUtils.ValidateUserId(userId, nameof(userId));
+        InputValidationUtils.ValidateTenantId(tenant, nameof(tenant));
+       
+
         var filterBuilder = Builders<Agent>.Filter;
         var filters = new List<FilterDefinition<Agent>>();
 
@@ -146,6 +152,8 @@ public class AgentRepository : IAgentRepository
 
     public async Task<bool> UpdateInternalAsync(string id, Agent agent)
     {
+        InputValidationUtils.ValidateObjectId(id, nameof(id));
+        InputValidationUtils.ValidateAgent(agent);
         var result = await _agents.ReplaceOneAsync(x => x.Id == id, agent);
         return result.ModifiedCount > 0;
     }
@@ -198,11 +206,18 @@ public class AgentRepository : IAgentRepository
 
     public async Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false)
     {
+        // Validate inputs using centralized validation utils
+        InputValidationUtils.ValidateUserId(userId, nameof(userId));
+        InputValidationUtils.ValidateTenantId(tenant, nameof(tenant));
+        InputValidationUtils.ValidateDateRange(startTime, endTime);
+        
         _logger.LogInformation("Getting agents with definitions for user: {UserId}, tenant: {Tenant}, start time: {StartTime} and end time: {EndTime}", userId, tenant, startTime, endTime);
 
         // First, get agents where user has read permission
         var allowedAgents = await GetAgentsWithPermissionAsync(userId, tenant);
-        
+        Console.WriteLine("userId:---repo---- " + userId);
+        Console.WriteLine("tenant:-----repo-- " + tenant);
+
         if (!allowedAgents.Any())
         {
             _logger.LogInformation("User {UserId} has no access to any agents in tenant {Tenant}", userId, tenant);
