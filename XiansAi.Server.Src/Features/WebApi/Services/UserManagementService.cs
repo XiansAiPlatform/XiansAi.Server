@@ -51,7 +51,7 @@ public interface IUserManagementService
     Task<ServiceResult<bool>> CreateNewUser(UserDto user);
     Task<ServiceResult<bool>> CreateUserIfNotExist(string userId, string token);
     Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite);
-    Task<ServiceResult<InviteDto>> GetInviteByUserEmailAsync(string token);
+    Task<ServiceResult<InviteDto?>> GetInviteByUserEmailAsync(string token);
     Task<ServiceResult<bool>> AcceptInvitationAsync(string invitationToken);
 }
 
@@ -266,7 +266,7 @@ public class UserManagementService : IUserManagementService
         }
     }
 
-    public async Task<ServiceResult<InviteDto>> GetInviteByUserEmailAsync(string token)
+    public async Task<ServiceResult<InviteDto?>> GetInviteByUserEmailAsync(string token)
     {
         try
         {
@@ -274,7 +274,7 @@ public class UserManagementService : IUserManagementService
             var invitation = await _invitationRepository.GetByEmailAsync(email);
             if (invitation == null)
             {
-                return ServiceResult<InviteDto>.NotFound("Invitation not found for the provided email");
+                return ServiceResult<InviteDto?>.Success(null);
             }
 
             if (invitation.ExpiresAt < DateTime.UtcNow)
@@ -283,14 +283,14 @@ public class UserManagementService : IUserManagementService
                 {
                     await _invitationRepository.MarkAsExpiredAsync(invitation.Token);
                 }
-                return ServiceResult<InviteDto>.NotFound("Invitation not found for the provided email");
+                return ServiceResult<InviteDto?>.Success(null);
             }
-            return ServiceResult<InviteDto>.Success(new InviteDto { Email = email, Token = invitation.Token});
+            return ServiceResult<InviteDto?>.Success(new InviteDto { Email = email, Token = invitation.Token});
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving invitation for user {userId}", _tenantContext.LoggedInUser);
-            return ServiceResult<InviteDto>.InternalServerError("An error occurred while retrieving the invitation");
+            return ServiceResult<InviteDto?>.InternalServerError("An error occurred while retrieving the invitation");
         }
     }
 
@@ -317,7 +317,8 @@ public class UserManagementService : IUserManagementService
             existingUser.TenantRoles.Add(new TenantRole
             {
                 Tenant = invitation.TenantId,
-                Roles = invitation.Roles
+                Roles = invitation.Roles,
+                IsApproved = true
             });
 
             var user = await _userRepository.UpdateAsync(_tenantContext.LoggedInUser, existingUser);
@@ -386,7 +387,7 @@ public class UserManagementService : IUserManagementService
             _logger.LogWarning("Email claim not found in token");
             throw new ArgumentException("Email not found in token", nameof(token));
         }
-        return email ?? "hanifa@99x.io";
+        return email;
     }
 
     private string GetEmailBody(string expiry)

@@ -47,9 +47,10 @@ public static class UserTenantEndpoints
         .RequiresValidSysAdmin();
 
         group.MapGet("/unapprovedUsers", async (
+            [FromQuery]string? tenantId,
             [FromServices] IUserTenantService service) =>
         {
-            var result = await service.GetUnapprovedUsers();
+            var result = await service.GetUnapprovedUsers(tenantId);
             return Results.Ok(result);
         })
         .WithName("GetUnapprovedUsers")
@@ -77,6 +78,21 @@ public static class UserTenantEndpoints
             return operation;
         })
         .RequiresValidTenantAdmin();
+
+        group.MapPost("/requestJoinTenant", async (
+            [FromBody] JoinTenantRequestDto dto,
+            [FromServices] IUserTenantService service) =>
+        {
+            var result = await service.RequestToJoinTenant(dto.TenantId);
+            return Results.Ok(result);
+        })
+        .WithName("RequestJoinTenant")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Join tenant request";
+            operation.Description = "request to join given tenant";
+            return operation;
+        });
 
         group.MapPost("/", async (
             [FromBody] UserTenantDto dto,

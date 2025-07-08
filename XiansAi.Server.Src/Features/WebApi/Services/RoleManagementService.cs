@@ -309,7 +309,8 @@ namespace XiansAi.Server.Features.WebApi.Services
                     tenantEntry = new TenantRole
                     {
                         Tenant = roleDto.TenantId,
-                        Roles = new List<string> { roleToAssign }
+                        Roles = new List<string> { roleToAssign },
+                        IsApproved = true
                     };
                     user.TenantRoles.Add(tenantEntry);
                 }

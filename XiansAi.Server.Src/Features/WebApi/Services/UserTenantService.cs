@@ -21,15 +21,21 @@ public class UserTenantDto
     public string TenantId { get; set; } = string.Empty;
 }
 
+public class JoinTenantRequestDto
+{
+    public string TenantId { get; set; } = string.Empty;
+}
+
 public interface IUserTenantService
 {
     Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token);
     Task<ServiceResult<List<string>>> GetTenantsForCurrentUser();
     Task<ServiceResult<List<string>>> GetTenantsForUser(string userId);
-    Task<ServiceResult<List<UserTenantDto>>> GetUnapprovedUsers();
+    Task<ServiceResult<List<UserTenantDto>>> GetUnapprovedUsers(string? tenantId = null);
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
     Task<ServiceResult<bool>> ApproveUser(string userId, string tenantId);
+    Task<ServiceResult<bool>> RequestToJoinTenant(string tenantId);
 }
 
 public class UserTenantService : IUserTenantService
@@ -189,7 +195,8 @@ public class UserTenantService : IUserTenantService
                 tenantEntry = new TenantRole
                 {
                     Tenant = tenantId,
-                    Roles = new List<string>()
+                    Roles = new List<string>(),
+                    IsApproved = false
                 };
                 user.TenantRoles.Add(tenantEntry);
             }
@@ -231,20 +238,27 @@ public class UserTenantService : IUserTenantService
         }
     }
 
-    public async Task<ServiceResult<List<UserTenantDto>>> GetUnapprovedUsers()
+    public async Task<ServiceResult<List<UserTenantDto>>> GetUnapprovedUsers(string? tenantId = null)
     {
         try
         {
             var validationResult = ValidateTenantAccess("get unapproved users", _tenantContext.TenantId);
             if (!validationResult.IsSuccess)
                 return ServiceResult<List<UserTenantDto>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
-            var users = await _userRepository.GetUsersWithNoTenantAsync();
-            return ServiceResult<List<UserTenantDto>>.Success(users.Select(x => new UserTenantDto
-            {
-                UserId = x.UserId,
-                TenantId = x.TenantRoles?.FirstOrDefault()?.Tenant ?? string.Empty
-            }).ToList());
-
+            var users = await _userRepository.GetUsersWithUnapprovedTenantAsync(tenantId);
+            return ServiceResult<List<UserTenantDto>>.Success(
+                users.SelectMany(user =>
+                    (user.TenantRoles == null || user.TenantRoles.Count == 0)
+                        ? new[] { new UserTenantDto { UserId = user.UserId, TenantId = string.Empty } }
+                        : user.TenantRoles
+                            .Where(tr => !tr.IsApproved && (tenantId != null ? tr.Tenant == tenantId : true))
+                            .Select(tr => new UserTenantDto
+                            {
+                                UserId = user.UserId,
+                                TenantId = tr.Tenant
+                            })
+                ).ToList()
+            );
         }
         catch (Exception ex)
         {
@@ -272,7 +286,8 @@ public class UserTenantService : IUserTenantService
             var tenantEntry = new TenantRole
             {
                 Tenant = tenantId,
-                Roles = new List<string> { SystemRoles.TenantUser } // Default role on approval
+                Roles = new List<string> { SystemRoles.TenantUser }, // Default role on approval
+                IsApproved = true
             };
             user.TenantRoles.Add(tenantEntry);
             var result = await _userRepository.UpdateAsync(userId, user);
@@ -311,6 +326,37 @@ public class UserTenantService : IUserTenantService
         _logger.LogWarning("User {UserId} attempted to {Operation} without proper permissions",
             _tenantContext.LoggedInUser, operation);
         return ServiceResult.Failure("Insufficient permissions to manage roles", StatusCode.Forbidden);
+    }
+
+    public async Task<ServiceResult<bool>> RequestToJoinTenant(string tenantId)
+    {
+        try
+        {
+            var user = await _userRepository.GetByUserIdAsync(_tenantContext.LoggedInUser);
+            if (user == null)
+                return ServiceResult<bool>.NotFound("User not found");
+            if (user.TenantRoles.Any(tr => tr.Tenant == tenantId))
+            {
+                _logger.LogWarning("User {UserId} in tenant {TenantId}", _tenantContext.LoggedInUser, tenantId);
+                return ServiceResult<bool>.Conflict("User already in this tenant");
+            }
+            var tenantEntry = new TenantRole
+            {
+                Tenant = tenantId,
+                Roles = new List<string> { SystemRoles.TenantUser },
+                IsApproved = false
+            };
+            user.TenantRoles.Add(tenantEntry);
+            var result = await _userRepository.UpdateAsync(user.Id, user);
+            return result
+                ? ServiceResult<bool>.Success(true)
+                : ServiceResult<bool>.InternalServerError("Failed to approve user");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error approving user {UserId} for tenant {TenantId}", _tenantContext.LoggedInUser, tenantId);
+            return ServiceResult<bool>.InternalServerError("Error approving user");
+        }
     }
 
     private async Task<User> generateUserFromToken(string token)

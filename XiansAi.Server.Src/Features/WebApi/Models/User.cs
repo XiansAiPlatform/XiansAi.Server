@@ -65,4 +65,7 @@ public class TenantRole
     [BsonElement("roles")]
     [JsonPropertyName("roles")]
     public List<string> Roles { get; set; } = new();
+
+    [BsonElement("is_approved")]
+    public required bool IsApproved { get; set; }
 }

@@ -85,7 +85,7 @@ public class KeycloakProvider : IAuthProvider
                     }
 
                     // Get user roles from database or token claims (matching Auth0 behavior)
-                    var userId = identity.FindFirst("sub")?.Value ?? identity.FindFirst("preferred_username")?.Value;
+                    var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                     var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
                     if (!string.IsNullOrEmpty(userId))
