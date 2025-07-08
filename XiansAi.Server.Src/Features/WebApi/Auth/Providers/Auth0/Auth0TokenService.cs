@@ -5,6 +5,8 @@ using RestSharp;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.JsonWebTokens;
 using System.Security.Cryptography;
+using System.Security.Claims;
+using Shared.Utils;
 
 namespace Features.WebApi.Auth.Providers.Tokens;
 
@@ -38,10 +40,18 @@ public class Auth0TokenService : ITokenService
 
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)
     {
-        return token.Claims
+        var tenantIds = token.Claims
             .Where(c => c.Type == _tenantClaimType)
             .Select(c => c.Value)
             .ToList();
+
+        if (tenantIds.Count == 0)
+        {
+            _logger.LogWarning("No tenant IDs found in token");
+            return new List<string> { Constants.DefaultTenantId };
+        }
+
+        return tenantIds;
     }
 
     public async Task<(bool success, string? userId)> ProcessToken(string token)
@@ -141,27 +151,52 @@ public class Auth0TokenService : ITokenService
             // Set up token validation parameters
             var validationParameters = new TokenValidationParameters
             {
+                // Audience validation
                 ValidateAudience = !string.IsNullOrEmpty(_auth0Config.Audience),
                 ValidAudience = _auth0Config.Audience,
+                RequireAudience = !string.IsNullOrEmpty(_auth0Config.Audience),
+                
+                // Issuer validation
                 ValidateIssuer = true,
                 ValidIssuer = domain,
+                
+                // Lifetime validation
                 ValidateLifetime = true,
+                RequireExpirationTime = true,
+                
+                // Signing key validation
                 ValidateIssuerSigningKey = true,
+                RequireSignedTokens = true,
                 IssuerSigningKey = rsaSecurityKey,
-                ClockSkew = TimeSpan.FromMinutes(5)
+                
+                // Clock skew tolerance
+                ClockSkew = TimeSpan.FromMinutes(5),
+                
+                // Claim type mappings for proper role and name claim handling
+                NameClaimType = "sub",
+                RoleClaimType = ClaimTypes.Role
             };
 
             // Validate the token
+            _logger.LogDebug("Validating JWT token with issuer: {Issuer}, audience: {Audience}", 
+                validationParameters.ValidIssuer, validationParameters.ValidAudience);
+                
             var result = await handler.ValidateTokenAsync(token, validationParameters);
             
             if (!result.IsValid)
             {
                 var errorMessage = result.Exception?.Message ?? "Token validation failed";
                 _logger.LogWarning("JWT validation failed: {ErrorMessage}", errorMessage);
+                if (result.Exception != null)
+                {
+                    _logger.LogWarning("JWT validation exception details: {ExceptionType}: {ExceptionMessage}", 
+                        result.Exception.GetType().Name, result.Exception.Message);
+                }
                 return (false, errorMessage);
             }
 
-            _logger.LogDebug("JWT token validated successfully");
+            _logger.LogDebug("JWT token validated successfully with issuer: {Issuer} and audience: {Audience}", 
+                validationParameters.ValidIssuer, validationParameters.ValidAudience);
             return (true, null);
         }
         catch (Exception ex)

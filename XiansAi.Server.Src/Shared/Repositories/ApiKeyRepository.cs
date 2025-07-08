@@ -21,66 +21,20 @@ namespace Shared.Repositories
     {
         private readonly IMongoCollection<ApiKey> _collection;
         private readonly ILogger<ApiKeyRepository> _logger;
-        private readonly Lazy<Task> _indexCreationTask;
-        private volatile bool _indexesCreated = false;
 
         public ApiKeyRepository(IDatabaseService databaseService, ILogger<ApiKeyRepository> logger)
         {
             var database = databaseService.GetDatabaseAsync().Result;
             _collection = database.GetCollection<ApiKey>("api_keys");
             _logger = logger;
-            _indexCreationTask = new Lazy<Task>(() => InitializeIndexesAsync());
-            _ = Task.Run(async () =>
-            {
-                try { await _indexCreationTask.Value; }
-                catch (Exception ex) { _logger.LogWarning(ex, "Background index creation failed during ApiKeyRepository initialization"); }
-            });
         }
 
-        private async Task InitializeIndexesAsync()
-        {
-            if (_indexesCreated) return;
-            try
-            {
-                // Unique index on (tenant_id, name)
-                var uniqueNameIndex = new CreateIndexModel<ApiKey>(
-                    Builders<ApiKey>.IndexKeys.Ascending(x => x.TenantId).Ascending(x => x.Name),
-                    new CreateIndexOptions { Unique = true, Name = "tenant_name_unique" }
-                );
-                // Index on tenant_id
-                var tenantIndex = new CreateIndexModel<ApiKey>(
-                    Builders<ApiKey>.IndexKeys.Ascending(x => x.TenantId),
-                    new CreateIndexOptions { Name = "tenant_id_idx" }
-                );
-                // Index on hashed_key (for validation)
-                var hashedKeyIndex = new CreateIndexModel<ApiKey>(
-                    Builders<ApiKey>.IndexKeys.Ascending(x => x.HashedKey),
-                    new CreateIndexOptions { Name = "hashed_key_idx" }
-                );
-                await _collection.Indexes.CreateManyAsync(new[] { uniqueNameIndex, tenantIndex, hashedKeyIndex });
-                _indexesCreated = true;
-                _logger.LogInformation("Successfully created indexes for ApiKey collection");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to create indexes for ApiKey collection, will retry on next operation");
-            }
-        }
 
-        private async Task EnsureIndexesAsync()
-        {
-            if (!_indexesCreated)
-            {
-                try { await _indexCreationTask.Value; }
-                catch (Exception ex) { _logger.LogDebug(ex, "Index creation not yet complete, continuing with operation"); }
-            }
-        }
 
         public async Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy)
         {
             try
             {
-                await EnsureIndexesAsync();
                 var apiKey = GenerateApiKey();
                 var hashedKey = HashApiKey(apiKey);
                 var now = DateTime.UtcNow;
@@ -109,7 +63,6 @@ namespace Shared.Repositories
         {
             try
             {
-                await EnsureIndexesAsync();
                 var update = Builders<ApiKey>.Update.Set(x => x.RevokedAt, DateTime.UtcNow);
                 var result = await _collection.UpdateOneAsync(
                     x => x.Id == id && x.TenantId == tenantId && x.RevokedAt == null, update);
@@ -126,7 +79,6 @@ namespace Shared.Repositories
         {
             try
             {
-                await EnsureIndexesAsync();
                 if (hasRevoked)
                 {
                     return await _collection.Find(x => x.TenantId == tenantId).ToListAsync();
@@ -144,7 +96,6 @@ namespace Shared.Repositories
         {
             try
             {
-                await EnsureIndexesAsync();
                 var apiKey = GenerateApiKey();
                 var hashedKey = HashApiKey(apiKey);
                 var now = DateTime.UtcNow;
@@ -170,7 +121,6 @@ namespace Shared.Repositories
         {
             try
             {
-                await EnsureIndexesAsync();
                 return await _collection.Find(x => x.Id == id && x.TenantId == tenantId).FirstOrDefaultAsync();
             }
             catch (Exception ex)
@@ -184,7 +134,6 @@ namespace Shared.Repositories
         {
             try
             {
-                await EnsureIndexesAsync();
                 var hashed = HashApiKey(rawKey);
                 return await _collection.Find(x => x.HashedKey == hashed && x.TenantId == tenantId && x.RevokedAt == null).FirstOrDefaultAsync();
             }

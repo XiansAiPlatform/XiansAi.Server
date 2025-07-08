@@ -114,3 +114,16 @@ user_roles:
       tenant_id: asc
     unique: true
     background: true
+
+api_keys:
+  - name: tenant_name_unique
+    keys:
+      tenant_id: asc
+      name: asc
+    unique: true
+  - name: tenant_id_idx
+    keys:
+      tenant_id: asc
+  - name: hashed_key_idx
+    keys:
+      hashed_key: asc
