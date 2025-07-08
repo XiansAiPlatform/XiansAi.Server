@@ -1,16 +1,9 @@
-﻿using Features.AgentApi.Auth;
-using Features.Shared.Configuration;
-using Microsoft.AspNetCore.Authentication;
+﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using Shared.Repositories;
-using Shared.Services;
 using Features.UserApi.Auth;
-using XiansAi.Server.Shared.Repositories;
-using XiansAi.Server.Shared.Services;
-using Features.UserApi.Webhooks;
 using Features.UserApi.Websocket;
 using Features.UserApi.Services;
+using Features.UserApi.Endpoints;
 
 namespace Features.UserApi.Configuration
 {
@@ -36,12 +29,12 @@ namespace Features.UserApi.Configuration
             })
             .AddScheme<AuthenticationSchemeOptions, WebsocketAuthenticationHandler>(
                 "WebSocketApiKeyScheme", options => { })
-            .AddScheme<AuthenticationSchemeOptions, WebhookAuthenticationHandler>(
-                "WebhookApiKeyScheme", options => { });
+            .AddScheme<AuthenticationSchemeOptions, EndpointAuthenticationHandler>(
+                "EndpointApiKeyScheme", options => { });
 
             // Register both authorization handlers
             builder.Services.AddScoped<IAuthorizationHandler, ValidWebsocketAccessHandler>();
-            builder.Services.AddScoped<IAuthorizationHandler, ValidWebhookAccessHandler>();
+            builder.Services.AddScoped<IAuthorizationHandler, ValidEndpointAccessHandler>();
 
             // Add both authorization policies
             builder.Services.AddAuthorization(options =>
@@ -52,11 +45,11 @@ namespace Features.UserApi.Configuration
                     policy.RequireAuthenticatedUser();
                     policy.Requirements.Add(new ValidWebsocketAccessRequirement());
                 });
-                options.AddPolicy("WebhookAuthPolicy", policy =>
+                options.AddPolicy("EndpointAuthPolicy", policy =>
                 {
-                    policy.AddAuthenticationSchemes("WebhookApiKeyScheme");
+                    policy.AddAuthenticationSchemes("EndpointApiKeyScheme");
                     policy.RequireAuthenticatedUser();
-                    policy.Requirements.Add(new ValidWebhookAccessRequirement());
+                    policy.Requirements.Add(new ValidEndpointAccessRequirement());
                 });
             });
 
@@ -71,7 +64,7 @@ namespace Features.UserApi.Configuration
                 // Development-only middleware here (if any)
             }
 
-            WebhookTriggerEndpoints.MapWebhookTriggerEndpoints(app);
+            MessagingEndpoints.MapMessagingEndpoints(app);
             // Configure Websocket
             app.MapHub<ChatHub>("/ws/chat");
 
