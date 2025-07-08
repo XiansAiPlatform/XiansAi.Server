@@ -7,6 +7,7 @@ using System.Security;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using Shared.Repositories;
+using Shared.Utils.Services;
 
 namespace XiansAi.Server.Shared.Services;
 
@@ -32,7 +33,7 @@ public class DeleteAllVersionsRequest
 
 public interface IKnowledgeService
 {
-    Task<IResult> GetLatestByName(string name, string agent);
+    Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent);
     Task<IResult> GetById(string id);
     Task<IResult> GetVersions(string name, string? agent);
     Task<IResult> DeleteById(string id);
@@ -188,13 +189,13 @@ public class KnowledgeService : IKnowledgeService
         return Results.Ok(knowledge);
     }
 
-    public async Task<IResult> GetLatestByName(string name, string agent)
+    public async Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent)
     {
         var knowledge = await _knowledgeRepository.GetLatestByNameAsync<Knowledge>(name, agent, _tenantContext.TenantId);
         if (knowledge == null)
-            return Results.NotFound("Knowledge not found");
+            return ServiceResult<Knowledge>.NotFound("Knowledge not found");
 
-        return Results.Ok(knowledge);
+        return ServiceResult<Knowledge>.Success(knowledge);
     }
 
     public async Task<IResult> Create(KnowledgeRequest request)
@@ -206,13 +207,25 @@ public class KnowledgeService : IKnowledgeService
                 request.Agent, _tenantContext.LoggedInUser);
             return Results.Forbid();
         }
+
+        // Check if the knowledge already exists with the same content hash
+        var newContentHash = HashGenerator.GenerateContentHash(request.Content + request.Type);
+        var currentLatestKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
+
+        if (currentLatestKnowledge.IsSuccess && currentLatestKnowledge.Data?.Version == newContentHash)
+        {
+            _logger.LogInformation("Knowledge {Name} already exists with the same content hash", request.Name);
+            return Results.Ok(currentLatestKnowledge.Data);
+        }
+
+        // Create the knowledge
         var knowledge = new Knowledge
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = request.Name,
             Content = request.Content,
             Type = request.Type,
-            Version = HashGenerator.GenerateContentHash(ObjectId.GenerateNewId().ToString() + DateTime.UtcNow.ToString()),
+            Version = newContentHash,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = _tenantContext.LoggedInUser,
             TenantId = _tenantContext.TenantId,
