@@ -44,7 +44,7 @@ public static class UserTenantEndpoints
             operation.Description = "Returns all tenant IDs assigned to a user";
             return operation;
         })
-        .RequiresSysAdmin();
+        .RequiresValidSysAdmin();
 
         group.MapGet("/unapprovedUsers", async (
             [FromServices] IUserTenantService service) =>
@@ -60,7 +60,7 @@ public static class UserTenantEndpoints
             operation.Description = "Returns all user without tenant, excluding sysAdmin users";
             return operation;
         })
-        .RequiresSysAdmin();
+        .RequiresValidSysAdmin();
 
         group.MapPost("/approveUser", async (
             [FromBody] UserTenantDto dto,
@@ -76,7 +76,7 @@ public static class UserTenantEndpoints
             operation.Description = "Approve user by assigning a tenant and role to user";
             return operation;
         })
-        .RequiresTenantAdmin();
+        .RequiresValidTenantAdmin();
 
         group.MapPost("/", async (
             [FromBody] UserTenantDto dto,
@@ -92,7 +92,7 @@ public static class UserTenantEndpoints
             operation.Description = "Assigns a tenant to a user";
             return operation;
         })
-        .RequiresTenantAdmin();
+        .RequiresValidTenantAdmin();
 
         group.MapDelete("/", async (
             [FromBody] UserTenantDto dto,
@@ -108,6 +108,6 @@ public static class UserTenantEndpoints
             operation.Description = "Removes a tenant assignment from a user";
             return operation;
         })
-        .RequiresTenantAdmin();
+        .RequiresValidTenantAdmin();
     }
 }

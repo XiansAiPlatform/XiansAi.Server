@@ -1,6 +1,7 @@
 using Features.WebApi.Auth.Providers.Auth0;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
+using Shared.Utils;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -34,60 +35,97 @@ public class KeycloakProvider : IAuthProvider
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
     {
-        options.Authority = $"{_keycloakConfig.AuthServerUrl}/realms/{_keycloakConfig.Realm}";
-
-        // Handle multiple audiences by splitting them and configuring TokenValidationParameters
-        if (!string.IsNullOrEmpty(_keycloakConfig.Audience))
-        {
-            var audiences = _keycloakConfig.Audience.Split(',')
-                .Select(a => a.Trim())
-                .Where(a => !string.IsNullOrEmpty(a))
-                .ToArray();
-
-            if (audiences.Length == 1)
-            {
-                options.Audience = audiences[0];
-            }
-            else if (audiences.Length > 1)
-            {
-                // For multiple audiences, set the ValidAudiences property
-                options.TokenValidationParameters.ValidAudiences = audiences;
-            }
-        }
+        var baseUri = new Uri(_keycloakConfig.AuthServerUrl ?? throw new InvalidOperationException("Keycloak configuration is missing"));
+        var authorityUri = new Uri(baseUri, $"realms/{_keycloakConfig.Realm}");
+        options.Authority = authorityUri.ToString();
 
         options.RequireHttpsMetadata = false; // Set to true in production
         options.TokenValidationParameters.NameClaimType = "preferred_username";
         options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
+
+        // Configure audience validation for Keycloak
+        // Keycloak typically uses 'account' as the audience for standard tokens
+        options.TokenValidationParameters.ValidAudiences = new[] { "account" };
+
+        // Add JWT Bearer events to debug and properly authenticate the user
         options.Events = new JwtBearerEvents
         {
+            OnAuthenticationFailed = context =>
+            {
+                _logger.LogError("JWT Bearer authentication failed: {Exception}", context.Exception?.Message);
+                _logger.LogError("Exception details: {FullException}", context.Exception?.ToString());
+                return Task.CompletedTask;
+            },
+
+            OnChallenge = context =>
+            {
+                _logger.LogWarning("JWT Bearer challenge triggered: {Error}, {ErrorDescription}",
+                    context.Error, context.ErrorDescription);
+                return Task.CompletedTask;
+            },
+
             OnTokenValidated = async context =>
             {
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
-                    var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                    var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].ToString();
+                    _logger.LogInformation("Original identity authenticated: {IsAuthenticated}, Type: {AuthenticationType}",
+                        identity.IsAuthenticated, identity.AuthenticationType);
 
-                    if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(tenantId))
+                    // Ensure the identity is properly authenticated
+                    if (!identity.IsAuthenticated)
                     {
-                        var roleService = context.HttpContext.RequestServices.GetRequiredService<IRoleCacheService>();
-                        var roles = await roleService.GetUserRolesAsync(userId, tenantId);
+                        _logger.LogInformation("Creating new authenticated identity with JWT authentication type");
+                        // Create a new authenticated identity
+                        var authenticatedIdentity = new ClaimsIdentity(identity.Claims, "JWT", identity.NameClaimType, identity.RoleClaimType);
+                        context.Principal = new ClaimsPrincipal(authenticatedIdentity);
+                        identity = authenticatedIdentity;
 
-                        foreach (var role in roles)
+                        _logger.LogInformation("New identity authenticated: {IsAuthenticated}, Type: {AuthenticationType}",
+                            authenticatedIdentity.IsAuthenticated, authenticatedIdentity.AuthenticationType);
+                    }
+
+                    // Get user roles from database or token claims (matching Auth0 behavior)
+                    var userId = identity.FindFirst("sub")?.Value ?? identity.FindFirst("preferred_username")?.Value;
+                    var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+
+                        if (!string.IsNullOrEmpty(tenantId))
                         {
-                            identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                            using var scope = context.HttpContext.RequestServices.CreateScope();
+                            var roleCacheService = scope.ServiceProvider
+                                .GetRequiredService<IRoleCacheService>();
+
+                            var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
+
+                            foreach (var role in roles)
+                            {
+                                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                            }
+
+                            _logger.LogInformation("Added {RoleCount} roles to Keycloak user {UserId}: {Roles}",
+                                roles.Count(), userId, string.Join(", ", roles));
                         }
                     }
 
-                    // Set the User property of HttpContext
+                    // Set the User property of HttpContext to ensure it's properly authenticated
                     context.HttpContext.User = context.Principal;
+
+                    _logger.LogInformation("Keycloak user authenticated: {UserId}, IsAuthenticated: {IsAuthenticated}",
+                        identity.Name, context.HttpContext.User.Identity?.IsAuthenticated);
+                }
+                else
+                {
+                    _logger.LogWarning("No principal or identity found in OnTokenValidated");
                 }
             }
         };
     }
 
-    public Task<(bool success, string? userId)> ValidateToken(string token)
+    public async Task<(bool success, string? userId)> ValidateToken(string token)
     {
-        return _tokenService.ProcessToken(token);
+        return await _tokenService.ProcessToken(token);
     }
 
     public async Task<UserInfo> GetUserInfo(string userId)
@@ -97,7 +135,9 @@ public class KeycloakProvider : IAuthProvider
             var token = await GetManagementApiToken();
 
             // Base URL for Keycloak Admin API
-            _client = new RestClient($"{_keycloakConfig.AuthServerUrl}/admin/realms/{_keycloakConfig.Realm}");
+            var baseUri = new Uri(_keycloakConfig.AuthServerUrl ?? throw new InvalidOperationException("Keycloak configuration is missing"));
+            var adminUri = new Uri(baseUri, $"admin/realms/{_keycloakConfig.Realm}");
+            _client = new RestClient(adminUri.ToString());
 
             var request = new RestRequest($"/users/{userId}", Method.Get);
             request.AddHeader("Authorization", $"Bearer {token}");
@@ -121,7 +161,7 @@ public class KeycloakProvider : IAuthProvider
             {
                 Tenants = keycloakUser.Attributes?.ContainsKey("tenants") == true
                     ? keycloakUser.Attributes["tenants"].ToArray()
-                    : Array.Empty<string>()
+                    : new List<string> { Constants.DefaultTenantId }.ToArray()
             };
 
             return new UserInfo
@@ -149,7 +189,9 @@ public class KeycloakProvider : IAuthProvider
             var token = await GetManagementApiToken();
 
             // Base URL for Keycloak Admin API
-            _client = new RestClient($"{_keycloakConfig.AuthServerUrl}/admin/realms/{_keycloakConfig.Realm}");
+            var baseUri = new Uri(_keycloakConfig.AuthServerUrl ?? throw new InvalidOperationException("Keycloak configuration is missing"));
+            var adminUri = new Uri(baseUri, $"admin/realms/{_keycloakConfig.Realm}");
+            _client = new RestClient(adminUri.ToString());
 
             // Check if organization exists, and create it if it doesn't
             var orgExists = await CheckOrganizationExists(token, tenantId);

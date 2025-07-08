@@ -18,6 +18,16 @@ public static class EndpointConventionBuilderExtensions
         return builder.RequireAuthorization("RequireTenantAuth");
     }
 
+    public static T RequiresValidTenantAdmin<T>(this T builder) where T : IEndpointConventionBuilder
+    {
+        return builder.RequireAuthorization("RequireTenantAdmin");
+    }
+
+    public static T RequiresValidSysAdmin<T>(this T builder) where T : IEndpointConventionBuilder
+    {
+        return builder.RequireAuthorization("RequireSysAdmin");
+    }
+
     /// <summary>
     /// Requires valid tenant for the endpoint but does not validate tenant configuration.
     /// Use this for endpoints that need tenant context but don't need tenant-specific configuration.
@@ -39,21 +49,5 @@ public static class EndpointConventionBuilderExtensions
     public static T RequiresToken<T>(this T builder) where T : IEndpointConventionBuilder
     {
         return builder.RequireAuthorization("RequireTokenAuth");
-    }
-
-    // <summary>
-    /// Requires the SysAdmin role for the endpoint.
-    /// </summary>
-    public static T RequiresSysAdmin<T>(this T builder) where T : IEndpointConventionBuilder
-    {
-        return builder.RequireAuthorization("RequireSysAdmin");
-    }
-
-    /// <summary>
-    /// Requires the SysAdmin or TenantAdmin role for the endpoint.
-    /// </summary>
-    public static T RequiresTenantAdmin<T>(this T builder) where T : IEndpointConventionBuilder
-    {
-        return builder.RequireAuthorization("RequireTenantAdmin");
     }
 }

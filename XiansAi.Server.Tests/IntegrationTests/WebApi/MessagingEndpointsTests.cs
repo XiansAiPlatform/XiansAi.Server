@@ -285,7 +285,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         };
 
         // Insert directly into repository
-        var database = await databaseService.GetDatabase();
+        var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<ConversationThread>("conversation_thread");
         await collection.InsertOneAsync(thread);
 
@@ -321,7 +321,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         };
 
         // Insert directly into repository
-        var database = await databaseService.GetDatabase();
+        var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<ConversationMessage>("conversation_message");
         await collection.InsertOneAsync(message);
 
@@ -332,7 +332,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     {
         using var scope = _factory.Services.CreateScope();
         var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-        var database = await databaseService.GetDatabase();
+        var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<ConversationThread>("conversation_thread");
         
         return await collection.Find(t => t.Id == threadId).FirstOrDefaultAsync();

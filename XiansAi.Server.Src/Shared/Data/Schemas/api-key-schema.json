@@ -1,0 +1,63 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["tenant_id", "name", "hashed_key", "created_at", "created_by"],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId",
+        "description": "Unique identifier for the API key"
+      },
+      "tenant_id": {
+        "bsonType": "string",
+        "description": "Tenant ID"
+      },
+      "name": {
+        "bsonType": "string",
+        "description": "Label for the key"
+      },
+      "hashed_key": {
+        "bsonType": "string",
+        "description": "Hashed API key"
+      },
+      "created_at": {
+        "bsonType": "date",
+        "description": "Creation timestamp"
+      },
+      "created_by": {
+        "bsonType": "string",
+        "description": "User ID of the creator"
+      },
+      "revoked_at": {
+        "bsonType": ["date", "null"],
+        "description": "Timestamp when the key was revoked"
+      },
+      "last_rotated_at": {
+        "bsonType": ["date", "null"],
+        "description": "Timestamp of last key rotation"
+      }
+    },
+    "additionalProperties": false
+  },
+  "indices": [
+    {
+      "key": {
+        "tenant_id": 1,
+        "name": 1
+      },
+      "name": "tenant_name_unique",
+      "unique": true
+    },
+    {
+      "key": {
+        "tenant_id": 1
+      },
+      "name": "tenant_id_idx"
+    },
+    {
+      "key": {
+        "hashed_key": 1
+      },
+      "name": "hashed_key_idx"
+    }
+  ]
+}

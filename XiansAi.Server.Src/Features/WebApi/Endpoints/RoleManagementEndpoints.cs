@@ -12,8 +12,7 @@ public static class RoleManagementEndpoints
     {
         var group = app.MapGroup("/api/roles")
             .WithTags("WebAPI - Role Management")
-            .RequiresValidTenant()
-            .RequireAuthorization();
+            .RequiresValidTenant();
 
         group.MapGet("/user/{userId}/tenant/{tenantId}", async (
             string userId,
@@ -25,7 +24,7 @@ public static class RoleManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("GetUserRoles")
         .WithOpenApi(operation => new(operation)
         {
@@ -43,7 +42,7 @@ public static class RoleManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("GetUsersByRole")
         .WithOpenApi(operation => new(operation)
         {
@@ -61,7 +60,7 @@ public static class RoleManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("GetAllTenantAdmins")
         .WithOpenApi(operation => new(operation)
         {
@@ -93,7 +92,7 @@ public static class RoleManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("PromoteToTenantAdmin")
         .WithOpenApi(operation => new(operation)
         {
@@ -122,7 +121,7 @@ public static class RoleManagementEndpoints
 
             return Results.Ok(result);
         })
-        .RequiresSysAdmin()
+        .RequiresValidSysAdmin()
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Assign a user to a role",
@@ -164,7 +163,7 @@ public static class RoleManagementEndpoints
 
             return Results.Ok(result);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Remove a user from a role",

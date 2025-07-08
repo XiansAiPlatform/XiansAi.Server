@@ -1,7 +1,7 @@
 # Production-ready Dockerfile for DockerHub
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 WORKDIR /app
-EXPOSE 80
+EXPOSE 8080
 EXPOSE 443
 
 # Install curl for health checks
@@ -52,11 +52,11 @@ COPY --from=publish --chown=xiansai:xiansai /app/publish .
 # Environment variables with defaults
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV SERVICE_TYPE=--all
-ENV ASPNETCORE_URLS=http://+:80
-ENV ASPNETCORE_HTTP_PORTS=80
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_HTTP_PORTS=8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:80/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 ENTRYPOINT ["dotnet", "XiansAi.Server.dll"] 

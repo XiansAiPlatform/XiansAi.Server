@@ -2,7 +2,6 @@ using Features.WebApi.Auth;
 using Features.WebApi.Endpoints;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
-using Microsoft.AspNetCore.Authorization;
 using XiansAi.Server.Features.WebApi.Endpoints;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Services;
@@ -21,7 +20,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IWorkflowCancelService, WorkflowCancelService>();
         builder.Services.AddScoped<ILogsService, LogsService>();
         builder.Services.AddScoped<ITenantService, TenantService>();
-        builder.Services.AddScoped<IWebhookService, WebhookService>();
         builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
@@ -35,7 +33,6 @@ public static class WebApiConfiguration
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
-        builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
@@ -61,6 +58,8 @@ public static class WebApiConfiguration
         UserTenantEndpoints.MapUserTenantEndpoints(app);
         UserManagementEndpoints.MapUserManagementEndpoints(app);
 
+        ApiKeyEndpoints.MapApiKeyEndpoints(app);
+        
         return app;
     }
 } 

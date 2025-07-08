@@ -4,7 +4,6 @@ using Features.WebApi.Auth.Providers.AzureB2C;
 using Features.WebApi.Auth.Providers.Keycloak;
 using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace Features.WebApi.Auth;
 
@@ -15,13 +14,34 @@ public static class AuthConfigurationExtensions
         // Register memory cache if not already registered
         builder.Services.AddMemoryCache();
 
+        // Register HttpClient for token services
+        builder.Services.AddHttpClient();
+
         // Register token validation cache
         builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
 
         // Register token services
-        builder.Services.AddScoped<Auth0TokenService>();
-        builder.Services.AddScoped<AzureB2CTokenService>();
-        builder.Services.AddScoped<KeycloakTokenService>();
+        builder.Services.AddScoped<Auth0TokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<Auth0TokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new Auth0TokenService(logger, configuration, httpClient);
+        });
+        builder.Services.AddScoped<AzureB2CTokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<AzureB2CTokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new AzureB2CTokenService(logger, configuration, httpClient);
+        });
+        builder.Services.AddScoped<KeycloakTokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<KeycloakTokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new KeycloakTokenService(logger, configuration, httpClient);
+        });
         builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
         
         // Register auth providers
@@ -82,15 +102,13 @@ public static class AuthConfigurationExtensions
             options.AddPolicy("RequireSysAdmin", policy =>
             {
                 policy.AuthenticationSchemes.Add("JWT");
-                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation));
-                policy.RequireRole(SystemRoles.SysAdmin);
+                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation, SystemRoles.SysAdmin));
             });
 
             options.AddPolicy("RequireTenantAdmin", policy =>
             {
                 policy.AuthenticationSchemes.Add("JWT");
-                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation));
-                policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin);
+                policy.Requirements.Add(new AuthRequirement(AuthRequirementOptions.FullTenantValidation, SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
             });
         });
 

@@ -19,7 +19,7 @@ public class InvitationRepository : IInvitationRepository
 
     public InvitationRepository(IDatabaseService db)
     {
-        var database = db.GetDatabase().Result;
+        var database = db.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Invitation>("user_invitations");
     }
 

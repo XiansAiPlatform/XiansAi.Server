@@ -414,7 +414,7 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Insert directly into MongoDB collection for testing
         var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-        var mongoDatabase = await databaseService.GetDatabase();
+        var mongoDatabase = await databaseService.GetDatabaseAsync();
         var collection = mongoDatabase.GetCollection<Log>("logs");
         await collection.InsertOneAsync(log);
     }

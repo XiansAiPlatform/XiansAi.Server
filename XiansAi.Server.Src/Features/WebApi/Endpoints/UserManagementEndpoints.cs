@@ -26,7 +26,7 @@ public static class UserManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("LockUser")
         .WithOpenApi(operation => {
             operation.Summary = "Lock a user";
@@ -43,7 +43,7 @@ public static class UserManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("UnlockUser")
         .WithOpenApi(operation => {
             operation.Summary = "Unlock a user";
@@ -76,7 +76,7 @@ public static class UserManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("GetUser")
         .WithOpenApi(operation => {
             operation.Summary = "Get user details";
@@ -93,7 +93,7 @@ public static class UserManagementEndpoints
                 ? Results.Ok(new { token = result.Data })
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresTenantAdmin()
+        .RequiresValidTenantAdmin()
         .WithName("InviteUser")
         .WithOpenApi(operation => {
             operation.Summary = "Invite a user";

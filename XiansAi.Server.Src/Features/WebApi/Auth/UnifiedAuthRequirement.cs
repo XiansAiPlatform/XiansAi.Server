@@ -63,9 +63,15 @@ public class AuthRequirement : IAuthorizationRequirement
     /// </summary>
     public AuthRequirementOptions Options { get; }
     
-    public AuthRequirement(AuthRequirementOptions options)
+    /// <summary>
+    /// Required roles (optional)
+    /// </summary>
+    public string[]? RequiredRoles { get; }
+    
+    public AuthRequirement(AuthRequirementOptions options, params string[]? requiredRoles)
     {
         Options = options;
+        RequiredRoles = requiredRoles;
     }
 }
 
@@ -112,9 +118,11 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         var success = await TryAuthorizeWithRetry(context, httpContext, requirement);
         if (!success)
         {
+            _logger.LogWarning("Authorization failed for requirement: {RequirementType}", requirement.GetType().Name);
             return; // Context.Fail() already called in TryAuthorize methods
         }
         
+        _logger.LogInformation("Authorization succeeded for requirement: {RequirementType}", requirement.GetType().Name);
         context.Succeed(requirement);
     }
     
@@ -199,7 +207,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             }
         }
 
-        if (httpContext.User.Identity is ClaimsIdentity identity)
+        // Remove existing role claims from all identities
+        foreach (var identity in httpContext.User.Identities.OfType<ClaimsIdentity>())
         {
             var existingRoleClaims = identity.Claims
                 .Where(c => c.Type == ClaimTypes.Role)

@@ -29,7 +29,7 @@ public class UserRepository : IUserRepository
 
     public UserRepository(IDatabaseService databaseService, ILogger<UserRepository> logger)
     {
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _users = database.GetCollection<User>("users");
         _logger = logger;
     }
