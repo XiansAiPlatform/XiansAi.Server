@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using XiansAi.Server.Shared.Services;
+using Shared.Utils.Services; 
 
 namespace Features.AgentApi.Endpoints;
 
@@ -23,10 +24,11 @@ public static class KnowledgeEndpoints
         knowledgeGroup.MapGet("/latest", async (
             [FromQuery] string name,
             [FromQuery] string agent,
-            [FromServices] IKnowledgeService endpoint) =>
+            [FromServices] IKnowledgeService service) =>
         {
             _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}", name, agent);
-            return await endpoint.GetLatestByName(name, agent);
+            var result = await service.GetLatestByNameAsync(name, agent);
+            return result.ToHttpResult();
         })
         .WithOpenApi(operation => {
             operation.Summary = "Get latest knowledge";

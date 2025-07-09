@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
 using XiansAi.Server.Shared.Services;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -44,7 +45,8 @@ public static class KnowledgeEndpoints
             [FromQuery] string agent,
             [FromServices] IKnowledgeService endpoint) =>
         {
-            return await endpoint.GetLatestByName(name, agent);
+            var result = await endpoint.GetLatestByNameAsync(name, agent);
+            return result.ToHttpResult();
         })
         .WithName("Get Latest Instruction")
         .WithOpenApi();
