@@ -7,10 +7,73 @@ namespace Shared.Services;
 
 public class ChatOrDataRequest
 {
+    private string? _agent;
+    private string? _workflowType;
+    
     public required string ParticipantId { get; set; }
-    public required string WorkflowId { get; set; }
-    public required string WorkflowType { get; set; }
-    public required string Agent { get; set; }
+    public string? WorkflowId { get; set; }
+    
+    public string WorkflowType 
+    { 
+        get 
+        {
+            if (!string.IsNullOrEmpty(_workflowType))
+            {
+                return _workflowType;
+            }
+
+            if (!string.IsNullOrEmpty(WorkflowId))
+            {
+                var parts = WorkflowId.Split(':');
+                if (parts.Length > 2)
+                {
+                    return $"{parts[1]}:{parts[2]}";
+                }
+            }
+
+            throw new InvalidOperationException("Unable to determine WorkflowType from WorkflowType or WorkflowId");
+        }
+        set 
+        {
+            _workflowType = value;
+        }
+    }
+    
+    public string Agent 
+    { 
+        get 
+        {
+            if (!string.IsNullOrEmpty(_agent))
+            {
+                return _agent;
+            }
+
+            if (!string.IsNullOrEmpty(WorkflowType))
+            {
+                var parts = WorkflowType.Split(':');
+                if (parts.Length > 0 && !string.IsNullOrEmpty(parts[0]))
+                {
+                    return parts[0];
+                }
+            }
+
+            if (!string.IsNullOrEmpty(WorkflowId))
+            {
+                var parts = WorkflowId.Split(':');
+                if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
+                {
+                    return parts[1];
+                }
+            }
+
+            throw new InvalidOperationException("Unable to determine agent name from Agent, WorkflowType, or WorkflowId");
+        }
+        set 
+        {
+            _agent = value;
+        }
+    }
+    
     public object? Data { get; set; }
     public string? Text { get; set; }
     public string? ThreadId { get; set; }
@@ -38,7 +101,6 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false);
-    Task<ServiceResult<string>> GetAuthorization(string authorizationGuid);
 }
 
 public class MessageService : IMessageService
@@ -50,15 +112,13 @@ public class MessageService : IMessageService
     private readonly IConversationThreadRepository _threadRepository;
     private readonly IConversationMessageRepository _messageRepository;
     private readonly IWorkflowSignalService _workflowSignalService;
-    private readonly IAuthorizationCacheService _authorizationCacheService;
 
         public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
         IConversationThreadRepository threadRepository,
         IConversationMessageRepository messageRepository,
-        IWorkflowSignalService workflowSignalService,
-        IAuthorizationCacheService authorizationCacheService
+        IWorkflowSignalService workflowSignalService
         )
     {
         _logger = logger;
@@ -66,7 +126,6 @@ public class MessageService : IMessageService
         _threadRepository = threadRepository;
         _messageRepository = messageRepository;
         _workflowSignalService = workflowSignalService;
-        _authorizationCacheService = authorizationCacheService;
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -215,10 +274,26 @@ public class MessageService : IMessageService
 
     public async Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType)
     {
+        if (request.WorkflowId == null && request.WorkflowType == null)
+        {
+            throw new Exception("WorkflowId or WorkflowType is required");
+        }
+
+        if (request.WorkflowId == null && request.WorkflowType != null)
+        {
+            ExtractWorkflowId(request);
+        }
+
+        //check if starts with tenantId
+        if (!request.WorkflowId!.StartsWith(_tenantContext.TenantId + ":"))
+        {
+            throw new Exception("WorkflowId must start with tenantId");
+        }
+
         _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
         
-        await HandleAuthorization(request);
+        //await HandleAuthorization(request);
 
         if (request.ThreadId == null)
         {
@@ -236,14 +311,21 @@ public class MessageService : IMessageService
         return ServiceResult<string>.Success(request.ThreadId);
     }
 
-    private async Task HandleAuthorization(ChatOrDataRequest request)
+    private void ExtractWorkflowId(ChatOrDataRequest request)
     {
-        if (request.Authorization != null)
+        if (request.WorkflowId != null)
         {
-            var authorizationGuid = await _authorizationCacheService.CacheAuthorization(request.Authorization);
-            request.Authorization = authorizationGuid;
+            return;
         }
+
+        if (request.WorkflowType == null)
+        {
+            throw new Exception("WorkflowType is required when WorkflowId is not provided");
+        }
+        request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowType}";
     }
+
+
 
     private async Task SignalWorkflowAsync(ChatOrDataRequest request, MessageType messageType)
     {
@@ -273,7 +355,7 @@ public class MessageService : IMessageService
         var thread = new ConversationThread
         {
             TenantId = _tenantContext.TenantId,
-            WorkflowId = request.WorkflowId,
+            WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType,
             Agent = agent,
             ParticipantId = request.ParticipantId,
@@ -305,7 +387,7 @@ public class MessageService : IMessageService
             Direction = direction,
             Text = request.Text,
             Data = request.Data, // Assign original metadata
-            WorkflowId = request.WorkflowId,
+            WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType,
             MessageType = messageType
         };
@@ -317,13 +399,4 @@ public class MessageService : IMessageService
         return message;
     }
 
-    public async Task<ServiceResult<string>> GetAuthorization(string authorizationGuid)
-    {
-       var authorization = await _authorizationCacheService.GetAuthorization(authorizationGuid);
-       if (authorization == null)
-       {
-        return ServiceResult<string>.NotFound("Authorization not found");
-       }
-       return ServiceResult<string>.Success(authorization);
-    }
 }

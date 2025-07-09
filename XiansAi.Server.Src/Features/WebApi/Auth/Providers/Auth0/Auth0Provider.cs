@@ -1,9 +1,10 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text.Json;
 using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text.Json;
+using XiansAi.Server.Features.WebApi.Services;
 
 namespace Features.WebApi.Auth.Providers.Auth0;
 
@@ -38,14 +39,33 @@ public class Auth0Provider : IAuthProvider
         options.Audience = _auth0Config.Audience;
         options.Events = new JwtBearerEvents
         {
-            OnTokenValidated = context =>
+            OnTokenValidated = async context =>
             {
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
+                    // Get user roles from database or token claims
+                    var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+                        var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+                        if (!string.IsNullOrEmpty(tenantId))
+                        {
+                            using var scope = context.HttpContext.RequestServices.CreateScope();
+                            var roleCacheService = scope.ServiceProvider
+                                .GetRequiredService<IRoleCacheService>();
+
+                            var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
+
+                            foreach (var role in roles)
+                            {
+                                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                            }
+                        }
+                    }
+
                     // Set the User property of HttpContext
                     context.HttpContext.User = context.Principal;
                 }
-                return Task.CompletedTask;
             }
         };
     }

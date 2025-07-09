@@ -101,11 +101,11 @@ public class PermissionsService : IPermissionsService
 
         _logger.LogInformation("Updating permissions for agent: {AgentName}", agentName);
         
-        // Check if user has owner permission
-        var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
+
+        if (!hasPermission)
         {
-            _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", 
+            _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission",
                 _tenantContext.LoggedInUser, agentName);
             return ServiceResult<bool>.Forbidden("You must have owner permission to update permissions");
         }
@@ -144,9 +144,9 @@ public class PermissionsService : IPermissionsService
         _logger.LogInformation("Adding user {UserId} to agent {AgentName} with permission level {PermissionLevel}", 
             userId, agentName, permissionLevel);
         
-        // Check if user has owner permission
-        var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
+
+        if (!hasPermission)
         {
             _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -180,9 +180,9 @@ public class PermissionsService : IPermissionsService
 
         _logger.LogInformation("Removing user {UserId} from agent {AgentName}", userId, agentName);
         
-        // Check if user has owner permission
-        var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
+
+        if (!hasPermission)
         {
             _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -216,9 +216,9 @@ public class PermissionsService : IPermissionsService
         _logger.LogInformation("Updating permission for user {UserId} in agent {AgentName} to {PermissionLevel}", 
             userId, agentName, newPermissionLevel);
         
-        // Check if user has owner permission
-        var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
-        if (currentPermissions != null && !currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
+
+        if (!hasPermission)
         {
             _logger.LogWarning("User {UserId} attempted to update user permission for agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -253,8 +253,8 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.NotFound("Agent not found");
         }
 
-        var hasReadPermission = permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Read);
-        return ServiceResult<bool>.Success(hasReadPermission);
+        var hasPermission = await CheckPermissions(agentName, PermissionLevel.Read);
+        return ServiceResult<bool>.Success(hasPermission);
     }
 
     public async Task<ServiceResult<bool>> HasWritePermission(string agentName)
@@ -274,8 +274,8 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.NotFound("Agent not found");
         }
 
-        var hasWritePermission = permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Write);
-        return ServiceResult<bool>.Success(hasWritePermission);
+        var hasPermission = await CheckPermissions(agentName, PermissionLevel.Write);
+        return ServiceResult<bool>.Success(hasPermission);
     }
 
     public async Task<ServiceResult<bool>> HasOwnerPermission(string agentName)
@@ -295,8 +295,36 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.NotFound("Agent not found");
         }
 
-        var hasOwnerPermission = permissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner);
-        return ServiceResult<bool>.Success(hasOwnerPermission);
+        var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
+        return ServiceResult<bool>.Success(hasPermission);
+    }
+
+    private async Task<bool> HasSystemAccess(string agentName)
+    {
+        // System admin has access to everything
+        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            return true;
+
+        // Tenant admin has access to everything in their tenant
+        if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+        {
+            var agentTenantId = await _permissionRepository.GetAgentTenantAsync(agentName);
+            return !string.IsNullOrEmpty(agentTenantId) && 
+                   _tenantContext.TenantId.Equals(agentTenantId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private async Task<bool> CheckPermissions(string agentName, PermissionLevel requiredLevel)
+    {
+        if (await HasSystemAccess(agentName))
+        {
+            return true;
+        }
+
+        var currentPermissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
+        return currentPermissions?.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel) ?? false;
     }
 
     private PermissionLevel? NormalizePermissionLevel(string permissionLevel)
@@ -312,4 +340,4 @@ public class PermissionsService : IPermissionsService
 
         return null;
     }
-} 
+}

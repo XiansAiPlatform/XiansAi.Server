@@ -1,0 +1,92 @@
+# Environment files - exclude all .env files to prevent secrets from being baked into images
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.test
+
+# Development and build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.cache
+.vs/
+.vscode/
+.idea/
+*.sln.docstates
+
+# Temporary and log files
+*.log
+*.tmp
+*.temp
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Documentation and README files (optional - uncomment if you don't want docs in production)
+README.md
+*.md
+
+# Test files and directories
+**/Tests/
+**/*Test*/
+**/*Tests*/
+**/TestResults/
+
+# Scripts that shouldn't be in production
+*.sh
+*.bat
+*.ps1
+
+# Certificate files (development certs shouldn't be in production)
+.cert/
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+
+# IDE and editor files
+.cursor/
+*.swp
+*.swo
+*~
+
+# Package manager files
+.npmrc
+.yarnrc
+package-lock.json
+yarn.lock
+
+# Docker files themselves (prevent recursive copying)
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+docker-build-and-publish.sh 

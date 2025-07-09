@@ -2,7 +2,6 @@
 using Features.AgentApi.Models;
 using MongoDB.Driver;
 using Shared.Data;
-using XiansAi.Server.Shared.Data;
 
 namespace Features.AgentApi.Repositories;
 
@@ -26,22 +25,8 @@ public class CertificateRepository : ICertificateRepository
         ILogger<CertificateRepository> logger)
     {
         _logger = logger;
-        var database = databaseService.GetDatabase().Result;
+        var database = databaseService.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Certificate>("certificates");
-        
-        // Create indexes for performance
-        var indexModels = new[]
-        {
-            new CreateIndexModel<Certificate>(
-                Builders<Certificate>.IndexKeys.Ascending(x => x.Thumbprint),
-                new CreateIndexOptions { Unique = true }),
-            new CreateIndexModel<Certificate>(
-                Builders<Certificate>.IndexKeys.Ascending(x => x.TenantId)),
-            new CreateIndexModel<Certificate>(
-                Builders<Certificate>.IndexKeys.Ascending(x => x.ExpiresAt))
-        };
-        
-        _collection.Indexes.CreateMany(indexModels);
     }
 
     public async Task<Certificate?> GetByThumbprintAsync(string thumbprint)

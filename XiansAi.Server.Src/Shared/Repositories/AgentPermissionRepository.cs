@@ -7,6 +7,7 @@ namespace Shared.Repositories;
 public interface IAgentPermissionRepository
 {
     Task<Permission?> GetAgentPermissionsAsync(string agentName);
+    Task<string> GetAgentTenantAsync(string agentName);
     Task<bool> UpdateAgentPermissionsAsync(string agentName, Permission permissions);
     Task<bool> AddUserToAgentAsync(string agentName, string userId, PermissionLevel permissionLevel);
     Task<bool> RemoveUserFromAgentAsync(string agentName, string userId);
@@ -38,6 +39,19 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
         return agent?.Permissions;
+    }
+
+    public async Task<string> GetAgentTenantAsync(string agentName)
+    {
+        _logger.LogInformation("Getting tenant for agent: {AgentName}", agentName);
+
+        var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
+        if (agent == null)
+        {
+            _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            return string.Empty;
+        }
+        return agent.Tenant;
     }
 
     public async Task<bool> UpdateAgentPermissionsAsync(string agentName, Permission permissions)
@@ -75,7 +89,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }
 
         // Check if user has owner permission (required to add users)
-        if (!agent.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -120,7 +134,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }
 
         // Check if user has owner permission (required to remove users)
-        if (!agent.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, PermissionLevel.Owner))
+        if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission", 
                 _tenantContext.LoggedInUser, agentName);
@@ -199,5 +213,31 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }
 
         return cleanedPermissions;
+    }
+
+    private bool HasSystemAccess(string agentTenantId)
+    {
+        // System admin has access to everything
+        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            return true;
+
+        // Tenant admin has access to everything in their tenant
+        if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+        {
+            return !string.IsNullOrEmpty(agentTenantId) &&
+                   _tenantContext.TenantId.Equals(agentTenantId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private bool CheckPermissions(Agent agent, PermissionLevel requiredLevel)
+    {
+        if (HasSystemAccess(agent.Tenant))
+        {
+            return true;
+        }
+
+        return agent?.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel) ?? false;
     }
 } 

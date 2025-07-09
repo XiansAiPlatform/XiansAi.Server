@@ -45,10 +45,10 @@ namespace Shared.Auth;
                 throw new InvalidOperationException($"Temporal configuration for tenant {TenantId} not found");
             }
 
-            if (string.IsNullOrEmpty(temporalConfig.CertificateBase64)) 
-                throw new InvalidOperationException($"CertificateBase64 is required for tenant {TenantId}");
-            if (string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64)) 
-                throw new InvalidOperationException($"PrivateKeyBase64 is required for tenant {TenantId}");
+            // if (string.IsNullOrEmpty(temporalConfig.CertificateBase64)) 
+            //     throw new InvalidOperationException($"CertificateBase64 is required for tenant {TenantId}");
+            // if (string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64)) 
+            //     throw new InvalidOperationException($"PrivateKeyBase64 is required for tenant {TenantId}");
             if (temporalConfig.FlowServerUrl == null) 
                 throw new InvalidOperationException($"FlowServerUrl is required for tenant {TenantId}");
             

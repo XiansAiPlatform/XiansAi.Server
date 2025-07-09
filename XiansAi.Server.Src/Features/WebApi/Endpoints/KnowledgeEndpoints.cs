@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
 using XiansAi.Server.Shared.Services;
+using Shared.Utils.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -11,7 +12,8 @@ public static class KnowledgeEndpoints
         // Map instruction endpoints with common attributes
         var knowledgeGroup = app.MapGroup("/api/client/knowledge")
             .WithTags("WebAPI - Knowledge")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         knowledgeGroup.MapGet("/latest/all", async (
             [FromServices] IKnowledgeService endpoint) =>
@@ -44,7 +46,8 @@ public static class KnowledgeEndpoints
             [FromQuery] string agent,
             [FromServices] IKnowledgeService endpoint) =>
         {
-            return await endpoint.GetLatestByName(name, agent);
+            var result = await endpoint.GetLatestByNameAsync(name, agent);
+            return result.ToHttpResult();
         })
         .WithName("Get Latest Instruction")
         .WithOpenApi();

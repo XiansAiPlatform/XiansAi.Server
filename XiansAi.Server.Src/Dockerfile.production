@@ -1,0 +1,62 @@
+# Production-ready Dockerfile for DockerHub
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
+WORKDIR /app
+EXPOSE 8080
+EXPOSE 443
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Build stage with multi-platform support
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+ARG BUILDPLATFORM
+ARG TARGETARCH
+ARG configuration=Release
+WORKDIR /src
+
+# Map Docker TARGETARCH to .NET runtime identifiers
+RUN case "$TARGETARCH" in \
+      "amd64") echo "linux-x64" > /tmp/rid ;; \
+      "arm64") echo "linux-arm64" > /tmp/rid ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+    esac
+
+# Copy project file and restore dependencies for the target runtime
+COPY ["XiansAi.Server.csproj", "./"]
+
+# Clear any existing package cache and do a fresh restore
+RUN dotnet nuget locals all --clear
+RUN dotnet restore "XiansAi.Server.csproj" --runtime $(cat /tmp/rid) --force --no-cache
+
+# Copy source code and build (remove --no-restore to ensure dependencies are available)
+COPY . .
+RUN dotnet build "XiansAi.Server.csproj" -c $configuration -o /app/build --runtime $(cat /tmp/rid)
+
+# Publish stage
+FROM build AS publish
+ARG configuration=Release
+RUN dotnet publish "XiansAi.Server.csproj" -c $configuration -o /app/publish --runtime $(cat /tmp/rid) /p:UseAppHost=false
+
+# Final runtime stage
+FROM base AS final
+WORKDIR /app
+
+# Create non-root user for security
+RUN groupadd -r xiansai && useradd -r -g xiansai -m xiansai
+RUN chown -R xiansai:xiansai /app
+USER xiansai
+
+# Copy published application
+COPY --from=publish --chown=xiansai:xiansai /app/publish .
+
+# Environment variables with defaults
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV SERVICE_TYPE=--all
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_HTTP_PORTS=8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+ENTRYPOINT ["dotnet", "XiansAi.Server.dll"] 

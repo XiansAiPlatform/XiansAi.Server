@@ -13,7 +13,8 @@ public static class AuditingEndpoints
         // Map auditing endpoints with common attributes
         var auditingGroup = app.MapGroup("/api/client/auditing")
             .WithTags("WebAPI - Auditing")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         // Get all participants for a specific agent
         auditingGroup.MapGet("/agents/{agent}/participants", async (

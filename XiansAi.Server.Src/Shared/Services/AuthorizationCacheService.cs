@@ -4,7 +4,7 @@ namespace Shared.Services;
 
 public interface IAuthorizationCacheService
 {
-    Task<string> CacheAuthorization(string token);
+    Task<string> CacheAuthorization(string token, int time = 60);
     Task<string?> GetAuthorization(string guid);
 }
 
@@ -21,10 +21,10 @@ public class AuthorizationCacheService : IAuthorizationCacheService
         _logger = logger;
     }
 
-    public async Task<string> CacheAuthorization(string authorization)
+    public async Task<string> CacheAuthorization(string authorization, int time=60)
     {
         var guid = Guid.NewGuid().ToString();
-        var success = await _cache.SetAsync(guid, authorization, TimeSpan.FromMinutes(60));
+        var success = await _cache.SetAsync(guid, authorization, TimeSpan.FromMinutes(time));
         if (!success)
         {
             throw new Exception("Failed to cache authorization");

@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services;
+using Shared.Services;
 using Features.WebApi.Auth;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
@@ -13,7 +13,8 @@ public static class WebhookEndpoints
         // Map webhook endpoints with common attributes
         var webhooksGroup = app.MapGroup("/api/client/webhooks")
             .WithTags("WebAPI - Webhooks")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         webhooksGroup.MapGet("/", async (
             [FromServices] IWebhookService endpoint) =>

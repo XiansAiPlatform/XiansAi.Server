@@ -13,7 +13,8 @@ public static class PermissionsEndpoints
         // Map permissions endpoints with common attributes
         var permissionsGroup = app.MapGroup("/api/client/permissions")
             .WithTags("WebAPI - Permissions")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         permissionsGroup.MapGet("/agent/{agentName}", async (
             string agentName,

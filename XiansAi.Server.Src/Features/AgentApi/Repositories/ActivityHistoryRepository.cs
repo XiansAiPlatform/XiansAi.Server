@@ -21,7 +21,7 @@ public class ActivityHistoryRepository : IActivityHistoryRepository
         IBackgroundTaskService backgroundTaskService,
         ILogger<ActivityHistoryRepository> logger)
     {
-        var database = databaseService.GetDatabase().GetAwaiter().GetResult();
+        var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _activities = database.GetCollection<ActivityHistory>("activity_history");
         _backgroundTaskService = backgroundTaskService;
         _logger = logger;

@@ -6,11 +6,20 @@
 # Azure
 publish.zip
 
+# Certificates and security
+.certs/
+*.pfx
+*.pfx.base64
+*.pem
+*.key
+*.crt
 
 # dotenv files
 .env
+.env.*
+!.env.example
 appsettings.*
-.certs
+.secrets/
 
 # User-specific files
 *.rsuser
