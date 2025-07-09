@@ -82,7 +82,7 @@ public class AzureB2CProvider : IAuthProvider
         };
     }
 
-    public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
+    public Task<(bool success, string? userId)> ValidateToken(string token)
     {
         return _tokenService.ProcessToken(token);
     }
@@ -148,5 +148,11 @@ public class AzureB2CProvider : IAuthProvider
     private async Task<string> GetMsGraphApiToken()
     {
         return await _tokenService.GetManagementApiToken();
+    }
+
+    //Only Valid for Auth0 for backward compatibility. To be removed.
+    public Task<List<string>> GetUserTenants(string userId)
+    {
+        return Task.FromResult(new List<string>());
     }
 } 

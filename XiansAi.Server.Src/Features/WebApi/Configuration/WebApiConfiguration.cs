@@ -24,6 +24,8 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
+        builder.Services.AddScoped<IUserTenantService, UserTenantService>();
+        builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<IPublicService, PublicService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
@@ -32,7 +34,8 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
-        builder.Services.AddScoped<IUserRoleRepository, UserRoleRepository>();
+        builder.Services.AddScoped<IUserRepository, UserRepository>();
+        builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
 
         return builder;
     }
@@ -52,7 +55,8 @@ public static class WebApiConfiguration
         PermissionsEndpoints.MapPermissionsEndpoints(app);
         AgentEndpoints.MapAgentEndpoints(app);
         RoleManagementEndpoints.MapRoleManagementEndpoints(app);
-
+        UserTenantEndpoints.MapUserTenantEndpoints(app);
+        UserManagementEndpoints.MapUserManagementEndpoints(app);
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
         

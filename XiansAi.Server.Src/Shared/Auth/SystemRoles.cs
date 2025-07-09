@@ -9,4 +9,5 @@ public static class Policies
 {
     public const string RequireSysAdmin = "RequireSysAdmin";
     public const string RequireTenantAdmin = "RequireTenantAdmin";
+    public const string RequireTenantUser = "RequireTenantUser";
 }

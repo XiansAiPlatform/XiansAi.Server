@@ -1,5 +1,6 @@
 using Auth0.ManagementApi.Models;
 using Features.WebApi.Auth.Providers;
+using Features.WebApi.Models;
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
@@ -83,25 +84,22 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private readonly ITenantContext _tenantContext;
     private readonly IAuthProviderFactory _authProviderFactory;
     private readonly ITokenValidationCache _tokenCache;
-    private readonly IConfiguration _configuration;
     private readonly ITenantService _tenantService;
-    private readonly IRoleCacheService _roleCacheService;
+    private readonly IUserTenantService _userTenantService;
     public AuthRequirementHandler(
         ILogger<AuthRequirementHandler> logger,
         ITenantContext tenantContext,
         IAuthProviderFactory authProviderFactory,
         ITokenValidationCache tokenCache,
-        IConfiguration configuration,
-        IRoleCacheService roleCacheService,
+        IUserTenantService userTenantService,
         ITenantService tenantService)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _authProviderFactory = authProviderFactory;
         _tokenCache = tokenCache;
-        _configuration = configuration;
         _tenantService = tenantService;
-        _roleCacheService = roleCacheService;
+        _userTenantService = userTenantService;
     }
     
     protected override async Task HandleRequirementAsync(
@@ -146,7 +144,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private async Task<bool> TryAuthorize(AuthorizationHandlerContext context, HttpContext httpContext, AuthRequirement requirement, bool bypassCache)
     {
         // Always validate token
-        var (success, loggedInUser, authorizedTenantIds, roles) = await ValidateToken(httpContext, bypassCache);
+        var (success, loggedInUser, authorizedTenantIds) = await ValidateToken(httpContext, bypassCache);
         if (!success)
         {
             _logger.LogWarning("Token validation failed");
@@ -161,7 +159,6 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Set user info to tenant context
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
-        _tenantContext.UserRoles = roles?.ToArray() ?? Array.Empty<string>();
 
         // If tenant validation is not required, we're done
         if (!requirement.Options.RequireTenant)
@@ -200,63 +197,27 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Validate tenant configuration if required
         if (requirement.Options.ValidateTenantConfig)
         {
-            var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
-            if (!tenantResult.IsSuccess || tenantResult.Data == null)
-            {
-                _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
-                context.Fail(new AuthorizationFailureReason(this, 
-                    $"Tenant {currentTenantId} configuration not found"));
-                return false;
+            if (currentTenantId != Constants.DefaultTenantId)
+            { 
+                var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
+                if (!tenantResult.IsSuccess || tenantResult.Data == null)
+                {
+                    _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
+                    context.Fail(new AuthorizationFailureReason(this, 
+                        $"Tenant {currentTenantId} configuration not found"));
+                    return false;
+                }
             }
         }
 
-        // Remove existing role claims from all identities
-        foreach (var identity in httpContext.User.Identities.OfType<ClaimsIdentity>())
+        if (httpContext.User.Identity is ClaimsIdentity identity)
         {
             var existingRoleClaims = identity.Claims
                 .Where(c => c.Type == ClaimTypes.Role)
-                .ToList();
-            foreach (var claim in existingRoleClaims)
-            {
-                identity.RemoveClaim(claim);
-            }
-        }
+                .Select(c => c.Value)
+                .ToArray();
 
-        // Add new role claims to the primary identity
-        if (httpContext.User.Identity is ClaimsIdentity primaryIdentity)
-        {
-            foreach (var role in roles ?? Enumerable.Empty<string>())
-            {
-                primaryIdentity.AddClaim(new Claim(ClaimTypes.Role, role));
-                _logger.LogInformation("Added role claim: {Role} for user {UserId}", role, loggedInUser);
-            }
-            
-            // Log system role constants for comparison
-            _logger.LogInformation("SystemRoles.SysAdmin constant: '{SysAdminRole}'", SystemRoles.SysAdmin);
-        }
-
-        // Log all current claims for debugging
-        var allClaims = httpContext.User.Claims.Select(c => $"{c.Type}={c.Value}").ToList();
-        _logger.LogInformation("All user claims after role assignment: {Claims}", string.Join(", ", allClaims));
-
-        // Check required roles if specified
-        if (requirement.RequiredRoles != null && requirement.RequiredRoles.Length > 0)
-        {
-            var userRoles = roles?.ToList() ?? new List<string>();
-            var hasRequiredRole = requirement.RequiredRoles.Any(requiredRole => 
-                userRoles.Contains(requiredRole, StringComparer.OrdinalIgnoreCase));
-            
-            if (!hasRequiredRole)
-            {
-                _logger.LogWarning("User {UserId} does not have any of the required roles: {RequiredRoles}. User roles: {UserRoles}", 
-                    loggedInUser, string.Join(", ", requirement.RequiredRoles), string.Join(", ", userRoles));
-                context.Fail(new AuthorizationFailureReason(this, 
-                    $"User does not have required role. Required: {string.Join(" or ", requirement.RequiredRoles)}"));
-                return false;
-            }
-            
-            _logger.LogInformation("User {UserId} has required role. Required: {RequiredRoles}, User has: {UserRoles}", 
-                loggedInUser, string.Join(", ", requirement.RequiredRoles), string.Join(", ", userRoles));
+            _tenantContext.UserRoles = existingRoleClaims;
         }
 
         // Set tenant ID in context
@@ -264,16 +225,15 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         return true;
     }
     
-    private async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds, IEnumerable<string>? roles)> 
+    private async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)> 
         ValidateToken(HttpContext httpContext, bool bypassCache = false)
     {
         var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-        var currentTenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
         if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
         {
             _logger.LogWarning("No Bearer token found in Authorization header");
-            return (false, null, null, null);
+            return (false, null, null);
         }
 
         var token = authHeader.Substring("Bearer ".Length);
@@ -284,19 +244,14 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             var (found, valid, userId, tenantIds) = await _tokenCache.GetValidation(token);
             if (found)
             {
-                // Since we only cache successful validations, if found in cache it's always valid
-                if (currentTenantId == null)
+                if (valid)
                 {
-                    _logger.LogWarning("No tenantId found in request header");
-                    return (false, null, null, null);
+                    // Set the user name to the logged in user from cache
+                    httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
+                    return (true, userId, tenantIds);
                 }
-
-                var roles = await _roleCacheService.GetUserRolesAsync(userId!, currentTenantId);
-                // Don't add roles here - they will be added in TryAuthorize method
-
-                // Set the user name to the logged in user from cache
-                httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId!)]));
-                return (true, userId, tenantIds, roles);
+                // Don't immediately return false for invalid cached results - let retry logic handle this
+                _logger.LogDebug("Found invalid token in cache, will proceed to fresh validation");
             }
         }
         else
@@ -306,36 +261,33 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
 
         try
         {
-            if (currentTenantId == null)
-            {
-                _logger.LogWarning("No tenantId found in request header");
-                return (false, null, null, null);
-            }
             // Validate token through auth provider
             var authProvider = _authProviderFactory.GetProvider();
-            var (success, tokenUserId, tokenTenantIds) = await authProvider.ValidateToken(token);
+            var (success, tokenUserId) = await authProvider.ValidateToken(token);
+
+            if (!success || string.IsNullOrEmpty(tokenUserId))
+            {
+                _logger.LogWarning("Token validation failed from auth provider");
+                return (false, null, null);
+            }
+
+            // get tenant IDs from DB collection
+            _tenantContext.LoggedInUser = tokenUserId;
+            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
+            var tokenTenantIds = userTenants?.Data ?? new List<string>();
 
             // Cache the result (always cache fresh validation results)
             await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
             
-            if (!success || string.IsNullOrEmpty(tokenUserId))
-            {
-                _logger.LogWarning("Token validation failed from auth provider");
-                return (false, null, null, null);
-            }
-            
             // Set the user name to the logged in user
             httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, tokenUserId)]));
 
-            var roles = await _roleCacheService.GetUserRolesAsync(tokenUserId, currentTenantId);
-            // Don't add roles here - they will be added in TryAuthorize method
-
-            return (true, tokenUserId, tokenTenantIds, roles);
+            return (true, tokenUserId, tokenTenantIds);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing JWT token");
-            return (false, null, null, null);
+            return (false, null, null);
         }
     }
 } 

@@ -42,11 +42,11 @@ public class KeycloakProvider : IAuthProvider
         options.RequireHttpsMetadata = false; // Set to true in production
         options.TokenValidationParameters.NameClaimType = "preferred_username";
         options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
-        
+
         // Configure audience validation for Keycloak
         // Keycloak typically uses 'account' as the audience for standard tokens
         options.TokenValidationParameters.ValidAudiences = new[] { "account" };
-        
+
         // Add JWT Bearer events to debug and properly authenticate the user
         options.Events = new JwtBearerEvents
         {
@@ -56,23 +56,21 @@ public class KeycloakProvider : IAuthProvider
                 _logger.LogError("Exception details: {FullException}", context.Exception?.ToString());
                 return Task.CompletedTask;
             },
-            
+
             OnChallenge = context =>
             {
-                _logger.LogWarning("JWT Bearer challenge triggered: {Error}, {ErrorDescription}", 
+                _logger.LogWarning("JWT Bearer challenge triggered: {Error}, {ErrorDescription}",
                     context.Error, context.ErrorDescription);
                 return Task.CompletedTask;
             },
-            
+
             OnTokenValidated = async context =>
             {
-                _logger.LogInformation("JWT Bearer OnTokenValidated event triggered");
-                
                 if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
-                    _logger.LogInformation("Original identity authenticated: {IsAuthenticated}, Type: {AuthenticationType}", 
+                    _logger.LogInformation("Original identity authenticated: {IsAuthenticated}, Type: {AuthenticationType}",
                         identity.IsAuthenticated, identity.AuthenticationType);
-                    
+
                     // Ensure the identity is properly authenticated
                     if (!identity.IsAuthenticated)
                     {
@@ -81,16 +79,18 @@ public class KeycloakProvider : IAuthProvider
                         var authenticatedIdentity = new ClaimsIdentity(identity.Claims, "JWT", identity.NameClaimType, identity.RoleClaimType);
                         context.Principal = new ClaimsPrincipal(authenticatedIdentity);
                         identity = authenticatedIdentity;
-                        
-                        _logger.LogInformation("New identity authenticated: {IsAuthenticated}, Type: {AuthenticationType}", 
+
+                        _logger.LogInformation("New identity authenticated: {IsAuthenticated}, Type: {AuthenticationType}",
                             authenticatedIdentity.IsAuthenticated, authenticatedIdentity.AuthenticationType);
                     }
 
                     // Get user roles from database or token claims (matching Auth0 behavior)
-                    var userId = identity.FindFirst("sub")?.Value ?? identity.FindFirst("preferred_username")?.Value;
+                    var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
                     if (!string.IsNullOrEmpty(userId))
                     {
-                        var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
                         if (!string.IsNullOrEmpty(tenantId))
                         {
                             using var scope = context.HttpContext.RequestServices.CreateScope();
@@ -103,16 +103,16 @@ public class KeycloakProvider : IAuthProvider
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
                             }
-                            
-                            _logger.LogInformation("Added {RoleCount} roles to Keycloak user {UserId}: {Roles}", 
+
+                            _logger.LogInformation("Added {RoleCount} roles to Keycloak user {UserId}: {Roles}",
                                 roles.Count(), userId, string.Join(", ", roles));
                         }
                     }
 
                     // Set the User property of HttpContext to ensure it's properly authenticated
                     context.HttpContext.User = context.Principal;
-                    
-                    _logger.LogInformation("Keycloak user authenticated: {UserId}, IsAuthenticated: {IsAuthenticated}", 
+
+                    _logger.LogInformation("Keycloak user authenticated: {UserId}, IsAuthenticated: {IsAuthenticated}",
                         identity.Name, context.HttpContext.User.Identity?.IsAuthenticated);
                 }
                 else
@@ -123,7 +123,7 @@ public class KeycloakProvider : IAuthProvider
         };
     }
 
-    public async Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
+    public async Task<(bool success, string? userId)> ValidateToken(string token)
     {
         return await _tokenService.ProcessToken(token);
     }
@@ -232,6 +232,12 @@ public class KeycloakProvider : IAuthProvider
             _logger.LogError(ex, "Failed to set new tenant {TenantId} for Keycloak user {UserId}", tenantId, userId);
             throw;
         }
+    }
+
+    //Only Valid for Auth0 for backward compatibility. To be removed.
+    public Task<List<string>> GetUserTenants(string userId)
+    {
+        return Task.FromResult(new List<string>());
     }
 
     private async Task<Tuple<bool, string>> CheckOrganizationExists(string token, string organizationName)

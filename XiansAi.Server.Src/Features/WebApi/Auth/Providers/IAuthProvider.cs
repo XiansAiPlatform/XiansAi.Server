@@ -16,13 +16,15 @@ public interface IAuthProvider
     /// <summary>
     /// Validate a token and extract claims
     /// </summary>
-    Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token);
+    Task<(bool success, string? userId)> ValidateToken(string token);
     
     /// <summary>
     /// Get user information from the provider
     /// </summary>
     Task<UserInfo> GetUserInfo(string userId);
-    
+
+    Task<List<string>> GetUserTenants(string userId);
+
     /// <summary>
     /// Set a new tenant for the user
     /// </summary>
