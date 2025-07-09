@@ -146,6 +146,11 @@ public class UserRepository : IUserRepository
             await _users.InsertOneAsync(user);
             return true;
         }
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        {
+            _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", user.UserId);
+            return false;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating user {UserId}", user.UserId);

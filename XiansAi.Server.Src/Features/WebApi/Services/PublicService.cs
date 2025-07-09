@@ -99,6 +99,7 @@ public class PublicService : IPublicService
     /// </summary>
     /// <param name="email">The email address to validate the code for</param>
     /// <param name="code">The verification code to validate</param>
+    /// <param name="token">The auth token</param>
     /// <returns>True if the code is valid, false otherwise</returns>
     /// <exception cref="ArgumentException">Thrown when email or code is null or empty</exception>
     public async Task<bool> ValidateCode(string email, string code, string token)

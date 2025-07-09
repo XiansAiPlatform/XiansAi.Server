@@ -10,13 +10,17 @@ public interface IAuthMgtConnect
     /// </summary>
     Task<UserInfo> GetUserInfo(string userId);
 
-    // <summary>
+    /// <summary>
     /// Gets user tenant information
     /// </summary>
+    /// <param name="userId">The user id</param>
+    /// <returns>The user tenant information</returns>
     Task<List<string>> GetUserTenants(string userId);
 
     /// <summary>
     /// Adds a new tenant to the user
+    /// <param name="userId">The user id</param>
+    /// <param name="tenantId">The tenant id</param>
     /// </summary>
     Task<string> SetNewTenant(string userId, string tenantId);
 }

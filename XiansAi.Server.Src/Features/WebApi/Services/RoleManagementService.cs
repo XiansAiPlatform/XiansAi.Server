@@ -35,7 +35,7 @@ namespace XiansAi.Server.Features.WebApi.Services
         Task<ServiceResult<bool>> RemoveRoleFromUserAsync(RoleDto roleDto);
         Task<ServiceResult<List<string>>> GetUserRolesAsync(string userId, string tenantId);
         Task<ServiceResult<List<UserInfoDto>>> GetSystemAdminsAsync();
-        Task<ServiceResult<List<UserInfoDto>>> GetUsersByRoleAsync(string role, string? tenantId);
+        Task<ServiceResult<List<UserInfoDto>>> GetUsersByRoleAsync(string role, string tenantId);
         Task<ServiceResult<List<string>>> GetCurrentUserRolesAsync();
 
         Task<ServiceResult<List<UserInfoDto>>> GetUsersInfoByRoleAsync(string role, string tenantId);
@@ -231,7 +231,7 @@ namespace XiansAi.Server.Features.WebApi.Services
             }
         }
 
-        public async Task<ServiceResult<List<UserInfoDto>>> GetUsersByRoleAsync(string role, string? tenantId)
+        public async Task<ServiceResult<List<UserInfoDto>>> GetUsersByRoleAsync(string role, string tenantId)
         {
             var validationResult = ValidateTenantAccess("access user roles", tenantId);
             if (!validationResult.IsSuccess)

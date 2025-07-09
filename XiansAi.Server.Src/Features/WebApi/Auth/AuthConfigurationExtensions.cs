@@ -18,7 +18,7 @@ public static class AuthConfigurationExtensions
         builder.Services.AddHttpClient();
 
         // Register token validation cache
-        builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
+        builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
 
         // Register token services
         builder.Services.AddScoped<Auth0TokenService>(serviceProvider =>

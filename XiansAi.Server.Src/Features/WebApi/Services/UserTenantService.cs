@@ -4,6 +4,7 @@ using Features.WebApi.Auth.Providers;
 using Features.WebApi.Models;
 using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
+using MongoDB.Driver;
 using Newtonsoft.Json.Linq;
 using Shared.Auth;
 using Shared.Utils.Services;
@@ -84,8 +85,35 @@ public class UserTenantService : IUserTenantService
                 _logger.LogError("Failed to create user from token {Token}", token);
                 return ServiceResult<List<string>>.InternalServerError("Failed to create user from token");
             }
-            await _userRepository.CreateAsync(userDto);
-            _logger.LogInformation("User {UserId} created from token", userDto.UserId);
+            
+            try
+            {
+                var created = await _userRepository.CreateAsync(userDto);
+                if (created)
+                {
+                    _logger.LogInformation("User {UserId} created from token", userDto.UserId);
+                }
+                else
+                {
+                    // User might already exist, try to fetch again
+                    user = await _userRepository.GetByUserIdAsync(userId);
+                    if (user == null)
+                    {
+                        _logger.LogError("Failed to create or retrieve user {UserId}", userId);
+                        return ServiceResult<List<string>>.InternalServerError("Failed to create or retrieve user");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "User creation failed, attempting to retrieve existing user {UserId}", userId);
+                user = await _userRepository.GetByUserIdAsync(userId);
+                if (user == null)
+                {
+                    _logger.LogError("Failed to create or retrieve user {UserId}", userId);
+                    return ServiceResult<List<string>>.InternalServerError("Failed to create or retrieve user");
+                }
+            }
         }
 
         return await GetTenantsForCurrentUser();
@@ -383,18 +411,49 @@ public class UserTenantService : IUserTenantService
             throw new ArgumentException("Invalid token format", nameof(token));
         }
 
+        // First try the standard 'sub' claim
         var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            _logger.LogDebug("Found user ID in 'sub' claim: {UserId}", userId);
+        }
+        else
+        {
+            // Fallback to preferred_username for Keycloak tokens missing 'sub' claim
+            userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                _logger.LogInformation("Using 'preferred_username' as user ID: {UserId}", userId);
+            }
+            else
+            {
+                // Try other common alternative claim names
+                var alternativeClaimTypes = new[] { "user_id", "uid", "id", "email", "username" };
+                foreach (var claimType in alternativeClaimTypes)
+                {
+                    userId = jsonToken.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+                        _logger.LogInformation("Found user ID in '{ClaimType}' claim: {UserId}", claimType, userId);
+                        break;
+                    }
+                }
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(userId))
         {
             _logger.LogWarning("User ID claim not found in token");
             throw new ArgumentException("User ID not found in token", nameof(token));
         }
 
-        var user = await _authMgtConnect.GetUserInfo(userId);
-        var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
-            new AuthProviderConfig();
-        var name = user.Nickname ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
+        // Extract user information directly from JWT token claims - no management API needed
+        var name = jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ??
+                   jsonToken.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value ??
+                   jsonToken.Claims.FirstOrDefault(c => c.Type == "nickname")?.Value ?? 
+                   string.Empty;
         var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
+        
         var newUser = new User
         {
             UserId = userId,
@@ -406,10 +465,38 @@ public class UserTenantService : IUserTenantService
             UpdatedAt = DateTime.UtcNow,
             TenantRoles = new List<TenantRole>()
         };
-        var success = await _userRepository.CreateAsync(newUser);
-
-       return success
-            ? newUser
-            : throw new Exception($"Failed to create user {userId} from token");
+        
+        try
+        {
+            var success = await _userRepository.CreateAsync(newUser);
+            if (success)
+            {
+                return newUser;
+            }
+            
+            // User creation failed, try to fetch existing user
+            var existingUser = await _userRepository.GetByUserIdAsync(userId);
+            if (existingUser != null)
+            {
+                _logger.LogInformation("User {UserId} already exists, returning existing user", userId);
+                return existingUser;
+            }
+            
+            throw new Exception($"Failed to create user {userId} from token and no existing user found");
+        }
+        catch (Exception ex) when (!(ex is ArgumentException))
+        {
+            _logger.LogWarning(ex, "User creation failed for {UserId}, attempting to retrieve existing user", userId);
+            
+            // Try to get existing user in case of race condition
+            var existingUser = await _userRepository.GetByUserIdAsync(userId);
+            if (existingUser != null)
+            {
+                _logger.LogInformation("Retrieved existing user {UserId} after creation failure", userId);
+                return existingUser;
+            }
+            
+            throw new Exception($"Failed to create user {userId} from token: {ex.Message}", ex);
+        }
     }
 }

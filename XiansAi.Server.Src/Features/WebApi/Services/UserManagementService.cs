@@ -1,5 +1,6 @@
 using Features.WebApi.Auth;
 using Features.WebApi.Auth.Providers;
+using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Services;
 using Shared.Utils.Services;
@@ -193,13 +194,38 @@ public class UserManagementService : IUserManagementService
                 UpdatedAt = DateTime.UtcNow,
                 TenantRoles = new List<TenantRole>()
             };
-            var success = await _userRepository.CreateAsync(newUser);
-            if (!success)
+            
+            try
             {
-                return ServiceResult<bool>.InternalServerError("Failed to create new user");
+                var success = await _userRepository.CreateAsync(newUser);
+                if (!success)
+                {
+                    // Check if user was created by another thread/request
+                    existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
+                    if (existingUser != null)
+                    {
+                        _logger.LogInformation("User {UserId} already exists, creation was redundant", userDto.UserId);
+                        return ServiceResult<bool>.Conflict("User already exists");
+                    }
+                    return ServiceResult<bool>.InternalServerError("Failed to create new user");
+                }
+                _logger.LogInformation("New user created: {UserId}", userDto.UserId);
+                return ServiceResult<bool>.Success(true);
             }
-            _logger.LogInformation("New user created: {UserId}", userDto.UserId);
-            return ServiceResult<bool>.Success(true);
+            catch (Exception createEx)
+            {
+                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", userDto.UserId);
+                
+                // Check if user was created by another process
+                existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
+                if (existingUser != null)
+                {
+                    _logger.LogInformation("User {UserId} already exists after creation failure", userDto.UserId);
+                    return ServiceResult<bool>.Conflict("User already exists");
+                }
+                
+                throw; // Re-throw if it's not a duplicate key issue
+            }
         }
         catch (Exception ex)
         {
