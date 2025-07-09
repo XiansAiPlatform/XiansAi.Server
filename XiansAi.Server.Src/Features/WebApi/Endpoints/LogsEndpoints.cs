@@ -12,7 +12,8 @@ public static class LogsEndpoints
         // Map logs endpoints with common attributes
         var logsGroup = app.MapGroup("/api/client/logs")
             .WithTags("WebAPI - Logs")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         logsGroup.MapGet("/workflow", async (
             [FromQuery] string workflowRunId,

@@ -11,7 +11,8 @@ public static class SettingsEndpoints
         // Map certificate endpoints with common attributes
         var settingsGroup = app.MapGroup("/api/client/settings")
             .WithTags("WebAPI - Settings")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         settingsGroup.MapPost("/appserver/base64cert", (
             HttpContext context,
