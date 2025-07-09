@@ -72,17 +72,28 @@ public class ConversationThreadRepository : IConversationThreadRepository
         _collection = database.GetCollection<ConversationThread>("conversation_thread");
     }
 
+    //Deprecated function
     public async Task<bool> UpdateWorkflowIdAndTypeAsync(string id, string workflowId, string workflowType)
     {
+        // Sanitize and validate inputs
+        var sanitizedId = InputSanitizationUtils.SanitizeObjectId(id);
+        InputValidationUtils.ValidateObjectId(sanitizedId, nameof(id));
+
+        var sanitizedWorkflowId = InputSanitizationUtils.SanitizeWorkflowId(workflowId);
+        InputValidationUtils.ValidateWorkflowId(sanitizedWorkflowId, nameof(workflowId));
+
+        var sanitizedWorkflowType = InputSanitizationUtils.SanitizeWorkflowType(workflowType);
+        InputValidationUtils.ValidateWorkflowType(sanitizedWorkflowType, nameof(workflowType));
+
         try
         {
             return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
                 var update = Builders<ConversationThread>.Update
-                    .Set(x => x.WorkflowId, workflowId)
-                    .Set(x => x.WorkflowType, workflowType)
+                    .Set(x => x.WorkflowId, sanitizedWorkflowId)
+                    .Set(x => x.WorkflowType, sanitizedWorkflowType)
                     .Set(x => x.UpdatedAt, DateTime.UtcNow);
-                var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
+                var result = await _collection.UpdateOneAsync(x => x.Id == sanitizedId, update);
                 return result.ModifiedCount > 0;
             }, _logger, operationName: "UpdateWorkflowIdAndTypeAsync");
         }
@@ -125,11 +136,23 @@ public class ConversationThreadRepository : IConversationThreadRepository
 
     private async Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string agent, string workflowType, string participantId)
     {
+        // Sanitize and validate inputs
+        InputValidationUtils.ValidateTenantId(tenantId, nameof(tenantId));
+
+        var sanitizedAgent = InputSanitizationUtils.SanitizeAgent(agent);
+        InputValidationUtils.ValidateAgentName(sanitizedAgent, nameof(agent));
+
+        var sanitizedWorkflowType = InputSanitizationUtils.SanitizeWorkflowType(workflowType);
+        InputValidationUtils.ValidateWorkflowType(sanitizedWorkflowType, nameof(workflowType));
+
+        var sanitizedParticipantId = InputSanitizationUtils.SanitizeParticipantId(participantId);
+        InputValidationUtils.ValidateParticipantId(sanitizedParticipantId, nameof(participantId));
+
         var filter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
-            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, workflowType),
-            Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
+            Builders<ConversationThread>.Filter.Eq(x => x.Agent, sanitizedAgent),
+            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, sanitizedWorkflowType),
+            Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, sanitizedParticipantId)
         );
 
         return await _collection.Find(filter).FirstOrDefaultAsync();
@@ -137,9 +160,15 @@ public class ConversationThreadRepository : IConversationThreadRepository
 
     public async Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null)
     {
+        // Sanitize and validate inputs
+        InputValidationUtils.ValidateTenantId(tenantId, nameof(tenantId));
+
+        var sanitizedAgent = InputSanitizationUtils.SanitizeAgent(agent);
+        InputValidationUtils.ValidateAgentName(sanitizedAgent, nameof(agent));
+
         var filter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent)
+            Builders<ConversationThread>.Filter.Eq(x => x.Agent, sanitizedAgent)
         );
 
         var query = _collection.Find(filter).Sort(Builders<ConversationThread>.Sort.Descending(x => x.UpdatedAt));

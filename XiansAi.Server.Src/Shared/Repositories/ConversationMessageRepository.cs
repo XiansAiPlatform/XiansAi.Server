@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json;
 using Shared.Data;
 using Shared.Utils;
+using System.Text.RegularExpressions;
 
 
 namespace Shared.Repositories;
@@ -143,6 +144,26 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null)
     {
+        // Sanitize inputs
+        tenantId = InputSanitizationUtils.SanitizeTenantId(tenantId ?? string.Empty);
+        threadId = InputSanitizationUtils.SanitizeThreadId(threadId ?? string.Empty);
+
+        // Validate inputs
+        try
+        {
+            InputValidationUtils.ValidateTenantId(tenantId, "tenantId");
+            InputValidationUtils.ValidateObjectId(threadId, "threadId");
+            if (page.HasValue && pageSize.HasValue)
+            {
+                InputValidationUtils.ValidatePagination(0, pageSize.Value, "skip", "limit");
+            }
+        }
+        catch (ArgumentException)
+        {
+            _logger.LogWarning("Invalid input parameters for GetByThreadIdAsync");
+            return new List<ConversationMessage>();
+        }
+
         var filter = Builders<ConversationMessage>.Filter.And(
             Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
             Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
@@ -244,17 +265,43 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<string> CreateAndUpdateThreadAsync(ConversationMessage message, string threadId, DateTime timestamp)
     {
-        // Convert metadata to BsonDocument if needed
-        if (message.Data != null)
+        // Sanitize and validate inputs--ok --
+        var sanitizedMessage = InputSanitizationUtils.SanitizeConversationMessage(message);
+        threadId = InputSanitizationUtils.SanitizeThreadId(threadId ?? string.Empty);
+
+        if (sanitizedMessage == null)
         {
-            message.Data = ConvertToBsonDocument(message.Data);
+            _logger.LogWarning("Invalid conversation message for CreateAndUpdateThreadAsync");
+            throw new ArgumentException("Invalid conversation message data");
+        }
+
+        try
+        {
+            InputValidationUtils.ValidateObjectId(sanitizedMessage.ThreadId, "threadId");
+            InputValidationUtils.ValidateTenantId(sanitizedMessage.TenantId, "tenantId");
+            InputValidationUtils.ValidateParticipantId(sanitizedMessage.ParticipantId, "participantId");
+            InputValidationUtils.ValidateWorkflowId(sanitizedMessage.WorkflowId, "workflowId");
+            InputValidationUtils.ValidateWorkflowType(sanitizedMessage.WorkflowType, "workflowType");
+            InputValidationUtils.ValidateObjectId(threadId, "threadId");
+            InputValidationUtils.ValidateCreatedBy(sanitizedMessage.CreatedBy, "createdBy");
+        }
+        catch (ArgumentException)
+        {
+            _logger.LogWarning("Invalid input parameters for CreateAndUpdateThreadAsync");
+            throw new ArgumentException("Invalid input parameters");
+        }
+
+        // Convert metadata to BsonDocument if needed
+        if (sanitizedMessage.Data != null)
+        {
+            sanitizedMessage.Data = ConvertToBsonDocument(sanitizedMessage.Data);
         }
 
         // Critical operation: Create the message with retry logic
         var messageId = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            await _collection.InsertOneAsync(message);
-            return message.Id;
+            await _collection.InsertOneAsync(sanitizedMessage);
+            return sanitizedMessage.Id;
         }, _logger, operationName: "CreateMessage");
 
         // Best effort: Update thread timestamp (non-critical)
@@ -293,11 +340,29 @@ public class ConversationMessageRepository : IConversationMessageRepository
             return new List<string>();
         }
 
-        // Prepare each message for insertion
+        // Sanitize and validate all messages
+        var sanitizedMessages = new List<ConversationMessage>();
         foreach (var message in messages)
         {
+            var sanitizedMessage = InputSanitizationUtils.SanitizeConversationMessage(message);
+            if (sanitizedMessage == null)
+            {
+                _logger.LogWarning("Invalid conversation message in CreateManyAndUpdateThreadsAsync");
+                throw new ArgumentException("Invalid conversation message data");
+            }
+
+            // Validate the sanitized message--okoo
+           
+                InputValidationUtils.ValidateObjectId(sanitizedMessage.ThreadId, "threadId");
+                InputValidationUtils.ValidateTenantId(sanitizedMessage.TenantId, "tenantId");
+                InputValidationUtils.ValidateParticipantId(sanitizedMessage.ParticipantId, "participantId");
+                InputValidationUtils.ValidateWorkflowId(sanitizedMessage.WorkflowId, "workflowId");
+                InputValidationUtils.ValidateWorkflowType(sanitizedMessage.WorkflowType, "workflowType");
+                InputValidationUtils.ValidateCreatedBy(sanitizedMessage.CreatedBy, "createdBy");
+            
+
             // Convert metadata to BsonDocument if needed
-            if (message.Data != null)
+            if (sanitizedMessage.Data != null)
             {
                 message.Data = ConvertToBsonDocument(message.Data);
             }
@@ -313,8 +378,8 @@ public class ConversationMessageRepository : IConversationMessageRepository
             try
             {
                 // Insert all messages in a single operation
-                await _collection.InsertManyAsync(session, messages);
-                var messageIds = messages.Select(m => m.Id).ToList();
+                await _collection.InsertManyAsync(session, sanitizedMessages);
+                var messageIds = sanitizedMessages.Select(m => m.Id).ToList();
 
                 // Update all thread timestamps
                 foreach (var threadUpdate in threadTimestamps)
@@ -443,6 +508,19 @@ public class ConversationMessageRepository : IConversationMessageRepository
 
     public async Task<bool> UpdateStatusAsync(string id, MessageStatus status)
     {
+        // Sanitize and validate inputs
+        id = InputSanitizationUtils.SanitizeMessageId(id ?? string.Empty);
+        
+        try
+        {
+            InputValidationUtils.ValidateObjectId(id, "messageId");
+        }
+        catch (ArgumentException)
+        {
+            _logger.LogWarning("Invalid message ID for UpdateStatusAsync: {MessageId}", id);
+            return false;
+        }
+
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var update = Builders<ConversationMessage>.Update
@@ -603,10 +681,36 @@ public class ConversationMessageRepository : IConversationMessageRepository
     /// </summary>
     public async Task<string> CreateAndUpdateThreadWithOptimisticConcurrencyAsync(ConversationMessage message, string threadId, DateTime timestamp)
     {
-        // Convert metadata to BsonDocument if needed
-        if (message.Data != null)
+        // Sanitize and validate inputs
+        var sanitizedMessage = InputSanitizationUtils.SanitizeConversationMessage(message);
+        threadId = InputSanitizationUtils.SanitizeThreadId(threadId ?? string.Empty);
+
+        if (sanitizedMessage == null)
         {
-            message.Data = ConvertToBsonDocument(message.Data);
+            _logger.LogWarning("Invalid conversation message for CreateAndUpdateThreadWithOptimisticConcurrencyAsync");
+            throw new ArgumentException("Invalid conversation message data");
+        }
+
+        try
+        {
+            InputValidationUtils.ValidateObjectId(sanitizedMessage.ThreadId, "threadId");
+            InputValidationUtils.ValidateTenantId(sanitizedMessage.TenantId, "tenantId");
+            InputValidationUtils.ValidateParticipantId(sanitizedMessage.ParticipantId, "participantId");
+            InputValidationUtils.ValidateWorkflowId(sanitizedMessage.WorkflowId, "workflowId");
+            InputValidationUtils.ValidateWorkflowType(sanitizedMessage.WorkflowType, "workflowType");
+            InputValidationUtils.ValidateObjectId(threadId, "threadId");
+            InputValidationUtils.ValidateCreatedBy(sanitizedMessage.CreatedBy, "createdBy");
+        }
+        catch (ArgumentException)
+        {
+            _logger.LogWarning("Invalid input parameters for CreateAndUpdateThreadWithOptimisticConcurrencyAsync");
+            throw new ArgumentException("Invalid input parameters");
+        }
+
+        // Convert metadata to BsonDocument if needed
+        if (sanitizedMessage.Data != null)
+        {
+            sanitizedMessage.Data = ConvertToBsonDocument(sanitizedMessage.Data);
         }
 
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
@@ -620,12 +724,12 @@ public class ConversationMessageRepository : IConversationMessageRepository
             {
                 _logger.LogWarning("Thread {ThreadId} not found during message creation", threadId);
                 // Still create the message even if thread doesn't exist
-                await _collection.InsertOneAsync(message);
-                return message.Id;
+                await _collection.InsertOneAsync(sanitizedMessage);
+                return sanitizedMessage.Id;
             }
 
             // Create the message first
-            await _collection.InsertOneAsync(message);
+            await _collection.InsertOneAsync(sanitizedMessage);
             
             // Update thread only if UpdatedAt hasn't changed (optimistic concurrency)
             var threadFilter = Builders<ConversationThread>.Filter.And(
@@ -640,7 +744,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
                 _logger.LogDebug("Thread {ThreadId} was modified by another operation, timestamp update skipped", threadId);
             }
 
-            return message.Id;
+            return sanitizedMessage.Id;
         }, _logger, operationName: "CreateAndUpdateThreadWithOptimisticConcurrencyAsync");
     }
 }

@@ -1,5 +1,6 @@
 ﻿using MongoDB.Driver;
 using Shared.Data;
+using Shared.Utils;
 using XiansAi.Server.Features.WebApi.Models;
 
 namespace XiansAi.Server.Features.WebApi.Repositories
@@ -30,9 +31,16 @@ namespace XiansAi.Server.Features.WebApi.Repositories
 
         public async Task<UserRole?> GetUserRolesAsync(string userId, string tenantId)
         {
+            // Sanitize and validate inputs
+            var sanitizedUserId = InputSanitizationUtils.SanitizeUserId(userId);
+            InputValidationUtils.ValidateUserId(sanitizedUserId, nameof(userId));
+
+            var sanitizedTenantId = InputSanitizationUtils.SanitizeTenantId(tenantId);
+            InputValidationUtils.ValidateTenantId(sanitizedTenantId, nameof(tenantId));
+
             var filter = Builders<UserRole>.Filter.And(
-                Builders<UserRole>.Filter.Eq(x => x.UserId, userId),
-                Builders<UserRole>.Filter.Eq(x => x.TenantId, tenantId)
+                Builders<UserRole>.Filter.Eq(x => x.UserId, sanitizedUserId),
+                Builders<UserRole>.Filter.Eq(x => x.TenantId, sanitizedTenantId)
             );
 
             return await _collection.Find(filter).FirstOrDefaultAsync();
@@ -40,12 +48,27 @@ namespace XiansAi.Server.Features.WebApi.Repositories
 
         public async Task<bool> AssignRolesAsync(string userId, string tenantId, List<string> roles, string createdBy)
         {
+            // Sanitize and validate inputs
+            var sanitizedUserId = InputSanitizationUtils.SanitizeUserId(userId);
+            InputValidationUtils.ValidateUserId(sanitizedUserId, nameof(userId));
+
+            var sanitizedTenantId = InputSanitizationUtils.SanitizeTenantId(tenantId);
+            InputValidationUtils.ValidateTenantId(sanitizedTenantId, nameof(tenantId));
+
+            var sanitizedCreatedBy = InputSanitizationUtils.SanitizeCreatedBy(createdBy);
+            InputValidationUtils.ValidateCreatedBy(sanitizedCreatedBy, nameof(createdBy));
+
+            if (roles == null || roles.Count == 0)
+            {
+                throw new ArgumentException("Roles cannot be null or empty", nameof(roles));
+            }
+
             var userRole = new UserRole
             {
-                UserId = userId,
-                TenantId = tenantId,
+                UserId = sanitizedUserId,
+                TenantId = sanitizedTenantId,
                 Roles = roles,
-                CreatedBy = createdBy,
+                CreatedBy = sanitizedCreatedBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -64,9 +87,21 @@ namespace XiansAi.Server.Features.WebApi.Repositories
 
         public async Task<bool> UpdateRolesAsync(string userId, string tenantId, List<string> roles)
         {
+            // Sanitize and validate inputs
+            var sanitizedUserId = InputSanitizationUtils.SanitizeUserId(userId);
+            InputValidationUtils.ValidateUserId(sanitizedUserId, nameof(userId));
+
+            var sanitizedTenantId = InputSanitizationUtils.SanitizeTenantId(tenantId);
+            InputValidationUtils.ValidateTenantId(sanitizedTenantId, nameof(tenantId));
+
+            if (roles == null || roles.Count == 0)
+            {
+                throw new ArgumentException("Roles cannot be null or empty", nameof(roles));
+            }
+
             var filter = Builders<UserRole>.Filter.And(
-                Builders<UserRole>.Filter.Eq(x => x.UserId, userId),
-                Builders<UserRole>.Filter.Eq(x => x.TenantId, tenantId)
+                Builders<UserRole>.Filter.Eq(x => x.UserId, sanitizedUserId),
+                Builders<UserRole>.Filter.Eq(x => x.TenantId, sanitizedTenantId)
             );
 
             var update = Builders<UserRole>.Update
@@ -79,8 +114,17 @@ namespace XiansAi.Server.Features.WebApi.Repositories
 
         public async Task<List<UserRole>> GetUsersByRoleAsync(string role, string tenantId)
         {
+            // Sanitize and validate inputs
+            var sanitizedTenantId = InputSanitizationUtils.SanitizeTenantId(tenantId);
+            InputValidationUtils.ValidateTenantId(sanitizedTenantId, nameof(tenantId));
+
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                throw new ArgumentException("Role cannot be null or empty", nameof(role));
+            }
+
             var filter = Builders<UserRole>.Filter.And(
-                Builders<UserRole>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<UserRole>.Filter.Eq(x => x.TenantId, sanitizedTenantId),
                 Builders<UserRole>.Filter.AnyEq(x => x.Roles, role)
             );
 
@@ -89,9 +133,21 @@ namespace XiansAi.Server.Features.WebApi.Repositories
 
         public async Task<bool> RemoveRoleAsync(string userId, string tenantId, string role)
         {
+            // Sanitize and validate inputs
+            var sanitizedUserId = InputSanitizationUtils.SanitizeUserId(userId);
+            InputValidationUtils.ValidateUserId(sanitizedUserId, nameof(userId));
+
+            var sanitizedTenantId = InputSanitizationUtils.SanitizeTenantId(tenantId);
+            InputValidationUtils.ValidateTenantId(sanitizedTenantId, nameof(tenantId));
+
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                throw new ArgumentException("Role cannot be null or empty", nameof(role));
+            }
+
             var filter = Builders<UserRole>.Filter.And(
-                Builders<UserRole>.Filter.Eq(x => x.UserId, userId),
-                Builders<UserRole>.Filter.Eq(x => x.TenantId, tenantId)
+                Builders<UserRole>.Filter.Eq(x => x.UserId, sanitizedUserId),
+                Builders<UserRole>.Filter.Eq(x => x.TenantId, sanitizedTenantId)
             );
 
             var update = Builders<UserRole>.Update.Pull(x => x.Roles, role);
@@ -102,8 +158,12 @@ namespace XiansAi.Server.Features.WebApi.Repositories
 
         public async Task<List<UserRole>> GetAllTenantAdminsAsync(string tenantId)
         {
+            // Sanitize and validate inputs
+            var sanitizedTenantId = InputSanitizationUtils.SanitizeTenantId(tenantId);
+            InputValidationUtils.ValidateTenantId(sanitizedTenantId, nameof(tenantId));
+
             var filter = Builders<UserRole>.Filter.And(
-                Builders<UserRole>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<UserRole>.Filter.Eq(x => x.TenantId, sanitizedTenantId),
                 Builders<UserRole>.Filter.AnyEq(x => x.Roles, "TenantAdmin")
             );
 

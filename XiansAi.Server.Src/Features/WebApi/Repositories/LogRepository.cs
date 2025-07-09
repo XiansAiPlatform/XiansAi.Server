@@ -1,6 +1,7 @@
 using Features.WebApi.Models;
 using MongoDB.Driver;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Features.WebApi.Repositories;
 
@@ -100,14 +101,54 @@ public class LogRepository : ILogRepository
 
     public async Task<bool> UpdateAsync(string id, Log log)
     {
-        var result = await _logs.ReplaceOneAsync(x => x.Id == id, log);
+        // Sanitize and validate inputs
+        var sanitizedId = InputSanitizationUtils.SanitizeObjectId(id);
+        InputValidationUtils.ValidateObjectId(sanitizedId, nameof(id));
+
+        var sanitizedLog = InputSanitizationUtils.SanitizeLog(log);
+        InputValidationUtils.ValidateLog(sanitizedLog);
+
+        if (sanitizedLog == null)
+        {
+            throw new ArgumentException("Log cannot be null after sanitization");
+        }
+
+        var result = await _logs.ReplaceOneAsync(x => x.Id == sanitizedId, sanitizedLog);
         return result.ModifiedCount > 0;
     }
 
     public async Task<bool> UpdatePropertiesAsync(string id, Dictionary<string, object> properties)
     {
-        var update = Builders<Log>.Update.Set(x => x.Properties, properties);
-        var result = await _logs.UpdateOneAsync(x => x.Id == id, update);
+        // Sanitize and validate inputs ---ok--
+        var sanitizedId = InputSanitizationUtils.SanitizeObjectId(id);
+        InputValidationUtils.ValidateObjectId(sanitizedId, nameof(id));
+
+        if (properties == null)
+        {
+            throw new ArgumentException("Properties cannot be null", nameof(properties));
+        }
+
+        // Sanitize properties dictionary
+        var sanitizedProperties = new Dictionary<string, object>();
+        foreach (var kvp in properties)
+        {
+            var sanitizedKey = InputSanitizationUtils.SanitizeStringStrict(kvp.Key, 100);
+            if (!string.IsNullOrWhiteSpace(sanitizedKey))
+            {
+                // For string values, sanitize them
+                if (kvp.Value is string stringValue)
+                {
+                    sanitizedProperties[sanitizedKey] = InputSanitizationUtils.SanitizeString(stringValue);
+                }
+                else
+                {
+                    sanitizedProperties[sanitizedKey] = kvp.Value;
+                }
+            }
+        }
+
+        var update = Builders<Log>.Update.Set(x => x.Properties, sanitizedProperties);
+        var result = await _logs.UpdateOneAsync(x => x.Id == sanitizedId, update);
         return result.ModifiedCount > 0;
     }
 
@@ -144,8 +185,15 @@ public class LogRepository : ILogRepository
         int page = 1, 
         int pageSize = 20)
     {
-        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
-                    Builders<Log>.Filter.Eq(x => x.Agent, agent) & 
+        // Sanitize and validate inputs --ok--
+        var sanitizedTenantId = InputSanitizationUtils.SanitizeTenantId(tenantId);
+        InputValidationUtils.ValidateTenantId(sanitizedTenantId, nameof(tenantId));
+
+        var sanitizedAgent = InputSanitizationUtils.SanitizeAgent(agent);
+        InputValidationUtils.ValidateAgentName(sanitizedAgent, nameof(agent));
+
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, sanitizedTenantId) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, sanitizedAgent) & 
                     Builders<Log>.Filter.Ne(x => x.ParticipantId, null) &
                     Builders<Log>.Filter.Ne(x => x.ParticipantId, "");
         var distinctParticipants = await _logs.Distinct(x => x.ParticipantId, filter).ToListAsync();
@@ -164,14 +212,23 @@ public class LogRepository : ILogRepository
         string agent, 
         string? participantId = null)
     {
+        // Sanitize and validate inputs
+        InputValidationUtils.ValidateTenantId(tenantId, nameof(tenantId));
+
+        var sanitizedAgent = InputSanitizationUtils.SanitizeAgent(agent);
+        InputValidationUtils.ValidateAgentName(sanitizedAgent, nameof(agent));
+
         var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
-                    Builders<Log>.Filter.Eq(x => x.Agent, agent) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, sanitizedAgent) &
                     Builders<Log>.Filter.Ne(x => x.WorkflowType, null) &
                     Builders<Log>.Filter.Ne(x => x.WorkflowType, "");
+        
         if (!string.IsNullOrEmpty(participantId))
         {
+            InputValidationUtils.ValidateParticipantId(participantId, nameof(participantId));
             filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
         }
+        
         var workflowTypes = await _logs.Distinct(x => x.WorkflowType, filter).ToListAsync();
         workflowTypes.Sort();
         return workflowTypes;
@@ -183,14 +240,25 @@ public class LogRepository : ILogRepository
         string workflowType, 
         string? participantId = null)
     {
+        // Sanitize and validate inputs
+        InputValidationUtils.ValidateTenantId(tenantId, nameof(tenantId));
+
+        var sanitizedAgent = InputSanitizationUtils.SanitizeAgent(agent);
+        InputValidationUtils.ValidateAgentName(sanitizedAgent, nameof(agent));
+
+        var sanitizedWorkflowType = InputSanitizationUtils.SanitizeWorkflowType(workflowType);
+        InputValidationUtils.ValidateWorkflowType(sanitizedWorkflowType, nameof(workflowType));
+
         var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId) &
-                    Builders<Log>.Filter.Eq(x => x.Agent, agent) &
-                    Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType) &
+                    Builders<Log>.Filter.Eq(x => x.Agent, sanitizedAgent) &
+                    Builders<Log>.Filter.Eq(x => x.WorkflowType, sanitizedWorkflowType) &
                     Builders<Log>.Filter.Ne(x => x.WorkflowId, null) &
                     Builders<Log>.Filter.Ne(x => x.WorkflowId, "");
         if (!string.IsNullOrEmpty(participantId))
         {
-            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+            var sanitizedParticipantId = InputSanitizationUtils.SanitizeParticipantId(participantId);
+            InputValidationUtils.ValidateParticipantId(sanitizedParticipantId, nameof(participantId));
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, sanitizedParticipantId);
         }
         var workflowIds = await _logs.Distinct(x => x.WorkflowId, filter).ToListAsync();
         workflowIds.Sort();

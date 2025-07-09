@@ -3,6 +3,7 @@ using XiansAi.Server.Shared.Data.Models;
 using Shared.Auth;
 using XiansAi.Server.Shared.Data;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Shared.Repositories
 {
@@ -138,8 +139,17 @@ namespace Shared.Repositories
 
         public async Task UpdateAsync(Webhook webhook)
         {
-            var filter = Builders<Webhook>.Filter.Eq(w => w.Id, webhook.Id);
-            await _webhooks.ReplaceOneAsync(filter, webhook);
+            // Sanitize and validate webhook
+            var sanitizedWebhook = InputSanitizationUtils.SanitizeWebhook(webhook);
+            InputValidationUtils.ValidateWebhook(sanitizedWebhook);
+
+            if (sanitizedWebhook == null)
+            {
+                throw new ArgumentException("Webhook cannot be null after sanitization");
+            }
+
+            var filter = Builders<Webhook>.Filter.Eq(w => w.Id, sanitizedWebhook.Id);
+            await _webhooks.ReplaceOneAsync(filter, sanitizedWebhook);
         }
     }
 } 

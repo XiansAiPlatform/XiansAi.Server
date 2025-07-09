@@ -2,6 +2,7 @@ using MongoDB.Driver;
 using MongoDB.Bson;
 using Shared.Data;
 using Features.WebApi.Models;
+using Shared.Utils;
 
 namespace Features.WebApi.Repositories;
 
@@ -64,17 +65,33 @@ public class ActivityRepository : IActivityRepository
 
     public async Task<bool> UpdateAsync(string activityId, Activity activity)
     {
-        var result = await _activities.ReplaceOneAsync(x => x.ActivityId == activityId, activity);
+        // Validate and sanitize inputs--ok--
+        var sanitizedActivityId = InputSanitizationUtils.SanitizeActivityId(activityId);
+        InputValidationUtils.ValidateActivityId(sanitizedActivityId, nameof(activityId));
+        
+        var sanitizedActivity = InputSanitizationUtils.SanitizeActivity(activity);
+        InputValidationUtils.ValidateActivity(sanitizedActivity);
+
+        if (sanitizedActivity == null)
+        {
+            throw new ArgumentException("Activity cannot be null after sanitization");
+        }
+
+        var result = await _activities.ReplaceOneAsync(x => x.ActivityId == sanitizedActivityId, sanitizedActivity);
         return result.ModifiedCount > 0;
     }
 
     public async Task<bool> UpdateEndTimeAsync(string activityId, DateTime endTime, object result)
     {
+        // Validate and sanitize inputs-- ok--
+        var sanitizedActivityId = InputSanitizationUtils.SanitizeActivityId(activityId);
+        InputValidationUtils.ValidateActivityId(sanitizedActivityId, nameof(activityId));
+
         var update = Builders<Activity>.Update
             .Set(x => x.EndedTime, endTime)
             .Set(x => x.Result, result);
             
-        var returnResult = await _activities.UpdateOneAsync(x => x.ActivityId == activityId, update);
+        var returnResult = await _activities.UpdateOneAsync(x => x.ActivityId == sanitizedActivityId, update);
         return returnResult.ModifiedCount > 0;
     }
 
@@ -100,9 +117,13 @@ public class ActivityRepository : IActivityRepository
 
     public async Task<List<Activity>> SearchAsync(string searchTerm)
     {
+        // Sanitize and validate search term --ok--
+        var sanitizedSearchTerm = InputSanitizationUtils.SanitizeSearchTerm(searchTerm);
+        InputValidationUtils.ValidateSearchTerm(sanitizedSearchTerm, nameof(searchTerm));
+
         var filter = Builders<Activity>.Filter.Or(
-            Builders<Activity>.Filter.Regex(x => x.ActivityName, new BsonRegularExpression(searchTerm, "i")),
-            Builders<Activity>.Filter.Regex(x => x.WorkflowType, new BsonRegularExpression(searchTerm, "i"))
+            Builders<Activity>.Filter.Regex(x => x.ActivityName, new BsonRegularExpression(sanitizedSearchTerm, "i")),
+            Builders<Activity>.Filter.Regex(x => x.WorkflowType, new BsonRegularExpression(sanitizedSearchTerm, "i"))
         );
 
         return await _activities.Find(filter)

@@ -1,7 +1,7 @@
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
-using XiansAi.Server.Shared.Data;
+using Shared.Utils;
 
 namespace Features.AgentApi.Repositories;
 
@@ -36,7 +36,11 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
 
     public async Task<bool> UpdateAsync(string id, FlowDefinition definition)
     {
-        var result = await _definitions.ReplaceOneAsync(x => x.Id == id, definition);
+        InputValidationUtils.ValidateObjectId(id, nameof(id));
+        var sanitizedDefinition = InputSanitizationUtils.SanitizeFlowDefinition(definition)!;
+
+        sanitizedDefinition.UpdatedAt = DateTime.UtcNow;
+        var result = await _definitions.ReplaceOneAsync(x => x.Id == id, sanitizedDefinition);
         return result.ModifiedCount > 0;
     }
 

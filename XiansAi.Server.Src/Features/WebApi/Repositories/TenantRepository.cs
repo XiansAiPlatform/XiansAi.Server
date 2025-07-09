@@ -4,6 +4,7 @@ using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace XiansAi.Server.Features.WebApi.Repositories;
 
@@ -69,8 +70,20 @@ public class TenantRepository : ITenantRepository
 
     public async Task<bool> UpdateAsync(string id, Tenant tenant)
     {
-        tenant.UpdatedAt = DateTime.UtcNow;
-        var result = await _collection.ReplaceOneAsync(t => t.Id == id, tenant);
+        // Sanitize and validate inputs
+        var sanitizedId = InputSanitizationUtils.SanitizeObjectId(id);
+        InputValidationUtils.ValidateObjectId(sanitizedId, nameof(id));
+
+        var sanitizedTenant = InputSanitizationUtils.SanitizeTenant(tenant);
+        InputValidationUtils.ValidateTenant(sanitizedTenant);
+
+        if (sanitizedTenant == null)
+        {
+            throw new ArgumentException("Tenant cannot be null after sanitization");
+        }
+
+        sanitizedTenant.UpdatedAt = DateTime.UtcNow;
+        var result = await _collection.ReplaceOneAsync(t => t.Id == sanitizedId, sanitizedTenant);
         return result.ModifiedCount > 0;
     }
 
@@ -83,10 +96,14 @@ public class TenantRepository : ITenantRepository
     // Advanced Query Methods
     public async Task<List<Tenant>> SearchAsync(string searchTerm)
     {
+        // Sanitize and validate search term
+        var sanitizedSearchTerm = InputSanitizationUtils.SanitizeTenantSearchTerm(searchTerm);
+        InputValidationUtils.ValidateTenantSearchTerm(sanitizedSearchTerm, nameof(searchTerm));
+
         var filter = Builders<Tenant>.Filter.Or(
-            Builders<Tenant>.Filter.Regex(x => x.Name, new BsonRegularExpression(searchTerm, "i")),
-            Builders<Tenant>.Filter.Regex(x => x.Domain, new BsonRegularExpression(searchTerm, "i")),
-            Builders<Tenant>.Filter.Regex(x => x.Description, new BsonRegularExpression(searchTerm, "i"))
+            Builders<Tenant>.Filter.Regex(x => x.Name, new BsonRegularExpression(sanitizedSearchTerm, "i")),
+            Builders<Tenant>.Filter.Regex(x => x.Domain, new BsonRegularExpression(sanitizedSearchTerm, "i")),
+            Builders<Tenant>.Filter.Regex(x => x.Description, new BsonRegularExpression(sanitizedSearchTerm, "i"))
         );
         return await _collection.Find(filter).ToListAsync();
     }
@@ -109,9 +126,21 @@ public class TenantRepository : ITenantRepository
 
     public async Task<bool> UpdateAgentAsync(string tenantId, string agentName, Agent updatedAgent)
     {
+        // Sanitize and validate inputs
+        var sanitizedTenantId = InputSanitizationUtils.SanitizeObjectId(tenantId);
+        InputValidationUtils.ValidateObjectId(sanitizedTenantId, nameof(tenantId));
+
+        var sanitizedAgentName = InputSanitizationUtils.SanitizeString(agentName);
+        InputValidationUtils.ValidateAgentName(sanitizedAgentName, nameof(agentName));
+
+        if (updatedAgent == null)
+        {
+            throw new ArgumentException("UpdatedAgent cannot be null", nameof(updatedAgent));
+        }
+
         var filter = Builders<Tenant>.Filter.And(
-            Builders<Tenant>.Filter.Eq(t => t.Id, tenantId),
-            Builders<Tenant>.Filter.ElemMatch(t => t.Agents, a => a.Name == agentName)
+            Builders<Tenant>.Filter.Eq(t => t.Id, sanitizedTenantId),
+            Builders<Tenant>.Filter.ElemMatch(t => t.Agents, a => a.Name == sanitizedAgentName)
         );
         
         var update = Builders<Tenant>.Update
