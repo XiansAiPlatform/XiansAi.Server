@@ -280,16 +280,29 @@ public class UserTenantService : IUserTenantService
                 return ServiceResult<bool>.NotFound("User not found");
             if (user.TenantRoles.Any(tr => tr.Tenant == tenantId))
             {
-                _logger.LogWarning("User {UserId} already approved for tenant {TenantId}", userId, tenantId);
-                return ServiceResult<bool>.Conflict("User already approved for this tenant");
+                if (user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId)?.IsApproved == true)
+                {
+                    _logger.LogWarning("User {UserId} already approved for tenant {TenantId}", userId, tenantId);
+                    return ServiceResult<bool>.Conflict("User already approved for this tenant");
+                }
+
+                if (user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId) is TenantRole tenantRole)
+                {
+                    tenantRole.IsApproved = true;
+                    tenantRole.Roles = tenantRole.Roles.Count > 0 ? tenantRole.Roles : new List<string> { SystemRoles.TenantUser };
+                }
             }
-            var tenantEntry = new TenantRole
+            else
             {
-                Tenant = tenantId,
-                Roles = new List<string> { SystemRoles.TenantUser }, // Default role on approval
-                IsApproved = true
-            };
-            user.TenantRoles.Add(tenantEntry);
+                var tenantEntry = new TenantRole
+                {
+                    Tenant = tenantId,
+                    Roles = new List<string> { SystemRoles.TenantUser }, // Default role on approval
+                    IsApproved = true
+                };
+                user.TenantRoles.Add(tenantEntry);
+            }
+                
             var result = await _userRepository.UpdateAsync(userId, user);
             return result
                 ? ServiceResult<bool>.Success(true)

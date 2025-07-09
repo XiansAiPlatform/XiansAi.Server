@@ -37,7 +37,7 @@ public class InviteUserDto
 public class InviteDto
 {
     [JsonPropertyName("email")]
-    public required string Email { get; set; }
+    public string? Email { get; set; }
     [JsonPropertyName("token")]
     public required string Token { get; set; }
 }
@@ -51,6 +51,7 @@ public interface IUserManagementService
     Task<ServiceResult<bool>> CreateNewUser(UserDto user);
     Task<ServiceResult<bool>> CreateUserIfNotExist(string userId, string token);
     Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite);
+    Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync();
     Task<ServiceResult<InviteDto?>> GetInviteByUserEmailAsync(string token);
     Task<ServiceResult<bool>> AcceptInvitationAsync(string invitationToken);
 }
@@ -264,6 +265,16 @@ public class UserManagementService : IUserManagementService
             _logger.LogError(ex, "Error inviting user {Email}", invite.Email);
             return ServiceResult<string>.InternalServerError("An error occurred while inviting the user");
         }
+    }
+
+    public async Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync()
+    {
+        var invitations = await _invitationRepository.GetAllAsync();
+        var returnData = invitations.Select(x =>
+        {
+            return new InviteDto { Email = x.Email, Token = x.Token };
+        }).ToList();
+        return ServiceResult<List<InviteDto>>.Success(returnData);
     }
 
     public async Task<ServiceResult<InviteDto?>> GetInviteByUserEmailAsync(string token)

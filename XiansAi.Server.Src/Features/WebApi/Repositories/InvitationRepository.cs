@@ -1,3 +1,4 @@
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 using XiansAi.Server.Features.WebApi.Models;
@@ -6,6 +7,7 @@ namespace XiansAi.Server.Features.WebApi.Repositories;
 
 public interface IInvitationRepository
 {
+    Task<List<Invitation>> GetAllAsync();
     Task<Invitation?> GetByTokenAsync(string token);
     Task<Invitation?> GetByEmailAsync(string email);
     Task<bool> CreateAsync(Invitation invitation);
@@ -21,6 +23,11 @@ public class InvitationRepository : IInvitationRepository
     {
         var database = db.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Invitation>("user_invitations");
+    }
+
+    public async Task<List<Invitation>> GetAllAsync()
+    {
+        return await _collection.Find(_ => true).ToListAsync();
     }
 
     public async Task<Invitation?> GetByTokenAsync(string token)

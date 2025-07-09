@@ -101,7 +101,7 @@ public static class UserManagementEndpoints
             return operation;
         });
 
-        group.MapGet("/invitation", async (
+        group.MapGet("/currentUserInvitation", async (
             [FromServices] IUserManagementService userManagementService,
             HttpContext httpContext) =>
         {
@@ -111,18 +111,34 @@ public static class UserManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .WithName("GetInvitationByEmail")
+        .WithName("GetCurrentUserInvitation")
         .WithOpenApi(operation => {
-            operation.Summary = "Get invitation by email";
-            operation.Description = "Retrieves an invitation by the user's email address.";
+            operation.Summary = "Get invitation of current user";
+            operation.Description = "Retrieves an invitation by the current user's email address.";
             return operation;
         });
 
-        group.MapPost("/accept-invitation/{token}", async (
-           string token,
+        group.MapGet("/invitations", async (
             [FromServices] IUserManagementService userManagementService) =>
         {
-            var result = await userManagementService.AcceptInvitationAsync(token);
+            var result = await userManagementService.GetAllInvitationsAsync();
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("GetInvitations")
+        .RequiresValidSysAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Get all invitation";
+            operation.Description = "Retrieves all invitations";
+            return operation;
+        });
+
+        group.MapPost("/accept-invitation", async (
+           [FromBody]InviteDto dto,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.AcceptInvitationAsync(dto.Token);
             return result.IsSuccess
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
