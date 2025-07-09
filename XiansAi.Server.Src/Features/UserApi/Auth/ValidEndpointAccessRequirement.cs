@@ -2,7 +2,7 @@
 
 namespace Features.UserApi.Auth
 {
-    public class ValidWebhookAccessRequirement : IAuthorizationRequirement
+    public class ValidEndpointAccessRequirement : IAuthorizationRequirement
     {
     }
 }
