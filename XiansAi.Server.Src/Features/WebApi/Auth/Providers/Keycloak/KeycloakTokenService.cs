@@ -286,38 +286,6 @@ public class KeycloakTokenService : ITokenService
 
     public async Task<string> GetManagementApiToken()
     {
-        try
-        {
-            if (_keycloakConfig == null || _keycloakConfig.ManagementApi == null)
-                throw new InvalidOperationException("Keycloak configuration is not initialized");
-
-            var tokenUrl = $"{_keycloakConfig.AuthServerUrl}/realms/{_keycloakConfig.Realm}/protocol/openid-connect/token";
-            _client = new RestClient(tokenUrl);
-
-            var request = new RestRequest("", Method.Post);
-            request.AddHeader("Content-Type", "application/x-www-form-urlencoded");
-
-            request.AddParameter("grant_type", "client_credentials");
-            request.AddParameter("client_id", _keycloakConfig.ManagementApi.ClientId ??
-                throw new ArgumentException("Management API client ID is missing"));
-            request.AddParameter("client_secret", _keycloakConfig.ManagementApi.ClientSecret ??
-                throw new ArgumentException("Management API client secret is missing"));
-
-            var response = await _client.ExecuteAsync(request);
-
-            if (!response.IsSuccessful)
-            {
-                _logger.LogError("Failed to get Keycloak admin token: {ErrorMessage}", response.ErrorMessage);
-                throw new Exception($"Failed to get Keycloak admin token: {response.ErrorMessage}");
-            }
-
-            var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response.Content!);
-            return tokenResponse?.AccessToken ?? throw new Exception("No access token in response");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get Keycloak admin token");
-            throw;
-        }
+        throw new NotImplementedException("GetManagementApiToken is not implemented for Keycloak. Use Keycloak's management API directly.");
     }
 }
