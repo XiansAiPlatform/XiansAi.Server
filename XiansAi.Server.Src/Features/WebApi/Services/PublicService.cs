@@ -330,11 +330,9 @@ The Xians.ai Team";
             throw new ArgumentException("User ID not found in token", nameof(token));
         }
 
-        var user = await _authMgtConnect.GetUserInfo(userId);
-
         var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
-        var name = user.Nickname ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
+        var name =jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
         var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
         var tenantId = jsonToken.Claims.FirstOrDefault(c => c.Type == authProviderConfig.TenantClaimType)?.Value ?? GenerateTenantId(email);
 

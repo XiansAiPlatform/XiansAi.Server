@@ -99,6 +99,12 @@ public class KeycloakProvider : IAuthProvider
 
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
+                            //handle role for default tenant
+                            if(tenantId == Constants.DefaultTenantId)
+                            {
+                                roles.Add(SystemRoles.TenantUser);
+                            }
+
                             foreach (var role in roles)
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
