@@ -102,6 +102,10 @@ public class KeycloakProvider : IAuthProvider
                             //handle role for default tenant
                             if(tenantId == Constants.DefaultTenantId)
                             {
+                                if(roles == null)
+                                {
+                                    roles = new List<string>();
+                                }
                                 roles.Add(SystemRoles.TenantUser);
                             }
 
