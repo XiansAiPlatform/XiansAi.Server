@@ -50,7 +50,6 @@ public interface IUserManagementService
     Task<ServiceResult<bool>> IsUserLockedOutAsync(string userId);
     Task<ServiceResult<User>> GetUserAsync(string userId);
     Task<ServiceResult<bool>> CreateNewUser(UserDto user);
-    Task<ServiceResult<bool>> CreateUserIfNotExist(string userId, string token);
     Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite);
     Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync();
     Task<ServiceResult<InviteDto?>> GetInviteByUserEmailAsync(string token);
@@ -234,35 +233,6 @@ public class UserManagementService : IUserManagementService
         }
     }
 
-    public async Task<ServiceResult<bool>> CreateUserIfNotExist(string userId, string token)
-    {
-        try
-        {
-            var existingUser = await _userRepository.GetByUserIdAsync(userId);
-            if (existingUser != null)
-            {
-                return ServiceResult<bool>.Success(true);
-            }
-
-            var userDto = await generateUserFromToken(token);
-            var user = await CreateNewUser(userDto);
-
-            if (!user.IsSuccess)
-            {
-                return ServiceResult<bool>.InternalServerError("Failed to create user from token");
-            }
-            _logger.LogInformation("User created from token: {UserId}", userId);
-
-            return ServiceResult<bool>.Success(true);
-
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating or retrieving user {UserId}", userId);
-            return ServiceResult<bool>.InternalServerError("An error occurred while creating or retrieving the user");
-        }
-    }
-
     public async Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite)
     {
         try
@@ -394,11 +364,9 @@ public class UserManagementService : IUserManagementService
             throw new ArgumentException("User ID not found in token", nameof(token));
         }
 
-        var user = await _authMgtConnect.GetUserInfo(userId);
-
         var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
-        var name = user.Nickname ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
+        var name = jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
         var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
 
         return new UserDto

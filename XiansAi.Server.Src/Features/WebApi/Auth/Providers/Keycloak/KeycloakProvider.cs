@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using XiansAi.Server.Features.WebApi.Services;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace Features.WebApi.Auth.Providers.Keycloak;
 
@@ -40,12 +41,19 @@ public class KeycloakProvider : IAuthProvider
         options.Authority = authorityUri.ToString();
 
         options.RequireHttpsMetadata = false; // Set to true in production
-        options.TokenValidationParameters.NameClaimType = "preferred_username";
         options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
 
         // Configure audience validation for Keycloak
         // Keycloak typically uses 'account' as the audience for standard tokens
         options.TokenValidationParameters.ValidAudiences = new[] { "account" };
+        
+        // Map claims properly for Keycloak
+        options.MapInboundClaims = false; // Prevent automatic claim type mapping
+        
+        // Set up claim type mapping for proper user identification
+        JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear(); // Clear default mappings
+        JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Add("sub", ClaimTypes.NameIdentifier);
+        JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Add("preferred_username", ClaimTypes.Name);
 
         // Add JWT Bearer events to debug and properly authenticate the user
         options.Events = new JwtBearerEvents
@@ -86,6 +94,27 @@ public class KeycloakProvider : IAuthProvider
 
                     // Get user roles from database or token claims (matching Auth0 behavior)
                     var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    
+                    // If NameIdentifier is not found, try the same extraction logic as KeycloakTokenService
+                    if (string.IsNullOrEmpty(userId))
+                    {
+                        // First try 'sub' claim (standard JWT user ID)
+                        userId = identity.FindFirst("sub")?.Value;
+                        
+                        // Fallback to 'preferred_username' for Keycloak tokens
+                        if (string.IsNullOrEmpty(userId))
+                        {
+                            userId = identity.FindFirst("preferred_username")?.Value;
+                        }
+                        
+                        if (!string.IsNullOrEmpty(userId))
+                        {
+                            _logger.LogInformation("Extracted user ID for role assignment: {UserId}", userId);
+                            // Add the NameIdentifier claim so other parts of the system can find it
+                            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, userId));
+                        }
+                    }
+                    
                     var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
                     if (!string.IsNullOrEmpty(userId))
@@ -99,6 +128,16 @@ public class KeycloakProvider : IAuthProvider
 
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
+                            //handle role for default tenant
+                            if(tenantId == Constants.DefaultTenantId)
+                            {
+                                if(roles == null)
+                                {
+                                    roles = new List<string>();
+                                }
+                                roles.Add(SystemRoles.TenantUser);
+                            }
+
                             foreach (var role in roles)
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
@@ -106,6 +145,12 @@ public class KeycloakProvider : IAuthProvider
 
                             _logger.LogInformation("Added {RoleCount} roles to Keycloak user {UserId}: {Roles}",
                                 roles.Count(), userId, string.Join(", ", roles));
+                        }
+                        else
+                        {
+                            // No tenant ID header provided - assign default TenantUser role to allow basic access
+                            _logger.LogInformation("No X-Tenant-Id header found, assigning default TenantUser role to user {UserId}", userId);
+                            identity.AddClaim(new Claim(ClaimTypes.Role, SystemRoles.TenantUser));
                         }
                     }
 
