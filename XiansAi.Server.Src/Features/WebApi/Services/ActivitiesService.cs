@@ -24,6 +24,8 @@ public class ActivitiesService : IActivitiesService
     {
         try
         {
+            activityId = Activity.SanitizeAndValidateWorkflowId(activityId);
+            workflowId = FlowDefinition.SanitizeAndValidateWorkflowId(workflowId);
             if (string.IsNullOrWhiteSpace(workflowId))
             {
                 _logger.LogWarning("Invalid workflow ID provided for getting activity");
