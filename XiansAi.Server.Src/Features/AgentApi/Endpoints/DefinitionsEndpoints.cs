@@ -31,5 +31,19 @@ public static class DefinitionsEndpoints
             operation.Description = "Creates a new flow definition in the system";
             return operation;
         });
+
+        definitionsGroup.MapGet("/check", async (
+            [FromQuery] string workflowType,
+            [FromQuery] string hash,
+            [FromServices] IDefinitionsService endpoint) =>
+        {
+            return await endpoint.CheckHash(workflowType, hash);
+        })
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Check if flow definition hash already exists";
+            operation.Description = "Checks if a flow definition with the same workflow type and hash already exists to prevent unnecessary uploads.";
+            return operation;
+        });
     }
 } 
