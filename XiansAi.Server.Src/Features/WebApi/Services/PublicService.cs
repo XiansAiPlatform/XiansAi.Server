@@ -1,5 +1,4 @@
 using Features.WebApi.Auth;
-using Features.WebApi.Auth.Providers;
 using Features.WebApi.Models;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Identity.Client;
@@ -11,6 +10,7 @@ using System.Configuration;
 using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 using XiansAi.Server.Features.WebApi.Services;
+using Shared.Providers.Auth;
 using XiansAi.Server.Utils;
 
 namespace Features.WebApi.Services;

@@ -1,12 +1,10 @@
-using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.Json;
-using XiansAi.Server.Features.WebApi.Services;
+using XiansAi.Server.Shared.Services;
 
-namespace Features.WebApi.Auth.Providers.Auth0;
+namespace Shared.Providers.Auth.Auth0;
 
 public class Auth0Provider : IAuthProvider
 {
@@ -20,11 +18,11 @@ public class Auth0Provider : IAuthProvider
         _logger = logger;
         _client = new RestClient();
         _tokenService = tokenService;
-        
+
         // Initialize Auth0 configuration in constructor to ensure it's always available
-        _auth0Config = configuration.GetSection("Auth0").Get<Auth0Config>() ?? 
+        _auth0Config = configuration.GetSection("Auth0").Get<Auth0Config>() ??
             throw new ArgumentException("Auth0 configuration is missing");
-            
+
         if (string.IsNullOrEmpty(_auth0Config.Domain))
             throw new ArgumentException("Auth0 domain is missing");
     }
@@ -33,8 +31,8 @@ public class Auth0Provider : IAuthProvider
     {
         // Configuration is already initialized in constructor
         options.RequireHttpsMetadata = false;
-        options.Authority = _auth0Config.Domain!.StartsWith("https://") 
-            ? _auth0Config.Domain 
+        options.Authority = _auth0Config.Domain!.StartsWith("https://")
+            ? _auth0Config.Domain
             : $"https://{_auth0Config.Domain}/";
         options.Audience = _auth0Config.Audience;
         options.Events = new JwtBearerEvents
@@ -80,7 +78,7 @@ public class Auth0Provider : IAuthProvider
         try
         {
             // Extract domain name from URL if it's a full URL
-            var domainName = _auth0Config.Domain!.StartsWith("https://") == true 
+            var domainName = _auth0Config.Domain!.StartsWith("https://") == true
                 ? _auth0Config.Domain.Replace("https://", "").TrimEnd('/')
                 : _auth0Config.Domain;
 
@@ -91,7 +89,7 @@ public class Auth0Provider : IAuthProvider
             var response = await _client.ExecuteAsync(request);
             EnsureSuccessfulResponse(response, "get user info");
 
-            return JsonSerializer.Deserialize<UserInfo>(response.Content!) ?? 
+            return JsonSerializer.Deserialize<UserInfo>(response.Content!) ??
                 throw new Exception("Failed to deserialize user info");
         }
         catch (Exception ex)
@@ -114,7 +112,7 @@ public class Auth0Provider : IAuthProvider
             }
 
             // Extract domain name from URL if it's a full URL
-            var domainName = _auth0Config.Domain!.StartsWith("https://") == true 
+            var domainName = _auth0Config.Domain!.StartsWith("https://") == true
                 ? _auth0Config.Domain.Replace("https://", "").TrimEnd('/')
                 : _auth0Config.Domain;
 
@@ -166,4 +164,4 @@ public class Auth0Provider : IAuthProvider
             throw new Exception($"Failed to {operation}: {response.ErrorMessage}");
         }
     }
-} 
+}

@@ -1,9 +1,10 @@
-﻿using Features.WebApi.Auth.Providers;
-using Shared.Auth;
+﻿using Shared.Auth;
 using Shared.Utils.Services;
 using System.Text.Json.Serialization;
 using XiansAi.Server.Features.WebApi.Models;
-using XiansAi.Server.Features.WebApi.Repositories;
+using Shared.Providers.Auth;
+using XiansAi.Server.Shared.Services;
+using XiansAi.Server.Shared.Repositories;
 
 namespace XiansAi.Server.Features.WebApi.Services
 {

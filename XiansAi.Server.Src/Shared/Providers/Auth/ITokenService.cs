@@ -1,6 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 
-namespace Features.WebApi.Auth.Providers.Tokens;
+namespace Shared.Providers.Auth;
 
 /// <summary>
 /// Interface for provider-specific token operations
@@ -11,19 +11,19 @@ public interface ITokenService
     /// Extract user ID from a token
     /// </summary>
     string? ExtractUserId(JwtSecurityToken token);
-    
+
     /// <summary>
     /// Extract tenant IDs from a token
     /// </summary>
     IEnumerable<string> ExtractTenantIds(JwtSecurityToken token);
-    
+
     /// <summary>
     /// Validate and process a JWT token
     /// </summary>
     Task<(bool success, string? userId)> ProcessToken(string token);
-    
+
     /// <summary>
     /// Get an access token for the management API
     /// </summary>
     Task<string> GetManagementApiToken();
-} 
+}

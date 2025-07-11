@@ -1,6 +1,8 @@
-using Features.WebApi.Auth.Providers.Keycloak;
+using Shared.Providers.Auth.Auth0;
+using Shared.Providers.Auth.AzureB2C;
+using Shared.Providers.Auth.Keycloak;
 
-namespace Features.WebApi.Auth.Providers.Tokens;
+namespace Shared.Providers.Auth;
 
 public interface ITokenServiceFactory
 {
@@ -11,18 +13,18 @@ public class TokenServiceFactory : ITokenServiceFactory
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;
-    
+
     public TokenServiceFactory(IServiceProvider serviceProvider, IConfiguration configuration)
     {
         _serviceProvider = serviceProvider;
         _configuration = configuration;
     }
-    
+
     public ITokenService GetTokenService()
     {
         var providerConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
-            
+
         return providerConfig.Provider switch
         {
             AuthProviderType.Auth0 => _serviceProvider.GetRequiredService<Auth0TokenService>(),
@@ -31,4 +33,4 @@ public class TokenServiceFactory : ITokenServiceFactory
             _ => throw new ArgumentException($"Unsupported authentication provider: {providerConfig.Provider}")
         };
     }
-} 
+}

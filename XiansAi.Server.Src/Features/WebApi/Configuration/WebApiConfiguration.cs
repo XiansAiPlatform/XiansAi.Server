@@ -5,6 +5,8 @@ using Features.WebApi.Services;
 using XiansAi.Server.Features.WebApi.Endpoints;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Services;
+using XiansAi.Server.Shared.Repositories;
+using XiansAi.Server.Shared.Services;
 
 namespace Features.WebApi.Configuration;
 

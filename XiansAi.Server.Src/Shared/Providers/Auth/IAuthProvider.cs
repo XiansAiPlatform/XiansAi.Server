@@ -1,7 +1,7 @@
-using Features.WebApi.Auth.Providers.Auth0;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Shared.Providers.Auth.Auth0;
 
-namespace Features.WebApi.Auth.Providers;
+namespace Shared.Providers.Auth;
 
 /// <summary>
 /// Interface for authentication providers
@@ -12,12 +12,12 @@ public interface IAuthProvider
     /// Configure the JWT bearer options for this provider
     /// </summary>
     void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration);
-    
+
     /// <summary>
     /// Validate a token and extract claims
     /// </summary>
     Task<(bool success, string? userId)> ValidateToken(string token);
-    
+
     /// <summary>
     /// Get user information from the provider
     /// </summary>

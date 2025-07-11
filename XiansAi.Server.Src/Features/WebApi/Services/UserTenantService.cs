@@ -7,6 +7,7 @@ using Shared.Utils.Services;
 using System.IdentityModel.Tokens.Jwt;
 using XiansAi.Server.Features.WebApi.Models;
 using XiansAi.Server.Features.WebApi.Repositories;
+using XiansAi.Server.Shared.Repositories;
 
 
 namespace XiansAi.Server.Features.WebApi.Services;

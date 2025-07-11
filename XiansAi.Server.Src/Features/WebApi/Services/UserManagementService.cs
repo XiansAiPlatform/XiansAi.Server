@@ -1,5 +1,4 @@
 using Features.WebApi.Auth;
-using Features.WebApi.Auth.Providers;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Services;
@@ -8,6 +7,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json.Serialization;
 using XiansAi.Server.Features.WebApi.Models;
 using XiansAi.Server.Features.WebApi.Repositories;
+using Shared.Providers.Auth;
+using XiansAi.Server.Shared.Repositories;
 
 namespace XiansAi.Server.Features.WebApi.Services;
 

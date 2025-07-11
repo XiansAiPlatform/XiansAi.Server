@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 
-namespace Features.WebApi.Auth.Providers;
+namespace Shared.Providers.Auth;
 
 /// <summary>
 /// Interface for token validation caching
@@ -11,7 +11,7 @@ public interface ITokenValidationCache
     /// Gets validation result from cache if available
     /// </summary>
     Task<(bool found, bool valid, string? userId, IEnumerable<string>? tenantIds)> GetValidation(string token);
-    
+
     /// <summary>
     /// Caches validation result for future use
     /// </summary>
@@ -31,38 +31,38 @@ public class MemoryTokenValidationCache : ITokenValidationCache
     private readonly IMemoryCache _cache;
     private readonly ILogger<MemoryTokenValidationCache> _logger;
     private readonly TimeSpan _cacheDuration;
-    
+
     public MemoryTokenValidationCache(
-        IMemoryCache cache, 
+        IMemoryCache cache,
         ILogger<MemoryTokenValidationCache> logger,
         IConfiguration configuration)
     {
         _cache = cache;
         _logger = logger;
-        
+
         // Default to 5 minutes if not configured
         _cacheDuration = TimeSpan.FromMinutes(
             configuration.GetValue<double>("Auth:TokenValidationCacheDurationMinutes", 5));
     }
-    
+
     public Task<(bool found, bool valid, string? userId, IEnumerable<string>? tenantIds)> GetValidation(string token)
     {
         var cacheKey = GetCacheKey(token);
-        
+
         if (_cache.TryGetValue<CachedValidation>(cacheKey, out var cachedResult) && cachedResult != null)
         {
             _logger.LogDebug("Token validation cache hit");
             return Task.FromResult((
-                true, 
-                cachedResult.Valid, 
-                cachedResult.UserId, 
+                true,
+                cachedResult.Valid,
+                cachedResult.UserId,
                 (IEnumerable<string>?)cachedResult.TenantIds));
         }
-        
+
         _logger.LogDebug("Token validation cache miss");
         return Task.FromResult((false, false, (string?)null, (IEnumerable<string>?)null));
     }
-    
+
     public Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds)
     {
         // SECURITY IMPROVEMENT: Only cache successful validations to prevent cache pollution
@@ -74,22 +74,22 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         }
 
         var cacheKey = GetCacheKey(token);
-        
+
         var cacheOptions = new MemoryCacheEntryOptions()
             .SetAbsoluteExpiration(_cacheDuration)
             .SetPriority(CacheItemPriority.High);
-            
+
         _cache.Set(cacheKey, new CachedValidation
         {
             Valid = valid,
             UserId = userId,
             TenantIds = tenantIds?.ToList() ?? new List<string>()
         }, cacheOptions);
-        
+
         _logger.LogDebug("Cached successful token validation result");
         return Task.CompletedTask;
     }
-    
+
     private string GetCacheKey(string token)
     {
         // Use SHA256 hash to avoid collisions and not log the full token
@@ -121,17 +121,17 @@ public class MemoryTokenValidationCache : ITokenValidationCache
 public class NoOpTokenValidationCache : ITokenValidationCache
 {
     private readonly ILogger<NoOpTokenValidationCache> _logger;
-    
+
     public NoOpTokenValidationCache(ILogger<NoOpTokenValidationCache> logger)
     {
         _logger = logger;
     }
-    
+
     public Task<(bool found, bool valid, string? userId, IEnumerable<string>? tenantIds)> GetValidation(string token)
     {
         return Task.FromResult((false, false, (string?)null, (IEnumerable<string>?)null));
     }
-    
+
     public Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds)
     {
         return Task.CompletedTask;
@@ -141,4 +141,4 @@ public class NoOpTokenValidationCache : ITokenValidationCache
     {
         return Task.CompletedTask;
     }
-} 
+}

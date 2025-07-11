@@ -2,7 +2,7 @@ using MongoDB.Driver;
 using Shared.Data;
 using XiansAi.Server.Features.WebApi.Models;
 
-namespace XiansAi.Server.Features.WebApi.Repositories;
+namespace XiansAi.Server.Shared.Repositories;
 
 public interface IUserRepository
 {

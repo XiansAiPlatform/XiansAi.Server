@@ -1,11 +1,10 @@
-using Features.WebApi.Auth.Providers;
-
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
 using Shared.Utils;
 using System.Security.Claims;
 using XiansAi.Server.Features.WebApi.Services;
+using Shared.Providers.Auth;
 
 namespace Features.WebApi.Auth;
 

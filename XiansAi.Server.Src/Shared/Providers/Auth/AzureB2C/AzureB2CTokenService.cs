@@ -1,12 +1,12 @@
 using System.IdentityModel.Tokens.Jwt;
-using Features.WebApi.Auth.Providers.AzureB2C;
 using RestSharp;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.JsonWebTokens;
 using System.Security.Cryptography;
 using Shared.Utils;
 
-namespace Features.WebApi.Auth.Providers.Tokens;
+
+namespace Shared.Providers.Auth.AzureB2C;
 
 public class AzureB2CTokenService : ITokenService
 {
@@ -23,8 +23,8 @@ public class AzureB2CTokenService : ITokenService
         _httpClient = httpClient ?? new HttpClient();
         _azureB2CConfig = configuration.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
             throw new ArgumentException("Azure B2C configuration is missing");
-        
-        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
+
+        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
         _tenantClaimType = authProviderConfig.TenantClaimType;
     }
@@ -72,7 +72,7 @@ public class AzureB2CTokenService : ITokenService
             }
 
             var userId = ExtractUserId(jsonToken);
-            
+
             if (string.IsNullOrEmpty(userId))
             {
                 _logger.LogWarning("No user identifier found in token");
@@ -106,7 +106,7 @@ public class AzureB2CTokenService : ITokenService
             // Parse JWT header to get key ID
             var handler = new JsonWebTokenHandler();
             var jsonToken = handler.ReadJsonWebToken(token);
-            
+
             if (jsonToken == null)
             {
                 return (false, "Invalid JWT token format");
@@ -155,7 +155,7 @@ public class AzureB2CTokenService : ITokenService
 
             // Validate the token
             var result = await handler.ValidateTokenAsync(token, validationParameters);
-            
+
             if (!result.IsValid)
             {
                 var errorMessage = result.Exception?.Message ?? "Token validation failed";
@@ -190,7 +190,7 @@ public class AzureB2CTokenService : ITokenService
         //var jwksUri = $"https://login.microsoftonline.com/{_azureB2CConfig.TenantId}/discovery/v2.0/keys";
         var jwksUri = _azureB2CConfig.JwksUri ?? throw new InvalidOperationException("JWKS URI is not configured");
         var cacheKey = jwksUri;
-        
+
         await _jwksCacheLock.WaitAsync();
         try
         {
@@ -207,7 +207,7 @@ public class AzureB2CTokenService : ITokenService
             if (!response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Failed to fetch JWKS from {JwksUrl}. Status: {StatusCode}, Response: {ResponseContent}", 
+                _logger.LogError("Failed to fetch JWKS from {JwksUrl}. Status: {StatusCode}, Response: {ResponseContent}",
                     jwksUri, response.StatusCode, responseContent);
                 return null;
             }
@@ -237,4 +237,4 @@ public class AzureB2CTokenService : ITokenService
         await Task.CompletedTask;
         throw new NotImplementedException();
     }
-} 
+}

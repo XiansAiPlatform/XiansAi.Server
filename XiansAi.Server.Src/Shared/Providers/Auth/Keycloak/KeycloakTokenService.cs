@@ -1,6 +1,3 @@
-using Auth0.ManagementApi.Models;
-using Features.WebApi.Auth.Providers.Auth0;
-using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using RestSharp;
@@ -9,7 +6,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace Features.WebApi.Auth.Providers.Keycloak;
+namespace Shared.Providers.Auth.Keycloak;
 
 public class KeycloakTokenService : ITokenService
 {
@@ -39,7 +36,7 @@ public class KeycloakTokenService : ITokenService
             _logger.LogDebug("Found user ID in 'sub' claim: {UserId}", userId);
             return userId;
         }
-        
+
         // Fallback to preferred_username for Keycloak tokens missing 'sub' claim
         userId = token.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
         if (!string.IsNullOrEmpty(userId))
@@ -47,7 +44,7 @@ public class KeycloakTokenService : ITokenService
             _logger.LogInformation("Using 'preferred_username' as user ID: {UserId}", userId);
             return userId;
         }
-        
+
         // Try other common alternative claim names
         var alternativeClaimTypes = new[] { "user_id", "uid", "id", "email", "username" };
         foreach (var claimType in alternativeClaimTypes)
@@ -59,7 +56,7 @@ public class KeycloakTokenService : ITokenService
                 return userId;
             }
         }
-        
+
         _logger.LogWarning("No user identifier found in any known claim types");
         return null;
     }
@@ -169,7 +166,7 @@ public class KeycloakTokenService : ITokenService
             // Parse JWT header to get key ID
             var handler = new JsonWebTokenHandler();
             var jsonToken = handler.ReadJsonWebToken(token);
-            
+
             if (jsonToken == null)
             {
                 return (false, "Invalid JWT token format");
@@ -216,7 +213,7 @@ public class KeycloakTokenService : ITokenService
 
             // Validate the token
             var result = await handler.ValidateTokenAsync(token, validationParameters);
-            
+
             if (!result.IsValid)
             {
                 var errorMessage = result.Exception?.Message ?? "Token validation failed";
@@ -239,7 +236,7 @@ public class KeycloakTokenService : ITokenService
         var baseUri = new Uri(_keycloakConfig?.AuthServerUrl!);
         var realmUri = new Uri(baseUri, $"realms/{_keycloakConfig?.Realm}");
         var cacheKey = realmUri.ToString();
-        
+
         await _jwksCacheLock.WaitAsync();
         try
         {
@@ -259,7 +256,7 @@ public class KeycloakTokenService : ITokenService
             if (!response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Failed to fetch JWKS from {JwksUrl}. Status: {StatusCode}, Response: {ResponseContent}", 
+                _logger.LogError("Failed to fetch JWKS from {JwksUrl}. Status: {StatusCode}, Response: {ResponseContent}",
                     jwksUrl, response.StatusCode, responseContent);
                 return null;
             }

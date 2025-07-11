@@ -1,9 +1,8 @@
-using Features.WebApi.Auth.Providers;
-using Features.WebApi.Auth.Providers.Auth0;
-using Features.WebApi.Auth.Providers.AzureB2C;
-using Features.WebApi.Auth.Providers.Keycloak;
-using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authorization;
+using Shared.Providers.Auth;
+using Shared.Providers.Auth.Auth0;
+using Shared.Providers.Auth.AzureB2C;
+using Shared.Providers.Auth.Keycloak;
 
 namespace Features.WebApi.Auth;
 

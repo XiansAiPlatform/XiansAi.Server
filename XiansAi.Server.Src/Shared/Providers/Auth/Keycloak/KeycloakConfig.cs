@@ -1,6 +1,4 @@
-using Features.WebApi.Auth.Providers.Auth0;
-
-namespace Features.WebApi.Auth.Providers.Keycloak;
+namespace Shared.Providers.Auth.Keycloak;
 
 public class KeycloakConfig
 {
