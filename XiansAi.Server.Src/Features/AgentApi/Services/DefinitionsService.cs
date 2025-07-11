@@ -63,6 +63,7 @@ public class ParameterDefinitionRequest
 public interface IDefinitionsService
 {
     Task<IResult> CreateAsync(FlowDefinitionRequest request);
+    Task<IResult> CheckHash(string workflowType, string hash);
 }
 
 public class DefinitionsService : IDefinitionsService
@@ -145,6 +146,20 @@ public class DefinitionsService : IDefinitionsService
         return Results.Ok("New definition created successfully");
     }
 
+    public async Task<IResult> CheckHash(string workflowType, string hash)
+    {
+        var existingDefinition = await _flowDefinitionRepository.GetByWorkflowTypeAsync(workflowType);
+        if (existingDefinition == null)
+            return Results.NotFound("No existing definition");
+
+        if (existingDefinition.Hash == hash){
+            return Results.Ok("Hash matches existing definition");
+        }
+
+        return Results.NotFound("Hash does not match");
+    }
+
+
     private async Task GenerateMarkdown(FlowDefinition definition)
     {
         if (string.IsNullOrEmpty(definition.Source))
@@ -158,7 +173,7 @@ public class DefinitionsService : IDefinitionsService
     private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null)
     {
         var userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found. Check the certificate.");
-        
+
         return new FlowDefinition
         {
             Id = existingDefinition?.Id ?? ObjectId.GenerateNewId().ToString(),
