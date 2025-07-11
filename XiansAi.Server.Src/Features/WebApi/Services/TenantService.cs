@@ -76,6 +76,7 @@ public class TenantService : ITenantService
 
     private string? EnsureTenantAccessOrThrow(string tenantId)
     {
+        tenantId=Tenant.SanitizeAndValidateId(tenantId);
         // If system admin, return null (indicating unrestricted access)
         if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
@@ -98,6 +99,7 @@ public class TenantService : ITenantService
     {
         try
         {
+            id=Tenant.SanitizeAndValidateId(id);
             var tenant = await _tenantRepository.GetByTenantIdAsync(id);
             if (tenant == null)
             {
@@ -118,6 +120,7 @@ public class TenantService : ITenantService
     {
         try
         {
+            domain=Tenant.SanitizeAndValidateDomain(domain);
             var tenant = await _tenantRepository.GetByDomainAsync(domain);
             if (tenant == null)
             {
@@ -138,6 +141,7 @@ public class TenantService : ITenantService
     {
         try
         {
+            tenantId=Tenant.SanitizeAndValidateId(tenantId);
             var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
             if (tenant == null)
             {
@@ -188,6 +192,7 @@ public class TenantService : ITenantService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
+            tenant.ValidateAndSanitize();
 
             await _tenantRepository.CreateAsync(tenant);
             _logger.LogInformation("Created new tenant with ID {Id}", tenant.Id);
@@ -216,7 +221,7 @@ public class TenantService : ITenantService
         try
         {
             EnsureTenantAccessOrThrow(id);
-
+            id=Tenant.SanitizeAndValidateId(id);
             var existingTenant = await _tenantRepository.GetByIdAsync(id);
             if (existingTenant == null)
             {
@@ -247,6 +252,7 @@ public class TenantService : ITenantService
                 existingTenant.Timezone = request.Timezone;
             
             existingTenant.UpdatedAt = DateTime.UtcNow;
+            existingTenant.ValidateAndSanitize();
             
             var success = await _tenantRepository.UpdateAsync(id, existingTenant);
             if (success)
@@ -271,6 +277,7 @@ public class TenantService : ITenantService
     {
         try
         {
+            id = Tenant.SanitizeAndValidateId(id);
             var success = await _tenantRepository.DeleteAsync(id);
             if (success)
             {
@@ -320,6 +327,10 @@ public class TenantService : ITenantService
     {
         try
         {
+            tenantId = Tenant.SanitizeAndValidateId(tenantId);
+            agentName = Agent.SanitizeAndValidateName(agentName);
+            agent.ValidateAndSanitize();
+
             var success = await _tenantRepository.UpdateAgentAsync(tenantId, agentName, agent);
             if (success)
             {
@@ -343,6 +354,8 @@ public class TenantService : ITenantService
     {
         try
         {
+            agentName = Agent.SanitizeAndValidateName(agentName);
+            tenantId = Tenant.SanitizeAndValidateId(tenantId);
             var success = await _tenantRepository.RemoveAgentAsync(tenantId, agentName);
             if (success)
             {
@@ -366,6 +379,9 @@ public class TenantService : ITenantService
     {
         try
         {
+            tenantId = Tenant.SanitizeAndValidateId(tenantId);
+            agentName = Agent.SanitizeAndValidateName(agentName);
+            flow.ValidateAndSanitize();
             flow.CreatedAt = DateTime.UtcNow;
             flow.UpdatedAt = DateTime.UtcNow;
             flow.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
@@ -384,7 +400,7 @@ public class TenantService : ITenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding flow {FlowName} to agent {AgentName} in tenant {TenantId}", flow.Name, agentName, tenantId);
+            _logger.LogError(ex, "Error adding flow {FlowName} to agent {AgentName} in tenant {TenantId}", flow?.Name, agentName, tenantId);
             return ServiceResult<bool>.InternalServerError("An error occurred while adding the flow.");
         }
     }
