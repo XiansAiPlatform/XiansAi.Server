@@ -1,6 +1,5 @@
-using Auth0.ManagementApi.Models;
 using Features.WebApi.Auth.Providers;
-using Features.WebApi.Models;
+
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;

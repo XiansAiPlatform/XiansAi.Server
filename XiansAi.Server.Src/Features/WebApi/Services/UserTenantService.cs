@@ -429,8 +429,14 @@ public class UserTenantService : IUserTenantService
         };
         var createdUser = await _userManagementService.CreateNewUser(newUser);
 
+        if (!createdUser.IsSuccess && createdUser.StatusCode == StatusCode.Conflict)
+        {
+            _logger.LogInformation("User {UserId} already exists, returning existing user", userId);
+            return new UserDto { UserId = userId, Email = email, Name = name };
+        }
+
         return createdUser.IsSuccess
             ? newUser
-            : throw new Exception($"Failed to create user {userId} from token");
+            : throw new Exception($"Failed to create user {userId} from token: {createdUser.ErrorMessage}");
     }
 }

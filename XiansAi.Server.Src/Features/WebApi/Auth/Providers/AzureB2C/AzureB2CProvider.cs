@@ -5,6 +5,8 @@ using RestSharp;
 using System.Security.Claims;
 using System.Text.Json;
 using XiansAi.Server.Features.WebApi.Services;
+using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.WebApi.Auth.Providers.AzureB2C;
 
@@ -57,6 +59,26 @@ public class AzureB2CProvider : IAuthProvider
                 {
                     // Get user roles from database or token claims
                     var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    
+                    // If NameIdentifier is not found, try the same extraction logic as AzureB2CTokenService
+                    if (string.IsNullOrEmpty(userId))
+                    {
+                        // First try 'oid' claim (Azure B2C object ID)
+                        userId = identity.FindFirst("oid")?.Value;
+                        
+                        // Fallback to 'sub' claim (standard JWT user ID) - Azure Entra ID uses this
+                        if (string.IsNullOrEmpty(userId))
+                        {
+                            userId = identity.FindFirst("sub")?.Value;
+                        }
+                        
+                        if (!string.IsNullOrEmpty(userId))
+                        {
+                            // Add the NameIdentifier claim so other parts of the system can find it
+                            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, userId));
+                        }
+                    }
+                    
                     if (!string.IsNullOrEmpty(userId))
                     {
                         var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
@@ -68,9 +90,35 @@ public class AzureB2CProvider : IAuthProvider
 
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
+                            //handle role for default tenant
+                            if(tenantId == Constants.DefaultTenantId)
+                            {
+                                if(roles == null)
+                                {
+                                    roles = new List<string>();
+                                }
+                                
+                                if (!roles.Contains(SystemRoles.TenantUser))
+                                {
+                                    roles.Add(SystemRoles.TenantUser);
+                                }
+                            }
+
                             foreach (var role in roles)
                             {
-                                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                                // Prevent duplicate role claims
+                                if (!identity.Claims.Any(c => c.Type == ClaimTypes.Role && c.Value == role))
+                                {
+                                    identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // No tenant ID header provided - assign default TenantUser role to allow basic access
+                            if (!identity.Claims.Any(c => c.Type == ClaimTypes.Role && c.Value == SystemRoles.TenantUser))
+                            {
+                                identity.AddClaim(new Claim(ClaimTypes.Role, SystemRoles.TenantUser));
                             }
                         }
                     }
