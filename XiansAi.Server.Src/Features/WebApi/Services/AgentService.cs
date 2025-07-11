@@ -2,9 +2,11 @@ using Shared.Auth;
 using Shared.Repositories;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Data.Models.Validation;
 using Shared.Utils.Services;
 using Features.WebApi.Models;
 using Shared.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Services;
 
@@ -15,7 +17,7 @@ public interface IAgentService
     Task<ServiceResult<List<FlowDefinition>>> GetDefinitions(string agentName, bool basicDataOnly = false);
     Task<ServiceResult<List<WorkflowResponse>>> GetWorkflowInstances(string? agentName, string? typeName);
     Task<ServiceResult<AgentDeleteResult>> DeleteAgent(string agentName);
-} 
+}
 /// <summary>
 /// Service for managing agent definitions and workflows.
 /// </summary>
@@ -90,7 +92,23 @@ public class AgentService : IAgentService
             // Check if user has read permission for the agent if agentName is provided
             if (!string.IsNullOrWhiteSpace(agentName))
             {
+                try
+                {
+                    agentName = Agent.SanitizeAndValidateName(agentName);
+                }
+                catch (ValidationException ex)
+                {
+                    _logger.LogWarning("Agent name validation failed: {Error}", ex.Message);
+                    return ServiceResult<List<WorkflowResponse>>.BadRequest($"Agent name validation failed: {ex.Message}");
+                }
                 var readPermissionResult = await _permissionsService.HasReadPermission(agentName);
+                
+                // Sanitize and validate type name if provided
+                if (!string.IsNullOrWhiteSpace(typeName))
+                {
+                    typeName = FlowDefinition.SanitizeAndValidateType(typeName);
+                }
+                
                 if (!readPermissionResult.IsSuccess)
                 {
                     if (readPermissionResult.StatusCode == StatusCode.NotFound)
@@ -138,6 +156,7 @@ public class AgentService : IAgentService
                 _logger.LogWarning("Invalid agent name provided for deletion");
                 return ServiceResult<AgentDeleteResult>.BadRequest("Agent name is required");
             }
+            agentName = Agent.SanitizeAndValidateName(agentName);
 
             // Check if user has owner permission using PermissionsService
             var ownerPermissionResult = await _permissionsService.HasOwnerPermission(agentName);
@@ -204,6 +223,7 @@ public class AgentService : IAgentService
                 _logger.LogWarning("Invalid agent name provided for getting definitions");
                 return ServiceResult<List<FlowDefinition>>.BadRequest("Agent name is required");
             }
+            agentName = Agent.SanitizeAndValidateName(agentName);
 
             // Check if user has read permission using PermissionsService
             var readPermissionResult = await _permissionsService.HasReadPermission(agentName);

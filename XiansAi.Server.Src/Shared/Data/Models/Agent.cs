@@ -145,7 +145,7 @@ public class Agent : ModelValidatorBase
             throw new ValidationException("Agent name is required");
 
         // Sanitize the agent name
-        var sanitizedName = ValidationHelpers.SanitizeString(agentName);
+        var sanitizedName = SanitizeName(agentName);
         
         // Validate the agent name format
         if (!ValidationHelpers.IsValidPattern(sanitizedName, AgentNamePattern))
