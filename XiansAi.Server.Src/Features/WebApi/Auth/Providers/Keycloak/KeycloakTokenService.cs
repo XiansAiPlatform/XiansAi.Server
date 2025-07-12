@@ -286,6 +286,7 @@ public class KeycloakTokenService : ITokenService
 
     public async Task<string> GetManagementApiToken()
     {
+        await Task.CompletedTask;
         throw new NotImplementedException("GetManagementApiToken is not implemented for Keycloak. Use Keycloak's management API directly.");
     }
 }

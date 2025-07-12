@@ -293,7 +293,7 @@ The Xians.ai Team";
                 var tenantId = GenerateTenantId(email);
                 _logger.LogDebug("Setting tenant {TenantId} for user {UserId}", tenantId, user);
 
-                var userDto = await generateUserFromToken(token);
+                var userDto = generateUserFromToken(token);
 
                 await _userManagementService.CreateNewUser(userDto);
                 await _tokenCache.RemoveValidation(token);
@@ -313,7 +313,7 @@ The Xians.ai Team";
         return isValid;
     }
 
-    private async Task<UserDto> generateUserFromToken(string token)
+    private UserDto generateUserFromToken(string token)
     {
         var handler = new JwtSecurityTokenHandler();
         var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
