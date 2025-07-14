@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace Features.WebApi.Models;
 
 [BsonIgnoreExtraElements]
-public class Activity : ModelValidatorBase
+public class Activity : ModelValidatorBase<Activity>
 {
     // Regex patterns for validation
     private static readonly Regex ActivityIdPattern = new(@"^[a-zA-Z0-9._@-]{1,50}$", RegexOptions.Compiled);
@@ -74,18 +74,37 @@ public class Activity : ModelValidatorBase
     [BsonElement("instruction_ids")]
     public List<string>? InstructionIds { get; set; } = [];
 
-    public override void Sanitize()
-    {
-        // Sanitize string properties
-        ActivityId = ValidationHelpers.SanitizeString(ActivityId);
-        ActivityName = ValidationHelpers.SanitizeString(ActivityName);
-        WorkflowId = ValidationHelpers.SanitizeString(WorkflowId);
-        WorkflowType = ValidationHelpers.SanitizeString(WorkflowType);
-        TaskQueue = ValidationHelpers.SanitizeString(TaskQueue);
 
-        // Sanitize collections
-        AgentToolNames = ValidationHelpers.SanitizeStringList(AgentToolNames);
-        InstructionIds = ValidationHelpers.SanitizeStringList(InstructionIds);
+
+    public override Activity SanitizeAndReturn()
+    {
+        // Create a new activity with sanitized data
+        var sanitizedActivity = new Activity
+        {
+            Id = this.Id,
+            ActivityId = ValidationHelpers.SanitizeString(this.ActivityId),
+            ActivityName = ValidationHelpers.SanitizeString(this.ActivityName),
+            StartedTime = this.StartedTime,
+            EndedTime = this.EndedTime,
+            Inputs = this.Inputs,
+            Result = this.Result,
+            WorkflowId = ValidationHelpers.SanitizeString(this.WorkflowId),
+            WorkflowType = ValidationHelpers.SanitizeString(this.WorkflowType),
+            TaskQueue = ValidationHelpers.SanitizeString(this.TaskQueue),
+            AgentToolNames = ValidationHelpers.SanitizeStringList(this.AgentToolNames),
+            InstructionIds = ValidationHelpers.SanitizeStringList(this.InstructionIds)
+        };
+
+        return sanitizedActivity;
+    }
+
+    public override Activity SanitizeAndValidate()
+    {
+        // First sanitize
+        var sanitizedActivity = this.SanitizeAndReturn();
+        sanitizedActivity.Validate();        
+
+        return sanitizedActivity;
     }
 
     public override void Validate()
@@ -178,27 +197,6 @@ public class Activity : ModelValidatorBase
     }
 
     /// <summary>
-    /// Validates and sanitizes an activity name
-    /// </summary>
-    /// <param name="activityName">The raw activity name to validate and sanitize</param>
-    /// <returns>The sanitized activity name</returns>
-    /// <exception cref="ValidationException">Thrown when validation fails</exception>
-    public static string SanitizeAndValidateActivityName(string activityName)
-    {
-        if (string.IsNullOrWhiteSpace(activityName))
-            throw new ValidationException("Activity name is required");
-
-        // First sanitize the activity name
-        var sanitizedName = ValidationHelpers.SanitizeString(activityName);
-        
-        // Then validate the sanitized activity name format
-        if (!ValidationHelpers.IsValidPattern(sanitizedName, ActivityNamePattern))
-            throw new ValidationException("Invalid activity name format");
-
-        return sanitizedName;
-    }
-
-    /// <summary>
     /// Validates and sanitizes a workflow ID
     /// </summary>
     /// <param name="workflowId">The raw workflow ID to validate and sanitize</param>
@@ -217,69 +215,5 @@ public class Activity : ModelValidatorBase
             throw new ValidationException("Invalid workflow ID format");
 
         return sanitizedId;
-    }
-
-    /// <summary>
-    /// Validates and sanitizes a workflow type
-    /// </summary>
-    /// <param name="workflowType">The raw workflow type to validate and sanitize</param>
-    /// <returns>The sanitized workflow type</returns>
-    /// <exception cref="ValidationException">Thrown when validation fails</exception>
-    public static string SanitizeAndValidateWorkflowType(string workflowType)
-    {
-        if (string.IsNullOrWhiteSpace(workflowType))
-            throw new ValidationException("Workflow type is required");
-
-        // First sanitize the workflow type
-        var sanitizedType = ValidationHelpers.SanitizeString(workflowType);
-        
-        // Then validate the sanitized workflow type format
-        if (!ValidationHelpers.IsValidPattern(sanitizedType, WorkflowTypePattern))
-            throw new ValidationException("Invalid workflow type format");
-
-        return sanitizedType;
-    }
-
-    /// <summary>
-    /// Validates and sanitizes a task queue
-    /// </summary>
-    /// <param name="taskQueue">The raw task queue to validate and sanitize</param>
-    /// <returns>The sanitized task queue</returns>
-    /// <exception cref="ValidationException">Thrown when validation fails</exception>
-    public static string SanitizeAndValidateTaskQueue(string taskQueue)
-    {
-        if (string.IsNullOrWhiteSpace(taskQueue))
-            throw new ValidationException("Task queue is required");
-
-        // First sanitize the task queue
-        var sanitizedQueue = ValidationHelpers.SanitizeString(taskQueue);
-        
-        // Then validate the sanitized task queue format
-        if (!ValidationHelpers.IsValidPattern(sanitizedQueue, TaskQueuePattern))
-            throw new ValidationException("Invalid task queue format");
-
-        return sanitizedQueue;
-    }
-
-    /// <summary>
-    /// Validates and sanitizes activity data (ID, name, workflow ID, workflow type, task queue)
-    /// </summary>
-    /// <param name="activityId">The activity ID</param>
-    /// <param name="activityName">The activity name</param>
-    /// <param name="workflowId">The workflow ID</param>
-    /// <param name="workflowType">The workflow type</param>
-    /// <param name="taskQueue">The task queue</param>
-    /// <returns>Tuple of sanitized values</returns>
-    /// <exception cref="ValidationException">Thrown when validation fails</exception>
-    public static (string activityId, string activityName, string workflowId, string workflowType, string taskQueue) 
-        SanitizeAndValidateActivityData(string activityId, string activityName, string workflowId, string workflowType, string taskQueue)
-    {
-        var sanitizedActivityId = SanitizeAndValidateActivityId(activityId);
-        var sanitizedActivityName = SanitizeAndValidateActivityName(activityName);
-        var sanitizedWorkflowId = SanitizeAndValidateWorkflowId(workflowId);
-        var sanitizedWorkflowType = SanitizeAndValidateWorkflowType(workflowType);
-        var sanitizedTaskQueue = SanitizeAndValidateTaskQueue(taskQueue);
-
-        return (sanitizedActivityId, sanitizedActivityName, sanitizedWorkflowId, sanitizedWorkflowType, sanitizedTaskQueue);
     }
 }

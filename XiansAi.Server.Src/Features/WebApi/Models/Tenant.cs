@@ -8,7 +8,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Features.WebApi.Models;
 
 [BsonIgnoreExtraElements]
-public class Tenant : ModelValidatorBase
+public class Tenant : ModelValidatorBase<Tenant>
 {
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
@@ -74,39 +74,6 @@ public class Tenant : ModelValidatorBase
     [BsonElement("enabled")]
     public bool Enabled { get; set; } = true;
 
-    public override void Sanitize()
-    {
-        // Sanitize string properties
-        Id = ValidationHelpers.SanitizeString(Id);
-        TenantId = ValidationHelpers.SanitizeString(TenantId);
-        Name = ValidationHelpers.SanitizeString(Name);
-        Domain = ValidationHelpers.SanitizeString(Domain);
-        Description = ValidationHelpers.SanitizeString(Description);
-        Theme = ValidationHelpers.SanitizeString(Theme);
-        Timezone = ValidationHelpers.SanitizeString(Timezone);
-        CreatedBy = ValidationHelpers.SanitizeString(CreatedBy);
-
-        // Sanitize nested objects
-        Logo?.Sanitize();
-        
-        // Sanitize collections
-        if (Agents != null)
-        {
-            foreach (var agent in Agents)
-            {
-                agent.Sanitize();
-            }
-        }
-
-        if (Permissions != null)
-        {
-            foreach (var permission in Permissions)
-            {
-                permission.Sanitize();
-            }
-        }
-    }
-
     public override void Validate()
     {
         // Call base validation (Data Annotations)
@@ -153,10 +120,41 @@ public class Tenant : ModelValidatorBase
             }
         }
     }
-    public override void ValidateAndSanitize()
+
+
+    public override Tenant SanitizeAndReturn()
     {
-        Validate();
-        Sanitize();
+        // Create a new tenant with sanitized data
+        var sanitizedTenant = new Tenant
+        {
+            Id = this.Id,
+            TenantId = ValidationHelpers.SanitizeString(this.TenantId),
+            Name = ValidationHelpers.SanitizeString(this.Name),
+            Domain = ValidationHelpers.SanitizeString(this.Domain),
+            Description = ValidationHelpers.SanitizeString(this.Description),
+            Theme = ValidationHelpers.SanitizeString(this.Theme),
+            Timezone = ValidationHelpers.SanitizeString(this.Timezone),
+            CreatedAt = this.CreatedAt,
+            CreatedBy = ValidationHelpers.SanitizeString(this.CreatedBy),
+            UpdatedAt = this.UpdatedAt,
+            Enabled = this.Enabled,
+            Logo = this.Logo,
+            Agents = this.Agents,
+            Permissions = this.Permissions
+        };
+
+        return sanitizedTenant;
+    }
+
+    public override Tenant SanitizeAndValidate()
+    {
+        // First sanitize
+        var sanitizedTenant = this.SanitizeAndReturn();
+        
+        // Then validate
+        sanitizedTenant.Validate();
+        
+        return sanitizedTenant;
     }
 
     /// <summary>
@@ -196,7 +194,7 @@ public class Tenant : ModelValidatorBase
 
 }
 
-public class Logo : ModelValidatorBase
+public class Logo : ModelValidatorBase<Logo>
 {
     [BsonElement("url")]
     [StringLength(500, ErrorMessage = "Logo URL cannot exceed 500 characters")]
@@ -216,11 +214,7 @@ public class Logo : ModelValidatorBase
     [Range(1, 10000, ErrorMessage = "Height must be between 1 and 10000 pixels")]
     public required int Height { get; set; }
 
-    public override void Sanitize()
-    {
-        Url = ValidationHelpers.SanitizeUrl(Url);
-        ImgBase64 = ValidationHelpers.SanitizeBase64(ImgBase64);
-    }
+
 
     public override void Validate()
     {
@@ -256,9 +250,34 @@ public class Logo : ModelValidatorBase
             }
         }
     }
+
+    public override Logo SanitizeAndReturn()
+    {
+        // Create a new logo with sanitized data
+        var sanitizedLogo = new Logo
+        {
+            Url = ValidationHelpers.SanitizeUrl(this.Url),
+            ImgBase64 = ValidationHelpers.SanitizeBase64(this.ImgBase64),
+            Width = this.Width,
+            Height = this.Height
+        };
+
+        return sanitizedLogo;
+    }
+
+    public override Logo SanitizeAndValidate()
+    {
+        // First sanitize
+        var sanitizedLogo = this.SanitizeAndReturn();
+        
+        // Then validate
+        sanitizedLogo.Validate();
+        
+        return sanitizedLogo;
+    }
 }
 
-public class Flow : ModelValidatorBase
+public class Flow : ModelValidatorBase<Flow>
 {
     [BsonElement("name")]
     [Required(ErrorMessage = "Flow name is required")]
@@ -281,11 +300,7 @@ public class Flow : ModelValidatorBase
     [RegularExpression(@"^[a-zA-Z0-9._@-]+$", ErrorMessage = "Created by contains invalid characters")]
     public required string CreatedBy { get; set; }
 
-    public override void Sanitize()
-    {
-        Name = ValidationHelpers.SanitizeString(Name);
-        CreatedBy = ValidationHelpers.SanitizeString(CreatedBy);
-    }
+
 
     public override void Validate()
     {
@@ -303,5 +318,31 @@ public class Flow : ModelValidatorBase
         {
             throw new ValidationException("Updated date cannot be before created date");
         }
+    }
+
+    public override Flow SanitizeAndReturn()
+    {
+        // Create a new flow with sanitized data
+        var sanitizedFlow = new Flow
+        {
+            Name = ValidationHelpers.SanitizeString(this.Name),
+            IsActive = this.IsActive,
+            CreatedAt = this.CreatedAt,
+            UpdatedAt = this.UpdatedAt,
+            CreatedBy = ValidationHelpers.SanitizeString(this.CreatedBy)
+        };
+
+        return sanitizedFlow;
+    }
+
+    public override Flow SanitizeAndValidate()
+    {
+        // First sanitize
+        var sanitizedFlow = this.SanitizeAndReturn();
+        
+        // Then validate
+        sanitizedFlow.Validate();
+        
+        return sanitizedFlow;
     }
 }

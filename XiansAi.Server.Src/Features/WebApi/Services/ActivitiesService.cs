@@ -1,6 +1,7 @@
 using Features.WebApi.Models;
 using Features.WebApi.Repositories;
 using Shared.Utils.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Services;
 
@@ -24,8 +25,9 @@ public class ActivitiesService : IActivitiesService
     {
         try
         {
-            activityId = Activity.SanitizeAndValidateWorkflowId(activityId);
-            workflowId = FlowDefinition.SanitizeAndValidateWorkflowId(workflowId);
+            activityId = Activity.SanitizeAndValidateActivityId(activityId);
+            workflowId = Activity.SanitizeAndValidateWorkflowId(workflowId);
+            
             if (string.IsNullOrWhiteSpace(workflowId))
             {
                 _logger.LogWarning("Invalid workflow ID provided for getting activity");
@@ -46,6 +48,11 @@ public class ActivitiesService : IActivitiesService
             }
 
             return ServiceResult<Activity>.Success(activity);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving activity {ActivityId} for workflow {WorkflowId}: {Message}", activityId, workflowId, ex.Message);
+            return ServiceResult<Activity>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {

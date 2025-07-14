@@ -76,7 +76,14 @@ public class TenantService : ITenantService
 
     private string? EnsureTenantAccessOrThrow(string tenantId)
     {
-        tenantId=Tenant.SanitizeAndValidateId(tenantId);
+            try{
+                tenantId=Tenant.SanitizeAndValidateId(tenantId);
+            }
+            catch(ValidationException ex)
+            {
+                _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
+                throw new Exception($"Validation failed: {ex.Message}");
+            }
         // If system admin, return null (indicating unrestricted access)
         if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
@@ -109,6 +116,11 @@ public class TenantService : ITenantService
 
             return ServiceResult<Tenant>.Success(tenant);
         }
+        catch(ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by ID: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tenant with ID {Id}", id);
@@ -130,6 +142,11 @@ public class TenantService : ITenantService
 
             return ServiceResult<Tenant>.Success(tenant);
         }
+        catch(ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tenant with domain {Domain}", domain);
@@ -150,6 +167,11 @@ public class TenantService : ITenantService
             }
 
             return ServiceResult<Tenant>.Success(tenant);
+        }
+        catch(ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -192,17 +214,22 @@ public class TenantService : ITenantService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            tenant.ValidateAndSanitize();
+            var validatedTenant = tenant.SanitizeAndValidate();
 
-            await _tenantRepository.CreateAsync(tenant);
-            _logger.LogInformation("Created new tenant with ID {Id}", tenant.Id);
+            await _tenantRepository.CreateAsync(validatedTenant);
+            _logger.LogInformation("Created new tenant with ID {Id}", validatedTenant.Id);
             
             var result = new TenantCreatedResult
             {
-                Tenant = tenant,
-                Location = $"/api/tenants/{tenant.Id}"
+                Tenant = validatedTenant,
+                Location = $"/api/tenants/{validatedTenant.Id}"
             };
             return ServiceResult<TenantCreatedResult>.Success(result);
+        }
+        catch(ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while creating tenant: {Message}", ex.Message);
+            return ServiceResult<TenantCreatedResult>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
         {
@@ -252,19 +279,24 @@ public class TenantService : ITenantService
                 existingTenant.Timezone = request.Timezone;
             
             existingTenant.UpdatedAt = DateTime.UtcNow;
-            existingTenant.ValidateAndSanitize();
+            var validatedTenant = existingTenant.SanitizeAndValidate();
             
-            var success = await _tenantRepository.UpdateAsync(id, existingTenant);
+            var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
             if (success)
             {
                 _logger.LogInformation("Updated tenant with ID {Id}", id);
-                return ServiceResult<Tenant>.Success(existingTenant);
+                return ServiceResult<Tenant>.Success(validatedTenant);
             }
             else
             {
                 _logger.LogError("Failed to update tenant with ID {Id}", id);
                 return ServiceResult<Tenant>.BadRequest("Failed to update tenant.");
             }
+        }
+        catch(ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while updating tenant: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -289,6 +321,11 @@ public class TenantService : ITenantService
                 _logger.LogWarning("Tenant with ID {Id} not found for deletion", id);
                 return ServiceResult<bool>.NotFound("Tenant not found");
             }
+        }
+        catch(ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while deleting tenant: {Message}", ex.Message);
+            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -316,6 +353,11 @@ public class TenantService : ITenantService
                 return ServiceResult<bool>.NotFound("Tenant not found");
             }
         }
+        catch (ValidationException ex)
+    {
+        _logger.LogWarning("Validation failed while adding agent: {Message}", ex.Message);
+        return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
+    }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error adding agent {AgentName} to tenant {TenantId}", agent.Name, tenantId);
@@ -329,7 +371,7 @@ public class TenantService : ITenantService
         {
             tenantId = Tenant.SanitizeAndValidateId(tenantId);
             agentName = Agent.SanitizeAndValidateName(agentName);
-            agent.ValidateAndSanitize();
+            var validatedAgent = agent.SanitizeAndValidate();
 
             var success = await _tenantRepository.UpdateAgentAsync(tenantId, agentName, agent);
             if (success)
@@ -381,7 +423,7 @@ public class TenantService : ITenantService
         {
             tenantId = Tenant.SanitizeAndValidateId(tenantId);
             agentName = Agent.SanitizeAndValidateName(agentName);
-            flow.ValidateAndSanitize();
+            var validatedFlow = flow.SanitizeAndValidate();
             flow.CreatedAt = DateTime.UtcNow;
             flow.UpdatedAt = DateTime.UtcNow;
             flow.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");

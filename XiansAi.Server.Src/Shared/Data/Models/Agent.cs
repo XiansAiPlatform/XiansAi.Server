@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 namespace Shared.Data.Models;
 
 [BsonIgnoreExtraElements]
-public class Agent : ModelValidatorBase
+public class Agent : ModelValidatorBase<Agent>
 {
     // Regex pattern for agent name validation
     private static readonly Regex AgentNamePattern = new(@"^[a-zA-Z0-9\s._@-]+$", RegexOptions.Compiled);
@@ -111,27 +111,70 @@ public class Agent : ModelValidatorBase
         return JsonSerializer.Serialize(this);
     }
 
-    public override void Sanitize()
+    public override Agent SanitizeAndReturn()
     {
-        // Sanitize all string properties
-        Name = ValidationHelpers.SanitizeString(Name);
-        Tenant = ValidationHelpers.SanitizeString(Tenant);
-        CreatedBy = ValidationHelpers.SanitizeString(CreatedBy);
+        // Create a new agent with sanitized data
+        var sanitizedAgent = new Agent
+        {
+            Id = this.Id,
+            Name = ValidationHelpers.SanitizeString(this.Name),
+            Tenant = ValidationHelpers.SanitizeString(this.Tenant),
+            CreatedBy = ValidationHelpers.SanitizeString(this.CreatedBy),
+            CreatedAt = this.CreatedAt,
+            OwnerAccess = ValidationHelpers.SanitizeStringList(this.OwnerAccess),
+            ReadAccess = ValidationHelpers.SanitizeStringList(this.ReadAccess),
+            WriteAccess = ValidationHelpers.SanitizeStringList(this.WriteAccess)
+        };
 
-        // Sanitize access lists
-        OwnerAccess = ValidationHelpers.SanitizeStringList(OwnerAccess);
-        ReadAccess = ValidationHelpers.SanitizeStringList(ReadAccess);
-        WriteAccess = ValidationHelpers.SanitizeStringList(WriteAccess);
+        return sanitizedAgent;
+    }
+
+    public override Agent SanitizeAndValidate()
+    {
+        // First sanitize
+        var sanitizedAgent = this.SanitizeAndReturn();
+        sanitizedAgent.Validate();        
+
+        return sanitizedAgent;
     }
 
     public override void Validate()
     {
         // Call base validation (Data Annotations)
-        base.Validate();     
+        base.Validate();
 
+        // Validate agent name format
+        if (!ValidationHelpers.IsValidPattern(Name, AgentNamePattern))
+            throw new ValidationException("Invalid agent name format");
+
+        // Validate dates
         if (!ValidationHelpers.IsValidDate(CreatedAt))
-            throw new ValidationException("Invalid creation date");
+            throw new ValidationException("Agent creation date is invalid");
+
+        if (CreatedAt > DateTime.UtcNow)
+            throw new ValidationException("Agent creation date cannot be in the future");
+
+        // Validate access lists
+        if (OwnerAccess != null)
+        {
+            if (!ValidationHelpers.IsValidList(OwnerAccess, item => !string.IsNullOrEmpty(item)))
+                throw new ValidationException("Owner access list contains invalid items");
+        }
+
+        if (ReadAccess != null)
+        {
+            if (!ValidationHelpers.IsValidList(ReadAccess, item => !string.IsNullOrEmpty(item)))
+                throw new ValidationException("Read access list contains invalid items");
+        }
+
+        if (WriteAccess != null)
+        {
+            if (!ValidationHelpers.IsValidList(WriteAccess, item => !string.IsNullOrEmpty(item)))
+                throw new ValidationException("Write access list contains invalid items");
+        }
     }
+
+
 
     /// <summary>
     /// Validates and sanitizes an agent name

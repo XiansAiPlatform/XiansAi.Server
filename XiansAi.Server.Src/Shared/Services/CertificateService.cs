@@ -1,5 +1,6 @@
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
+using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 using Features.AgentApi.Repositories;
 using Features.AgentApi.Models;
@@ -81,8 +82,8 @@ public class CertificateService
             userId);
 
         var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
-        // Store certificate metadata
-        await _certificateRepository.CreateAsync(new Certificate
+        // Store certificate metadata with validation
+        var newCertificate = new Certificate
         {
             Thumbprint = cert.Thumbprint,
             SubjectName = cert.Subject,
@@ -91,19 +92,42 @@ public class CertificateService
             IssuedAt = DateTime.UtcNow,
             ExpiresAt = cert.NotAfter.ToUniversalTime(),
             IsRevoked = false
-        });
+        };
+        Console.WriteLine($"New55555 certificate IssuedTo",newCertificate.IssuedTo);
+        // Sanitize and validate before creating
+        var validatedNewCert = newCertificate.SanitizeAndValidate();
+        await _certificateRepository.CreateAsync(validatedNewCert);
         // Revoke previous certificates for this user
         foreach (var prevCert in previousCerts)
         {
             if (!prevCert.IsRevoked)
             {
-                prevCert.IsRevoked = true;
-                prevCert.RevokedAt = DateTime.UtcNow;
-                await _certificateRepository.UpdateAsync(prevCert);
-                _logger.LogInformation(
-                    "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
-                    prevCert.Thumbprint, 
-                    userId);
+                try
+                {
+                    // Use model-based sanitization and validation
+                    var sanitizedAndValidatedCert = prevCert.SanitizeAndValidate();
+                    
+                    // Create revocation data
+                    sanitizedAndValidatedCert.IsRevoked = true;
+                    sanitizedAndValidatedCert.RevocationReason = "Automatically revoked during certificate rotation";
+                    sanitizedAndValidatedCert.RevokedAt = DateTime.UtcNow;
+                    sanitizedAndValidatedCert.UpdatedAt = DateTime.UtcNow;
+                    
+                    // Validate the final certificate before update
+                    sanitizedAndValidatedCert.Validate();
+                    
+                    await _certificateRepository.UpdateAsync(sanitizedAndValidatedCert);
+                    _logger.LogInformation(
+                        "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
+                        sanitizedAndValidatedCert.Thumbprint, 
+                        userId);
+                }
+                catch (ValidationException ex)
+                {
+                    _logger.LogWarning("Skipping invalid certificate for update. Thumbprint: {Thumbprint}, User: {UserId}, Error: {Error}", 
+                        prevCert.Thumbprint, userId, ex.Message);
+                    continue;
+                }
             }
         }
         _logger.LogInformation(

@@ -1,4 +1,5 @@
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
 using XiansAi.Server.Features.WebApi.Repositories;
@@ -65,6 +66,7 @@ public class MessagingService : IMessagingService
     public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null)
     {
         var tenantId = _tenantContext.TenantId;
+        agent = Agent.SanitizeAndValidateName(agent);
         
         // Validate pagination parameters
         if (page.HasValue && page.Value <= 0)

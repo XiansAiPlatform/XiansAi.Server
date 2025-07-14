@@ -40,6 +40,7 @@ public class CertificateGenerator
         _logger.LogDebug("Generating client certificate for {certName}, {tenantName}, {userName}", certName, tenantName, userName);
         var subject = $"CN=XiansAi, OU={userName}, O={tenantName}";
         _logger.LogDebug("Subject: {subject}", subject);
+        Console.WriteLine($"Subject-------: {subject}");
         using var rsa = RSA.Create(2048);
         var distinguishedName = new X500DistinguishedName(subject);
         
