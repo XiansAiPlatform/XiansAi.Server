@@ -1,5 +1,6 @@
 using Features.WebApi.Auth;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Utils.Services;
 using System.Text.Json.Serialization;
 using XiansAi.Server.Features.WebApi.Services;
 
@@ -24,7 +25,7 @@ public static class RoleManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin))
+        .RequiresValidTenantAdmin()
         .WithName("GetUserRoles")
         .WithOpenApi(operation => new(operation)
         {
@@ -42,7 +43,7 @@ public static class RoleManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin))
+        .RequiresValidTenantAdmin()
         .WithName("GetUsersByRole")
         .WithOpenApi(operation => new(operation)
         {
@@ -60,7 +61,7 @@ public static class RoleManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin))
+        .RequiresValidTenantAdmin()
         .WithName("GetAllTenantAdmins")
         .WithOpenApi(operation => new(operation)
         {
@@ -84,15 +85,15 @@ public static class RoleManagementEndpoints
         });
 
         group.MapPost("/promote-tenant-admin", async (
-            [FromBody] RolesDto request,
+            [FromBody] RoleDto request,
             [FromServices] IRoleManagementService roleService) =>
         {
-            var result = await roleService.PromoteToTenantAdminAsync(request.UserId, request.TenantId);
+            var result = await roleService.AssignTenantRoletoUserAsync(request);
             return result.IsSuccess
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin))
+        .RequiresValidTenantAdmin()
         .WithName("PromoteToTenantAdmin")
         .WithOpenApi(operation => new(operation)
         {
@@ -101,16 +102,27 @@ public static class RoleManagementEndpoints
         });
 
         group.MapPost("/assign", async (
-            [FromBody] RolesDto request,
+            [FromBody] RoleDto request,
             [FromServices] IRoleManagementService roleService) =>
         {
-            var result = await roleService.AssignRolesToUserAsync(
-                request.UserId,
-                request.TenantId,
-                request.Roles);
+            ServiceResult<bool> result;
+
+            if (request.Role == SystemRoles.SysAdmin)
+            {
+                result = await roleService.AssignSysAdminRolesToUserAsync(request.UserId);
+                return Results.Ok(result);
+            }
+
+            if (string.IsNullOrEmpty(request.TenantId))
+            {
+                return Results.BadRequest("TenantId is required.");
+            }
+
+            result = await roleService.AssignTenantRoletoUserAsync(request);
+
             return Results.Ok(result);
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin))
+        .RequiresValidSysAdmin()
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Assign a user to a role",
@@ -118,34 +130,41 @@ public static class RoleManagementEndpoints
         });
 
         group.MapPost("/bootstrap-admin", async (
-            [FromBody] BootstrapAdminDto request,
             [FromServices] IRoleManagementService roleService) =>
         {
-            var existingAdmins = await roleService.GetUsersByRoleAsync(SystemRoles.SysAdmin, request.TenantId);
+            var existingAdmins = await roleService.GetSystemAdminsAsync();
             if (existingAdmins.Data?.Any() == true)
             {
                 return Results.BadRequest("System admin already exists. Use regular role assignment.");
             }
 
-            var result = await roleService.AssignRolesToUserAsync(
-                request.UserId,
-                request.TenantId,
-                new List<string> { SystemRoles.SysAdmin });
+            var result = await roleService.AssignBootstrapSysAdminRolesToUserAsync();
 
             return Results.Ok(result);
         });
 
         group.MapDelete("/remove", async (
-            [FromBody] RolesDto request,
+            [FromBody] RoleDto request,
             [FromServices] IRoleManagementService roleService) =>
         {
-            var result = await roleService.RemoveRoleFromUserAsync(
-                request.UserId,
-                request.TenantId,
-                request.Roles);
+            ServiceResult<bool> result;
+
+            if (request.Role == SystemRoles.SysAdmin)
+            {
+                result = await roleService.RemoveSysAdminRolesToUserAsync(request.UserId);
+                return Results.Ok(result);
+            }
+
+            if (string.IsNullOrEmpty(request.TenantId))
+            {
+                return Results.BadRequest("TenantId is required.");
+            }
+
+            result = await roleService.RemoveRoleFromUserAsync(request);
+
             return Results.Ok(result);
         })
-        .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin))
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Remove a user from a role",

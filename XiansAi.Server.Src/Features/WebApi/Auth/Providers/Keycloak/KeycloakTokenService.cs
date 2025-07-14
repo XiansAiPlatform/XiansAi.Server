@@ -1,17 +1,20 @@
+using Auth0.ManagementApi.Models;
+using Features.WebApi.Auth.Providers.Auth0;
 using Features.WebApi.Auth.Providers.Tokens;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using RestSharp;
 using Shared.Utils;
 using System.IdentityModel.Tokens.Jwt;
-using System.Text.Json;
-using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography;
-using Microsoft.IdentityModel.JsonWebTokens;
+using System.Text.Json;
 
 namespace Features.WebApi.Auth.Providers.Keycloak;
 
 public class KeycloakTokenService : ITokenService
 {
     private readonly ILogger<KeycloakTokenService> _logger;
+    private RestClient _client;
     private readonly KeycloakConfig? _keycloakConfig;
     private readonly string _organizationClaimType = "organization";
     private readonly HttpClient _httpClient;
@@ -21,6 +24,7 @@ public class KeycloakTokenService : ITokenService
     public KeycloakTokenService(ILogger<KeycloakTokenService> logger, IConfiguration configuration, HttpClient? httpClient = null)
     {
         _logger = logger;
+        _client = new RestClient();
         _httpClient = httpClient ?? new HttpClient();
         _keycloakConfig = configuration.GetSection("Keycloak").Get<KeycloakConfig>() ??
             throw new ArgumentException("Keycloak configuration is missing");
@@ -108,7 +112,7 @@ public class KeycloakTokenService : ITokenService
         }
     }
 
-    public async Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ProcessToken(string token)
+    public async Task<(bool success, string? userId)> ProcessToken(string token)
     {
         try
         {
@@ -117,7 +121,7 @@ public class KeycloakTokenService : ITokenService
             if (!validationResult.success)
             {
                 _logger.LogWarning("JWT token validation failed");
-                return (false, null, null);
+                return (false, null);
             }
 
             var handler = new JwtSecurityTokenHandler();
@@ -126,7 +130,7 @@ public class KeycloakTokenService : ITokenService
             if (jsonToken == null)
             {
                 _logger.LogWarning("Invalid JWT token format");
-                return (false, null, null);
+                return (false, null);
             }
 
             var userId = ExtractUserId(jsonToken);
@@ -134,17 +138,15 @@ public class KeycloakTokenService : ITokenService
             if (string.IsNullOrEmpty(userId))
             {
                 _logger.LogWarning("No user identifier found in token");
-                return (false, null, null);
+                return (false, null);
             }
 
-            var tenantIds = ExtractTenantIds(jsonToken);
-
-            return (true, userId, tenantIds);
+            return (true, userId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing JWT token");
-            return (false, null, null);
+            return (false, null);
         }
     }
 
@@ -282,11 +284,9 @@ public class KeycloakTokenService : ITokenService
         }
     }
 
-
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     public async Task<string> GetManagementApiToken()
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-    {       
-       throw new NotImplementedException();
+    {
+        await Task.CompletedTask;
+        throw new NotImplementedException("GetManagementApiToken is not implemented for Keycloak. Use Keycloak's management API directly.");
     }
 }

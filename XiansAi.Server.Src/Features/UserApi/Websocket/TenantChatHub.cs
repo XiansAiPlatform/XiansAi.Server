@@ -91,10 +91,15 @@ namespace Features.UserApi.Websocket
             return base.OnDisconnectedAsync(exception);
         }
 
-        public async Task GetThreadHistory(string workflowType, string participantId, int page, int pageSize)
+        public async Task GetThreadHistory(string workflow, string participantId, int page, int pageSize)
         {
+            string workflowId = workflow;
+            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
+            {
+                workflowId = _tenantContext.TenantId + ":" + workflow;
+            }
             EnsureTenantContext();
-            var result = await _messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
+            var result = await _messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, null);
             await Clients.Caller.SendAsync("ThreadHistory", result.Data);
         }
 

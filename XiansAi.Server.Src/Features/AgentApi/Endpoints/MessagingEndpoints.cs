@@ -3,9 +3,22 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Utils.Services;
 using Shared.Repositories;
+using Shared.Auth;
+using System.Security.Permissions;
 
 namespace Features.AgentApi.Endpoints
 {
+    public class ConversationHistoryQuery
+    {
+        public string? ThreadId { get; set; }
+        public string? WorkflowType { get; set; }
+        public string? WorkflowId { get; set; }
+        public string ParticipantId { get; set; } = string.Empty;
+        public string? Scope { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+    }
+
     public static class ConversationEndpoints
     {
         private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
@@ -26,16 +39,7 @@ namespace Features.AgentApi.Endpoints
                 .WithTags("AgentAPI - Conversation")
                 .RequiresCertificate();
 
-            group.MapGet("/history", async (
-                [FromQuery] string workflowType,
-                [FromQuery] string participantId,
-                [FromQuery] int page,
-                [FromQuery] int pageSize,
-                [FromServices] IMessageService messageService) => {
-                
-                var result = await messageService.GetThreadHistoryAsync(workflowType, participantId, page, pageSize);
-                return result.ToHttpResult();
-            })
+            group.MapGet("/history", GetConversationHistory)
             .WithName("Get Conversation History")
             .WithOpenApi(operation => {
                 operation.Summary = "Get conversation history";
@@ -83,6 +87,29 @@ namespace Features.AgentApi.Endpoints
                 operation.Description = "Processes a handover message for agent conversations and returns the result";
                 return operation;
             });
+        }
+
+        private static async Task<IResult> GetConversationHistory(
+            [AsParameters] ConversationHistoryQuery query,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] IMessageService messageService)
+        {
+            if (string.IsNullOrEmpty(query.WorkflowType) && string.IsNullOrEmpty(query.WorkflowId)) {
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType or WorkflowId is required").ToHttpResult();
+            }
+            
+            if (query.WorkflowId == null) {
+                query.WorkflowId = $"{tenantContext.TenantId}:{query.WorkflowType}";
+            }
+
+            if (string.IsNullOrEmpty(query.ThreadId)) {
+                var result = await messageService.GetThreadHistoryAsync(query.WorkflowId, query.ParticipantId, query.Page, query.PageSize, query.Scope);
+                return result.ToHttpResult();
+            } else {
+                var result = await messageService.GetThreadHistoryAsync(query.ThreadId, query.Page, query.PageSize);
+                return result.ToHttpResult();
+            }
+            
         }
     }
 } 

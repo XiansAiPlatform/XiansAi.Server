@@ -20,7 +20,7 @@ public interface ITokenService
     /// <summary>
     /// Validate and process a JWT token
     /// </summary>
-    Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ProcessToken(string token);
+    Task<(bool success, string? userId)> ProcessToken(string token);
     
     /// <summary>
     /// Get an access token for the management API

@@ -9,9 +9,18 @@ public interface IAuthMgtConnect
     /// Gets user information from the authentication provider
     /// </summary>
     Task<UserInfo> GetUserInfo(string userId);
-    
+
+    /// <summary>
+    /// Gets user tenant information
+    /// </summary>
+    /// <param name="userId">The user id</param>
+    /// <returns>The user tenant information</returns>
+    Task<List<string>> GetUserTenants(string userId);
+
     /// <summary>
     /// Adds a new tenant to the user
+    /// <param name="userId">The user id</param>
+    /// <param name="tenantId">The tenant id</param>
     /// </summary>
     Task<string> SetNewTenant(string userId, string tenantId);
 }
@@ -39,6 +48,20 @@ public class AuthMgtConnect : IAuthMgtConnect
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get user info for userId: {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task<List<string>> GetUserTenants(string userId)
+    {
+        try
+        {
+            var provider = _authProviderFactory.GetProvider();
+            return await provider.GetUserTenants(userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get user tenant for user {UserId}", userId);
             throw;
         }
     }

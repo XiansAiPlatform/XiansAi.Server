@@ -56,7 +56,6 @@ public interface IConversationThreadRepository
 {
     Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null);
     Task<string> CreateOrGetAsync(ConversationThread thread);
-    Task<bool> UpdateWorkflowIdAndTypeAsync(string id, string workflowId, string workflowType);
     Task<bool> DeleteAsync(string id);
 }
 
@@ -72,63 +71,12 @@ public class ConversationThreadRepository : IConversationThreadRepository
         _collection = database.GetCollection<ConversationThread>("conversation_thread");
     }
 
-    public async Task<bool> UpdateWorkflowIdAndTypeAsync(string id, string workflowId, string workflowType)
-    {
-        try
-        {
-            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-            {
-                var update = Builders<ConversationThread>.Update
-                    .Set(x => x.WorkflowId, workflowId)
-                    .Set(x => x.WorkflowType, workflowType)
-                    .Set(x => x.UpdatedAt, DateTime.UtcNow);
-                var result = await _collection.UpdateOneAsync(x => x.Id == id, update);
-                return result.ModifiedCount > 0;
-            }, _logger, operationName: "UpdateWorkflowIdAndTypeAsync");
-        }
-        catch (MongoBulkWriteException ex)
-        {
-            // Check if it's a duplicate key error (error code 11000)
-            if (ex.WriteErrors.Any(e => e.Code == 11000))
-            {
-                // The combination of tenant_id, agent, workflow_type, and participant_id already exists
-                // This means there's already another thread with the target workflow type
-                // In this case, we should fail gracefully but log the issue
-                
-                // First, let's get the current thread to extract the composite key values
-                var currentThread = await _collection.Find(x => x.Id == id).FirstOrDefaultAsync();
-                if (currentThread != null)
-                {
-                    // Check if there's already a thread with the target workflow type
-                    var existingThread = await GetByCompositeKeyAsync(
-                        currentThread.TenantId, 
-                        currentThread.Agent, 
-                        workflowType, 
-                        currentThread.ParticipantId);
-                    
-                    if (existingThread != null && existingThread.Id != id)
-                    {
-                        // There's already another thread with this combination
-                        // This is a business logic issue that needs to be handled at a higher level
-                        throw new InvalidOperationException(
-                            $"Cannot update thread {id} to workflow type '{workflowType}' because thread {existingThread.Id} already exists with the same tenant, agent, workflow type, and participant combination.");
-                    }
-                }
-                
-                // If we couldn't determine the exact issue, rethrow the original exception
-                throw;
-            }
-            // For other errors, rethrow
-            throw;
-        }
-    }
 
-    private async Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string agent, string workflowType, string participantId)
+    private async Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string workflowId, string participantId)
     {
         var filter = Builders<ConversationThread>.Filter.And(
             Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
-            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowType, workflowType),
+            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowId, workflowId),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
 
@@ -155,7 +103,7 @@ public class ConversationThreadRepository : IConversationThreadRepository
 
     public async Task<string> CreateOrGetAsync(ConversationThread thread)
     {
-        var existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.Agent, thread.WorkflowType, thread.ParticipantId);
+        var existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
         if (existingThread != null)
         {
             return existingThread.Id;
@@ -173,7 +121,7 @@ public class ConversationThreadRepository : IConversationThreadRepository
             {
                 // Another thread created the record between our check and insert
                 // Fetch and return the existing thread
-                existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.Agent, thread.WorkflowType, thread.ParticipantId);
+                existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
                 if (existingThread != null)
                 {
                     return existingThread.Id;

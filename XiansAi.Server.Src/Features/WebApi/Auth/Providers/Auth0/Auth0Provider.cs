@@ -70,7 +70,7 @@ public class Auth0Provider : IAuthProvider
         };
     }
 
-    public Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ValidateToken(string token)
+    public Task<(bool success, string? userId)> ValidateToken(string token)
     {
         return _tokenService.ProcessToken(token);
     }
@@ -135,6 +135,14 @@ public class Auth0Provider : IAuthProvider
             _logger.LogError(ex, "Failed to set new tenant {TenantId} for user {UserId}", tenantId, userId);
             throw;
         }
+    }
+
+    public async Task<List<string>> GetUserTenants(string userId)
+    {
+        var userInfo = await GetUserInfo(userId);
+        var appMetadata = userInfo.AppMetadata ?? new AppMetadata { Tenants = Array.Empty<string>() };
+
+        return appMetadata.Tenants.ToList();
     }
 
     private async Task<string> GetManagementApiToken()
