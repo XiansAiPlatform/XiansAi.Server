@@ -73,6 +73,11 @@ AzureB2C__TenantId=your-tenant-id-guid
 AzureB2C__Audience=api://your-app-registration-id
 AzureB2C__JwksUri=https://login.microsoftonline.com/your-tenant-id/discovery/v2.0/keys
 AzureB2C__Issuer=https://sts.windows.net/your-tenant-id/
+AzureB2C__Authority=https://login.microsoftonline.com/your-tenant-id/v2.0/
+
+# Optional
+AuthProvider__TenantClaimType=https://your-domain.com/tenants
+
 ```
 
 **Key Features:**
@@ -103,6 +108,11 @@ AzureB2C__TenantId=your-b2c-tenant-id
 AzureB2C__Audience=your-app-registration-id
 AzureB2C__JwksUri=https://your-tenant.b2clogin.com/your-tenant-id/B2C_1A_SIGNUP_SIGNIN/discovery/v2.0/keys
 AzureB2C__Issuer=https://your-tenant.b2clogin.com/your-tenant-id/v2.0/
+AzureB2C__Authority=https://your-tenant.b2clogin.com/your-tenant-id/B2C_1A_SIGNUP_SIGNIN/v2.0/
+
+# Optional
+AuthProvider__TenantClaimType=https://login-dev.parkly.no/tenants
+
 ```
 
 **Key Features:**

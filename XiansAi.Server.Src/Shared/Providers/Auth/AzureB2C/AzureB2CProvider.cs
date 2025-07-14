@@ -33,6 +33,9 @@ public class AzureB2CProvider : IAuthProvider
 
         if (string.IsNullOrEmpty(_azureB2CConfig.JwksUri))
             throw new ArgumentException("Azure B2C JWKS URI is missing");
+
+        if (string.IsNullOrEmpty(_azureB2CConfig.Authority))
+            throw new ArgumentException("Azure B2C authority is missing");
     }
 
     public void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)

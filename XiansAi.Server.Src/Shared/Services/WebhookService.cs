@@ -76,6 +76,7 @@ public class ChatHistoryWebhookDto
 {
     public required string WorkflowId { get; set; }
     public required string ParticipantId { get; set; }
+    public string? Scope { get; set; }
     public required int Page { get; set; }
     public required int PageSize { get; set; }
 }
@@ -345,7 +346,7 @@ public class WebhookService : IWebhookService
                 };
             }
             var historyResult = await _messageService.GetThreadHistoryAsync(
-                chatHistoryDto.WorkflowId, chatHistoryDto.ParticipantId, chatHistoryDto.Page, chatHistoryDto.PageSize);
+                chatHistoryDto.WorkflowId, chatHistoryDto.ParticipantId, chatHistoryDto.Page, chatHistoryDto.PageSize, chatHistoryDto.Scope);
             if (!historyResult.IsSuccess)
             {
                 return new WebhookTriggerResult

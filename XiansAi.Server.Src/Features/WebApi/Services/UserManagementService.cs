@@ -1,3 +1,4 @@
+using Features.WebApi.Auth;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Services;
@@ -346,38 +347,6 @@ public class UserManagementService : IUserManagementService
             return ServiceResult<bool>.InternalServerError("An error occurred while accepting the invitation");
         }
     }
-
-    private async Task<UserDto> generateUserFromToken(string token)
-    {
-        var handler = new JwtSecurityTokenHandler(); 
-        var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
-
-        if (jsonToken == null)
-        {
-            _logger.LogWarning("Invalid JWT token format");
-            throw new ArgumentException("Invalid token format", nameof(token));
-        }
-
-        var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            _logger.LogWarning("User ID claim not found in token");
-            throw new ArgumentException("User ID not found in token", nameof(token));
-        }
-
-        var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
-            new AuthProviderConfig();
-        var name = jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
-
-        return new UserDto
-        {
-            UserId = userId,
-            Email = email,
-            Name = name,
-        };
-    }
-
     private string getUserEmailfromToken(string token)
     {
         var handler = new JwtSecurityTokenHandler();
