@@ -31,7 +31,12 @@ public class AzureB2CTokenService : ITokenService
 
     public string? ExtractUserId(JwtSecurityToken token)
     {
-        return token.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
+        var userId = token.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+        if (string.IsNullOrEmpty(userId))
+        {
+            userId = token.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
+        }
+        return userId;
     }
 
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)

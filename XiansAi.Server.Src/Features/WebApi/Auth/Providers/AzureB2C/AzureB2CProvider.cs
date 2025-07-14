@@ -67,12 +67,12 @@ public class AzureB2CProvider : IAuthProvider
                     if (string.IsNullOrEmpty(userId))
                     {
                         // First try 'oid' claim (Azure B2C object ID)
-                        userId = identity.FindFirst("oid")?.Value;
+                        userId = identity.FindFirst("sub")?.Value;
                         
                         // Fallback to 'sub' claim (standard JWT user ID) - Azure Entra ID uses this
                         if (string.IsNullOrEmpty(userId))
                         {
-                            userId = identity.FindFirst("sub")?.Value;
+                            userId = identity.FindFirst("oid")?.Value;
                         }
                         
                         if (!string.IsNullOrEmpty(userId))
