@@ -1,10 +1,10 @@
-using Features.WebApi.Auth;
 using Features.WebApi.Endpoints;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
 using XiansAi.Server.Features.WebApi.Endpoints;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Services;
+using Shared.Auth;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
 

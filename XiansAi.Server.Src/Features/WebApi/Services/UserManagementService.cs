@@ -1,4 +1,3 @@
-using Features.WebApi.Auth;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Services;

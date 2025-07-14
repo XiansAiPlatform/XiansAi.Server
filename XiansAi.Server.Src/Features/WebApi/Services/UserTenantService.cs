@@ -1,4 +1,3 @@
-using Features.WebApi.Auth;
 using Features.WebApi.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;

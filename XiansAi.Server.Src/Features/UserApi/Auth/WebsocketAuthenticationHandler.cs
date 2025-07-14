@@ -16,6 +16,7 @@ namespace Features.UserApi.Auth
         private readonly IConfiguration _configuration;
         private readonly IApiKeyService _apiKeyService;
         private readonly ITokenServiceFactory _tokenServiceFactory;
+        private readonly IAuthMgtConnect _authMgtConnect;
 
         public WebsocketAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -24,7 +25,8 @@ namespace Features.UserApi.Auth
             IConfiguration configuration,
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
-            ITokenServiceFactory tokenServiceFactory)
+            ITokenServiceFactory tokenServiceFactory,
+            IAuthMgtConnect authMgtConnect)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
@@ -32,6 +34,7 @@ namespace Features.UserApi.Auth
             _configuration = configuration;
             _apiKeyService = apiKeyService;
             _tokenServiceFactory = tokenServiceFactory;
+            _authMgtConnect = authMgtConnect;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -114,9 +117,20 @@ namespace Features.UserApi.Auth
                             // Treat as JWT
                             var tokenService = _tokenServiceFactory.GetTokenService();
                             var jwtResult = await tokenService.ProcessToken(accessToken);
-                            var handler = new JwtSecurityTokenHandler();
-                            var jwtToken = handler.ReadJwtToken(accessToken);
-                            var tenantIds =  tokenService.ExtractTenantIds(jwtToken);
+                            if (string.IsNullOrEmpty(jwtResult.userId))
+                            {
+                                _logger.LogInformation("No user Id found in the JWT Token");
+                                return AuthenticateResult.Fail("No user Id found in the JWT Token");
+                            }
+                            var tenantIds = await _authMgtConnect.GetUserTenants(jwtResult.userId);
+                            foreach (var tId in tenantIds)
+                            {
+                                _logger.LogDebug("---------tenantIds-{tId}: ", tId);
+                            }
+
+                            //var handler = new JwtSecurityTokenHandler();
+                            //var jwtToken = handler.ReadJwtToken(accessToken);
+                            //var tenantIds =  tokenService.ExtractTenantIds(jwtToken);
                             if (!jwtResult.success || string.IsNullOrEmpty(jwtResult.userId) || string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
                             {
                                 _logger.LogWarning("JWT authentication failed or tenant mismatch");

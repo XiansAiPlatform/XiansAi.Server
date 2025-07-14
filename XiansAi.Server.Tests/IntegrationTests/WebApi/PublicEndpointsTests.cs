@@ -9,10 +9,9 @@ using Moq;
 using XiansAi.Server.Tests.TestUtils;
 using XiansAi.Server.Utils;
 using System.Text;
-using Features.WebApi.Auth;
-using Features.WebApi.Auth.Providers;
-using Features.WebApi.Auth.Providers.Auth0;
+using Shared.Providers.Auth.Auth0;
 using Microsoft.AspNetCore.Hosting;
+using Shared.Auth;
 
 namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
 

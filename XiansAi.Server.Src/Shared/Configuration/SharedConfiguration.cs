@@ -1,17 +1,59 @@
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authorization;
 using Shared.Repositories;
 using Shared.Services;
-using Shared.Utils.GenAi;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Shared.Services;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Providers.Auth.Auth0;
+using Shared.Providers.Auth.AzureB2C;
+using Shared.Providers.Auth.Keycloak;
+using Shared.Providers.Auth;
+using Shared.Auth;
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
 {
     public static WebApplicationBuilder AddSharedServices(this WebApplicationBuilder builder)
     {
+        // Register memory cache if not already registered
+        builder.Services.AddMemoryCache();
+
+        // Register HttpClient for token services
+        builder.Services.AddHttpClient();
+
+        // Register token validation cache
+        builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
+
+        // Register token services
+        builder.Services.AddScoped<Auth0TokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<Auth0TokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new Auth0TokenService(logger, configuration, httpClient);
+        });
+        builder.Services.AddScoped<AzureB2CTokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<AzureB2CTokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new AzureB2CTokenService(logger, configuration, httpClient);
+        });
+        builder.Services.AddScoped<KeycloakTokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<KeycloakTokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new KeycloakTokenService(logger, configuration, httpClient);
+        });
+        builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
+
+        // Register auth providers
+        builder.Services.AddScoped<Auth0Provider>();
+        builder.Services.AddScoped<AzureB2CProvider>();
+        builder.Services.AddScoped<KeycloakProvider>();
+        builder.Services.AddScoped<IAuthProviderFactory, AuthProviderFactory>();
+        builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
+
         // Add services using specialized configuration classes
         builder = builder
             .AddCorsConfiguration();
