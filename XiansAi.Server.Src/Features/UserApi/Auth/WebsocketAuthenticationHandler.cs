@@ -1,10 +1,12 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
+using Shared.Providers.Auth;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 namespace Features.UserApi.Auth
 {
     public class WebsocketAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
@@ -13,7 +15,7 @@ namespace Features.UserApi.Auth
         private readonly ILogger<WebsocketAuthenticationHandler> _logger;
         private readonly IConfiguration _configuration;
         private readonly IApiKeyService _apiKeyService;
-
+        private readonly ITokenServiceFactory _tokenServiceFactory;
 
         public WebsocketAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -21,13 +23,15 @@ namespace Features.UserApi.Auth
             UrlEncoder encoder,
             IConfiguration configuration,
             ITenantContext tenantContext,
-            IApiKeyService apiKeyService)
+            IApiKeyService apiKeyService,
+            ITokenServiceFactory tokenServiceFactory)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
             _tenantContext = tenantContext;
             _configuration = configuration;
             _apiKeyService = apiKeyService;
+            _tokenServiceFactory = tokenServiceFactory;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -102,16 +106,43 @@ namespace Features.UserApi.Auth
                         }
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
-                                // Treat as JWT
                             if (Request.Path.HasValue && Request.Path.Value.Contains("/ws/tenant/chat", StringComparison.OrdinalIgnoreCase))
                             {
                                 _logger.LogInformation("Skipping JWT validation for /ws/tenant/chat endpoint");
                                 return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
                             }
                             // Treat as JWT
-                            // TODO: Need to add jwt validation logic here
-                            _logger.LogWarning("JWT authentication not implemented");
-                            return AuthenticateResult.Fail("JWT authentication not implemented");
+                            var tokenService = _tokenServiceFactory.GetTokenService();
+                            var jwtResult = await tokenService.ProcessToken(accessToken);
+                            var handler = new JwtSecurityTokenHandler();
+                            var jwtToken = handler.ReadJwtToken(accessToken);
+                            var tenantIds =  tokenService.ExtractTenantIds(jwtToken);
+                            if (!jwtResult.success || string.IsNullOrEmpty(jwtResult.userId) || string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
+                            {
+                                _logger.LogWarning("JWT authentication failed or tenant mismatch");
+                                return AuthenticateResult.Fail("JWT authentication failed or tenant mismatch");
+                            }
+
+                            _tenantContext.LoggedInUser = jwtResult.userId;
+                            _tenantContext.TenantId = tenantId;
+                            _tenantContext.AuthorizedTenantIds = tenantIds;
+                            _logger.LogDebug("UserID-{Id}", jwtResult.userId);
+                            var claims = new List<Claim>
+                            {
+                                new Claim(ClaimTypes.NameIdentifier, jwtResult.userId),
+                                new Claim("TenantId", tenantId)
+                            };
+                            foreach (var tId in tenantIds)
+                            {
+                                _logger.LogDebug("tenantIds-{tId}",tId);
+                                claims.Add(new Claim("AuthorizedTenantId", tId));
+                            }
+
+                            var identity = new ClaimsIdentity(claims, Scheme.Name);
+                            var principal = new ClaimsPrincipal(identity);
+                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+                            _logger.LogInformation("Successfully authenticated Webhook JWT: User={UserId}, Tenant={TenantId}", jwtResult.userId, tenantId);
+                            return AuthenticateResult.Success(ticket);
                         }
                         else
                         {
