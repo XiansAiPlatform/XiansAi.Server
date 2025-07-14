@@ -6,7 +6,7 @@ using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.IdentityModel.Tokens.Jwt;
-using System.Security.Cryptography;
+
 namespace Features.UserApi.Auth
 {
     public class WebsocketAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
@@ -141,7 +141,7 @@ namespace Features.UserApi.Auth
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
                             var principal = new ClaimsPrincipal(identity);
                             var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogInformation("Successfully authenticated Webhook JWT: User={UserId}, Tenant={TenantId}", jwtResult.userId, tenantId);
+                            _logger.LogDebug("Successfully authenticated Websocket JWT: User={UserId}, Tenant={TenantId}", jwtResult.userId, tenantId);
                             return AuthenticateResult.Success(ticket);
                         }
                         else
