@@ -1,7 +1,7 @@
 ﻿using Shared.Auth;
 using Shared.Utils.Services;
 using System.Text.Json.Serialization;
-using XiansAi.Server.Features.WebApi.Models;
+using Shared.Data.Models;
 using Shared.Providers.Auth;
 using XiansAi.Server.Shared.Services;
 using XiansAi.Server.Shared.Repositories;

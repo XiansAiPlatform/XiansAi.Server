@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using XiansAi.Server.Tests.TestUtils;
 using XiansAi.Server.Features.AgentApi.Models;
-using XiansAi.Server.Shared.Data.Models;
+using Shared.Data.Models;
 using MongoDB.Driver;
 using MongoDB.Bson;
 

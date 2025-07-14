@@ -1,6 +1,6 @@
 using Shared.Auth;
 using Shared.Services;
-using XiansAi.Server.Shared.Data.Models;
+using Shared.Data.Models;
 using XiansAi.Server.Shared.Repositories;
 
 namespace Shared.Services;

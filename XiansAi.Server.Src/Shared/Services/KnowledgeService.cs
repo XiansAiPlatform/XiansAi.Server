@@ -1,6 +1,6 @@
 using MongoDB.Bson;
 using Shared.Auth;
-using XiansAi.Server.Shared.Data.Models;
+using Shared.Data.Models;
 using XiansAi.Server.Shared.Repositories;
 using XiansAi.Server.Utils;
 using System.Security;

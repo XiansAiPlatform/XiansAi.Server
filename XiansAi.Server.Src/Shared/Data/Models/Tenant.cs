@@ -3,7 +3,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data;
 using Shared.Data.Models;
 
-namespace Features.WebApi.Models;
+namespace Shared.Data.Models;
 
 [BsonIgnoreExtraElements]
 public class Tenant

@@ -5,8 +5,8 @@ using XiansAi.Server.Features.WebApi.Endpoints;
 using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Services;
 using Shared.Auth;
-using XiansAi.Server.Shared.Repositories;
-using XiansAi.Server.Shared.Services;
+//using XiansAi.Server.Shared.Repositories;
+//using XiansAi.Server.Shared.Services;
 
 namespace Features.WebApi.Configuration;
 
@@ -28,15 +28,13 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IUserTenantService, UserTenantService>();
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
-        builder.Services.AddScoped<IPublicService, PublicService>();
-        builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
+        builder.Services.AddScoped<IPublicService, PublicService>();        
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
-        builder.Services.AddScoped<ITenantRepository, TenantRepository>();
-        builder.Services.AddScoped<IUserRepository, UserRepository>();
+        builder.Services.AddScoped<ITenantRepository, TenantRepository>();        
         builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
 
         return builder;

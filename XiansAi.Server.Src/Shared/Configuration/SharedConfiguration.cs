@@ -113,6 +113,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
         builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
+        builder.Services.AddScoped<IUserRepository, UserRepository>();
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();
@@ -125,6 +126,7 @@ public static class SharedConfiguration
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IWebhookService, WebhookService>();
+        builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
 
         return builder;
     }

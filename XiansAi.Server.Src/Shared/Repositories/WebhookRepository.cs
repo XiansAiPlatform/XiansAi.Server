@@ -1,7 +1,6 @@
 using MongoDB.Driver;
-using XiansAi.Server.Shared.Data.Models;
+using Shared.Data.Models;
 using Shared.Auth;
-using XiansAi.Server.Shared.Data;
 using Shared.Data;
 
 namespace Shared.Repositories

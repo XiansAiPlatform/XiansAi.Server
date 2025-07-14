@@ -1,7 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace XiansAi.Server.Shared.Data.Models;
+namespace Shared.Data.Models;
 
 public interface IKnowledge
 {
