@@ -1,5 +1,4 @@
 using MongoDB.Bson;
-using XiansAi.Server.Features.WebApi.Repositories;
 using Shared.Auth;
 using Shared.Utils.Services;
 using Shared.Data.Models;
@@ -7,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 using MongoDB.Driver;
 using Auth0.ManagementApi.Models;
 using Microsoft.AspNetCore.Authentication;
+using XiansAi.Server.Shared.Repositories;
 
 namespace Features.WebApi.Services;
 

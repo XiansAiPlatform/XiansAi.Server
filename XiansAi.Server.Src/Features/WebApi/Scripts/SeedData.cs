@@ -2,12 +2,12 @@ using MongoDB.Driver;
 using MongoDB.Bson;
 using Shared.Data;
 using Features.WebApi.Models;
-using XiansAi.Server.Features.WebApi.Repositories;
 using Shared.Data.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Shared.Configuration;
+using XiansAi.Server.Shared.Repositories;
 
 namespace XiansAi.Server.Features.WebApi.Scripts;
 

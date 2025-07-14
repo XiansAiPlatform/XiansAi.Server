@@ -5,7 +5,8 @@ using Shared.Providers.Auth;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using System.IdentityModel.Tokens.Jwt;
+using XiansAi.Server.Shared.Services;
+using YamlDotNet.Core.Tokens;
 
 namespace Features.UserApi.Auth
 {
@@ -16,7 +17,8 @@ namespace Features.UserApi.Auth
         private readonly IConfiguration _configuration;
         private readonly IApiKeyService _apiKeyService;
         private readonly ITokenServiceFactory _tokenServiceFactory;
-        private readonly IAuthMgtConnect _authMgtConnect;
+        private readonly IUserTenantService _userTenantService;
+
 
         public WebsocketAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -26,7 +28,7 @@ namespace Features.UserApi.Auth
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
             ITokenServiceFactory tokenServiceFactory,
-            IAuthMgtConnect authMgtConnect)
+            IUserTenantService userTenantService)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
@@ -34,7 +36,7 @@ namespace Features.UserApi.Auth
             _configuration = configuration;
             _apiKeyService = apiKeyService;
             _tokenServiceFactory = tokenServiceFactory;
-            _authMgtConnect = authMgtConnect;
+            _userTenantService = userTenantService;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -117,45 +119,45 @@ namespace Features.UserApi.Auth
                             // Treat as JWT
                             var tokenService = _tokenServiceFactory.GetTokenService();
                             var jwtResult = await tokenService.ProcessToken(accessToken);
-                            if (string.IsNullOrEmpty(jwtResult.userId))
+                            var userId = jwtResult.userId;
+
+                            if (!jwtResult.success || string.IsNullOrEmpty(userId) )
                             {
                                 _logger.LogInformation("No user Id found in the JWT Token");
                                 return AuthenticateResult.Fail("No user Id found in the JWT Token");
                             }
-                            var tenantIds = await _authMgtConnect.GetUserTenants(jwtResult.userId);
-                            foreach (var tId in tenantIds)
+                            else
                             {
-                                _logger.LogDebug("---------tenantIds-{tId}: ", tId);
+                                _tenantContext.LoggedInUser = userId;
                             }
 
-                            //var handler = new JwtSecurityTokenHandler();
-                            //var jwtToken = handler.ReadJwtToken(accessToken);
-                            //var tenantIds =  tokenService.ExtractTenantIds(jwtToken);
-                            if (!jwtResult.success || string.IsNullOrEmpty(jwtResult.userId) || string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
+                            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
+                            var tenantIds = userTenants?.Data ?? new List<string>();
+
+                            if(string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
                             {
-                                _logger.LogWarning("JWT authentication failed or tenant mismatch");
-                                return AuthenticateResult.Fail("JWT authentication failed or tenant mismatch");
+                                _logger.LogWarning("JWT authentication failed, tenant mismatch");
+                                return AuthenticateResult.Fail("JWT authentication failed, tenant mismatch");
                             }
 
-                            _tenantContext.LoggedInUser = jwtResult.userId;
                             _tenantContext.TenantId = tenantId;
                             _tenantContext.AuthorizedTenantIds = tenantIds;
-                            _logger.LogDebug("UserID-{Id}", jwtResult.userId);
+                            _logger.LogDebug("UserID-{Id}", userId);
                             var claims = new List<Claim>
                             {
-                                new Claim(ClaimTypes.NameIdentifier, jwtResult.userId),
+                                new Claim(ClaimTypes.NameIdentifier, userId),
                                 new Claim("TenantId", tenantId)
                             };
                             foreach (var tId in tenantIds)
                             {
-                                _logger.LogDebug("tenantIds-{tId}",tId);
+                                _logger.LogDebug("tenantIds-{tId}: ", tId);
                                 claims.Add(new Claim("AuthorizedTenantId", tId));
                             }
 
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
                             var principal = new ClaimsPrincipal(identity);
                             var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogDebug("Successfully authenticated Websocket JWT: User={UserId}, Tenant={TenantId}", jwtResult.userId, tenantId);
+                            _logger.LogDebug("Successfully authenticated Websocket JWT: User={UserId}, Tenant={TenantId}", userId, tenantId);
                             return AuthenticateResult.Success(ticket);
                         }
                         else
