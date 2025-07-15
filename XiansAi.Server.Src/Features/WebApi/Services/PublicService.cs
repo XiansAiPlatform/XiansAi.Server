@@ -7,8 +7,6 @@ using Shared.Utils;
 using Shared.Utils.Services;
 using System.Configuration;
 using System.IdentityModel.Tokens.Jwt;
-using System.Threading.Tasks;
-using XiansAi.Server.Features.WebApi.Services;
 using Shared.Providers.Auth;
 using XiansAi.Server.Utils;
 

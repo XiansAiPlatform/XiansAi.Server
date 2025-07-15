@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Shared.Configuration;
-using XiansAi.Server.Shared.Repositories;
+using Shared.Repositories;
 
 namespace XiansAi.Server.Features.WebApi.Scripts;
 

@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.IdentityModel.Tokens.Jwt;
 using Shared.Providers.Auth.Auth0;
-using XiansAi.Server.Shared.Services;
+using Shared.Services;
 
 namespace Shared.Providers.Auth.Keycloak;
 

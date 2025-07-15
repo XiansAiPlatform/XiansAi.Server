@@ -3,8 +3,8 @@ using Shared.Utils.Services;
 using System.Text.Json.Serialization;
 using Shared.Data.Models;
 using Shared.Providers.Auth;
-using XiansAi.Server.Shared.Services;
-using XiansAi.Server.Shared.Repositories;
+using Shared.Services;
+using Shared.Repositories;
 
 namespace XiansAi.Server.Features.WebApi.Services
 {

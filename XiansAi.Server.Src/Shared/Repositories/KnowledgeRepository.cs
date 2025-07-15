@@ -3,7 +3,7 @@ using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Data;
 
-namespace XiansAi.Server.Shared.Repositories;
+namespace Shared.Repositories;
 
 public interface IKnowledgeRepository
 {

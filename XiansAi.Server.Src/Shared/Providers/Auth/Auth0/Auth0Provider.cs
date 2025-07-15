@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
 using System.Security.Claims;
 using System.Text.Json;
-using XiansAi.Server.Shared.Services;
+using Shared.Services;
 
 namespace Shared.Providers.Auth.Auth0;
 

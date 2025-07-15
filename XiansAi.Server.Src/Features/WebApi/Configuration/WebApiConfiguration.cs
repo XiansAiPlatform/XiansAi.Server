@@ -2,13 +2,7 @@ using Features.WebApi.Endpoints;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
 using XiansAi.Server.Features.WebApi.Endpoints;
-using XiansAi.Server.Features.WebApi.Repositories;
 using XiansAi.Server.Features.WebApi.Services;
-using Shared.Auth;
-using XiansAi.Server.Shared.Repositories;
-using XiansAi.Server.Shared.Services;
-//using XiansAi.Server.Shared.Repositories;
-//using XiansAi.Server.Shared.Services;
 
 namespace Features.WebApi.Configuration;
 
@@ -16,8 +10,7 @@ public static class WebApiConfiguration
 {
     public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder builder)
     {
-        // Register Web API specific services
-        builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
+        // Register Web API specific services       
         builder.Services.AddScoped<IWorkflowStarterService, WorkflowStarterService>();
         builder.Services.AddScoped<IWorkflowEventsService, WorkflowEventsService>();
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
@@ -28,16 +21,13 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
-        builder.Services.AddScoped<IUserTenantService, UserTenantService>();
-        builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<IPublicService, PublicService>();        
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
-        builder.Services.AddScoped<ITenantRepository, TenantRepository>();        
-        builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
+      
 
         return builder;
     }

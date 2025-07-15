@@ -1,15 +1,14 @@
 using MongoDB.Bson;
 using Shared.Auth;
 using Shared.Data.Models;
-using XiansAi.Server.Shared.Repositories;
+using Shared.Repositories;
 using XiansAi.Server.Utils;
 using System.Security;
 using System.Text.Json.Serialization;
 using System.Text.Json;
-using Shared.Repositories;
 using Shared.Utils.Services;
 
-namespace XiansAi.Server.Shared.Services;
+namespace Shared.Services;
 
 public class KnowledgeRequest
 {

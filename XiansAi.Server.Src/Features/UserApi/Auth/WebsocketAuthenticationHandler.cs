@@ -5,7 +5,6 @@ using Shared.Providers.Auth;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using XiansAi.Server.Shared.Services;
 using YamlDotNet.Core.Tokens;
 
 namespace Features.UserApi.Auth

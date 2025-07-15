@@ -4,7 +4,7 @@ using Shared.Auth;
 using Shared.Utils;
 using System.Security.Claims;
 using Shared.Providers.Auth;
-using XiansAi.Server.Shared.Services;
+using Shared.Services;
 
 namespace Features.WebApi.Auth;
 

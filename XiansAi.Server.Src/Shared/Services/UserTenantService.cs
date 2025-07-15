@@ -1,14 +1,12 @@
-
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Utils.Services;
 using System.IdentityModel.Tokens.Jwt;
 using Shared.Data.Models;
-using XiansAi.Server.Shared.Repositories;
-using XiansAi.Server.Features.WebApi.Services;
+using Shared.Repositories;
 
-namespace XiansAi.Server.Shared.Services;
+namespace Shared.Services;
 
 public class UserTenantDto
 {

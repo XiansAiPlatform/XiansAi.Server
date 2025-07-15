@@ -4,7 +4,7 @@ using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
 
-namespace XiansAi.Server.Shared.Repositories;
+namespace Shared.Repositories;
 
 public interface ITenantRepository
 {

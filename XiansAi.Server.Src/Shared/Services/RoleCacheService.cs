@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
-using XiansAi.Server.Shared.Repositories;
+using Shared.Repositories;
 
-namespace XiansAi.Server.Shared.Services
+namespace Shared.Services
 {
     public interface IRoleCacheService
     {

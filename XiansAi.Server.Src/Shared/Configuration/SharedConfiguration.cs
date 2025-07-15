@@ -1,7 +1,5 @@
 using Shared.Repositories;
 using Shared.Services;
-using XiansAi.Server.Shared.Repositories;
-using XiansAi.Server.Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Providers.Auth.Auth0;
 using Shared.Providers.Auth.AzureB2C;
@@ -114,6 +112,8 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
         builder.Services.AddScoped<IWebhookRepository, WebhookRepository>();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
+        builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
+        builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();
@@ -127,6 +127,8 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IWebhookService, WebhookService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
+        builder.Services.AddScoped<IUserTenantService, UserTenantService>();
+        builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 
         return builder;
     }

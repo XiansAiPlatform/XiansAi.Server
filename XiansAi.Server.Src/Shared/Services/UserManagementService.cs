@@ -1,17 +1,13 @@
-using Features.WebApi.Auth;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Services;
 using Shared.Utils.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json.Serialization;
-using XiansAi.Server.Features.WebApi.Models;
-using XiansAi.Server.Features.WebApi.Repositories;
-using Shared.Providers.Auth;
-using XiansAi.Server.Shared.Repositories;
+using Shared.Repositories;
 using Shared.Data.Models;
 
-namespace XiansAi.Server.Features.WebApi.Services;
+namespace Shared.Services;
 
 public class UserDto
 {
@@ -189,13 +185,13 @@ public class UserManagementService : IUserManagementService
                 UserId = userDto.UserId,
                 Email = userDto.Email,
                 Name = userDto.Name,
-                IsSysAdmin = anyUser == null, 
+                IsSysAdmin = anyUser == null,
                 IsLockedOut = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 TenantRoles = new List<TenantRole>()
             };
-            
+
             try
             {
                 var success = await _userRepository.CreateAsync(newUser);
@@ -216,7 +212,7 @@ public class UserManagementService : IUserManagementService
             catch (Exception createEx)
             {
                 _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", userDto.UserId);
-                
+
                 // Check if user was created by another process
                 existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                 if (existingUser != null)
@@ -224,7 +220,7 @@ public class UserManagementService : IUserManagementService
                     _logger.LogInformation("User {UserId} already exists after creation failure", userDto.UserId);
                     return ServiceResult<bool>.Conflict("User already exists");
                 }
-                
+
                 throw; // Re-throw if it's not a duplicate key issue
             }
         }
@@ -294,7 +290,7 @@ public class UserManagementService : IUserManagementService
                 }
                 return ServiceResult<InviteDto?>.Success(null);
             }
-            return ServiceResult<InviteDto?>.Success(new InviteDto { Email = email, Token = invitation.Token});
+            return ServiceResult<InviteDto?>.Success(new InviteDto { Email = email, Token = invitation.Token });
         }
         catch (Exception ex)
         {
