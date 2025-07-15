@@ -13,7 +13,7 @@ namespace Features.UserApi.Endpoints
         {
             var messagingGroup = app.MapGroup("/api/user/messaging")
                 .WithTags("UserAPI - Messaging")
-                .RequireAuthorization("EndpointAuthPolicy"); ;
+                .RequireAuthorization("EndpointAuthPolicy");
 
             messagingGroup.MapPost("/inbound", async (
                 [FromQuery] string workflowId,
