@@ -1,14 +1,14 @@
-using Features.WebApi.Auth.Providers.Auth0;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
 using Shared.Utils;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using XiansAi.Server.Features.WebApi.Services;
 using System.IdentityModel.Tokens.Jwt;
+using Shared.Providers.Auth.Auth0;
+using Shared.Services;
 
-namespace Features.WebApi.Auth.Providers.Keycloak;
+namespace Shared.Providers.Auth.Keycloak;
 
 public class KeycloakProvider : IAuthProvider
 {
@@ -46,10 +46,10 @@ public class KeycloakProvider : IAuthProvider
         // Configure audience validation for Keycloak
         // Keycloak typically uses 'account' as the audience for standard tokens
         options.TokenValidationParameters.ValidAudiences = new[] { "account" };
-        
+
         // Map claims properly for Keycloak
         options.MapInboundClaims = false; // Prevent automatic claim type mapping
-        
+
         // Set up claim type mapping for proper user identification
         JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear(); // Clear default mappings
         JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Add("sub", ClaimTypes.NameIdentifier);
@@ -94,19 +94,19 @@ public class KeycloakProvider : IAuthProvider
 
                     // Get user roles from database or token claims (matching Auth0 behavior)
                     var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                    
+
                     // If NameIdentifier is not found, try the same extraction logic as KeycloakTokenService
                     if (string.IsNullOrEmpty(userId))
                     {
                         // First try 'sub' claim (standard JWT user ID)
                         userId = identity.FindFirst("sub")?.Value;
-                        
+
                         // Fallback to 'preferred_username' for Keycloak tokens
                         if (string.IsNullOrEmpty(userId))
                         {
                             userId = identity.FindFirst("preferred_username")?.Value;
                         }
-                        
+
                         if (!string.IsNullOrEmpty(userId))
                         {
                             _logger.LogInformation("Extracted user ID for role assignment: {UserId}", userId);
@@ -114,7 +114,7 @@ public class KeycloakProvider : IAuthProvider
                             identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, userId));
                         }
                     }
-                    
+
                     var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
                     if (!string.IsNullOrEmpty(userId))
@@ -129,9 +129,9 @@ public class KeycloakProvider : IAuthProvider
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
                             //handle role for default tenant
-                            if(tenantId == Constants.DefaultTenantId)
+                            if (tenantId == Constants.DefaultTenantId)
                             {
-                                if(roles == null)
+                                if (roles == null)
                                 {
                                     roles = new List<string>();
                                 }

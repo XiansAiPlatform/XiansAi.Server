@@ -1,15 +1,12 @@
-using Features.WebApi.Auth;
-using Features.WebApi.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Utils.Services;
 using System.IdentityModel.Tokens.Jwt;
-using XiansAi.Server.Features.WebApi.Models;
-using XiansAi.Server.Features.WebApi.Repositories;
+using Shared.Data.Models;
+using Shared.Repositories;
 
-
-namespace XiansAi.Server.Features.WebApi.Services;
+namespace Shared.Services;
 
 public class UserTenantDto
 {
@@ -44,8 +41,8 @@ public class UserTenantService : IUserTenantService
     private readonly IConfiguration _configuration;
     private readonly IUserManagementService _userManagementService;
 
-    public UserTenantService(IUserRepository userRepository, 
-        ILogger<UserTenantService> logger, 
+    public UserTenantService(IUserRepository userRepository,
+        ILogger<UserTenantService> logger,
         ITenantContext tenantContext,
         IAuthMgtConnect authMgtConnect,
         IConfiguration configuration,
@@ -108,7 +105,7 @@ public class UserTenantService : IUserTenantService
             var tenants = await _userRepository.GetUserTenantsAsync(userId);
 
             //for backward compatibility, ensure existing users with their Tenants
-            if(tenants.Count == 0)
+            if (tenants.Count == 0)
             {
                 tenants = await _authMgtConnect.GetUserTenants(userId);
 
@@ -119,7 +116,7 @@ public class UserTenantService : IUserTenantService
                     if (tenant == null)
                     {
                         _logger.LogInformation("Tenant {TenantId} not found in database, adding to DB collection", tenantId);
-                        
+
                         var newTenant = new Tenant
                         {
                             Id = ObjectId.GenerateNewId().ToString(),
@@ -163,7 +160,7 @@ public class UserTenantService : IUserTenantService
                 return ServiceResult<List<string>>.Success(allTenants.Select(t => t.TenantId).ToList());
             }
 
-            var tenants =  await _userRepository.GetUserTenantsAsync(userId);
+            var tenants = await _userRepository.GetUserTenantsAsync(userId);
             return ServiceResult<List<string>>.Success(tenants);
         }
         catch (Exception ex)
@@ -246,7 +243,7 @@ public class UserTenantService : IUserTenantService
             var users = await _userRepository.GetUsersWithUnapprovedTenantAsync(tenantId);
             return ServiceResult<List<UserTenantDto>>.Success(
                 users.SelectMany(user =>
-                    (user.TenantRoles == null || user.TenantRoles.Count == 0)
+                    user.TenantRoles == null || user.TenantRoles.Count == 0
                         ? new[] { new UserTenantDto { UserId = user.UserId, TenantId = string.Empty } }
                         : user.TenantRoles
                             .Where(tr => !tr.IsApproved && (tenantId != null ? tr.Tenant == tenantId : true))
@@ -272,7 +269,7 @@ public class UserTenantService : IUserTenantService
             var validationResult = ValidateTenantAccess("approve user", null);
             if (!validationResult.IsSuccess)
                 return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
-            
+
             var user = await _userRepository.GetByUserIdAsync(userId);
             if (user == null)
                 return ServiceResult<bool>.NotFound("User not found");
@@ -300,7 +297,7 @@ public class UserTenantService : IUserTenantService
                 };
                 user.TenantRoles.Add(tenantEntry);
             }
-                
+
             var result = await _userRepository.UpdateAsync(userId, user);
             return result
                 ? ServiceResult<bool>.Success(true)

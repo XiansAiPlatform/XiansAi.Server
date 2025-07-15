@@ -3,7 +3,7 @@ using System.Text.Json;
 using Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
-using XiansAi.Server.Shared.Data.Models;
+using Shared.Data.Models;
 using Features.WebApi.Services;
 using MongoDB.Bson;
 using Shared.Utils.Services;

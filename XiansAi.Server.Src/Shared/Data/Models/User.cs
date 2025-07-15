@@ -2,7 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using System.Text.Json.Serialization;
 
-namespace XiansAi.Server.Features.WebApi.Models;
+namespace Shared.Data.Models;
 
 public class User
 {

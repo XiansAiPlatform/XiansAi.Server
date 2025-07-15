@@ -1,69 +1,123 @@
-using System.IdentityModel.Tokens.Jwt;
-using Features.WebApi.Auth.Providers.AzureB2C;
-using RestSharp;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.JsonWebTokens;
-using System.Security.Cryptography;
+using Microsoft.IdentityModel.Tokens;
+using RestSharp;
 using Shared.Utils;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
+using System.Text.Json;
 
-namespace Features.WebApi.Auth.Providers.Tokens;
+namespace Shared.Providers.Auth.Keycloak;
 
-public class AzureB2CTokenService : ITokenService
+public class KeycloakTokenService : ITokenService
 {
-    private readonly ILogger<AzureB2CTokenService> _logger;
-    private AzureB2CConfig? _azureB2CConfig;
-    private readonly string _tenantClaimType;
+    private readonly ILogger<KeycloakTokenService> _logger;
+    private RestClient _client;
+    private readonly KeycloakConfig? _keycloakConfig;
+    private readonly string _organizationClaimType = "organization";
     private readonly HttpClient _httpClient;
     private static readonly Dictionary<string, (DateTime expiry, JsonWebKeySet jwks)> _jwksCache = new();
     private static readonly SemaphoreSlim _jwksCacheLock = new(1, 1);
 
-    public AzureB2CTokenService(ILogger<AzureB2CTokenService> logger, IConfiguration configuration, HttpClient? httpClient = null)
+    public KeycloakTokenService(ILogger<KeycloakTokenService> logger, IConfiguration configuration, HttpClient? httpClient = null)
     {
         _logger = logger;
+        _client = new RestClient();
         _httpClient = httpClient ?? new HttpClient();
-        _azureB2CConfig = configuration.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
-            throw new ArgumentException("Azure B2C configuration is missing");
-        
-        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
-            new AuthProviderConfig();
-        _tenantClaimType = authProviderConfig.TenantClaimType;
+        _keycloakConfig = configuration.GetSection("Keycloak").Get<KeycloakConfig>() ??
+            throw new ArgumentException("Keycloak configuration is missing");
     }
 
     public string? ExtractUserId(JwtSecurityToken token)
     {
+        // First try the standard 'sub' claim
         var userId = token.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-        if (string.IsNullOrEmpty(userId))
+        if (!string.IsNullOrEmpty(userId))
         {
-            userId = token.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
+            _logger.LogDebug("Found user ID in 'sub' claim: {UserId}", userId);
+            return userId;
         }
-        return userId;
+
+        // Fallback to preferred_username for Keycloak tokens missing 'sub' claim
+        userId = token.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            _logger.LogInformation("Using 'preferred_username' as user ID: {UserId}", userId);
+            return userId;
+        }
+
+        // Try other common alternative claim names
+        var alternativeClaimTypes = new[] { "user_id", "uid", "id", "email", "username" };
+        foreach (var claimType in alternativeClaimTypes)
+        {
+            userId = token.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                _logger.LogInformation("Found user ID in '{ClaimType}' claim: {UserId}", claimType, userId);
+                return userId;
+            }
+        }
+
+        _logger.LogWarning("No user identifier found in any known claim types");
+        return null;
     }
 
     public IEnumerable<string> ExtractTenantIds(JwtSecurityToken token)
     {
-        var tenantIds = token.Claims
-            .Where(c => c.Type == _tenantClaimType)
-            .Select(c => c.Value)
-            .ToList();
-
-        if (tenantIds.Count == 0)
+        try
         {
-            _logger.LogWarning("No tenant IDs found in token");
-            return new List<string> { Constants.DefaultTenantId };
-        }
+            var defaultTenantId = Constants.DefaultTenantId;
+            // Find the organization claim
+            var organizationClaim = token.Claims.FirstOrDefault(c => c.Type == _organizationClaimType);
+            if (organizationClaim == null)
+            {
+                _logger.LogWarning("No organization claim found in token");
+                return new List<string> { defaultTenantId };
+            }
 
-        return tenantIds;
+            // The organization claim contains a JSON object with tenant IDs as properties
+            var organizationJson = organizationClaim.Value;
+            if (string.IsNullOrEmpty(organizationJson))
+            {
+                _logger.LogWarning("Organization claim is empty");
+                return new List<string> { defaultTenantId };
+            }
+
+            // Parse the organization JSON
+            var tenantIds = new List<string>();
+            try
+            {
+                var organizationObj = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(organizationJson);
+                if (organizationObj != null)
+                {
+                    // Extract tenant IDs which are the keys of the dictionary
+                    tenantIds.AddRange(organizationObj.Keys);
+                }
+                tenantIds.Add(defaultTenantId);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse organization claim JSON: {Value}", organizationJson);
+            }
+
+            _logger.LogInformation("Extracted tenant IDs from token: {TenantIds}", string.Join(", ", tenantIds));
+            return tenantIds;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error extracting tenant IDs from token");
+            return Enumerable.Empty<string>();
+        }
     }
 
     public async Task<(bool success, string? userId)> ProcessToken(string token)
     {
         try
         {
-            // SECURITY FIX: Validate the JWT token with JWKS before processing claims
+            // Validate the JWT token with JWKS
             var validationResult = await ValidateJwtWithJwks(token);
             if (!validationResult.success)
             {
-                _logger.LogWarning("JWT token validation failed: {Error}", validationResult.errorMessage);
+                _logger.LogWarning("JWT token validation failed");
                 return (false, null);
             }
 
@@ -77,12 +131,13 @@ public class AzureB2CTokenService : ITokenService
             }
 
             var userId = ExtractUserId(jsonToken);
-            
+
             if (string.IsNullOrEmpty(userId))
             {
                 _logger.LogWarning("No user identifier found in token");
                 return (false, null);
             }
+
             return (true, userId);
         }
         catch (Exception ex)
@@ -96,22 +151,22 @@ public class AzureB2CTokenService : ITokenService
     {
         try
         {
-            if (_azureB2CConfig == null)
+            if (_keycloakConfig == null)
             {
-                return (false, "Azure B2C configuration is missing");
+                return (false, "Keycloak configuration is missing");
             }
 
             // Get JWKS
             var jwks = await GetJwks();
             if (jwks == null)
             {
-                return (false, "Failed to fetch JWKS from Azure B2C");
+                return (false, "Failed to fetch JWKS from Keycloak");
             }
 
             // Parse JWT header to get key ID
             var handler = new JsonWebTokenHandler();
             var jsonToken = handler.ReadJsonWebToken(token);
-            
+
             if (jsonToken == null)
             {
                 return (false, "Invalid JWT token format");
@@ -144,14 +199,12 @@ public class AzureB2CTokenService : ITokenService
             };
 
             // Set up token validation parameters
+            var issuerUri = new Uri(_keycloakConfig.ValidIssuer ?? throw new InvalidOperationException("Keycloak configuration ValidIssuer is missing"));
             var validationParameters = new TokenValidationParameters
             {
-                ValidateAudience = !string.IsNullOrEmpty(_azureB2CConfig.Audience),
-                ValidAudience = _azureB2CConfig.Audience,
+                ValidateAudience = false,
                 ValidateIssuer = true,
-                //ValidIssuer = $"https://sts.windows.net/{_azureB2CConfig.TenantId}/", // Azure Entra ID actual token issuer
-                //ValidIssuer = $"{domain}/{_azureB2CConfig.TenantId}/v2.0/", // Token issuer does not include policy
-                ValidIssuer = _azureB2CConfig.Issuer,
+                ValidIssuer = issuerUri.ToString(),
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = rsaSecurityKey,
@@ -160,7 +213,7 @@ public class AzureB2CTokenService : ITokenService
 
             // Validate the token
             var result = await handler.ValidateTokenAsync(token, validationParameters);
-            
+
             if (!result.IsValid)
             {
                 var errorMessage = result.Exception?.Message ?? "Token validation failed";
@@ -180,22 +233,10 @@ public class AzureB2CTokenService : ITokenService
 
     private async Task<JsonWebKeySet?> GetJwks()
     {
-        if (_azureB2CConfig == null)
-        {
-            return null;
-        }
+        var baseUri = new Uri(_keycloakConfig?.AuthServerUrl!);
+        var realmUri = new Uri(baseUri, $"realms/{_keycloakConfig?.Realm}");
+        var cacheKey = realmUri.ToString();
 
-        // Ensure domain starts with https://
-        // var domain = _azureB2CConfig.Domain!.StartsWith("https://") 
-        //     ? _azureB2CConfig.Domain 
-        //     : $"https://{_azureB2CConfig.Domain}";
-        // Azure B2C JWKS URL includes the policy
-        //var jwksUri = $"{domain}/{_azureB2CConfig.TenantId}/{_azureB2CConfig.Policy}/discovery/v2.0/keys";
-        // Azure Entra ID JWKS URL format
-        //var jwksUri = $"https://login.microsoftonline.com/{_azureB2CConfig.TenantId}/discovery/v2.0/keys";
-        var jwksUri = _azureB2CConfig.JwksUri ?? throw new InvalidOperationException("JWKS URI is not configured");
-        var cacheKey = jwksUri;
-        
         await _jwksCacheLock.WaitAsync();
         try
         {
@@ -206,14 +247,17 @@ public class AzureB2CTokenService : ITokenService
             }
 
             // Fetch fresh JWKS
-            _logger.LogDebug("Fetching JWKS from: {JwksUrl}", jwksUri);
+            var realmUriWithSlash = new Uri(realmUri.ToString() + "/");
+            var jwksUri = new Uri(realmUriWithSlash, "protocol/openid-connect/certs");
+            var jwksUrl = jwksUri.ToString();
+            _logger.LogDebug("Fetching JWKS from: {JwksUrl}", jwksUrl);
 
-            var response = await _httpClient.GetAsync(jwksUri);
+            var response = await _httpClient.GetAsync(jwksUrl);
             if (!response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Failed to fetch JWKS from {JwksUrl}. Status: {StatusCode}, Response: {ResponseContent}", 
-                    jwksUri, response.StatusCode, responseContent);
+                _logger.LogError("Failed to fetch JWKS from {JwksUrl}. Status: {StatusCode}, Response: {ResponseContent}",
+                    jwksUrl, response.StatusCode, responseContent);
                 return null;
             }
 
@@ -228,7 +272,7 @@ public class AzureB2CTokenService : ITokenService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error fetching JWKS from Azure B2C");
+            _logger.LogError(ex, "Error fetching JWKS from Keycloak");
             return null;
         }
         finally
@@ -240,6 +284,6 @@ public class AzureB2CTokenService : ITokenService
     public async Task<string> GetManagementApiToken()
     {
         await Task.CompletedTask;
-        throw new NotImplementedException();
+        throw new NotImplementedException("GetManagementApiToken is not implemented for Keycloak. Use Keycloak's management API directly.");
     }
-} 
+}

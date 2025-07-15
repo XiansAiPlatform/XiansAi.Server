@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Shared.Auth;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
-using XiansAi.Server.Features.WebApi.Services;
+using Shared.Services;
 
 namespace XiansAi.Server.Features.WebApi.Endpoints;
 

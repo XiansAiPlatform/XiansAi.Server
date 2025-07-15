@@ -1,11 +1,10 @@
-using Features.WebApi.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
 
-namespace XiansAi.Server.Features.WebApi.Repositories;
+namespace Shared.Repositories;
 
 public interface ITenantRepository
 {
@@ -102,7 +101,7 @@ public class TenantRepository : ITenantRepository
         var update = Builders<Tenant>.Update
             .Push(t => t.Agents, agent)
             .Set(t => t.UpdatedAt, DateTime.UtcNow);
-            
+
         var result = await _collection.UpdateOneAsync(filter, update);
         return result.ModifiedCount > 0;
     }
@@ -113,11 +112,11 @@ public class TenantRepository : ITenantRepository
             Builders<Tenant>.Filter.Eq(t => t.Id, tenantId),
             Builders<Tenant>.Filter.ElemMatch(t => t.Agents, a => a.Name == agentName)
         );
-        
+
         var update = Builders<Tenant>.Update
             .Set("agents.$", updatedAgent)
             .Set(t => t.UpdatedAt, DateTime.UtcNow);
-            
+
         var result = await _collection.UpdateOneAsync(filter, update);
         return result.ModifiedCount > 0;
     }
@@ -128,7 +127,7 @@ public class TenantRepository : ITenantRepository
         var update = Builders<Tenant>.Update
             .PullFilter(t => t.Agents, a => a.Name == agentName)
             .Set(t => t.UpdatedAt, DateTime.UtcNow);
-            
+
         var result = await _collection.UpdateOneAsync(filter, update);
         return result.ModifiedCount > 0;
     }
@@ -137,11 +136,11 @@ public class TenantRepository : ITenantRepository
     {
         var tenant = await GetByIdAsync(tenantId);
         if (tenant == null) return false;
-        
+
         var agent = tenant.Agents?.FirstOrDefault(a => a.Name == agentName);
         if (agent == null) return false;
-    
-        
+
+
         return await UpdateAsync(tenantId, tenant);
     }
-} 
+}

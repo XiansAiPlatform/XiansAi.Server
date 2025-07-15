@@ -1,8 +1,8 @@
-using Features.WebApi.Auth.Providers.Auth0;
-using Features.WebApi.Auth.Providers.AzureB2C;
-using Features.WebApi.Auth.Providers.Keycloak;
+using Shared.Providers.Auth.Auth0;
+using Shared.Providers.Auth.AzureB2C;
+using Shared.Providers.Auth.Keycloak;
 
-namespace Features.WebApi.Auth.Providers;
+namespace Shared.Providers.Auth;
 
 public interface IAuthProviderFactory
 {
@@ -13,18 +13,18 @@ public class AuthProviderFactory : IAuthProviderFactory
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;
-    
+
     public AuthProviderFactory(IServiceProvider serviceProvider, IConfiguration configuration)
     {
         _serviceProvider = serviceProvider;
         _configuration = configuration;
     }
-    
+
     public IAuthProvider GetProvider()
     {
-        var providerConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
+        var providerConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
-            
+
         return providerConfig.Provider switch
         {
             AuthProviderType.Auth0 => _serviceProvider.GetRequiredService<Auth0Provider>(),
@@ -33,4 +33,4 @@ public class AuthProviderFactory : IAuthProviderFactory
             _ => throw new ArgumentException($"Unsupported authentication provider: {providerConfig.Provider}")
         };
     }
-} 
+}

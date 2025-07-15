@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Features.WebApi.Auth.Providers.Auth0;
+namespace Shared.Providers.Auth.Auth0;
 
 public class Auth0Config
 {
@@ -31,7 +31,7 @@ public class UserInfo
 {
     [JsonPropertyName("nickname")]
     public string? Nickname { get; set; }
-    
+
     [JsonPropertyName("user_id")]
     public string? UserId { get; set; }
 
@@ -52,4 +52,4 @@ public class UserInfo
 
     [JsonPropertyName("last_ip")]
     public string? LastIp { get; set; }
-} 
+}

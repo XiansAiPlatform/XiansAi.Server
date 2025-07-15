@@ -1,14 +1,12 @@
-using Features.WebApi.Auth.Providers.Auth0;
-using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using RestSharp;
 using System.Security.Claims;
 using System.Text.Json;
-using XiansAi.Server.Features.WebApi.Services;
-using Shared.Auth;
+using Shared.Services;
 using Shared.Utils;
+using Shared.Providers.Auth.Auth0;
 
-namespace Features.WebApi.Auth.Providers.AzureB2C;
+namespace Shared.Providers.Auth.AzureB2C;
 
 public class AzureB2CProvider : IAuthProvider
 {
@@ -22,7 +20,7 @@ public class AzureB2CProvider : IAuthProvider
         _logger = logger;
         _client = new RestClient();
         _tokenService = tokenService;
-        
+
         // Initialize Azure B2C configuration in constructor to ensure it's always available
         _azureB2CConfig = configuration.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
             throw new ArgumentException("Azure B2C configuration is missing");
@@ -48,7 +46,7 @@ public class AzureB2CProvider : IAuthProvider
         // Extract policy name from JWKS URI for Azure B2C authority
         // JWKS URI format: https://domain/tenant/policy/discovery/v2.0/keys
         // Authority should be: https://domain/tenant/policy/v2.0/
-        
+
         options.Authority = _azureB2CConfig.Authority;
         options.TokenValidationParameters.ValidIssuer = _azureB2CConfig.Issuer;
         options.Audience = _azureB2CConfig.Audience;
@@ -62,7 +60,7 @@ public class AzureB2CProvider : IAuthProvider
                 {
                     // Get user roles from database or token claims
                     var userId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                    
+
                     // If NameIdentifier is not found, try the same extraction logic as AzureB2CTokenService
                     if (string.IsNullOrEmpty(userId))
                     {
@@ -74,14 +72,14 @@ public class AzureB2CProvider : IAuthProvider
                         {
                             userId = identity.FindFirst("oid")?.Value;
                         }
-                        
+
                         if (!string.IsNullOrEmpty(userId))
                         {
                             // Add the NameIdentifier claim so other parts of the system can find it
                             identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, userId));
                         }
                     }
-                    
+
                     if (!string.IsNullOrEmpty(userId))
                     {
                         var tenantId = context.HttpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
@@ -94,13 +92,13 @@ public class AzureB2CProvider : IAuthProvider
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
                             //handle role for default tenant
-                            if(tenantId == Constants.DefaultTenantId)
+                            if (tenantId == Constants.DefaultTenantId)
                             {
-                                if(roles == null)
+                                if (roles == null)
                                 {
                                     roles = new List<string>();
                                 }
-                                
+
                                 if (!roles.Contains(SystemRoles.TenantUser))
                                 {
                                     roles.Add(SystemRoles.TenantUser);
@@ -146,15 +144,15 @@ public class AzureB2CProvider : IAuthProvider
                 throw new InvalidOperationException("Azure B2C configuration is not initialized");
 
             var azureUserInfo = await GetAzureB2CUserInfo(userId);
-            
+
             // Convert Azure B2C user info to common UserInfo format
             return new UserInfo
             {
                 UserId = azureUserInfo.UserId,
                 Nickname = azureUserInfo.DisplayName,
-                AppMetadata = new AppMetadata 
-                { 
-                    Tenants = azureUserInfo.Tenants ?? Array.Empty<string>() 
+                AppMetadata = new AppMetadata
+                {
+                    Tenants = azureUserInfo.Tenants ?? Array.Empty<string>()
                 },
                 CreatedAt = DateTime.UtcNow,  // Azure B2C doesn't provide this directly
                 LastLogin = DateTime.UtcNow   // Azure B2C doesn't provide this directly
@@ -176,22 +174,22 @@ public class AzureB2CProvider : IAuthProvider
     private async Task<AzureB2CUserInfo> GetAzureB2CUserInfo(string userId)
     {
         var token = await GetMsGraphApiToken();
-            
+
         // Base URL for Microsoft Graph API
         _client = new RestClient("https://graph.microsoft.com/v1.0");
-        
+
         var request = new RestRequest($"/users/{userId}", Method.Get);
         request.AddHeader("Authorization", $"Bearer {token}");
         request.AddHeader("Content-Type", "application/json");
-        
+
         var response = await _client.ExecuteAsync(request);
-        
+
         if (!response.IsSuccessful)
         {
             _logger.LogError("Failed to get user info: {ErrorMessage}", response.ErrorMessage);
             throw new Exception($"Failed to get user info: {response.ErrorMessage}");
         }
-        
+
         return JsonSerializer.Deserialize<AzureB2CUserInfo>(response.Content!) ??
             throw new Exception("Failed to deserialize Azure B2C user info");
     }
@@ -206,4 +204,4 @@ public class AzureB2CProvider : IAuthProvider
     {
         return Task.FromResult(new List<string>());
     }
-} 
+}

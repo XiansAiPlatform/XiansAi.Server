@@ -1,9 +1,9 @@
-using Features.WebApi.Auth.Providers;
-using Features.WebApi.Auth.Providers.Auth0;
+using Shared.Providers.Auth;
+using Shared.Providers.Auth.Auth0;
 
-namespace Features.WebApi.Auth;
+namespace Shared.Auth;
 
-public interface IAuthMgtConnect    
+public interface IAuthMgtConnect
 {
     /// <summary>
     /// Gets user information from the authentication provider

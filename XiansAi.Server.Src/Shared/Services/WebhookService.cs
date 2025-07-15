@@ -1,4 +1,4 @@
-using XiansAi.Server.Shared.Data.Models;
+using Shared.Data.Models;
 using Shared.Auth;
 using MongoDB.Bson;
 using Shared.Utils.Services;

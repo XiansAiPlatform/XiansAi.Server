@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using XiansAi.Server.Shared.Repositories;
-using XiansAi.Server.Shared.Services;
+using Shared.Repositories;
+using Shared.Services;
 
 namespace XiansAi.Server.Shared;
 
