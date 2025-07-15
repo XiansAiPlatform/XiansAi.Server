@@ -1,0 +1,75 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug WebApi (All Services)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/XiansAi.Server.Src/bin/Debug/net9.0/XiansAi.Server.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/XiansAi.Server.Src",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_APPSETTINGS_JSON": "appsettings.Development.json"
+            },
+            "envFile": "${workspaceFolder}/XiansAi.Server.Src/.env.development"
+        },
+        {
+            "name": "Debug WebApi Only",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/XiansAi.Server.Src/bin/Debug/net9.0/XiansAi.Server.dll",
+            "args": ["--web"],
+            "cwd": "${workspaceFolder}/XiansAi.Server.Src",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_APPSETTINGS_JSON": "appsettings.Development.json"
+            },
+            "envFile": "${workspaceFolder}/XiansAi.Server.Src/.env.development"
+        },
+        {
+            "name": "Debug AgentService Tests",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/XiansAi.Server.Tests/bin/Debug/net9.0/XiansAi.Server.Tests.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/XiansAi.Server.Tests",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "envFile": "${workspaceFolder}/XiansAi.Server.Tests/.env"
+        },
+        {
+            "name": "Debug with Custom Env File",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/XiansAi.Server.Src/bin/Debug/net9.0/XiansAi.Server.dll",
+            "args": ["--env-file", ".env.local"],
+            "cwd": "${workspaceFolder}/XiansAi.Server.Src",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            }
+        },
+        {
+            "name": "Attach to Process",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickProcess}"
+        }
+    ]
+}
