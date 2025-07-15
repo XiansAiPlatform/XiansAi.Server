@@ -1,6 +1,7 @@
 using Features.WebApi.Auth;
 using Features.WebApi.Models;
 using Features.WebApi.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
 
@@ -26,9 +27,11 @@ public static class PublicEndpoints
 
         registrationGroup.MapPost("/verification/validate", async (
             [FromBody] ValidateCodeRequest request,
-            [FromServices] IPublicService publicService) =>
+            [FromServices] IPublicService publicService,
+            HttpContext httpContext) =>
         {
-            var isValid = await publicService.ValidateCode(request.Email, request.Code);
+            var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
+            var isValid = await publicService.ValidateCode(request.Email, request.Code, authHeader!.Substring("Bearer ".Length));
             return Results.Ok(new { isValid });
         })
         .WithName("Validate Verification Code")

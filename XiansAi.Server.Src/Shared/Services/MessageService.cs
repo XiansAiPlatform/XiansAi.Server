@@ -9,9 +9,20 @@ public class ChatOrDataRequest
 {
     private string? _agent;
     private string? _workflowType;
+
+    public string? RequestId { get; set; }
     
+    // unique identifier for the participant, used to identify the participant in the message thread
     public required string ParticipantId { get; set; }
+
+    // unique identifier for the agent's workflow, used to identify the workflow in the message thread
     public string? WorkflowId { get; set; }
+
+    // Scope for the message, used to identify the scope of the message thread
+    public string? Scope { get; set; }
+
+    // Hint for the agent to use when processing the message
+    public string? Hint { get; set; }
     
     public string WorkflowType 
     { 
@@ -89,6 +100,7 @@ public class HandoffRequest
     public required string SourceWorkflowId { get; set; }
     public required string ThreadId { get; set; }
     public required string ParticipantId { get; set; }
+    public string? Scope { get; set; }
     public required string Text { get; set; }
     public object? Data { get; set; }
     public string? Authorization { get; set; }
@@ -100,7 +112,8 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize);
 }
 
 public class MessageService : IMessageService
@@ -193,6 +206,8 @@ public class MessageService : IMessageService
                 WorkflowType = request.TargetWorkflowType,
                 Text = request.Text,
                 Data = request.Data,
+                Scope = request.Scope,
+                // No 'Hint' for handover messages
                 Agent = request.SourceAgent,
                 Authorization = request.Authorization
             }, MessageType.Chat);
@@ -206,23 +221,34 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowType, string participantId, int page, int pageSize, bool includeMetadata = false)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize)
+    {
+        if (page < 1 || pageSize < 1)
+        {
+            _logger.LogWarning("Invalid request: page {Page} and pageSize {PageSize} must be greater than 0", page, pageSize);
+            return ServiceResult<List<ConversationMessage>>.BadRequest("Page and PageSize must be greater than 0");
+        }
+        var messages = await _messageRepository.GetByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize);
+        return ServiceResult<List<ConversationMessage>>.Success(messages);
+    }
+
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope)
     {
         try
         {
-            _logger.LogInformation("Getting message history for workflowType {WorkflowType}, participant {ParticipantId}, page {Page}, pageSize {PageSize}",
-                workflowType, participantId, page, pageSize);
+            _logger.LogInformation("Getting message history for workflowId {WorkflowId}, participant {ParticipantId}, page {Page}, pageSize {PageSize}",
+                workflowId, participantId, page, pageSize);
 
-            if (string.IsNullOrEmpty(workflowType) || string.IsNullOrEmpty(participantId))
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
-                _logger.LogWarning("Invalid request: missing required fields workflowType {WorkflowType}, participant {ParticipantId}", workflowType, participantId);
-                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType and ParticipantId are required");
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
-            if (string.IsNullOrEmpty(workflowType))
+            if (string.IsNullOrEmpty(workflowId))
             {
-                _logger.LogWarning("Invalid request: missing required fields workflowType {WorkflowType}", workflowType);
-                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType is required");
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}", workflowId);
+                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowId is required");
             }
 
             if (page < 1 || pageSize < 1)
@@ -232,16 +258,13 @@ public class MessageService : IMessageService
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowType, participantId, page, pageSize, includeMetadata );
-
-            _logger.LogInformation("Found {Count} messages for workflowType {WorkflowType} and participant {ParticipantId}",
-                messages.Count, workflowType, participantId);
+            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowId, participantId, page, pageSize, scope );
 
             return ServiceResult<List<ConversationMessage>>.Success(messages);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting message history for workflowType {WorkflowType}, participant {ParticipantId}", workflowType, participantId);
+            _logger.LogError(ex, "Error getting message history for workflowId {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
             throw;
         }
     }
@@ -293,8 +316,7 @@ public class MessageService : IMessageService
         _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
         
-        //await HandleAuthorization(request);
-
+        // Critical Operation: If the threadId is not provided, we need to create a new thread
         if (request.ThreadId == null)
         {
             request.ThreadId = await CreateOrGetThread(request);
@@ -341,6 +363,9 @@ public class MessageService : IMessageService
                  request.ThreadId,
                  request.ParticipantId,
                  request.Text, 
+                 request.RequestId,
+                 request.Scope,
+                 request.Hint,
                  request.Data,
                  Type = messageType.ToString(),
                  request.Authorization
@@ -381,6 +406,9 @@ public class MessageService : IMessageService
             ThreadId = request.ThreadId,
             ParticipantId = request.ParticipantId,
             TenantId = _tenantContext.TenantId,
+            Hint = request.Hint,
+            Scope = request.Scope,
+            RequestId = request.RequestId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             CreatedBy = _tenantContext.LoggedInUser,

@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using MongoDB.Bson;
 using Shared.Utils.Serialization;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -55,19 +56,37 @@ public class MongoIndexSynchronizer(
                 var existingIndexNames = existingIndexes.Select(i => i["name"].AsString).ToHashSet();
                 var expectedIndexNames = indexes.Select(i => i.Options.Name).ToHashSet();
 
-                // Drop indexes that are not in expected set (except _id_)
-                foreach (var index in existingIndexes)
+                // Detect if we're using Cosmos DB by checking connection string or error patterns
+                var isCosmosDb = await IsCosmosDbAsync(database);
+
+                if (!isCosmosDb)
                 {
-                    var indexName = index["name"].AsString;
-                    if (indexName != "_id_" && !expectedIndexNames.Contains(indexName))
+                    // For regular MongoDB, drop unused indexes (except _id_)
+                    foreach (var index in existingIndexes)
                     {
-                        logger.LogInformation("Dropping unused index {IndexName} from collection {CollectionName}", 
-                            indexName, collectionName);
-                        await collection.Indexes.DropOneAsync(indexName);
+                        var indexName = index["name"].AsString;
+                        if (indexName != "_id_" && !expectedIndexNames.Contains(indexName))
+                        {
+                            logger.LogInformation("Dropping unused index {IndexName} from collection {CollectionName}", 
+                                indexName, collectionName);
+                            try
+                            {
+                                await collection.Indexes.DropOneAsync(indexName);
+                            }
+                            catch (Exception dropEx)
+                            {
+                                logger.LogWarning(dropEx, "Failed to drop index {IndexName} from collection {CollectionName}, continuing", 
+                                    indexName, collectionName);
+                            }
+                        }
                     }
                 }
+                else
+                {
+                    logger.LogInformation("Detected Cosmos DB - skipping index drops for collection {CollectionName}", collectionName);
+                }
 
-                // Create missing indexes
+                // Create missing indexes with Cosmos DB error handling
                 var indexesToCreate = indexes
                     .Where(i => !existingIndexNames.Contains(i.Options.Name))
                     .ToList();
@@ -76,15 +95,80 @@ public class MongoIndexSynchronizer(
                 {
                     logger.LogInformation("Creating {Count} indexes for collection {CollectionName}", 
                         indexesToCreate.Count, collectionName);
-                    await collection.Indexes.CreateManyAsync(indexesToCreate);
+                    
+                    try
+                    {
+                        await collection.Indexes.CreateManyAsync(indexesToCreate);
+                    }
+                    catch (MongoCommandException ex) when (IsCosmosDbUniqueIndexError(ex))
+                    {
+                        logger.LogWarning("Cosmos DB unique index restriction encountered for collection {CollectionName}. " +
+                                        "Indexes may already exist with different constraints. Continuing without recreating indexes. " +
+                                        "Error: {Message}", collectionName, ex.Message);
+                        // Continue execution - don't let index creation failures stop the app
+                    }
                 }
+            }
+            catch (MongoCommandException ex) when (IsCosmosDbUniqueIndexError(ex))
+            {
+                logger.LogWarning("Cosmos DB unique index restriction for collection {CollectionName}. " +
+                                "This is expected when indexes already exist. Continuing. Error: {Message}", 
+                                collectionName, ex.Message);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to ensure indexes for collection: {CollectionName}", collectionName);
+                
+                // For production environments, don't let index failures stop the application
+                if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+                {
+                    logger.LogWarning("Continuing application startup despite index creation failure in production environment");
+                    continue; // Continue with next collection
+                }
                 throw;
             }
         }
+        
+        logger.LogInformation("Index synchronization completed");
+    }
+
+    /// <summary>
+    /// Detects if we're connected to Cosmos DB by checking for specific characteristics
+    /// </summary>
+    private static async Task<bool> IsCosmosDbAsync(IMongoDatabase database)
+    {
+        try
+        {
+            // Cosmos DB has specific admin database characteristics
+            var adminDb = database.Client.GetDatabase("admin");
+            var result = await adminDb.RunCommandAsync<BsonDocument>(
+                new BsonDocument("buildInfo", 1));
+            
+            // Check if response contains Cosmos DB indicators
+            return result.Contains("version") && 
+                   (result["version"]?.ToString()?.Contains("cosmos") ?? false || 
+                    result.ToString().Contains("DocumentDB"));
+        }
+        catch
+        {
+            // If we can't determine, check connection string as fallback
+            var connectionString = database.Client.Settings.ToString();
+            return connectionString?.Contains("cosmos") == true || 
+                   connectionString?.Contains("documents.azure.com") == true ||
+                   connectionString?.Contains("mongo.cosmos.azure.com") == true;
+        }
+    }
+
+    /// <summary>
+    /// Checks if the exception is related to Cosmos DB unique index restrictions
+    /// </summary>
+    private static bool IsCosmosDbUniqueIndexError(MongoCommandException ex)
+    {
+        return ex.Code == 13 && // Forbidden
+               (ex.Message.Contains("unique index cannot be modified") ||
+                ex.Message.Contains("Forbidden") ||
+                ex.Message.Contains("remove the collection and re-create") ||
+                ex.Message.Contains("The unique index cannot be modified"));
     }
 
     private async Task<Dictionary<string, List<CreateIndexModel<object>>>> GetExpectedIndexesAsync()

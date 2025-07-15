@@ -13,11 +13,13 @@ namespace Features.UserApi.Services
     public class MongoChangeStreamService : BackgroundService
     {
         private readonly IHubContext<ChatHub> _hubContext;
+        private readonly IHubContext<TenantChatHub> _tenantHubContext;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MongoChangeStreamService> _logger;
 
         public MongoChangeStreamService(
             IHubContext<ChatHub> hubContext,
+            IHubContext<TenantChatHub> tenantHubContext,
             IServiceScopeFactory scopeFactory,
             ILogger<MongoChangeStreamService> logger
             )
@@ -25,6 +27,7 @@ namespace Features.UserApi.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _hubContext = hubContext;
+            _tenantHubContext = tenantHubContext;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -87,6 +90,7 @@ namespace Features.UserApi.Services
                             ConvertBsonMetadataToObjectInternal(message);
 
                             var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
+                            var tenantGroupId = message.WorkflowId + message.TenantId;
 
                             //TODO Merge Conflict
                             if (message.Direction == MessageDirection.Outgoing || message.MessageType == MessageType.Handoff)
@@ -97,12 +101,16 @@ namespace Features.UserApi.Services
                                     groupId, JsonSerializer.Serialize(message));
                                     await _hubContext.Clients.Group(groupId)
                                     .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
+                                    await _tenantHubContext.Clients.Group(tenantGroupId)
+                                    .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
                                 }
                                 else
                                 {
                                     _logger.LogDebug("Sending message to group {GroupId}: {Message}",
                                     groupId, JsonSerializer.Serialize(message));
                                     await _hubContext.Clients.Group(groupId)
+                                        .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
+                                    await _tenantHubContext.Clients.Group(tenantGroupId)
                                         .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
                                 }
                             }

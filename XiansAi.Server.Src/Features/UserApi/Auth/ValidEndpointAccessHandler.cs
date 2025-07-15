@@ -4,14 +4,15 @@ using System.Security.Claims;
 
 namespace Features.UserApi.Auth
 {
-    public class ValidWebhookAccessHandler : AuthorizationHandler<ValidWebhookAccessRequirement>
+    public class ValidEndpointAccessHandler : AuthorizationHandler<ValidEndpointAccessRequirement>
     {
-        private readonly ILogger<ValidWebhookAccessHandler> _logger;
+        private readonly ILogger<ValidEndpointAccessHandler> _logger;
         private readonly ITenantContext _tenantContext;
-        public ValidWebhookAccessHandler(
+        public ValidEndpointAccessHandler(
             IHttpContextAccessor httpContextAccessor,
+            IConfiguration configuration,
             ITenantContext tenantContext,
-            ILogger<ValidWebhookAccessHandler> logger)
+            ILogger<ValidEndpointAccessHandler> logger)
         {
             _tenantContext = tenantContext;
             _logger = logger;
@@ -19,7 +20,7 @@ namespace Features.UserApi.Auth
 
         protected override Task HandleRequirementAsync(
             AuthorizationHandlerContext context,
-            ValidWebhookAccessRequirement requirement)
+            ValidEndpointAccessRequirement requirement)
         {
             var loginedUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var tenantId = context.User.FindFirst("TenantId")?.Value;
@@ -53,22 +54,20 @@ namespace Features.UserApi.Auth
                     _tenantContext.TenantId = tenantId;
                     _tenantContext.AuthorizedTenantIds = new[] { tenantId };
 
-                    _logger.LogInformation("Successfully authenticated Webhook Connection");
+                    _logger.LogInformation("Successfully authenticated Endpoint Connection");
                     context.Succeed(requirement);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing access token for Webhook connection");
+                    _logger.LogError(ex, "Error processing access token for Endpoint connection");
                     context.Fail();
                 }
             }
             else
             {
-                _logger.LogWarning("Authorization Fails for Webhook connection");
+                _logger.LogWarning("Authorization Fails for Endpoint connection");
             }
             return Task.CompletedTask;
         }
     }
-
 }
-

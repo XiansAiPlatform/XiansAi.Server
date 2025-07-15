@@ -13,7 +13,8 @@ public static class TenantEndpoints
         // Map tenant endpoints with common attributes
         var tenantsGroup = app.MapGroup("/api/client/tenants")
             .WithTags("WebAPI - Tenants")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
         
 
         tenantsGroup.MapGet("/", async (
@@ -31,20 +32,52 @@ public static class TenantEndpoints
             return operation;
         }).RequiresValidSysAdmin();
 
+        tenantsGroup.MapGet("/{id}", async (
+            string id,
+            [FromServices] ITenantService endpoint) =>
+        {
+            var result = await endpoint.GetTenantByTenantId(id);
+            return result.ToHttpResult();
+        })
+        .WithName("Get Tenant")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Get tenant by ID";
+            operation.Description = "Retrieves a tenant by its unique ID";
+            return operation;
+        })
+        .RequiresValidTenantAdmin();
+
         tenantsGroup.MapGet("/by-tenant-id/{tenantId}", async (
             HttpContext httpContext,
             string tenantId,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantByTenantId(tenantId);
+            var result = await endpoint.GetTenantById(tenantId);
             return result.ToHttpResult();
         })
         .WithName("Get Tenant By TenantId")
-        .WithOpenApi(operation => {
+        .WithOpenApi(operation =>
+        {
             operation.Summary = "Get tenant by tenant ID";
             operation.Description = "Retrieves a tenant by its tenant ID";
             return operation;
-        }).RequiresValidTenant();
+        });
+
+        tenantsGroup.MapGet("/by-domain/{domain}", async (
+            string domain,
+            [FromServices] ITenantService endpoint) =>
+        {
+            var result = await endpoint.GetTenantByDomain(domain);
+            return result.ToHttpResult();
+        })
+        .WithName("Get Tenant By Domain")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get tenant by domain";
+            operation.Description = "Retrieves a tenant by its domain";
+            return operation;
+        })
+        .RequiresValidTenantAdmin();
 
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,

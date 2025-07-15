@@ -26,7 +26,8 @@ public static class MessagingEndpoints
         // Map definitions endpoints with common attributes
         var messagingGroup = app.MapGroup("/api/client/messaging")
             .WithTags("WebAPI - Messaging")
-            .RequiresValidTenant();
+            .RequiresValidTenant()
+            .RequireAuthorization();
 
         messagingGroup.MapPost("/inbound/data", async (
             [FromBody] ChatOrDataRequest request,

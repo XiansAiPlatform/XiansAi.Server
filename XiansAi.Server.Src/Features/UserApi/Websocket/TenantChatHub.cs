@@ -5,18 +5,19 @@ using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
 
+
 namespace Features.UserApi.Websocket
 {
     [Authorize(Policy = "WebsocketAuthPolicy")]
-    public class ChatHub : Hub
+    public class TenantChatHub : Hub
     {
         private readonly IMessageService _messageService;
         private readonly ITenantContext _tenantContext;
         private readonly ITenantContext? _tempTenantContext;
-        private readonly ILogger<ChatHub> _logger;
+        private readonly ILogger<TenantChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
+        public TenantChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<TenantChatHub> logger)
         {
             _messageService = messageService;
             _httpContextAccessor = httpContextAccessor;
@@ -92,15 +93,13 @@ namespace Features.UserApi.Websocket
 
         public async Task GetThreadHistory(string workflow, string participantId, int page, int pageSize)
         {
-            string? scope = null;
             string workflowId = workflow;
-            if(!workflow.StartsWith(_tenantContext.TenantId + ":")) {
-                // this is workflowType, convert to workflowId
+            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
+            {
                 workflowId = _tenantContext.TenantId + ":" + workflow;
             }
-
             EnsureTenantContext();
-            var result = await _messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, scope);
+            var result = await _messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, null);
             await Clients.Caller.SendAsync("ThreadHistory", result.Data);
         }
 
@@ -133,18 +132,18 @@ namespace Features.UserApi.Websocket
             }
         }
 
-        public async Task SubscribeToAgent(string subscribeId, string participantId, string TenantId)
+        public async Task SubscribeToAgent(string subscribeId, string TenantId)
         {
             var workflowId = subscribeId;
             if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
             {
                 workflowId = _tenantContext.TenantId + ":" + subscribeId;
             }
-            
-            await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
+
+            await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + TenantId);
         }
 
-        public async Task UnsubscribeFromAgent(string subscribeId, string participantId, string TenantId)
+        public async Task UnsubscribeFromAgent(string subscribeId, string TenantId)
         {
             var workflowId = subscribeId;
             if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
@@ -152,7 +151,7 @@ namespace Features.UserApi.Websocket
                 workflowId = _tenantContext.TenantId + ":" + subscribeId;
             }
 
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + TenantId);
         }
     }
 }

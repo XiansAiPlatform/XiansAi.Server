@@ -54,7 +54,7 @@ public class Auth0TokenService : ITokenService
         return tenantIds;
     }
 
-    public async Task<(bool success, string? userId, IEnumerable<string>? tenantIds)> ProcessToken(string token)
+    public async Task<(bool success, string? userId)> ProcessToken(string token)
     {
         try
         {
@@ -63,7 +63,7 @@ public class Auth0TokenService : ITokenService
             if (!validationResult.success)
             {
                 _logger.LogWarning("JWT token validation failed: {Error}", validationResult.errorMessage);
-                return (false, null, null);
+                return (false, null);
             }
 
             var handler = new JwtSecurityTokenHandler();
@@ -72,7 +72,7 @@ public class Auth0TokenService : ITokenService
             if (jsonToken == null)
             {
                 _logger.LogWarning("Invalid JWT token format: {Token}", token);
-                return (false, null, null);
+                return (false, null);
             }
 
             var userId = ExtractUserId(jsonToken);
@@ -80,18 +80,15 @@ public class Auth0TokenService : ITokenService
             if (string.IsNullOrEmpty(userId))
             {
                 _logger.LogWarning("No user identifier found in token");
-                return (false, null, null);
+                return (false, null);
             }
 
-            var tenantIds = ExtractTenantIds(jsonToken);
-            _logger.LogInformation("Tenant IDs: {TenantIds}", string.Join(", ", tenantIds));
-            
-            return (true, userId, tenantIds);
+            return (true, userId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing JWT token");
-            return (false, null, null);
+            return (false, null);
         }
     }
 
