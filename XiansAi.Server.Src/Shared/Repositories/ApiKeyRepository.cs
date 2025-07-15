@@ -146,7 +146,7 @@ namespace Shared.Repositories
 
         private static string GenerateApiKey()
         {
-            var bytes = new byte[64];
+            var bytes = new byte[32];
             using var rng = RandomNumberGenerator.Create();
             rng.GetBytes(bytes);
             return "sk-Xnai-"+Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
@@ -154,8 +154,8 @@ namespace Shared.Repositories
 
         private static string HashApiKey(string apiKey)
         {
-            using var sha512 = SHA512.Create();
-            var hash = sha512.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
+            using var sha256 = SHA256.Create();
+            var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
             return Convert.ToBase64String(hash);
         }
     }
