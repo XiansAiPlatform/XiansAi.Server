@@ -13,20 +13,18 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     [Required(ErrorMessage = "Flow definition ID is required")]
-    [StringLength(50, MinimumLength = 1, ErrorMessage = "Flow definition ID must be between 1 and 50 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9._@-]+$", ErrorMessage = "Flow definition ID contains invalid characters")]
     public required string Id { get; set; }
 
     [BsonElement("workflow_type")]
     [Required(ErrorMessage = "Workflow type is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Workflow type must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9 ._:-]+$", ErrorMessage = "Workflow type contains invalid characters")]
-     public required string WorkflowType { get; set; }
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#='’]+$", ErrorMessage = "Workflow type contains invalid characters")]
+    public required string WorkflowType { get; set; }
 
     [BsonElement("agent")]
     [Required(ErrorMessage = "Agent is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Agent must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@-]+$", ErrorMessage = "Agent contains invalid characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Agent contains invalid characters")]
     public required string Agent { get; set; }
 
     [BsonElement("hash")]
@@ -76,7 +74,7 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
             CreatedBy = ValidationHelpers.SanitizeString(CreatedBy),
             CreatedAt = CreatedAt,
             UpdatedAt = UpdatedAt,
-            ActivityDefinitions = ActivityDefinitions?.Select(a => 
+            ActivityDefinitions = ActivityDefinitions?.Select(a =>
             {
                 if (a is IModelValidator<ActivityDefinition> validator)
                 {
@@ -84,7 +82,7 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
                 }
                 return a;
             }).ToList() ?? new List<ActivityDefinition>(),
-            ParameterDefinitions = ParameterDefinitions?.Select(p => 
+            ParameterDefinitions = ParameterDefinitions?.Select(p =>
             {
                 if (p is IModelValidator<ParameterDefinition> validator)
                 {
@@ -133,25 +131,12 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
 
         // Sanitize the workflow type
         var sanitizedType = ValidationHelpers.SanitizeString(workflowType);
-        
+
         // Validate the workflow type format using the same pattern as the WorkflowType property
-        if (!ValidationHelpers.IsValidPattern(sanitizedType, new(@"^[a-zA-Z0-9 ._:-]+$", RegexOptions.Compiled)))
+        if (!ValidationHelpers.IsValidPattern(sanitizedType, WorkflowTypePattern))
             throw new ValidationException("Invalid workflow type format");
 
         return sanitizedType;
     }
-    public static string SanitizeAndValidateWorkflowId(string workflowId)
-    {
-        if (string.IsNullOrWhiteSpace(workflowId))
-            throw new ValidationException("Workflow ID is required");
-
-        // First sanitize the workflow ID
-        var sanitizedId = ValidationHelpers.SanitizeString(workflowId);
-        
-        // Then validate the sanitized workflow ID format
-        if (!ValidationHelpers.IsValidPattern(sanitizedId, new(@"^[a-zA-Z0-9._@-]+$", RegexOptions.Compiled)))
-            throw new ValidationException("Invalid workflow ID format");
-
-        return sanitizedId;
-    }
+    
 }

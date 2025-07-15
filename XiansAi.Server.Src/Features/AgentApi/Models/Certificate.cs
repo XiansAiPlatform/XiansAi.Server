@@ -26,19 +26,18 @@ public class Certificate : ModelValidatorBase<Certificate>
     [BsonElement("subject_name")]
     [Required(ErrorMessage = "Certificate subject name is required")]
     [StringLength(500, MinimumLength = 1, ErrorMessage = "Certificate subject name must be between 1 and 500 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s.,=|@_-]+$", ErrorMessage = "Certificate subject name contains invalid characters")] public string SubjectName { get; set; } = string.Empty;
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Certificate subject name contains invalid characters")] public string SubjectName { get; set; } = string.Empty;
 
     [BsonElement("tenant_id")]
     [Required(ErrorMessage = "Tenant ID is required")]
     [StringLength(50, MinimumLength = 1, ErrorMessage = "Tenant ID must be between 1 and 50 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9._@-]+$", ErrorMessage = "Tenant ID contains invalid characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Tenant ID contains invalid characters")]
     public string TenantId { get; set; } = string.Empty;
 
     [BsonElement("issued_to")]
     [Required(ErrorMessage = "Issued to is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Issued to must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9._@-]+$", ErrorMessage = "Issued to contains invalid characters")]
-    public string IssuedTo { get; set; } = string.Empty;
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Issued to contains invalid characters")] public string IssuedTo { get; set; } = string.Empty;
 
     [BsonElement("issued_at")]
     [Required(ErrorMessage = "Issued at date is required")]
@@ -53,7 +52,7 @@ public class Certificate : ModelValidatorBase<Certificate>
 
     [BsonElement("revocation_reason")]
     [StringLength(500, ErrorMessage = "Revocation reason cannot exceed 500 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@-]*$", ErrorMessage = "Revocation reason contains invalid characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Revocation reason contains invalid characters")]
     public string? RevocationReason { get; set; }
 
     [BsonElement("revoked_at")]

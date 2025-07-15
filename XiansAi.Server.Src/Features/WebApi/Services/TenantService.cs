@@ -85,10 +85,10 @@ public class TenantService : ITenantService
                 throw new Exception($"Validation failed: {ex.Message}");
             }
         // If system admin, return null (indicating unrestricted access)
-        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
-        {
-            return null;
-        }
+        // if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        // {
+        //     return null;
+        // }
 
         // If tenant admin and tenantId matches, return the tenant
         if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin) &&

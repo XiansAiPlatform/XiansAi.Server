@@ -12,7 +12,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 {
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
-    [Required(ErrorMessage = "Tenant ID is required")]
+    [Required(ErrorMessage = "ID is required")]
     [StringLength(50, MinimumLength = 1, ErrorMessage = "Tenant ID must be between 1 and 50 characters")]
     [RegularExpression(@"^[a-zA-Z0-9._@-]+$", ErrorMessage = "Tenant ID contains invalid characters")]
     public required string Id { get; set; }
@@ -26,14 +26,12 @@ public class Tenant : ModelValidatorBase<Tenant>
     [BsonElement("name")]
     [Required(ErrorMessage = "Tenant name is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Tenant name must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@-]+$", ErrorMessage = "Tenant name contains invalid characters")]
-    public required string Name { get; set; }
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Tenant name contains invalid characters")] public required string Name { get; set; }
 
     [BsonElement("domain")]
     [Required(ErrorMessage = "Domain is required")]
     [StringLength(255, MinimumLength = 1, ErrorMessage = "Domain must be between 1 and 255 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", ErrorMessage = "Domain format is invalid")]
-    public required string Domain { get; set; }
+    [RegularExpression(@"^[a-zA-Z0-9._\-+:|=#]+(\.[a-zA-Z]{2,})$", ErrorMessage = "Domain format is invalid")] public required string Domain { get; set; }
 
     [BsonElement("description")]
     [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
@@ -50,8 +48,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 
     [BsonElement("timezone")]
     [StringLength(50, ErrorMessage = "Timezone cannot exceed 50 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9/._-]*$", ErrorMessage = "Timezone contains invalid characters")]
-    public string? Timezone { get; set; }
+    [RegularExpression(@"^[a-zA-Z0-9/._\-+:]+$", ErrorMessage = "Timezone contains invalid characters")] public string? Timezone { get; set; }
 
     [BsonElement("agents")]
     public List<Agent>? Agents { get; set; }
@@ -65,7 +62,7 @@ public class Tenant : ModelValidatorBase<Tenant>
     [BsonElement("created_by")]
     [Required(ErrorMessage = "Created by is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Created by must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9._@-]+$", ErrorMessage = "Created by contains invalid characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Created by contains invalid characters")] 
     public required string CreatedBy { get; set; }
 
     [BsonElement("updated_at")]
@@ -150,10 +147,10 @@ public class Tenant : ModelValidatorBase<Tenant>
     {
         // First sanitize
         var sanitizedTenant = this.SanitizeAndReturn();
-        
+
         // Then validate
         sanitizedTenant.Validate();
-        
+
         return sanitizedTenant;
     }
 
@@ -170,7 +167,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 
         // Sanitize the tenant ID
         var sanitizedId = ValidationHelpers.SanitizeString(tenantId);
-        
+
         // Validate the tenant ID format using the same pattern as the Id property
         if (!ValidationHelpers.IsValidPattern(sanitizedId, ValidationHelpers.Patterns.SafeId))
             throw new ValidationException("Invalid tenant ID format");
@@ -184,7 +181,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 
         // Sanitize the tenant ID
         var sanitizedDomain = ValidationHelpers.SanitizeString(domain);
-        
+
         // Validate the tenant ID format using the same pattern as the Id property
         if (!ValidationHelpers.IsValidPattern(sanitizedDomain, ValidationHelpers.Patterns.SafeDomain))
             throw new ValidationException("Invalid Domain format");
@@ -269,10 +266,10 @@ public class Logo : ModelValidatorBase<Logo>
     {
         // First sanitize
         var sanitizedLogo = this.SanitizeAndReturn();
-        
+
         // Then validate
         sanitizedLogo.Validate();
-        
+
         return sanitizedLogo;
     }
 }
@@ -282,7 +279,7 @@ public class Flow : ModelValidatorBase<Flow>
     [BsonElement("name")]
     [Required(ErrorMessage = "Flow name is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Flow name must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@-]+$", ErrorMessage = "Flow name contains invalid characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Flow name contains invalid characters")]
     public required string Name { get; set; }
 
     [BsonElement("is_active")]
@@ -297,7 +294,7 @@ public class Flow : ModelValidatorBase<Flow>
     [BsonElement("created_by")]
     [Required(ErrorMessage = "Created by is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Created by must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9._@-]+$", ErrorMessage = "Created by contains invalid characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Created by contains invalid characters")]
     public required string CreatedBy { get; set; }
 
 
@@ -339,10 +336,10 @@ public class Flow : ModelValidatorBase<Flow>
     {
         // First sanitize
         var sanitizedFlow = this.SanitizeAndReturn();
-        
+
         // Then validate
         sanitizedFlow.Validate();
-        
+
         return sanitizedFlow;
     }
 }
