@@ -40,11 +40,23 @@ namespace Features.UserApi.Auth
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
+            // Only handle authentication for specific websocket/SignalR endpoints
+            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
+            var isWebsocketEndpoint = path.StartsWith("/ws/");
+            
+            _logger.LogDebug("WebsocketAuthenticationHandler: Evaluating path '{Path}' - IsWebsocketEndpoint: {IsWebsocketEndpoint}", Request.Path, isWebsocketEndpoint);
+            
+            if (!isWebsocketEndpoint)
+            {
+                return AuthenticateResult.NoResult(); // Let other handlers process this request
+            }
+
+            _logger.LogDebug("Processing SignalR/Websocket request: {Path}", Request.Path);
+
             // Example: validate access_token and tenant from query
             var accessToken = Request.Query["access_token"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
 
-            _logger.LogDebug("Processing SignalR request: {Path}", Request.Path);
             if (_tenantContext != null)
             {
                 // Check if WebSockets are enabled in configuration
@@ -168,14 +180,14 @@ namespace Features.UserApi.Auth
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error processing access token for SignalR connection");
-                        return AuthenticateResult.Fail("Error processing access token for SignalR connection");
+                        _logger.LogError(ex, "Error processing access token for Websocket connection");
+                        return AuthenticateResult.Fail("Error processing access token for Websocket connection");
                     }
                 }
                 else
                 {
-                    _logger.LogWarning("No access token found for SignalR connection");
-                    return AuthenticateResult.Fail("No access token found for SignalR connection");
+                    _logger.LogWarning("No access token found for Websocket connection");
+                    return AuthenticateResult.Fail("No access token found for Websocket connection");
                 }
             }
             else

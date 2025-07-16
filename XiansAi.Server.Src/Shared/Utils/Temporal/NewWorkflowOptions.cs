@@ -1,5 +1,6 @@
 using Shared.Auth;
 using Shared.Utils;
+using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
 using Temporalio.Common;
 
@@ -29,6 +30,7 @@ public class NewWorkflowOptions : WorkflowOptions
         TaskQueue = GetTemporalQueueName(workFlowType, queueName, tenantContext);
         Memo = GetMemo(tenantContext, queueName, agentName);
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName);
+        IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting;
     }
 
     private SearchAttributeCollection GetSearchAttributes(ITenantContext tenantContext, string agent)

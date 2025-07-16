@@ -47,6 +47,14 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     {
         try
         {
+            // Only handle authentication for AgentApi endpoints
+            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
+            if (!path.StartsWith("/api/agent/"))
+            {
+                _logger.LogDebug("Skipping certificate authentication for non-AgentApi path: {Path}", Request.Path);
+                return AuthenticateResult.NoResult(); // Let other handlers process this request
+            }
+
             _logger.LogDebug("Handling certificate authentication for {Path}", Request.Path);
 
             var certHeader = await ExtractCertificateFromHeader();

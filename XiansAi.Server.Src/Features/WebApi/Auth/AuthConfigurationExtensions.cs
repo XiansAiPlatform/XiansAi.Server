@@ -7,17 +7,8 @@ public static class AuthConfigurationExtensions
 {
     public static WebApplicationBuilder AddWebApiAuth(this WebApplicationBuilder builder)
     {
-        // Get the configured provider
-        // var providerConfig = builder.Configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
-        //     new AuthProviderConfig();
-
-        // Add Authentication with JWT as the default scheme
-        builder.Services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = "JWT";
-            options.DefaultChallengeScheme = "JWT";
-            options.DefaultForbidScheme = "JWT";
-        })
+        // Add Authentication without setting global defaults - let each endpoint specify its own scheme
+        builder.Services.AddAuthentication()
         .AddJwtBearer("JWT", options =>
         {
             // Use the service provider to get the appropriate provider
