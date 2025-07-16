@@ -1,6 +1,7 @@
 using Features.WebApi.Models;
 using Features.WebApi.Repositories;
 using Shared.Utils.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Services;
 
@@ -24,26 +25,22 @@ public class ActivitiesService : IActivitiesService
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(workflowId))
-            {
-                _logger.LogWarning("Invalid workflow ID provided for getting activity");
-                return ServiceResult<Activity>.BadRequest("Workflow ID is required");
-            }
-
-            if (string.IsNullOrWhiteSpace(activityId))
-            {
-                _logger.LogWarning("Invalid activity ID provided for getting activity");
-                return ServiceResult<Activity>.BadRequest("Activity ID is required");
-            }
-
-            var activity = await _activityRepository.GetByWorkflowIdAndActivityIdAsync(workflowId, activityId);
+          var   validatedActivityId = Activity.SanitizeAndValidateActivityId(activityId);
+           var validatedWorkflowId = Activity.SanitizeAndValidateWorkflowId(workflowId);
+            
+            var activity = await _activityRepository.GetByWorkflowIdAndActivityIdAsync(validatedWorkflowId, validatedActivityId);
             if (activity == null)
             {
-                _logger.LogWarning("Activity {ActivityId} not found for workflow {WorkflowId}", activityId, workflowId);
+                _logger.LogWarning("Activity {ActivityId} not found for workflow {WorkflowId}", validatedActivityId, validatedWorkflowId);
                 return ServiceResult<Activity>.NotFound("Activity not found");
             }
 
             return ServiceResult<Activity>.Success(activity);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving activity: {Message}", ex.Message);
+            return ServiceResult<Activity>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
