@@ -1,10 +1,10 @@
 using System.Text.Json;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data.Models;
+using Shared.Data.Models.Validation;
 
 namespace Shared.Data;
-
-public class Permission
+public class Permission  : ModelValidatorBase<Permission>
 {
     [BsonElement("owner_access")]
     public List<string> OwnerAccess { get; set; } = new();
@@ -68,5 +68,17 @@ public class Permission
     public override string ToString()
     {
         return JsonSerializer.Serialize(this);
+    }
+    public override Permission SanitizeAndReturn()
+    {
+        // Create a new permission with sanitized data
+        var sanitizedPermission = new Permission
+        {
+            OwnerAccess = ValidationHelpers.SanitizeStringList(OwnerAccess),
+            ReadAccess = ValidationHelpers.SanitizeStringList(ReadAccess),
+            WriteAccess = ValidationHelpers.SanitizeStringList(WriteAccess)
+        };
+
+        return sanitizedPermission;
     }
 }
