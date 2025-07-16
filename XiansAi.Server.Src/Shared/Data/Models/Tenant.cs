@@ -181,7 +181,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 
         // Validate the tenant ID format using the same pattern as the Id property
         if (!ValidationHelpers.IsValidPattern(sanitizedDomain, ValidationHelpers.Patterns.SafeDomain))
-            throw new ValidationException("Invalid Domain format");
+            throw new ValidationException($"Invalid Domain format {domain}. Expected format: {ValidationHelpers.Patterns.SafeDomain}");
 
         return sanitizedDomain;
     }
@@ -193,7 +193,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 
         var sanitizedTenantId = ValidationHelpers.SanitizeString(tenantId);
         if (!ValidationHelpers.IsValidPattern(sanitizedTenantId, ValidationHelpers.Patterns.SafeTenantId))
-            throw new ValidationException("Invalid Domain format");
+            throw new ValidationException($"Invalid Tenant ID format {tenantId}. Expected format: {ValidationHelpers.Patterns.SafeTenantId}");
 
         return sanitizedTenantId;
     }

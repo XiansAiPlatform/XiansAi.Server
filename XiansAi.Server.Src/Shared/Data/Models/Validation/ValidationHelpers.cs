@@ -14,8 +14,8 @@ public static class ValidationHelpers
         public static readonly Regex SafeName = new(@"^[a-zA-Z0-9\s._@-]{1,100}$", RegexOptions.Compiled);
         public static readonly Regex SafeUrl = new(@"^https?://[^\s/$.?#].[^\s]*$", RegexOptions.Compiled);
         public static readonly Regex SafeWorkflowType = new(@"^[a-zA-Z0-9._-]{1,100}$", RegexOptions.Compiled);
-        public static readonly Regex SafeDomain = new(@"^[a-zA-Z0-9._\-+:|=#]+(\.[a-zA-Z]{2,})$", RegexOptions.Compiled);
-        public static readonly Regex SafeTenantId = new(@"^[a-fA-F0-9]{24}$", RegexOptions.Compiled);
+        public static readonly Regex SafeDomain = new(@"^[a-zA-Z0-9._-]{1,100}$", RegexOptions.Compiled);
+        public static readonly Regex SafeTenantId = new(@"^[a-zA-Z0-9._-]{1,100}$", RegexOptions.Compiled);
         public static readonly Regex SafeBase64 = new(@"^[A-Za-z0-9+/]*={0,2}$", RegexOptions.Compiled);
         public static readonly Regex AgentNamePattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", RegexOptions.Compiled); 
         public static readonly Regex WorkflowIdPattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", RegexOptions.Compiled);
