@@ -10,6 +10,7 @@ namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
 {
+    
     public static WebApplicationBuilder AddSharedServices(this WebApplicationBuilder builder)
     {
         // Register memory cache if not already registered
@@ -22,6 +23,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
 
         // Register token services
+
         builder.Services.AddScoped<Auth0TokenService>(serviceProvider =>
         {
             var logger = serviceProvider.GetRequiredService<ILogger<Auth0TokenService>>();
@@ -43,6 +45,7 @@ public static class SharedConfiguration
             var httpClient = serviceProvider.GetRequiredService<HttpClient>();
             return new KeycloakTokenService(logger, configuration, httpClient);
         });
+
         builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
 
         // Register auth providers
@@ -55,15 +58,15 @@ public static class SharedConfiguration
         // Add services using specialized configuration classes
         builder = builder
             .AddCorsConfiguration();
-            
+
         // Add infrastructure services (clients, data access, etc.)
         builder.Services.AddInfrastructureServices(builder.Configuration);
-        
+
         // Add common api-related services
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
         builder.Services.AddServerOpenApi();
-        
+
         // Configure controllers with model validation
         builder.Services.AddControllers(options =>
         {
@@ -78,7 +81,7 @@ public static class SharedConfiguration
                     .Where(x => x.Value?.Errors.Count > 0)
                     .SelectMany(x => x.Value?.Errors.Select(e => e.ErrorMessage) ?? Array.Empty<string>())
                     .ToList();
-                
+
                 return new BadRequestObjectResult(new
                 {
                     error = "Validation failed",
@@ -86,19 +89,19 @@ public static class SharedConfiguration
                 });
             };
         });
-        
+
         // Enable model validation for minimal APIs
         builder.Services.Configure<ApiBehaviorOptions>(options =>
         {
             options.SuppressModelStateInvalidFilter = false;
         });
-        
+
         // Add health checks
         builder.Services.AddHealthChecks();
-        
+
         // Register TimeProvider for DI
         builder.Services.AddSingleton(TimeProvider.System);
-        
+
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
 
@@ -123,7 +126,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IMessageService, MessageService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
-        builder.Services.AddHttpClient();              
+        builder.Services.AddHttpClient();
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IWebhookService, WebhookService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();

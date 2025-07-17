@@ -15,15 +15,17 @@ public class AzureB2CProvider : IAuthProvider
     private AzureB2CConfig _azureB2CConfig;
     private readonly AzureB2CTokenService _tokenService;
 
-    public AzureB2CProvider(ILogger<AzureB2CProvider> logger, AzureB2CTokenService tokenService, IConfiguration configuration)
+    public AzureB2CProvider(ILogger<AzureB2CProvider> logger, AzureB2CTokenService tokenService, IConfiguration configuration, ApiType api = ApiType.WebApi)
     {
         _logger = logger;
         _client = new RestClient();
         _tokenService = tokenService;
 
         // Initialize Azure B2C configuration in constructor to ensure it's always available
-        _azureB2CConfig = configuration.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
-            throw new ArgumentException("Azure B2C configuration is missing");
+        string sectionName = api == ApiType.UserApi ? "UserApi" : "WebApi";
+        var section = configuration.GetSection(sectionName);
+        _azureB2CConfig = section.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
+            throw new ArgumentException($"Azure B2C configuration is missing for {sectionName}");
 
         if (string.IsNullOrEmpty(_azureB2CConfig.TenantId))
             throw new ArgumentException("Azure B2C tenant ID is missing");

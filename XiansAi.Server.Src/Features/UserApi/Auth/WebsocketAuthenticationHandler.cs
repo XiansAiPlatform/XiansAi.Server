@@ -18,7 +18,6 @@ namespace Features.UserApi.Auth
         private readonly ITokenServiceFactory _tokenServiceFactory;
         private readonly IUserTenantService _userTenantService;
 
-
         public WebsocketAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
             ILoggerFactory logger,
@@ -116,7 +115,7 @@ namespace Features.UserApi.Auth
                                 return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
                             }
                             // Treat as JWT
-                            var tokenService = _tokenServiceFactory.GetTokenService();
+                            var tokenService = _tokenServiceFactory.GetTokenService(ApiType.UserApi);
                             var jwtResult = await tokenService.ProcessToken(accessToken);
                             var userId = jwtResult.userId;
 
