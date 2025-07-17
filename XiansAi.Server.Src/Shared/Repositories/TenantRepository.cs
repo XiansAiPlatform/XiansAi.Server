@@ -12,6 +12,7 @@ public interface ITenantRepository
     Task<Tenant> GetByTenantIdAsync(string tenantId);
     Task<Tenant> GetByDomainAsync(string domain);
     Task<List<Tenant>> GetAllAsync(string? tenantId = null);
+    Task<List<string>> GetTenantListAsync();
     Task CreateAsync(Tenant tenant);
     Task<bool> UpdateAsync(string id, Tenant tenant);
     Task<bool> DeleteAsync(string id);
@@ -59,6 +60,11 @@ public class TenantRepository : ITenantRepository
         }
 
         return await _collection.Find(_ => true).ToListAsync();
+    }
+
+    public async Task<List<string>> GetTenantListAsync()
+    {
+        return (await _collection.Find(_ => true).ToListAsync()).Select(x => x.TenantId).ToList();
     }
 
     public async Task CreateAsync(Tenant tenant)

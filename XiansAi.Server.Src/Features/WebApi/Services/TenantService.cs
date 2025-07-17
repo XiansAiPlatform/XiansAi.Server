@@ -46,6 +46,7 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetTenantByDomain(string domain);
     Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId);
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
+    Task<ServiceResult<List<string>>> GetTenantList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request);
     Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
     Task<ServiceResult<bool>> DeleteTenant(string id);
@@ -200,6 +201,20 @@ public class TenantService : ITenantService
         {
             _logger.LogError(ex, "Error retrieving all tenants");
             return ServiceResult<List<Tenant>>.InternalServerError("An error occurred while retrieving tenants.");
+        }
+    }
+
+    public async Task<ServiceResult<List<string>>> GetTenantList()
+    {
+        try
+        {
+            var tenants = await _tenantRepository.GetTenantListAsync();
+            return ServiceResult<List<string>>.Success(tenants);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving tenant list");
+            return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving tenants.");
         }
     }
 

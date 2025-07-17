@@ -1,11 +1,11 @@
 using MongoDB.Driver;
 using Shared.Auth;
-using Shared.Services;
 using Shared.Utils.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json.Serialization;
 using Shared.Repositories;
 using Shared.Data.Models;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace Shared.Services;
 
@@ -20,6 +20,33 @@ public class UserDto
     [JsonPropertyName("tenantId")]
     public string TenantId { get; set; } = string.Empty;
 }
+
+public class EditUserDto
+{
+    [JsonPropertyName("userId")]
+    public string UserId { get; set; } = string.Empty;
+    [JsonPropertyName("email")]
+    public string Email { get; set; } = string.Empty;
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+    [JsonPropertyName("active")]
+    public bool Active { get; set; }
+    [JsonPropertyName("isSysAdmin")]
+    public bool IsSysAdmin { get; set; }
+    [JsonPropertyName("tenantRoles")]
+    public List<TenantRoleDto> TenantRoles { get; set; } = new();
+}
+
+public class TenantRoleDto
+{
+    [JsonPropertyName("tenant")]
+    public string Tenant { get; set; } = string.Empty;
+    [JsonPropertyName("roles")]
+    public List<string> Roles { get; set; } = new();
+    [BsonElement("isApproved")]
+    public required bool IsApproved { get; set; }
+}
+
 
 public class InviteUserDto
 {
@@ -39,6 +66,39 @@ public class InviteDto
     public string? Email { get; set; }
     [JsonPropertyName("token")]
     public required string Token { get; set; }
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; set; }
+    [JsonPropertyName("expiresAt")]
+    public DateTime ExpiresAt { get; set; }
+    [JsonPropertyName("status")]
+    public Status Status { get; set; } = Status.Pending;
+}
+
+public class UserFilter
+{
+    [JsonPropertyName("page")]
+    public int  Page { get; set; }
+    [JsonPropertyName("pageSize")]
+    public int PageSize { get; set; }
+    [JsonPropertyName("type")]
+    public UserTypeFilter Type { get; set; }
+    [JsonPropertyName("tenant")]
+    public string? Tenant { get; set; }
+    [JsonPropertyName("search")]
+    public string? Search { get; set; }
+}
+
+public class PagedUserResult
+{
+    public List<User> Users { get; set; } = new();
+    public long TotalCount { get; set; }
+}
+
+public enum UserTypeFilter
+{
+    ALL,
+    ADMIN,
+    NON_ADMIN
 }
 
 public interface IUserManagementService
@@ -46,12 +106,17 @@ public interface IUserManagementService
     Task<ServiceResult<bool>> LockUserAsync(string userId, string reason);
     Task<ServiceResult<bool>> UnlockUserAsync(string userId);
     Task<ServiceResult<bool>> IsUserLockedOutAsync(string userId);
+    Task<ServiceResult<PagedUserResult>> GetAllUsersAsync(UserFilter filter);
     Task<ServiceResult<User>> GetUserAsync(string userId);
     Task<ServiceResult<bool>> CreateNewUser(UserDto user);
+    Task<ServiceResult<bool>> UpdateUser(EditUserDto user);
     Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite);
-    Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync();
+    Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync(string tenantId);
     Task<ServiceResult<InviteDto?>> GetInviteByUserEmailAsync(string token);
     Task<ServiceResult<bool>> AcceptInvitationAsync(string invitationToken);
+    Task<ServiceResult<bool>> DeleteUser(string userId);
+    Task<ServiceResult<List<UserDto>>> SearchUsers(string query);
+    Task<ServiceResult<bool>> DeleteInvitation(string token);
 }
 
 public class UserManagementService : IUserManagementService
@@ -150,6 +215,12 @@ public class UserManagementService : IUserManagementService
         }
     }
 
+    public async Task<ServiceResult<PagedUserResult>> GetAllUsersAsync(UserFilter filter)
+    {
+        var users = await _userRepository.GetAllUsersAsync(filter);
+        return ServiceResult<PagedUserResult>.Success(users);
+    }
+
     public async Task<ServiceResult<User>> GetUserAsync(string userId)
     {
         try
@@ -179,7 +250,12 @@ public class UserManagementService : IUserManagementService
             }
             // to assign first user as SysAdmin
             var anyUser = await _userRepository.GetAnyUserAsync();
-
+            var tenantRole = new TenantRole
+            {
+                Tenant = userDto.TenantId,
+                Roles = new List<string> { SystemRoles.TenantUser },
+                IsApproved = false
+            };
             var newUser = new User
             {
                 UserId = userDto.UserId,
@@ -189,7 +265,7 @@ public class UserManagementService : IUserManagementService
                 IsLockedOut = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
-                TenantRoles = new List<TenantRole>()
+                TenantRoles = !String.IsNullOrEmpty(userDto.TenantId) ? new List<TenantRole> { tenantRole }  : new List<TenantRole>()
             };
 
             try
@@ -231,6 +307,39 @@ public class UserManagementService : IUserManagementService
         }
     }
 
+    public async Task<ServiceResult<bool>> UpdateUser(EditUserDto user)
+    {
+        var existingUser = await _userRepository.GetByUserIdAsync(user.UserId);
+        if (existingUser == null)
+        {
+            return ServiceResult<bool>.NotFound("User not found");
+        }
+
+        existingUser.Email = user.Email;
+        existingUser.Name = user.Email;
+        existingUser.IsSysAdmin = user.IsSysAdmin;
+        existingUser.IsLockedOut = !user.Active;
+
+        if (existingUser.IsLockedOut)
+        {
+            existingUser.LockedOutBy = _tenantContext.LoggedInUser;
+            existingUser.LockedOutReason = "Locked by admin";
+        }
+
+        existingUser.TenantRoles = user.TenantRoles.Select(x => {
+            return new TenantRole
+            {
+                Tenant = x.Tenant,
+                Roles = x.Roles,
+                IsApproved = x.IsApproved
+            };
+        }).ToList();
+
+        await _userRepository.UpdateAsync(existingUser.UserId, existingUser);
+
+        return ServiceResult<bool>.Success(true);
+    }
+
     public async Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite)
     {
         try
@@ -261,12 +370,12 @@ public class UserManagementService : IUserManagementService
         }
     }
 
-    public async Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync()
+    public async Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync(string tenantId)
     {
-        var invitations = await _invitationRepository.GetAllAsync();
+        var invitations = await _invitationRepository.GetAllAsync(tenantId);
         var returnData = invitations.Select(x =>
         {
-            return new InviteDto { Email = x.Email, Token = x.Token };
+            return new InviteDto { Email = x.Email, Token = x.Token, CreatedAt = x.CreatedAt, ExpiresAt = x.ExpiresAt, Status = x.Status };
         }).ToList();
         return ServiceResult<List<InviteDto>>.Success(returnData);
     }
@@ -342,6 +451,31 @@ public class UserManagementService : IUserManagementService
             _logger.LogError(ex, "Error accepting invitation for user {UserId}", _tenantContext.LoggedInUser);
             return ServiceResult<bool>.InternalServerError("An error occurred while accepting the invitation");
         }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteUser(string userId)
+    {
+        var deleted = await _userRepository.DeleteUser(userId);
+        return ServiceResult<bool>.Success(deleted);
+    }
+
+    public async Task<ServiceResult<List<UserDto>>> SearchUsers(string query)
+    {
+        var users = await _userRepository.SearchUsersAsync(query);
+        var userDtos = users.Select(u => new UserDto
+        {
+            UserId = u.UserId,
+            Email = u.Email,
+            Name = u.Name,
+            TenantId = u.TenantRoles.FirstOrDefault()?.Tenant ?? string.Empty
+        }).ToList();
+        return ServiceResult<List<UserDto>>.Success(userDtos);
+    }
+
+    public async Task<ServiceResult<bool>> DeleteInvitation(string token)
+    {
+        var deleted = await _invitationRepository.DeleteInvitation(token);
+        return ServiceResult<bool>.Success(deleted);
     }
     private string getUserEmailfromToken(string token)
     {

@@ -12,6 +12,7 @@ public class UserTenantDto
 {
     public string UserId { get; set; } = string.Empty;
     public string TenantId { get; set; } = string.Empty;
+    public bool IsApproved { get; set; } = false;
 }
 
 public class JoinTenantRequestDto
@@ -24,11 +25,13 @@ public interface IUserTenantService
     Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token);
     Task<ServiceResult<List<string>>> GetTenantsForCurrentUser();
     Task<ServiceResult<List<string>>> GetTenantsForUser(string userId);
-    Task<ServiceResult<List<UserTenantDto>>> GetUnapprovedUsers(string? tenantId = null);
+    Task<ServiceResult<List<User>>> GetUnapprovedUsers(string? tenantId = null);
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
-    Task<ServiceResult<bool>> ApproveUser(string userId, string tenantId);
+    Task<ServiceResult<bool>> ApproveUser(string userId, string tenantId, bool approve);
     Task<ServiceResult<bool>> RequestToJoinTenant(string tenantId);
+    Task<ServiceResult<PagedUserResult>> GetTenantUsers(UserFilter filter);
+    Task<ServiceResult<bool>> UpdateTenantUser(EditUserDto user);
 }
 
 public class UserTenantService : IUserTenantService
@@ -233,36 +236,24 @@ public class UserTenantService : IUserTenantService
         }
     }
 
-    public async Task<ServiceResult<List<UserTenantDto>>> GetUnapprovedUsers(string? tenantId = null)
+    public async Task<ServiceResult<List<User>>> GetUnapprovedUsers(string? tenantId = null)
     {
         try
         {
             var validationResult = ValidateTenantAccess("get unapproved users", _tenantContext.TenantId);
             if (!validationResult.IsSuccess)
-                return ServiceResult<List<UserTenantDto>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+                return ServiceResult<List<User>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
             var users = await _userRepository.GetUsersWithUnapprovedTenantAsync(tenantId);
-            return ServiceResult<List<UserTenantDto>>.Success(
-                users.SelectMany(user =>
-                    user.TenantRoles == null || user.TenantRoles.Count == 0
-                        ? new[] { new UserTenantDto { UserId = user.UserId, TenantId = string.Empty } }
-                        : user.TenantRoles
-                            .Where(tr => !tr.IsApproved && (tenantId != null ? tr.Tenant == tenantId : true))
-                            .Select(tr => new UserTenantDto
-                            {
-                                UserId = user.UserId,
-                                TenantId = tr.Tenant
-                            })
-                ).ToList()
-            );
+            return ServiceResult<List<User>>.Success(users);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting unapproved users");
-            return ServiceResult<List<UserTenantDto>>.InternalServerError("Error getting unapproved users");
+            return ServiceResult<List<User>>.InternalServerError("Error getting unapproved users");
         }
     }
 
-    public async Task<ServiceResult<bool>> ApproveUser(string userId, string tenantId)
+    public async Task<ServiceResult<bool>> ApproveUser(string userId, string tenantId, bool approve)
     {
         try
         {
@@ -281,10 +272,14 @@ public class UserTenantService : IUserTenantService
                     return ServiceResult<bool>.Conflict("User already approved for this tenant");
                 }
 
-                if (user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId) is TenantRole tenantRole)
+                if (approve && user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId) is TenantRole tenantRole)
                 {
                     tenantRole.IsApproved = true;
                     tenantRole.Roles = tenantRole.Roles.Count > 0 ? tenantRole.Roles : new List<string> { SystemRoles.TenantUser };
+                }
+                else
+                {
+                    user.TenantRoles.RemoveAll(tr => tr.Tenant == tenantId);
                 }
             }
             else
@@ -367,6 +362,58 @@ public class UserTenantService : IUserTenantService
         }
     }
 
+    public async Task<ServiceResult<PagedUserResult>> GetTenantUsers(UserFilter filter)
+    {
+        var validationResult = ValidateTenantAccess("get tenant users", _tenantContext.TenantId);
+        if (!validationResult.IsSuccess)
+            return ServiceResult<PagedUserResult>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+
+        filter.Tenant = _tenantContext.TenantId;
+        var users = await _userRepository.GetAllUsersByTenantAsync(filter);
+        return ServiceResult<PagedUserResult>.Success(users);
+    }
+
+    public async Task<ServiceResult<bool>> UpdateTenantUser(EditUserDto user)
+    {
+        var existingUser = await _userRepository.GetByUserIdAsync(user.UserId);
+        if (existingUser == null)
+        {
+            return ServiceResult<bool>.NotFound("User not found");
+        }
+
+        existingUser.Email = user.Email;
+        existingUser.Name = user.Name;
+        existingUser.IsLockedOut = !user.Active;
+
+        if (existingUser.IsLockedOut)
+        {
+            existingUser.LockedOutBy = _tenantContext.LoggedInUser;
+            existingUser.LockedOutReason = "Locked by admin";
+        }
+
+        var currentTenantRoles = existingUser.TenantRoles.Where(x => x.Tenant == _tenantContext.TenantId).ToList();
+        var updatedRoles = user.TenantRoles
+            .Where(x => x.Tenant == _tenantContext.TenantId)
+            .Select(x => x.Roles).FirstOrDefault() ?? new List<string>();
+        if (currentTenantRoles.Count > 0)
+        {
+            currentTenantRoles[0].Roles = updatedRoles;
+        }
+        else
+        {
+            existingUser.TenantRoles.Add(new TenantRole
+            {
+                Tenant = _tenantContext.TenantId,
+                Roles = updatedRoles,
+                IsApproved = true 
+            });
+        }
+
+        await _userRepository.UpdateAsync(existingUser.UserId, existingUser);
+
+        return ServiceResult<bool>.Success(true);
+    }
+
     private async Task<UserDto> createUserFromToken(string token)
     {
         var handler = new JwtSecurityTokenHandler();
@@ -418,11 +465,13 @@ public class UserTenantService : IUserTenantService
         //     new AuthProviderConfig();
         var name = jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
         var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
+        var tenant = email.Split('@')[1];
         var newUser = new UserDto
         {
             UserId = userId,
             Email = email,
             Name = name,
+            TenantId = tenant
         };
         var createdUser = await _userManagementService.CreateNewUser(newUser);
 

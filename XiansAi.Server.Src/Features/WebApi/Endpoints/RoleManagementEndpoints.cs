@@ -84,23 +84,6 @@ public static class RoleManagementEndpoints
             Description = "Retrieves the roles for the currently authenticated user in the current tenant context"
         });
 
-        group.MapPost("/promote-tenant-admin", async (
-            [FromBody] RoleDto request,
-            [FromServices] IRoleManagementService roleService) =>
-        {
-            var result = await roleService.AssignTenantRoletoUserAsync(request);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .RequiresValidTenantAdmin()
-        .WithName("PromoteToTenantAdmin")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Promote user to tenant admin",
-            Description = "Promotes a user to tenant administrator role. Requires System Admin or Tenant Admin privileges."
-        });
-
         group.MapPost("/assign", async (
             [FromBody] RoleDto request,
             [FromServices] IRoleManagementService roleService) =>
@@ -161,6 +144,63 @@ public static class RoleManagementEndpoints
             }
 
             result = await roleService.RemoveRoleFromUserAsync(request);
+
+            return Results.Ok(result);
+        })
+        .RequiresValidTenantAdmin()
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Remove a user from a role",
+            Description = "Remove a user from a system roles. Requires System Admin privileges."
+        });
+
+        group.MapPost("/tenant/{tenantId}/admins", async (
+            string tenantId,
+            [FromBody] RoleDto dto,
+            [FromServices] IRoleManagementService roleService) =>
+        {
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return Results.BadRequest("TenantId is required.");
+            }
+
+            dto.Role = SystemRoles.TenantAdmin;
+            dto.TenantId = tenantId;
+
+            var result = await roleService.AssignTenantRoletoUserAsync(dto);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .RequiresValidTenantAdmin()
+        .WithName("AssignTenantAdmin")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Assign tenant admin role to user",
+            Description = "Assign a user to tenant administrator role. Requires System Admin or Tenant Admin privileges"
+        });
+
+        group.MapDelete("/tenant/{tenantId}/admins/{userId}", async (
+            string tenantId,
+            string userId,
+            [FromServices] IRoleManagementService roleService) =>
+        {
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return Results.BadRequest("TenantId is required.");
+            }
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Results.BadRequest("UserId is required.");
+            }
+            var request = new RoleDto
+            {
+                UserId = userId,
+                TenantId = tenantId,
+                Role = SystemRoles.TenantAdmin
+            };
+
+            ServiceResult<bool> result = await roleService.RemoveRoleFromUserAsync(request);
 
             return Results.Ok(result);
         })

@@ -84,6 +84,23 @@ public static class UserManagementEndpoints
             return operation;
         });
 
+        group.MapDelete("/{userId}", async (
+            string userId,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.DeleteUser(userId);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .RequiresValidTenantAdmin()
+        .WithName("DeleteUser")
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete a user";
+            operation.Description = "Delete a user by the Id";
+            return operation;
+        });
+
         group.MapPost("/invite", async (
             [FromBody] InviteUserDto invite,
             [FromServices] IUserManagementService userManagementService) =>
@@ -118,10 +135,11 @@ public static class UserManagementEndpoints
             return operation;
         });
 
-        group.MapGet("/invitations", async (
+        group.MapGet("/invitations/{tenantId}", async (
+            string tenantId,
             [FromServices] IUserManagementService userManagementService) =>
         {
-            var result = await userManagementService.GetAllInvitationsAsync();
+            var result = await userManagementService.GetAllInvitationsAsync(tenantId);
             return result.IsSuccess
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
@@ -150,6 +168,87 @@ public static class UserManagementEndpoints
             operation.Description = "Accepts an invitation using the invitation token and creates the user account.";
             return operation;
         });
+
+        group.MapDelete("/invitations/{token}", async (
+            string token,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.DeleteInvitation(token);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("DeleteInvitation")
+        .RequiresValidSysAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete a invitation";
+            operation.Description = "Delete a invitation by token";
+            return operation;
+        });
+
+        group.MapGet("/all", async (
+            [FromQuery] int page,
+            [FromQuery] int pageSize,
+            [FromQuery] UserTypeFilter type,
+            [FromQuery] string? tenant,
+            [FromQuery] string? search,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var filter = new UserFilter
+            {
+                Page = page,
+                PageSize = pageSize,
+                Type = type,
+                Tenant = tenant == "null" ? null : tenant,
+                Search = search == "null" ? null : search
+            };
+            var result = await userManagementService.GetAllUsersAsync(filter);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("GetAllUsers")
+        .RequiresValidSysAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Get all users";
+            operation.Description = "Retrieves all users";
+            return operation;
+        });
+
+        group.MapPut("/update", async (
+           [FromBody] EditUserDto dto,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.UpdateUser(dto);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("UpdateUser")
+        .RequiresToken()
+        .WithOpenApi(operation => {
+            operation.Summary = "Update user";
+            operation.Description = "Update user details";
+            return operation;
+        });
+
+        group.MapGet("/search", async (
+        [FromQuery] string query,
+        [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.SearchUsers(query);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("SearchUsers")
+        .RequiresToken()
+        .WithOpenApi(operation => {
+            operation.Summary = "Search users";
+            operation.Description = "Search users by name, email, or other supported fields";
+            return operation;
+        });
+
     }
 }
 
