@@ -1,6 +1,8 @@
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Services;
 
@@ -39,44 +41,51 @@ public class MessagingService : IMessagingService
         _threadRepository = threadRepository ?? throw new ArgumentNullException(nameof(threadRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
     }
-    
+
 
     public async Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null)
     {
         var tenantId = _tenantContext.TenantId;
-        
+
         // Validate pagination parameters
         if (page.HasValue && page.Value <= 0)
         {
             page = 1;
         }
-        
+
         if (pageSize.HasValue && pageSize.Value <= 0)
         {
             pageSize = 10;
         }
-        
+
         var messages = await _messageRepository.GetByThreadIdAsync(tenantId, threadId, page, pageSize);
         return ServiceResult<List<ConversationMessage>>.Success(messages);
     }
 
     public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null)
     {
+        try{
         var tenantId = _tenantContext.TenantId;
-        
+        var validatedAgentName = Agent.SanitizeAndValidateName(agent);
         // Validate pagination parameters
         if (page.HasValue && page.Value <= 0)
         {
             page = 1;
         }
-        
+
         if (pageSize.HasValue && pageSize.Value <= 0)
         {
             pageSize = 10;
         }
-        
-        var threads = await _threadRepository.GetByTenantAndAgentAsync(tenantId, agent, page, pageSize);
+
+        var threads = await _threadRepository.GetByTenantAndAgentAsync(tenantId, validatedAgentName, page, pageSize);
         return ServiceResult<List<ConversationThread>>.Success(threads);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving threads: {Message}", ex.Message);
+            return ServiceResult<List<ConversationThread>>.BadRequest($"Validation failed: {ex.Message}");
+        }
     }
 
     public async Task<ServiceResult<bool>> DeleteThread(string threadId)

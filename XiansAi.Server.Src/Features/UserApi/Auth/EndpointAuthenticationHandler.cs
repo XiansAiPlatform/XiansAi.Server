@@ -28,33 +28,31 @@ namespace Features.UserApi.Auth
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
+            // Only handle authentication for UserApi endpoints
+            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
+            
+            _logger.LogDebug("EndpointAuthenticationHandler: Evaluating path '{Path}'", Request.Path);
+            
+            if (!path.StartsWith("/api/user/"))
+            {
+                _logger.LogDebug("Skipping endpoint authentication for non-UserApi path: {Path}", Request.Path);
+                return AuthenticateResult.NoResult(); // Let other handlers process this request
+            }
+
+            _logger.LogDebug("Processing UserApi endpoint request: {Path}", Request.Path);
+
             // Example: validate access_token and tenant from query
             var accessToken = Request.Query["apikey"].ToString();  
             var tenantId = Request.Query["tenantId"].ToString();
             if (string.IsNullOrEmpty(tenantId))
             {
-                // Try to get tenantId from workflowId query parameter
-                var workflowId = Request.Query["workflowId"].ToString();
-                if (!string.IsNullOrEmpty(workflowId) && workflowId.Contains(":"))
-                {
-                    tenantId = workflowId.Split(':')[0].Trim();
-                    _logger.LogDebug("Extracted tenantId '{TenantId}' from workflowId '{WorkflowId}'", tenantId, workflowId);
-                }
-                else
-                {
-                    _logger.LogWarning("No tenantId query string, and workflowId is missing or invalid");
-                    return AuthenticateResult.NoResult();
-                }
-            }
+                _logger.LogWarning("No tenantId query string or invalid");
+                return AuthenticateResult.Fail("No tenantId provided in query string");
+            } 
 
             _logger.LogDebug("Processing Endpoint request: {Path}", Request.Path);
             if (_tenantContext != null)
             {
-                if (string.IsNullOrEmpty(tenantId))
-                {
-                    return AuthenticateResult.Fail("No tenantId provided in query string");
-                }
-
                 if (string.IsNullOrEmpty(accessToken))
                 {
                     var authHeader = Request.Headers["Authorization"].FirstOrDefault();
@@ -74,7 +72,7 @@ namespace Features.UserApi.Auth
                             var apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
                             if (apiKey == null)
                             {
-                                _logger.LogWarning("Endpoint apikey not found");
+                                _logger.LogWarning("Submitted apiKey not found for tenant {TenantId}", tenantId);
                                 return AuthenticateResult.Fail("Invalid API key or Tenant ID");
                             }
 

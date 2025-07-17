@@ -3,8 +3,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
-using XiansAi.Server.Shared.Data;
-using Shared.Utils.GenAi;
 using Moq;
 using Shared.Data;
 using Shared.Services;

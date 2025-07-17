@@ -56,7 +56,18 @@ public class Auth0Provider : IAuthProvider
 
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
-                            foreach (var role in roles)
+                            // Remove existing role claims to prevent accumulation
+                            var existingRoleClaims = identity.Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
+                            foreach (var existingClaim in existingRoleClaims)
+                            {
+                                identity.RemoveClaim(existingClaim);
+                            }
+
+                            // Deduplicate roles before adding claims
+                            var uniqueRoles = roles.Distinct().ToList();
+
+                            // Add fresh role claims
+                            foreach (var role in uniqueRoles)
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
                             }

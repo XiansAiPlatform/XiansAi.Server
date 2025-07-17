@@ -129,16 +129,15 @@ namespace Features.UserApi.Websocket
             }
         }
 
-        public async Task SubscribeToAgent(string subscribeId, string participantId, string TenantId)
+        public async Task SubscribeToAgent(string workflow, string participantId, string TenantId)
         {
-            EnsureTenantContext();
-            var workflowId = subscribeId;
-            var authProvider = Context.User?.FindFirst("AuthProvider")?.Value;
-            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            var workflowId = workflow;
+            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
             {
-                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+                workflowId = _tenantContext.TenantId + ":" + workflow;
             }
-            if(authProvider != "api-key" && (participantId != _tenantContext.LoggedInUser || TenantId != _tenantContext.TenantId))
+            var authProvider = Context.User?.FindFirst("AuthProvider")?.Value;
+            if (authProvider != "api-key" && (participantId != _tenantContext.LoggedInUser || TenantId != _tenantContext.TenantId))
             {
                 _logger.LogDebug("Agent Authentification Failed: Id: {}", workflowId);
                 await Clients.Caller.SendAsync("AgentSubscriptionStatus", "Agent Authentification Failed.");
@@ -153,20 +152,23 @@ namespace Features.UserApi.Websocket
             await Clients.Caller.SendAsync("AgentSubscriptionStatus", $"{workflowId} Subscribed");
         }
 
-        public async Task UnsubscribeFromAgent(string subscribeId, string participantId, string TenantId)
+        public async Task UnsubscribeFromAgent(string workflow, string participantId, string TenantId)
         {
-            EnsureTenantContext();
-            var workflowId = subscribeId;
-            var authProvider = Context.User?.FindFirst("AuthProvider")?.Value;
-            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            var workflowId = workflow;
+            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
             {
-                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+                workflowId = _tenantContext.TenantId + ":" + workflow;
             }
-
+            var authProvider = Context.User?.FindFirst("AuthProvider")?.Value;
             if (authProvider != "api-key" && (participantId != _tenantContext.LoggedInUser || TenantId != _tenantContext.TenantId))
             {
                 _logger.LogDebug("Agent Authentification Failed: Id: {}", workflowId);
-                await Clients.Caller.SendAsync("AgentSubscriptionStatus", "Agent Authentification Failed.");
+                await Clients.Caller.SendAsync("AgentUnsubscriptionStatus", "Agent Authentification Failed.");
+            }
+            else
+            {
+                _logger.LogDebug("Agent Authentification Successfull Id: {}", workflowId);
+                await Clients.Caller.SendAsync("AgentUnscriptionStatus", "Agent Authentification Successfull.");
             }
 
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);

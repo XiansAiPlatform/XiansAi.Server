@@ -140,10 +140,26 @@ public class KeycloakProvider : IAuthProvider
                                 {
                                     roles = new List<string>();
                                 }
-                                roles.Add(SystemRoles.TenantUser);
+                                
+                                // Only add TenantUser role if it doesn't already exist
+                                if (!roles.Contains(SystemRoles.TenantUser))
+                                {
+                                    roles.Add(SystemRoles.TenantUser);
+                                }
                             }
 
-                            foreach (var role in roles)
+                            // Remove existing role claims to prevent accumulation
+                            var existingRoleClaims = identity.Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
+                            foreach (var existingClaim in existingRoleClaims)
+                            {
+                                identity.RemoveClaim(existingClaim);
+                            }
+
+                            // Deduplicate roles before adding claims
+                            var uniqueRoles = roles.Distinct().ToList();
+
+                            // Add fresh role claims
+                            foreach (var role in uniqueRoles)
                             {
                                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
                             }
@@ -155,6 +171,15 @@ public class KeycloakProvider : IAuthProvider
                         {
                             // No tenant ID header provided - assign default TenantUser role to allow basic access
                             _logger.LogInformation("No X-Tenant-Id header found, assigning default TenantUser role to user {UserId}", userId);
+                            
+                            // Remove existing role claims to prevent accumulation
+                            var existingRoleClaims = identity.Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
+                            foreach (var existingClaim in existingRoleClaims)
+                            {
+                                identity.RemoveClaim(existingClaim);
+                            }
+                            
+                            // Add fresh default role
                             identity.AddClaim(new Claim(ClaimTypes.Role, SystemRoles.TenantUser));
                         }
                     }

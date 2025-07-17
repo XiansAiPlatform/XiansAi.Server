@@ -5,6 +5,7 @@ using Shared.Data.Models;
 using Shared.Utils.Services;
 using Features.WebApi.Models;
 using Shared.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Services;
 
@@ -15,7 +16,7 @@ public interface IAgentService
     Task<ServiceResult<List<FlowDefinition>>> GetDefinitions(string agentName, bool basicDataOnly = false);
     Task<ServiceResult<List<WorkflowResponse>>> GetWorkflowInstances(string? agentName, string? typeName);
     Task<ServiceResult<AgentDeleteResult>> DeleteAgent(string agentName);
-} 
+}
 /// <summary>
 /// Service for managing agent definitions and workflows.
 /// </summary>
@@ -87,10 +88,13 @@ public class AgentService : IAgentService
     {
         try
         {
+            string? validatedAgentName = null;
+            string? validatedTypeName = null;
             // Check if user has read permission for the agent if agentName is provided
             if (!string.IsNullOrWhiteSpace(agentName))
             {
-                var readPermissionResult = await _permissionsService.HasReadPermission(agentName);
+                 validatedAgentName = Agent.SanitizeAndValidateName(agentName);
+                var readPermissionResult = await _permissionsService.HasReadPermission(validatedAgentName);
                 if (!readPermissionResult.IsSuccess)
                 {
                     if (readPermissionResult.StatusCode == StatusCode.NotFound)
@@ -102,25 +106,34 @@ public class AgentService : IAgentService
 
                 if (!readPermissionResult.Data)
                 {
-                    _logger.LogWarning("User {UserId} attempted to access workflows for agent {AgentName} without read permission", 
+                    _logger.LogWarning("User {UserId} attempted to access workflows for agent {AgentName} without read permission",
                         _tenantContext.LoggedInUser, agentName);
                     return ServiceResult<List<WorkflowResponse>>.Forbidden("You do not have permission to access workflows for this agent");
                 }
             }
+            if (!string.IsNullOrWhiteSpace(typeName))
+            {
+                 validatedTypeName = FlowDefinition.SanitizeAndValidateType(typeName);
+            }
 
             // Call the refactored workflow service which now returns ServiceResult<List<WorkflowResponse>>
-            var workflowResult = await _workflowFinderService.GetRunningWorkflowsByAgentAndType(agentName, typeName);
-            
+            var workflowResult = await _workflowFinderService.GetRunningWorkflowsByAgentAndType(validatedAgentName, validatedTypeName);
+
             if (workflowResult.IsSuccess)
             {
                 return ServiceResult<List<WorkflowResponse>>.Success(workflowResult.Data ?? new List<Features.WebApi.Models.WorkflowResponse>());
             }
             else
             {
-                _logger.LogWarning("Workflow service returned error for agent {AgentName} and type {TypeName}: {Error}", 
+                _logger.LogWarning("Workflow service returned error for agent {AgentName} and type {TypeName}: {Error}",
                     agentName, typeName, workflowResult.ErrorMessage);
                 return ServiceResult<List<WorkflowResponse>>.BadRequest(workflowResult.ErrorMessage ?? "Failed to retrieve workflows");
             }
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving workflows: {Message}", ex.Message);
+            return ServiceResult<List<WorkflowResponse>>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -138,9 +151,10 @@ public class AgentService : IAgentService
                 _logger.LogWarning("Invalid agent name provided for deletion");
                 return ServiceResult<AgentDeleteResult>.BadRequest("Agent name is required");
             }
+            var validatedgentName = Agent.SanitizeAndValidateName(agentName);
 
             // Check if user has owner permission using PermissionsService
-            var ownerPermissionResult = await _permissionsService.HasOwnerPermission(agentName);
+            var ownerPermissionResult = await _permissionsService.HasOwnerPermission(validatedgentName);
             if (!ownerPermissionResult.IsSuccess)
             {
                 if (ownerPermissionResult.StatusCode == StatusCode.NotFound)
@@ -152,7 +166,7 @@ public class AgentService : IAgentService
 
             if (!ownerPermissionResult.Data)
             {
-                _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", 
+                _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission",
                     _tenantContext.LoggedInUser, agentName);
                 return ServiceResult<AgentDeleteResult>.Forbidden("You must have owner permission to delete this agent");
             }
@@ -166,8 +180,8 @@ public class AgentService : IAgentService
             }
 
             // Delete all flow definitions for this agent
-            var deletedDefinitionsCount = (int)await _definitionRepository.DeleteByAgentAsync(agentName);
-            _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", deletedDefinitionsCount, agentName);
+            var deletedDefinitionsCount = (int)await _definitionRepository.DeleteByAgentAsync(validatedgentName);
+            _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", deletedDefinitionsCount, validatedgentName);
 
             // Delete the agent itself
             var agentDeleted = await _agentRepository.DeleteAsync(agent.Id, _tenantContext.LoggedInUser, _tenantContext.UserRoles);
@@ -177,16 +191,21 @@ public class AgentService : IAgentService
                 return ServiceResult<AgentDeleteResult>.BadRequest("Failed to delete the agent");
             }
 
-            _logger.LogInformation("Successfully deleted agent {AgentName} and {Count} associated flow definitions", 
+            _logger.LogInformation("Successfully deleted agent {AgentName} and {Count} associated flow definitions",
                 agentName, deletedDefinitionsCount);
-            
+
             var result = new AgentDeleteResult
             {
                 Message = "Agent deleted successfully",
                 DeletedFlowDefinitions = deletedDefinitionsCount
             };
-            
+
             return ServiceResult<AgentDeleteResult>.Success(result);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while deleting agent: {Message}", ex.Message);
+            return ServiceResult<AgentDeleteResult>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -204,9 +223,10 @@ public class AgentService : IAgentService
                 _logger.LogWarning("Invalid agent name provided for getting definitions");
                 return ServiceResult<List<FlowDefinition>>.BadRequest("Agent name is required");
             }
+            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
 
             // Check if user has read permission using PermissionsService
-            var readPermissionResult = await _permissionsService.HasReadPermission(agentName);
+            var readPermissionResult = await _permissionsService.HasReadPermission(validatedAgentName);
             if (!readPermissionResult.IsSuccess)
             {
                 if (readPermissionResult.StatusCode == StatusCode.NotFound)
@@ -218,20 +238,25 @@ public class AgentService : IAgentService
 
             if (!readPermissionResult.Data)
             {
-                _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission", 
+                _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission",
                     _tenantContext.LoggedInUser, agentName);
                 return ServiceResult<List<FlowDefinition>>.Forbidden("You do not have permission to access this agent");
             }
 
             // Get definitions for the specific agent directly from the definition repository
-            var definitions = await _definitionRepository.GetByNameAsync(agentName);
+            var definitions = await _definitionRepository.GetByNameAsync(validatedAgentName);
 
             return ServiceResult<List<FlowDefinition>>.Success(definitions);
         }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving definitions: {Message}", ex.Message);
+            return ServiceResult<List<FlowDefinition>>.BadRequest($"Validation failed: {ex.Message}");
+        }   
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving definitions for agent {AgentName}", agentName);
             return ServiceResult<List<FlowDefinition>>.InternalServerError("An error occurred while retrieving agent definitions. Error: " + ex.Message);
         }
     }
-} 
+}

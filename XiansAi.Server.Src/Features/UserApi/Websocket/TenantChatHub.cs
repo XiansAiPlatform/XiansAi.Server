@@ -128,23 +128,23 @@ namespace Features.UserApi.Websocket
             }
         }
 
-        public async Task SubscribeToAgent(string subscribeId, string TenantId)
+        public async Task SubscribeToAgent(string workflow, string TenantId)
         {
-            var workflowId = subscribeId;
-            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            var workflowId = workflow;
+            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
             {
-                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+                workflowId = _tenantContext.TenantId + ":" + workflow;
             }
 
             await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + TenantId);
         }
 
-        public async Task UnsubscribeFromAgent(string subscribeId, string TenantId)
+        public async Task UnsubscribeFromAgent(string workflow, string TenantId)
         {
-            var workflowId = subscribeId;
-            if (!subscribeId.StartsWith(_tenantContext.TenantId + ":"))
+            var workflowId = workflow;
+            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
             {
-                workflowId = _tenantContext.TenantId + ":" + subscribeId;
+                workflowId = _tenantContext.TenantId + ":" + workflow;
             }
 
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + TenantId);
