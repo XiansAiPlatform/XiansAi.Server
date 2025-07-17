@@ -57,15 +57,7 @@ public interface ILlmService
 - **Configuration**: Uses LLM configuration with Provider = "OpenAI"
 - **Models**: Supports all OpenAI models (default: gpt-4o-mini)
 
-#### Anthropic Provider
-
-- **Placeholder**: Currently a placeholder implementation
-- **Configuration**: Uses LLM configuration with Provider = "Anthropic"
-- **Models**: Supports Claude models (default: claude-3-sonnet-20240229)
-
-## Configuration
-
-### LLM Configuration
+### Example Configuration
 
 ```json
 {
@@ -75,6 +67,34 @@ public interface ILlmService
   }
 }
 ```
+
+#### Anthropic Provider
+
+- **Placeholder**: Currently a placeholder implementation
+- **Configuration**: Uses LLM configuration with Provider = "Anthropic"
+- **Models**: Supports Claude models (default: claude-3-sonnet-20240229)
+
+#### Azure OpenAI Provider
+
+- **Production Ready**: Uses Azure OpenAI REST API
+- **Configuration**: Uses LLM configuration with Provider = "AzureOpenAI"
+- **Models**: Supports all Azure OpenAI deployed models (e.g., gpt-35-turbo, gpt-4)
+
+##### Example Configuration
+
+```json
+"Llm": {
+  "Provider": "AzureOpenAI",
+  "ApiKey": "YOUR_AZURE_OPENAI_KEY",
+  "Model": "MODEL_NAME",
+  "Endpoint": "https://resourcename.openai.azure.com/",
+  "AdditionalConfig": {
+    "DeploymentName": "YOUR_DEPLOYMENT_NAME",
+    "ApiVersion": "VERSION"
+  }
+}
+```
+
 
 ### Switching Providers
 

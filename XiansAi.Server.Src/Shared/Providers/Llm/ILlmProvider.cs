@@ -12,10 +12,28 @@ public interface ILlmProvider
     string GetApiKey();
 
     /// <summary>
+    /// Gets the name of the LLM provider
+    /// </summary>
+    /// <returns>The LLM provider</returns>
+    string? GetLlmProvider();
+
+    /// <summary>
     /// Gets the model for the LLM provider
     /// </summary>
     /// <returns>The model</returns>
     string GetModel();
+
+    /// <summary>
+    /// Gets the additional details of the LLM provider
+    /// </summary>
+    /// <returns>Additional configuration details</returns>
+    Dictionary<string, string>? GetAdditionalConfig();
+
+    /// <summary>
+    /// Gets Base URL of the Model
+    /// </summary>
+    /// <returns>Base URL</returns>
+    string? GetBaseUrl();
 
     /// <summary>
     /// Gets a chat completion from the LLM provider
