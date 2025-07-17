@@ -91,7 +91,8 @@ namespace Features.UserApi.Auth
                                 var claims = new List<Claim>
                                 {
                                     new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                                    new Claim("TenantId", apiKey.TenantId)
+                                    new Claim("TenantId", apiKey.TenantId),
+                                    new Claim("AuthProvider","api-key")
                                 };
 
                                 var identity = new ClaimsIdentity(claims, Scheme.Name);
@@ -144,7 +145,8 @@ namespace Features.UserApi.Auth
                             var claims = new List<Claim>
                             {
                                 new Claim(ClaimTypes.NameIdentifier, userId),
-                                new Claim("TenantId", tenantId)
+                                new Claim("TenantId", tenantId),
+                                new Claim("AuthProvider","JWT")
                             };
                             foreach (var tId in tenantIds)
                             {

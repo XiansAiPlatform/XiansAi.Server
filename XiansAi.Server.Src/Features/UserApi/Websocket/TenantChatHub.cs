@@ -73,11 +73,7 @@ namespace Features.UserApi.Websocket
         {
             if (_tempTenantContext == null) throw new InvalidOperationException("TenantContext not properly initialized");
 
-            _tempTenantContext.UserRoles = _tenantContext.UserRoles;
-            _tempTenantContext.TenantId = _tenantContext.TenantId;
-            _tempTenantContext.LoggedInUser = _tenantContext.LoggedInUser;
-            _tempTenantContext.AuthorizedTenantIds = _tenantContext.AuthorizedTenantIds;
-
+            _tempTenantContext.CopyFrom(_tenantContext);
 
             if (string.IsNullOrEmpty(_tenantContext.TenantId) || string.IsNullOrEmpty(_tenantContext.LoggedInUser))
             {

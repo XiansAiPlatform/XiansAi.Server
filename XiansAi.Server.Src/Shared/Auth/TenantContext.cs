@@ -10,6 +10,7 @@ namespace Shared.Auth;
         IEnumerable<string> AuthorizedTenantIds { get; set; }
         
         TemporalConfig GetTemporalConfig();
+        void CopyFrom(ITenantContext source);
     }
 
     public class TenantContext : ITenantContext
@@ -26,32 +27,45 @@ namespace Shared.Auth;
         {
             _configuration = configuration;
             _logger = logger;
+    }
+
+    public TemporalConfig GetTemporalConfig()
+    {
+        if (string.IsNullOrEmpty(TenantId))
+            throw new InvalidOperationException("TenantId is required");
+
+        // get the temporal config for the tenant
+        var temporalConfig = _configuration.GetSection($"Tenants:{TenantId}:Temporal").Get<TemporalConfig>();
+
+        if (temporalConfig == null)
+        {
+            // fallback to the root temporal config
+            temporalConfig = _configuration.GetSection("Temporal").Get<TemporalConfig>();
+        }
+        // we cant share the temporal config between tenants, so if it is not found, throw an error
+        if (temporalConfig == null)
+        {
+            throw new InvalidOperationException($"Temporal configuration for tenant {TenantId} not found");
         }
 
-        public TemporalConfig GetTemporalConfig() 
-        { 
-            if (string.IsNullOrEmpty(TenantId)) 
-                 throw new InvalidOperationException("TenantId is required");
+        // if (string.IsNullOrEmpty(temporalConfig.CertificateBase64)) 
+        //     throw new InvalidOperationException($"CertificateBase64 is required for tenant {TenantId}");
+        // if (string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64)) 
+        //     throw new InvalidOperationException($"PrivateKeyBase64 is required for tenant {TenantId}");
+        if (temporalConfig.FlowServerUrl == null)
+            throw new InvalidOperationException($"FlowServerUrl is required for tenant {TenantId}");
 
-            // get the temporal config for the tenant
-            var temporalConfig = _configuration.GetSection($"Tenants:{TenantId}:Temporal").Get<TemporalConfig>();
+        return temporalConfig;
+    }
+    public void CopyFrom(ITenantContext source)
+    {
+        if (source == null)
+            throw new ArgumentNullException(nameof(source));
 
-            if (temporalConfig == null) {
-                // fallback to the root temporal config
-                temporalConfig = _configuration.GetSection("Temporal").Get<TemporalConfig>();
-            }
-            // we cant share the temporal config between tenants, so if it is not found, throw an error
-            if (temporalConfig == null) {
-                throw new InvalidOperationException($"Temporal configuration for tenant {TenantId} not found");
-            }
+        UserRoles = source.UserRoles;
+        TenantId = source.TenantId;
+        LoggedInUser = source.LoggedInUser;
+        AuthorizedTenantIds = source.AuthorizedTenantIds;
+    }
 
-            // if (string.IsNullOrEmpty(temporalConfig.CertificateBase64)) 
-            //     throw new InvalidOperationException($"CertificateBase64 is required for tenant {TenantId}");
-            // if (string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64)) 
-            //     throw new InvalidOperationException($"PrivateKeyBase64 is required for tenant {TenantId}");
-            if (temporalConfig.FlowServerUrl == null) 
-                throw new InvalidOperationException($"FlowServerUrl is required for tenant {TenantId}");
-            
-            return temporalConfig;
-        }
-     }
+}
