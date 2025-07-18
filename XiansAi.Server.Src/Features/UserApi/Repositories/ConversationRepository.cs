@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using Shared.Data;
 using Shared.Repositories;
 using Shared.Utils;
+using Shared.Auth;
 
 namespace Features.UserApi.Repositories;
 
@@ -12,10 +13,10 @@ namespace Features.UserApi.Repositories;
 /// </summary>
 public interface IConversationRepository
 {
-    Task<ConversationThreadInfo> CreateOrGetThreadAsync(string tenantId, string workflowId, string workflowType, string participantId, string createdBy);
+    Task<ConversationThreadInfo> CreateOrGetThreadAsync(string workflowId, string participantId);
     Task<string> SaveMessageAsync(MessageRequest message);
-    Task<List<ConversationMessage>> GetMessagesAsync(string tenantId, string workflowId, string participantId, int page, int pageSize, string? scope = null);
-    Task<ConversationThreadInfo?> GetThreadInfoAsync(string tenantId, string workflowId, string participantId);
+    Task<List<ConversationMessage>> GetMessagesAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null);
+    Task<ConversationThreadInfo?> GetThreadInfoAsync(string workflowId, string participantId);
 }
 
 /// <summary>
@@ -58,25 +59,22 @@ public class ConversationRepository : IConversationRepository
     private readonly IMongoCollection<ConversationMessage> _messagesCollection;
     private readonly IMongoCollection<ConversationThread> _threadsCollection;
     private readonly ILogger<ConversationRepository> _logger;
-    private static readonly object _indexLock = new();
-    private static bool _indexesCreated = false;
+    private readonly ITenantContext _tenantContext;
 
-    public ConversationRepository(IDatabaseService databaseService, ILogger<ConversationRepository> logger)
+    public ConversationRepository(IDatabaseService databaseService, ILogger<ConversationRepository> logger, ITenantContext tenantContext)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _messagesCollection = database.GetCollection<ConversationMessage>("conversation_message");
         _threadsCollection = database.GetCollection<ConversationThread>("conversation_thread");
-        
-        // Initialize indexes on first use
-        _ = Task.Run(EnsureOptimizedIndexesAsync);
+        _tenantContext = tenantContext;
     }
 
-    public async Task<ConversationThreadInfo> CreateOrGetThreadAsync(string tenantId, string workflowId, string workflowType, string participantId, string createdBy)
+    public async Task<ConversationThreadInfo> CreateOrGetThreadAsync(string workflowId, string participantId)
     {
         // Fast lookup using optimized composite index
         var filter = Builders<ConversationThread>.Filter.And(
-            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
+            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, _tenantContext.TenantId),
             Builders<ConversationThread>.Filter.Eq(x => x.WorkflowId, workflowId),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
@@ -111,20 +109,20 @@ public class ConversationRepository : IConversationRepository
             };
         }
 
-        // Create new thread with optimized structure
-        var agent = workflowType.Split(':').FirstOrDefault() ?? 
-                   throw new ArgumentException("WorkflowType must be in format 'agent:type'", nameof(workflowType));
+        var workflow = new WorkflowIdentifier(workflowId, _tenantContext);
+
+        var workflowType = workflow.WorkflowType;
 
         var newThread = new ConversationThread
         {
-            TenantId = tenantId,
+            TenantId = _tenantContext.TenantId,
             WorkflowId = workflowId,
             WorkflowType = workflowType,
-            Agent = agent,
+            Agent = workflow.AgentName,
             ParticipantId = participantId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            CreatedBy = createdBy,
+            CreatedBy = _tenantContext.LoggedInUser,
             Status = ConversationThreadStatus.Active
         };
 
@@ -221,12 +219,12 @@ public class ConversationRepository : IConversationRepository
         return message.Id;
     }
 
-    public async Task<List<ConversationMessage>> GetMessagesAsync(string tenantId, string workflowId, string participantId, int page, int pageSize, string? scope = null)
+    public async Task<List<ConversationMessage>> GetMessagesAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null)
     {
         // Single optimized query using compound index
         var filterBuilder = Builders<ConversationMessage>.Filter;
         var filter = filterBuilder.And(
-            filterBuilder.Eq(x => x.TenantId, tenantId),
+            filterBuilder.Eq(x => x.TenantId, _tenantContext.TenantId),
             filterBuilder.Eq(x => x.WorkflowId, workflowId),
             filterBuilder.Eq(x => x.ParticipantId, participantId)
         );
@@ -264,10 +262,10 @@ public class ConversationRepository : IConversationRepository
         return messages;
     }
 
-    public async Task<ConversationThreadInfo?> GetThreadInfoAsync(string tenantId, string workflowId, string participantId)
+    public async Task<ConversationThreadInfo?> GetThreadInfoAsync(string workflowId, string participantId)
     {
         var filter = Builders<ConversationThread>.Filter.And(
-            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
+            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, _tenantContext.TenantId),
             Builders<ConversationThread>.Filter.Eq(x => x.WorkflowId, workflowId),
             Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
         );
@@ -301,80 +299,7 @@ public class ConversationRepository : IConversationRepository
         };
     }
 
-    private async Task EnsureOptimizedIndexesAsync()
-    {
-        if (_indexesCreated) return;
 
-        lock (_indexLock)
-        {
-            if (_indexesCreated) return;
-
-            try
-            {
-                // Create optimized indexes for bot performance
-                var tasks = new List<Task>
-                {
-                    CreateMessageIndexesAsync(),
-                    CreateThreadIndexesAsync()
-                };
-
-                Task.WaitAll(tasks.ToArray());
-                _indexesCreated = true;
-                _logger.LogInformation("Optimized conversation indexes created successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to create optimized indexes, but repository will continue to function");
-            }
-        }
-    }
-
-    private async Task CreateMessageIndexesAsync()
-    {
-        var indexModels = new List<CreateIndexModel<ConversationMessage>>
-        {
-            // Optimized compound index for bot message queries
-            new(Builders<ConversationMessage>.IndexKeys
-                .Ascending(x => x.TenantId)
-                .Ascending(x => x.WorkflowId)
-                .Ascending(x => x.ParticipantId)
-                .Descending(x => x.CreatedAt),
-                new CreateIndexOptions { Name = "bot_message_lookup_optimized", Background = true }),
-
-            // Thread-based message lookup
-            new(Builders<ConversationMessage>.IndexKeys
-                .Ascending(x => x.TenantId)
-                .Ascending(x => x.ThreadId)
-                .Descending(x => x.CreatedAt),
-                new CreateIndexOptions { Name = "thread_message_lookup_optimized", Background = true }),
-
-            // Scope-based filtering
-            new(Builders<ConversationMessage>.IndexKeys
-                .Ascending(x => x.TenantId)
-                .Ascending(x => x.WorkflowId)
-                .Ascending(x => x.ParticipantId)
-                .Ascending(x => x.Scope)
-                .Descending(x => x.CreatedAt),
-                new CreateIndexOptions { Name = "bot_scope_lookup_optimized", Background = true, Sparse = true })
-        };
-
-        await _messagesCollection.Indexes.CreateManyAsync(indexModels);
-    }
-
-    private async Task CreateThreadIndexesAsync()
-    {
-        var indexModels = new List<CreateIndexModel<ConversationThread>>
-        {
-            // Optimized unique composite index for thread lookup
-            new(Builders<ConversationThread>.IndexKeys
-                .Ascending(x => x.TenantId)
-                .Ascending(x => x.WorkflowId)
-                .Ascending(x => x.ParticipantId),
-                new CreateIndexOptions { Name = "thread_lookup_optimized", Unique = true, Background = true })
-        };
-
-        await _threadsCollection.Indexes.CreateManyAsync(indexModels);
-    }
 
     private static BsonDocument? ConvertToBsonDocument(object? obj)
     {

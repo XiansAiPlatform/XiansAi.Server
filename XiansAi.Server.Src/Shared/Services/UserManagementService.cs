@@ -23,6 +23,8 @@ public class UserDto
 
 public class EditUserDto
 {
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
     [JsonPropertyName("userId")]
     public string UserId { get; set; } = string.Empty;
     [JsonPropertyName("email")]
@@ -309,14 +311,15 @@ public class UserManagementService : IUserManagementService
 
     public async Task<ServiceResult<bool>> UpdateUser(EditUserDto user)
     {
-        var existingUser = await _userRepository.GetByUserIdAsync(user.UserId);
+        var existingUser = await _userRepository.GetByIdAsync(user.Id);
         if (existingUser == null)
         {
             return ServiceResult<bool>.NotFound("User not found");
         }
 
         existingUser.Email = user.Email;
-        existingUser.Name = user.Email;
+        existingUser.UserId = user.UserId;
+        existingUser.Name = user.Name;
         existingUser.IsSysAdmin = user.IsSysAdmin;
         existingUser.IsLockedOut = !user.Active;
 
@@ -335,7 +338,7 @@ public class UserManagementService : IUserManagementService
             };
         }).ToList();
 
-        await _userRepository.UpdateAsync(existingUser.UserId, existingUser);
+        await _userRepository.UpdateAsyncById(user.Id, existingUser);
 
         return ServiceResult<bool>.Success(true);
     }

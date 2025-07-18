@@ -14,12 +14,14 @@ public interface IUserRepository
     Task<List<User>> GetUsersWithUnapprovedTenantAsync(string? tenantId = null);
     Task<List<User>> GetUsersByRoleAsync(string roleName, string tenantId);
     Task<User?> GetByUserIdAsync(string userId);
+    Task<User?> GetByIdAsync(string id);
     Task<User?> GetByUserEmailAsync(string email);
     Task<List<string>> GetUserTenantsAsync(string userId);
     Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
     Task<User?> GetAnyUserAsync();
     Task<bool> CreateAsync(User user);
     Task<bool> UpdateAsync(string userId, User user);
+    Task<bool> UpdateAsyncById(string id, User user);
     Task<bool> LockUserAsync(string userId, string reason, string lockedByUserId);
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
@@ -208,6 +210,11 @@ public class UserRepository : IUserRepository
         return await _users.Find(filter).ToListAsync();
     }
 
+    public async Task<User?> GetByIdAsync(string id)
+    {
+        return await _users.Find(x => x.Id == id).FirstOrDefaultAsync();
+    }
+
 
     public async Task<User?> GetByUserIdAsync(string userId)
     {
@@ -278,6 +285,13 @@ public class UserRepository : IUserRepository
             _logger.LogError(ex, "Error creating user {UserId}", user.UserId);
             return false;
         }
+    }
+
+    public async Task<bool> UpdateAsyncById(string id, User user)
+    {
+        user.UpdatedAt = DateTime.UtcNow;
+        var result = await _users.ReplaceOneAsync(x => x.Id == id, user);
+        return result.ModifiedCount > 0;
     }
 
     public async Task<bool> UpdateAsync(string userId, User user)

@@ -45,42 +45,6 @@ public static class BotRestEndpoints
         .WithSummary("Get bot conversation history with caching")
         .WithDescription("Retrieves bot conversation history with optimized database queries and caching");
 
-        // Bot response processing endpoint
-        // botGroup.MapPost("/response", async (
-        //     [FromBody] OptimizedBotResponseRequest request,
-        //     [FromServices] IOptimizedBotService botService) =>
-        // {
-        //     var botRequest = new OptimizedBotRequest
-        //     {
-        //         RequestId = request.OriginalRequestId,
-        //         ParticipantId = request.ParticipantId,
-        //         WorkflowId = request.WorkflowId,
-        //         WorkflowType = request.WorkflowType,
-        //         ThreadId = request.ThreadId,
-        //         Scope = request.Scope,
-        //         Hint = request.Hint
-        //     };
-
-        //     var botResponse = new OptimizedBotResponse
-        //     {
-        //         RequestId = request.ResponseId,
-        //         ThreadId = request.ThreadId,
-        //         ParticipantId = request.ParticipantId,
-        //         Text = request.Text,
-        //         Data = request.Data,
-        //         IsComplete = request.IsComplete,
-        //         Error = request.Error,
-        //         Timestamp = DateTime.UtcNow
-        //     };
-
-        //     var result = await botService.ProcessBotResponseAsync(botRequest, botResponse);
-        //     return result.ToHttpResult();
-        // })
-        // .WithName("ProcessOptimizedBotResponse")
-        // .WithSummary("Process bot response with optimized performance")
-        // .WithDescription("Handles bot responses with minimal overhead");
-
-        // Health check and metrics endpoint
         botGroup.MapGet("/metrics", () =>
         {
             return Results.Ok(new
@@ -96,22 +60,3 @@ public static class BotRestEndpoints
         .WithDescription("Returns performance metrics and connection statistics");
     }
 }
-
-// /// <summary>
-// /// Optimized request model for bot responses
-// /// </summary>
-// public class OptimizedBotResponseRequest
-// {
-//     public string? OriginalRequestId { get; set; }
-//     public string? ResponseId { get; set; }
-//     public required string ThreadId { get; set; }
-//     public required string ParticipantId { get; set; }
-//     public string? WorkflowId { get; set; }
-//     public string? WorkflowType { get; set; }
-//     public string? Text { get; set; }
-//     public object? Data { get; set; }
-//     public bool IsComplete { get; set; }
-//     public string? Error { get; set; }
-//     public string? Scope { get; set; }
-//     public string? Hint { get; set; }
-// } 

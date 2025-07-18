@@ -2,7 +2,6 @@ using Shared.Auth;
 using Shared.Utils.Services;
 using Features.UserApi.Repositories;
 using Shared.Repositories;
-using System.Text.Json;
 using Shared.Utils.Temporal;
 using Temporalio.Client;
 using Shared.Utils;
@@ -75,12 +74,7 @@ public class BotService : IBotService
     private readonly ITenantContext _tenantContext;
     private readonly IConversationRepository _conversationRepository;
     private readonly ITemporalClientService _temporalClientService;
-    // Performance optimizations
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
+
 
     public BotService(
         ILogger<BotService> logger,
@@ -103,27 +97,23 @@ public class BotService : IBotService
             if (!validationResult.IsSuccess)
                 return ServiceResult<BotResponse>.BadRequest(validationResult.ErrorMessage!);
 
-            // Ensure we have workflow ID
-            var workflowId = EnsureWorkflowId(request);
-            var workflowType = request.WorkflowType ?? ExtractWorkflowTypeFromId(workflowId);
+            // Ensure we have workflow ID and Type
+            request.WorkflowId = EnsureWorkflowId(request);
+            request.WorkflowType = request.WorkflowType ?? ExtractWorkflowTypeFromId(request.WorkflowId);
 
             // Get or create thread in single operation
             ConversationThreadInfo? threadInfo;
             if (string.IsNullOrEmpty(request.ThreadId))
             {
                 threadInfo = await _conversationRepository.CreateOrGetThreadAsync(
-                    _tenantContext.TenantId, 
-                    workflowId, 
-                    workflowType, 
-                    request.ParticipantId, 
-                    _tenantContext.LoggedInUser);
+                    request.WorkflowId, 
+                    request.ParticipantId);
                 request.ThreadId = threadInfo.Id;
             }
             else
             {
                 threadInfo = await _conversationRepository.GetThreadInfoAsync(
-                    _tenantContext.TenantId, 
-                    workflowId, 
+                    request.WorkflowId, 
                     request.ParticipantId);
                 
                 if (threadInfo == null)
@@ -131,13 +121,13 @@ public class BotService : IBotService
             }
 
             // Save incoming message atomically
-            await SaveMessageOptimizedAsync(request, MessageDirection.Incoming, MessageType.Chat, workflowId, workflowType);
+            await SaveRequestMessageAsync(request);
 
             // Process bot interaction (currently synchronous for performance)
             var botResponse = await ProcessSynchronousBotAsync(request, threadInfo);
 
             // Save response message atomically
-            await SaveResponseMessageOptimizedAsync(botResponse);
+            await SaveResponseMessageAsync(botResponse);
 
             return ServiceResult<BotResponse>.Success(botResponse);
         }
@@ -167,7 +157,6 @@ public class BotService : IBotService
 
             // Single optimized query - get one extra message to check if there's a next page
             var messages = await _conversationRepository.GetMessagesAsync(
-                _tenantContext.TenantId, 
                 fullWorkflowId, 
                 participantId, 
                 page, 
@@ -232,11 +221,7 @@ public class BotService : IBotService
 
     private async Task<BotResponse> ProcessSynchronousBotAsync(BotRequest request, ConversationThreadInfo threadInfo)
     {
-        // TODO: Replace with actual temporal synchronous call
-        // For now, create optimized dummy response
-
         var workflowIdentifier = new WorkflowIdentifier(EnsureWorkflowId(request), _tenantContext);
-
         var updateRequest = new 
         {
             SourceAgent = workflowIdentifier.AgentName,
@@ -271,7 +256,6 @@ public class BotService : IBotService
             var workflowIdentifier = new WorkflowIdentifier(workflow, _tenantContext);
 
             var client = _temporalClientService.GetClient();
-            //var workflowHandle = client.GetWorkflowHandle(workflowId);
 
             var workflowOptions = new NewWorkflowOptions(
                     workflowIdentifier.AgentName,
@@ -288,7 +272,6 @@ public class BotService : IBotService
             var workflowUpdateWithStartOptions = new WorkflowUpdateWithStartOptions(
                 withStartWorkflowOperation
             );
-
 
             var response = await client.ExecuteUpdateWithStartWorkflowAsync<BotResponse>(
                 procedureName,
@@ -309,23 +292,19 @@ public class BotService : IBotService
         }
     }
 
-    private async Task SaveMessageOptimizedAsync(
-        BotRequest request, 
-        MessageDirection direction, 
-        MessageType messageType, 
-        string workflowId, 
-        string workflowType)
+    private async Task SaveRequestMessageAsync(
+        BotRequest request)
     {
         var optimizedRequest = new MessageRequest
         {
             TenantId = _tenantContext.TenantId,
             ThreadId = request.ThreadId!,
             ParticipantId = request.ParticipantId,
-            WorkflowId = workflowId,
-            WorkflowType = workflowType,
+            WorkflowId = request.WorkflowId ?? throw new Exception("WorkflowId is required"),
+            WorkflowType = request.WorkflowType ?? throw new Exception("WorkflowType is required"),
             CreatedBy = _tenantContext.LoggedInUser,
-            Direction = direction,
-            MessageType = messageType,
+            Direction = MessageDirection.Incoming,
+            MessageType = MessageType.Chat,
             RequestId = request.RequestId,
             Text = request.Text,
             Data = request.Data,
@@ -336,7 +315,7 @@ public class BotService : IBotService
         await _conversationRepository.SaveMessageAsync(optimizedRequest);
     }
 
-    private async Task SaveResponseMessageOptimizedAsync(
+    private async Task SaveResponseMessageAsync(
         BotResponse response)
     {
         var optimizedRequest = new MessageRequest
