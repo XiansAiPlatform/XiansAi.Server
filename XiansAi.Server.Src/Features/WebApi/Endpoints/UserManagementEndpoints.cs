@@ -179,7 +179,7 @@ public static class UserManagementEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("DeleteInvitation")
-        .RequiresValidSysAdmin()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Delete a invitation";
             operation.Description = "Delete a invitation by token";

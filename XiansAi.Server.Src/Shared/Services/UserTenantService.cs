@@ -257,7 +257,7 @@ public class UserTenantService : IUserTenantService
     {
         try
         {
-            var validationResult = ValidateTenantAccess("approve user", null);
+            var validationResult = ValidateTenantAccess("approve user", tenantId);
             if (!validationResult.IsSuccess)
                 return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 

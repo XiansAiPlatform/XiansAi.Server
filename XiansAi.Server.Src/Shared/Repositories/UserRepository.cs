@@ -110,18 +110,18 @@ public class UserRepository : IUserRepository
         {
             case UserTypeFilter.ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantAdmin")));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantAdmin") && tr.IsApproved));
                 break;
 
             case UserTypeFilter.NON_ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantUser")));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantUser") && tr.IsApproved));
                 break;
 
             case UserTypeFilter.ALL:
             default:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant));
+                    tr => tr.Tenant == filter.Tenant && tr.IsApproved));
                 break;
         }
 
