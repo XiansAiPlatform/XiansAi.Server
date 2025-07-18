@@ -12,36 +12,78 @@ namespace Features.UserApi.Websocket
     {
         private readonly IMessageService _messageService;
         private readonly ITenantContext _tenantContext;
-        private readonly ITenantContext? _tempTenantContext;
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
         public ChatHub(IMessageService messageService, ITenantContext tenantContext, IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
         {
-            _messageService = messageService;
-            _httpContextAccessor = httpContextAccessor;
-            var httpContext = _httpContextAccessor.HttpContext;
+            _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
+            _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
 
-            if (httpContext != null)
+        private ITenantContext GetScopedTenantContext()
+        {
+            try
             {
-                var scopedTenantContext = httpContext.RequestServices.GetService<ITenantContext>();
-                if (scopedTenantContext != null)
+                var httpContext = _httpContextAccessor.HttpContext;
+                if (httpContext?.RequestServices != null)
                 {
-                    _tenantContext = scopedTenantContext;
-                    _tempTenantContext = tenantContext;
+                    var scopedTenantContext = httpContext.RequestServices.GetService<ITenantContext>();
+                    if (scopedTenantContext != null)
+                    {
+                        return scopedTenantContext;
+                    }
                 }
+                
+                // Fallback to injected tenant context
+                _logger.LogWarning("Using fallback tenant context for connection {ConnectionId}", Context.ConnectionId);
+                return _tenantContext;
             }
-            _tenantContext ??= tenantContext;
-            _logger = logger;
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error getting scoped tenant context, using fallback for connection {ConnectionId}", Context.ConnectionId);
+                return _tenantContext;
+            }
+        }
+
+        private IMessageService GetScopedMessageService()
+        {
+            try
+            {
+                var httpContext = _httpContextAccessor.HttpContext;
+                if (httpContext?.RequestServices != null)
+                {
+                    var scopedMessageService = httpContext.RequestServices.GetService<IMessageService>();
+                    if (scopedMessageService != null)
+                    {
+                        _logger.LogDebug("Using scoped MessageService for connection {ConnectionId}", Context.ConnectionId);
+                        return scopedMessageService;
+                    }
+                }
+                
+                // Fallback to injected message service
+                _logger.LogWarning("Using fallback MessageService for connection {ConnectionId}", Context.ConnectionId);
+                return _messageService;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error getting scoped MessageService, using fallback for connection {ConnectionId}", Context.ConnectionId);
+                return _messageService;
+            }
         }
 
         public override async Task OnConnectedAsync()
         {
             try
             {
-                if (string.IsNullOrEmpty(_tenantContext.TenantId) || string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+                var tenantContext = GetScopedTenantContext();
+                
+                if (!IsValidTenantContext(tenantContext))
                 {
-                    _logger.LogError("TenantContext not properly initialized");
+                    _logger.LogError("TenantContext not properly initialized for connection {ConnectionId}. TenantId: {TenantId}, User: {UserId}", 
+                        Context.ConnectionId, tenantContext.TenantId, tenantContext.LoggedInUser);
                     await Clients.Caller.SendAsync("ConnectionError", new
                     {
                         StatusCode = StatusCodes.Status401Unauthorized,
@@ -51,14 +93,14 @@ namespace Features.UserApi.Websocket
                     return;
                 }
 
-                _logger.LogInformation("SignalR Connection established for user: {UserId}, Tenant: {TenantId}",
-                    _tenantContext.LoggedInUser, _tenantContext.TenantId);
+                _logger.LogInformation("SignalR Connection established for user: {UserId}, Tenant: {TenantId}, Connection: {ConnectionId}",
+                    tenantContext.LoggedInUser, tenantContext.TenantId, Context.ConnectionId);
 
                 await base.OnConnectedAsync();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in OnConnectedAsync");
+                _logger.LogError(ex, "Error in OnConnectedAsync for connection {ConnectionId}", Context.ConnectionId);
                 await Clients.Caller.SendAsync("ConnectionError", new
                 {
                     StatusCode = StatusCodes.Status500InternalServerError,
@@ -68,52 +110,152 @@ namespace Features.UserApi.Websocket
             }
         }
 
-        private void EnsureTenantContext()
+        private static bool IsValidTenantContext(ITenantContext tenantContext)
         {
-            if (_tempTenantContext == null) throw new InvalidOperationException("TenantContext not properly initialized");
-
-            _tempTenantContext.UserRoles = _tenantContext.UserRoles;
-            _tempTenantContext.TenantId = _tenantContext.TenantId;
-            _tempTenantContext.LoggedInUser = _tenantContext.LoggedInUser;
-            _tempTenantContext.AuthorizedTenantIds = _tenantContext.AuthorizedTenantIds;
-
-
-            if (string.IsNullOrEmpty(_tenantContext.TenantId) || string.IsNullOrEmpty(_tenantContext.LoggedInUser))
-            {
-                _logger.LogError("TenantContext not properly initialized");
-                throw new InvalidOperationException("TenantContext not properly initialized");
-            }
+            return !string.IsNullOrEmpty(tenantContext.TenantId) && 
+                   !string.IsNullOrEmpty(tenantContext.LoggedInUser);
         }
 
         public override Task OnDisconnectedAsync(Exception? exception)
         {
+            if (exception != null)
+            {
+                _logger.LogWarning(exception, "SignalR Connection disconnected with exception for connection {ConnectionId}", Context.ConnectionId);
+            }
+            else
+            {
+                _logger.LogInformation("SignalR Connection disconnected normally for connection {ConnectionId}", Context.ConnectionId);
+            }
+            
             return base.OnDisconnectedAsync(exception);
         }
 
         public async Task GetThreadHistory(string workflow, string participantId, int page, int pageSize)
         {
-            string? scope = null;
-            string workflowId = workflow;
-            if(!workflow.StartsWith(_tenantContext.TenantId + ":")) {
-                // this is workflowType, convert to workflowId
-                workflowId = _tenantContext.TenantId + ":" + workflow;
+            // Input validation
+            if (string.IsNullOrWhiteSpace(workflow))
+            {
+                _logger.LogWarning("GetThreadHistory called with null or empty workflow on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Workflow parameter is required");
+                return;
             }
 
-            EnsureTenantContext();
-            var result = await _messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, scope);
-            await Clients.Caller.SendAsync("ThreadHistory", result.Data);
+            if (string.IsNullOrWhiteSpace(participantId))
+            {
+                _logger.LogWarning("GetThreadHistory called with null or empty participantId on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "ParticipantId parameter is required");
+                return;
+            }
+
+            if (page < 0)
+            {
+                _logger.LogWarning("GetThreadHistory called with negative page {Page} on connection {ConnectionId}", page, Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Page must be non-negative");
+                return;
+            }
+
+            if (pageSize <= 0 || pageSize > 1000)
+            {
+                _logger.LogWarning("GetThreadHistory called with invalid pageSize {PageSize} on connection {ConnectionId}", pageSize, Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "PageSize must be between 1 and 1000");
+                return;
+            }
+
+            try
+            {
+                var tenantContext = GetScopedTenantContext();
+                if (!IsValidTenantContext(tenantContext))
+                {
+                    _logger.LogError("Invalid tenant context for GetThreadHistory call on connection {ConnectionId}. TenantId: {TenantId}, User: {UserId}", 
+                        Context.ConnectionId, tenantContext.TenantId, tenantContext.LoggedInUser);
+                    await Clients.Caller.SendAsync("Error", "Invalid tenant context");
+                    return;
+                }
+
+                string? scope = null;
+                string workflowId = workflow;
+                if(!workflow.StartsWith(tenantContext.TenantId + ":")) {
+                    // this is workflowType, convert to workflowId
+                    workflowId = tenantContext.TenantId + ":" + workflow;
+                }
+
+                var messageService = GetScopedMessageService();
+                var result = await messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, scope);
+                await Clients.Caller.SendAsync("ThreadHistory", result.Data);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogError(ex, "Service configuration error in GetThreadHistory on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Service temporarily unavailable");
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex, "Timeout error in GetThreadHistory on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Request timeout - please try again");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in GetThreadHistory on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "An unexpected error occurred");
+            }
         }
 
         //TODO: This is a temporary method to send inbound messages to the client. We need to refactor this to use the new messaging endpoints.
         public async Task SendInboundMessage(ChatOrDataRequest request, string messageType)
         {
+            // Input validation
+            if (request == null)
+            {
+                _logger.LogWarning("SendInboundMessage called with null request on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Request cannot be null");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(messageType))
+            {
+                _logger.LogWarning("SendInboundMessage called with null or empty messageType on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "MessageType is required");
+                return;
+            }
+
             _logger.LogDebug("Sending inbound message : {Request}", JsonSerializer.Serialize(request));
-            EnsureTenantContext();
+            
             try
             {
-                var messageTypeEnum = Enum.Parse<MessageType>(messageType);
+                var tenantContext = GetScopedTenantContext();
+                if (!IsValidTenantContext(tenantContext))
+                {
+                    _logger.LogError("Invalid tenant context for SendInboundMessage call on connection {ConnectionId}. TenantId: {TenantId}, User: {UserId}", 
+                        Context.ConnectionId, tenantContext.TenantId, tenantContext.LoggedInUser);
+                    await Clients.Caller.SendAsync("Error", "Invalid tenant context");
+                    return;
+                }
+
+                // Debug: Log tenant context details
+                _logger.LogDebug("SendInboundMessage: Using tenant context - TenantId: {TenantId}, User: {UserId}, Connection: {ConnectionId}",
+                    tenantContext.TenantId, tenantContext.LoggedInUser, Context.ConnectionId);
+
+                // Validate message type enum
+                if (!Enum.TryParse<MessageType>(messageType, out var messageTypeEnum))
+                {
+                    _logger.LogWarning("SendInboundMessage called with invalid messageType '{MessageType}' on connection {ConnectionId}", 
+                        messageType, Context.ConnectionId);
+                    await Clients.Caller.SendAsync("Error", "Invalid message type");
+                    return;
+                }
+
+                // Ensure request has proper tenant context for downstream services
+                if (request.Authorization == null)
+                {
+                    // Propagate tenant information to the request for downstream services
+                    _logger.LogDebug("Adding tenant context to request for downstream services");
+                    // Note: We're not modifying the Authorization field directly since that might affect other logic
+                    // Instead, we rely on the fact that MessageService should use the scoped ITenantContext
+                }
+
                 // Step 1: Process inbound
-                var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
+                var messageService = GetScopedMessageService();
+                var inboundResult = await messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
                 if (inboundResult.Data != null)
                 {
@@ -122,37 +264,159 @@ namespace Features.UserApi.Websocket
                 }
                 else
                 {
+                    _logger.LogWarning("ProcessIncomingMessage returned null data with status {StatusCode} on connection {ConnectionId}", 
+                        inboundResult.StatusCode, Context.ConnectionId);
                     await Clients.Caller.SendAsync("InboundProcessed", inboundResult.StatusCode);
                     Context.Abort();
                 }
             }
+            catch (ArgumentNullException ex)
+            {
+                _logger.LogError(ex, "Configuration error in SendInboundMessage on connection {ConnectionId} - missing required service", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Service configuration error - please try again later");
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogError(ex, "Service state error in SendInboundMessage on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Service temporarily unavailable");
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex, "Timeout error in SendInboundMessage on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Request timeout - please try again");
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid input in SendInboundMessage on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Invalid request data");
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing inbound message");
-                await Clients.Caller.SendAsync("Error", "Failed to process message: " + ex.Message);
+                _logger.LogError(ex, "Unexpected error in SendInboundMessage on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "An unexpected error occurred");
             }
         }
 
-        public async Task SubscribeToAgent(string workflow, string participantId, string TenantId)
+        public async Task SubscribeToAgent(string workflow, string participantId, string tenantId)
         {
-            var workflowId = workflow;
-            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
+            // Input validation
+            if (string.IsNullOrWhiteSpace(workflow))
             {
-                workflowId = _tenantContext.TenantId + ":" + workflow;
+                _logger.LogWarning("SubscribeToAgent called with null or empty workflow on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Workflow parameter is required");
+                return;
             }
-            
-            await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
+
+            if (string.IsNullOrWhiteSpace(participantId))
+            {
+                _logger.LogWarning("SubscribeToAgent called with null or empty participantId on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "ParticipantId parameter is required");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                _logger.LogWarning("SubscribeToAgent called with null or empty tenantId on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "TenantId parameter is required");
+                return;
+            }
+
+            try
+            {
+                var tenantContext = GetScopedTenantContext();
+                
+                // Security check: ensure user can only subscribe to their own tenant groups
+                if (tenantId != tenantContext.TenantId)
+                {
+                    _logger.LogWarning("SubscribeToAgent: User {UserId} attempted to subscribe to different tenant {RequestedTenantId} vs {ActualTenantId} on connection {ConnectionId}",
+                        tenantContext.LoggedInUser, tenantId, tenantContext.TenantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync("Error", "Access denied - invalid tenant");
+                    return;
+                }
+
+                var workflowId = workflow;
+                if (!workflow.StartsWith(tenantContext.TenantId + ":"))
+                {
+                    workflowId = tenantContext.TenantId + ":" + workflow;
+                }
+                
+                var groupName = workflowId + participantId + tenantId;
+                await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
+                
+                _logger.LogInformation("User {UserId} subscribed to group {GroupName} on connection {ConnectionId}",
+                    tenantContext.LoggedInUser, groupName, Context.ConnectionId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogError(ex, "Service error in SubscribeToAgent on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Service temporarily unavailable");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in SubscribeToAgent on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Failed to subscribe to agent");
+            }
         }
 
-        public async Task UnsubscribeFromAgent(string workflow, string participantId, string TenantId)
+        public async Task UnsubscribeFromAgent(string workflow, string participantId, string tenantId)
         {
-            var workflowId = workflow;
-            if (!workflow.StartsWith(_tenantContext.TenantId + ":"))
+            // Input validation
+            if (string.IsNullOrWhiteSpace(workflow))
             {
-                workflowId = _tenantContext.TenantId + ":" + workflow;
+                _logger.LogWarning("UnsubscribeFromAgent called with null or empty workflow on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Workflow parameter is required");
+                return;
             }
 
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + participantId + TenantId);
+            if (string.IsNullOrWhiteSpace(participantId))
+            {
+                _logger.LogWarning("UnsubscribeFromAgent called with null or empty participantId on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "ParticipantId parameter is required");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                _logger.LogWarning("UnsubscribeFromAgent called with null or empty tenantId on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "TenantId parameter is required");
+                return;
+            }
+
+            try
+            {
+                var tenantContext = GetScopedTenantContext();
+                
+                // Security check: ensure user can only unsubscribe from their own tenant groups
+                if (tenantId != tenantContext.TenantId)
+                {
+                    _logger.LogWarning("UnsubscribeFromAgent: User {UserId} attempted to unsubscribe from different tenant {RequestedTenantId} vs {ActualTenantId} on connection {ConnectionId}",
+                        tenantContext.LoggedInUser, tenantId, tenantContext.TenantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync("Error", "Access denied - invalid tenant");
+                    return;
+                }
+
+                var workflowId = workflow;
+                if (!workflow.StartsWith(tenantContext.TenantId + ":"))
+                {
+                    workflowId = tenantContext.TenantId + ":" + workflow;
+                }
+
+                var groupName = workflowId + participantId + tenantId;
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
+                
+                _logger.LogInformation("User {UserId} unsubscribed from group {GroupName} on connection {ConnectionId}",
+                    tenantContext.LoggedInUser, groupName, Context.ConnectionId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogError(ex, "Service error in UnsubscribeFromAgent on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Service temporarily unavailable");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in UnsubscribeFromAgent on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync("Error", "Failed to unsubscribe from agent");
+            }
         }
     }
 }
