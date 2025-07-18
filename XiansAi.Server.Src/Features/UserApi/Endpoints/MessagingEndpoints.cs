@@ -244,6 +244,24 @@ namespace Features.UserApi.Endpoints
                     operation.Description = "Send data to a workflow and wait synchronously for the response. Requires workflowId, type, participantId and apikey as query parameters. For Chat messages, you can pass text as query parameter and optional JSON data in request body. For Data messages, pass JSON in request body. Optional timeoutSeconds (default: 60, max: 300).";
                     return operation;
                 });
+
+            // History endpoint with caching
+            messagingGroup.MapGet("/history/{workflow}/{participantId}", async (
+                [FromRoute] string workflow,
+                [FromRoute] string participantId,
+                [FromServices] IMessageService messageService,
+                [FromServices] ITenantContext tenantContext,
+                [FromQuery] int page = 1,
+                [FromQuery] int pageSize = 50,
+                [FromQuery] string? scope = null) =>
+            {
+                var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
+                var result = await messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, scope);
+                return result.ToHttpResult();
+            })
+            .WithName("GetMessageHistory")
+            .WithSummary("Get conversation history with caching")
+            .WithDescription("Retrieves conversation history with optimized database queries and caching");
         }
     }
 }

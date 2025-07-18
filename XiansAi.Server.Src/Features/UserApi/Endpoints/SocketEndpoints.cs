@@ -5,11 +5,12 @@ namespace Features.UserApi.Endpoints;
 /// <summary>
 /// Optimized bot endpoints with minimal overhead and maximum performance
 /// </summary>
-public static class BotSocketEndpoints
+public static class SocketEndpoints
 {
-    public static void MapBotSocketEndpoints(this IEndpointRouteBuilder app)
+    public static void MapSocketEndpoints(this IEndpointRouteBuilder app)
     {
         // Configure Websocket
-        app.MapHub<BotHub>("/ws/user/bot");
+        app.MapHub<ChatHub>("/ws/chat");
+        app.MapHub<TenantChatHub>("/ws/tenant/chat");
     }
 }
