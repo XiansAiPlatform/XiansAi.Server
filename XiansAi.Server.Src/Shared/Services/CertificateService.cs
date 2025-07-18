@@ -15,8 +15,11 @@ public class FlowServerSettings
     public required string FlowServerNamespace { get; set; }
     public string? FlowServerCertBase64 { get; set; }
     public string? FlowServerPrivateKeyBase64 { get; set; }
-    public required string OpenAIApiKey { get; set; }
+    public required string ApiKey { get; set; }
+    public required string? ProviderName { get; set; }
     public required string ModelName { get; set; }
+    public Dictionary<string, string>? AdditionalConfig { get; set; }
+    public required string? BaseUrl { get; set; }
 }
 
 public class CertificateService
@@ -53,8 +56,11 @@ public class CertificateService
             FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerCertBase64 = GetFlowServerCertBase64(),
             FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
-            OpenAIApiKey = _llmService.GetApiKey(),
-            ModelName = _llmService.GetModel()
+            ApiKey = _llmService.GetApiKey(),
+            ProviderName = _llmService.GetLlmProvider(),
+            ModelName = _llmService.GetModel(),
+            AdditionalConfig = _llmService.GetAdditionalConfig(),
+            BaseUrl = _llmService.GetBaseUrl()
         };
     }
 

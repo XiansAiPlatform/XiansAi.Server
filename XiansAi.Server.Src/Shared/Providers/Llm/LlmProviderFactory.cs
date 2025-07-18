@@ -45,6 +45,9 @@ public class LlmProviderFactory
             case "anthropic":
                 services.AddScoped<ILlmProvider, AnthropicLlmProvider>();
                 break;
+            case "azureopenai":
+                services.AddScoped<ILlmProvider, AzureOpenAILlmProvider>();
+                break;
             default:
                 throw new InvalidOperationException($"Unsupported LLM provider: {llmConfig.Provider}");
         }
