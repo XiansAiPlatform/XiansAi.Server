@@ -9,19 +9,18 @@ using System.Security.Cryptography;
 using Shared.Auth;
 using Shared.Utils;
 using Features.WebApi.Services;
+using Shared.Repositories;
 
 namespace Features.AgentApi.Auth;
 
 public class CertificateAuthenticationHandler : AuthenticationHandler<CertificateAuthenticationOptions>
 {
     private readonly ILogger<CertificateAuthenticationHandler> _logger;
-    private readonly IConfiguration _configuration;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
     private readonly ITenantContext _tenantContext;
     private readonly ICertificateValidationCache _certValidationCache;
-    private readonly ITenantService _tenantService;
-
+    private readonly ITenantRepository _tenantRepository;
     public CertificateAuthenticationHandler(
         IOptionsMonitor<CertificateAuthenticationOptions> options,
         ILoggerFactory logger,
@@ -31,16 +30,16 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         IConfiguration configuration,
         ITenantContext tenantContext,
         ICertificateValidationCache certValidationCache,
-        ITenantService tenantService) 
+        ITenantService tenantService,
+        ITenantRepository tenantRepository) 
         : base(options, logger, encoder)
     {
         _logger = logger.CreateLogger<CertificateAuthenticationHandler>();
-        _configuration = configuration;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
         _tenantContext = tenantContext;
         _certValidationCache = certValidationCache;
-        _tenantService = tenantService;
+        _tenantRepository = tenantRepository;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -80,6 +79,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var validationResult = await ValidateCertificateAsync(cert);
             if (!validationResult.IsValid)
             {
+                _logger.LogWarning("Certificate validation failed for tenant ID {TenantId}", cert.Subject);
                 _certValidationCache.CacheValidation(cert.Thumbprint, false);
                 return AuthenticateResult.Fail(string.Join(", ", validationResult.Errors));
             }
@@ -129,6 +129,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             // Check if certificate is revoked
             if (await _certificateRepository.IsRevokedAsync(cert.Thumbprint))
             {
+                _logger.LogWarning("Certificate has been revoked for tenant ID {TenantId}", cert.Subject);
                 result.AddError("Certificate has been revoked");
                 return result;
             }
@@ -146,6 +147,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             
             if (!isValid)
             {
+                _logger.LogWarning("Certificate validation chain failed for tenant ID {TenantId}", cert.Subject);
                 var errors = chain.ChainStatus
                     .Select(s => $"Chain validation error: {s.StatusInformation}")
                     .ToList();
@@ -157,6 +159,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var chainRoot = chain.ChainElements[chain.ChainElements.Count - 1].Certificate;
             if (!chainRoot.Thumbprint.Equals(rootCert.Thumbprint, StringComparison.OrdinalIgnoreCase))
             {
+                _logger.LogWarning("Certificate is not signed by the expected root CA for tenant ID {TenantId}", cert.Subject);
                 result.AddError("Certificate is not signed by the expected root CA");
                 return result;
             }
@@ -168,6 +171,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
                 
             if (enhancedKeyUsage == null || !HasClientAuthenticationPurpose(enhancedKeyUsage))
             {
+                _logger.LogWarning("Certificate does not have client authentication purpose for tenant ID {TenantId}", cert.Subject);
                 result.AddError("Certificate does not have client authentication purpose");
                 return result;
             }
@@ -176,13 +180,17 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var tenantId = GetSubjectValue(cert.Subject, "O");
             if (string.IsNullOrEmpty(tenantId))
             {
+                _logger.LogWarning("Invalid tenant: No tenant ID found in certificate for tenant ID {TenantId}", cert.Subject);
                 result.AddError("Invalid tenant: No tenant ID found in certificate");
                 return result;
             }
-
-            var tenantResult = await _tenantService.GetTenantByTenantId(tenantId);
-            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+            _logger.LogInformation("Getting tenant by tenant ID {TenantId}", tenantId);
+            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            //`var tenantResult = await _tenantService.GetTenantByTenantId(tenantId);
+            _logger.LogInformation("Tenant result: {TenantResult}", tenant);
+            if (tenant == null)
             {
+                _logger.LogWarning("Invalid tenant: {TenantId} not found", tenantId);
                 result.AddError($"Invalid tenant: {tenantId}.");
                 return result;
             }
@@ -192,7 +200,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error validating certificate");
+            _logger.LogError(ex, "Error validatingcertificate");
             result.Errors.Add($"Certificate validation error: {ex.Message}");
             return result;
         }
@@ -208,6 +216,8 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     {
         var tenantId = GetSubjectValue(cert.Subject, "O");
         var userId = GetSubjectValue(cert.Subject, "OU");
+
+        _logger.LogInformation("Creating authentication ticket for tenant ID {TenantId} and user ID {UserId}", tenantId, userId);
 
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(userId))
         {
