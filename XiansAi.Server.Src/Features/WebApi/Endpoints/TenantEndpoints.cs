@@ -32,11 +32,26 @@ public static class TenantEndpoints
             return operation;
         }).RequiresValidSysAdmin();
 
+        tenantsGroup.MapGet("/list", async (
+            HttpContext httpContext,
+            [FromServices] ITenantService endpoint) =>
+        {
+            var result = await endpoint.GetTenantList();
+            return result.ToHttpResult();
+        })
+        .WithName("Get Tenant List")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Get tenant List";
+            operation.Description = "Retrieves all tenant ids";
+            return operation;
+        }).RequiresValidSysAdmin();
+
         tenantsGroup.MapGet("/{id}", async (
             string id,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantByTenantId(id);
+            var result = await endpoint.GetTenantById(id);
             return result.ToHttpResult();
         })
         .WithName("Get Tenant")
@@ -53,7 +68,7 @@ public static class TenantEndpoints
             string tenantId,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantById(tenantId);
+            var result = await endpoint.GetTenantByTenantId(tenantId);
             return result.ToHttpResult();
         })
         .WithName("Get Tenant By TenantId")
