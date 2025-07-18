@@ -90,12 +90,14 @@ namespace Features.UserApi.Endpoints
                 [FromQuery] string type,
                 [FromQuery] string apikey,
                 [FromQuery] string participantId,
-                [FromBody] JsonElement request,
+                [FromBody] JsonElement? request,
                 [FromServices] IMessageService messageService,  
                 [FromServices] ITenantContext tenantContext,
                 [FromServices] IPendingRequestService pendingRequestService,
                 HttpContext context,
-                [FromQuery] int timeoutSeconds = 30) => {
+                [FromQuery] int timeoutSeconds = 60,
+                [FromQuery] string? requestId = null,
+                [FromQuery] string? text = null) => {
                     var messageTypeEnum = Enum.Parse<MessageType>(type);
                     if (!Enum.IsDefined(typeof(MessageType), messageTypeEnum))
                     {
@@ -114,7 +116,10 @@ namespace Features.UserApi.Endpoints
                     var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
                     
                     // Generate unique request ID for correlation
-                    var requestId = $"{workflowId}:{resolvedParticipantId}:{Guid.NewGuid()}";
+                    if (string.IsNullOrEmpty(requestId))
+                    {
+                        requestId = $"{workflowId}:{resolvedParticipantId}:{Guid.NewGuid()}";
+                    }
 
                     try
                     {
@@ -127,20 +132,36 @@ namespace Features.UserApi.Endpoints
                                 RequestId = requestId,
                                 ParticipantId = resolvedParticipantId,
                                 WorkflowId = workflowId,
-                                Data = request.ValueKind == JsonValueKind.Undefined ? null : request,
+                                Data = request,
                                 Authorization = apikey
                             };
                         }
                         else if (messageTypeEnum == MessageType.Chat)
                         {
-                            string? text = null;
-                            if (request.ValueKind == JsonValueKind.String)
+                            // Use text from query parameter if provided, otherwise try to extract from request body
+                            if (string.IsNullOrEmpty(text))
                             {
-                                text = request.GetString();
+                                if (request.HasValue)
+                                {
+                                    if (request.Value.ValueKind == JsonValueKind.String)
+                                    {
+                                        text = request.Value.GetString();
+                                    }
+                                    else if (request.Value.ValueKind != JsonValueKind.Undefined && request.Value.ValueKind != JsonValueKind.Null)
+                                    {
+                                        // If not a string, try to get the raw JSON as string
+                                        text = request.Value.ToString();
+                                    }
+                                }
                             }
-                            else if (request.ValueKind != JsonValueKind.Undefined && request.ValueKind != JsonValueKind.Null)
+                            
+                            // If we have both text (from query) and request body, use request body as data
+                            object? data = null;
+                            if (!string.IsNullOrEmpty(text) && request.HasValue && 
+                                request.Value.ValueKind != JsonValueKind.Undefined && 
+                                request.Value.ValueKind != JsonValueKind.Null)
                             {
-                                text = request.ToString();
+                                data = request.Value;
                             }
                             
                             chat = new ChatOrDataRequest
@@ -149,6 +170,7 @@ namespace Features.UserApi.Endpoints
                                 ParticipantId = resolvedParticipantId,
                                 WorkflowId = workflowId,
                                 Text = text,
+                                Data = data,
                                 Authorization = apikey
                             };
                         }
@@ -216,7 +238,7 @@ namespace Features.UserApi.Endpoints
                 .WithName("Send Data to workflow and wait for response")
                 .WithOpenApi(operation => {
                     operation.Summary = "Send Data to workflow and wait for response";
-                    operation.Description = "Send data to a workflow and wait synchronously for the response. Requires workflowId, type, participantId and apikey as query parameters. Optional timeoutSeconds (default: 30, max: 300).";
+                    operation.Description = "Send data to a workflow and wait synchronously for the response. Requires workflowId, type, participantId and apikey as query parameters. For Chat messages, you can pass text as query parameter and optional JSON data in request body. For Data messages, pass JSON in request body. Optional timeoutSeconds (default: 60, max: 300).";
                     return operation;
                 });
         }
