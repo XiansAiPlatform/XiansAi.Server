@@ -6,6 +6,7 @@ using Shared.Repositories;
 using Features.UserApi.Websocket;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
+using Shared.Services;
 
 
 namespace Features.UserApi.Services
@@ -38,6 +39,7 @@ namespace Features.UserApi.Services
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+                    var pendingRequestService = scope.ServiceProvider.GetRequiredService<IPendingRequestService>();
 
                     var database = await databaseService.GetDatabaseAsync();
                     var collectionName = "conversation_message";
@@ -92,7 +94,22 @@ namespace Features.UserApi.Services
                             var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
                             var tenantGroupId = message.WorkflowId + message.TenantId;
 
-                            //TODO Merge Conflict
+                            // Check if this is a response to a pending synchronous request
+                            if (message.Direction == MessageDirection.Outgoing && !string.IsNullOrEmpty(message.RequestId))
+                            {
+                                try
+                                {
+                                    _logger.LogDebug("Completing pending request {RequestId} with outgoing message {MessageId}", 
+                                        message.RequestId, message.Id);
+                                    pendingRequestService.CompleteRequest(message.RequestId, message);
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Error completing pending request {RequestId}", message.RequestId);
+                                }
+                            }
+
+                            // Existing SignalR broadcasting logic (unchanged)
                             if (message.Direction == MessageDirection.Outgoing || message.MessageType == MessageType.Handoff)
                             {
                                 if (string.IsNullOrEmpty(message.Text))

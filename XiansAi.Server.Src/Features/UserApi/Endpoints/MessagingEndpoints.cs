@@ -84,6 +84,141 @@ namespace Features.UserApi.Endpoints
                     return operation;
                 });
 
+            // New synchronous endpoint that waits for responses
+            messagingGroup.MapPost("/inbound/sync", async (
+                [FromQuery] string workflowId,
+                [FromQuery] string type,
+                [FromQuery] string apikey,
+                [FromQuery] string participantId,
+                [FromBody] JsonElement request,
+                [FromServices] IMessageService messageService,  
+                [FromServices] ITenantContext tenantContext,
+                [FromServices] IPendingRequestService pendingRequestService,
+                HttpContext context,
+                [FromQuery] int timeoutSeconds = 30) => {
+                    var messageTypeEnum = Enum.Parse<MessageType>(type);
+                    if (!Enum.IsDefined(typeof(MessageType), messageTypeEnum))
+                    {
+                        return Results.BadRequest("Invalid message type specified.");
+                    }
+                    if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(apikey))
+                    {
+                        return Results.BadRequest("WorkflowId and apikey are required.");
+                    }
+
+                    if (timeoutSeconds < 1 || timeoutSeconds > 300) // Max 5 minutes
+                    {
+                        return Results.BadRequest("Timeout must be between 1 and 300 seconds.");
+                    }
+
+                    var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
+                    
+                    // Generate unique request ID for correlation
+                    var requestId = $"{workflowId}:{resolvedParticipantId}:{Guid.NewGuid()}";
+
+                    try
+                    {
+                        ChatOrDataRequest chat;
+                        
+                        if (messageTypeEnum == MessageType.Data)
+                        {
+                            chat = new ChatOrDataRequest
+                            {
+                                RequestId = requestId,
+                                ParticipantId = resolvedParticipantId,
+                                WorkflowId = workflowId,
+                                Data = request.ValueKind == JsonValueKind.Undefined ? null : request,
+                                Authorization = apikey
+                            };
+                        }
+                        else if (messageTypeEnum == MessageType.Chat)
+                        {
+                            string? text = null;
+                            if (request.ValueKind == JsonValueKind.String)
+                            {
+                                text = request.GetString();
+                            }
+                            else if (request.ValueKind != JsonValueKind.Undefined && request.ValueKind != JsonValueKind.Null)
+                            {
+                                text = request.ToString();
+                            }
+                            
+                            chat = new ChatOrDataRequest
+                            {
+                                RequestId = requestId,
+                                ParticipantId = resolvedParticipantId,
+                                WorkflowId = workflowId,
+                                Text = text,
+                                Authorization = apikey
+                            };
+                        }
+                        else
+                        {
+                            return Results.BadRequest("Invalid message type specified.");
+                        }
+
+                        // Start waiting for the response (this sets up the TaskCompletionSource)
+                        var responseTask = pendingRequestService.WaitForResponseAsync<ConversationMessage>(
+                            requestId, 
+                            TimeSpan.FromSeconds(timeoutSeconds), 
+                            context.RequestAborted);
+
+                        // Process the incoming message asynchronously (using existing flow)
+                        var processResult = await messageService.ProcessIncomingMessage(chat, messageTypeEnum);
+                        
+                        if (!processResult.IsSuccess)
+                        {
+                            pendingRequestService.CancelRequest(requestId);
+                            return processResult.ToHttpResult();
+                        }
+
+                        // Wait for the response from the change stream
+                        var response = await responseTask;
+                        
+                        if (response == null)
+                        {
+                            return Results.Problem("No response received within timeout period", statusCode: 408);
+                        }
+
+                        // Return the response message
+                        return Results.Ok(new
+                        {
+                            RequestId = requestId,
+                            ThreadId = processResult.Data,
+                            Response = new
+                            {
+                                response.Id,
+                                response.Text,
+                                response.Data,
+                                response.CreatedAt,
+                                response.Direction,
+                                response.MessageType,
+                                response.Scope,
+                                response.Hint
+                            }
+                        });
+                    }
+                    catch (TimeoutException)
+                    {
+                        return Results.Problem("Request timed out waiting for response", statusCode: 408);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        pendingRequestService.CancelRequest(requestId);
+                        return Results.Problem("Request was cancelled", statusCode: 499);
+                    }
+                    catch (Exception ex)
+                    {
+                        pendingRequestService.CancelRequest(requestId);
+                        return Results.Problem($"An error occurred: {ex.Message}", statusCode: 500);
+                    }
+                })
+                .WithName("Send Data to workflow and wait for response")
+                .WithOpenApi(operation => {
+                    operation.Summary = "Send Data to workflow and wait for response";
+                    operation.Description = "Send data to a workflow and wait synchronously for the response. Requires workflowId, type, participantId and apikey as query parameters. Optional timeoutSeconds (default: 30, max: 300).";
+                    return operation;
+                });
         }
     }
 }

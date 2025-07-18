@@ -5,6 +5,7 @@ using Features.UserApi.Websocket;
 using Features.UserApi.Services;
 using Features.UserApi.Endpoints;
 using Features.UserApi.Repositories;
+using Shared.Services;
 
 namespace Features.UserApi.Configuration
 {
@@ -19,6 +20,9 @@ namespace Features.UserApi.Configuration
             builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
             builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
             builder.Services.AddScoped<IBotService, BotService>();
+            
+            // Add PendingRequestService for sync messaging support
+            builder.Services.AddSingleton<IPendingRequestService, PendingRequestService>();
             
             // Add SignalR services
             AddSignalRServices(builder.Services);
