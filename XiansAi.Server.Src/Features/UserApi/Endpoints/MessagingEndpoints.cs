@@ -86,7 +86,7 @@ namespace Features.UserApi.Endpoints
 
             // New synchronous endpoint that waits for responses
             messagingGroup.MapPost("/inbound/sync", async (
-                [FromQuery] string workflowId,
+                [FromQuery] string workflow,
                 [FromQuery] string type,
                 [FromQuery] string apikey,
                 [FromQuery] string participantId,
@@ -103,7 +103,7 @@ namespace Features.UserApi.Endpoints
                     {
                         return Results.BadRequest("Invalid message type specified.");
                     }
-                    if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(apikey))
+                    if (string.IsNullOrEmpty(workflow) || string.IsNullOrEmpty(apikey))
                     {
                         return Results.BadRequest("WorkflowId and apikey are required.");
                     }
@@ -113,12 +113,14 @@ namespace Features.UserApi.Endpoints
                         return Results.BadRequest("Timeout must be between 1 and 300 seconds.");
                     }
 
+                    var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
+
                     var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
                     
                     // Generate unique request ID for correlation
                     if (string.IsNullOrEmpty(requestId))
                     {
-                        requestId = $"{workflowId}:{resolvedParticipantId}:{Guid.NewGuid()}";
+                        requestId = $"{workflow}:{resolvedParticipantId}:{Guid.NewGuid()}";
                     }
 
                     try
@@ -131,7 +133,7 @@ namespace Features.UserApi.Endpoints
                             {
                                 RequestId = requestId,
                                 ParticipantId = resolvedParticipantId,
-                                WorkflowId = workflowId,
+                                WorkflowId = workflow,
                                 Data = request,
                                 Authorization = apikey
                             };
@@ -168,7 +170,7 @@ namespace Features.UserApi.Endpoints
                             {
                                 RequestId = requestId,
                                 ParticipantId = resolvedParticipantId,
-                                WorkflowId = workflowId,
+                                WorkflowId = workflow,
                                 Text = text,
                                 Data = data,
                                 Authorization = apikey
