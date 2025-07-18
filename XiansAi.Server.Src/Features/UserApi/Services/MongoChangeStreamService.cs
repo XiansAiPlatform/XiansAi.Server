@@ -101,7 +101,7 @@ namespace Features.UserApi.Services
                                 {
                                     _logger.LogDebug("Completing pending request {RequestId} with outgoing message {MessageId}", 
                                         message.RequestId, message.Id);
-                                    pendingRequestService.CompleteRequest(message.RequestId, message);
+                                    pendingRequestService.CompleteRequest(message.RequestId, message, message.MessageType);
                                 }
                                 catch (Exception ex)
                                 {

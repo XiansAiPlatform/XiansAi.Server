@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Shared.Repositories;
 
 namespace Shared.Services;
 
@@ -7,8 +8,8 @@ namespace Shared.Services;
 /// </summary>
 public interface IPendingRequestService
 {
-    Task<T?> WaitForResponseAsync<T>(string requestId, TimeSpan timeout, CancellationToken cancellationToken = default);
-    void CompleteRequest<T>(string requestId, T response);
+    Task<T?> WaitForResponseAsync<T>(string requestId, TimeSpan timeout, MessageType expectedMessageType, CancellationToken cancellationToken = default);
+    void CompleteRequest<T>(string requestId, T response, MessageType? messageType = null);
     void CompleteRequestWithError(string requestId, Exception exception);
     void CancelRequest(string requestId);
     int GetPendingRequestCount();
@@ -28,12 +29,12 @@ public class PendingRequestService : IPendingRequestService, IDisposable
         _cleanupTimer = new Timer(CleanupExpiredRequests, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
-    public async Task<T?> WaitForResponseAsync<T>(string requestId, TimeSpan timeout, CancellationToken cancellationToken = default)
+    public async Task<T?> WaitForResponseAsync<T>(string requestId, TimeSpan timeout, MessageType expectedMessageType, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(requestId))
             throw new ArgumentException("RequestId cannot be null or empty", nameof(requestId));
 
-        var pendingRequest = new PendingRequest<T>(requestId, DateTime.UtcNow.Add(timeout));
+        var pendingRequest = new PendingRequest<T>(requestId, DateTime.UtcNow.Add(timeout), expectedMessageType);
         
         if (!_pendingRequests.TryAdd(requestId, pendingRequest))
         {
@@ -43,13 +44,13 @@ public class PendingRequestService : IPendingRequestService, IDisposable
 
         try
         {
-            _logger.LogDebug("Waiting for response to request {RequestId} with timeout {Timeout}", requestId, timeout);
+            _logger.LogDebug("Waiting for {MessageType} response to request {RequestId} with timeout {Timeout}", expectedMessageType, requestId, timeout);
             
             using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             combinedCts.CancelAfter(timeout);
             
             var response = await pendingRequest.TaskCompletionSource.Task.WaitAsync(combinedCts.Token);
-            _logger.LogDebug("Received response for request {RequestId}", requestId);
+            _logger.LogDebug("Received {MessageType} response for request {RequestId}", expectedMessageType, requestId);
             
             return response;
         }
@@ -69,7 +70,7 @@ public class PendingRequestService : IPendingRequestService, IDisposable
         }
     }
 
-    public void CompleteRequest<T>(string requestId, T response)
+    public void CompleteRequest<T>(string requestId, T response, MessageType? messageType = null)
     {
         if (string.IsNullOrEmpty(requestId))
         {
@@ -81,7 +82,18 @@ public class PendingRequestService : IPendingRequestService, IDisposable
         {
             if (pendingRequest is PendingRequest<T> typedRequest)
             {
-                _logger.LogDebug("Completing request {RequestId} with response", requestId);
+                // Check if the response message type matches the expected type (if specified)
+                if (messageType.HasValue && typedRequest.ExpectedMessageType != messageType.Value)
+                {
+                    _logger.LogDebug("Message type mismatch for request {RequestId}. Expected {ExpectedType}, got {ActualType}. Ignoring response.", 
+                        requestId, typedRequest.ExpectedMessageType, messageType.Value);
+                    
+                    // Re-add the request back to the dictionary since this response doesn't match
+                    _pendingRequests.TryAdd(requestId, pendingRequest);
+                    return;
+                }
+
+                _logger.LogDebug("Completing request {RequestId} with {MessageType} response", requestId, messageType?.ToString() ?? "unspecified");
                 typedRequest.TaskCompletionSource.SetResult(response);
             }
             else
@@ -181,11 +193,13 @@ public abstract class PendingRequest
 {
     public string RequestId { get; }
     public DateTime ExpiresAt { get; }
+    public MessageType ExpectedMessageType { get; }
 
-    protected PendingRequest(string requestId, DateTime expiresAt)
+    protected PendingRequest(string requestId, DateTime expiresAt, MessageType expectedMessageType)
     {
         RequestId = requestId;
         ExpiresAt = expiresAt;
+        ExpectedMessageType = expectedMessageType;
     }
 
     public abstract void SetException(Exception exception);
@@ -197,7 +211,7 @@ public class PendingRequest<T> : PendingRequest
 {
     public TaskCompletionSource<T> TaskCompletionSource { get; }
 
-    public PendingRequest(string requestId, DateTime expiresAt) : base(requestId, expiresAt)
+    public PendingRequest(string requestId, DateTime expiresAt, MessageType expectedMessageType) : base(requestId, expiresAt, expectedMessageType)
     {
         TaskCompletionSource = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
     }

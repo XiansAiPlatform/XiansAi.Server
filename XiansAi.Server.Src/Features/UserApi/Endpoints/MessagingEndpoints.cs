@@ -183,6 +183,7 @@ namespace Features.UserApi.Endpoints
                         var responseTask = pendingRequestService.WaitForResponseAsync<ConversationMessage>(
                             requestId, 
                             TimeSpan.FromSeconds(timeoutSeconds), 
+                            messageTypeEnum,
                             context.RequestAborted);
 
                         // Process the incoming message asynchronously (using existing flow)
