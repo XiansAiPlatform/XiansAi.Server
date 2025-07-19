@@ -28,7 +28,7 @@ namespace Features.UserApi.Websocket
             public const string RequestCannotBeNull = "Request cannot be null";
             public const string MessageTypeRequired = "MessageType is required";
             public const string InvalidTenantContext = "Invalid tenant context";
-            public const string InvalidMessageType = "Invalid message type";
+            public const string InvalidMessageType = "Invalid message type. Valid types are: Chat, Data";
             public const string PageMustBeNonNegative = "Page must be non-negative";
             public const string InvalidPageSize = "PageSize must be between 1 and 1000";
             public const string AccessDeniedInvalidTenant = "Access denied - invalid tenant";
@@ -171,7 +171,11 @@ namespace Features.UserApi.Websocket
             return base.OnDisconnectedAsync(exception);
         }
 
-        public async Task GetThreadHistory(string workflow, string participantId, int page, int pageSize)
+        public async Task GetThreadHistory(string workflow, string participantId, int page, int pageSize){
+            await GetScopedThreadHistory(workflow, participantId, page, pageSize, null);
+        }
+
+        public async Task GetScopedThreadHistory(string workflow, string participantId, int page, int pageSize, string? scope)
         {
             var cancellationToken = Context.ConnectionAborted;
             
@@ -215,7 +219,6 @@ namespace Features.UserApi.Websocket
                     return;
                 }
 
-                string? scope = null;
                 string workflowId = workflow;
                 if(!workflow.StartsWith(tenantContext.TenantId + ":")) {
                     // this is workflowType, convert to workflowId
