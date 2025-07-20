@@ -1,8 +1,6 @@
 using System.Text.Json;
 using Shared.Services;
 using Shared.Repositories;
-using Shared.Auth;
-using Shared.Utils;
 
 namespace Features.UserApi.Utils
 {
@@ -11,7 +9,6 @@ namespace Features.UserApi.Utils
         public static ChatOrDataRequest CreateRequest(
             MessageType messageType,
             string workflowId,
-            string apikey,
             string participantId,
             JsonElement? request = null,
             string? text = null,
@@ -26,7 +23,7 @@ namespace Features.UserApi.Utils
                     ParticipantId = participantId,
                     WorkflowId = workflowId,
                     Data = request?.ValueKind == JsonValueKind.Undefined ? null : request,
-                    Authorization = apikey
+                    Authorization = null
                 };
             }
             else if (messageType == MessageType.Chat)
@@ -55,7 +52,7 @@ namespace Features.UserApi.Utils
                     WorkflowId = workflowId,
                     Text = resolvedText,
                     Data = data,
-                    Authorization = apikey
+                    Authorization = null
                 };
             }
             else
@@ -68,25 +65,23 @@ namespace Features.UserApi.Utils
         public static ChatOrDataRequest CreateInboundRequest(
             MessageType messageType,
             string workflowId,
-            string apikey,
             string participantId,
             JsonElement? request = null,
             string? text = null,
             string? requestId = null)
         {
-            return CreateRequest(messageType, workflowId, apikey, participantId, request, text, requestId);
+            return CreateRequest(messageType, workflowId, participantId, request, text, requestId);
         }
 
         public static ChatOrDataRequest CreateSyncRequest(
             MessageType messageType,
             string workflow,
-            string apikey,
             string participantId,
             string requestId,
             JsonElement? request = null,
             string? text = null)
         {
-            return CreateRequest(messageType, workflow, apikey, participantId, request, text, requestId);
+            return CreateRequest(messageType, workflow, participantId, request, text, requestId);
         }
 
         public static string GenerateRequestId(string workflow, string participantId)

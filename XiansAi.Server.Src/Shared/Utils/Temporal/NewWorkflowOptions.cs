@@ -81,7 +81,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
     public static string GenerateNewWorkflowId(string workflowType, ITenantContext tenantContext)
     {
-        var id = $"{workflowType}:{Guid.NewGuid()}";
+        var id = $"{workflowType}--{Guid.NewGuid()}";
         var tenantWorkflowId = tenantContext.TenantId + ":" + id;
         return tenantWorkflowId;
     }

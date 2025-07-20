@@ -17,18 +17,21 @@ namespace Features.UserApi.Services
         private readonly IHubContext<TenantChatHub> _tenantHubContext;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MongoChangeStreamService> _logger;
+        private readonly IMessageEventPublisher _messageEventPublisher;
 
         public MongoChangeStreamService(
             IHubContext<ChatHub> hubContext,
             IHubContext<TenantChatHub> tenantHubContext,
             IServiceScopeFactory scopeFactory,
-            ILogger<MongoChangeStreamService> logger
+            ILogger<MongoChangeStreamService> logger,
+            IMessageEventPublisher messageEventPublisher
             )
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _hubContext = hubContext;
             _tenantHubContext = tenantHubContext;
+            _messageEventPublisher = messageEventPublisher ?? throw new ArgumentNullException(nameof(messageEventPublisher));
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -117,18 +120,42 @@ namespace Features.UserApi.Services
                                     _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
                                     groupId, JsonSerializer.Serialize(message));
                                     await _hubContext.Clients.Group(groupId)
+                                    // TODO: Remove the backward compatibility ReceiveMetadata later
                                     .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
+                                    await _hubContext.Clients.Group(groupId)
+                                    // New method names
+                                    .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
                                     await _tenantHubContext.Clients.Group(tenantGroupId)
-                                    .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
+                                    .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
                                 }
                                 else
                                 {
                                     _logger.LogDebug("Sending message to group {GroupId}: {Message}",
                                     groupId, JsonSerializer.Serialize(message));
+                                    // TODO: Remove the backward compatibility ReceiveMessage later
                                     await _hubContext.Clients.Group(groupId)
                                         .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
+                                    // New method names
+                                    await _hubContext.Clients.Group(groupId)
+                                        .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken);
                                     await _tenantHubContext.Clients.Group(tenantGroupId)
-                                        .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
+                                        .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken);
+                                }
+
+                                // Publish to SSE subscribers
+                                try
+                                {
+                                    var messageEvent = new MessageStreamEvent
+                                    {
+                                        Message = message,
+                                        GroupId = groupId,
+                                        TenantGroupId = tenantGroupId
+                                    };
+                                    await _messageEventPublisher.PublishMessageAsync(messageEvent, stoppingToken);
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Error publishing message event for SSE subscribers: {MessageId}", message.Id);
                                 }
                             }
                             _logger.LogDebug("Sent message to group {GroupId}: {MessageId}",

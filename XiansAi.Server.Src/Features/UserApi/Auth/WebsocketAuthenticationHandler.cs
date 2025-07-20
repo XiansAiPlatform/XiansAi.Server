@@ -53,8 +53,8 @@ namespace Features.UserApi.Auth
 
             _logger.LogDebug("Processing SignalR/Websocket request: {Path}", Request.Path);
 
-            // Example: validate access_token and tenant from query
-            var accessToken = Request.Query["access_token"].ToString();
+            // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
+            var accessToken = Request.Query["apikey"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
 
             if (_tenantContext != null)
@@ -72,8 +72,16 @@ namespace Features.UserApi.Auth
                     return AuthenticateResult.Fail("No tenantId provided in query string");
                 }
 
+                // Check for token in different locations based on authentication method
                 if (string.IsNullOrEmpty(accessToken))
                 {
+                    // Check for access_token query parameter (used for JWT and as fallback for API keys)
+                    accessToken = Request.Query["access_token"].ToString();
+                }
+
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    // Check for Authorization header (preferred method for JWT)
                     var authHeader = Request.Headers["Authorization"].FirstOrDefault();
                     if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
                     {

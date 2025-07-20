@@ -14,6 +14,9 @@ namespace Features.UserApi.Configuration
         public static WebApplicationBuilder AddUserApiServices(this WebApplicationBuilder builder)
         {
             builder.Services.AddLogging();
+            
+            // Add Message Event Publisher for SSE support
+            builder.Services.AddSingleton<IMessageEventPublisher, MessageEventPublisher>();
             builder.Services.AddSingleton<MongoChangeStreamService>();
             builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
             builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
@@ -91,7 +94,8 @@ namespace Features.UserApi.Configuration
 
         public static WebApplication UseUserApiEndpoints(this WebApplication app)
         {
-            MessagingEndpoints.MapMessagingEndpoints(app);
+            RestEndpoints.MapRestEndpoints(app);
+            SseEndpoints.MapSseEndpoints(app);
             SocketEndpoints.MapSocketEndpoints(app);
 
             return app;

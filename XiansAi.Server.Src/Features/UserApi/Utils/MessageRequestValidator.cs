@@ -8,14 +8,13 @@ namespace Features.UserApi.Utils
         public static (bool IsValid, string? ErrorMessage) ValidateInboundRequest(
             string? workflow, 
             string? type, 
-            string? apikey,
             out MessageType messageType)
         {
             messageType = default;
 
-            if (string.IsNullOrEmpty(workflow) || string.IsNullOrEmpty(apikey))
+            if (string.IsNullOrEmpty(workflow))
             {
-                return (false, "WorkflowId and apikey are required.");
+                return (false, "WorkflowId is required.");
             }
 
             if (string.IsNullOrEmpty(type))
@@ -34,15 +33,14 @@ namespace Features.UserApi.Utils
         public static (bool IsValid, string? ErrorMessage) ValidateSyncRequest(
             string? workflow, 
             string? type, 
-            string? apikey,
             int timeoutSeconds,
             out MessageType messageType)
         {
             messageType = default;
 
-            if (string.IsNullOrEmpty(workflow) || string.IsNullOrEmpty(apikey))
+            if (string.IsNullOrEmpty(workflow))
             {
-                return (false, "WorkflowId and apikey are required.");
+                return (false, "Workflow is required.");
             }
 
             if (string.IsNullOrEmpty(type))

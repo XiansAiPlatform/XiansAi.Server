@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Utils.Temporal;
 
 namespace Features.UserApi.Websocket
 {
@@ -255,12 +256,20 @@ namespace Features.UserApi.Websocket
         {
             var cancellationToken = Context.ConnectionAborted;
             
-            // Input validation
+            // Input validation - check for null request first
             if (request == null)
             {
                 _logger.LogWarning("SendInboundMessage called with null request on connection {ConnectionId}", Context.ConnectionId);
                 await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.RequestCannotBeNull, cancellationToken);
                 return;
+            }
+
+            if (request.Workflow != null)
+            {
+                var identifier = new WorkflowIdentifier(request.Workflow, GetScopedTenantContext());
+                request.WorkflowId = identifier.WorkflowId;
+                request.WorkflowType = identifier.WorkflowType;
+                request.Agent = identifier.AgentName;
             }
 
             if (string.IsNullOrWhiteSpace(messageType))
@@ -296,13 +305,12 @@ namespace Features.UserApi.Websocket
                     return;
                 }
 
+                request.Type = messageTypeEnum;
+
                 // Ensure request has proper tenant context for downstream services
                 if (request.Authorization == null)
                 {
-                    // Propagate tenant information to the request for downstream services
-                    _logger.LogDebug("Adding tenant context to request for downstream services");
-                    // Note: We're not modifying the Authorization field directly since that might affect other logic
-                    // Instead, we rely on the fact that MessageService should use the scoped ITenantContext
+                    request.Authorization = tenantContext.Authorization;
                 }
 
                 // Step 1: Process inbound

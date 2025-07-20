@@ -2,14 +2,19 @@ using Shared.Auth;
 using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
+using System.Text.Json.Serialization;
 
 namespace Shared.Services;
 
 public class ChatOrDataRequest
 {
+
     private string? _agent;
     private string? _workflowType;
-
+    public string? Workflow { get; set; }
+    
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MessageType? Type { get; set; }
     public string? RequestId { get; set; }
     
     // unique identifier for the participant, used to identify the participant in the message thread
@@ -23,8 +28,8 @@ public class ChatOrDataRequest
 
     // Hint for the agent to use when processing the message
     public string? Hint { get; set; }
-    
-    public string WorkflowType 
+
+    public string? WorkflowType 
     { 
         get 
         {
@@ -35,11 +40,12 @@ public class ChatOrDataRequest
 
             if (!string.IsNullOrEmpty(WorkflowId))
             {
-                var parts = WorkflowId.Split(':');
-                if (parts.Length > 2)
-                {
-                    return $"{parts[1]}:{parts[2]}";
-                }
+                return WorkflowIdentifier.GetWorkflowType(WorkflowId);
+            }
+
+            if (!string.IsNullOrEmpty(Workflow))
+            {
+                return WorkflowIdentifier.GetWorkflowType(Workflow);
             }
 
             throw new InvalidOperationException("Unable to determine WorkflowType from WorkflowType or WorkflowId");
@@ -307,6 +313,11 @@ public class MessageService : IMessageService
             ExtractWorkflowId(request);
         }
 
+        if (request.Authorization == null && _tenantContext.Authorization != null)
+        {
+            request.Authorization = _tenantContext.Authorization;
+        }
+
         //check if starts with tenantId
         if (!request.WorkflowId!.StartsWith(_tenantContext.TenantId + ":"))
         {
@@ -351,6 +362,11 @@ public class MessageService : IMessageService
 
     private async Task SignalWorkflowAsync(ChatOrDataRequest request, MessageType messageType)
     {
+        if (request.WorkflowType == null)
+        {
+            throw new Exception("WorkflowType is required");
+        }
+
         var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var signalRequest = new WorkflowSignalWithStartRequest
         {
@@ -376,6 +392,11 @@ public class MessageService : IMessageService
 
     private async Task<string> CreateOrGetThread(ChatOrDataRequest request)
     {
+        if (request.WorkflowType == null)
+        {
+            throw new Exception("WorkflowType is required");
+        }
+
         var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var thread = new ConversationThread
         {
@@ -416,7 +437,7 @@ public class MessageService : IMessageService
             Text = request.Text,
             Data = request.Data, // Assign original metadata
             WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
-            WorkflowType = request.WorkflowType,
+            WorkflowType = request.WorkflowType ?? throw new Exception("WorkflowType is required"),
             MessageType = messageType
         };
 
