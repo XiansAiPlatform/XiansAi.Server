@@ -280,8 +280,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             CreatedBy = TestUserId,
-            Status = ConversationThreadStatus.Active,
-            IsInternalThread = false
+            Status = ConversationThreadStatus.Active
         };
 
         // Insert directly into repository

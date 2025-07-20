@@ -29,6 +29,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
         // Set the environment if specified
         if (!string.IsNullOrEmpty(_environment))
         {
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", _environment);
             builder.UseEnvironment(_environment);
         }
 
@@ -45,17 +46,22 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             var env = context.HostingEnvironment.EnvironmentName;
             config.AddJsonFile($"appsettings.{env}.json", optional: true, reloadOnChange: false);
             
-            // Add test-specific overrides
-            config.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                // Override MongoDB settings to use test database
-                ["MongoDB:ConnectionString"] = _mongoFixture.MongoConfig.ConnectionString,
-                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName,
-                
-                // Override other settings for testing as needed
-                ["Logging:LogLevel:Default"] = "Information",
-                ["Logging:LogLevel:Microsoft.AspNetCore"] = "Warning"
-            });
+                            // Add test-specific overrides
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    // Override MongoDB settings to use test database
+                    ["MongoDB:ConnectionString"] = _mongoFixture.MongoConfig.ConnectionString,
+                    ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName,
+                    
+                    // Configure cache provider for testing
+                    ["Cache:Provider"] = "memory",
+                    ["Cache:Memory:SizeLimit"] = "1024",
+                    ["Cache:Memory:ExpirationScanFrequency"] = "00:00:30",
+                    
+                    // Override other settings for testing as needed
+                    ["Logging:LogLevel:Default"] = "Information",
+                    ["Logging:LogLevel:Microsoft.AspNetCore"] = "Warning"
+                });
             
             // Add environment variables
             config.AddEnvironmentVariables();
@@ -83,6 +89,13 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             mockMarkdownService.Setup(m => m.GenerateMarkdown(It.IsAny<string>()))
                 .ReturnsAsync("```mermaid\ngraph TD\n    A[Start] --> B[End]\n```");
             services.AddSingleton<IMarkdownService>(mockMarkdownService.Object);
+
+            // Remove existing cache provider
+            RemoveService<XiansAi.Server.Providers.ICacheProvider>(services);
+
+            // Configure cache provider for testing
+            services.AddMemoryCache();
+            services.AddScoped<XiansAi.Server.Providers.ICacheProvider, XiansAi.Server.Providers.InMemoryCacheProvider>();
 
             // Override JWT authentication with test authentication for WebApi endpoints
             services.AddAuthentication("Test")

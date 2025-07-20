@@ -7,6 +7,7 @@ using Shared.Data.Models;
 using Features.WebApi.Services;
 using MongoDB.Bson;
 using Shared.Utils.Services;
+using Shared.Services;
 using XiansAi.Server.Tests.TestUtils;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net.Http.Json;
@@ -395,8 +396,7 @@ public class WebhookEndpointsTests : WebApiIntegrationTestBase, IDisposable
 
         // Act - Make requests without tenant header
         var getResponse = await client.GetAsync("/api/client/webhooks/");
-        var createResponse = await client.PostAsync("/api/client/webhooks", 
-            new StringContent(JsonSerializer.Serialize(validRequest), Encoding.UTF8, "application/json"));
+        var createResponse = await client.PostAsJsonAsync("/api/client/webhooks", validRequest);
 
         // Assert - These endpoints should require tenant validation
         // In test environment, this might return OK due to test auth configuration

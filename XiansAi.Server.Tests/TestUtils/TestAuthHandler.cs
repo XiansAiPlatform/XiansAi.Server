@@ -13,8 +13,8 @@ public class TestAuthenticationOptions : AuthenticationSchemeOptions
 public class TestAuthHandler : AuthenticationHandler<TestAuthenticationOptions>
 {
     public TestAuthHandler(IOptionsMonitor<TestAuthenticationOptions> options,
-        ILoggerFactory logger, UrlEncoder encoder, ISystemClock clock)
-        : base(options, logger, encoder, clock)
+        ILoggerFactory logger, UrlEncoder encoder)
+        : base(options, logger, encoder)
     {
     }
 

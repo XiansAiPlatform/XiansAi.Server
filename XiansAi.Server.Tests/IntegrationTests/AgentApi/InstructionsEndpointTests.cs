@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using MongoDB.Bson;
 using Shared.Data.Models;
-using Shared.Data.Models;
 using XiansAi.Server.Tests.TestUtils;
 
 namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;

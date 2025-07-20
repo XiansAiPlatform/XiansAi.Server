@@ -6,8 +6,6 @@ using Xunit;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
-using Shared.Repositories;
-using Shared.Data.Models;
 using Shared.Data;
 using XiansAi.Server.Tests.TestUtils;
 
@@ -389,12 +387,9 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
             Tenant = TestTenantId,
-            Permissions = new Permission
-            {
-                OwnerAccess = [TestUserId],
-                ReadAccess = [TestUserId],
-                WriteAccess = [TestUserId]
-            },
+            OwnerAccess = [TestUserId],
+            ReadAccess = [TestUserId],
+            WriteAccess = [TestUserId],
             CreatedBy = TestUserId,
             CreatedAt = DateTime.UtcNow
         };
