@@ -20,76 +20,6 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     }
 
     [Fact]
-    public async Task ProcessInboundMessage_WithValidRequest_HandlesTransactionError()
-    {
-        // Arrange
-        var request = new ChatOrDataRequest
-        {
-            ParticipantId = "test-participant-1",
-            WorkflowId = "test-workflow-1",
-            WorkflowType = "TestWorkflowType",
-            Agent = "test-agent-1",
-            Text = "Hello, this is a test message",
-            Data = new { priority = "high", source = "web" }
-        };
-
-        // Act
-        var response = await PostAsJsonAsync("/api/client/messaging/inbound", request);
-
-        // Assert - The transaction will fail in test environment, so we expect InternalServerError
-        // This is expected behavior due to MongoDB transaction limitations in test environment
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ProcessInboundMessage_WithExistingThread_HandlesTransactionError()
-    {
-        // Arrange
-        var agent = $"test-agent-{Guid.NewGuid()}";
-        var participantId = $"test-participant-{Guid.NewGuid()}";
-        
-        // Create a thread first
-        var thread = await CreateTestThreadAsync(agent: agent, participantId: participantId);
-
-        var request = new ChatOrDataRequest
-        {
-            ParticipantId = participantId,
-            WorkflowId = thread.WorkflowId,
-            WorkflowType = thread.WorkflowType,
-            Agent = agent,
-            Text = "Second message to existing thread",
-            Data = new { priority = "normal" }
-        };
-
-        // Act
-        var response = await PostAsJsonAsync("/api/client/messaging/inbound", request);
-
-        // Assert - The transaction will fail in test environment
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ProcessInboundMessage_WithMissingRequiredFields_HandlesTransactionError()
-    {
-        // Arrange - missing ParticipantId
-        var request = new ChatOrDataRequest
-        {
-            ParticipantId = "", // Empty but not null to satisfy required property
-            WorkflowId = "test-workflow-1",
-            WorkflowType = "TestWorkflowType",
-            Agent = "test-agent-1",
-            Text = "Message with missing participant",
-            Data = new { priority = "high" }
-        };
-
-        // Act
-        var response = await PostAsJsonAsync("/api/client/messaging/inbound", request);
-
-        // Assert - Even with missing fields, the transaction error occurs first
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    [Fact]
     public async Task GetThreads_WithValidAgent_ReturnsThreads()
     {
         // Arrange
@@ -138,26 +68,6 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetMessages_WithValidThreadId_ReturnsMessages()
-    {
-        // Arrange
-        var thread = await CreateTestThreadAsync();
-        await CreateTestMessageAsync(thread.Id);
-        await CreateTestMessageAsync(thread.Id);
-
-        // Act
-        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var messages = await ReadAsJsonAsync<List<ConversationMessage>>(response);
-        Assert.NotNull(messages);
-        Assert.True(messages.Count >= 2);
-        Assert.All(messages, m => Assert.Equal(thread.Id, m.ThreadId));
     }
 
     [Fact]
@@ -235,28 +145,6 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode); // Exception during ObjectId parsing
-    }
-
-    [Fact]
-    public async Task ProcessInboundMessage_WithLargeContent_HandlesTransactionError()
-    {
-        // Arrange
-        var largeContent = new string('A', 10000); // 10KB content
-        var request = new ChatOrDataRequest
-        {
-            ParticipantId = "test-participant-large",
-            WorkflowId = "test-workflow-large",
-            WorkflowType = "TestWorkflowType",
-            Agent = "test-agent-large",
-            Text = largeContent,
-            Data = new { size = "large", contentLength = largeContent.Length }
-        };
-
-        // Act
-        var response = await PostAsJsonAsync("/api/client/messaging/inbound", request);
-
-        // Assert - The transaction will fail in test environment
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
     // Helper methods

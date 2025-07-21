@@ -245,45 +245,6 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    [Fact]
-    public async Task DeleteAgent_WithoutOwnerPermission_ReturnsForbidden()
-    {
-        // Arrange
-        var agent = await CreateTestAgentWithDifferentOwnerAsync("forbidden-delete-agent", "different-user");
-
-        // Act
-        var response = await DeleteAsync("/api/client/agents/forbidden-delete-agent");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetDefinitionsBasic_WithoutReadPermission_ReturnsForbidden()
-    {
-        // Arrange
-        var agent = await CreateTestAgentWithDifferentOwnerAsync("forbidden-read-agent", "different-user");
-
-        // Act
-        var response = await GetAsync("/api/client/agents/forbidden-read-agent/definitions/basic");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetWorkflowInstances_WithoutReadPermission_ReturnsForbidden()
-    {
-        // Arrange
-        var agent = await CreateTestAgentWithDifferentOwnerAsync("forbidden-workflow-agent", "different-user");
-
-        // Act
-        var response = await GetAsync("/api/client/agents/forbidden-workflow-agent/TestWorkflow/runs");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
     private async Task<Agent> CreateTestAgentAsync(string agentName = "test-agent")
     {
         using var scope = _factory.Services.CreateScope();

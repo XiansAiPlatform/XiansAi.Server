@@ -15,7 +15,7 @@ using System.Text;
 
 namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
 
-public class WebhookEndpointsTests : WebApiIntegrationTestBase, IDisposable
+public class WebhookEndpointsTests : WebApiIntegrationTestBase
 {
     private readonly IMongoCollection<Webhook> _webhooksCollection;
     
@@ -462,12 +462,5 @@ public class WebhookEndpointsTests : WebApiIntegrationTestBase, IDisposable
         Assert.Single(webhooks); // Should only see the current tenant's webhook
         Assert.Equal(webhook.Id, webhooks[0].Id);
         Assert.Equal(TestTenantId, webhooks[0].TenantId);
-    }
-
-    public new void Dispose()
-    {
-        // Clean up any webhooks created during tests
-        CleanupWebhooksAsync().Wait();
-        base.Dispose();
     }
 } 

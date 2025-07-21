@@ -2,6 +2,14 @@
 
 This project contains integration tests for the XiansAi Server. The tests use a real certificate for authentication to test the authentication mechanism.
 
+## Quick Start
+
+```bash
+# Run all tests with development configuration
+ASPNETCORE_ENVIRONMENT=Tests dotnet test
+
+```
+
 ## Setup
 
 ### Certificate Configuration
@@ -35,8 +43,8 @@ This project contains integration tests for the XiansAi Server. The tests use a 
 ### Method 1: Using Environment Variables (Recommended)
 
 ```bash
-# Run tests with Production configuration
-export ASPNETCORE_ENVIRONMENT=Production
+# Run tests with Test configuration
+export ASPNETCORE_ENVIRONMENT=Test
 dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
 
 # Run tests with Staging configuration

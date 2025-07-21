@@ -6,6 +6,14 @@ using Shared.Providers.Auth.AzureB2C;
 using Shared.Providers.Auth.Keycloak;
 using Shared.Providers.Auth;
 using Shared.Auth;
+using Shared.Data;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Hosting;
+
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
@@ -41,6 +49,19 @@ public static class SharedConfiguration
             var logger = serviceProvider.GetRequiredService<ILogger<KeycloakTokenService>>();
             var configuration = serviceProvider.GetRequiredService<IConfiguration>();
             var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            
+            // In test environment, check if Keycloak configuration exists
+            var env = serviceProvider.GetRequiredService<IWebHostEnvironment>();
+            if (env.EnvironmentName == "Tests")
+            {
+                var keycloakSection = configuration.GetSection("Keycloak");
+                if (!keycloakSection.Exists() || keycloakSection.Get<KeycloakConfig>() == null)
+                {
+                    // Return a mock KeycloakTokenService for tests
+                    return new KeycloakTokenService(logger, GetTestKeycloakConfiguration(), httpClient);
+                }
+            }
+            
             return new KeycloakTokenService(logger, configuration, httpClient);
         });
         builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
@@ -48,7 +69,26 @@ public static class SharedConfiguration
         // Register auth providers
         builder.Services.AddScoped<Auth0Provider>();
         builder.Services.AddScoped<AzureB2CProvider>();
-        builder.Services.AddScoped<KeycloakProvider>();
+        builder.Services.AddScoped<KeycloakProvider>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<KeycloakProvider>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var tokenService = serviceProvider.GetRequiredService<KeycloakTokenService>();
+            
+            // In test environment, check if Keycloak configuration exists
+            var env = serviceProvider.GetRequiredService<IWebHostEnvironment>();
+            if (env.EnvironmentName == "Tests")
+            {
+                var keycloakSection = configuration.GetSection("Keycloak");
+                if (!keycloakSection.Exists() || keycloakSection.Get<KeycloakConfig>() == null)
+                {
+                    // Return a mock KeycloakProvider for tests
+                    return new KeycloakProvider(logger, tokenService, GetTestKeycloakConfiguration());
+                }
+            }
+            
+            return new KeycloakProvider(logger, tokenService, configuration);
+        });
         builder.Services.AddScoped<IAuthProviderFactory, AuthProviderFactory>();
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
 
@@ -158,5 +198,19 @@ public static class SharedConfiguration
         app.MapHealthChecks("/health");
 
         return app;
+    }
+    
+    private static IConfiguration GetTestKeycloakConfiguration()
+    {
+        var testConfig = new Dictionary<string, string>
+        {
+            ["Keycloak:AuthServerUrl"] = "https://test.keycloak.com",
+            ["Keycloak:Realm"] = "test-realm",
+            ["Keycloak:ValidIssuer"] = "https://test.keycloak.com/realms/test-realm"
+        };
+        
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(testConfig)
+            .Build();
     }
 }
