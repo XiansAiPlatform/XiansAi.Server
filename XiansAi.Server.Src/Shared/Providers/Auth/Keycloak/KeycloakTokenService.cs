@@ -199,12 +199,13 @@ public class KeycloakTokenService : ITokenService
             };
 
             // Set up token validation parameters
-            var issuerUri = new Uri(_keycloakConfig.ValidIssuer ?? throw new InvalidOperationException("Keycloak configuration ValidIssuer is missing"));
+            var issuerUri = _keycloakConfig.ValidIssuer ?? throw new InvalidOperationException("Keycloak configuration ValidIssuer is missing");
+            var issuerUriList = issuerUri.Split(',');
             var validationParameters = new TokenValidationParameters
             {
                 ValidateAudience = false,
                 ValidateIssuer = true,
-                ValidIssuer = issuerUri.ToString(),
+                ValidIssuers = issuerUriList,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = rsaSecurityKey,

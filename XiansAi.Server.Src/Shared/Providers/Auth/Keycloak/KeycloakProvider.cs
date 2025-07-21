@@ -43,6 +43,14 @@ public class KeycloakProvider : IAuthProvider
         options.RequireHttpsMetadata = false; // Set to true in production
         options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
 
+        // Configure issuer validation to handle both internal and external URLs
+        if (!string.IsNullOrEmpty(_keycloakConfig.ValidIssuer))
+        {
+            var issuerUriList = _keycloakConfig.ValidIssuer.Split(',');
+            options.TokenValidationParameters.ValidIssuers = issuerUriList;
+            _logger.LogDebug("Configured valid issuers: {ValidIssuers}", string.Join(", ", issuerUriList));
+        }
+
         // Configure audience validation for Keycloak
         // Keycloak typically uses 'account' as the audience for standard tokens
         options.TokenValidationParameters.ValidAudiences = new[] { "account" };
