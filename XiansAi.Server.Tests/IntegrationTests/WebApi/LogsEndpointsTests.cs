@@ -20,40 +20,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
     {
     }
 
-    [Fact]
-    public async Task GetById_WithValidId_ReturnsLog()
-    {
-        // Arrange
-        var log = await CreateTestLogAsync();
-
-        // Act
-        var response = await GetAsync($"/api/client/logs/{log.Id}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var returnedLog = await ReadAsJsonAsync<Log>(response);
-        Assert.NotNull(returnedLog);
-        Assert.Equal(log.Id, returnedLog.Id);
-        Assert.Equal(log.Message, returnedLog.Message);
-        Assert.Equal(log.Level, returnedLog.Level);
-        Assert.Equal(log.WorkflowId, returnedLog.WorkflowId);
-        Assert.Equal(log.WorkflowRunId, returnedLog.WorkflowRunId);
-        Assert.Equal(log.TenantId, returnedLog.TenantId);
-    }
-
-    [Fact]
-    public async Task GetById_WithInvalidId_ReturnsNotFound()
-    {
-        // Arrange
-        var invalidId = ObjectId.GenerateNewId().ToString();
-
-        // Act
-        var response = await GetAsync($"/api/client/logs/{invalidId}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
+    // Removed tests for /api/client/logs/{id} as the endpoint does not exist
 
     [Fact]
     public async Task GetByWorkflowRunId_WithValidRequest_ReturnsLogs()
@@ -140,83 +107,6 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
     }
 
     [Fact]
-    public async Task GetByDateRange_WithValidRange_ReturnsLogs()
-    {
-        // Arrange - Use a specific date range that won't conflict with other tests
-        var baseDate = new DateTime(2023, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var startDate = baseDate.AddDays(-1);
-        var endDate = baseDate.AddDays(1);
-        
-        var log1 = await CreateTestLogAsync(message: "Log within range", createdAt: baseDate);
-        
-        // Create a log outside the range
-        await CreateTestLogAsync(message: "Log outside range", createdAt: baseDate.AddDays(-2));
-
-        // Act
-        var response = await GetAsync($"/api/client/logs/date-range?startDate={startDate:yyyy-MM-ddTHH:mm:ss.fffZ}&endDate={endDate:yyyy-MM-ddTHH:mm:ss.fffZ}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var logs = await ReadAsJsonAsync<List<Log>>(response);
-        Assert.NotNull(logs);
-        Assert.Single(logs);
-        Assert.Equal("Log within range", logs[0].Message);
-    }
-
-    [Fact]
-    public async Task GetByDateRange_WithNoLogsInRange_ReturnsEmptyList()
-    {
-        // Arrange - Use a specific date range that won't conflict with other tests
-        var baseDate = new DateTime(2023, 2, 1, 0, 0, 0, DateTimeKind.Utc);
-        var startDate = baseDate.AddDays(1);
-        var endDate = baseDate.AddDays(2);
-        
-        // Create a log outside the range
-        await CreateTestLogAsync(message: "Log outside range", createdAt: baseDate);
-
-        // Act
-        var response = await GetAsync($"/api/client/logs/date-range?startDate={startDate:yyyy-MM-ddTHH:mm:ss.fffZ}&endDate={endDate:yyyy-MM-ddTHH:mm:ss.fffZ}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var logs = await ReadAsJsonAsync<List<Log>>(response);
-        Assert.NotNull(logs);
-        Assert.Empty(logs);
-    }
-
-    [Fact]
-    public async Task DeleteById_WithValidId_DeletesLog()
-    {
-        // Arrange
-        var log = await CreateTestLogAsync();
-
-        // Act
-        var response = await DeleteAsync($"/api/client/logs/{log.Id}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        
-        // Verify the log is deleted
-        var getResponse = await GetAsync($"/api/client/logs/{log.Id}");
-        Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
-    }
-
-    [Fact]
-    public async Task DeleteById_WithInvalidId_ReturnsNotFound()
-    {
-        // Arrange
-        var invalidId = ObjectId.GenerateNewId().ToString();
-
-        // Act
-        var response = await DeleteAsync($"/api/client/logs/{invalidId}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
-    [Fact]
     public async Task GetByWorkflowRunId_WithMissingWorkflowRunId_ReturnsBadRequest()
     {
         // Act
@@ -224,35 +114,6 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetByDateRange_WithInvalidDateFormat_ReturnsBadRequest()
-    {
-        // Act
-        var response = await GetAsync("/api/client/logs/date-range?startDate=invalid-date&endDate=2024-01-01");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetByDateRange_WithStartDateAfterEndDate_ReturnsEmptyList()
-    {
-        // Arrange - Use a specific date range
-        var baseDate = new DateTime(2023, 3, 1, 0, 0, 0, DateTimeKind.Utc);
-        var startDate = baseDate.AddDays(1);
-        var endDate = baseDate.AddDays(-1);
-
-        // Act
-        var response = await GetAsync($"/api/client/logs/date-range?startDate={startDate:yyyy-MM-ddTHH:mm:ss.fffZ}&endDate={endDate:yyyy-MM-ddTHH:mm:ss.fffZ}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var logs = await ReadAsJsonAsync<List<Log>>(response);
-        Assert.NotNull(logs);
-        Assert.Empty(logs);
     }
 
     [Fact]
@@ -291,25 +152,6 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
         var logs = await ReadAsJsonAsync<List<Log>>(response);
         Assert.NotNull(logs);
         Assert.Equal(3, logs.Count);
-    }
-
-    [Fact]
-    public async Task GetByDateRange_WithExactDateMatch_ReturnsLog()
-    {
-        // Arrange - Use a specific date
-        var exactDate = new DateTime(2023, 4, 1, 12, 0, 0, DateTimeKind.Utc);
-        var log = await CreateTestLogAsync(createdAt: exactDate);
-
-        // Act - Use the exact date as both start and end
-        var response = await GetAsync($"/api/client/logs/date-range?startDate={exactDate:yyyy-MM-ddTHH:mm:ss.fffZ}&endDate={exactDate:yyyy-MM-ddTHH:mm:ss.fffZ}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var logs = await ReadAsJsonAsync<List<Log>>(response);
-        Assert.NotNull(logs);
-        Assert.Single(logs);
-        Assert.Equal(log.Id, logs[0].Id);
     }
 
     private async Task<Log> CreateTestLogAsync(

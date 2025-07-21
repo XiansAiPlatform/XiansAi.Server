@@ -13,75 +13,10 @@ using Microsoft.Extensions.Configuration;
 
 namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
 
-public abstract class WebApiIntegrationTestBase : IClassFixture<MongoDbFixture>
+public abstract class WebApiIntegrationTestBase : IntegrationTestBase
 {
-    protected readonly MongoDbFixture _mongoFixture;
-    protected WebApplicationFactory<Program> _factory;
-    protected HttpClient _client;
-    protected const string TestTenantId = "test-tenant";
-
-    protected WebApiIntegrationTestBase(MongoDbFixture mongoFixture)
+    protected WebApiIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
-        _mongoFixture = mongoFixture;
-        
-        _factory = new XiansAiWebApplicationFactory(mongoFixture)
-            .WithWebHostBuilder(builder =>
-            {
-                builder.ConfigureAppConfiguration((context, config) =>
-                {
-                    // Add test tenant configuration
-                    config.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        [$"Tenants:{TestTenantId}:Name"] = "Test Tenant",
-                        [$"Tenants:{TestTenantId}:Domain"] = "test.example.com",
-                        [$"Tenants:{TestTenantId}:Temporal:CertificateBase64"] = "test-cert",
-                        [$"Tenants:{TestTenantId}:Temporal:PrivateKeyBase64"] = "test-key",
-                        [$"Tenants:{TestTenantId}:Temporal:FlowServerUrl"] = "http://localhost:7233"
-                    });
-                });
-                
-                builder.ConfigureServices(services =>
-                {
-                    // Override authorization policies to use Test authentication scheme
-                    services.AddAuthorization(options =>
-                    {
-                        // Clear existing policies
-                        options.DefaultPolicy = new AuthorizationPolicyBuilder("Test")
-                            .RequireAuthenticatedUser()
-                            .Build();
-
-                        // Override WebApi policies to use Test scheme
-                        options.AddPolicy("RequireTokenAuth", policy =>
-                        {
-                            policy.AuthenticationSchemes.Clear();
-                            policy.AuthenticationSchemes.Add("Test");
-                            policy.RequireAuthenticatedUser();
-                        });
-                        
-                        options.AddPolicy("RequireTenantAuth", policy =>
-                        {
-                            policy.AuthenticationSchemes.Clear();
-                            policy.AuthenticationSchemes.Add("Test");
-                            policy.RequireAuthenticatedUser();
-                        });
-                        
-                        options.AddPolicy("RequireTenantAuthWithoutConfig", policy =>
-                        {
-                            policy.AuthenticationSchemes.Clear();
-                            policy.AuthenticationSchemes.Add("Test");
-                            policy.RequireAuthenticatedUser();
-                        });
-                    });
-                });
-            });
-        
-        _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            AllowAutoRedirect = false
-        });
-        
-        // Add test tenant header
-        _client.DefaultRequestHeaders.Add("X-Tenant-Id", TestTenantId);
     }
 
     protected async Task<HttpResponseMessage> GetAsync(string requestUri)
@@ -115,11 +50,5 @@ public abstract class WebApiIntegrationTestBase : IClassFixture<MongoDbFixture>
         {
             PropertyNameCaseInsensitive = true
         });
-    }
-
-    public void Dispose()
-    {
-        _client?.Dispose();
-        _factory?.Dispose();
     }
 } 
