@@ -209,47 +209,44 @@ public class AgentRepository : IAgentRepository
             return new List<AgentWithDefinitions>();
         }
 
-        var result = new List<AgentWithDefinitions>();
-
-        foreach (var agent in allowedAgents)
+        var agentNames = allowedAgents.Select(a => a.Name).ToList();
+        var filterBuilder = Builders<FlowDefinition>.Filter;
+        var filters = new List<FilterDefinition<FlowDefinition>>
         {
-            // Get definitions for this specific agent
-            var filterBuilder = Builders<FlowDefinition>.Filter;
-            var agentFilter = filterBuilder.Eq(x => x.Agent, agent.Name);
+            filterBuilder.In(x => x.Agent, agentNames)
+        };
+        if (startTime.HasValue)
+            filters.Add(filterBuilder.Gte(x => x.UpdatedAt, startTime.Value));
+        if (endTime.HasValue)
+            filters.Add(filterBuilder.Lte(x => x.UpdatedAt, endTime.Value));
+        var finalFilter = filterBuilder.And(filters);
 
-            // Create time filter
-            var timeFilter = filterBuilder.And(
-                startTime == null ? filterBuilder.Empty : filterBuilder.Gte(x => x.UpdatedAt, startTime.Value),
-                endTime == null ? filterBuilder.Empty : filterBuilder.Lte(x => x.UpdatedAt, endTime.Value)
-            );
-
-            // Combine filters
-            var finalFilter = filterBuilder.And(agentFilter, timeFilter);
-
-            var findFluent = _definitions.Find(finalFilter).SortByDescending(x => x.UpdatedAt);
-
-            List<FlowDefinition> definitions;
-            if (basicDataOnly)
-            {
-                definitions = await findFluent
-                    .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
-                        .Include(x => x.Agent)
-                        .Include(x => x.WorkflowType)
-                        .Include(x => x.CreatedAt)
-                        .Include(x => x.UpdatedAt))
-                    .ToListAsync();
-            }
-            else
-            {
-                definitions = await findFluent.ToListAsync();
-            }
-
-            result.Add(new AgentWithDefinitions
-            {
-                Agent = agent,
-                Definitions = definitions
-            });
+        var findFluent = _definitions.Find(finalFilter).SortByDescending(x => x.UpdatedAt);
+        List<FlowDefinition> allDefinitions;
+        if (basicDataOnly)
+        {
+            // Project only basic fields
+            allDefinitions = await findFluent
+                .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
+                    .Include(x => x.Agent)
+                    .Include(x => x.WorkflowType)
+                    .Include(x => x.CreatedAt)
+                    .Include(x => x.UpdatedAt))
+                .ToListAsync();
         }
+        else
+        {
+            allDefinitions = await findFluent.ToListAsync();
+        }
+
+        var definitionsByAgent = allDefinitions.GroupBy(d => d.Agent)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = allowedAgents.Select(agent => new AgentWithDefinitions
+        {
+            Agent = agent,
+            Definitions = definitionsByAgent.TryGetValue(agent.Name, out var defs) ? defs : new List<FlowDefinition>()
+        }).ToList();
 
         _logger.LogInformation("Returning {Count} agents with their definitions for user {UserId}", result.Count, userId);
         return result;
