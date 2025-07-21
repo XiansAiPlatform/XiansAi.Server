@@ -18,7 +18,9 @@ public class EmailProviderFactory
         var emailProvider = configuration["Email:Provider"];
         if (string.IsNullOrWhiteSpace(emailProvider))
         {
-            throw new InvalidOperationException("Email:Provider is not configured in appsettings");
+            // Default to console email provider if not configured
+            services.AddScoped<IEmailProvider, ConsoleEmailProvider>();
+            return;
         }
         // Register the appropriate provider based on configuration
         switch (emailProvider.ToLowerInvariant())

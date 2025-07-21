@@ -30,7 +30,15 @@ public class LlmProviderFactory
         var llmConfig = configuration.GetSection("Llm").Get<LlmConfig>();
         if (llmConfig == null || string.IsNullOrWhiteSpace(llmConfig.Provider))
         {
-            throw new InvalidOperationException("Llm configuration is missing or Provider is not specified");
+            // Default to Dummy provider if not configured
+            services.AddSingleton(new LlmConfig
+            {
+                Provider = "dummy",
+                ApiKey = "dummy-api-key",
+                Model = "dummy-echo-model"
+            });
+            services.AddScoped<ILlmProvider, DummyLlmProvider>();
+            return;
         }
 
         // Register the config
@@ -39,6 +47,9 @@ public class LlmProviderFactory
         // Register the appropriate provider based on configuration
         switch (llmConfig.Provider.ToLowerInvariant())
         {
+            case "dummy":
+                services.AddScoped<ILlmProvider, DummyLlmProvider>();
+                break;
             case "openai":
                 services.AddScoped<ILlmProvider, OpenAILlmProvider>();
                 break;
