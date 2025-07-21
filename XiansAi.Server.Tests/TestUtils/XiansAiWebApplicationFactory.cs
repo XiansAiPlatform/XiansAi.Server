@@ -98,7 +98,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                 
                 // Create a test configuration with dummy certificate data
                 var testConfig = new ConfigurationBuilder()
-                    .AddInMemoryCollection(new Dictionary<string, string>
+                    .AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["Certificates:AppServerPfxBase64"] = "MIIJgQIBAzCCCUcGCSqGSIb3DQEHAaCCCTgEggk0MIIJMDCCBWcGCSqGSIb3DQEHBqCCBVgwggVUAgEAMIIFTQYJKoZIhvcNAQcBMBwGCiqGSIb3DQEMAQYwDgQI", // Dummy base64
                         ["Certificates:AppServerCertPassword"] = "test-password"
