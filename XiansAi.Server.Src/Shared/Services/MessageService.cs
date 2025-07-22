@@ -158,12 +158,6 @@ public class MessageService : IMessageService
                 throw new ArgumentNullException(nameof(request.ThreadId), "ThreadId is required to handover a conversation");
             }
 
-            // the workflowid should not start with "<tenantId>:"
-            if (request.TargetWorkflowId.StartsWith(_tenantContext.TenantId + ":"))
-            {
-                throw new ArgumentException("WorkflowId submitted for handover cannot start with '<tenantId>:'. Remove the tenantId from the workflowId.");
-            }
-
             // Add the tenantId to the workflowId
             if (!request.TargetWorkflowId.StartsWith(_tenantContext.TenantId + ":"))
             {

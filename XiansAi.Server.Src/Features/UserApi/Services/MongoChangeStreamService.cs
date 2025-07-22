@@ -112,26 +112,39 @@ namespace Features.UserApi.Services
                                 }
                             }
 
-                            // Existing SignalR broadcasting logic (unchanged)
+                            // Existing SignalR broadcasting logic (updated for proper handoff routing)
                             if (message.Direction == MessageDirection.Outgoing || message.MessageType == MessageType.Handoff)
                             {
-                                if (string.IsNullOrEmpty(message.Text))
+                                // Route messages based on their type first, then content
+                                if (message.MessageType == MessageType.Handoff)
                                 {
-                                    _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
-                                    groupId, JsonSerializer.Serialize(message));
+                                    // Handoff messages get their own dedicated event
+                                    _logger.LogDebug("Sending handoff message to group {GroupId}: {Message}",
+                                        groupId, JsonSerializer.Serialize(message));
                                     await _hubContext.Clients.Group(groupId)
-                                    // TODO: Remove the backward compatibility ReceiveMetadata later
-                                    .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
-                                    await _hubContext.Clients.Group(groupId)
-                                    // New method names
-                                    .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
+                                        .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken);
                                     await _tenantHubContext.Clients.Group(tenantGroupId)
-                                    .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
+                                        .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken);
+                                }
+                                else if (message.MessageType == MessageType.Data)
+                                {
+                                    // Data/Metadata messages (no text content)
+                                    _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
+                                        groupId, JsonSerializer.Serialize(message));
+                                    await _hubContext.Clients.Group(groupId)
+                                        // TODO: Remove the backward compatibility ReceiveMetadata later
+                                        .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
+                                    await _hubContext.Clients.Group(groupId)
+                                        // New method names
+                                        .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
+                                    await _tenantHubContext.Clients.Group(tenantGroupId)
+                                        .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
                                 }
                                 else
                                 {
+                                    // Chat messages (with text content)
                                     _logger.LogDebug("Sending message to group {GroupId}: {Message}",
-                                    groupId, JsonSerializer.Serialize(message));
+                                        groupId, JsonSerializer.Serialize(message));
                                     // TODO: Remove the backward compatibility ReceiveMessage later
                                     await _hubContext.Clients.Group(groupId)
                                         .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);

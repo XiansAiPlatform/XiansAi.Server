@@ -307,12 +307,6 @@ namespace Features.UserApi.Websocket
 
                 request.Type = messageTypeEnum;
 
-                // Ensure request has proper tenant context for downstream services
-                if (request.Authorization == null)
-                {
-                    request.Authorization = tenantContext.Authorization;
-                }
-
                 // Step 1: Process inbound
                 var messageService = GetScopedMessageService();
                 var inboundResult = await messageService.ProcessIncomingMessage(request, messageTypeEnum);
