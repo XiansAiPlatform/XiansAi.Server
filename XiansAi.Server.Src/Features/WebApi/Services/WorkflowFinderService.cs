@@ -121,6 +121,11 @@ public class WorkflowFinderService : IWorkflowFinderService
         _logger.LogInformation("Retrieving workflows with filters - Status: {Status}", status ?? "null");
 
         var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+
+        if (agents == null || agents.Count == 0)
+        {
+            return ServiceResult<List<WorkflowsWithAgent>>.Success(new List<WorkflowsWithAgent>());
+        }
         var agentNames = agents.Select(a => a.Name).ToArray();
         var allWorkflowResponses = new List<WorkflowResponse>();
 

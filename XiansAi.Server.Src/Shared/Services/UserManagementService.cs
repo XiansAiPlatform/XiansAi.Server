@@ -489,7 +489,7 @@ public class UserManagementService : IUserManagementService
             _logger.LogWarning("Invalid JWT token format");
             throw new ArgumentException("Invalid token format", nameof(token));
         }
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value;
+        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "upn")?.Value;
         if (string.IsNullOrWhiteSpace(email))
         {
             _logger.LogWarning("Email claim not found in token");

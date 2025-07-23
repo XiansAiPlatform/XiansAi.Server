@@ -129,6 +129,7 @@ public static class UserManagementEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("GetCurrentUserInvitation")
+        .RequiresToken()
         .WithOpenApi(operation => {
             operation.Summary = "Get invitation of current user";
             operation.Description = "Retrieves an invitation by the current user's email address.";

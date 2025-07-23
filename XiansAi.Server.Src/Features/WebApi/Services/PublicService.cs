@@ -332,7 +332,7 @@ The Xians.ai Team";
         var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
         var name =jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
+        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "upn")?.Value ?? string.Empty;
         var tenantId = jsonToken.Claims.FirstOrDefault(c => c.Type == authProviderConfig.TenantClaimType)?.Value ?? GenerateTenantId(email);
 
         _logger.LogDebug("Generated tenant ID: {TenantId} from email: {Email}", tenantId, email);
