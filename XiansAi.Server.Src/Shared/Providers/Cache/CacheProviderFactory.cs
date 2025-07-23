@@ -35,7 +35,10 @@ public class CacheProviderFactory
         var cacheProvider = GetConfigValue(configuration, "Cache:Provider");
         if (string.IsNullOrWhiteSpace(cacheProvider))
         {
-            throw new InvalidOperationException("Cache:Provider or Cache__Provider is not configured in appsettings or environment variables");
+            // Default to memory cache if not configured
+            services.AddMemoryCache();
+            services.AddScoped<ICacheProvider, InMemoryCacheProvider>();
+            return;
         }
 
         // Register the appropriate provider based on configuration

@@ -5,6 +5,7 @@ using Features.UserApi.Websocket;
 using Features.UserApi.Services;
 using Features.UserApi.Endpoints;
 using Features.UserApi.Repositories;
+using Shared.Services;
 
 namespace Features.UserApi.Configuration
 {
@@ -13,18 +14,18 @@ namespace Features.UserApi.Configuration
         public static WebApplicationBuilder AddUserApiServices(this WebApplicationBuilder builder)
         {
             builder.Services.AddLogging();
-            builder.Services.AddScoped<IRpcService, RpcService>();
-            builder.Services.AddScoped<IBotService, BotService>();
+            
+            // Add Message Event Publisher for SSE support
+            builder.Services.AddSingleton<IMessageEventPublisher, MessageEventPublisher>();
             builder.Services.AddSingleton<MongoChangeStreamService>();
             builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
             builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
-            builder.Services.AddScoped<IBotService, BotService>();
+            
+            // Add PendingRequestService for sync messaging support
+            builder.Services.AddSingleton<IPendingRequestService, PendingRequestService>();
             
             // Add SignalR services
             AddSignalRServices(builder.Services);
-
-            builder.Services.AddHealthChecks()
-                .AddCheck<BotHealthCheck>("bot-service");
 
             return builder;
         }
@@ -93,20 +94,9 @@ namespace Features.UserApi.Configuration
 
         public static WebApplication UseUserApiEndpoints(this WebApplication app)
         {
-            // Configure environment-specific middleware
-            if (app.Environment.IsDevelopment())
-            {
-                // Development-only middleware here (if any)
-            }
-
-            MessagingEndpoints.MapMessagingEndpoints(app);
-            RpcEndpoints.MapRpcEndpoints(app);
-            BotRestEndpoints.MapBotRestEndpoints(app);
-            BotSocketEndpoints.MapBotSocketEndpoints(app);
-
-            // Configure Websocket
-            app.MapHub<ChatHub>("/ws/chat");
-            app.MapHub<TenantChatHub>("/ws/tenant/chat");
+            RestEndpoints.MapRestEndpoints(app);
+            SseEndpoints.MapSseEndpoints(app);
+            SocketEndpoints.MapSocketEndpoints(app);
 
             return app;
         }

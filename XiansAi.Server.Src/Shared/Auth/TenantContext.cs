@@ -10,6 +10,8 @@ namespace Shared.Auth;
         IEnumerable<string> AuthorizedTenantIds { get; set; }
         
         TemporalConfig GetTemporalConfig();
+
+        string? Authorization { get; set; }
         void CopyFrom(ITenantContext source);
     }
 
@@ -17,12 +19,12 @@ namespace Shared.Auth;
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger<TenantContext> _logger;
-
+ 
         public required string TenantId { get; set; }
         public required string LoggedInUser { get; set; }
         public required string[] UserRoles { get; set; } = Array.Empty<string>();
         public IEnumerable<string> AuthorizedTenantIds { get; set; } = new List<string>();
-
+        public string? Authorization { get; set; }
         public TenantContext(IConfiguration configuration, ILogger<TenantContext> logger)
         {
             _configuration = configuration;

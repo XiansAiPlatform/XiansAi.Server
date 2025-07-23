@@ -19,6 +19,7 @@ publish.zip
 .env.*
 !.env.example
 appsettings.*
+!appsettings.Tests.json
 .secrets/
 
 # User-specific files

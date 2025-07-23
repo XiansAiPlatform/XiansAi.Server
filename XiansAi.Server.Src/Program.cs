@@ -64,9 +64,6 @@ public class Program
             
             // Build and run the application
             var builder = CreateApplicationBuilder(args, commandLineArgs.ServiceType, loggerFactory);
-
-            builder.LoadServiceConfiguration(commandLineArgs.ServiceType); // best place!
-
             var app = await ConfigureApplication(builder, commandLineArgs.ServiceType, loggerFactory);
             
             // Run the app
@@ -133,7 +130,6 @@ public class Program
     private static WebApplicationBuilder CreateApplicationBuilder(string[] args, ServiceType serviceType, ILoggerFactory loggerFactory )
     {
         var builder = WebApplication.CreateBuilder(args);
-        builder.LoadServiceConfiguration(serviceType);
         
         // Configure shared services and configuration first
         SharedConfiguration.AddSharedServices(builder);
@@ -192,10 +188,6 @@ public class Program
     {
         var app = builder.Build();
 
-        // Call your extension method here, passing the ServiceType
-        builder.LoadServiceConfiguration(serviceType);
-        
-        
         // Configure shared middleware
         app.UseSharedMiddleware();
 
@@ -224,6 +216,7 @@ public class Program
     /// </summary>
     private static void ConfigureEndpointsByType(WebApplication app, ServiceType serviceType, ILoggerFactory loggerFactory)
     {
+        // Map endpoints based on service type
         switch (serviceType)
         {
             case ServiceType.WebApi:
@@ -303,10 +296,32 @@ public class Program
                     throw new ArgumentException("--env-file argument requires a file path");
                 }
             }
+            else if (arg.StartsWith("--environment=", StringComparison.OrdinalIgnoreCase))
+            {
+                // Handle environment setting - this is used by test framework
+                var env = arg.Substring("--environment=".Length);
+                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", env);
+            }
+            else if (arg.StartsWith("--contentRoot=", StringComparison.OrdinalIgnoreCase))
+            {
+                // Handle content root setting - this is used by test framework
+                var contentRoot = arg.Substring("--contentRoot=".Length);
+                Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", contentRoot);
+            }
+            else if (arg.StartsWith("--applicationName=", StringComparison.OrdinalIgnoreCase))
+            {
+                // Handle application name setting - this is used by test framework
+                var appName = arg.Substring("--applicationName=".Length);
+                Environment.SetEnvironmentVariable("ASPNETCORE_APPLICATIONNAME", appName);
+            }
             else if (arg.StartsWith("--", StringComparison.OrdinalIgnoreCase))
             {
                 // Unknown argument starting with -- 
-                throw new ArgumentException($"Unknown argument: {arg}. Use --help to see available options.");
+                // Ignore unknown arguments in test environment
+                if (!Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")?.Contains("Test", StringComparison.OrdinalIgnoreCase) ?? true)
+                {
+                    throw new ArgumentException($"Unknown argument: {arg}. Use --help to see available options.");
+                }
             }
         }
 

@@ -88,7 +88,7 @@ public class AzureOpenAILlmProvider : ILlmProvider
         return _config.BaseUrl ?? string.Empty;
     }
 
-    public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model = null)
+    public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string? model = null)
     {
         var endpoint = _config.BaseUrl?.TrimEnd('/') + $"/openai/deployments/{_deploymentName}/chat/completions?api-version={_apiVersion}";
         var requestBody = new

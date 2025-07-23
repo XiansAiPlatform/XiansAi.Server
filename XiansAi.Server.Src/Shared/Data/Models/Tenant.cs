@@ -167,7 +167,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 
         // Validate the tenant ID format using the same pattern as the Id property
         if (!ValidationHelpers.IsValidPattern(sanitizedId, ValidationHelpers.Patterns.SafeId))
-            throw new ValidationException("Invalid tenant ID format");
+            throw new ValidationException($"Invalid tenant ID format --{id}--");
 
         return sanitizedId;
     }

@@ -25,12 +25,28 @@ flow_definitions:
       updated_at: desc
 
 conversation_message:
-  - name: thread_participant_message_lookup
+  - name: bot_message_lookup
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      participant_id: asc
+      created_at: desc
+    background: true
+  - name: thread_message_lookup
     keys:
       tenant_id: asc
       thread_id: asc
-      participant_id: asc
       created_at: desc
+    background: true
+  - name: bot_scope_lookup
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      participant_id: asc
+      scope: asc
+      created_at: desc
+    background: true
+    sparse: true
   - name: tenant_lookup
     keys:
       tenant_id: asc
@@ -40,6 +56,13 @@ conversation_message:
       status: asc
 
 conversation_thread:
+  - name: thread_lookup
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      participant_id: asc
+    unique: true
+    background: true
   - name: thread_status_lookup
     keys:
       tenant_id: asc
