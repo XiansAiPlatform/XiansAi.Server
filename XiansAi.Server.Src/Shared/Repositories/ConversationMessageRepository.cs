@@ -105,6 +105,8 @@ public class ConversationMessage
     [BsonRepresentation(BsonType.String)]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MessageType? MessageType { get; set; }
+    [BsonElement("origin")]
+    public string? Origin { get; set; }
 
 }
 
