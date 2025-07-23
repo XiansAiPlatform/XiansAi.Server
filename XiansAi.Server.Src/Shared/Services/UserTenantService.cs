@@ -464,8 +464,8 @@ public class UserTenantService : IUserTenantService
         // var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
         //     new AuthProviderConfig();
         var name = jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
-        var tenant = email.Split('@')[1];
+        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "upn")?.Value ?? string.Empty;
+        var tenant = email?.Split('@')?[1] ?? string.Empty;
         var newUser = new UserDto
         {
             UserId = userId,
