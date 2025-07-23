@@ -222,13 +222,8 @@ public class TenantService : ITenantService
 
             var tenantId = Tenant.SanitizeAndValidateTenantId(_tenantContext.TenantId);
 
-            if(tenantId == "default")
-            {
-                return ServiceResult<Tenant>.Success(null);
-            }
-
-            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
-            if (accessableTenantId == null)
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessibleTenantId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
