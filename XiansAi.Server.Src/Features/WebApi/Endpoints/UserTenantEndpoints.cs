@@ -177,5 +177,21 @@ public static class UserTenantEndpoints
             return operation;
         })
         .RequiresValidTenantAdmin();
+
+        group.MapPost("/AddUserToCurrentTenant", async (
+            [FromBody] AddUserToTenantDto dto,
+            [FromServices] IUserTenantService service) =>
+        {
+            var result = await service.AddTenantToUserIfExist(dto.Email);
+            return Results.Ok(result);
+        })
+        .WithName("AddUserToCurrentTenant")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Assign a tenant to a user";
+            operation.Description = "Assigns a tenant to a user";
+            return operation;
+        })
+        .RequiresValidTenantAdmin();
     }
 }

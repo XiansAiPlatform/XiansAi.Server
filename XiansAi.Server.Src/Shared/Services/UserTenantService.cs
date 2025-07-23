@@ -20,6 +20,11 @@ public class JoinTenantRequestDto
     public string TenantId { get; set; } = string.Empty;
 }
 
+public class AddUserToTenantDto
+{
+    public string Email { get; set; } = string.Empty;
+}
+
 public interface IUserTenantService
 {
     Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token);
@@ -32,6 +37,7 @@ public interface IUserTenantService
     Task<ServiceResult<bool>> RequestToJoinTenant(string tenantId);
     Task<ServiceResult<PagedUserResult>> GetTenantUsers(UserFilter filter);
     Task<ServiceResult<bool>> UpdateTenantUser(EditUserDto user);
+    Task<ServiceResult<bool>> AddTenantToUserIfExist(string email);
 }
 
 public class UserTenantService : IUserTenantService
@@ -208,6 +214,47 @@ public class UserTenantService : IUserTenantService
         {
             _logger.LogError(ex, "Error adding tenant {TenantId} to user {UserId}", tenantId, userId);
             return ServiceResult<bool>.InternalServerError("Error adding tenant to user");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> AddTenantToUserIfExist(string email)
+    {
+
+        try
+        {
+            var validationResult = ValidateTenantAccess("add user tenant", _tenantContext.TenantId);
+            if (!validationResult.IsSuccess)
+                return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+
+            var user = await _userRepository.GetByUserEmailAsync(email);
+            if (user == null)
+                return ServiceResult<bool>.NotFound("User not found");
+
+            var tenantEntry = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == _tenantContext.TenantId);
+
+            if(tenantEntry != null && tenantEntry.IsApproved)
+            {
+                return ServiceResult<bool>.Conflict("Tenant already assigned to user");
+            }
+
+            if (tenantEntry == null)
+            {
+                tenantEntry = new TenantRole
+                {
+                    Tenant = _tenantContext.TenantId,
+                    Roles = new List<string> { SystemRoles.TenantUser},
+                    IsApproved = true
+                };
+                user.TenantRoles.Add(tenantEntry);
+            }
+
+            var result = await _userRepository.UpdateAsync(user.UserId, user);
+            return ServiceResult<bool>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error adding user with email user {email} to tenant {TenantId}", _tenantContext.TenantId, email);
+            return ServiceResult<bool>.InternalServerError("Error adding tenant to user with email {email}, email");
         }
     }
 
