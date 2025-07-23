@@ -17,7 +17,7 @@ public class Certificate : ModelValidatorBase<Certificate>
     [RegularExpression(@"^[a-fA-F0-9]{40}$", ErrorMessage = "Certificate thumbprint must be a 40-character hexadecimal string")]
     public string Thumbprint { get; set; } = string.Empty;
     [StringLength(500, MinimumLength = 1, ErrorMessage = "Certificate subject name must be between 1 and 500 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Certificate subject name contains invalid characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=""]+$", ErrorMessage = "Certificate subject name contains invalid characters")]
     public string SubjectName { get; set; } = string.Empty;
     [StringLength(50, MinimumLength = 1, ErrorMessage = "Tenant ID must be between 1 and 50 characters")]
     [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Tenant ID contains invalid characters")]
