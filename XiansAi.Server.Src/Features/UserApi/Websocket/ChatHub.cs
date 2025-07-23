@@ -152,17 +152,10 @@ namespace Features.UserApi.Websocket
             }
         }
 
-        private void EnsureTenantContext()
+        private static bool IsValidTenantContext(ITenantContext tenantContext)
         {
-            if (_tempTenantContext == null) throw new InvalidOperationException("TenantContext not properly initialized");
-
-            _tempTenantContext.CopyFrom(_tenantContext);
-
-            if (string.IsNullOrEmpty(_tenantContext.TenantId) || string.IsNullOrEmpty(_tenantContext.LoggedInUser))
-            {
-                _logger.LogError("TenantContext not properly initialized");
-                throw new InvalidOperationException("TenantContext not properly initialized");
-            }
+            return !string.IsNullOrEmpty(tenantContext.TenantId) &&
+                   !string.IsNullOrEmpty(tenantContext.LoggedInUser);
         }
 
         public override Task OnDisconnectedAsync(Exception? exception)
