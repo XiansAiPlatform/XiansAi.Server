@@ -45,6 +45,7 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetTenantById(string id);
     Task<ServiceResult<Tenant>> GetTenantByDomain(string domain);
     Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId);
+    Task<ServiceResult<Tenant>> GetCurrentTenantInfo();
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
     Task<ServiceResult<List<string>>> GetTenantList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request);
@@ -205,6 +206,46 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tenant with tenant ID {TenantId}", tenantId);
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
+        }
+    }
+
+    public async Task<ServiceResult<Tenant>> GetCurrentTenantInfo()
+    {
+        try
+        {
+            if(_tenantContext.TenantId == null)
+            {
+                _logger.LogWarning("Tenant ID is not set in tenant context");
+                return ServiceResult<Tenant>.BadRequest("Tenant ID is not set in the context");
+            }
+
+            var tenantId = Tenant.SanitizeAndValidateTenantId(_tenantContext.TenantId);
+
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessibleTenantId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
+                return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+            }
+
+            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            if (tenant == null)
+            {
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
+                return ServiceResult<Tenant>.NotFound("Tenant not found");
+            }
+
+            return ServiceResult<Tenant>.Success(tenant);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving current tenant info");
             return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }

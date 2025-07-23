@@ -236,7 +236,7 @@ public class UserRepository : IUserRepository
             .Project(projection)
             .FirstOrDefaultAsync();
 
-        return tenantRoles?.Select(tr => tr.Tenant).ToList() ?? new List<string>();
+        return tenantRoles.Where(x => x.IsApproved)?.Select(tr => tr.Tenant).ToList() ?? new List<string>();
     }
 
     public async Task<User?> GetAnyUserAsync()
