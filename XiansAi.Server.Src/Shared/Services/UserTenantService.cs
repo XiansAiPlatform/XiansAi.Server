@@ -512,24 +512,23 @@ public class UserTenantService : IUserTenantService
         //     new AuthProviderConfig();
         var name = jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
         var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "upn")?.Value ?? string.Empty;
-        var tenant = email?.Split('@')?[1] ?? string.Empty;
         var newUser = new UserDto
         {
             UserId = userId,
-            Email = email,
+            Email = email ?? string.Empty,
             Name = name,
-            TenantId = tenant
+            TenantId = _tenantContext.TenantId
         };
         var createdUser = await _userManagementService.CreateNewUser(newUser);
 
         if (!createdUser.IsSuccess && createdUser.StatusCode == StatusCode.Conflict)
         {
             _logger.LogInformation("User {UserId} already exists, returning existing user", userId);
-            return new UserDto { UserId = userId, Email = email, Name = name };
+            return newUser;
         }
 
         return createdUser.IsSuccess
             ? newUser
-            : throw new Exception($"Failed to create user {userId} from token: {createdUser.ErrorMessage}");
+            : throw new Exception($"Failed to create user {userId} from token. Error: {createdUser.ErrorMessage}");
     }
 }
