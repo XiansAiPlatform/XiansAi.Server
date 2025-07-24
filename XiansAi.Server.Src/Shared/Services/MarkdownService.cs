@@ -1,7 +1,7 @@
 using Shared.Auth;
 using Shared.Services;
-using XiansAi.Server.Shared.Data.Models;
-using XiansAi.Server.Shared.Repositories;
+using Shared.Data.Models;
+using Shared.Repositories;
 
 namespace Shared.Services;
 
@@ -16,7 +16,6 @@ public class MarkdownService : IMarkdownService
     private readonly ILogger<MarkdownService> _logger;
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly ITenantContext _tenantContext;
-    private readonly string _model = "gpt-4o-mini";
     
     public MarkdownService(ILlmService llmService, 
         IKnowledgeRepository knowledgeRepository, 
@@ -38,8 +37,7 @@ public class MarkdownService : IMarkdownService
             new XiansAi.Server.Providers.ChatMessage { Role = "system", Content = instruction },
             new XiansAi.Server.Providers.ChatMessage { Role = "user", Content = "Workflow code:\n" + source }
         };
-        
-        var markdown = await _llmService.GetChatCompletionAsync(messages, _model);
+        var markdown = await _llmService.GetChatCompletionAsync(messages, _llmService.GetModel());
 
         // Remove spaces between classes to make it valid mermaid code
         markdown = markdown.Replace(", ", ",");

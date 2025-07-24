@@ -350,12 +350,9 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
             Tenant = TestTenantId,
-            Permissions = new Permission
-            {
-                OwnerAccess = [TestUserId],
-                ReadAccess = [TestUserId],
-                WriteAccess = [TestUserId]
-            },
+            OwnerAccess = [TestUserId],
+            ReadAccess = [TestUserId],
+            WriteAccess = [TestUserId],
             CreatedBy = TestUserId,
             CreatedAt = DateTime.UtcNow
         };
@@ -374,12 +371,9 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
             Tenant = TestTenantId,
-            Permissions = new Permission
-            {
-                OwnerAccess = [ownerId],
-                ReadAccess = [ownerId],
-                WriteAccess = [ownerId]
-            },
+            OwnerAccess = [ownerId],
+            ReadAccess = [ownerId],
+            WriteAccess = [ownerId],
             CreatedBy = ownerId,
             CreatedAt = DateTime.UtcNow
         };

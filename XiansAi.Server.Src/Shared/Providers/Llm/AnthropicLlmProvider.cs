@@ -42,12 +42,45 @@ public class AnthropicLlmProvider : ILlmProvider
     }
 
     /// <summary>
+    /// Gets the name of the LLM provider
+    /// </summary>
+    /// <returns>The LLM provider</returns>
+    public string GetLlmProvider()
+    {
+        return _config.Provider ?? string.Empty;
+    }
+
+    /// <summary>
     /// Gets the model for the Anthropic provider
     /// </summary>
     /// <returns>The model</returns>
     public string GetModel()
     {
         return _config.Model;
+    }
+
+    /// <summary>
+    /// Gets the additional details of the LLM provider
+    /// </summary>
+    /// <returns>Additional configuration details</returns>
+    public Dictionary<string, string> GetAdditionalConfig()
+    {
+        if (_config.AdditionalConfig == null || _config.AdditionalConfig.Count == 0)
+        {
+            _logger.LogWarning("Additional configuration is missing or empty for LLM provider");
+            return new Dictionary<string, string>();
+        }
+
+        return _config.AdditionalConfig;
+    }
+
+    /// <summary>
+    /// Gets Base URL of the Model
+    /// </summary>
+    /// <returns>Base URL</returns>
+    public string GetBaseUrl()
+    {
+        return _config.BaseUrl ?? string.Empty;
     }
 
     /// <summary>

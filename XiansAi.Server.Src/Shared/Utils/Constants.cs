@@ -11,4 +11,5 @@ public static class Constants {
     public const string SIGNAL_INBOUND_CHAT_OR_DATA = "HandleInboundChatOrData";
     public const string SIGNAL_INBOUND_EVENT = "HandleInboundEvent";
     public const string DefaultTenantId = "default";
+    public const string UPDATE_INBOUND_CHAT_OR_DATA = "HandleInboundChatOrDataSync";
 }

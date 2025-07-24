@@ -13,6 +13,9 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
     protected XiansAiWebApplicationFactory _factory;
     protected RetryHttpClient _client;
     protected IMongoDatabase _database;
+    protected const string TestTenantId = "test-tenant";
+    protected const string TestApiKey = "test-api-key";
+    protected const string TestCertificateThumbprint = "test-certificate-thumbprint";
 
     protected IntegrationTestBase(MongoDbFixture mongoFixture, string? environment = null)
     {
@@ -26,14 +29,16 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         
         var httpClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
-            AllowAutoRedirect = false
+            AllowAutoRedirect = false,
+            HandleCookies = true,
+            BaseAddress = new Uri("http://localhost")
         });
         
-        // Configure client with certificate
-        ConfigureClientWithCertificate(httpClient);
+        // Configure client with authentication
+        ConfigureClientWithAuth(httpClient);
         
         // Create retry client
-        _client = new RetryHttpClient(httpClient, () => ConfigureClientWithCertificate(httpClient));
+        _client = new RetryHttpClient(httpClient, () => ConfigureClientWithAuth(httpClient));
         
         _database = _mongoFixture.Database;
     }
@@ -44,7 +49,7 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         return Task.CompletedTask;
     }
     
-    private void ConfigureClientWithCertificate(HttpClient client)
+    protected virtual void ConfigureClientWithAuth(HttpClient client)
     {
         try
         {
@@ -53,17 +58,27 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
                 throw new InvalidOperationException("Client is not initialized");
             }
             
-            var apiKey = TestCertificateHelper.LoadApiKeyFromEnv();
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                throw new InvalidOperationException("API key is null or empty");
-            }
+            // Clear existing headers
+            client.DefaultRequestHeaders.Clear();
             
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            // Add API key for API endpoints
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TestApiKey);
+
+            // Add test certificate header for agent endpoints
+            client.DefaultRequestHeaders.Add("X-Test-Certificate", TestCertificateThumbprint);
+
+            // Add tenant header
+            client.DefaultRequestHeaders.Add("X-Tenant-Id", TestTenantId);
+
+            // Add accept headers
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            // Add user-agent
+            client.DefaultRequestHeaders.Add("User-Agent", "XiansAi.Server.Tests");
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException($"Failed to configure client with certificate: {ex.Message}", ex);
+            throw new InvalidOperationException($"Failed to configure client with authentication: {ex.Message}", ex);
         }
     }
 
@@ -84,6 +99,22 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
 
         while (retryCount <= maxRetries)
         {
+            // Add authentication headers to each request
+            if (!request.Headers.Contains("X-Tenant-Id"))
+            {
+                request.Headers.Add("X-Tenant-Id", TestTenantId);
+            }
+
+            if (!request.Headers.Contains("X-Test-Certificate"))
+            {
+                request.Headers.Add("X-Test-Certificate", TestCertificateThumbprint);
+            }
+
+            if (request.Headers.Authorization == null)
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", TestApiKey);
+            }
+
             response = await _client.SendAsync(request);
             
             // Check if response is not a retryable status code or we've reached max retries
@@ -100,8 +131,8 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
             if (retryCount <= maxRetries)
             {
                 await Task.Delay(retryDelayMs);
-                // Reconfigure the client with certificate before retrying
-                ConfigureClientWithCertificate(_client.HttpClient);
+                // Reconfigure the client with authentication before retrying
+                ConfigureClientWithAuth(_client.HttpClient);
             }
         }
         if (response == null)

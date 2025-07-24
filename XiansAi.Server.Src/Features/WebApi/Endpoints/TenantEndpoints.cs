@@ -32,11 +32,26 @@ public static class TenantEndpoints
             return operation;
         }).RequiresValidSysAdmin();
 
+        tenantsGroup.MapGet("/list", async (
+            HttpContext httpContext,
+            [FromServices] ITenantService endpoint) =>
+        {
+            var result = await endpoint.GetTenantList();
+            return result.ToHttpResult();
+        })
+        .WithName("Get Tenant List")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Get tenant List";
+            operation.Description = "Retrieves all tenant ids";
+            return operation;
+        }).RequiresValidSysAdmin();
+
         tenantsGroup.MapGet("/{id}", async (
             string id,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantByTenantId(id);
+            var result = await endpoint.GetTenantById(id);
             return result.ToHttpResult();
         })
         .WithName("Get Tenant")
@@ -48,19 +63,18 @@ public static class TenantEndpoints
         })
         .RequiresValidTenantAdmin();
 
-        tenantsGroup.MapGet("/by-tenant-id/{tenantId}", async (
+        tenantsGroup.MapGet("/currentTenantInfo", async (
             HttpContext httpContext,
-            string tenantId,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantById(tenantId);
+            var result = await endpoint.GetCurrentTenantInfo();
             return result.ToHttpResult();
         })
-        .WithName("Get Tenant By TenantId")
+        .WithName("Get current Tenant info")
         .WithOpenApi(operation =>
         {
-            operation.Summary = "Get tenant by tenant ID";
-            operation.Description = "Retrieves a tenant by its tenant ID";
+            operation.Summary = "Get current tenant info";
+            operation.Description = "Retrieves current tenant information";
             return operation;
         });
 

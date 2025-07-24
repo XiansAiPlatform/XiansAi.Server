@@ -5,7 +5,6 @@ using Shared.Utils;
 using Shared.Utils.Temporal;
 using Shared.Data;
 using Shared.Services;
-using XiansAi.Server.Shared.Services;
 
 namespace Features.Shared.Configuration;
 
@@ -55,9 +54,13 @@ public static class SharedServices
         // Register cache service
         services.AddScoped<ObjectCache>();
         
-        // Add this to the AddInfrastructureServices method in SharedServices.cs
-        services.AddSingleton<IBackgroundTaskService, BackgroundTaskService>();
-        services.AddHostedService(sp => (BackgroundTaskService)sp.GetRequiredService<IBackgroundTaskService>());
+        // Add background task service only if not already registered (to support test mocks)
+        if (!services.Any(s => s.ServiceType == typeof(IBackgroundTaskService)))
+        {
+            services.AddSingleton<BackgroundTaskService>();
+            services.AddSingleton<IBackgroundTaskService>(sp => sp.GetRequiredService<BackgroundTaskService>());
+            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<BackgroundTaskService>());
+        }
         
         return services;
     }

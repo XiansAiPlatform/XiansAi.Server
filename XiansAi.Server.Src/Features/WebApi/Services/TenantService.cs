@@ -1,19 +1,17 @@
 using MongoDB.Bson;
-using XiansAi.Server.Features.WebApi.Repositories;
-using XiansAi.Server.Shared.Data;
 using Shared.Auth;
-using Features.WebApi.Models;
 using Shared.Utils.Services;
 using Shared.Data.Models;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Driver;
 using Auth0.ManagementApi.Models;
 using Microsoft.AspNetCore.Authentication;
+using Shared.Repositories;
 
 namespace Features.WebApi.Services;
 
 // Request DTOs
-public class CreateTenantRequest 
+public class CreateTenantRequest
 {
     public required string TenantId { get; set; }
     public required string Name { get; set; }
@@ -47,7 +45,9 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetTenantById(string id);
     Task<ServiceResult<Tenant>> GetTenantByDomain(string domain);
     Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId);
+    Task<ServiceResult<Tenant>> GetCurrentTenantInfo();
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
+    Task<ServiceResult<List<string>>> GetTenantList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request);
     Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
     Task<ServiceResult<bool>> DeleteTenant(string id);
@@ -74,12 +74,22 @@ public class TenantService : ITenantService
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
 
-    private string? EnsureTenantAccessOrThrow(string tenantId)
+    private string EnsureTenantAccessOrThrow(string tenantId)
     {
+        try
+        {
+            tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
+            throw new Exception($"Validation failed: {ex.Message}");
+        }
+
         // If system admin, return null (indicating unrestricted access)
         if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
-            return null;
+            return tenantId;
         }
 
         // If tenant admin and tenantId matches, return the tenant
@@ -94,10 +104,24 @@ public class TenantService : ITenantService
         throw new Exception(("Access denied: insufficient permissions"));
     }
 
+    private string SanitizeAndValidateId(string id)
+    {
+        try
+        {
+            return Tenant.SanitizeAndValidateId(id);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
+            throw new Exception($"Validation failed: {ex.Message}");
+        }
+    }
+
     public async Task<ServiceResult<Tenant>> GetTenantById(string id)
     {
         try
         {
+            id = SanitizeAndValidateId(id);
             var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
             if (accessableTenantId == null)
             {
@@ -105,7 +129,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantRepository.GetByTenantIdAsync(id);
+            var tenant = await _tenantRepository.GetByIdAsync(id);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with ID {Id} not found", id);
@@ -113,6 +137,11 @@ public class TenantService : ITenantService
             }
 
             return ServiceResult<Tenant>.Success(tenant);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by ID: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -125,6 +154,8 @@ public class TenantService : ITenantService
     {
         try
         {
+            domain = Tenant.SanitizeAndValidateDomain(domain);
+
             var tenant = await _tenantRepository.GetByDomainAsync(domain);
             if (tenant == null)
             {
@@ -133,6 +164,11 @@ public class TenantService : ITenantService
             }
 
             return ServiceResult<Tenant>.Success(tenant);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -145,6 +181,14 @@ public class TenantService : ITenantService
     {
         try
         {
+            tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessableTenantId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
+                return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+            }
+
             var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
             if (tenant == null)
             {
@@ -154,9 +198,54 @@ public class TenantService : ITenantService
 
             return ServiceResult<Tenant>.Success(tenant);
         }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tenant with tenant ID {TenantId}", tenantId);
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
+        }
+    }
+
+    public async Task<ServiceResult<Tenant>> GetCurrentTenantInfo()
+    {
+        try
+        {
+            if(_tenantContext.TenantId == null)
+            {
+                _logger.LogWarning("Tenant ID is not set in tenant context");
+                return ServiceResult<Tenant>.BadRequest("Tenant ID is not set in the context");
+            }
+
+            var tenantId = Tenant.SanitizeAndValidateTenantId(_tenantContext.TenantId);
+
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessibleTenantId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
+                return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+            }
+
+            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            if (tenant == null)
+            {
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
+                return ServiceResult<Tenant>.NotFound("Tenant not found");
+            }
+
+            return ServiceResult<Tenant>.Success(tenant);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving current tenant info");
             return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }
@@ -165,14 +254,28 @@ public class TenantService : ITenantService
     {
         try
         {
-            var tenantId = EnsureTenantAccessOrThrow(_tenantContext.TenantId);
-            var tenants = await _tenantRepository.GetAllAsync(tenantId);
+            EnsureTenantAccessOrThrow(_tenantContext.TenantId);
+            var tenants = await _tenantRepository.GetAllAsync();
             return ServiceResult<List<Tenant>>.Success(tenants);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving all tenants");
             return ServiceResult<List<Tenant>>.InternalServerError("An error occurred while retrieving tenants.");
+        }
+    }
+
+    public async Task<ServiceResult<List<string>>> GetTenantList()
+    {
+        try
+        {
+            var tenants = await _tenantRepository.GetTenantListAsync();
+            return ServiceResult<List<string>>.Success(tenants);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving tenant list");
+            return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving tenants.");
         }
     }
 
@@ -195,16 +298,23 @@ public class TenantService : ITenantService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
+            var validatedTenant = tenant.SanitizeAndValidate();
 
-            await _tenantRepository.CreateAsync(tenant);
+
+            await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id}", tenant.Id);
-            
+
             var result = new TenantCreatedResult
             {
                 Tenant = tenant,
                 Location = $"/api/tenants/{tenant.Id}"
             };
             return ServiceResult<TenantCreatedResult>.Success(result);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while creating tenant: {Message}", ex.Message);
+            return ServiceResult<TenantCreatedResult>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
         {
@@ -222,7 +332,7 @@ public class TenantService : ITenantService
     {
         try
         {
-            EnsureTenantAccessOrThrow(id);
+            SanitizeAndValidateId(id);
 
             var existingTenant = await _tenantRepository.GetByIdAsync(id);
             if (existingTenant == null)
@@ -231,16 +341,18 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
+
             // Update only the properties that are provided in the request
             if (request.Name != null)
                 existingTenant.Name = request.Name;
-            
+
             if (request.Domain != null)
                 existingTenant.Domain = request.Domain;
-            
+
             if (request.Description != null)
                 existingTenant.Description = request.Description;
-            
+
             if (request.Logo != null)
                 existingTenant.Logo = request.Logo;
 
@@ -249,23 +361,29 @@ public class TenantService : ITenantService
 
             if (request.Enabled.HasValue)
                 existingTenant.Enabled = request.Enabled.Value;
-            
+
             if (request.Timezone != null)
                 existingTenant.Timezone = request.Timezone;
-            
+
             existingTenant.UpdatedAt = DateTime.UtcNow;
-            
-            var success = await _tenantRepository.UpdateAsync(id, existingTenant);
+            var validatedTenant = existingTenant.SanitizeAndValidate();
+
+            var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
             if (success)
             {
                 _logger.LogInformation("Updated tenant with ID {Id}", id);
-                return ServiceResult<Tenant>.Success(existingTenant);
+                return ServiceResult<Tenant>.Success(validatedTenant);
             }
             else
             {
                 _logger.LogError("Failed to update tenant with ID {Id}", id);
                 return ServiceResult<Tenant>.BadRequest("Failed to update tenant.");
             }
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while updating tenant: {Message}", ex.Message);
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -278,6 +396,8 @@ public class TenantService : ITenantService
     {
         try
         {
+            id = SanitizeAndValidateId(id);
+
             var success = await _tenantRepository.DeleteAsync(id);
             if (success)
             {
@@ -289,6 +409,11 @@ public class TenantService : ITenantService
                 _logger.LogWarning("Tenant with ID {Id} not found for deletion", id);
                 return ServiceResult<bool>.NotFound("Tenant not found");
             }
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while deleting tenant: {Message}", ex.Message);
+            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -304,10 +429,12 @@ public class TenantService : ITenantService
             agent.CreatedAt = DateTime.UtcNow;
             agent.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
 
-            var success = await _tenantRepository.AddAgentAsync(tenantId, agent);
+            var validatedTenantId = SanitizeAndValidateId(tenantId);
+            var validatedAgent = agent.SanitizeAndValidate();
+            var success = await _tenantRepository.AddAgentAsync(validatedTenantId, validatedAgent);
             if (success)
             {
-                _logger.LogInformation("Added agent {AgentName} to tenant {TenantId}", agent.Name, tenantId);
+                _logger.LogInformation("Added agent {AgentName} to tenant {TenantId}", validatedAgent.Name, validatedTenantId);
                 return ServiceResult<bool>.Success(true);
             }
             else
@@ -315,6 +442,11 @@ public class TenantService : ITenantService
                 _logger.LogWarning("Failed to add agent {AgentName} to tenant {TenantId}", agent.Name, tenantId);
                 return ServiceResult<bool>.NotFound("Tenant not found");
             }
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while adding agent: {Message}", ex.Message);
+            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -327,10 +459,13 @@ public class TenantService : ITenantService
     {
         try
         {
-            var success = await _tenantRepository.UpdateAgentAsync(tenantId, agentName, agent);
+            var validatedTenantId = SanitizeAndValidateId(tenantId);
+            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
+            var validatedAgent = agent.SanitizeAndValidate();
+            var success = await _tenantRepository.UpdateAgentAsync(validatedTenantId, validatedAgentName, validatedAgent);
             if (success)
             {
-                _logger.LogInformation("Updated agent {AgentName} in tenant {TenantId}", agentName, tenantId);
+                _logger.LogInformation("Updated agent {AgentName} in tenant {TenantId}", validatedAgentName, validatedTenantId);
                 return ServiceResult<bool>.Success(true);
             }
             else
@@ -338,6 +473,11 @@ public class TenantService : ITenantService
                 _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", agentName, tenantId);
                 return ServiceResult<bool>.NotFound("Agent not found");
             }
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while updating agent: {Message}", ex.Message);
+            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -349,11 +489,13 @@ public class TenantService : ITenantService
     public async Task<ServiceResult<bool>> RemoveAgent(string tenantId, string agentName)
     {
         try
-        {
-            var success = await _tenantRepository.RemoveAgentAsync(tenantId, agentName);
+        { var validatedTenantId = SanitizeAndValidateId(tenantId);
+            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
+
+            var success = await _tenantRepository.RemoveAgentAsync(validatedTenantId, validatedAgentName);
             if (success)
             {
-                _logger.LogInformation("Removed agent {AgentName} from tenant {TenantId}", agentName, tenantId);
+                _logger.LogInformation("Removed agent {AgentName} from tenant {TenantId}", validatedAgentName, validatedTenantId);
                 return ServiceResult<bool>.Success(true);
             }
             else
@@ -361,6 +503,11 @@ public class TenantService : ITenantService
                 _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", agentName, tenantId);
                 return ServiceResult<bool>.NotFound("Agent not found");
             }
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while removing agent: {Message}", ex.Message);
+            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -373,11 +520,15 @@ public class TenantService : ITenantService
     {
         try
         {
+            var validatedTenantId = SanitizeAndValidateId(tenantId);
+            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
+            var validatedFlow = flow.SanitizeAndValidate();
+
             flow.CreatedAt = DateTime.UtcNow;
             flow.UpdatedAt = DateTime.UtcNow;
             flow.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
 
-            var success = await _tenantRepository.AddFlowToAgentAsync(tenantId, agentName, flow);
+            var success = await _tenantRepository.AddFlowToAgentAsync(validatedTenantId, validatedAgentName, validatedFlow);
             if (success)
             {
                 _logger.LogInformation("Added flow {FlowName} to agent {AgentName} in tenant {TenantId}", flow.Name, agentName, tenantId);
@@ -395,4 +546,4 @@ public class TenantService : ITenantService
             return ServiceResult<bool>.InternalServerError("An error occurred while adding the flow.");
         }
     }
-} 
+}

@@ -1,5 +1,6 @@
 using Shared.Auth;
 using Shared.Utils;
+using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
 using Temporalio.Common;
 
@@ -29,6 +30,7 @@ public class NewWorkflowOptions : WorkflowOptions
         TaskQueue = GetTemporalQueueName(workFlowType, queueName, tenantContext);
         Memo = GetMemo(tenantContext, queueName, agentName);
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName);
+        IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting;
     }
 
     private SearchAttributeCollection GetSearchAttributes(ITenantContext tenantContext, string agent)
@@ -79,7 +81,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
     public static string GenerateNewWorkflowId(string workflowType, ITenantContext tenantContext)
     {
-        var id = $"{workflowType}:{Guid.NewGuid()}";
+        var id = $"{workflowType}--{Guid.NewGuid()}";
         var tenantWorkflowId = tenantContext.TenantId + ":" + id;
         return tenantWorkflowId;
     }

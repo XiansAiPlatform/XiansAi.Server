@@ -1,8 +1,9 @@
-using Features.AgentApi.Endpoints;
+using Features.AgentApi.Repositories;
+using Features.AgentApi.Services;
 using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
-using XiansAi.Server.Features.AgentApi.Repositories;
-using Features.AgentApi.Repositories;
+using Features.AgentApi.Endpoints;
+using Shared.Utils;
 using Shared.Services;
 
 namespace Features.AgentApi.Configuration;
@@ -11,19 +12,20 @@ public static class AgentApiConfiguration
 {
     public static WebApplicationBuilder AddAgentApiServices(this WebApplicationBuilder builder)
     {
-        // Register repositories
-        builder.Services.AddScoped<IActivityHistoryRepository, ActivityHistoryRepository>();
-        builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
+        // Register Agent API specific services
         builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
-        // Register HttpClient for webhook service
-        //builder.Services.AddHttpClient();
-
-        // Register Lib API specific services
-        builder.Services.AddScoped<CertificateService>();
+        builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
+        builder.Services.AddScoped<IActivityHistoryRepository, ActivityHistoryRepository>();
         builder.Services.AddScoped<IActivityHistoryService, ActivityHistoryService>();
         builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
-        builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
         builder.Services.AddScoped<ILogsService, LogsService>();
+        builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
+        
+        // Register CertificateGenerator
+        builder.Services.AddScoped<CertificateGenerator>();
+
+        // Register the certificate service
+        builder.Services.AddScoped<CertificateService>();
 
         return builder;
     }
@@ -45,6 +47,7 @@ public static class AgentApiConfiguration
         {
             options.AddPolicy("RequireCertificate", policy =>
             {
+                policy.AuthenticationSchemes.Clear(); // Clear any inherited schemes
                 policy.AuthenticationSchemes.Add(CertificateAuthenticationOptions.DefaultScheme);
                 policy.RequireAuthenticatedUser();
             });

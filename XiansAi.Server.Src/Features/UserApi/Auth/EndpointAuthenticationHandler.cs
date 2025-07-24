@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
+using Shared.Providers.Auth;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -10,57 +11,71 @@ namespace Features.UserApi.Auth
     public class EndpointAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
         private readonly ITenantContext _tenantContext;
-        private readonly ILogger<WebsocketAuthenticationHandler> _logger;
+        private readonly ILogger<EndpointAuthenticationHandler> _logger;
         private readonly IApiKeyService _apiKeyService;
+        private readonly ITokenServiceFactory _tokenServiceFactory;
+        private readonly IUserTenantService _userTenantService;
 
         public EndpointAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
             ILoggerFactory logger,
             UrlEncoder encoder,
             ITenantContext tenantContext,
-            IApiKeyService apiKeyService)
+            IApiKeyService apiKeyService,
+            ITokenServiceFactory tokenServiceFactory,
+            IUserTenantService userTenantService)
             : base(options, logger, encoder)
         {
-            _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
+            _logger = logger.CreateLogger<EndpointAuthenticationHandler>();
             _tenantContext = tenantContext;
             _apiKeyService = apiKeyService;
+            _tokenServiceFactory = tokenServiceFactory;
+            _userTenantService = userTenantService;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            // Example: validate access_token and tenant from query
-            var accessToken = Request.Query["apikey"].ToString();  
+            // Only handle authentication for UserApi endpoints
+            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
+            
+            _logger.LogDebug("EndpointAuthenticationHandler: Evaluating path '{Path}'", Request.Path);
+            
+            if (!path.StartsWith("/api/user/"))
+            {
+                _logger.LogDebug("Skipping endpoint authentication for non-UserApi path: {Path}", Request.Path);
+                return AuthenticateResult.NoResult(); // Let other handlers process this request
+            }
+
+            _logger.LogDebug("Processing UserApi endpoint request: {Path}", Request.Path);
+
+            // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
+            var accessToken = Request.Query["apikey"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
+            
             if (string.IsNullOrEmpty(tenantId))
             {
-                // Try to get tenantId from workflowId query parameter
-                var workflowId = Request.Query["workflowId"].ToString();
-                if (!string.IsNullOrEmpty(workflowId) && workflowId.Contains(":"))
-                {
-                    tenantId = workflowId.Split(':')[0].Trim();
-                    _logger.LogDebug("Extracted tenantId '{TenantId}' from workflowId '{WorkflowId}'", tenantId, workflowId);
-                }
-                else
-                {
-                    _logger.LogWarning("No tenantId query string, and workflowId is missing or invalid");
-                    return AuthenticateResult.NoResult();
-                }
-            }
+                _logger.LogWarning("No tenantId query string or invalid");
+                return AuthenticateResult.Fail("No tenantId provided in query string");
+            } 
 
             _logger.LogDebug("Processing Endpoint request: {Path}", Request.Path);
             if (_tenantContext != null)
             {
-                if (string.IsNullOrEmpty(tenantId))
-                {
-                    return AuthenticateResult.Fail("No tenantId provided in query string");
-                }
-
+                // Check for token in different locations based on authentication method
                 if (string.IsNullOrEmpty(accessToken))
                 {
+                    // Check for access_token query parameter (used for JWT fallback when EventSource headers aren't supported)
+                    accessToken = Request.Query["access_token"].ToString();
+                }
+                
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    // Check for Authorization header (preferred method for JWT)
                     var authHeader = Request.Headers["Authorization"].FirstOrDefault();
                     if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
                     {
                         accessToken = authHeader.Substring("Bearer ".Length);
+                        _tenantContext.Authorization = accessToken;
                     }
                 }
 
@@ -74,7 +89,7 @@ namespace Features.UserApi.Auth
                             var apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
                             if (apiKey == null)
                             {
-                                _logger.LogWarning("Endpoint apikey not found");
+                                _logger.LogWarning("Submitted apiKey not found for tenant {TenantId}", tenantId);
                                 return AuthenticateResult.Fail("Invalid API key or Tenant ID");
                             }
 
@@ -106,9 +121,51 @@ namespace Features.UserApi.Auth
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
                             // Treat as JWT
-                            // TODO: Need to add jwt validation logic here
-                            _logger.LogWarning("JWT authentication not implemented");
-                            return AuthenticateResult.Fail("JWT authentication not implemented");
+                            var tokenService = _tokenServiceFactory.GetTokenService();
+                            var jwtResult = await tokenService.ProcessToken(accessToken);
+                            var userId = jwtResult.userId;
+
+                            if (!jwtResult.success || string.IsNullOrEmpty(userId))
+                            {
+                                _logger.LogWarning("No user Id found in the JWT Token");
+                                return AuthenticateResult.Fail("No user Id found in the JWT Token");
+                            }
+                            else
+                            {
+                                _tenantContext.LoggedInUser = userId;
+                            }
+
+                            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
+                            var tenantIds = userTenants?.Data ?? new List<string>();
+
+                            if (string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
+                            {
+                                _logger.LogWarning("JWT authentication failed, tenant mismatch");
+                                return AuthenticateResult.Fail("JWT authentication failed, tenant mismatch");
+                            }
+
+                            _tenantContext.TenantId = tenantId;
+                            _tenantContext.AuthorizedTenantIds = tenantIds;
+                            _logger.LogDebug("UserID-{Id}", userId);
+                            
+                            var claims = new List<Claim>
+                            {
+                                new Claim(ClaimTypes.NameIdentifier, userId),
+                                new Claim("TenantId", tenantId)
+                            };
+                            
+                            foreach (var tId in tenantIds)
+                            {
+                                _logger.LogDebug("tenantIds-{tId}: ", tId);
+                                claims.Add(new Claim("AuthorizedTenantId", tId));
+                            }
+
+                            var identity = new ClaimsIdentity(claims, Scheme.Name);
+                            var principal = new ClaimsPrincipal(identity);
+                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+                            _logger.LogInformation("Successfully authenticated Endpoint JWT: User={UserId}, Tenant={TenantId}", userId, tenantId);
+                            
+                            return AuthenticateResult.Success(ticket);
                         }
                         else
                         {

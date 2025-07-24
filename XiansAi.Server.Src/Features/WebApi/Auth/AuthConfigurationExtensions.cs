@@ -1,9 +1,5 @@
-using Features.WebApi.Auth.Providers;
-using Features.WebApi.Auth.Providers.Auth0;
-using Features.WebApi.Auth.Providers.AzureB2C;
-using Features.WebApi.Auth.Providers.Keycloak;
-using Features.WebApi.Auth.Providers.Tokens;
 using Microsoft.AspNetCore.Authorization;
+using Shared.Providers.Auth;
 
 namespace Features.WebApi.Auth;
 
@@ -11,57 +7,8 @@ public static class AuthConfigurationExtensions
 {
     public static WebApplicationBuilder AddWebApiAuth(this WebApplicationBuilder builder)
     {
-        // Register memory cache if not already registered
-        builder.Services.AddMemoryCache();
-
-        // Register HttpClient for token services
-        builder.Services.AddHttpClient();
-
-        // Register token validation cache
-        builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
-
-        // Register token services
-        builder.Services.AddScoped<Auth0TokenService>(serviceProvider =>
-        {
-            var logger = serviceProvider.GetRequiredService<ILogger<Auth0TokenService>>();
-            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
-            return new Auth0TokenService(logger, configuration, httpClient);
-        });
-        builder.Services.AddScoped<AzureB2CTokenService>(serviceProvider =>
-        {
-            var logger = serviceProvider.GetRequiredService<ILogger<AzureB2CTokenService>>();
-            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
-            return new AzureB2CTokenService(logger, configuration, httpClient);
-        });
-        builder.Services.AddScoped<KeycloakTokenService>(serviceProvider =>
-        {
-            var logger = serviceProvider.GetRequiredService<ILogger<KeycloakTokenService>>();
-            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
-            return new KeycloakTokenService(logger, configuration, httpClient);
-        });
-        builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
-        
-        // Register auth providers
-        builder.Services.AddScoped<Auth0Provider>();
-        builder.Services.AddScoped<AzureB2CProvider>();
-        builder.Services.AddScoped<KeycloakProvider>();
-        builder.Services.AddScoped<IAuthProviderFactory, AuthProviderFactory>();
-        builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
-
-        // Get the configured provider
-        // var providerConfig = builder.Configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ?? 
-        //     new AuthProviderConfig();
-
-        // Add Authentication with JWT as the default scheme
-        builder.Services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = "JWT";
-            options.DefaultChallengeScheme = "JWT";
-            options.DefaultForbidScheme = "JWT";
-        })
+        // Add Authentication without setting global defaults - let each endpoint specify its own scheme
+        builder.Services.AddAuthentication()
         .AddJwtBearer("JWT", options =>
         {
             // Use the service provider to get the appropriate provider

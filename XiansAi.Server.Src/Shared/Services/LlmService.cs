@@ -14,10 +14,28 @@ public interface ILlmService
     string GetApiKey();
 
     /// <summary>
+    /// Gets the name of the LLM provider
+    /// </summary>
+    /// <returns>The LLM provider</returns>
+    string? GetLlmProvider();
+
+    /// <summary>
     /// Gets the model for the current LLM provider
     /// </summary>
     /// <returns>The model</returns>
     string GetModel();
+
+    /// <summary>
+    /// Gets the additional details of the LLM provider
+    /// </summary>
+    /// <returns>Additional configuration details</returns>
+    Dictionary<string, string>? GetAdditionalConfig();
+
+    /// <summary>
+    /// Gets Base URL of the Model
+    /// </summary>
+    /// <returns>Base URL</returns>
+    string? GetBaseUrl();
 
     /// <summary>
     /// Gets a chat completion from the current LLM provider
@@ -67,6 +85,23 @@ public class LlmService : ILlmService
     }
 
     /// <summary>
+    /// Gets the name of the LLM provider
+    /// </summary>
+    /// <returns>The LLM provider</returns>
+    public string? GetLlmProvider()
+    {
+        try
+        {
+            return _llmProvider.GetLlmProvider();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting API key from LLM provider");
+            throw new Exception("Error getting API key from LLM provider", ex);
+        }
+    }
+
+    /// <summary>
     /// Gets the model for the current LLM provider
     /// </summary>
     /// <returns>The model</returns>
@@ -85,6 +120,39 @@ public class LlmService : ILlmService
         {
             _logger.LogError(ex, "Error getting model from LLM provider");
             throw new Exception("Error getting model from LLM provider", ex);
+        }
+    }
+
+    /// <summary>
+    /// Gets the additional details of the LLM provider
+    /// </summary>
+    /// <returns>Additional configuration details</returns>
+    public Dictionary<string, string>? GetAdditionalConfig()
+    {
+        try {
+            return _llmProvider.GetAdditionalConfig();            
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting model from LLM provider");
+            throw new Exception("Error getting model from LLM provider", ex);
+        }
+    }
+
+    /// <summary>
+    /// Gets Base URL of the Model
+    /// </summary>
+    /// <returns>Base URL</returns>
+    public string? GetBaseUrl()
+    {
+        try
+        {
+            return _llmProvider.GetBaseUrl();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting Base URL from LLM provider");
+            return null; // Optional behavior
         }
     }
 

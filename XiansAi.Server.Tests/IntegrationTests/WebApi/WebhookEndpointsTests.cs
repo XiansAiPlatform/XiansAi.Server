@@ -3,10 +3,11 @@ using System.Text.Json;
 using Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
-using XiansAi.Server.Shared.Data.Models;
+using Shared.Data.Models;
 using Features.WebApi.Services;
 using MongoDB.Bson;
 using Shared.Utils.Services;
+using Shared.Services;
 using XiansAi.Server.Tests.TestUtils;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net.Http.Json;
@@ -14,7 +15,7 @@ using System.Text;
 
 namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
 
-public class WebhookEndpointsTests : WebApiIntegrationTestBase, IDisposable
+public class WebhookEndpointsTests : WebApiIntegrationTestBase
 {
     private readonly IMongoCollection<Webhook> _webhooksCollection;
     
@@ -395,8 +396,7 @@ public class WebhookEndpointsTests : WebApiIntegrationTestBase, IDisposable
 
         // Act - Make requests without tenant header
         var getResponse = await client.GetAsync("/api/client/webhooks/");
-        var createResponse = await client.PostAsync("/api/client/webhooks", 
-            new StringContent(JsonSerializer.Serialize(validRequest), Encoding.UTF8, "application/json"));
+        var createResponse = await client.PostAsJsonAsync("/api/client/webhooks", validRequest);
 
         // Assert - These endpoints should require tenant validation
         // In test environment, this might return OK due to test auth configuration
@@ -462,12 +462,5 @@ public class WebhookEndpointsTests : WebApiIntegrationTestBase, IDisposable
         Assert.Single(webhooks); // Should only see the current tenant's webhook
         Assert.Equal(webhook.Id, webhooks[0].Id);
         Assert.Equal(TestTenantId, webhooks[0].TenantId);
-    }
-
-    public new void Dispose()
-    {
-        // Clean up any webhooks created during tests
-        CleanupWebhooksAsync().Wait();
-        base.Dispose();
     }
 } 

@@ -1,6 +1,7 @@
 using Features.WebApi.Auth;
+using Features.WebApi.Models;
 using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.Features.WebApi.Services;
+using Shared.Services;
 
 namespace XiansAi.Server.Features.WebApi.Endpoints;
 
@@ -26,6 +27,57 @@ public static class UserTenantEndpoints
         {
             operation.Summary = "Get all tenants for current user";
             operation.Description = "Returns all tenant IDs assigned to current user";
+            return operation;
+        });
+
+        group.MapGet("/tenantUsers", async (
+            [FromQuery] int page,
+            [FromQuery] int pageSize,
+            [FromQuery] UserTypeFilter type,
+            [FromQuery] string? search,
+            [FromServices] IUserTenantService service,
+            HttpContext httpContext) =>
+        {
+            var tenant = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+            if (string.IsNullOrEmpty(tenant))
+            {
+                return Results.BadRequest("Tenant ID is required");
+            }
+
+            var filter = new UserFilter
+            {
+                Page = page,
+                PageSize = pageSize,
+                Type = type,
+                Tenant = tenant,
+                Search = search == "null" ? null : search
+            };
+            var result = await service.GetTenantUsers(filter);
+            return Results.Ok(result);
+        })
+        .WithName("GetCurrentTenantUsers")
+        .RequiresValidTenant()
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Get all users for current tenant";
+            operation.Description = "Returns all users IDs assigned to current tenant";
+            return operation;
+        });
+
+        group.MapPut("/updateTenantUser", async (
+           [FromBody] EditUserDto dto,
+            [FromServices] IUserTenantService service) =>
+        {
+            var result = await service.UpdateTenantUser(dto);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("UpdateTenantUser")
+        .RequiresValidTenant()
+        .WithOpenApi(operation => {
+            operation.Summary = "Update tenant user";
+            operation.Description = "Update tenant user details";
             return operation;
         });
 
@@ -67,7 +119,7 @@ public static class UserTenantEndpoints
             [FromBody] UserTenantDto dto,
             [FromServices] IUserTenantService service) =>
         {
-            var result = await service.ApproveUser(dto.UserId, dto.TenantId);
+            var result = await service.ApproveUser(dto.UserId, dto.TenantId, dto.IsApproved);
             return Results.Ok(result);
         })
         .WithName("ApproveUser")
@@ -122,6 +174,22 @@ public static class UserTenantEndpoints
         {
             operation.Summary = "Remove a tenant from a user";
             operation.Description = "Removes a tenant assignment from a user";
+            return operation;
+        })
+        .RequiresValidTenantAdmin();
+
+        group.MapPost("/AddUserToCurrentTenant", async (
+            [FromBody] AddUserToTenantDto dto,
+            [FromServices] IUserTenantService service) =>
+        {
+            var result = await service.AddTenantToUserIfExist(dto.Email);
+            return Results.Ok(result);
+        })
+        .WithName("AddUserToCurrentTenant")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Assign a tenant to a user";
+            operation.Description = "Assigns a tenant to a user";
             return operation;
         })
         .RequiresValidTenantAdmin();

@@ -1,9 +1,11 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
+using Shared.Providers.Auth;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using YamlDotNet.Core.Tokens;
 
 namespace Features.UserApi.Auth
 {
@@ -13,6 +15,8 @@ namespace Features.UserApi.Auth
         private readonly ILogger<WebsocketAuthenticationHandler> _logger;
         private readonly IConfiguration _configuration;
         private readonly IApiKeyService _apiKeyService;
+        private readonly ITokenServiceFactory _tokenServiceFactory;
+        private readonly IUserTenantService _userTenantService;
 
 
         public WebsocketAuthenticationHandler(
@@ -21,22 +25,38 @@ namespace Features.UserApi.Auth
             UrlEncoder encoder,
             IConfiguration configuration,
             ITenantContext tenantContext,
-            IApiKeyService apiKeyService)
+            IApiKeyService apiKeyService,
+            ITokenServiceFactory tokenServiceFactory,
+            IUserTenantService userTenantService)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
             _tenantContext = tenantContext;
             _configuration = configuration;
             _apiKeyService = apiKeyService;
+            _tokenServiceFactory = tokenServiceFactory;
+            _userTenantService = userTenantService;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            // Example: validate access_token and tenant from query
-            var accessToken = Request.Query["access_token"].ToString();
+            // Only handle authentication for specific websocket/SignalR endpoints
+            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
+            var isWebsocketEndpoint = path.StartsWith("/ws/");
+            
+            _logger.LogDebug("WebsocketAuthenticationHandler: Evaluating path '{Path}' - IsWebsocketEndpoint: {IsWebsocketEndpoint}", Request.Path, isWebsocketEndpoint);
+            
+            if (!isWebsocketEndpoint)
+            {
+                return AuthenticateResult.NoResult(); // Let other handlers process this request
+            }
+
+            _logger.LogDebug("Processing SignalR/Websocket request: {Path}", Request.Path);
+
+            // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
+            var accessToken = Request.Query["apikey"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
 
-            _logger.LogDebug("Processing SignalR request: {Path}", Request.Path);
             if (_tenantContext != null)
             {
                 // Check if WebSockets are enabled in configuration
@@ -52,8 +72,16 @@ namespace Features.UserApi.Auth
                     return AuthenticateResult.Fail("No tenantId provided in query string");
                 }
 
+                // Check for token in different locations based on authentication method
                 if (string.IsNullOrEmpty(accessToken))
                 {
+                    // Check for access_token query parameter (used for JWT and as fallback for API keys)
+                    accessToken = Request.Query["access_token"].ToString();
+                }
+
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    // Check for Authorization header (preferred method for JWT)
                     var authHeader = Request.Headers["Authorization"].FirstOrDefault();
                     if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
                     {
@@ -102,16 +130,54 @@ namespace Features.UserApi.Auth
                         }
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
-                                // Treat as JWT
                             if (Request.Path.HasValue && Request.Path.Value.Contains("/ws/tenant/chat", StringComparison.OrdinalIgnoreCase))
                             {
                                 _logger.LogInformation("Skipping JWT validation for /ws/tenant/chat endpoint");
                                 return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
                             }
                             // Treat as JWT
-                            // TODO: Need to add jwt validation logic here
-                            _logger.LogWarning("JWT authentication not implemented");
-                            return AuthenticateResult.Fail("JWT authentication not implemented");
+                            var tokenService = _tokenServiceFactory.GetTokenService();
+                            var jwtResult = await tokenService.ProcessToken(accessToken);
+                            var userId = jwtResult.userId;
+
+                            if (!jwtResult.success || string.IsNullOrEmpty(userId) )
+                            {
+                                _logger.LogInformation("No user Id found in the JWT Token");
+                                return AuthenticateResult.Fail("No user Id found in the JWT Token");
+                            }
+                            else
+                            {
+                                _tenantContext.LoggedInUser = userId;
+                            }
+
+                            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
+                            var tenantIds = userTenants?.Data ?? new List<string>();
+
+                            if(string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
+                            {
+                                _logger.LogWarning("JWT authentication failed, tenant mismatch");
+                                return AuthenticateResult.Fail("JWT authentication failed, tenant mismatch");
+                            }
+
+                            _tenantContext.TenantId = tenantId;
+                            _tenantContext.AuthorizedTenantIds = tenantIds;
+                            _logger.LogDebug("UserID-{Id}", userId);
+                            var claims = new List<Claim>
+                            {
+                                new Claim(ClaimTypes.NameIdentifier, userId),
+                                new Claim("TenantId", tenantId)
+                            };
+                            foreach (var tId in tenantIds)
+                            {
+                                _logger.LogDebug("tenantIds-{tId}: ", tId);
+                                claims.Add(new Claim("AuthorizedTenantId", tId));
+                            }
+
+                            var identity = new ClaimsIdentity(claims, Scheme.Name);
+                            var principal = new ClaimsPrincipal(identity);
+                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+                            _logger.LogDebug("Successfully authenticated Websocket JWT: User={UserId}, Tenant={TenantId}", userId, tenantId);
+                            return AuthenticateResult.Success(ticket);
                         }
                         else
                         {
@@ -122,14 +188,14 @@ namespace Features.UserApi.Auth
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error processing access token for SignalR connection");
-                        return AuthenticateResult.Fail("Error processing access token for SignalR connection");
+                        _logger.LogError(ex, "Error processing access token for Websocket connection");
+                        return AuthenticateResult.Fail("Error processing access token for Websocket connection");
                     }
                 }
                 else
                 {
-                    _logger.LogWarning("No access token found for SignalR connection");
-                    return AuthenticateResult.Fail("No access token found for SignalR connection");
+                    _logger.LogWarning("No access token found for Websocket connection");
+                    return AuthenticateResult.Fail("No access token found for Websocket connection");
                 }
             }
             else
