@@ -13,15 +13,17 @@ public class Auth0Provider : IAuthProvider
     private Auth0Config _auth0Config;
     private readonly Auth0TokenService _tokenService;
 
-    public Auth0Provider(ILogger<Auth0Provider> logger, Auth0TokenService tokenService, IConfiguration configuration)
+    public Auth0Provider(ILogger<Auth0Provider> logger, Auth0TokenService tokenService, IConfiguration configuration, ApiType api = ApiType.WebApi)
     {
         _logger = logger;
         _client = new RestClient();
         _tokenService = tokenService;
 
         // Initialize Auth0 configuration in constructor to ensure it's always available
-        _auth0Config = configuration.GetSection("Auth0").Get<Auth0Config>() ??
-            throw new ArgumentException("Auth0 configuration is missing");
+        string sectionName = api == ApiType.UserApi ? "UserApi" : "WebApi";
+        var section = configuration.GetSection(sectionName);
+        _auth0Config = section.GetSection("Auth0").Get<Auth0Config>() ??
+            throw new ArgumentException($"Auth0 configuration is missing for {sectionName}");
 
         if (string.IsNullOrEmpty(_auth0Config.Domain))
             throw new ArgumentException("Auth0 domain is missing");

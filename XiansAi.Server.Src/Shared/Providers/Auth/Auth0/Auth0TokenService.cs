@@ -18,16 +18,21 @@ public class Auth0TokenService : ITokenService
     private readonly HttpClient _httpClient;
     private static readonly Dictionary<string, (DateTime expiry, JsonWebKeySet jwks)> _jwksCache = new();
     private static readonly SemaphoreSlim _jwksCacheLock = new(1, 1);
+    private readonly ApiType _apiType;
 
-    public Auth0TokenService(ILogger<Auth0TokenService> logger, IConfiguration configuration, HttpClient? httpClient = null)
+    public Auth0TokenService(ILogger<Auth0TokenService> logger, IConfiguration configuration, HttpClient? httpClient = null, ApiType api = ApiType.WebApi)
     {
         _logger = logger;
         _client = new RestClient();
         _httpClient = httpClient ?? new HttpClient();
-        _auth0Config = configuration.GetSection("Auth0").Get<Auth0Config>() ??
-            throw new ArgumentException("Auth0 configuration is missing");
+        _apiType = api;
+        // Load config for WebApi/UserApi
+        string sectionName = api == ApiType.UserApi ? "UserApi" : "WebApi";
+        var section = configuration.GetSection(sectionName);
+        _auth0Config = section.GetSection("Auth0").Get<Auth0Config>() ??
+            throw new ArgumentException($"Auth0 configuration is missing for {sectionName}");
 
-        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
+        var authProviderConfig = section.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
         _tenantClaimType = authProviderConfig.TenantClaimType;
     }

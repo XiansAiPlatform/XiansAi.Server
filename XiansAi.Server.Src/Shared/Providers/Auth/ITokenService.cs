@@ -27,3 +27,9 @@ public interface ITokenService
     /// </summary>
     Task<string> GetManagementApiToken();
 }
+
+public enum ApiType
+{
+    WebApi,
+    UserApi
+}

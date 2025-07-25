@@ -17,15 +17,20 @@ public class KeycloakProvider : IAuthProvider
     private KeycloakConfig _keycloakConfig;
     private readonly KeycloakTokenService _tokenService;
 
-    public KeycloakProvider(ILogger<KeycloakProvider> logger, KeycloakTokenService tokenService, IConfiguration configuration)
+    public KeycloakProvider(ILogger<KeycloakProvider> logger, KeycloakTokenService tokenService, IConfiguration configuration, ApiType api = ApiType.WebApi)
     {
         _logger = logger;
         _client = new RestClient();
         _tokenService = tokenService;
 
+        // Load config for WebApi/UserApi
+        string sectionName = api == ApiType.UserApi ? "UserApi" : "WebApi";
+        var section = configuration.GetSection(sectionName);
+        _keycloakConfig = section.GetSection("Keycloak").Get<KeycloakConfig>() ??
+            throw new ArgumentException($"Keycloak configuration is missing for {sectionName}");
         // Initialize Keycloak configuration in constructor
-        _keycloakConfig = configuration.GetSection("Keycloak").Get<KeycloakConfig>() ??
-            throw new ArgumentException("Keycloak configuration is missing");
+        //_keycloakConfig = configuration.GetSection("Keycloak").Get<KeycloakConfig>() ??
+        //    throw new ArgumentException("Keycloak configuration is missing");
 
         if (string.IsNullOrEmpty(_keycloakConfig.AuthServerUrl))
             throw new ArgumentException("Keycloak server URL is missing");

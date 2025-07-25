@@ -18,7 +18,6 @@ namespace Features.UserApi.Auth
         private readonly ITokenServiceFactory _tokenServiceFactory;
         private readonly IUserTenantService _userTenantService;
 
-
         public WebsocketAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
             ILoggerFactory logger,
@@ -112,7 +111,8 @@ namespace Features.UserApi.Auth
                                 var claims = new List<Claim>
                                 {
                                     new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                                    new Claim("TenantId", apiKey.TenantId)
+                                    new Claim("TenantId", apiKey.TenantId),
+                                    new Claim("AuthProvider","api-key")
                                 };
 
                                 var identity = new ClaimsIdentity(claims, Scheme.Name);
@@ -136,7 +136,7 @@ namespace Features.UserApi.Auth
                                 return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
                             }
                             // Treat as JWT
-                            var tokenService = _tokenServiceFactory.GetTokenService();
+                            var tokenService = _tokenServiceFactory.GetTokenService(ApiType.UserApi);
                             var jwtResult = await tokenService.ProcessToken(accessToken);
                             var userId = jwtResult.userId;
 
@@ -165,7 +165,8 @@ namespace Features.UserApi.Auth
                             var claims = new List<Claim>
                             {
                                 new Claim(ClaimTypes.NameIdentifier, userId),
-                                new Claim("TenantId", tenantId)
+                                new Claim("TenantId", tenantId),
+                                new Claim("AuthProvider","JWT")
                             };
                             foreach (var tId in tenantIds)
                             {

@@ -17,14 +17,19 @@ public class KeycloakTokenService : ITokenService
     private readonly HttpClient _httpClient;
     private static readonly Dictionary<string, (DateTime expiry, JsonWebKeySet jwks)> _jwksCache = new();
     private static readonly SemaphoreSlim _jwksCacheLock = new(1, 1);
+    private readonly ApiType _apiType;
 
-    public KeycloakTokenService(ILogger<KeycloakTokenService> logger, IConfiguration configuration, HttpClient? httpClient = null)
+    public KeycloakTokenService(ILogger<KeycloakTokenService> logger, IConfiguration configuration, HttpClient? httpClient = null, ApiType api = ApiType.WebApi)
     {
         _logger = logger;
         _client = new RestClient();
         _httpClient = httpClient ?? new HttpClient();
-        _keycloakConfig = configuration.GetSection("Keycloak").Get<KeycloakConfig>() ??
-            throw new ArgumentException("Keycloak configuration is missing");
+        _apiType = api;
+        // Load config for WebApi/UserApi
+        string sectionName = api == ApiType.UserApi ? "UserApi" : "WebApi";
+        var section = configuration.GetSection(sectionName);
+        _keycloakConfig = section.GetSection("Keycloak").Get<KeycloakConfig>() ??
+            throw new ArgumentException($"Keycloak configuration is missing for {sectionName}");
     }
 
     public string? ExtractUserId(JwtSecurityToken token)

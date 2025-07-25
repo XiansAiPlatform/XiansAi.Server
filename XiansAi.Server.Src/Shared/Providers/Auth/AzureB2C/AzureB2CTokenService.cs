@@ -16,15 +16,20 @@ public class AzureB2CTokenService : ITokenService
     private readonly HttpClient _httpClient;
     private static readonly Dictionary<string, (DateTime expiry, JsonWebKeySet jwks)> _jwksCache = new();
     private static readonly SemaphoreSlim _jwksCacheLock = new(1, 1);
+    private readonly ApiType _apiType;
 
-    public AzureB2CTokenService(ILogger<AzureB2CTokenService> logger, IConfiguration configuration, HttpClient? httpClient = null)
+    public AzureB2CTokenService(ILogger<AzureB2CTokenService> logger, IConfiguration configuration, HttpClient? httpClient = null, ApiType api = ApiType.WebApi)
     {
         _logger = logger;
         _httpClient = httpClient ?? new HttpClient();
-        _azureB2CConfig = configuration.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
-            throw new ArgumentException("Azure B2C configuration is missing");
+        _apiType = api;
+        // Load config for WebApi/UserApi
+        string sectionName = api == ApiType.UserApi ? "UserApi" : "WebApi";
+        var section = configuration.GetSection(sectionName);
+        _azureB2CConfig = section.GetSection("AzureB2C").Get<AzureB2CConfig>() ??
+            throw new ArgumentException($"Azure B2C configuration is missing for {sectionName}");
 
-        var authProviderConfig = configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
+        var authProviderConfig = section.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
             new AuthProviderConfig();
         _tenantClaimType = authProviderConfig.TenantClaimType;
     }

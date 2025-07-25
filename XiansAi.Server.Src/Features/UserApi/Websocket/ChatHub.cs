@@ -154,7 +154,7 @@ namespace Features.UserApi.Websocket
 
         private static bool IsValidTenantContext(ITenantContext tenantContext)
         {
-            return !string.IsNullOrEmpty(tenantContext.TenantId) && 
+            return !string.IsNullOrEmpty(tenantContext.TenantId) &&
                    !string.IsNullOrEmpty(tenantContext.LoggedInUser);
         }
 
