@@ -142,8 +142,7 @@ public class Program
         
         // Register the TenantContext
         builder.Services.AddScoped<ITenantContext, TenantContext>();
-        // Register the MongoDbContext
-        builder.Services.AddScoped<IMongoDbContext, MongoDbContext>();
+        // MongoDbContext is registered as singleton in SharedServices.cs
         
         return builder;
     }

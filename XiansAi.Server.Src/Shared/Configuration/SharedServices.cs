@@ -31,13 +31,11 @@ public static class SharedServices
         services.AddScoped<IAuthorizationCacheService, AuthorizationCacheService>();
         
 
-        services.AddSingleton<IMongoDbContext>(sp =>
-            new MongoDbContext(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ILogger<MongoDbContext>>()));
+        // Register MongoDB context as singleton - it only reads configuration
+        services.AddSingleton<IMongoDbContext, MongoDbContext>();
         
-        // Register MongoDB client
-        services.AddScoped<IMongoDbClientService>(sp =>
-            new MongoDbClientService(
-                sp.GetRequiredService<IMongoDbContext>()));
+        // Register MongoDB client as singleton - MongoClient is thread-safe and should be reused
+        services.AddSingleton<IMongoDbClientService, MongoDbClientService>();
         
         // Register database service
         services.AddScoped<IDatabaseService, DatabaseService>();
