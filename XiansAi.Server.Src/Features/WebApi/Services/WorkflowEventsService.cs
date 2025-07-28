@@ -27,17 +27,17 @@ public interface IWorkflowEventsService
 
 public class WorkflowEventsService : IWorkflowEventsService
 {
-    private readonly ITemporalClientService _clientService;
+    private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowEventsService> _logger;
 
     private readonly Dictionary<long, HistoryEvent> _scheduledEvents = new();
     private readonly Dictionary<long, HistoryEvent> _startedEvents = new();
 
     public WorkflowEventsService(
-        ITemporalClientService clientService,
+        ITemporalClientFactory clientFactory,
         ILogger<WorkflowEventsService> logger)
     {
-        _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
+        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -52,7 +52,7 @@ public class WorkflowEventsService : IWorkflowEventsService
         {
             try
             {
-                var client = _clientService.GetClient();
+                var client = await _clientFactory.GetClientAsync();
                 var handle = client.GetWorkflowHandle(workflowId);
                 var options = new WorkflowHistoryEventFetchOptions
                 {
@@ -147,7 +147,7 @@ public class WorkflowEventsService : IWorkflowEventsService
         
         try
         {
-            var client = _clientService.GetClient();
+            var client = await _clientFactory.GetClientAsync();
             var handle = client.GetWorkflowHandle(workflowId);
             
             var events = new List<HistoryEvent>();

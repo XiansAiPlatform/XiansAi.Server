@@ -198,7 +198,7 @@ docker stats xians-server-standalone
 
    ```bash
    cd XiansAi.Server.Src
-   docker build -t xiansai-server:local .
+   docker build -t xiansai-server:local -f Dockerfile.production .
    ```
 
 2. **Run the local image:**

@@ -15,12 +15,12 @@ public interface IWorkflowCancelService
 
 public class WorkflowCancelService : IWorkflowCancelService
 {
-    private readonly ITemporalClientService _temporalClientService;
+    private readonly ITemporalClientFactory _temporalClientFactory;
     private readonly ILogger<WorkflowCancelService> _logger;
 
-    public WorkflowCancelService(ITemporalClientService temporalClientService, ILogger<WorkflowCancelService> logger)
+    public WorkflowCancelService(ITemporalClientFactory temporalClientFactory, ILogger<WorkflowCancelService> logger)
     {
-        _temporalClientService = temporalClientService;
+        _temporalClientFactory = temporalClientFactory;
         _logger = logger;
     }
 
@@ -38,7 +38,7 @@ public class WorkflowCancelService : IWorkflowCancelService
                 return ServiceResult<WorkflowCancelResult>.BadRequest("WorkflowId is required");
             }
 
-            var client = _temporalClientService.GetClient();
+            var client = await _temporalClientFactory.GetClientAsync();
             var handle = client.GetWorkflowHandle(workflowId);
             
             var result = new WorkflowCancelResult();

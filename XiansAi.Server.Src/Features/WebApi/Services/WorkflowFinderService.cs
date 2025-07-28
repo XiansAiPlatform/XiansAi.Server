@@ -31,7 +31,7 @@ public interface IWorkflowFinderService
 /// </summary>
 public class WorkflowFinderService : IWorkflowFinderService
 {
-    private readonly ITemporalClientService _clientService;
+    private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowFinderService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IDatabaseService _databaseService;
@@ -40,7 +40,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderService"/> class.
     /// </summary>
-    /// <param name="clientService">The Temporal client service for workflow operations.</param>
+    /// <param name="clientFactory">The Temporal client factory for workflow operations.</param>
     /// <param name="logger">Logger for recording operational events.</param>
     /// <param name="tenantContext">Context containing tenant-specific information.</param>
     /// <param name="databaseService">The database service for accessing workflow logs.</param>
@@ -48,14 +48,14 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="permissionsService">The permissions service for checking permissions.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
-        ITemporalClientService clientService,
+        ITemporalClientFactory clientFactory,
         ILogger<WorkflowFinderService> logger,
         ITenantContext tenantContext,
         IDatabaseService databaseService,
         IAgentRepository agentRepository,
         IPermissionsService permissionsService)
     {
-        _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
+        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _databaseService = databaseService;
@@ -80,7 +80,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         try
         {
             _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", workflowId, workflowRunId);
-            var client = _clientService.GetClient();
+            var client = await _clientFactory.GetClientAsync();
             var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
 
             var workflowDescription = await workflowHandle.DescribeAsync();
@@ -131,7 +131,7 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            var client = _clientService.GetClient();
+            var client = await _clientFactory.GetClientAsync();
 
             var listQuery = BuildQuery(agentNames, status);
 
@@ -211,7 +211,7 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            var client = _clientService.GetClient();
+            var client = await _clientFactory.GetClientAsync();
             var workflows = new List<WorkflowResponse>();
             var queryParts = new List<string>
             {

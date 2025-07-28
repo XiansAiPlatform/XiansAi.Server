@@ -47,23 +47,23 @@ public interface IWorkflowStarterService
 /// </summary>
 public class WorkflowStarterService : IWorkflowStarterService
 {
-    private readonly ITemporalClientService _clientService;
+    private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowStarterService> _logger;
     private readonly ITenantContext _tenantContext;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowStarterService"/> class.
     /// </summary>
-    /// <param name="clientService">The Temporal client service.</param>
+    /// <param name="clientFactory">The Temporal client factory.</param>
     /// <param name="logger">The logger instance.</param>
     /// <param name="tenantContext">The tenant context.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowStarterService(
-        ITemporalClientService clientService,
+        ITemporalClientFactory clientFactory,
         ILogger<WorkflowStarterService> logger,
         ITenantContext tenantContext)
     {
-        _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
+        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
@@ -131,7 +131,7 @@ public class WorkflowStarterService : IWorkflowStarterService
         _logger.LogDebug("Starting workflow {WorkflowType} with options {Options}", 
             request.WorkflowType, JsonSerializer.Serialize(options));
         
-        var client = _clientService.GetClient();
+                    var client = await _clientFactory.GetClientAsync();
         return await client.StartWorkflowAsync(
             request.WorkflowType,
             request.Parameters ?? Array.Empty<string>(),

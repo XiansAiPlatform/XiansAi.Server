@@ -43,12 +43,12 @@ public static class SharedServices
         // Register MongoDB index synchronization
         services.AddScoped<IMongoIndexSynchronizer, MongoIndexSynchronizer>();
         
-        // Register Temporal client
-        services.AddScoped<ITemporalClientService>(sp =>
-            new TemporalClientService(
-                sp.GetRequiredService<ILogger<TemporalClientService>>(),
-                sp.GetRequiredService<ITenantContext>()));
-                
+        // Register Temporal client as singleton for better connection management
+        services.AddSingleton<ITemporalClientService, TemporalClientService>();
+        
+        // Register a factory service for tenant-aware temporal operations
+        services.AddScoped<ITemporalClientFactory, TemporalClientFactory>();
+        
         // Register cache service
         services.AddScoped<ObjectCache>();
         

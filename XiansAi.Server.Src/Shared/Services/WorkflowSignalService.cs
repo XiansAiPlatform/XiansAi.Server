@@ -64,23 +64,23 @@ public interface IWorkflowSignalService
 
 public class WorkflowSignalService : IWorkflowSignalService
 {
-    private readonly ITemporalClientService _clientService;
+    private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowSignalService> _logger;
     private readonly ITenantContext _tenantContext;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowSignalService"/> class.
     /// </summary>
-    /// <param name="clientService">The service for obtaining Temporal clients.</param>
+    /// <param name="clientFactory">The factory for obtaining Temporal clients.</param>
     /// <param name="logger">The logger for recording operational information.</param>
     /// <param name="tenantContext">The tenant context for the current request.</param>
     /// <exception cref="ArgumentNullException">Thrown when any of the required services is null.</exception>
     public WorkflowSignalService(
-        ITemporalClientService clientService,
+        ITemporalClientFactory clientFactory,
         ILogger<WorkflowSignalService> logger,
         ITenantContext tenantContext)
     {
-        _clientService = clientService ?? throw new ArgumentNullException(nameof(clientService));
+        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
@@ -89,7 +89,7 @@ public class WorkflowSignalService : IWorkflowSignalService
     {
         try
         {
-            var client = _clientService.GetClient() ?? throw new Exception("Failed to get Temporal client");
+            var client = await _clientFactory.GetClientAsync() ?? throw new Exception("Failed to get Temporal client");
 
             var options = new NewWorkflowOptions(
                 request.SourceAgent, 
