@@ -85,7 +85,7 @@ public class CertificateService
         return temporalConfig.PrivateKeyBase64;
     }
 
-    private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId)
+    private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId, bool revokePrevious)
     {
         // Generate new certificate
         var cert = _certificateGenerator.GenerateClientCertificate(
@@ -93,7 +93,6 @@ public class CertificateService
             _tenantContext.TenantId,
             userId);
 
-        var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
         // Store certificate metadata
         try
         {
@@ -118,17 +117,21 @@ public class CertificateService
             throw new Exception("Failed to generate and store certificate");
         }
         // Revoke previous certificates for this user
-        foreach (var prevCert in previousCerts)
+        if (revokePrevious)
         {
-            if (!prevCert.IsRevoked)
+            var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
+            foreach (var prevCert in previousCerts)
             {
-                prevCert.IsRevoked = true;
-                prevCert.RevokedAt = DateTime.UtcNow;
-                await _certificateRepository.UpdateAsync(prevCert);
-                _logger.LogInformation(
-                    "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
-                    prevCert.Thumbprint, 
-                    userId);
+                if (!prevCert.IsRevoked)
+                {
+                    prevCert.IsRevoked = true;
+                    prevCert.RevokedAt = DateTime.UtcNow;
+                    await _certificateRepository.UpdateAsync(prevCert);
+                    _logger.LogInformation(
+                        "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
+                        prevCert.Thumbprint, 
+                        userId);
+                }
             }
         }
         _logger.LogInformation(
@@ -140,7 +143,7 @@ public class CertificateService
         return cert;
     }
 
-    public async Task<IResult> GenerateClientCertificateBase64()
+    public async Task<IResult> GenerateClientCertificateBase64(bool revokePrevious = false)
     {
         try
         {
@@ -154,7 +157,7 @@ public class CertificateService
                 _tenantContext.TenantId, 
                 userId);
 
-            var cert = await GenerateAndStoreCertificate(certName, userId);
+            var cert = await GenerateAndStoreCertificate(certName, userId, revokePrevious);
             var certBytes = cert.Export(X509ContentType.Cert);
             var base64String = Convert.ToBase64String(certBytes);
 
