@@ -108,7 +108,7 @@ public class UserTenantService : IUserTenantService
             if (isSysAdmin)
             {
                 var allTenants = await _tenantRepository.GetAllAsync();
-                return ServiceResult<List<string>>.Success(allTenants.Select(t => t.TenantId).ToList());
+                return ServiceResult<List<string>>.Success(allTenants.Where(x => x.Enabled).Select(t => t.TenantId).ToList());
             }
 
             var tenants = await _userRepository.GetUserTenantsAsync(userId);
@@ -144,6 +144,18 @@ public class UserTenantService : IUserTenantService
                 }
             }
 
+            if (tenants.Count > 0)
+            {
+                // only return enabled tenants
+                var filteredTenants = await FilterUserTenantAsync(tenants);
+                if (filteredTenants.Count == 0)
+                {
+                    _logger.LogInformation("No enabled tenants found for user {UserId}", userId);
+                    return ServiceResult<List<string>>.Success(new List<string>());
+                }
+                tenants = filteredTenants;
+            }
+
             return ServiceResult<List<string>>.Success(tenants);
         }
         catch (Exception ex)
@@ -170,6 +182,19 @@ public class UserTenantService : IUserTenantService
             }
 
             var tenants = await _userRepository.GetUserTenantsAsync(userId);
+
+            if (tenants.Count > 0)
+            {
+                // only return enabled tenants
+               var filteredTenants = await FilterUserTenantAsync(tenants);
+                if (filteredTenants.Count == 0)
+                {
+                    _logger.LogInformation("No enabled tenants found for user {UserId}", userId);
+                    return ServiceResult<List<string>>.Success(new List<string>());
+                }
+                tenants = filteredTenants;
+            }
+
             return ServiceResult<List<string>>.Success(tenants);
         }
         catch (Exception ex)
@@ -530,5 +555,11 @@ public class UserTenantService : IUserTenantService
         return createdUser.IsSuccess
             ? newUser
             : throw new Exception($"Failed to create user {userId} from token. Error: {createdUser.ErrorMessage}");
+    }
+
+    private async Task<List<string>> FilterUserTenantAsync(List<string> tenants)
+    {
+        var enabledTenants = await _tenantRepository.GetEnabledTenantsAsync(tenants);
+        return enabledTenants.Select(t => t.TenantId).ToList();
     }
 }

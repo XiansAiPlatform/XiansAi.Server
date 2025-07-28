@@ -22,6 +22,7 @@ public interface ITenantRepository
     Task<bool> UpdateAgentAsync(string tenantId, string agentName, Agent updatedAgent);
     Task<bool> RemoveAgentAsync(string tenantId, string agentName);
     Task<bool> AddFlowToAgentAsync(string tenantId, string agentName, Flow flow);
+    Task<List<Tenant>> GetEnabledTenantsAsync(List<string> tenantIds);
 }
 
 public class TenantRepository : ITenantRepository
@@ -148,5 +149,15 @@ public class TenantRepository : ITenantRepository
 
 
         return await UpdateAsync(tenantId, tenant);
+    }
+
+    public Task<List<Tenant>> GetEnabledTenantsAsync(List<string> tenantIds)
+    {
+        var filter = Builders<Tenant>.Filter.And(
+            Builders<Tenant>.Filter.In(x => x.TenantId, tenantIds),
+            Builders<Tenant>.Filter.Eq(x => x.Enabled, true)
+        );
+
+        return _collection.Find(filter).ToListAsync();
     }
 }
