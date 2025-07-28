@@ -3,7 +3,7 @@ using Shared.Services;
 using Shared.Repositories;
 using Shared.Utils.Services;
 
-namespace Features.UserApi.Utils
+namespace Shared.Utils
 {
     public class SyncMessageHandler
     {
@@ -31,14 +31,14 @@ namespace Features.UserApi.Utils
             {
                 // Start waiting for the response (this sets up the TaskCompletionSource)
                 var responseTask = _pendingRequestService.WaitForResponseAsync<ConversationMessage>(
-                    chatRequest.RequestId, 
-                    TimeSpan.FromSeconds(timeoutSeconds), 
+                    chatRequest.RequestId,
+                    TimeSpan.FromSeconds(timeoutSeconds),
                     messageType,
                     cancellationToken);
 
                 // Process the incoming message asynchronously (using existing flow)
                 var processResult = await _messageService.ProcessIncomingMessage(chatRequest, messageType);
-                
+
                 if (!processResult.IsSuccess)
                 {
                     _pendingRequestService.CancelRequest(chatRequest.RequestId);
@@ -47,7 +47,7 @@ namespace Features.UserApi.Utils
 
                 // Wait for the response from the change stream
                 var response = await responseTask;
-                
+
                 if (response == null)
                 {
                     return Results.Problem("No response received within timeout period", statusCode: 408);
@@ -56,7 +56,7 @@ namespace Features.UserApi.Utils
                 // Return the response message
                 return Results.Ok(new
                 {
-                    RequestId = chatRequest.RequestId,
+                    chatRequest.RequestId,
                     ThreadId = processResult.Data,
                     Response = new
                     {
@@ -87,4 +87,4 @@ namespace Features.UserApi.Utils
             }
         }
     }
-} 
+}

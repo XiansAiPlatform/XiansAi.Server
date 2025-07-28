@@ -2,7 +2,7 @@ using System.Text.Json;
 using Shared.Services;
 using Shared.Repositories;
 
-namespace Features.UserApi.Utils
+namespace Shared.Utils
 {
     public static class MessageRequestProcessor
     {
@@ -12,7 +12,8 @@ namespace Features.UserApi.Utils
             string participantId,
             JsonElement? request = null,
             string? text = null,
-            string? requestId = null)
+            string? requestId = null,
+            string? origin = null)
         {
 
             if (messageType == MessageType.Data)
@@ -31,20 +32,20 @@ namespace Features.UserApi.Utils
                 // Use text from query parameter if provided, otherwise try to extract from request body
                 string? resolvedText = text;
                 object? data = null;
-                
+
                 if (string.IsNullOrEmpty(resolvedText) && request.HasValue)
                 {
                     resolvedText = ExtractTextFromJsonElement(request.Value);
                 }
-                
+
                 // If we have both text (from query) and request body, use request body as data
-                if (!string.IsNullOrEmpty(text) && request.HasValue && 
-                    request.Value.ValueKind != JsonValueKind.Undefined && 
+                if (!string.IsNullOrEmpty(text) && request.HasValue &&
+                    request.Value.ValueKind != JsonValueKind.Undefined &&
                     request.Value.ValueKind != JsonValueKind.Null)
                 {
                     data = request.Value;
                 }
-                
+
                 return new ChatOrDataRequest
                 {
                     RequestId = requestId,
@@ -52,7 +53,8 @@ namespace Features.UserApi.Utils
                     WorkflowId = workflowId,
                     Text = resolvedText,
                     Data = data,
-                    Authorization = null
+                    Authorization = null,
+                    Origin = origin
                 };
             }
             else
@@ -100,8 +102,8 @@ namespace Features.UserApi.Utils
                 // If not a string, try to get the raw JSON as string
                 return request.ToString();
             }
-            
+
             return null;
         }
     }
-} 
+}
