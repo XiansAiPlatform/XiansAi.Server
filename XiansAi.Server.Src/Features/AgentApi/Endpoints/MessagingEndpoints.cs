@@ -114,7 +114,7 @@ namespace Features.AgentApi.Endpoints
                     return Results.BadRequest("Workflow Id not provided");
                 }
                 var participantId = chatOrDataRequest.ParticipantId;
-             
+                var origin = chatOrDataRequest.Origin;
                 var text = chatOrDataRequest.Text;
                 string jsonString = JsonSerializer.Serialize(chatOrDataRequest.Data);
 
@@ -147,7 +147,9 @@ namespace Features.AgentApi.Endpoints
                     resolvedParticipantId,
                     request.RootElement.Clone(),
                     text,
-                    requestId);
+                    requestId,
+                    origin);
+
 
                 // Use the sync message handler to process the complex flow
                 var syncHandler = new SyncMessageHandler(messageService, pendingRequestService);

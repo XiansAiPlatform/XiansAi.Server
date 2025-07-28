@@ -12,7 +12,8 @@ namespace Shared.Utils
             string participantId,
             JsonElement? request = null,
             string? text = null,
-            string? requestId = null)
+            string? requestId = null,
+            string? origin = null)
         {
 
             if (messageType == MessageType.Data)
@@ -52,7 +53,8 @@ namespace Shared.Utils
                     WorkflowId = workflowId,
                     Text = resolvedText,
                     Data = data,
-                    Authorization = null
+                    Authorization = null,
+                    Origin = origin
                 };
             }
             else
