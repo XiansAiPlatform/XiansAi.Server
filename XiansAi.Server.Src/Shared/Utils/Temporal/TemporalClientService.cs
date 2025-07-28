@@ -15,7 +15,7 @@ public interface ITemporalClientService
 
 }
 
-public class TemporalClientService : ITemporalClientService, IDisposable
+public class TemporalClientService : ITemporalClientService, IDisposable, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, ITemporalClient> _clients = new();
     private readonly ConcurrentDictionary<string, CloudService> _serviceClients = new();
@@ -23,6 +23,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable
     private readonly IConfiguration _configuration;
     private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
     private volatile bool _disposed = false;
+    private readonly object _disposeLock = new object();
 
     public TemporalClientService(
         ILogger<TemporalClientService> logger,
@@ -147,34 +148,101 @@ public class TemporalClientService : ITemporalClientService, IDisposable
         GC.SuppressFinalize(this);
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore();
+        Dispose(false);
+        GC.SuppressFinalize(this);
+    }
+
     protected virtual void Dispose(bool disposing)
     {
         if (!_disposed && disposing)
         {
-            _logger.LogInformation("Disposing Temporal client service");
-            
-            _connectionSemaphore?.Dispose();
-            
-            // Dispose all cached clients
-            foreach (var client in _clients.Values)
+            lock (_disposeLock)
+            {
+                if (_disposed) return;
+                
+                _logger.LogInformation("Disposing Temporal client service synchronously");
+                
+                try
+                {
+                    // Use a timeout to prevent hanging during shutdown
+                    var disposeTask = DisposeAsyncCore();
+                    if (!disposeTask.AsTask().Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        _logger.LogWarning("Temporal client service disposal timed out after 10 seconds");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during synchronous disposal of Temporal client service");
+                }
+                finally
+                {
+                    _disposed = true;
+                    _connectionSemaphore?.Dispose();
+                }
+            }
+        }
+    }
+
+    protected virtual async ValueTask DisposeAsyncCore()
+    {
+        if (_disposed) return;
+        
+        lock (_disposeLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
+
+        _logger.LogInformation("Disposing Temporal client service asynchronously");
+        
+        var disposeTimeout = TimeSpan.FromSeconds(10);
+        var cancellationTokenSource = new CancellationTokenSource(disposeTimeout);
+        
+        try
+        {
+            // Dispose all cached clients with timeout
+            var disposeTasks = _clients.Values.Select(async client =>
             {
                 try
                 {
-                    if (client is IDisposable disposableClient)
+                    if (client is IAsyncDisposable asyncDisposableClient)
+                    {
+                        await asyncDisposableClient.DisposeAsync();
+                    }
+                    else if (client is IDisposable disposableClient)
                     {
                         disposableClient.Dispose();
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error disposing Temporal client");
+                    _logger.LogError(ex, "Error disposing individual Temporal client");
                 }
-            }
+            });
+
+            // Wait for all disposals to complete with timeout
+            await Task.WhenAll(disposeTasks).WaitAsync(cancellationTokenSource.Token);
             
             _clients.Clear();
             _serviceClients.Clear();
             
-            _disposed = true;
+            _logger.LogInformation("Temporal client service disposed successfully");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Temporal client service disposal timed out after {TimeoutSeconds} seconds", disposeTimeout.TotalSeconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during async disposal of Temporal client service");
+        }
+        finally
+        {
+            _connectionSemaphore?.Dispose();
         }
     }
 }

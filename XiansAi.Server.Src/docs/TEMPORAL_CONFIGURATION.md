@@ -348,6 +348,32 @@ The singleton pattern ensures optimal connection reuse:
 3. **Monitor connection health** - Implement health checks for Temporal connectivity
 4. **Configure timeouts appropriately** - Balance responsiveness vs. reliability
 
+## Disposal and Shutdown
+
+### Preventing Shutdown Hangs
+
+The `TemporalClientService` implements both `IDisposable` and `IAsyncDisposable` to ensure proper cleanup during application shutdown. To prevent the application from hanging during shutdown due to Temporal client disposal taking too long, the following measures are in place:
+
+1. **Disposal Timeout**: Both synchronous and asynchronous disposal operations have a 10-second timeout to prevent hanging.
+
+2. **Async-First Disposal**: The service prefers asynchronous disposal (`IAsyncDisposable`) when available, which allows for proper cleanup of Temporal client connections.
+
+3. **Graceful Degradation**: If async disposal is not available, it falls back to synchronous disposal with the same timeout protection.
+
+4. **Error Isolation**: Each individual Temporal client disposal is wrapped in error handling to prevent one failed disposal from affecting others.
+
+### Troubleshooting Shutdown Issues
+
+If you experience slow application shutdown:
+
+1. Check the logs for "Temporal client service disposal timed out" warnings
+2. Monitor Temporal server connectivity during shutdown
+3. Consider adjusting the disposal timeout if needed (currently hardcoded to 10 seconds)
+
+### Configuration Impact
+
+Since `TemporalClientService` is registered as a singleton, the .NET dependency injection container will automatically handle `IAsyncDisposable` disposal during application shutdown. No additional configuration is required.
+
 ## Configuration Examples
 
 ### Complete Development Setup

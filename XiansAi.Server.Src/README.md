@@ -96,3 +96,21 @@ export DOCKERHUB_USERNAME=yourusername
 ```
 
 See [Docker Documentation](./docs/DOCKER.md) for detailed build and deployment instructions.
+
+## Recent Fixes
+
+### Temporal Client Service Shutdown Hanging (2025-01-27)
+
+**Issue**: Application would hang during shutdown when Temporal clients took too long to dispose, requiring multiple Ctrl+C signals to force shutdown.
+
+**Solution**: Updated `TemporalClientService` to implement proper async disposal pattern:
+- Added `IAsyncDisposable` implementation alongside `IDisposable`
+- Implemented 10-second timeout for disposal operations
+- Added proper error isolation for individual client disposals
+- Improved logging for disposal process monitoring
+
+**Files Modified**:
+- `Shared/Utils/Temporal/TemporalClientService.cs`
+- `docs/TEMPORAL_CONFIGURATION.md`
+
+**Testing**: Monitor application shutdown times and check logs for "Temporal client service disposed successfully" messages.
