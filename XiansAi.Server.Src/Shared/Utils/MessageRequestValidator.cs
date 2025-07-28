@@ -1,13 +1,13 @@
 using Shared.Utils.Services;
 using Shared.Repositories;
 
-namespace Features.UserApi.Utils
+namespace Shared.Utils
 {
     public static class MessageRequestValidator
     {
         public static (bool IsValid, string? ErrorMessage) ValidateInboundRequest(
-            string? workflow, 
-            string? type, 
+            string? workflow,
+            string? type,
             out MessageType messageType)
         {
             messageType = default;
@@ -22,7 +22,7 @@ namespace Features.UserApi.Utils
                 return (false, "Message type is required.");
             }
 
-            if (!Enum.TryParse<MessageType>(type, out messageType) || !Enum.IsDefined(typeof(MessageType), messageType))
+            if (!Enum.TryParse(type, out messageType) || !Enum.IsDefined(typeof(MessageType), messageType))
             {
                 return (false, "Invalid message type specified.");
             }
@@ -31,8 +31,8 @@ namespace Features.UserApi.Utils
         }
 
         public static (bool IsValid, string? ErrorMessage) ValidateSyncRequest(
-            string? workflow, 
-            string? type, 
+            string? workflow,
+            string? type,
             int timeoutSeconds,
             out MessageType messageType)
         {
@@ -48,7 +48,7 @@ namespace Features.UserApi.Utils
                 return (false, "Message type is required.");
             }
 
-            if (!Enum.TryParse<MessageType>(type, out messageType) || !Enum.IsDefined(typeof(MessageType), messageType))
+            if (!Enum.TryParse(type, out messageType) || !Enum.IsDefined(typeof(MessageType), messageType))
             {
                 return (false, "Invalid message type specified.");
             }
@@ -61,4 +61,4 @@ namespace Features.UserApi.Utils
             return (true, null);
         }
     }
-} 
+}

@@ -4,6 +4,7 @@ using Shared.Services;
 using Shared.Auth;
 using System.Text.Json;
 using Features.UserApi.Utils;
+using Shared.Utils;
 
 namespace Features.UserApi.Endpoints;
 

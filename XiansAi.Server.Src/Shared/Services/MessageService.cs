@@ -95,6 +95,7 @@ public class ChatOrDataRequest
     public string? Text { get; set; }
     public string? ThreadId { get; set; }
     public string? Authorization { get; set; }
+    public string? Origin { get; set; }
 }
 
 public class HandoffRequest
@@ -118,6 +119,7 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
+    //Task<ServiceResult<string>> ProcessSilentHandoff(HandoffRequest request);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize);
 }
@@ -432,7 +434,9 @@ public class MessageService : IMessageService
             Data = request.Data, // Assign original metadata
             WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType ?? throw new Exception("WorkflowType is required"),
-            MessageType = messageType
+            MessageType = messageType,
+            Origin = request.Origin
+
         };
 
         // This call will modify message.Metadata within the 'message' instance to be a BsonDocument
