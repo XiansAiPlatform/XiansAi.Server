@@ -9,6 +9,18 @@ agents:
   - name: tenant_-1
     keys:
       tenant: desc
+  - name: owner_access_1
+    keys:
+      owner_access: asc
+    background: true
+  - name: read_access_1
+    keys:
+      read_access: asc
+    background: true
+  - name: write_access_1
+    keys:
+      write_access: asc
+    background: true
 
 flow_definitions:
   - name: created_at_-1
@@ -17,12 +29,17 @@ flow_definitions:
   - name: agent_1
     keys:
       agent: asc
-  - name: workflow_type_1
+  - name: workflow_type_1_created_at_-1
     keys:
       workflow_type: asc
+      created_at: desc
   - name: updated_at_-1
     keys:
       updated_at: desc
+  - name: hash_1_workflow_type_1
+    keys:
+      hash: asc
+      workflow_type: asc
 
 conversation_message:
   - name: bot_message_lookup
@@ -54,6 +71,15 @@ conversation_message:
     keys:
       tenant_id: asc
       status: asc
+  - name: message_type_1
+    keys:
+      message_type: asc
+  - name: conversation_message_ttl
+    keys:
+      created_at: asc
+    expire_after: 180d
+    background: true
+
 
 conversation_thread:
   - name: thread_lookup
@@ -103,6 +129,10 @@ certificates:
   - name: ExpiresAt_1
     keys:
       ExpiresAt: asc
+  - name: TenantId_1_IssuedTo_1
+    keys:
+      TenantId: asc
+      IssuedTo: asc
 
 tenants:
   - name: tenant_id_1
@@ -113,6 +143,9 @@ tenants:
     keys:
       domain: asc
     unique: true
+  - name: created_by_1
+    keys:
+      created_by: asc
 
 logs:
   - name: level_1_tenant_id_1_created_at_-1_workflow_type_1_autocreated
@@ -129,6 +162,16 @@ logs:
       created_at: asc
     expire_after: 30d
     background: true
+  - name: tenant_id_1_agent_1_participant_id_1
+    keys:
+      tenant_id: asc
+      agent: asc
+      participant_id: asc
+  - name: tenant_id_1_workflow_type_1_level_1
+    keys:
+      tenant_id: asc
+      workflow_type: asc
+      level: asc
 
 user_roles:
   - name: user_id_1_tenant_id_1
@@ -150,3 +193,74 @@ api_keys:
   - name: hashed_key_idx
     keys:
       hashed_key: asc
+
+users:
+  - name: user_id_1
+    keys:
+      user_id: asc
+    unique: true
+  - name: email_1
+    keys:
+      email: asc
+    unique: true
+  - name: is_sys_admin_1
+    keys:
+      is_sys_admin: asc
+  - name: tenant_roles_tenant_approved
+    keys:
+      "tenant_roles.tenant": asc
+      "tenant_roles.is_approved": asc
+
+user_invitations:
+  - name: tenant_id_1
+    keys:
+      tenant_id: asc
+  - name: token_1
+    keys:
+      token: asc
+    unique: true
+  - name: email_1_status_1
+    keys:
+      email: asc
+      status: asc
+
+knowledge:
+  - name: version_1
+    keys:
+      version: asc
+  - name: name_1_agent_1_tenant_id_1
+    keys:
+      name: asc
+      agent: asc
+      tenant_id: asc
+
+activity_history:
+  - name: activity_id_1
+    keys:
+      activity_id: asc
+    unique: true
+  - name: workflow_id_1
+    keys:
+      workflow_id: asc
+  - name: workflow_type_1
+    keys:
+      workflow_type: asc
+  - name: started_time_1
+    keys:
+      started_time: desc
+  - name: ended_time_1
+    keys:
+      ended_time: asc
+    sparse: true
+  - name: task_queue_1
+    keys:
+      task_queue: asc
+  - name: workflow_id_1_activity_id_1
+    keys:
+      workflow_id: asc
+      activity_id: asc
+  - name: activity_history_ttl
+    keys:
+      started_time: asc
+    expire_after: 90d
+    background: true
