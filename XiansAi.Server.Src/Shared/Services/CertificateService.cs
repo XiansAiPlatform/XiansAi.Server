@@ -4,7 +4,6 @@ using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 using Features.AgentApi.Repositories;
 using Features.AgentApi.Models;
-using Shared.Utils.GenAi;
 using Shared.Utils;
 
 namespace Shared.Services;
@@ -87,6 +86,24 @@ public class CertificateService
 
     private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId, bool revokePrevious)
     {
+        // Revoke previous certificates for this user
+        if (revokePrevious)
+        {
+            var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
+            foreach (var prevCert in previousCerts)
+            {
+                if (!prevCert.IsRevoked)
+                {
+                    prevCert.IsRevoked = true;
+                    prevCert.RevokedAt = DateTime.UtcNow;
+                    await _certificateRepository.UpdateAsync(prevCert);
+                    _logger.LogInformation(
+                        "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
+                        prevCert.Thumbprint, 
+                        userId);
+                }
+            }
+        }
         // Generate new certificate
         var cert = _certificateGenerator.GenerateClientCertificate(
             name,
@@ -115,24 +132,6 @@ public class CertificateService
         {
             _logger.LogError(ex, "Failed to generate and store certificate");
             throw new Exception("Failed to generate and store certificate");
-        }
-        // Revoke previous certificates for this user
-        if (revokePrevious)
-        {
-            var previousCerts = await _certificateRepository.GetByUserAsync(_tenantContext.TenantId, userId);
-            foreach (var prevCert in previousCerts)
-            {
-                if (!prevCert.IsRevoked)
-                {
-                    prevCert.IsRevoked = true;
-                    prevCert.RevokedAt = DateTime.UtcNow;
-                    await _certificateRepository.UpdateAsync(prevCert);
-                    _logger.LogInformation(
-                        "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
-                        prevCert.Thumbprint, 
-                        userId);
-                }
-            }
         }
         _logger.LogInformation(
             "Generated new certificate. Name: {Name}, Thumbprint: {Thumbprint}, User: {UserId}", 
