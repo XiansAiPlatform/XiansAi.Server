@@ -202,7 +202,6 @@ users:
   - name: email_1
     keys:
       email: asc
-    unique: true
   - name: is_sys_admin_1
     keys:
       is_sys_admin: asc
@@ -238,7 +237,6 @@ activity_history:
   - name: activity_id_1
     keys:
       activity_id: asc
-    unique: true
   - name: workflow_id_1
     keys:
       workflow_id: asc
