@@ -4,7 +4,6 @@ using Features.AgentApi.Auth;
 using Shared.Utils.Services;
 using Shared.Repositories;
 using Shared.Auth;
-using System.Security.Permissions;
 using Shared.Utils;
 using System.Text.Json;
 

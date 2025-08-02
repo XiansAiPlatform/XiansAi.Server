@@ -13,7 +13,8 @@ namespace Shared.Utils
             JsonElement? request = null,
             string? text = null,
             string? requestId = null,
-            string? origin = null)
+            string? origin = null,
+            string? authorization = null)
         {
 
             if (messageType == MessageType.Data)
@@ -23,8 +24,10 @@ namespace Shared.Utils
                     RequestId = requestId,
                     ParticipantId = participantId,
                     WorkflowId = workflowId,
+                    Text = text,
                     Data = request?.ValueKind == JsonValueKind.Undefined ? null : request,
-                    Authorization = null
+                    Authorization = authorization,
+                    Origin = origin
                 };
             }
             else if (messageType == MessageType.Chat)
@@ -53,7 +56,7 @@ namespace Shared.Utils
                     WorkflowId = workflowId,
                     Text = resolvedText,
                     Data = data,
-                    Authorization = null,
+                    Authorization = authorization,
                     Origin = origin
                 };
             }
@@ -61,29 +64,6 @@ namespace Shared.Utils
             {
                 throw new ArgumentException($"Unsupported message type: {messageType}", nameof(messageType));
             }
-        }
-
-        // Backward compatibility methods
-        public static ChatOrDataRequest CreateInboundRequest(
-            MessageType messageType,
-            string workflowId,
-            string participantId,
-            JsonElement? request = null,
-            string? text = null,
-            string? requestId = null)
-        {
-            return CreateRequest(messageType, workflowId, participantId, request, text, requestId);
-        }
-
-        public static ChatOrDataRequest CreateSyncRequest(
-            MessageType messageType,
-            string workflow,
-            string participantId,
-            string requestId,
-            JsonElement? request = null,
-            string? text = null)
-        {
-            return CreateRequest(messageType, workflow, participantId, request, text, requestId);
         }
 
         public static string GenerateRequestId(string workflow, string participantId)

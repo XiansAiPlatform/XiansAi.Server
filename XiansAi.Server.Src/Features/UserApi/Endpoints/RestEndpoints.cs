@@ -3,7 +3,6 @@ using Shared.Utils.Services;
 using Shared.Services;
 using Shared.Auth;
 using System.Text.Json;
-using Features.UserApi.Utils;
 using Shared.Utils;
 
 namespace Features.UserApi.Endpoints;
@@ -47,7 +46,8 @@ public static class RestEndpoints
                 resolvedParticipantId,
                 request,
                 text,
-                requestId);
+                requestId,
+                tenantContext.Authorization);
 
             var result = await messageService.ProcessIncomingMessage(message, messageType);
             return result.ToHttpResult();
@@ -100,7 +100,8 @@ public static class RestEndpoints
                 resolvedParticipantId,
                 request,
                 text,
-                requestId);
+                requestId,
+                tenantContext.Authorization);
 
             // Use the sync message handler to process the complex flow
             var syncHandler = new SyncMessageHandler(messageService, pendingRequestService);
