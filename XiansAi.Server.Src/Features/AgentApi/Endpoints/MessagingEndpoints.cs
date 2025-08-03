@@ -181,10 +181,10 @@ namespace Features.AgentApi.Endpoints
             }
 
             if (string.IsNullOrEmpty(query.ThreadId)) {
-                var result = await messageService.GetThreadHistoryAsync(query.WorkflowId, query.ParticipantId, query.Page, query.PageSize, query.Scope);
+                var result = await messageService.GetThreadHistoryAsync(query.WorkflowId, query.ParticipantId, query.Page, query.PageSize, query.Scope, true);
                 return result.ToHttpResult();
             } else {
-                var result = await messageService.GetThreadHistoryAsync(query.ThreadId, query.Page, query.PageSize);
+                var result = await messageService.GetThreadHistoryAsync(query.ThreadId, query.Page, query.PageSize, query.Scope, true);
                 return result.ToHttpResult();
             }
             

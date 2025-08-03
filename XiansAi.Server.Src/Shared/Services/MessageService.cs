@@ -120,8 +120,8 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
     //Task<ServiceResult<string>> ProcessSilentHandoff(HandoffRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
 }
 
 public class MessageService : IMessageService
@@ -223,18 +223,18 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope, bool chatOnly = false)
     {
         if (page < 1 || pageSize < 1)
         {
             _logger.LogWarning("Invalid request: page {Page} and pageSize {PageSize} must be greater than 0", page, pageSize);
             return ServiceResult<List<ConversationMessage>>.BadRequest("Page and PageSize must be greater than 0");
         }
-        var messages = await _messageRepository.GetByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize);
+        var messages = await _messageRepository.GetByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize, scope, chatOnly);
         return ServiceResult<List<ConversationMessage>>.Success(messages);
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false)
     {
         try
         {
@@ -260,7 +260,7 @@ public class MessageService : IMessageService
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowId, participantId, page, pageSize, scope );
+            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowId, participantId, page, pageSize, scope, chatOnly);
 
             return ServiceResult<List<ConversationMessage>>.Success(messages);
         }
