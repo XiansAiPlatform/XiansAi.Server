@@ -144,8 +144,9 @@ public class ConversationMessageRepository : IConversationMessageRepository
             Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
         );
 
-        if (scope != null)
+        if (!string.IsNullOrEmpty(scope))
         {
+            _logger.LogDebug("Filtering messages by scope `{Scope}`", scope);
             messageFilter = Builders<ConversationMessage>.Filter.And(messageFilter, Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope));
         }
 
@@ -175,6 +176,7 @@ public class ConversationMessageRepository : IConversationMessageRepository
         {
             ConvertBsonMetadataToObject(message);
         }
+        _logger.LogDebug("Found history of {Count} messages", messages.Count);
         return messages;
     }
 
