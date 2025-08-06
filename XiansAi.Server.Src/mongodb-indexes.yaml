@@ -88,7 +88,6 @@ conversation_thread:
       workflow_id: asc
       participant_id: asc
     unique: true
-    background: true
   - name: thread_status_lookup
     keys:
       tenant_id: asc
@@ -179,7 +178,6 @@ user_roles:
       user_id: asc
       tenant_id: asc
     unique: true
-    background: true
 
 api_keys:
   - name: tenant_name_unique
