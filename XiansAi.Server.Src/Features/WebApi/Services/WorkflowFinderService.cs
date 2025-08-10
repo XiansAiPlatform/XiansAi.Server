@@ -23,6 +23,7 @@ public interface IWorkflowFinderService
 {
     Task<ServiceResult<WorkflowResponse>> GetWorkflow(string workflowId, string? runId = null);
     Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(string? status);
+    Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, int? pageSize, string? pageToken);
     Task<ServiceResult<List<WorkflowResponse>>> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName);
 }
 
@@ -112,7 +113,182 @@ public class WorkflowFinderService : IWorkflowFinderService
     }
 
     /// <summary>
-    /// Retrieves a list of workflows based on specified filters.
+    /// Retrieves a list of workflows based on specified filters with pagination support.
+    /// </summary>
+    /// <param name="status">Optional status filter for workflows.</param>
+    /// <param name="agent">Optional agent filter for workflows.</param>
+    /// <param name="pageSize">Number of items per page (default: 20, max: 100).</param>
+    /// <param name="pageToken">Token for pagination continuation.</param>
+    /// <returns>A result containing the paginated list of workflows.</returns>
+    public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, int? pageSize, string? pageToken)
+    {
+        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, PageSize: {PageSize}, PageToken: {PageToken}", 
+            status ?? "null", agent ?? "null", pageSize ?? 20, pageToken ?? "null");
+
+        // Validate page size
+        var actualPageSize = pageSize ?? 20;
+        if (actualPageSize <= 0 || actualPageSize > 100)
+        {
+            actualPageSize = 20;
+        }
+
+        try
+        {
+            var client = await _clientFactory.GetClientAsync();
+            var workflows = new List<WorkflowResponse>();
+
+            // Build query for agent filtering
+            var queryParts = new List<string>
+            {
+                $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'"
+            };
+
+            // Add agent filter if specified
+            if (!string.IsNullOrEmpty(agent))
+            {
+                // Check if user has permission to read this agent
+                var hasReadPermission = await _permissionsService.HasReadPermission(agent);
+                if (!hasReadPermission.Data)
+                {
+                    return ServiceResult<PaginatedWorkflowsResponse>.BadRequest("You do not have read permission to this agent");
+                }
+                queryParts.Add($"{Constants.AgentKey} = '{agent}'");
+            }
+            else
+            {
+                // If no specific agent, get all agents user has permission to
+                var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+                if (agents == null || agents.Count == 0)
+                {
+                    return ServiceResult<PaginatedWorkflowsResponse>.Success(new PaginatedWorkflowsResponse
+                    {
+                        Workflows = new List<WorkflowResponse>(),
+                        NextPageToken = null,
+                        PageSize = actualPageSize,
+                        HasNextPage = false,
+                        TotalCount = 0
+                    });
+                }
+                var agentNames = agents.Select(a => a.Name).ToArray();
+                queryParts.Add($"{Constants.AgentKey} in ({string.Join(",", agentNames.Select(a => "'" + a + "'"))})");
+            }
+
+            // Add status filter if specified
+            if (!string.IsNullOrEmpty(status))
+            {
+                status = status.ToLower();
+                string normalizedStatus = status switch
+                {
+                    "running" => "Running",
+                    "completed" => "Completed",
+                    "failed" => "Failed",
+                    "canceled" => "Canceled",
+                    "terminated" => "Terminated",
+                    "continuedasnew" => "ContinuedAsNew",
+                    "timedout" => "TimedOut",
+                    _ => status
+                };
+                queryParts.Add($"ExecutionStatus = '{normalizedStatus}'");
+            }
+
+            var listQuery = string.Join(" and ", queryParts);
+            _logger.LogDebug("Executing paginated workflow query: {Query}", listQuery);
+
+            // Calculate pagination parameters
+            int skipCount = 0;
+            if (!string.IsNullOrEmpty(pageToken) && int.TryParse(pageToken, out var pageNumber))
+            {
+                skipCount = (pageNumber - 1) * actualPageSize;
+            }
+
+            // To avoid fetching too many items for later pages, we'll use a reasonable limit
+            // but ensure we get enough for the requested page
+            var minRequiredItems = skipCount + actualPageSize + 1; // +1 to check for next page
+            var fetchLimit = Math.Max(minRequiredItems, 100); // Fetch at least 100 or the required amount
+            
+            var listOptions = new WorkflowListOptions
+            {
+                Limit = fetchLimit
+            };
+
+            var allWorkflows = new List<WorkflowResponse>();
+            var itemsProcessed = 0;
+            
+            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            {
+                var mappedWorkflow = MapWorkflowToResponse(workflow);
+                allWorkflows.Add(mappedWorkflow);
+                itemsProcessed++;
+                
+                // If we have enough items for this page and to determine next page, we can break early
+                if (itemsProcessed >= minRequiredItems)
+                {
+                    break;
+                }
+            }
+
+            // Apply pagination to the collected results
+            var totalResults = allWorkflows.Count;
+            var startIndex = skipCount;
+            var endIndex = Math.Min(startIndex + actualPageSize, totalResults);
+            
+            _logger.LogDebug("Pagination details: TotalResults={TotalResults}, StartIndex={StartIndex}, EndIndex={EndIndex}, PageSize={PageSize}, PageToken={PageToken}, SkipCount={SkipCount}, FetchLimit={FetchLimit}, ItemsProcessed={ItemsProcessed}", 
+                totalResults, startIndex, endIndex, actualPageSize, pageToken ?? "null", skipCount, fetchLimit, itemsProcessed);
+            
+            // Get the workflows for this page
+            workflows = allWorkflows.Skip(startIndex).Take(actualPageSize).ToList();
+            
+            // Determine if there's a next page
+            string? nextPageToken = null;
+            if (startIndex + actualPageSize < totalResults)
+            {
+                // We have more results available
+                var nextPage = string.IsNullOrEmpty(pageToken) ? 2 : (int.TryParse(pageToken, out var currentPageNum) ? currentPageNum + 1 : 2);
+                nextPageToken = nextPage.ToString();
+            }
+            else if (itemsProcessed >= fetchLimit && totalResults >= minRequiredItems - 1)
+            {
+                // We may have more results but hit our fetch limit
+                var nextPage = string.IsNullOrEmpty(pageToken) ? 2 : (int.TryParse(pageToken, out var currentPageNum) ? currentPageNum + 1 : 2);
+                nextPageToken = nextPage.ToString();
+            }
+            
+            _logger.LogInformation("Pagination result: Retrieved {ActualCount} workflows out of {TotalResults} for page {CurrentPage}, HasNextPage={HasNextPage}", 
+                workflows.Count, totalResults, pageToken ?? "1", nextPageToken != null);
+
+            // Retrieve last logs for workflows in this page
+            var logRepository = new LogRepository(_databaseService);
+            var logs = await logRepository.GetLastLogAsync(null, null);
+            foreach (var workflow in workflows)
+            {
+                var lastLog = logs.FirstOrDefault(x => x.WorkflowRunId == workflow.RunId);
+                if (lastLog != null)
+                {
+                    workflow.LastLog = lastLog;
+                }
+            }
+
+            var response = new PaginatedWorkflowsResponse
+            {
+                Workflows = workflows,
+                NextPageToken = nextPageToken,
+                PageSize = actualPageSize,
+                HasNextPage = nextPageToken != null,
+                TotalCount = null // Temporal doesn't provide total count efficiently
+            };
+
+            _logger.LogInformation("Retrieved {Count} workflows for page", workflows.Count);
+            return ServiceResult<PaginatedWorkflowsResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve paginated workflows. Error: {ErrorMessage}", ex.Message);
+            return ServiceResult<PaginatedWorkflowsResponse>.InternalServerError("Failed to retrieve workflows: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves a list of workflows based on specified filters (legacy method - maintains backward compatibility).
     /// </summary>
     /// <param name="status">Optional status filter for workflows.</param>
     /// <returns>A result containing the list of filtered workflows.</returns>

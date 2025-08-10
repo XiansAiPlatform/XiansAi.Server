@@ -8,6 +8,37 @@ public class WorkflowsWithAgent
     public required List<WorkflowResponse> Workflows { get; set; }
 }
 
+/// <summary>
+/// Represents a paginated response for workflows.
+/// </summary>
+public class PaginatedWorkflowsResponse
+{
+    /// <summary>
+    /// Gets or sets the list of workflows for the current page.
+    /// </summary>
+    public required List<WorkflowResponse> Workflows { get; set; }
+
+    /// <summary>
+    /// Gets or sets the next page token for pagination.
+    /// </summary>
+    public string? NextPageToken { get; set; }
+
+    /// <summary>
+    /// Gets or sets the current page size.
+    /// </summary>
+    public int PageSize { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether there are more pages available.
+    /// </summary>
+    public bool HasNextPage { get; set; }
+
+    /// <summary>
+    /// Gets or sets the total count of workflows (if available).
+    /// </summary>
+    public int? TotalCount { get; set; }
+}
+
 
 /// <summary>
 /// Represents a workflow response object containing workflow execution details.
