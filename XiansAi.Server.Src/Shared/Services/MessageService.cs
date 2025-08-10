@@ -342,7 +342,7 @@ public class MessageService : IMessageService
 
     private void ExtractWorkflowId(ChatOrDataRequest request)
     {
-        if (request.WorkflowId != null)
+        if (!string.IsNullOrEmpty(request.WorkflowId))
         {
             return;
         }

@@ -131,7 +131,7 @@ public class WorkflowStarterService : IWorkflowStarterService
         _logger.LogDebug("Starting workflow {WorkflowType} with options {Options}", 
             request.WorkflowType, JsonSerializer.Serialize(options));
         
-                    var client = await _clientFactory.GetClientAsync();
+        var client = await _clientFactory.GetClientAsync();
         return await client.StartWorkflowAsync(
             request.WorkflowType,
             request.Parameters ?? Array.Empty<string>(),
