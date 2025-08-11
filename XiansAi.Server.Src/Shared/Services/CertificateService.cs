@@ -147,7 +147,7 @@ public class CertificateService
         try
         {
             var certName = "XiansAi-Client-Certificate";
-            var userId = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value 
+            var userId = _tenantContext.LoggedInUser
                 ?? throw new UnauthorizedAccessException("User not authenticated");
 
             _logger.LogInformation(
