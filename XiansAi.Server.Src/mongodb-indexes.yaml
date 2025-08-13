@@ -164,12 +164,6 @@ logs:
       workflow_type: asc
       level: asc
 
-user_roles:
-  - name: user_id_1_tenant_id_1
-    keys:
-      user_id: asc
-      tenant_id: asc
-
 api_keys:
   - name: tenant_name_unique
     keys:
@@ -251,3 +245,34 @@ activity_history:
       started_time: asc
     expire_after: 90d
     background: true
+
+documents:
+  - name: tenant_id_type_key
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      type: asc
+      key: asc
+    unique: true
+    sparse: true
+  - name: type_key
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      type: asc
+      key: asc
+    sparse: true
+  - name: type_created_at
+    keys:
+      type: asc
+      created_at: desc
+  - name: type_updated_at
+    keys:
+      type: asc
+      updated_at: desc
+  - name: documents_ttl
+    keys:
+      expires_at: asc
+    expire_after: 0s
+    background: true
+    sparse: true

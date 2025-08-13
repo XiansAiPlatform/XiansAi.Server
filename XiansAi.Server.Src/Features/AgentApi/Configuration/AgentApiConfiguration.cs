@@ -20,6 +20,8 @@ public static class AgentApiConfiguration
         builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
         builder.Services.AddScoped<ILogsService, LogsService>();
         builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
+        builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+        builder.Services.AddScoped<IDocumentService, DocumentService>();
         
         // Register CertificateGenerator
         builder.Services.AddScoped<CertificateGenerator>();
@@ -67,6 +69,7 @@ public static class AgentApiConfiguration
         ConversationEndpoints.MapConversationEndpoints(app);
         LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
         SettingsEndpoints.MapSettingsEndpoints(app);
+        DocumentEndpoints.MapDocumentEndpoints(app, loggerFactory);
         
         return app;
     }
