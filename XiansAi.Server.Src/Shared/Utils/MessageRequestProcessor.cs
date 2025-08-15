@@ -32,17 +32,12 @@ namespace Shared.Utils
             }
             else if (messageType == MessageType.Chat)
             {
-                // Use text from query parameter if provided, otherwise try to extract from request body
+                // Use text from query parameter
                 string? resolvedText = text;
                 object? data = null;
 
-                if (string.IsNullOrEmpty(resolvedText) && request.HasValue)
-                {
-                    resolvedText = ExtractTextFromJsonElement(request.Value);
-                }
-
-                // If we have both text (from query) and request body, use request body as data
-                if (!string.IsNullOrEmpty(text) && request.HasValue &&
+                // Use request body as data
+                if (request.HasValue &&
                     request.Value.ValueKind != JsonValueKind.Undefined &&
                     request.Value.ValueKind != JsonValueKind.Null)
                 {
