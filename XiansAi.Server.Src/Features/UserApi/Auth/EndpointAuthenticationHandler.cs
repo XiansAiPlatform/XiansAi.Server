@@ -15,6 +15,7 @@ namespace Features.UserApi.Auth
         private readonly IApiKeyService _apiKeyService;
         private readonly ITokenServiceFactory _tokenServiceFactory;
         private readonly IUserTenantService _userTenantService;
+        private readonly IDynamicOidcValidator _dynamicOidcValidator;
 
         public EndpointAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -23,7 +24,8 @@ namespace Features.UserApi.Auth
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
             ITokenServiceFactory tokenServiceFactory,
-            IUserTenantService userTenantService)
+            IUserTenantService userTenantService,
+            IDynamicOidcValidator dynamicOidcValidator)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<EndpointAuthenticationHandler>();
@@ -31,6 +33,7 @@ namespace Features.UserApi.Auth
             _apiKeyService = apiKeyService;
             _tokenServiceFactory = tokenServiceFactory;
             _userTenantService = userTenantService;
+            _dynamicOidcValidator = dynamicOidcValidator;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -120,23 +123,18 @@ namespace Features.UserApi.Auth
                         }
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
-                            // Treat as JWT
-                            var tokenService = _tokenServiceFactory.GetTokenService();
-                            var jwtResult = await tokenService.ProcessToken(accessToken);
-                            var userId = jwtResult.userId;
-
-                            if (!jwtResult.success || string.IsNullOrEmpty(userId))
+                            // Treat as JWT - validate using dynamic OIDC per-tenant rules
+                            var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
+                            if (!validation.success || string.IsNullOrEmpty(validation.canonicalUserId))
                             {
-                                _logger.LogWarning("No user Id found in the JWT Token");
-                                return AuthenticateResult.Fail("No user Id found in the JWT Token");
+                                _logger.LogWarning("JWT validation failed: {Error}", validation.error);
+                                return AuthenticateResult.Fail(validation.error ?? "JWT validation failed");
                             }
-                            else
-                            {
-                                _tenantContext.LoggedInUser = userId;
-                            }
+                            var userId = validation.canonicalUserId;
+                            _tenantContext.LoggedInUser = userId;
 
-                            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
-                            var tenantIds = userTenants?.Data ?? new List<string>();
+                            var tenantIds = new List<string>();
+                            tenantIds.Add(tenantId);
 
                             if (string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
                             {

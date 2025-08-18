@@ -3,6 +3,8 @@ using Features.WebApi.Repositories;
 using Features.WebApi.Services;
 using XiansAi.Server.Features.WebApi.Endpoints;
 using XiansAi.Server.Features.WebApi.Services;
+using Shared.Repositories;
+using Shared.Services;
 
 namespace Features.WebApi.Configuration;
 
@@ -27,6 +29,11 @@ public static class WebApiConfiguration
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
+
+        // OIDC config services for admin endpoints
+        builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
+        builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
+        builder.Services.AddScoped<ISecureEncryptionService, SecureEncryptionService>();
       
 
         return builder;
@@ -49,6 +56,7 @@ public static class WebApiConfiguration
         RoleManagementEndpoints.MapRoleManagementEndpoints(app);
         UserTenantEndpoints.MapUserTenantEndpoints(app);
         UserManagementEndpoints.MapUserManagementEndpoints(app);
+        OidcConfigEndpoints.MapOidcConfigEndpoints(app);
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
         

@@ -28,6 +28,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.1.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.4" />
     <PackageReference Include="Microsoft.Extensions.Logging.AzureAppServices" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Identity.Web" Version="3.13.0" />
     <PackageReference Include="MongoDB.Driver" Version="3.4.0" />
     <PackageReference Include="OpenAI" Version="2.1.0" />
     <PackageReference Include="Pipelines.Sockets.Unofficial" Version="2.2.8" />
