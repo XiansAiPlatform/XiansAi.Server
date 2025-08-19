@@ -54,6 +54,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
 
             // Select provider rule based on tenant configuration
             OidcProviderRule? providerRule = null;
+            string? providerName = null;
             if (rules?.Providers != null && rules.Providers.Count > 0)
             {
                 IEnumerable<KeyValuePair<string, OidcProviderRule>> candidates = rules.Providers;
@@ -63,10 +64,17 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 }
 
                 var normIssuer = NormalizeUrl(issuer);
-                providerRule = candidates.Select(kv => kv.Value).FirstOrDefault(pr =>
-                    (!string.IsNullOrEmpty(pr.Issuer) && string.Equals(NormalizeUrl(pr.Issuer), normIssuer, StringComparison.OrdinalIgnoreCase)) ||
-                    (!string.IsNullOrEmpty(pr.Authority) && (normIssuer.StartsWith(NormalizeUrl(pr.Authority), StringComparison.OrdinalIgnoreCase) || NormalizeUrl(pr.Authority).StartsWith(normIssuer, StringComparison.OrdinalIgnoreCase)))
-                );
+                foreach (var kv in candidates)
+                {
+                    var pr = kv.Value;
+                    if ((!string.IsNullOrEmpty(pr.Issuer) && string.Equals(NormalizeUrl(pr.Issuer), normIssuer, StringComparison.OrdinalIgnoreCase)) ||
+                        (!string.IsNullOrEmpty(pr.Authority) && (normIssuer.StartsWith(NormalizeUrl(pr.Authority), StringComparison.OrdinalIgnoreCase) || NormalizeUrl(pr.Authority).StartsWith(normIssuer, StringComparison.OrdinalIgnoreCase))))
+                    {
+                        providerRule = pr;
+                        providerName = kv.Key;
+                        break;
+                    }
+                }
 
                 if (providerRule == null && rules.AllowedProviders != null && rules.AllowedProviders.Any())
                 {
@@ -209,7 +217,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 _logger.LogDebug("User Authenticated with user ID: {userId}" , userId);
             }
 
-            var canonical = issuer + "|" + userId;
+            var canonical = (providerName ?? issuer) + "|" + userId;
             return (true, canonical, null);
         }
         catch (SecurityTokenException ex)

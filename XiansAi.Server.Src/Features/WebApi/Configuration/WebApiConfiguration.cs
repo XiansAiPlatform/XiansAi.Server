@@ -28,13 +28,7 @@ public static class WebApiConfiguration
 
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
-        builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
-
-        // OIDC config services for admin endpoints
-        builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
-        builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
-        builder.Services.AddScoped<ISecureEncryptionService, SecureEncryptionService>();
-      
+        builder.Services.AddScoped<IActivityRepository, ActivityRepository>();      
 
         return builder;
     }
