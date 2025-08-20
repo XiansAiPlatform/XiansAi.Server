@@ -5,7 +5,6 @@ using Shared.Providers.Auth;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using YamlDotNet.Core.Tokens;
 
 namespace Features.UserApi.Auth
 {
@@ -15,8 +14,7 @@ namespace Features.UserApi.Auth
         private readonly ILogger<WebsocketAuthenticationHandler> _logger;
         private readonly IConfiguration _configuration;
         private readonly IApiKeyService _apiKeyService;
-        private readonly ITokenServiceFactory _tokenServiceFactory;
-        private readonly IUserTenantService _userTenantService;
+        private readonly IDynamicOidcValidator _dynamicOidcValidator;
 
 
         public WebsocketAuthenticationHandler(
@@ -26,16 +24,14 @@ namespace Features.UserApi.Auth
             IConfiguration configuration,
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
-            ITokenServiceFactory tokenServiceFactory,
-            IUserTenantService userTenantService)
+            IDynamicOidcValidator dynamicOidcValidator)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
             _tenantContext = tenantContext;
             _configuration = configuration;
             _apiKeyService = apiKeyService;
-            _tokenServiceFactory = tokenServiceFactory;
-            _userTenantService = userTenantService;
+            _dynamicOidcValidator = dynamicOidcValidator;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -135,29 +131,18 @@ namespace Features.UserApi.Auth
                                 _logger.LogInformation("Skipping JWT validation for /ws/tenant/chat endpoint");
                                 return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
                             }
-                            // Treat as JWT
-                            var tokenService = _tokenServiceFactory.GetTokenService();
-                            var jwtResult = await tokenService.ProcessToken(accessToken);
-                            var userId = jwtResult.userId;
-
-                            if (!jwtResult.success || string.IsNullOrEmpty(userId) )
+                            // Treat as JWT - validate using dynamic OIDC per-tenant rules
+                            var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
+                            if (!validation.success || string.IsNullOrEmpty(validation.canonicalUserId))
                             {
-                                _logger.LogInformation("No user Id found in the JWT Token");
-                                return AuthenticateResult.Fail("No user Id found in the JWT Token");
+                                _logger.LogWarning("JWT validation failed: {Error}", validation.error);
+                                return AuthenticateResult.Fail(validation.error ?? "JWT validation failed");
                             }
-                            else
-                            {
-                                _tenantContext.LoggedInUser = userId;
-                            }
+                            var userId = validation.canonicalUserId;
+                            _tenantContext.LoggedInUser = userId;
 
-                            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
-                            var tenantIds = userTenants?.Data ?? new List<string>();
-
-                            if(string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
-                            {
-                                _logger.LogWarning("JWT authentication failed, tenant mismatch");
-                                return AuthenticateResult.Fail("JWT authentication failed, tenant mismatch");
-                            }
+                            var tenantIds = new List<string>();
+                            tenantIds.Add(tenantId);
 
                             _tenantContext.TenantId = tenantId;
                             _tenantContext.AuthorizedTenantIds = tenantIds;

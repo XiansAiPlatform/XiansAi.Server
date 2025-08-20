@@ -6,6 +6,7 @@ using Features.UserApi.Services;
 using Features.UserApi.Endpoints;
 using Features.UserApi.Repositories;
 using Shared.Services;
+using Shared.Repositories;
 
 namespace Features.UserApi.Configuration
 {
@@ -26,6 +27,12 @@ namespace Features.UserApi.Configuration
             
             // Add SignalR services
             AddSignalRServices(builder.Services);
+
+            // OIDC per-tenant config storage and encryption
+            builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
+            builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
+            builder.Services.AddScoped<ISecureEncryptionService, SecureEncryptionService>();
+            builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
 
             return builder;
         }

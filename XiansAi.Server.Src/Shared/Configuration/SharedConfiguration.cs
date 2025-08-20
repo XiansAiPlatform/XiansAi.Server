@@ -98,7 +98,7 @@ public static class SharedConfiguration
         
         // Register TimeProvider for DI
         builder.Services.AddSingleton(TimeProvider.System);
-        
+
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
 
@@ -114,6 +114,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
+        builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
 
         // Register Utility service
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();
@@ -129,6 +130,8 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
         builder.Services.AddScoped<IUserTenantService, UserTenantService>();
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+        builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
+        builder.Services.AddScoped<ISecureEncryptionService, SecureEncryptionService>();
 
         return builder;
     }
