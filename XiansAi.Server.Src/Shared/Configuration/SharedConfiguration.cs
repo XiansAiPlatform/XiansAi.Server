@@ -103,8 +103,7 @@ public static class SharedConfiguration
         builder.Services.AddHttpContextAccessor();
 
         // Register repositories
-        builder.Services.AddScoped<IConversationThreadRepository, ConversationThreadRepository>();
-        builder.Services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
+        builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();

@@ -1,10 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Features.UserApi.Auth;
-using Features.UserApi.Websocket;
 using Features.UserApi.Services;
 using Features.UserApi.Endpoints;
-using Features.UserApi.Repositories;
+
 using Shared.Services;
 using Shared.Repositories;
 
@@ -20,7 +19,6 @@ namespace Features.UserApi.Configuration
             builder.Services.AddSingleton<IMessageEventPublisher, MessageEventPublisher>();
             builder.Services.AddSingleton<MongoChangeStreamService>();
             builder.Services.AddHostedService(sp => sp.GetRequiredService<MongoChangeStreamService>());
-            builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
             
             // Add PendingRequestService for sync messaging support
             builder.Services.AddSingleton<IPendingRequestService, PendingRequestService>();

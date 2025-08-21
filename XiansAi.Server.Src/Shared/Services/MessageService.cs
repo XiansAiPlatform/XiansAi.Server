@@ -130,22 +130,19 @@ public class MessageService : IMessageService
     private readonly ILogger<MessageService> _logger;
     private readonly ITenantContext _tenantContext;
 
-    private readonly IConversationThreadRepository _threadRepository;
-    private readonly IConversationMessageRepository _messageRepository;
+    private readonly IConversationRepository _conversationRepository;
     private readonly IWorkflowSignalService _workflowSignalService;
 
         public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
-        IConversationThreadRepository threadRepository,
-        IConversationMessageRepository messageRepository,
+        IConversationRepository conversationRepository,
         IWorkflowSignalService workflowSignalService
         )
     {
         _logger = logger;
         _tenantContext = tenantContext;
-        _threadRepository = threadRepository;
-        _messageRepository = messageRepository;
+        _conversationRepository = conversationRepository;
         _workflowSignalService = workflowSignalService;
     }
 
@@ -182,7 +179,7 @@ public class MessageService : IMessageService
             };
 
             // This will either create a new thread or return the existing one
-            var targetThreadId = await _threadRepository.CreateOrGetAsync(targetThread);
+            var targetThreadId = await _conversationRepository.CreateOrGetThreadIdAsync(targetThread);
 
             var messageRequest = new ChatOrDataRequest
             {
@@ -230,7 +227,7 @@ public class MessageService : IMessageService
             _logger.LogWarning("Invalid request: page {Page} and pageSize {PageSize} must be greater than 0", page, pageSize);
             return ServiceResult<List<ConversationMessage>>.BadRequest("Page and PageSize must be greater than 0");
         }
-        var messages = await _messageRepository.GetByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize, scope, chatOnly);
+        var messages = await _conversationRepository.GetMessagesByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize, scope, chatOnly);
         return ServiceResult<List<ConversationMessage>>.Success(messages);
     }
 
@@ -260,7 +257,7 @@ public class MessageService : IMessageService
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _messageRepository.GetByAgentAndParticipantAsync(_tenantContext.TenantId, workflowId, participantId, page, pageSize, scope, chatOnly);
+            var messages = await _conversationRepository.GetMessagesByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize, scope);
 
             return ServiceResult<List<ConversationMessage>>.Success(messages);
         }
@@ -407,7 +404,7 @@ public class MessageService : IMessageService
             Status = ConversationThreadStatus.Active
         };
 
-        var threadId = await _threadRepository.CreateOrGetAsync(thread);
+        var threadId = await _conversationRepository.CreateOrGetThreadIdAsync(thread);
         return threadId;
     }
     
@@ -439,8 +436,8 @@ public class MessageService : IMessageService
 
         };
 
-        // This call will modify message.Metadata within the 'message' instance to be a BsonDocument
-        message.Id = await _messageRepository.CreateAndUpdateThreadAsync(message, request.ThreadId, DateTime.UtcNow);
+        // Save the message with transaction support
+        message.Id = await _conversationRepository.SaveMessageAsync(message);
         _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, request.ThreadId);
 
         return message;
