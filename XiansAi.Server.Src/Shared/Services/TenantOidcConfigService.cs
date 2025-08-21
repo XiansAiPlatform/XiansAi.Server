@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Security.Cryptography;
-using Microsoft.Extensions.Configuration;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -58,7 +57,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:TenantOidcSecretKey"] ?? string.Empty;
         if (string.IsNullOrWhiteSpace(_uniqueSecret))
         {
-            throw new InvalidOperationException("EncryptionKeys:UniqueSecrets:TenantOidcSecretKey is not configured");
+            _logger.LogWarning("EncryptionKeys:UniqueSecrets:TenantOidcSecretKey is not configured. Using the base secret value.");
+            var baseSecret = configuration["EncryptionKeys:BaseSecret"];
+            if (string.IsNullOrWhiteSpace(baseSecret))
+            {
+                throw new InvalidOperationException("EncryptionKeys:BaseSecret is not configured");
+            }
+            _uniqueSecret = baseSecret;
         }
     }
 
