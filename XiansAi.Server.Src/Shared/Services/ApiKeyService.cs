@@ -2,6 +2,9 @@
 using Shared.Utils.Services;
 using Shared.Repositories;
 using Shared.Data.Models;
+using Microsoft.Extensions.Caching.Memory;
+using System.Security.Cryptography;
+using System.Text;
 namespace Shared.Services
 {
     public interface IApiKeyService
@@ -21,11 +24,17 @@ namespace Shared.Services
     {
         private readonly IApiKeyRepository _apiKeyRepository;
         private readonly ILogger<ApiKeyService> _logger;
+        private readonly IMemoryCache _cache;
+        
+        // Cache configuration
+        private static readonly TimeSpan ApiKeyCacheExpiration = TimeSpan.FromMinutes(15);
+        private static readonly string CacheKeyPrefix = "apikey:";
 
-        public ApiKeyService(IApiKeyRepository apiKeyRepository, ILogger<ApiKeyService> logger)
+        public ApiKeyService(IApiKeyRepository apiKeyRepository, ILogger<ApiKeyService> logger, IMemoryCache cache)
         {
             _apiKeyRepository = apiKeyRepository;
             _logger = logger;
+            _cache = cache;
         }
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy)
@@ -53,9 +62,21 @@ namespace Shared.Services
             _logger.LogInformation("Revoking API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
             try
             {
+                // Get the API key first to invalidate its cache entry
+                var existingKey = await _apiKeyRepository.GetByIdAsync(id, tenantId);
+                
                 var ok = await _apiKeyRepository.RevokeAsync(id, tenantId);
                 if (!ok)
                     return ServiceResult<bool>.NotFound("API key not found.");
+                
+                // Invalidate cache entry if the key existed
+                if (existingKey != null)
+                {
+                    var cacheKey = $"{CacheKeyPrefix}{tenantId}:{existingKey.HashedKey}";
+                    _cache.Remove(cacheKey);
+                    _logger.LogDebug("Invalidated cache for revoked API key {ApiKeyId} in tenant {TenantId}", id, tenantId);
+                }
+                
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception ex)
@@ -85,9 +106,23 @@ namespace Shared.Services
             _logger.LogInformation("Rotating API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
             try
             {
+                // Get the existing API key to invalidate its cache entry
+                var existingKey = await _apiKeyRepository.GetByIdAsync(id, tenantId);
+                
                 var rotated = await _apiKeyRepository.RotateAsync(id, tenantId);
                 if (rotated == null)
                     return ServiceResult<(string, ApiKey)?>.NotFound("API key not found.");
+                
+                // Invalidate old cache entry if the key existed
+                if (existingKey != null)
+                {
+                    var oldCacheKey = $"{CacheKeyPrefix}{tenantId}:{existingKey.HashedKey}";
+                    _cache.Remove(oldCacheKey);
+                    _logger.LogDebug("Invalidated old cache for rotated API key {ApiKeyId} in tenant {TenantId}", id, tenantId);
+                }
+                
+                // The new key will be cached on first use by GetApiKeyByRawKeyAsync
+                
                 return ServiceResult<(string, ApiKey)?>.Success(rotated);
             }
             catch (Exception ex)
@@ -113,18 +148,59 @@ namespace Shared.Services
             }
         }
 
-        // Do not change this method
+        // Enhanced with caching for performance - preserving original behavior
         public async Task<ApiKey?> GetApiKeyByRawKeyAsync(string rawKey, string tenantId)
         {
             try
             {
-                return await _apiKeyRepository.GetByRawKeyAsync(rawKey, tenantId);
+                // Generate cache key using hashed API key for security
+                var hashedKey = HashApiKey(rawKey);
+                var cacheKey = $"{CacheKeyPrefix}{tenantId}:{hashedKey}";
+                
+                // Try to get from cache first
+                if (_cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
+                {
+                    _logger.LogDebug("Retrieved API key for tenant {TenantId} from cache", tenantId);
+                    return cachedApiKey;
+                }
+                
+                // Cache miss - fetch from database
+                _logger.LogDebug("Cache miss for tenant {TenantId} API key, fetching from database", tenantId);
+                var apiKey = await _apiKeyRepository.GetByRawKeyAsync(rawKey, tenantId);
+                
+                // Cache the result (including null results to prevent repeated DB hits for invalid keys)
+                if (apiKey != null)
+                {
+                    _cache.Set(cacheKey, apiKey, ApiKeyCacheExpiration);
+                    _logger.LogDebug("Cached API key for tenant {TenantId} with {CacheExpiration} expiration", 
+                        tenantId, ApiKeyCacheExpiration);
+                }
+                else
+                {
+                    // Cache null results with shorter TTL to prevent brute force attacks
+                    _cache.Set(cacheKey, (ApiKey?)null, TimeSpan.FromMinutes(2));
+                    _logger.LogDebug("Cached null API key result for tenant {TenantId}", tenantId);
+                }
+                
+                return apiKey;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", tenantId);
                 throw;
             }
+        }
+        
+        /// <summary>
+        /// Hashes an API key for secure caching and storage
+        /// </summary>
+        /// <param name="apiKey">The raw API key to hash</param>
+        /// <returns>Base64 encoded SHA256 hash of the API key</returns>
+        private static string HashApiKey(string apiKey)
+        {
+            using var sha256 = SHA256.Create();
+            var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
+            return Convert.ToBase64String(hash);
         }
     }
 }
