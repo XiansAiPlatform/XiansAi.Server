@@ -169,11 +169,16 @@ public interface IConversationRepository
     Task<string> CreateOrGetThreadIdAsync(ConversationThread thread);
     Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null);
     Task<bool> DeleteThreadAsync(string threadId);
+    Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
+
+
     
     // Message operations
     Task<string> SaveMessageAsync(ConversationMessage message);
     Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
     Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null);
+    Task<bool> DeleteByThreadIdAsync(string tenantId, string threadId);
+
 }
 
 /// <summary>
@@ -622,6 +627,42 @@ public class ConversationRepository : IConversationRepository
         }
 
         return messages;
+    }
+
+    public async Task<bool> DeleteByThreadIdAsync(string tenantId, string threadId)
+    {
+        try
+        {
+            var filter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
+            );
+
+            var result = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _messagesCollection.DeleteManyAsync(filter),
+                _logger,
+                operationName: "DeleteMessagesByThreadId");
+
+            _logger.LogInformation("Deleted {DeletedCount} messages for thread {ThreadId} in tenant {TenantId}", 
+                result.DeletedCount, threadId, tenantId);
+            
+            return result.DeletedCount >= 0; // Return true even if no messages were found
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting messages for thread {ThreadId} in tenant {TenantId}", threadId, tenantId);
+            throw;
+        }
+    }
+
+    public async Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId)
+    {
+        var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
+        if (thread == null)
+        {
+            throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
+        }
+        return thread.Id;
     }
 
     #endregion
