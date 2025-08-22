@@ -84,7 +84,7 @@ public static class RestEndpoints
             {
                 return Results.BadRequest(errorMessage);
             }
-            
+
             var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
 
             // Generate unique request ID for correlation
@@ -137,7 +137,30 @@ public static class RestEndpoints
         .WithSummary("Get conversation history with caching")
         .WithDescription("Retrieves conversation history with optimized database queries and caching");
 
+        // Delete thread endpoint
+        restGroup.MapDelete("/thread", async (
+            [FromQuery] string workflow,
+            [FromQuery] string participantId,
+            [FromServices] IMessageService messageService,
+            [FromServices] ITenantContext tenantContext) =>
+        {
+            // Validate request parameters
+            if (string.IsNullOrEmpty(workflow))
+            {
+                return Results.BadRequest("Workflow is required parameter");
+            }
+
+            var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
+            var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
+
+            var result = await messageService.DeleteThreadAsync(workflowId, resolvedParticipantId);
+            return result.ToHttpResult();
+        })
+        .WithName("DeleteThread")
+        .WithSummary("Delete conversation thread")
+        .WithDescription("Deletes a conversation thread and all its associated messages for the specified workflow and participant");
+
+        
 
     }
 }
-

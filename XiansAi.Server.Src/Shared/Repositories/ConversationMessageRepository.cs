@@ -115,6 +115,7 @@ public interface IConversationMessageRepository
     Task<string> CreateAndUpdateThreadAsync(ConversationMessage message, string threadId, DateTime timestamp);
     Task<List<ConversationMessage>> GetByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
     Task<List<ConversationMessage>> GetByAgentAndParticipantAsync(string tenantId, string workflowId, string participantId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
+   Task<bool> DeleteByThreadIdAsync(string tenantId, string threadId);
 }
 
 public class ConversationMessageRepository : IConversationMessageRepository
@@ -446,6 +447,32 @@ public class ConversationMessageRepository : IConversationMessageRepository
             default:
                 // For any other types, convert to string as fallback
                 return bsonValue.ToString();
+        }
+    }
+
+    public async Task<bool> DeleteByThreadIdAsync(string tenantId, string threadId)
+    {
+        try
+        {
+            var filter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
+            );
+
+            var result = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _collection.DeleteManyAsync(filter),
+                _logger,
+                operationName: "DeleteMessagesByThreadId");
+
+            _logger.LogInformation("Deleted {DeletedCount} messages for thread {ThreadId} in tenant {TenantId}", 
+                result.DeletedCount, threadId, tenantId);
+            
+            return result.DeletedCount >= 0; // Return true even if no messages were found
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting messages for thread {ThreadId} in tenant {TenantId}", threadId, tenantId);
+            throw;
         }
     }
 

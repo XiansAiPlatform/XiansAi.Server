@@ -122,6 +122,7 @@ public interface IMessageService
     //Task<ServiceResult<string>> ProcessSilentHandoff(HandoffRequest request);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
+    Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
 }
 
 public class MessageService : IMessageService
@@ -444,6 +445,59 @@ public class MessageService : IMessageService
         _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, request.ThreadId);
 
         return message;
+    }
+
+    public async Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId)
+    {
+        try
+        {
+            _logger.LogInformation("Attempting to delete thread for workflowId {WorkflowId}, participant {ParticipantId}", 
+                workflowId, participantId);
+
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
+            {
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
+                    workflowId, participantId);
+                return ServiceResult<bool>.BadRequest("WorkflowId and ParticipantId are required");
+            }
+
+            // First, find the thread ID using workflowId and participantId
+            string threadId;
+            try
+            {
+                threadId = await _threadRepository.GetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}", 
+                    workflowId, participantId, _tenantContext.TenantId);
+                return ServiceResult<bool>.NotFound("Thread not found");
+            }
+
+            // Delete all messages in the thread first
+            await _messageRepository.DeleteByThreadIdAsync(_tenantContext.TenantId, threadId);
+            _logger.LogInformation("Deleted messages for thread {ThreadId}", threadId);
+
+            // Delete the thread
+            var result = await _threadRepository.DeleteAsync(threadId);
+            
+            if (!result)
+            {
+                _logger.LogWarning("Failed to delete thread {ThreadId} for workflowId {WorkflowId}, participant {ParticipantId}", 
+                    threadId, workflowId, participantId);
+                return ServiceResult<bool>.InternalServerError("Failed to delete thread");
+            }
+
+            _logger.LogInformation("Successfully deleted thread {ThreadId} for workflowId {WorkflowId}, participant {ParticipantId}", 
+                threadId, workflowId, participantId);
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}", 
+                workflowId, participantId);
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread: " + ex.Message);
+        }
     }
 
 }

@@ -18,6 +18,7 @@ namespace Features.UserApi.Websocket
             public const string ConnectionError = "ConnectionError";
             public const string ThreadHistory = "ThreadHistory";
             public const string InboundProcessed = "InboundProcessed";
+            public const string ThreadDeleted = "ThreadDeleted";
         }
 
         // Error messages
@@ -352,6 +353,94 @@ namespace Features.UserApi.Websocket
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error in SendInboundMessage on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.UnexpectedError, cancellationToken);
+            }
+        }
+
+        public async Task DeleteThread(string workflow, string participantId)
+        {
+            var cancellationToken = Context.ConnectionAborted;
+            
+            // Input validation
+            if (string.IsNullOrWhiteSpace(workflow))
+            {
+                _logger.LogWarning("DeleteThread called with null or empty workflow on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.WorkflowRequired, cancellationToken);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(participantId))
+            {
+                _logger.LogWarning("DeleteThread called with null or empty participantId on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.ParticipantIdRequired, cancellationToken);
+                return;
+            }
+
+            try
+            {
+                _logger.LogInformation("DeleteThread requested for workflow {Workflow}, participantId {ParticipantId} on connection {ConnectionId}", 
+                    workflow, participantId, Context.ConnectionId);
+
+                // Get tenant context using the consistent helper method
+                var tenantContext = GetScopedTenantContext();
+                if (!IsValidTenantContext(tenantContext))
+                {
+                    _logger.LogError("Invalid tenant context for DeleteThread call on connection {ConnectionId}. TenantId: {TenantId}, User: {UserId}", 
+                        Context.ConnectionId, tenantContext.TenantId, tenantContext.LoggedInUser);
+                    await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidTenantContext, cancellationToken);
+                    return;
+                }
+
+                // Get message service using the consistent helper method
+                var messageService = GetScopedMessageService();
+
+                // Resolve workflow ID (participantId is already validated as non-empty)
+                var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
+
+                // Call the delete service
+                var result = await messageService.DeleteThreadAsync(workflowId, participantId);
+
+                if (result.IsSuccess)
+                {
+                    _logger.LogInformation("Thread deleted successfully for workflow {Workflow}, participantId {ParticipantId} on connection {ConnectionId}", 
+                        workflow, participantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync(SignalRMethods.ThreadDeleted, result.Data, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to delete thread for workflow {Workflow}, participantId {ParticipantId} on connection {ConnectionId}: {ErrorMessage}", 
+                        workflow, participantId, Context.ConnectionId, result.ErrorMessage);
+                    await Clients.Caller.SendAsync(SignalRMethods.Error, result.ErrorMessage, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("DeleteThread cancelled for connection {ConnectionId}", Context.ConnectionId);
+                // Don't send response for cancelled operations
+            }
+            catch (ArgumentNullException ex)
+            {
+                _logger.LogError(ex, "Configuration error in DeleteThread on connection {ConnectionId} - missing required service", Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.ServiceConfigurationError, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogError(ex, "Service state error in DeleteThread on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.ServiceTemporarilyUnavailable, cancellationToken);
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex, "Timeout error in DeleteThread on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.RequestTimeout, cancellationToken);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid input in DeleteThread on connection {ConnectionId}", Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidRequestData, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in DeleteThread on connection {ConnectionId}", Context.ConnectionId);
                 await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.UnexpectedError, cancellationToken);
             }
         }
