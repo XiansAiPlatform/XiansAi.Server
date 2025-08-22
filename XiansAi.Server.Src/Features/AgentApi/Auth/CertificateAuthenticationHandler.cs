@@ -225,7 +225,9 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         }
 
         // Set up TenantContext
+        _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", userId, UserType.AgentApiKey);
         _tenantContext.TenantId = tenantId;
+        _tenantContext.UserType = UserType.AgentApiKey;
         _tenantContext.LoggedInUser = userId;
         _tenantContext.UserRoles = new[] { "Agent" }; // Agents get the "Agent" role
         _tenantContext.AuthorizedTenantIds = new[] { tenantId }; // Agents can only access their own tenant

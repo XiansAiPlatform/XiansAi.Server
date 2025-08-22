@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.SignalR;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
-using Shared.Utils.Temporal;
 
 namespace Features.UserApi.Websocket
 {
@@ -42,6 +41,7 @@ namespace Features.UserApi.Websocket
             public const string FailedToSubscribe = "Failed to subscribe to agent";
             public const string FailedToUnsubscribe = "Failed to unsubscribe from agent";
             public const string InternalServerError = "Internal server error";
+            public const string InvalidParticipantId = "Invalid participantId. Mismatch between participantId and logged in user";
         }
 
         // Validation constants
@@ -59,6 +59,25 @@ namespace Features.UserApi.Websocket
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        private bool IsValidUser(string participantId, ITenantContext tenantContext) {
+
+            // if the user type is UserApiKey, then we simply trust the participantId
+            if (tenantContext.UserType == UserType.UserApiKey) {
+                return true;
+            }
+            // if the user type is UserToken, then we need to check if the participantId is the same as the logged in user
+            if (tenantContext.LoggedInUser != null) {
+                //split the userId by |
+                var userIdParts = tenantContext.LoggedInUser.Split('|');
+                if (userIdParts.Length > 1) {
+                    return userIdParts[1].Equals(participantId, StringComparison.OrdinalIgnoreCase);
+                } else if (userIdParts.Length == 1) {
+                    return userIdParts[0].Equals(participantId, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            return false;
         }
 
         private ITenantContext GetScopedTenantContext()
@@ -131,8 +150,8 @@ namespace Features.UserApi.Websocket
                     return;
                 }
 
-                _logger.LogInformation("SignalR Connection established for user: {UserId}, Tenant: {TenantId}, Connection: {ConnectionId}",
-                    tenantContext.LoggedInUser, tenantContext.TenantId, Context.ConnectionId);
+                _logger.LogInformation("SignalR Connection established for user: {UserId}, UserType: {UserType}, Tenant: {TenantId}, Connection: {ConnectionId}",
+                    tenantContext.LoggedInUser, tenantContext.UserType, tenantContext.TenantId, Context.ConnectionId);
 
                 await base.OnConnectedAsync();
             }
@@ -174,6 +193,12 @@ namespace Features.UserApi.Websocket
         }
 
         public async Task GetThreadHistory(string workflow, string participantId, int page, int pageSize){
+            if (!IsValidUser(participantId, GetScopedTenantContext())) {
+                _logger.LogWarning("GetThreadHistory called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                    participantId, Context.ConnectionId);
+                await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
+                return;
+            }
             await GetScopedThreadHistory(workflow, participantId, page, pageSize, null);
         }
 
@@ -218,6 +243,14 @@ namespace Features.UserApi.Websocket
                     _logger.LogError("Invalid tenant context for GetThreadHistory call on connection {ConnectionId}. TenantId: {TenantId}, User: {UserId}", 
                         Context.ConnectionId, tenantContext.TenantId, tenantContext.LoggedInUser);
                     await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidTenantContext, cancellationToken);
+                    return;
+                }
+
+
+                if (!IsValidUser(participantId, tenantContext)) {
+                    _logger.LogWarning("GetScopedThreadHistory called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                        participantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
                     return;
                 }
 
@@ -294,8 +327,8 @@ namespace Features.UserApi.Websocket
                 }
 
                 // Debug: Log tenant context details
-                _logger.LogDebug("SendInboundMessage: Using tenant context - TenantId: {TenantId}, User: {UserId}, Connection: {ConnectionId}",
-                    tenantContext.TenantId, tenantContext.LoggedInUser, Context.ConnectionId);
+                _logger.LogDebug("SendInboundMessage: Using tenant context - TenantId: {TenantId}, User: {UserId}, UserType: {UserType}, Connection: {ConnectionId}",
+                    tenantContext.TenantId, tenantContext.LoggedInUser, tenantContext.UserType, Context.ConnectionId);
 
                 // Validate message type enum
                 if (!Enum.TryParse<MessageType>(messageType, out var messageTypeEnum))
@@ -303,6 +336,13 @@ namespace Features.UserApi.Websocket
                     _logger.LogWarning("SendInboundMessage called with invalid messageType '{MessageType}' on connection {ConnectionId}", 
                         messageType, Context.ConnectionId);
                     await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidMessageType, cancellationToken);
+                    return;
+                }
+
+                if (!IsValidUser(request.ParticipantId, tenantContext)) {
+                    _logger.LogWarning("SendInboundMessage called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                        request.ParticipantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
                     return;
                 }
 
@@ -388,6 +428,13 @@ namespace Features.UserApi.Websocket
                     _logger.LogError("Invalid tenant context for DeleteThread call on connection {ConnectionId}. TenantId: {TenantId}, User: {UserId}", 
                         Context.ConnectionId, tenantContext.TenantId, tenantContext.LoggedInUser);
                     await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidTenantContext, cancellationToken);
+                    return;
+                }
+
+                if (!IsValidUser(participantId, tenantContext)) {
+                    _logger.LogWarning("DeleteThread called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                        participantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
                     return;
                 }
 
@@ -484,6 +531,13 @@ namespace Features.UserApi.Websocket
                     return;
                 }
 
+                if (!IsValidUser(participantId, tenantContext)) {
+                    _logger.LogWarning("SubscribeToAgent called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                        participantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
+                    return;
+                }
+
                 var workflowId = workflow;
                 if (!workflow.StartsWith(tenantContext.TenantId + ":"))
                 {
@@ -549,6 +603,13 @@ namespace Features.UserApi.Websocket
                     _logger.LogWarning("UnsubscribeFromAgent: User {UserId} attempted to unsubscribe from different tenant {RequestedTenantId} vs {ActualTenantId} on connection {ConnectionId}",
                         tenantContext.LoggedInUser, tenantId, tenantContext.TenantId, Context.ConnectionId);
                     await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.AccessDeniedInvalidTenant, cancellationToken);
+                    return;
+                }
+
+                if (!IsValidUser(participantId, tenantContext)) {
+                    _logger.LogWarning("UnsubscribeFromAgent called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                        participantId, Context.ConnectionId);
+                    await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
                     return;
                 }
 

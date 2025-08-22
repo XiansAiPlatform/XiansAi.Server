@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
+using XiansAi.Server.Utils;
 
 namespace Shared.Services;
 
@@ -47,13 +48,19 @@ public class TenantOidcConfigService : ITenantOidcConfigService
     private readonly ITenantOidcConfigRepository _repository;
     private readonly ISecureEncryptionService _encryption;
     private readonly ILogger<TenantOidcConfigService> _logger;
+    private readonly ObjectCache _cache;
     private readonly string _uniqueSecret;
+    
+    // Cache configuration
+    private static readonly TimeSpan CacheExpiration = TimeSpan.FromHours(1);
+    private static readonly string CacheKeyPrefix = "tenant_oidc_config:";
 
-    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration)
+    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration, ObjectCache cache)
     {
         _repository = repository;
         _encryption = encryption;
         _logger = logger;
+        _cache = cache;
         _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:TenantOidcSecretKey"] ?? string.Empty;
         if (string.IsNullOrWhiteSpace(_uniqueSecret))
         {
@@ -74,8 +81,65 @@ public class TenantOidcConfigService : ITenantOidcConfigService
 
         try
         {
+            // Try to get from cache first
+            var cacheKey = GetCacheKey(tenantId);
+            var cachedRules = await _cache.GetAsync<TenantOidcRules>(cacheKey);
+            
+            if (cachedRules != null)
+            {
+                _logger.LogDebug("Retrieved OIDC config for tenant {TenantId} from cache", tenantId);
+                return ServiceResult<TenantOidcRules?>.Success(cachedRules);
+            }
+
+            // Check for cached null result (when tenant has no config)
+            var nullCacheKey = GetNullCacheKey(tenantId);
+            var hasNullResult = await _cache.GetAsync<bool?>(nullCacheKey);
+            if (hasNullResult == true)
+            {
+                _logger.LogDebug("Retrieved null OIDC config for tenant {TenantId} from cache", tenantId);
+                return ServiceResult<TenantOidcRules?>.Success(null);
+            }
+
+            // Cache miss - fetch from database
+            _logger.LogDebug("Cache miss for tenant {TenantId} OIDC config, fetching from database", tenantId);
+            var result = await GetForTenantFromDatabaseAsync(tenantId);
+            
+            // Cache the result based on success/failure
+            if (result.IsSuccess)
+            {
+                if (result.Data != null)
+                {
+                    await _cache.SetAsync(cacheKey, result.Data, CacheExpiration);
+                    _logger.LogDebug("Cached OIDC config for tenant {TenantId} with {CacheExpiration} expiration", 
+                        tenantId, CacheExpiration);
+                }
+                else
+                {
+                    // Cache null results to avoid repeated database hits for non-existent configs
+                    await _cache.SetAsync(nullCacheKey, true, CacheExpiration);
+                    _logger.LogDebug("Cached null OIDC config for tenant {TenantId} with {CacheExpiration} expiration", 
+                        tenantId, CacheExpiration);
+                }
+            }
+            // Don't cache error results - let them retry on next request
+            
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting cached OIDC config for tenant {TenantId}", tenantId);
+            // Fallback to database on cache errors
+            return await GetForTenantFromDatabaseAsync(tenantId);
+        }
+    }
+
+    private async Task<ServiceResult<TenantOidcRules?>> GetForTenantFromDatabaseAsync(string tenantId)
+    {
+        try
+        {
             var doc = await _repository.GetByTenantIdAsync(tenantId);
             if (doc == null) return ServiceResult<TenantOidcRules?>.Success(null);
+            
             try
             {
                 var json = _encryption.Decrypt(doc.EncryptedPayload, _uniqueSecret);
@@ -157,6 +221,11 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                 doc.UpdatedBy = actorUserId;
             }
             await _repository.UpsertAsync(doc);
+            
+            // Invalidate cache after successful update
+            await InvalidateCacheAsync(tenantId);
+            _logger.LogDebug("Invalidated cache for tenant {TenantId} after upsert", tenantId);
+            
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -174,6 +243,14 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         try
         {
             var removed = await _repository.DeleteAsync(tenantId);
+            
+            if (removed)
+            {
+                // Invalidate cache after successful deletion
+                await InvalidateCacheAsync(tenantId);
+                _logger.LogDebug("Invalidated cache for tenant {TenantId} after deletion", tenantId);
+            }
+            
             return removed ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");
         }
         catch (Exception ex)
@@ -209,6 +286,51 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         {
             _logger.LogError(ex, "Error listing all OIDC configs");
             return ServiceResult<List<(string tenantId, TenantOidcRules? rules)>>.InternalServerError("Failed to list configs");
+        }
+    }
+
+    /// <summary>
+    /// Generates a cache key for a tenant's OIDC configuration
+    /// </summary>
+    /// <param name="tenantId">The tenant ID</param>
+    /// <returns>The cache key</returns>
+    private static string GetCacheKey(string tenantId)
+    {
+        return $"{CacheKeyPrefix}{tenantId}";
+    }
+
+    /// <summary>
+    /// Generates a cache key for tracking null results for a tenant
+    /// </summary>
+    /// <param name="tenantId">The tenant ID</param>
+    /// <returns>The null cache key</returns>
+    private static string GetNullCacheKey(string tenantId)
+    {
+        return $"{CacheKeyPrefix}{tenantId}:null";
+    }
+
+    /// <summary>
+    /// Invalidates the cache for a specific tenant
+    /// </summary>
+    /// <param name="tenantId">The tenant ID</param>
+    /// <returns>Task representing the async operation</returns>
+    private async Task InvalidateCacheAsync(string tenantId)
+    {
+        try
+        {
+            var cacheKey = GetCacheKey(tenantId);
+            var nullCacheKey = GetNullCacheKey(tenantId);
+            
+            // Remove both the data cache and null result cache
+            await Task.WhenAll(
+                _cache.RemoveAsync(cacheKey),
+                _cache.RemoveAsync(nullCacheKey)
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to invalidate cache for tenant {TenantId}", tenantId);
+            // Don't throw - cache invalidation failure shouldn't break the main operation
         }
     }
 }

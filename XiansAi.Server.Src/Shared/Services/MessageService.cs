@@ -471,7 +471,7 @@ public class MessageService : IMessageService
             }
 
             // Delete all messages in the thread first
-            await _conversationRepository.DeleteByThreadIdAsync(_tenantContext.TenantId, threadId);
+            await _conversationRepository.DeleteMessagesByThreadIdAsync(threadId);
             _logger.LogInformation("Deleted messages for thread {ThreadId}", threadId);
 
             // Delete the thread

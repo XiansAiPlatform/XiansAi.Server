@@ -156,7 +156,9 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         
         // Set user info to tenant context
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
+        _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", loggedInUser, UserType.DevToken);
         _tenantContext.LoggedInUser = loggedInUser ?? throw new InvalidOperationException("Logged in user not found");
+        _tenantContext.UserType = UserType.DevToken;
 
         // If tenant validation is not required, we're done
         if (!requirement.Options.RequireTenant)
@@ -270,7 +272,9 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             }
 
             // get tenant IDs from DB collection
+            _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", tokenUserId, UserType.UserToken);
             _tenantContext.LoggedInUser = tokenUserId;
+            _tenantContext.UserType = UserType.UserToken;
             var userTenants = await _userTenantService.GetTenantsForCurrentUser();
             var tokenTenantIds = userTenants?.Data ?? new List<string>();
 

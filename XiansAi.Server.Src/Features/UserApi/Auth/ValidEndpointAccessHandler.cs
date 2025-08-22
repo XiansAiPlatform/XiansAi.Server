@@ -22,7 +22,7 @@ namespace Features.UserApi.Auth
             AuthorizationHandlerContext context,
             ValidEndpointAccessRequirement requirement)
         {
-            var loginedUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var loggedInUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var tenantId = context.User.FindFirst("TenantId")?.Value;
 
             if (_tenantContext == null)
@@ -39,18 +39,20 @@ namespace Features.UserApi.Auth
                 return Task.CompletedTask;
             }
 
-            if (string.IsNullOrEmpty(loginedUser))
+            if (string.IsNullOrEmpty(loggedInUser))
             {
-                _logger.LogWarning("No LoginedUser");
+                _logger.LogWarning("No Logged In User");
                 context.Fail();
                 return Task.CompletedTask;
             }
 
-            if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(loginedUser))
+            if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(loggedInUser))
             {
                 try
                 {
-                    _tenantContext.LoggedInUser = loginedUser;
+                    _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", loggedInUser, UserType.UserToken);
+                    _tenantContext.LoggedInUser = loggedInUser;
+                    _tenantContext.UserType = UserType.UserToken;
                     _tenantContext.TenantId = tenantId;
                     _tenantContext.AuthorizedTenantIds = new[] { tenantId };
 

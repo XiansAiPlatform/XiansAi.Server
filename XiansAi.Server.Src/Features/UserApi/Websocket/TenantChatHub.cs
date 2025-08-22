@@ -76,6 +76,7 @@ namespace Features.UserApi.Websocket
             _tempTenantContext.UserRoles = _tenantContext.UserRoles;
             _tempTenantContext.TenantId = _tenantContext.TenantId;
             _tempTenantContext.LoggedInUser = _tenantContext.LoggedInUser;
+            _tempTenantContext.UserType = _tenantContext.UserType;
             _tempTenantContext.AuthorizedTenantIds = _tenantContext.AuthorizedTenantIds;
 
 

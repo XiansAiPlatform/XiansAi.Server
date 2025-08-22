@@ -101,7 +101,9 @@ namespace Features.UserApi.Auth
 
                             if (tenantId == apiKey.TenantId)
                             {
+                                _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", apiKey.CreatedBy, UserType.UserApiKey);
                                 _tenantContext.LoggedInUser = apiKey.CreatedBy;
+                                _tenantContext.UserType = UserType.UserApiKey;
                                 _tenantContext.TenantId = apiKey.TenantId;
                                 _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
 
@@ -139,10 +141,14 @@ namespace Features.UserApi.Auth
                                 return AuthenticateResult.Fail(validation.error ?? "JWT validation failed");
                             }
                             var userId = validation.canonicalUserId;
+                            _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", userId, UserType.UserToken);
                             _tenantContext.LoggedInUser = userId;
+                            _tenantContext.UserType = UserType.UserToken;
 
-                            var tenantIds = new List<string>();
-                            tenantIds.Add(tenantId);
+                            var tenantIds = new List<string>
+                            {
+                                tenantId
+                            };
 
                             _tenantContext.TenantId = tenantId;
                             _tenantContext.AuthorizedTenantIds = tenantIds;

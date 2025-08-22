@@ -7,7 +7,6 @@ using Shared.Data;
 using Shared.Utils;
 using Shared.Auth;
 using Shared.Services;
-using Microsoft.Extensions.Configuration;
 
 namespace Shared.Repositories;
 
@@ -164,20 +163,17 @@ public class ConversationThread
 public interface IConversationRepository
 {
     // Thread operations
-    Task<ConversationThreadInfo> CreateOrGetThreadAsync(string workflowId, string participantId);
-    Task<ConversationThreadInfo?> GetThreadInfoAsync(string workflowId, string participantId);
     Task<string> CreateOrGetThreadIdAsync(ConversationThread thread);
     Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null);
     Task<bool> DeleteThreadAsync(string threadId);
     Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
 
 
-    
     // Message operations
     Task<string> SaveMessageAsync(ConversationMessage message);
     Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
     Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null);
-    Task<bool> DeleteByThreadIdAsync(string tenantId, string threadId);
+    Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
 
 }
 
@@ -237,140 +233,6 @@ public class ConversationRepository : IConversationRepository
     }
 
     #region Thread Operations
-
-    public async Task<ConversationThreadInfo> CreateOrGetThreadAsync(string workflowId, string participantId)
-    {
-        // Fast lookup using optimized composite index
-        var filter = Builders<ConversationThread>.Filter.And(
-            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, _tenantContext.TenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowId, workflowId),
-            Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
-        );
-
-        // Project only required fields to reduce memory usage
-        var projection = Builders<ConversationThread>.Projection
-            .Include(x => x.Id)
-            .Include(x => x.TenantId)
-            .Include(x => x.WorkflowId)
-            .Include(x => x.WorkflowType)
-            .Include(x => x.ParticipantId)
-            .Include(x => x.CreatedAt)
-            .Include(x => x.UpdatedAt);
-
-        var existingThread = await _threadsCollection
-            .Find(filter)
-            .Project<ConversationThread>(projection)
-            .FirstOrDefaultAsync();
-
-        if (existingThread != null)
-        {
-            return new ConversationThreadInfo
-            {
-                Id = existingThread.Id,
-                TenantId = existingThread.TenantId,
-                WorkflowId = existingThread.WorkflowId,
-                WorkflowType = existingThread.WorkflowType,
-                ParticipantId = existingThread.ParticipantId,
-                CreatedAt = existingThread.CreatedAt,
-                UpdatedAt = existingThread.UpdatedAt ?? existingThread.CreatedAt,
-                IsNew = false
-            };
-        }
-
-        var workflow = new WorkflowIdentifier(workflowId, _tenantContext);
-        var workflowType = workflow.WorkflowType;
-
-        var newThread = new ConversationThread
-        {
-            TenantId = _tenantContext.TenantId,
-            WorkflowId = workflowId,
-            WorkflowType = workflowType,
-            Agent = workflow.AgentName,
-            ParticipantId = participantId,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedBy = _tenantContext.LoggedInUser,
-            Status = ConversationThreadStatus.Active
-        };
-
-        try
-        {
-            await _threadsCollection.InsertOneAsync(newThread);
-            
-            return new ConversationThreadInfo
-            {
-                Id = newThread.Id,
-                TenantId = newThread.TenantId,
-                WorkflowId = newThread.WorkflowId,
-                WorkflowType = newThread.WorkflowType,
-                ParticipantId = newThread.ParticipantId,
-                CreatedAt = newThread.CreatedAt,
-                UpdatedAt = newThread.UpdatedAt,
-                IsNew = true
-            };
-        }
-        catch (MongoBulkWriteException ex) when (ex.WriteErrors.Any(e => e.Code == 11000))
-        {
-            // Handle race condition - another thread created it
-            var raceConditionThread = await _threadsCollection
-                .Find(filter)
-                .Project<ConversationThread>(projection)
-                .FirstOrDefaultAsync();
-
-            if (raceConditionThread != null)
-            {
-                return new ConversationThreadInfo
-                {
-                    Id = raceConditionThread.Id,
-                    TenantId = raceConditionThread.TenantId,
-                    WorkflowId = raceConditionThread.WorkflowId,
-                    WorkflowType = raceConditionThread.WorkflowType,
-                    ParticipantId = raceConditionThread.ParticipantId,
-                    CreatedAt = raceConditionThread.CreatedAt,
-                    UpdatedAt = raceConditionThread.UpdatedAt ?? raceConditionThread.CreatedAt,
-                    IsNew = false
-                };
-            }
-            throw;
-        }
-    }
-
-    public async Task<ConversationThreadInfo?> GetThreadInfoAsync(string workflowId, string participantId)
-    {
-        var filter = Builders<ConversationThread>.Filter.And(
-            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, _tenantContext.TenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.WorkflowId, workflowId),
-            Builders<ConversationThread>.Filter.Eq(x => x.ParticipantId, participantId)
-        );
-
-        var projection = Builders<ConversationThread>.Projection
-            .Include(x => x.Id)
-            .Include(x => x.TenantId)
-            .Include(x => x.WorkflowId)
-            .Include(x => x.WorkflowType)
-            .Include(x => x.ParticipantId)
-            .Include(x => x.CreatedAt)
-            .Include(x => x.UpdatedAt);
-
-        var thread = await _threadsCollection
-            .Find(filter)
-            .Project<ConversationThread>(projection)
-            .FirstOrDefaultAsync();
-
-        if (thread == null) return null;
-
-        return new ConversationThreadInfo
-        {
-            Id = thread.Id,
-            TenantId = thread.TenantId,
-            WorkflowId = thread.WorkflowId,
-            WorkflowType = thread.WorkflowType,
-            ParticipantId = thread.ParticipantId,
-            CreatedAt = thread.CreatedAt,
-            UpdatedAt = thread.UpdatedAt ?? thread.CreatedAt,
-            IsNew = false
-        };
-    }
 
     public async Task<string> CreateOrGetThreadIdAsync(ConversationThread thread)
     {
@@ -629,12 +491,11 @@ public class ConversationRepository : IConversationRepository
         return messages;
     }
 
-    public async Task<bool> DeleteByThreadIdAsync(string tenantId, string threadId)
+    public async Task<bool> DeleteMessagesByThreadIdAsync(string threadId)
     {
         try
         {
             var filter = Builders<ConversationMessage>.Filter.And(
-                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
                 Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
             );
 
@@ -643,14 +504,14 @@ public class ConversationRepository : IConversationRepository
                 _logger,
                 operationName: "DeleteMessagesByThreadId");
 
-            _logger.LogInformation("Deleted {DeletedCount} messages for thread {ThreadId} in tenant {TenantId}", 
-                result.DeletedCount, threadId, tenantId);
+            _logger.LogInformation("Deleted {DeletedCount} messages for thread {ThreadId}", 
+                result.DeletedCount, threadId);
             
             return result.DeletedCount >= 0; // Return true even if no messages were found
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting messages for thread {ThreadId} in tenant {TenantId}", threadId, tenantId);
+            _logger.LogError(ex, "Error deleting messages for thread {ThreadId}", threadId);
             throw;
         }
     }

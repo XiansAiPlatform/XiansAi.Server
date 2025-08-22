@@ -2,8 +2,18 @@ using Shared.Utils.Temporal;
 
 namespace Shared.Auth;
 
+    public enum UserType
+    {
+        DevToken,
+        UserToken,
+        UserApiKey,
+        AgentApiKey,
+        Unknown
+    }
+
     public interface ITenantContext
     {
+        UserType UserType { get; set; }
         string TenantId { get; set; }   
         string LoggedInUser { get; set; }
         string[] UserRoles { get; set; }
@@ -17,17 +27,15 @@ namespace Shared.Auth;
     public class TenantContext : ITenantContext
     {
         private readonly IConfiguration _configuration;
-        private readonly ILogger<TenantContext> _logger;
- 
+        public UserType UserType { get; set; } = UserType.Unknown;
         public required string TenantId { get; set; }
         public required string LoggedInUser { get; set; }
         public required string[] UserRoles { get; set; } = Array.Empty<string>();
         public IEnumerable<string> AuthorizedTenantIds { get; set; } = new List<string>();
         public string? Authorization { get; set; }
-        public TenantContext(IConfiguration configuration, ILogger<TenantContext> logger)
+        public TenantContext(IConfiguration configuration)
         {
             _configuration = configuration;
-            _logger = logger;
         }
 
         public TemporalConfig GetTemporalConfig() 
@@ -46,11 +54,6 @@ namespace Shared.Auth;
             if (temporalConfig == null) {
                 throw new InvalidOperationException($"Temporal configuration for tenant {TenantId} not found");
             }
-
-            // if (string.IsNullOrEmpty(temporalConfig.CertificateBase64)) 
-            //     throw new InvalidOperationException($"CertificateBase64 is required for tenant {TenantId}");
-            // if (string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64)) 
-            //     throw new InvalidOperationException($"PrivateKeyBase64 is required for tenant {TenantId}");
             if (temporalConfig.FlowServerUrl == null) 
                 throw new InvalidOperationException($"FlowServerUrl is required for tenant {TenantId}");
             

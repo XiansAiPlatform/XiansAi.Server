@@ -9,8 +9,6 @@ namespace Features.UserApi.Auth
         private readonly ILogger<ValidWebsocketAccessHandler> _logger;
         private readonly ITenantContext _tenantContext;
         public ValidWebsocketAccessHandler(
-            IHttpContextAccessor httpContextAccessor,
-            IConfiguration configuration,
             ITenantContext tenantContext,
             ILogger<ValidWebsocketAccessHandler> logger)
         {
@@ -22,7 +20,8 @@ namespace Features.UserApi.Auth
             AuthorizationHandlerContext context,
             ValidWebsocketAccessRequirement requirement)
         {
-            var loginedUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            var loggedInUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var tenantId = context.User.FindFirst("TenantId")?.Value;
 
             if (_tenantContext == null)
@@ -39,18 +38,19 @@ namespace Features.UserApi.Auth
                 return Task.CompletedTask;
             }
 
-            if (string.IsNullOrEmpty(loginedUser))
+            if (string.IsNullOrEmpty(loggedInUser))
             {
-                _logger.LogWarning("No LoginedUser");
+                _logger.LogWarning("No Logged In User");
                 context.Fail();
                 return Task.CompletedTask;
             }
 
-            if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(loginedUser))
+            if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(loggedInUser))
             {
                 try
                 {
-                    _tenantContext.LoggedInUser = loginedUser;
+                    _logger.LogDebug("Setting tenant context with user ID: {userId}", loggedInUser);
+                    _tenantContext.LoggedInUser = loggedInUser;
                     _tenantContext.TenantId = tenantId;
                     _tenantContext.AuthorizedTenantIds = new[] { tenantId };
 

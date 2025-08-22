@@ -179,10 +179,12 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             {
                 return (false, null, "Missing subject claim");
             }
-            else
+            else if(_tenantContext.UserType != UserType.UserApiKey)
             {
+                _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", userId, UserType.UserToken);
                 // Set tenant context
                 _tenantContext.LoggedInUser = userId;
+                _tenantContext.UserType = UserType.UserToken;
                 _tenantContext.Authorization = token;
                 _tenantContext.TenantId = tenantId;
                 _tenantContext.AuthorizedTenantIds = new[] { tenantId };
