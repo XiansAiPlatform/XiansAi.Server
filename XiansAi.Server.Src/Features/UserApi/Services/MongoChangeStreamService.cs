@@ -7,6 +7,7 @@ using Features.UserApi.Websocket;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
 using Shared.Services;
+using Microsoft.Extensions.Configuration;
 
 
 namespace Features.UserApi.Services
@@ -18,13 +19,17 @@ namespace Features.UserApi.Services
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MongoChangeStreamService> _logger;
         private readonly IMessageEventPublisher _messageEventPublisher;
+        private readonly ISecureEncryptionService _encryptionService;
+        private readonly string _uniqueSecret;
 
         public MongoChangeStreamService(
             IHubContext<ChatHub> hubContext,
             IHubContext<TenantChatHub> tenantHubContext,
             IServiceScopeFactory scopeFactory,
             ILogger<MongoChangeStreamService> logger,
-            IMessageEventPublisher messageEventPublisher
+            IMessageEventPublisher messageEventPublisher,
+            ISecureEncryptionService encryptionService,
+            IConfiguration configuration
             )
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -32,6 +37,20 @@ namespace Features.UserApi.Services
             _hubContext = hubContext;
             _tenantHubContext = tenantHubContext;
             _messageEventPublisher = messageEventPublisher ?? throw new ArgumentNullException(nameof(messageEventPublisher));
+            _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
+            
+            // Get the unique secret for conversation messages
+            _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:ConversationMessageKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(_uniqueSecret))
+            {
+                _logger.LogWarning("EncryptionKeys:UniqueSecrets:ConversationMessageKey is not configured. Using the base secret value.");
+                var baseSecret = configuration["EncryptionKeys:BaseSecret"];
+                if (string.IsNullOrWhiteSpace(baseSecret))
+                {
+                    throw new InvalidOperationException("EncryptionKeys:BaseSecret is not configured");
+                }
+                _uniqueSecret = baseSecret;
+            }
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -93,6 +112,9 @@ namespace Features.UserApi.Services
 
                             // Convert BSON metadata to native .NET objects before sending via SignalR
                             ConvertBsonMetadataToObjectInternal(message);
+                            
+                            // Decrypt the message text
+                            DecryptMessageText(message);
 
                             var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
                             var tenantGroupId = message.WorkflowId + message.TenantId;
@@ -266,6 +288,81 @@ namespace Features.UserApi.Services
                     _logger.LogWarning("MongoChangeStreamService: Unhandled BSON type {BsonType} in metadata conversion. Converting to string.", bsonValue.BsonType);
                     return bsonValue.ToString();
             }
+        }
+
+        private void DecryptMessageText(ConversationMessage message)
+        {
+            if (!string.IsNullOrEmpty(message.Text))
+            {
+                try
+                {
+                    _logger.LogDebug("DecryptMessageText: Processing message {MessageId} with text length {Length}, first 20 chars: {Text}", 
+                        message.Id, message.Text.Length, message.Text.Length > 20 ? message.Text.Substring(0, 20) : message.Text);
+
+                    // First check if this looks like it could be encrypted data
+                    if (!IsLikelyEncrypted(message.Text))
+                    {
+                        // Plain text message - no decryption needed
+                        _logger.LogDebug("Message {MessageId} appears to be plain text, skipping decryption. Text: {Text}", message.Id, message.Text);
+                        return;
+                    }
+
+                    _logger.LogDebug("Message {MessageId} appears to be encrypted, attempting decryption", message.Id);
+
+                    // Try to decrypt
+                    var messageSpecificSecret = $"{_uniqueSecret}";
+                    var decryptedText = _encryptionService.Decrypt(message.Text, messageSpecificSecret);
+                    message.Text = decryptedText;
+                    _logger.LogInformation("Successfully decrypted message {MessageId}. Decrypted text: {Text}", message.Id, decryptedText);
+                }
+                catch (FormatException)
+                {
+                    // Not a valid Base64 string - this is plain text
+                    _logger.LogDebug("Message {MessageId} is not encrypted (invalid Base64), treating as plain text", message.Id);
+                    // Leave message.Text as-is
+                }
+                catch (System.Security.Cryptography.AuthenticationTagMismatchException)
+                {
+                    // This might be Base64 data that wasn't encrypted by our system
+                    _logger.LogWarning("Message {MessageId} appears to be Base64 but decryption failed (authentication tag mismatch). This might be legacy data or corrupted encryption.", message.Id);
+                    // Leave message.Text as-is
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Unexpected error decrypting message {MessageId}. Text will remain as-is.", message.Id);
+                    // Leave message.Text as-is
+                }
+            }
+        }
+
+        private bool IsLikelyEncrypted(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return false;
+
+            // Our encrypted messages are Base64 encoded and have specific length characteristics
+            // Minimum length check - encrypted data with nonce + tag + minimal content
+            if (text.Length < 44) // 12 (nonce) + 16 (tag) + some content, base64 encoded
+                return false;
+
+            // Check if it's valid Base64 and has the right length
+            if (text.Length % 4 != 0)
+                return false;
+
+            // Quick check for Base64 character set without being too strict
+            // Allow for some common plain text patterns that would indicate it's not encrypted
+            if (text.Contains(' ') || text.Contains('\n') || text.Contains('\t'))
+                return false;
+
+            // Check for common message patterns that indicate plain text
+            var lowerText = text.ToLowerInvariant();
+            if (lowerText.StartsWith("hello") || lowerText.StartsWith("hi") || 
+                lowerText.StartsWith("test") || lowerText.StartsWith("help") ||
+                lowerText.Contains("http://") || lowerText.Contains("https://"))
+                return false;
+
+            // If we got here, it might be encrypted
+            return true;
         }
     }
 }

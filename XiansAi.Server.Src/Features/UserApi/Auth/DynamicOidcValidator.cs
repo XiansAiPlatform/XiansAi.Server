@@ -4,10 +4,10 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using Microsoft.Identity.Web;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Json;
+using Shared.Auth;
 
 namespace Features.UserApi.Auth;
 
@@ -20,12 +20,17 @@ public class DynamicOidcValidator : IDynamicOidcValidator
 {
     private readonly ITenantOidcConfigService _configService;
     private readonly ILogger<DynamicOidcValidator> _logger;
+    private readonly ITenantContext _tenantContext;
     private static readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _oidcManagers = new();
 
-    public DynamicOidcValidator(ITenantOidcConfigService configService, ILogger<DynamicOidcValidator> logger)
+    public DynamicOidcValidator(
+        ITenantOidcConfigService configService, 
+        ILogger<DynamicOidcValidator> logger,
+        ITenantContext tenantContext)
     {
         _configService = configService;
         _logger = logger;
+        _tenantContext = tenantContext;
     }
 
     public async Task<(bool success, string? canonicalUserId, string? error)> ValidateAsync(string tenantId, string token)
@@ -117,9 +122,9 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             var tokenHandler = new JwtSecurityTokenHandler();
             tokenHandler.MapInboundClaims = false;
             tokenHandler.InboundClaimTypeMap.Clear();
-            tokenHandler.OutboundClaimTypeMap.Clear(); 
+            tokenHandler.OutboundClaimTypeMap.Clear();
 
-            
+
             SecurityToken validatedToken;
             var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out validatedToken);
 
@@ -135,7 +140,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             // Scope check if configured
             if (!string.IsNullOrWhiteSpace(providerRule.Scope))
             {
-                var tokenScope = principal.Claims.FirstOrDefault(c => c.Type == "scope")?.Value??
+                var tokenScope = principal.Claims.FirstOrDefault(c => c.Type == "scope")?.Value ??
                 principal.Claims.FirstOrDefault(c => c.Type == "scp")?.Value;
                 if (string.IsNullOrWhiteSpace(tokenScope))
                 {
@@ -158,8 +163,8 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 foreach (var check in providerRule.AdditionalClaims)
                 {
                     var value = principal.Claims.FirstOrDefault(c => c.Type == check.Claim)?.Value;
-                        //?? principal.Claims.FirstOrDefault(c => c.Type == ClaimConstants.TenantId)?.Value
-                        //?? principal.Claims.FirstOrDefault(c => c.Type == ClaimConstants.Tid)?.Value;
+                    //?? principal.Claims.FirstOrDefault(c => c.Type == ClaimConstants.TenantId)?.Value
+                    //?? principal.Claims.FirstOrDefault(c => c.Type == ClaimConstants.Tid)?.Value;
                     if (!EvaluateClaim(value, check))
                     {
                         return (false, null, $"Claim check failed: {check.Claim}");
@@ -168,45 +173,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             }
 
             // Canonical user id: iss|<id>. Prefer 'sub', then 'oid', then configured/user-friendly fallbacks
-            var userId = principal.Claims.FirstOrDefault(c => c.Type == "sub")?.Value
-                         ?? principal.Claims.FirstOrDefault(c => c.Type == "oid")?.Value
-                         ?? principal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
-
-            if (string.IsNullOrEmpty(userId))
-            {
-                // Allow provider configuration to specify preferred claim(s)
-                IEnumerable<string> configuredClaims = Enumerable.Empty<string>();
-                if (providerRule.ProviderSpecificSettings != null)
-                {
-                    if (providerRule.ProviderSpecificSettings.TryGetValue("userIdClaim", out var single))
-                    {
-                        var s = single?.ToString();
-                        if (!string.IsNullOrWhiteSpace(s)) configuredClaims = new[] { s! };
-                    }
-                    else if (providerRule.ProviderSpecificSettings.TryGetValue("userIdClaims", out var list))
-                    {
-                        var s = list?.ToString();
-                        if (!string.IsNullOrWhiteSpace(s))
-                        {
-                            configuredClaims = s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                        }
-                    }
-                }
-
-                var fallbackClaims = configuredClaims.Any()
-                    ? configuredClaims
-                    : new[] { "preferred_username", "email", "upn", "nameid", "name" };
-
-                foreach (var claimType in fallbackClaims)
-                {
-                    var val = principal.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.OrdinalIgnoreCase))?.Value;
-                    if (!string.IsNullOrWhiteSpace(val))
-                    {
-                        userId = val;
-                        break;
-                    }
-                }
-            }
+            var userId = GetUserId(providerRule, principal);
 
             if (string.IsNullOrWhiteSpace(userId))
             {
@@ -214,7 +181,12 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             }
             else
             {
-                _logger.LogDebug("User Authenticated with user ID: {userId}" , userId);
+                // Set tenant context
+                _tenantContext.LoggedInUser = userId;
+                _tenantContext.Authorization = token;
+                _tenantContext.TenantId = tenantId;
+                _tenantContext.AuthorizedTenantIds = new[] { tenantId };
+                _logger.LogDebug("User Authenticated with user ID: {userId}", userId);
             }
 
             var canonical = (providerName ?? issuer) + "|" + userId;
@@ -232,6 +204,46 @@ public class DynamicOidcValidator : IDynamicOidcValidator
         }
     }
 
+    private static string? GetUserId(OidcProviderRule providerRule, ClaimsPrincipal principal)
+    {
+        string? userId = null;
+
+        // Allow provider configuration to specify preferred claim(s)
+        IEnumerable<string> configuredClaims = Enumerable.Empty<string>();
+        if (providerRule.ProviderSpecificSettings != null)
+        {
+            if (providerRule.ProviderSpecificSettings.TryGetValue("userIdClaim", out var single))
+            {
+                var s = single?.ToString();
+                if (!string.IsNullOrWhiteSpace(s)) configuredClaims = new[] { s! };
+            }
+            else if (providerRule.ProviderSpecificSettings.TryGetValue("userIdClaims", out var list))
+            {
+                var s = list?.ToString();
+                if (!string.IsNullOrWhiteSpace(s))
+                {
+                    configuredClaims = s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                }
+            }
+        }
+
+        var fallbackClaims = configuredClaims.Any()
+            ? configuredClaims
+            : ["sub", "oid", ClaimTypes.NameIdentifier, "preferred_username", "email", "upn", "nameid", "name" ];
+
+        foreach (var claimType in fallbackClaims)
+        {
+            var val = principal.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.OrdinalIgnoreCase))?.Value;
+            if (!string.IsNullOrWhiteSpace(val))
+            {
+                userId = val;
+                break;
+            }
+        }
+
+        return userId;
+    }
+
     private static string CombineUrl(string baseUrl, string path)
     {
         if (!baseUrl.EndsWith("/")) baseUrl += "/";
@@ -239,7 +251,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
     }
 
     private static string NormalizeUrl(string url) => url?.TrimEnd('/') ?? string.Empty;
-    
+
     private static ConfigurationManager<OpenIdConnectConfiguration> GetOrCreateConfigurationManager(string metadataAddress, bool requireHttps)
     {
         return _oidcManagers.GetOrAdd(metadataAddress, address =>

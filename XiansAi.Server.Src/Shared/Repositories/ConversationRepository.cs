@@ -6,6 +6,8 @@ using System.Text.Json;
 using Shared.Data;
 using Shared.Utils;
 using Shared.Auth;
+using Shared.Services;
+using Microsoft.Extensions.Configuration;
 
 namespace Shared.Repositories;
 
@@ -196,18 +198,37 @@ public class ConversationRepository : IConversationRepository
     private readonly IMongoDatabase _database;
     private readonly ILogger<ConversationRepository> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly ISecureEncryptionService _encryptionService;
+    private readonly string _uniqueSecret;
 
     public ConversationRepository(
         IDatabaseService databaseService, 
         ILogger<ConversationRepository> logger, 
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ISecureEncryptionService encryptionService,
+        IConfiguration configuration)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
+        
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _database = database;
         _messagesCollection = database.GetCollection<ConversationMessage>("conversation_message");
         _threadsCollection = database.GetCollection<ConversationThread>("conversation_thread");
+        
+        // Get the unique secret for conversation messages
+        _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:ConversationMessageKey"] ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_uniqueSecret))
+        {
+            _logger.LogWarning("EncryptionKeys:UniqueSecrets:ConversationMessageKey is not configured. Using the base secret value.");
+            var baseSecret = configuration["EncryptionKeys:BaseSecret"];
+            if (string.IsNullOrWhiteSpace(baseSecret))
+            {
+                throw new InvalidOperationException("EncryptionKeys:BaseSecret is not configured");
+            }
+            _uniqueSecret = baseSecret;
+        }
     }
 
     #region Thread Operations
@@ -450,6 +471,22 @@ public class ConversationRepository : IConversationRepository
         message.CreatedAt = now;
         message.UpdatedAt = now;
         
+        // Encrypt the Text property if it's not null or empty
+        if (!string.IsNullOrEmpty(message.Text))
+        {
+            try
+            {
+                // Use a combination of tenant ID and message ID as the unique secret
+                var messageSpecificSecret = $"{_uniqueSecret}";
+                message.Text = _encryptionService.Encrypt(message.Text, messageSpecificSecret);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to encrypt message text for message {MessageId}", message.Id);
+                throw new InvalidOperationException("Failed to encrypt message text", ex);
+            }
+        }
+        
         // Convert data to BsonDocument if needed
         if (message.Data != null)
         {
@@ -519,6 +556,7 @@ public class ConversationRepository : IConversationRepository
         // Project only the fields we need
         var projection = Builders<ConversationMessage>.Projection
             .Include(x => x.Id)
+            .Include(x => x.TenantId)
             .Include(x => x.CreatedAt)
             .Include(x => x.Direction)
             .Include(x => x.MessageType)
@@ -529,10 +567,11 @@ public class ConversationRepository : IConversationRepository
 
         var messages = await query.Project<ConversationMessage>(projection).ToListAsync();
         
-        // Convert BSON data back to objects
+        // Convert BSON data back to objects and decrypt text
         foreach (var message in messages)
         {
             ConvertBsonDataToObject(message);
+            DecryptMessageText(message);
         }
         
         _logger.LogDebug("Found history of {Count} messages", messages.Count);
@@ -558,6 +597,7 @@ public class ConversationRepository : IConversationRepository
         // Optimized projection for better memory usage
         var projection = Builders<ConversationMessage>.Projection
             .Include(x => x.Id)
+            .Include(x => x.TenantId)
             .Include(x => x.CreatedAt)
             .Include(x => x.Direction)
             .Include(x => x.MessageType)
@@ -574,10 +614,11 @@ public class ConversationRepository : IConversationRepository
             .Limit(pageSize)
             .ToListAsync();
 
-        // Convert BSON data efficiently
+        // Convert BSON data efficiently and decrypt text
         foreach (var message in messages)
         {
             ConvertBsonDataToObject(message);
+            DecryptMessageText(message);
         }
 
         return messages;
@@ -596,6 +637,38 @@ public class ConversationRepository : IConversationRepository
         );
 
         return await _threadsCollection.Find(filter).FirstOrDefaultAsync();
+    }
+
+    private void DecryptMessageText(ConversationMessage message)
+    {
+        if (!string.IsNullOrEmpty(message.Text))
+        {
+            try
+            {
+                // Try to decrypt
+                var messageSpecificSecret = $"{_uniqueSecret}";
+                var decryptedText = _encryptionService.Decrypt(message.Text, messageSpecificSecret);
+                message.Text = decryptedText;
+                _logger.LogTrace("Successfully decrypted message {MessageId}", message.Id);
+            }
+            catch (FormatException)
+            {
+                // Not a valid Base64 string - this is plain text
+                _logger.LogDebug("Message {MessageId} is not encrypted (invalid Base64), treating as plain text", message.Id);
+                // Leave message.Text as-is
+            }
+            catch (System.Security.Cryptography.AuthenticationTagMismatchException)
+            {
+                // This might be Base64 data that wasn't encrypted by our system
+                _logger.LogWarning("Message {MessageId} appears to be Base64 but decryption failed (authentication tag mismatch). This might be legacy data or corrupted encryption.", message.Id);
+                // Leave message.Text as-is
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error decrypting message {MessageId}. Text will remain as-is.", message.Id);
+                // Leave message.Text as-is
+            }
+        }
     }
 
     private BsonDocument? ConvertToBsonDocument(object? obj)

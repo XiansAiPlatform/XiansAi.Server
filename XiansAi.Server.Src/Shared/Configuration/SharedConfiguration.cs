@@ -130,7 +130,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUserTenantService, UserTenantService>();
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
-        builder.Services.AddScoped<ISecureEncryptionService, SecureEncryptionService>();
+        builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
 
         return builder;
     }

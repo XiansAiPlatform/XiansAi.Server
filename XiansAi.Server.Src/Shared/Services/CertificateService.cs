@@ -24,7 +24,6 @@ public class FlowServerSettings
 public class CertificateService
 {
     private readonly ILogger<CertificateService> _logger;
-    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
@@ -32,14 +31,12 @@ public class CertificateService
 
     public CertificateService(
         ILogger<CertificateService> logger,
-        IHttpContextAccessor httpContextAccessor,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
         ILlmService llmService)
     {
         _logger = logger;
-        _httpContextAccessor = httpContextAccessor;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;

@@ -29,7 +29,7 @@ namespace Features.UserApi.Configuration
             // OIDC per-tenant config storage and encryption
             builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
             builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
-            builder.Services.AddScoped<ISecureEncryptionService, SecureEncryptionService>();
+            // ISecureEncryptionService is registered as Singleton in SharedConfiguration
             builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
 
             return builder;
