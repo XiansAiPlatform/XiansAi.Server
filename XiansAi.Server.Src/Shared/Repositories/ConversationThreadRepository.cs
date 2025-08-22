@@ -56,6 +56,7 @@ public interface IConversationThreadRepository
     Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null);
     Task<string> CreateOrGetAsync(ConversationThread thread);
     Task<bool> DeleteAsync(string id);
+    Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
 }
 
 public class ConversationThreadRepository : IConversationThreadRepository
@@ -131,6 +132,16 @@ public class ConversationThreadRepository : IConversationThreadRepository
             // For other errors, rethrow
             throw;
         }
+    }
+
+    public async Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId)
+    {
+        var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
+        if (thread == null)
+        {
+            throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
+        }
+        return thread.Id;
     }
 
     public async Task<bool> DeleteAsync(string id)
