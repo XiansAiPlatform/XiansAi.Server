@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Mvc;
 using Shared.Services;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -16,7 +15,7 @@ namespace Shared.Utils
             _pendingRequestService = pendingRequestService;
         }
 
-        public async Task<IResult> ProcessSyncMessageAsync(
+        public async Task<object> ProcessSyncMessageAsync(
             ChatOrDataRequest chatRequest,
             MessageType messageType,
             int timeoutSeconds,
@@ -54,12 +53,13 @@ namespace Shared.Utils
                 }
 
                 // Return the response message
-                return Results.Ok(new
+                return new
                 {
                     chatRequest.RequestId,
                     ThreadId = processResult.Data,
                     Response = new
                     {
+                        ThreadId = processResult.Data,
                         response.Id,
                         response.Text,
                         response.Data,
@@ -67,9 +67,10 @@ namespace Shared.Utils
                         response.Direction,
                         response.MessageType,
                         response.Scope,
+                        response.RequestId,
                         response.Hint
                     }
-                });
+                };
             }
             catch (TimeoutException)
             {

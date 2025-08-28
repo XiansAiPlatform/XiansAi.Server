@@ -8,8 +8,6 @@ namespace Shared.Services;
 
 public class ChatOrDataRequest
 {
-
-    private string? _agent;
     private string? _workflowType;
     public string? Workflow { get; set; }
     
@@ -56,39 +54,10 @@ public class ChatOrDataRequest
         }
     }
     
-    public string Agent 
+    public string GetAgent(ITenantContext tenantContext)
     { 
-        get 
-        {
-            if (!string.IsNullOrEmpty(_agent))
-            {
-                return _agent;
-            }
-
-            if (!string.IsNullOrEmpty(WorkflowType))
-            {
-                var parts = WorkflowType.Split(':');
-                if (parts.Length > 0 && !string.IsNullOrEmpty(parts[0]))
-                {
-                    return parts[0];
-                }
-            }
-
-            if (!string.IsNullOrEmpty(WorkflowId))
-            {
-                var parts = WorkflowId.Split(':');
-                if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
-                {
-                    return parts[1];
-                }
-            }
-
-            throw new InvalidOperationException("Unable to determine agent name from Agent, WorkflowType, or WorkflowId");
-        }
-        set 
-        {
-            _agent = value;
-        }
+        var workflow = WorkflowId ?? WorkflowType ?? throw new Exception("WorkflowId or WorkflowType is required");
+        return new WorkflowIdentifier(workflow, tenantContext).AgentName;
     }
     
     public object? Data { get; set; }
@@ -189,7 +158,6 @@ public class MessageService : IMessageService
                 WorkflowType = request.TargetWorkflowType,
                 Text = $"{request.SourceWorkflowType} -> {request.TargetWorkflowType}",
                 Data = request.Data,
-                Agent = request.SourceAgent,
                 Authorization = request.Authorization
             };
 
@@ -206,8 +174,6 @@ public class MessageService : IMessageService
                 Text = request.Text,
                 Data = request.Data,
                 Scope = request.Scope,
-                // No 'Hint' for handover messages
-                Agent = request.SourceAgent,
                 Authorization = request.Authorization
             }, MessageType.Chat);
 
@@ -281,9 +247,6 @@ public class MessageService : IMessageService
             }
 
             var message = await SaveMessage(request, MessageDirection.Outgoing, messageType);
-
-            // TODO: Notify webhooks
-            //await NotifyWebhooksAsync(message);
 
             return ServiceResult<string>.Success(request.ThreadId);
         }

@@ -152,11 +152,13 @@ namespace Features.AgentApi.Endpoints
 
                 // Use the sync message handler to process the complex flow
                 var syncHandler = new SyncMessageHandler(messageService, pendingRequestService);
-                return await syncHandler.ProcessSyncMessageAsync(
+                var result =  await syncHandler.ProcessSyncMessageAsync(
                     chat,
                     messageType,
                     timeoutSeconds,
                     context.RequestAborted);
+
+                return Results.Ok(result);
             })
                 .WithName("Send Data or Chat to workflow and wait for response from Agent")
                 .WithOpenApi(operation =>

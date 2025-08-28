@@ -303,7 +303,6 @@ namespace Features.UserApi.Websocket
                 var identifier = new WorkflowIdentifier(request.Workflow, GetScopedTenantContext());
                 request.WorkflowId = identifier.WorkflowId;
                 request.WorkflowType = identifier.WorkflowType;
-                request.Agent = identifier.AgentName;
             }
 
             if (string.IsNullOrWhiteSpace(messageType))
