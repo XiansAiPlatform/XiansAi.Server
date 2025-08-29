@@ -53,9 +53,9 @@ namespace Shared.Utils
                 return (false, "Invalid message type specified.");
             }
 
-            if (timeoutSeconds < 1 || timeoutSeconds > 300) // Max 5 minutes
+            if (timeoutSeconds < 1 || timeoutSeconds > 600) // Max 10 minutes
             {
-                return (false, "Timeout must be between 1 and 300 seconds.");
+                return (false, "Timeout must be between 1 and 600 seconds.");
             }
 
             return (true, null);

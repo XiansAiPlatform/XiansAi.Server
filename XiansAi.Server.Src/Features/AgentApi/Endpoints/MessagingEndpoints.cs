@@ -98,6 +98,7 @@ namespace Features.AgentApi.Endpoints
 
             // New synchronous endpoint that waits for responses
             group.MapPost("/converse", async (
+                [FromServices] ILogger<ConversationHistoryQuery> logger,
                 [FromQuery] string type,
                 [FromBody] ChatOrDataRequest chatOrDataRequest,
                 [FromServices] IMessageService messageService,
@@ -107,9 +108,11 @@ namespace Features.AgentApi.Endpoints
                 [FromQuery] int timeoutSeconds = 60,
                 [FromQuery] string? requestId = null) =>
             {
+                logger.LogInformation("Converse endpoint called with request: {Request}", JsonSerializer.Serialize(chatOrDataRequest));
                 var workflow = chatOrDataRequest.WorkflowId;
                 if (string.IsNullOrEmpty(workflow))
                 {
+                    logger.LogError("Workflow Id not provided");
                     return Results.BadRequest("Workflow Id not provided");
                 }
                 var participantId = chatOrDataRequest.ParticipantId;
@@ -128,6 +131,7 @@ namespace Features.AgentApi.Endpoints
 
                 if (!isValid)
                 {
+                    logger.LogError("Invalid request: {ErrorMessage}", errorMessage);
                     return Results.BadRequest(errorMessage);
                 }
 
