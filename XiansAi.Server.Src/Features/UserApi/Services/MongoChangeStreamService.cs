@@ -7,7 +7,6 @@ using Features.UserApi.Websocket;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
 using Shared.Services;
-using Microsoft.Extensions.Configuration;
 
 
 namespace Features.UserApi.Services
@@ -296,19 +295,6 @@ namespace Features.UserApi.Services
             {
                 try
                 {
-                    _logger.LogDebug("DecryptMessageText: Processing message {MessageId} with text length {Length}, first 20 chars: {Text}", 
-                        message.Id, message.Text.Length, message.Text.Length > 20 ? message.Text.Substring(0, 20) : message.Text);
-
-                    // First check if this looks like it could be encrypted data
-                    if (!IsLikelyEncrypted(message.Text))
-                    {
-                        // Plain text message - no decryption needed
-                        _logger.LogDebug("Message {MessageId} appears to be plain text, skipping decryption. Text: {Text}", message.Id, message.Text);
-                        return;
-                    }
-
-                    _logger.LogDebug("Message {MessageId} appears to be encrypted, attempting decryption", message.Id);
-
                     // Try to decrypt
                     var messageSpecificSecret = $"{_uniqueSecret}";
                     var decryptedText = _encryptionService.Decrypt(message.Text, messageSpecificSecret);
@@ -335,34 +321,5 @@ namespace Features.UserApi.Services
             }
         }
 
-        private bool IsLikelyEncrypted(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return false;
-
-            // Our encrypted messages are Base64 encoded and have specific length characteristics
-            // Minimum length check - encrypted data with nonce + tag + minimal content
-            if (text.Length < 44) // 12 (nonce) + 16 (tag) + some content, base64 encoded
-                return false;
-
-            // Check if it's valid Base64 and has the right length
-            if (text.Length % 4 != 0)
-                return false;
-
-            // Quick check for Base64 character set without being too strict
-            // Allow for some common plain text patterns that would indicate it's not encrypted
-            if (text.Contains(' ') || text.Contains('\n') || text.Contains('\t'))
-                return false;
-
-            // Check for common message patterns that indicate plain text
-            var lowerText = text.ToLowerInvariant();
-            if (lowerText.StartsWith("hello") || lowerText.StartsWith("hi") || 
-                lowerText.StartsWith("test") || lowerText.StartsWith("help") ||
-                lowerText.Contains("http://") || lowerText.Contains("https://"))
-                return false;
-
-            // If we got here, it might be encrypted
-            return true;
-        }
     }
 }
