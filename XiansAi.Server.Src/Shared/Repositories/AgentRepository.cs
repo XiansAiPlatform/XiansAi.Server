@@ -171,7 +171,9 @@ public class AgentRepository : IAgentRepository
             Builders<Agent>.Filter.Eq(x => x.Tenant, tenant)
         );
         
-        var update = Builders<Agent>.Update.Set(x => x.Permissions, permissions);
+        var update = Builders<Agent>.Update.Set(x => x.OwnerAccess, permissions.OwnerAccess)
+            .Set(x => x.ReadAccess, permissions.ReadAccess)
+            .Set(x => x.WriteAccess, permissions.WriteAccess);
         var result = await _agents.UpdateOneAsync(filter, update);
         return result.ModifiedCount > 0;
     }

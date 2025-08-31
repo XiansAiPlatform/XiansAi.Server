@@ -62,7 +62,7 @@ public class ChatOrDataRequest
     
     public object? Data { get; set; }
     public string? Text { get; set; }
-    public string? ThreadId { get; set; }
+    //public string? ThreadId { get; set; }
     public string? Authorization { get; set; }
     public string? Origin { get; set; }
 }
@@ -152,7 +152,6 @@ public class MessageService : IMessageService
 
             var messageRequest = new ChatOrDataRequest
             {
-                ThreadId = targetThreadId,  // Use the target thread ID
                 ParticipantId = request.ParticipantId,
                 WorkflowId = request.TargetWorkflowId,
                 WorkflowType = request.TargetWorkflowType,
@@ -161,13 +160,12 @@ public class MessageService : IMessageService
                 Authorization = request.Authorization
             };
 
-            await SaveMessage(messageRequest, MessageDirection.Outgoing, MessageType.Handoff);
+            await SaveMessage(targetThreadId, messageRequest, MessageDirection.Outgoing, MessageType.Handoff);
 
             messageRequest.Text = request.Text;
             //await SignalWorkflowAsync(messageRequest);
             await ProcessIncomingMessage(new ChatOrDataRequest
             {
-                ThreadId = targetThreadId,  // Use the target thread ID
                 ParticipantId = request.ParticipantId,
                 WorkflowId = request.TargetWorkflowId,
                 WorkflowType = request.TargetWorkflowType,
@@ -241,14 +239,11 @@ public class MessageService : IMessageService
 
         try
         {
-            if (request.ThreadId == null)
-            {
-                request.ThreadId = await CreateOrGetThread(request);
-            }
+            var threadId = await CreateOrGetThread(request);
 
-            var message = await SaveMessage(request, MessageDirection.Outgoing, messageType);
+            var message = await SaveMessage(threadId, request, MessageDirection.Outgoing, messageType);
 
-            return ServiceResult<string>.Success(request.ThreadId);
+            return ServiceResult<string>.Success(message.ThreadId);
         }
         catch (Exception ex)
         {
@@ -284,20 +279,17 @@ public class MessageService : IMessageService
             request.WorkflowId, request.ParticipantId);
         
         // Critical Operation: If the threadId is not provided, we need to create a new thread
-        if (request.ThreadId == null)
-        {
-            request.ThreadId = await CreateOrGetThread(request);
-        }
+        var threadId = await CreateOrGetThread(request);
 
         // Save the message
-        await SaveMessage(request, MessageDirection.Incoming, messageType);
+        await SaveMessage(threadId, request, MessageDirection.Incoming, messageType);
 
         // Signal the workflow
-        await SignalWorkflowAsync(request, messageType);
+        await SignalWorkflowAsync(threadId, request, messageType);
 
         _logger.LogInformation("Successfully processed inbound message");
 
-        return ServiceResult<string>.Success(request.ThreadId);
+        return ServiceResult<string>.Success(threadId);
     }
 
     private void ExtractWorkflowId(ChatOrDataRequest request)
@@ -316,7 +308,7 @@ public class MessageService : IMessageService
 
 
 
-    private async Task SignalWorkflowAsync(ChatOrDataRequest request, MessageType messageType)
+    private async Task SignalWorkflowAsync(string threadId,ChatOrDataRequest request, MessageType messageType)
     {
         if (request.WorkflowType == null)
         {
@@ -332,7 +324,7 @@ public class MessageService : IMessageService
             SourceAgent = agent,
             Payload = new {
                  Agent = agent,
-                 request.ThreadId,
+                 ThreadId = threadId,
                  request.ParticipantId,
                  request.Text, 
                  request.RequestId,
@@ -371,16 +363,12 @@ public class MessageService : IMessageService
         return threadId;
     }
     
-    private async Task<ConversationMessage> SaveMessage(ChatOrDataRequest request, MessageDirection direction, MessageType messageType)
+    private async Task<ConversationMessage> SaveMessage(string threadId,ChatOrDataRequest request, MessageDirection direction, MessageType messageType)
     {
-        if (request.ThreadId == null)
-        {
-            throw new Exception("ThreadId is required");
-        }
 
         var message = new ConversationMessage
         {
-            ThreadId = request.ThreadId,
+            ThreadId = threadId,
             ParticipantId = request.ParticipantId,
             TenantId = _tenantContext.TenantId,
             Hint = request.Hint,
@@ -401,7 +389,7 @@ public class MessageService : IMessageService
 
         // Save the message with transaction support
         message.Id = await _conversationRepository.SaveMessageAsync(message);
-        _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, request.ThreadId);
+        _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, message.ThreadId);
 
         return message;
     }

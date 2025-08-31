@@ -151,7 +151,7 @@ logs:
   - name: logs_ttl_created_at
     keys:
       created_at: asc
-    expire_after: 30d
+    expire_after: 15d
     background: true
   - name: tenant_id_1_agent_1_participant_id_1
     keys:

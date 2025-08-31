@@ -41,15 +41,15 @@ public class Agent : ModelValidatorBase<Agent>
     [BsonElement("write_access")]
     public List<string> WriteAccess { get; set; } = new();
 
-    public Permission? Permissions {
-        get {
-            return new Permission() {
-                OwnerAccess = OwnerAccess,
-                ReadAccess = ReadAccess,
-                WriteAccess = WriteAccess
-            };
-        }
-    }
+    // public Permission? Permissions {
+    //     get {
+    //         return new Permission() {
+    //             OwnerAccess = OwnerAccess,
+    //             ReadAccess = ReadAccess,
+    //             WriteAccess = WriteAccess
+    //         };
+    //     }
+    // }
 
     public bool HasPermission(string userId, string[] userRoles, PermissionLevel requiredLevel)
     {

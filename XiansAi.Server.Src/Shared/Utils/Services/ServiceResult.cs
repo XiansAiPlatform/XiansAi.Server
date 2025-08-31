@@ -8,6 +8,7 @@ public enum StatusCode
     Forbidden = 403,
     NotFound = 404,
     Conflict = 409,
+    RequestTimeout = 408,
     InternalServerError = 500,
 }
 
@@ -56,6 +57,11 @@ public class ServiceResult<T>
     }
 
     public static ServiceResult<T> Unauthorized(string errorMessage, StatusCode statusCode = StatusCode.Unauthorized)
+    {
+        return new ServiceResult<T>(false, default, errorMessage, statusCode);
+    }
+
+    public static ServiceResult<T> RequestTimeout(string errorMessage, StatusCode statusCode = StatusCode.RequestTimeout)
     {
         return new ServiceResult<T>(false, default, errorMessage, statusCode);
     }

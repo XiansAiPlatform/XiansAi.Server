@@ -36,9 +36,21 @@ public class AgentPermissionRepository : IAgentPermissionRepository
     public async Task<Permission?> GetAgentPermissionsAsync(string agentName)
     {
         _logger.LogInformation("Getting permissions for agent: {AgentName}", agentName);
-        
+
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
-        return agent?.Permissions;
+
+        if (agent == null)
+        {
+            _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            return null;
+        }
+
+        return new Permission()
+        {
+            OwnerAccess = agent.OwnerAccess,
+            ReadAccess = agent.ReadAccess,
+            WriteAccess = agent.WriteAccess
+        }; ;
     }
 
     public async Task<string> GetAgentTenantAsync(string agentName)
@@ -57,15 +69,15 @@ public class AgentPermissionRepository : IAgentPermissionRepository
     public async Task<bool> UpdateAgentPermissionsAsync(string agentName, Permission permissions)
     {
         _logger.LogInformation("Updating permissions for agent: {AgentName}", agentName);
-        
+
         // Use permission-aware method that checks if user has owner permission
         var agentUpdated = await _agentRepository.UpdatePermissionsAsync(
-            agentName, 
-            _tenantContext.TenantId, 
+            agentName,
+            _tenantContext.TenantId,
             CleanPermissionLevels(permissions),
             _tenantContext.LoggedInUser,
             _tenantContext.UserRoles);
-        
+
         if (!agentUpdated)
         {
             _logger.LogWarning("Failed to update permissions for agent {AgentName} - either not found or insufficient permissions", agentName);
@@ -77,9 +89,9 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
     public async Task<bool> AddUserToAgentAsync(string agentName, string userId, PermissionLevel permissionLevel)
     {
-        _logger.LogInformation("Adding user {UserId} to agent {AgentName} with permission level {PermissionLevel}", 
+        _logger.LogInformation("Adding user {UserId} to agent {AgentName} with permission level {PermissionLevel}",
             userId, agentName, permissionLevel);
-        
+
         // Get the agent without permission check first, then check owner permission explicitly
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
         if (agent == null)
@@ -91,7 +103,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         // Check if user has owner permission (required to add users)
         if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
-            _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission", 
+            _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission",
                 _tenantContext.LoggedInUser, agentName);
             return false;
         }
@@ -117,14 +129,14 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
         // Use the internal update method since we've already verified permissions
         var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
-        
+
         return result;
     }
 
     public async Task<bool> RemoveUserFromAgentAsync(string agentName, string userId)
     {
         _logger.LogInformation("Removing user {UserId} from agent {AgentName}", userId, agentName);
-        
+
         // Get the agent without permission check first, then check owner permission explicitly
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
         if (agent == null)
@@ -136,14 +148,14 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         // Check if user has owner permission (required to remove users)
         if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
-            _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission", 
+            _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission",
                 _tenantContext.LoggedInUser, agentName);
             return false;
         }
 
         // Track if any changes were made (for logging purposes)
-        bool wasUserFound = agent.OwnerAccess.Contains(userId) || 
-                           agent.WriteAccess.Contains(userId) || 
+        bool wasUserFound = agent.OwnerAccess.Contains(userId) ||
+                           agent.WriteAccess.Contains(userId) ||
                            agent.ReadAccess.Contains(userId);
 
         // Remove user from all permission levels
@@ -153,25 +165,25 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
         // Use the internal update method since we've already verified permissions
         var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
-        
+
         // If the user wasn't found in any permission list, still consider it successful (idempotent operation)
         if (!wasUserFound)
         {
             _logger.LogInformation("User {UserId} was not found in any permission lists for agent {AgentName}, operation considered successful", userId, agentName);
             return true;
         }
-        
+
         return result;
     }
 
     public async Task<bool> UpdateUserPermissionAsync(string agentName, string userId, PermissionLevel newPermissionLevel)
     {
-        _logger.LogInformation("Updating permission for user {UserId} in agent {AgentName} to {PermissionLevel}", 
+        _logger.LogInformation("Updating permission for user {UserId} in agent {AgentName} to {PermissionLevel}",
             userId, agentName, newPermissionLevel);
-        
+
         // First remove the user from all permission levels
         await RemoveUserFromAgentAsync(agentName, userId);
-        
+
         // Then add them with the new permission level
         return await AddUserToAgentAsync(agentName, userId, newPermissionLevel);
     }
@@ -186,7 +198,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
     private Permission CleanPermissionLevels(Permission permissions)
     {
         var cleanedPermissions = new Permission();
-        
+
         // Process owner access first (highest level)
         foreach (var userId in permissions.OwnerAccess)
         {
@@ -205,7 +217,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         // Process read access (remove users who are already owners or writers)
         foreach (var userId in permissions.ReadAccess)
         {
-            if (!cleanedPermissions.OwnerAccess.Contains(userId) && 
+            if (!cleanedPermissions.OwnerAccess.Contains(userId) &&
                 !cleanedPermissions.WriteAccess.Contains(userId))
             {
                 cleanedPermissions.ReadAccess.Add(userId);
@@ -240,4 +252,4 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
         return agent?.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel) ?? false;
     }
-} 
+}

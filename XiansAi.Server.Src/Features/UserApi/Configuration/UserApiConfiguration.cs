@@ -32,6 +32,9 @@ namespace Features.UserApi.Configuration
             // ISecureEncryptionService is registered as Singleton in SharedConfiguration
             builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
 
+            // Add Webhook service
+            builder.Services.AddScoped<IWebhookReceiverService, WebhookReceiverService>();
+
             return builder;
         }
 
@@ -102,6 +105,7 @@ namespace Features.UserApi.Configuration
             RestEndpoints.MapRestEndpoints(app);
             SseEndpoints.MapSseEndpoints(app);
             SocketEndpoints.MapSocketEndpoints(app);
+            WebhookEndpoints.MapWebhookEndpoints(app);
 
             return app;
         }
