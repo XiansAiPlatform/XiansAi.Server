@@ -100,7 +100,7 @@ public class TenantService : ITenantService
         }
 
         // Otherwise, forbidden
-        _logger.LogWarning("Tenant admin attempted to access tenant {Id} but is restricted to their own tenant {TenantId}", tenantId, _tenantContext.TenantId);
+        _logger.LogWarning("Attempted to access tenant `{Id}` but is restricted to SysAdmins and of tenant `{TenantId}`", tenantId, _tenantContext.TenantId);
         throw new Exception(("Access denied: insufficient permissions"));
     }
 
