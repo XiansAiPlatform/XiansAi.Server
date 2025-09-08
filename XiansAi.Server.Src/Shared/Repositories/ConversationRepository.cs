@@ -29,9 +29,7 @@ public enum MessageType
 {
     Chat,
     Data,
-    Handoff,
-    [Obsolete("Use MessageType.Handoff instead")]
-    Handover
+    Handoff
 }
 
 public enum ConversationThreadStatus

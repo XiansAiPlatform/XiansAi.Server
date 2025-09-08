@@ -40,7 +40,13 @@ public static class WebhookEndpoints
 
                 if (result.IsSuccess)
                 {
-                    return Results.Ok(result.Data);
+                    // Return the WebhookResponse directly
+                    var webhookResponse = result.Data ?? throw new Exception("WebhookResponse is null");
+                    
+                    // Apply the webhook response to the HTTP context
+                    await webhookResponse.ApplyToHttpContextAsync(httpContext);
+                    
+                    return Results.Empty;
                 }
 
                 return result.ToHttpResult();

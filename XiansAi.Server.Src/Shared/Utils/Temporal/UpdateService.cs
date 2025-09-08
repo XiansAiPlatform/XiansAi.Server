@@ -1,6 +1,7 @@
 using Temporalio.Client;
 using Temporalio.Exceptions;
 using Shared.Auth;
+using Shared.Models;
 
 namespace Shared.Utils.Temporal;
 
@@ -18,9 +19,9 @@ public class UpdateService
     /// <param name="temporalClientFactory">Factory to get temporal client</param>
     /// <param name="timeout">Timeout for the update operation (default: 30 seconds). Manually enforced via cancellation token.</param>
     /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
-    /// <returns>String response from the workflow update method</returns>
+    /// <returns>WebhookResponse from the workflow update method</returns>
     /// <exception cref="WorkflowUpdateRpcTimeoutOrCanceledException">Thrown when the operation times out or is cancelled</exception>
-    public static async Task<string> SendWebhookUpdate(
+    public static async Task<WebhookResponse> SendWebhookUpdate(
         string workflowIdentifier,
         string methodName,
         IDictionary<string, string> queryParams,
@@ -70,7 +71,7 @@ public class UpdateService
         };
         
         // Send the update with start - this will be cancelled by our manual timeout
-        var result = await client.ExecuteUpdateWithStartWorkflowAsync<string>(
+        var result = await client.ExecuteUpdateWithStartWorkflowAsync<WebhookResponse>(
             methodName,
             [queryParams, body],
             updateOptions);

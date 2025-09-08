@@ -2,13 +2,14 @@ using Shared.Auth;
 using Shared.Utils.Services;
 using Shared.Utils.Temporal;
 using Shared.Repositories;
+using Shared.Models;
 using Temporalio.Exceptions;
 
 namespace Features.UserApi.Services;
 
 public interface IWebhookReceiverService
 {
-    Task<ServiceResult<string>> ProcessWebhook(
+    Task<ServiceResult<WebhookResponse>> ProcessWebhook(
         string tenantId,
         string workflow,
         string methodName,
@@ -35,7 +36,7 @@ public class WebhookReceiverService : IWebhookReceiverService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<string>> ProcessWebhook(
+    public async Task<ServiceResult<WebhookResponse>> ProcessWebhook(
         string tenantId,
         string workflow,
         string methodName,
@@ -48,7 +49,7 @@ public class WebhookReceiverService : IWebhookReceiverService
             if (_tenantContext.TenantId != tenantId)
             {
                 _logger.LogWarning("Tenant mismatch for webhook {TenantId}, {Workflow}, {MethodName}", tenantId, workflow, methodName);
-                return ServiceResult<string>.Forbidden("Tenant mismatch");
+                return ServiceResult<WebhookResponse>.Forbidden("Tenant mismatch");
             }
 
             _logger.LogInformation(
@@ -68,24 +69,24 @@ public class WebhookReceiverService : IWebhookReceiverService
                 "Successfully processed webhook for tenant {TenantId}, workflow {Workflow}, method {Method}",
                 tenantId, workflow, methodName);
 
-            return ServiceResult<string>.Success(result);
+            return ServiceResult<WebhookResponse>.Success(result);
         }
         catch (WorkflowUpdateRpcTimeoutOrCanceledException ex)
         {
             _logger.LogWarning(ex, "Webhook update timed out for workflow {Workflow}, method {Method} - likely no workers available", workflow, methodName);
-            return ServiceResult<string>.RequestTimeout(
+            return ServiceResult<WebhookResponse>.RequestTimeout(
                 "The webhook update timed out. This typically means no workflow workers are available to process the request.",
                 StatusCode.RequestTimeout);
         }
         catch (InvalidOperationException ex)
         {
             _logger.LogError(ex, "Invalid operation while processing webhook");
-            return ServiceResult<string>.BadRequest(ex.Message, StatusCode.BadRequest);
+            return ServiceResult<WebhookResponse>.BadRequest(ex.Message, StatusCode.BadRequest);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing webhook for workflow {Workflow}, method {Method}", workflow, methodName);
-            return ServiceResult<string>.InternalServerError(
+            return ServiceResult<WebhookResponse>.InternalServerError(
                 $"An error occurred while processing the webhook. Exception: {ex.Message}",
                 StatusCode.InternalServerError);
         }

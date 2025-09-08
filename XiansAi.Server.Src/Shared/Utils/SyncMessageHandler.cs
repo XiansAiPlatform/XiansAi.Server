@@ -55,21 +55,15 @@ namespace Shared.Utils
                 // Return the response message
                 return new
                 {
-                    chatRequest.RequestId,
                     ThreadId = processResult.Data,
-                    Response = new
-                    {
-                        ThreadId = processResult.Data,
-                        response.Id,
-                        response.Text,
-                        response.Data,
-                        response.CreatedAt,
-                        response.Direction,
-                        response.MessageType,
-                        response.Scope,
-                        response.RequestId,
-                        response.Hint
-                    }
+                    response.Text,
+                    response.ParticipantId,
+                    response.Data,
+                    response.CreatedAt,
+                    response.MessageType,
+                    response.Scope,
+                    response.RequestId,
+                    response.Hint
                 };
             }
             catch (TimeoutException)
