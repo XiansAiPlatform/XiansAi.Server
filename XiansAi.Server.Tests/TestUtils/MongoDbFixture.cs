@@ -76,6 +76,7 @@ public class MongoDbFixture : IDisposable
             {
                 throw new Exception("Failed to connect to MongoDB test instance");
             }
+            
         }
         catch (Exception ex)
         {
