@@ -2,6 +2,8 @@ using MongoDB.Driver;
 using MongoDB.Bson;
 using Shared.Data;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mongo2Go;
 using System.Threading;
 
@@ -29,6 +31,7 @@ public class MongoDbFixture : IDisposable
     private readonly IMongoDatabase _database;
     private readonly string _databaseName = "test_db";
     private readonly IMongoDbClientService _mongoClientService;
+    private readonly ILogger<MongoDbClientService> _logger;
 
     public MongoDBConfig MongoConfig { get; }
     public IMongoDatabase Database => _database;
@@ -38,6 +41,9 @@ public class MongoDbFixture : IDisposable
     {
         try
         {
+            // Create a null logger for testing
+            _logger = new NullLogger<MongoDbClientService>();
+            
             // Start MongoDB instance with replica set
         _runner = MongoDbRunner.Start(singleNodeReplSet: true);
             
@@ -59,7 +65,7 @@ public class MongoDbFixture : IDisposable
         };
 
         // Create client service
-        _mongoClientService = new MongoDbClientService(new TestMongoDbContext(MongoConfig));
+        _mongoClientService = new MongoDbClientService(new TestMongoDbContext(MongoConfig), _logger);
 
         // Initialize collections and indexes
         InitializeCollections();
