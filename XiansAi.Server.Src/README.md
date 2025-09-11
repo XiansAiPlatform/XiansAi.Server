@@ -29,6 +29,12 @@ dotnet run
 # Run with specific environment file
 dotnet run --env-file .env.local
 
+# Run with multiple environment files (comma-separated)
+dotnet run --env-file .env.base,.env.local
+
+# Run with multiple environment files (separate arguments)
+dotnet run --env-file .env.base --env-file .env.local
+
 # Run with file watching for development
 dotnet watch run
 
@@ -44,6 +50,14 @@ For detailed startup options and microservice configuration, see [Start Options]
 # Quick start with published image
 docker run --rm -it \
   --env-file .env \
+  -p 5001:8080 \
+  --name xiansai-server-dev \
+  99xio/xiansai-server:latest
+
+# Run with multiple environment files
+docker run --rm -it \
+  --env-file .env.base \
+  --env-file .env.local \
   -p 5001:8080 \
   --name xiansai-server-dev \
   99xio/xiansai-server:latest

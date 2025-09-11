@@ -30,7 +30,7 @@ public class Program
     public class CommandLineArgs
     {
         public ServiceType ServiceType { get; set; } = ServiceType.All;
-        public string? CustomEnvFile { get; set; }
+        public List<string> CustomEnvFiles { get; set; } = new List<string>();
         public bool ShowHelp { get; set; } = false;
     }
     
@@ -53,7 +53,7 @@ public class Program
             }
             
             // Load environment variables
-            LoadEnvironmentVariables(commandLineArgs.CustomEnvFile);
+            LoadEnvironmentVariables(commandLineArgs.CustomEnvFiles);
             
             var loggerFactory = LoggerFactory.Create(logBuilder => logBuilder.AddConsole());
             // Initialize logger
@@ -80,20 +80,24 @@ public class Program
     /// <summary>
     /// Loads environment variables from the appropriate file(s).
     /// </summary>
-    /// <param name="customEnvFile">Optional custom environment file path specified via command line.</param>
-    private static void LoadEnvironmentVariables(string? customEnvFile)
+    /// <param name="customEnvFiles">Optional custom environment file paths specified via command line.</param>
+    private static void LoadEnvironmentVariables(List<string> customEnvFiles)
     {
-        if (!string.IsNullOrWhiteSpace(customEnvFile))
+        if (customEnvFiles != null && customEnvFiles.Count > 0)
         {
-            // Load custom environment file if specified
-            if (File.Exists(customEnvFile))
+            // Load each custom environment file
+            foreach (var envFile in customEnvFiles)
             {
-                Console.WriteLine($"Loading custom environment file: {customEnvFile}");
-                Env.Load(customEnvFile);
-            }
-            else
-            {
-                throw new FileNotFoundException($"Custom environment file not found: {customEnvFile}");
+                if (File.Exists(envFile))
+                {
+                    Console.WriteLine($"Loading custom environment file: {envFile}");
+                    _logger?.LogInformation("Loading custom environment file: {EnvFile}", envFile);
+                    Env.Load(envFile);
+                }
+                else
+                {
+                    throw new FileNotFoundException($"Custom environment file not found: {envFile}");
+                }
             }
         }
         else
@@ -101,11 +105,15 @@ public class Program
             // Always load the default .env file first (if it exists)
             try
             {
+                Console.WriteLine("Loading default environment file: .env");
+                _logger?.LogInformation("Loading default environment file: .env");
                 Env.Load();
             }
             catch (FileNotFoundException)
             {
                 // Default .env file doesn't exist, which is fine
+                Console.WriteLine("Default .env file not found, continuing with existing environment variables");
+                _logger?.LogInformation("Default .env file not found, continuing with existing environment variables");
             }
             
             // Fall back to environment-based file selection
@@ -115,11 +123,13 @@ public class Program
             try
             {
                 Console.WriteLine($"Loading environment variables from {envFile} (ASPNETCORE_ENVIRONMENT={envName})");
+                _logger?.LogInformation("Loading environment variables from {EnvFile} (ASPNETCORE_ENVIRONMENT={Environment})", envFile, envName);
                 Env.Load(envFile);
             }
             catch (FileNotFoundException)
             {
                 Console.WriteLine($"Environment file {envFile} not found, continuing with existing environment variables");
+                _logger?.LogInformation("Environment file {EnvFile} not found, continuing with existing environment variables", envFile);
             }
         }
     }
@@ -279,15 +289,23 @@ public class Program
             }
             else if (arg.StartsWith("--env-file=", StringComparison.OrdinalIgnoreCase))
             {
-                // Handle --env-file=filepath format
-                commandLineArgs.CustomEnvFile = arg.Substring("--env-file=".Length);
+                // Handle --env-file=filepath format (can be comma-separated)
+                var filePath = arg.Substring("--env-file=".Length);
+                var files = filePath.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                  .Select(f => f.Trim())
+                                  .Where(f => !string.IsNullOrWhiteSpace(f));
+                commandLineArgs.CustomEnvFiles.AddRange(files);
             }
             else if (arg.Equals("--env-file", StringComparison.OrdinalIgnoreCase))
             {
-                // Handle --env-file filepath format (separate arguments)
+                // Handle --env-file filepath format (separate arguments, can be comma-separated)
                 if (i + 1 < args.Length)
                 {
-                    commandLineArgs.CustomEnvFile = args[i + 1];
+                    var filePath = args[i + 1];
+                    var files = filePath.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                      .Select(f => f.Trim())
+                                      .Where(f => !string.IsNullOrWhiteSpace(f));
+                    commandLineArgs.CustomEnvFiles.AddRange(files);
                     i++; // Skip the next argument since we've processed it
                 }
                 else
@@ -372,8 +390,9 @@ public class Program
         Console.WriteLine("  --all                 Start all services (default)");
         Console.WriteLine();
         Console.WriteLine("Environment Options:");
-        Console.WriteLine("  --env-file=<path>     Use custom environment file");
-        Console.WriteLine("  --env-file <path>     Use custom environment file (alternative syntax)");
+        Console.WriteLine("  --env-file=<path>     Use custom environment file(s) - comma-separated for multiple files");
+        Console.WriteLine("  --env-file <path>     Use custom environment file(s) (alternative syntax)");
+        Console.WriteLine("  --env-file <file1> --env-file <file2>  Use multiple separate environment files");
         Console.WriteLine();
         Console.WriteLine("Other Options:");
         Console.WriteLine("  --help, -h            Show this help information");
@@ -383,9 +402,11 @@ public class Program
         Console.WriteLine("  dotnet run --web                        # Start WebApi service only");
         Console.WriteLine("  dotnet run --lib --env-file=.env.local  # Start LibApi with custom env file");
         Console.WriteLine("  dotnet run --user --env-file .env.test  # Start UserApi with test environment");
+        Console.WriteLine("  dotnet run --env-file=.env.base,.env.local  # Start with multiple env files (comma-separated)");
+        Console.WriteLine("  dotnet run --env-file .env.base --env-file .env.local  # Start with multiple env files (separate args)");
         Console.WriteLine();
         Console.WriteLine("Environment File Loading:");
-        Console.WriteLine("  1. Custom file (if specified with --env-file)");
+        Console.WriteLine("  1. Custom file(s) (if specified with --env-file, supports both comma-separated and multiple args)");
         Console.WriteLine("  2. Default .env file (if exists)");
         Console.WriteLine("  3. Environment-specific file (.env.development or .env.production)");
         Console.WriteLine();
@@ -413,9 +434,16 @@ public class Program
         _logger.LogInformation("Starting XiansAi.Server with {ServiceType}: {ServiceDescription}", 
             commandLineArgs.ServiceType, serviceDescription);
 
-        if (!string.IsNullOrWhiteSpace(commandLineArgs.CustomEnvFile))
+        if (commandLineArgs.CustomEnvFiles != null && commandLineArgs.CustomEnvFiles.Count > 0)
         {
-            _logger.LogInformation("Using custom environment file: {EnvFile}", commandLineArgs.CustomEnvFile);
+            if (commandLineArgs.CustomEnvFiles.Count == 1)
+            {
+                _logger.LogInformation("Using custom environment file: {EnvFile}", commandLineArgs.CustomEnvFiles[0]);
+            }
+            else
+            {
+                _logger.LogInformation("Using custom environment files: {EnvFiles}", string.Join(", ", commandLineArgs.CustomEnvFiles));
+            }
         }
         else
         {
