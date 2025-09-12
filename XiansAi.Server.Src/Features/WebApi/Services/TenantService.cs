@@ -220,6 +220,12 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.BadRequest("Tenant ID is not set in the context");
             }
 
+            // handle default tenant
+            if(_tenantContext.TenantId == "default")
+            {
+                return ServiceResult<Tenant>.Success(null);
+            }
+
             var tenantId = Tenant.SanitizeAndValidateTenantId(_tenantContext.TenantId);
 
             var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
@@ -234,6 +240,11 @@ public class TenantService : ITenantService
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
+            }
+
+            if(!tenant.Enabled)
+            {
+                return ServiceResult<Tenant>.Forbidden("Access denied: Tenant is disabled");
             }
 
             return ServiceResult<Tenant>.Success(tenant);
