@@ -62,7 +62,20 @@ public class CertificateGenerator
         
         // Set validity period starting from now
         var now = DateTimeOffset.UtcNow;
-        var notBefore = now.AddMinutes(-10); // Buffer for clock skew
+        var proposedNotBefore = now.AddMinutes(-10); // Buffer for clock skew
+        
+        // Ensure client certificate's notBefore is not earlier than issuer certificate's NotBefore
+        var issuerNotBefore = new DateTimeOffset(rootCertificate.NotBefore, TimeSpan.Zero);
+        var notBefore = proposedNotBefore > issuerNotBefore ? proposedNotBefore : issuerNotBefore;
+        
+        if (proposedNotBefore <= issuerNotBefore)
+        {
+            _logger.LogWarning(
+                "Adjusted client certificate notBefore time from {ProposedNotBefore} to {ActualNotBefore} " +
+                "to ensure it's not earlier than issuer certificate's NotBefore ({IssuerNotBefore})",
+                proposedNotBefore, notBefore, issuerNotBefore);
+        }
+        
         var notAfter = now.AddYears(5);
 
         // Add key usage extension
