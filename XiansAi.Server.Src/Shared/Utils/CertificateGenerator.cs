@@ -220,7 +220,7 @@ public class CertificateGenerator
         var proposedNotBefore = now.AddMinutes(-10); // Buffer for clock skew
         
         // Ensure client certificate's notBefore is not earlier than issuer certificate's NotBefore
-        var issuerNotBefore = new DateTimeOffset(rootCertificate.NotBefore, TimeSpan.Zero);
+        var issuerNotBefore = new DateTimeOffset(rootCertificate.NotBefore.ToUniversalTime(), TimeSpan.Zero);
         var notBefore = proposedNotBefore > issuerNotBefore ? proposedNotBefore : issuerNotBefore;
 
         if (proposedNotBefore <= issuerNotBefore)
