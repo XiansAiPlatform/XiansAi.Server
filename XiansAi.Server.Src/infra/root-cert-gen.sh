@@ -61,12 +61,37 @@ openssl genrsa -des3 -passout pass:"$PASSWORD" -out "$OUTPUT_DIR/$CA_NAME.key" $
 
 # Generate root certificate with UTC time
 echo "Generating root certificate..."
-# Set notBefore to be 1 hour after current time to ensure it's after issuer's notBefore
+
+# Create a configuration file for the CA certificate with proper extensions
+CA_CONFIG="$OUTPUT_DIR/ca.conf"
+cat > "$CA_CONFIG" << EOF
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_ca
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = State
+L = City
+O = Organization
+OU = IT
+CN = $CA_NAME
+
+[v3_ca]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints = critical,CA:true
+keyUsage = critical,digitalSignature,keyCertSign,cRLSign
+EOF
+
+# Generate the root CA certificate with proper CA extensions
 openssl req -x509 -new -nodes -key "$OUTPUT_DIR/$CA_NAME.key" -sha256 -days $DAYS \
+    -config "$CA_CONFIG" \
+    -extensions v3_ca \
     -passin pass:"$PASSWORD" \
     -out "$OUTPUT_DIR/$CA_NAME.crt" \
-    -subj "//C=US/ST=State/L=City/O=Organization/OU=IT/CN=$CA_NAME" \
-    -set_serial $(date -u +%s) \
+    -set_serial $(date -u +%s)
 
 # Verify certificate was created
 if [ -f "$OUTPUT_DIR/$CA_NAME.crt" ]; then
@@ -89,6 +114,9 @@ if [ -f "$OUTPUT_DIR/$CA_NAME.crt" ]; then
     echo "Creating base64 encoded PFX file..."
     PFX_BASE64_FILE="$OUTPUT_DIR/$CA_NAME.pfx.base64"
     cat "$PKCS12_FILE" | base64 > "$PFX_BASE64_FILE"
+    
+    # Clean up temporary configuration file
+    rm -f "$CA_CONFIG"
     
     echo "- PFX file: $PKCS12_FILE"
     echo "- Base64 encoded PFX: $PFX_BASE64_FILE"
