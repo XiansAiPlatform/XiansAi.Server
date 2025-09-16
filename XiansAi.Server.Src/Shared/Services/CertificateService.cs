@@ -101,6 +101,12 @@ public class CertificateService
                 }
             }
         }
+        // Validate PFX certificates if this is the first call (helpful for debugging)
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _certificateGenerator.ValidatePfxCertificates();
+        }
+
         // Generate new certificate
         var cert = _certificateGenerator.GenerateClientCertificate(
             name,
