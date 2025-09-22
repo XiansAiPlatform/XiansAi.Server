@@ -2,7 +2,7 @@ using Features.WebApi.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
 using System.Text.Json.Serialization;
-using XiansAi.Server.Features.WebApi.Services;
+using Features.WebApi.Services;
 
 namespace Features.WebApi.Endpoints;
 

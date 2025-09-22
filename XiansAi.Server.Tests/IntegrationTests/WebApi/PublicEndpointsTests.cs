@@ -7,7 +7,7 @@ using Shared.Utils.Services;
 using Shared.Services;
 using Moq;
 using XiansAi.Server.Tests.TestUtils;
-using XiansAi.Server.Utils;
+using Shared.Utils;
 using System.Text;
 using Shared.Providers.Auth.Auth0;
 using Microsoft.AspNetCore.Hosting;

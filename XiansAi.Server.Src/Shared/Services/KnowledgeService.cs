@@ -2,7 +2,7 @@ using MongoDB.Bson;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
-using XiansAi.Server.Utils;
+using Shared.Utils;
 using System.Security;
 using System.Text.Json.Serialization;
 using System.Text.Json;

@@ -6,7 +6,7 @@ using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Shared.Services;
 
-namespace XiansAi.Server.Features.WebApi.Endpoints;
+namespace Features.WebApi.Endpoints;
 
 public static class UserManagementEndpoints
 {

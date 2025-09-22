@@ -3,7 +3,7 @@ using Features.WebApi.Models;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Services;
 
-namespace XiansAi.Server.Features.WebApi.Endpoints;
+namespace Features.WebApi.Endpoints;
 
 public static class UserTenantEndpoints
 {

@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
-using XiansAi.Server.Utils;
+using Shared.Utils;
 
 namespace Shared.Services;
 
