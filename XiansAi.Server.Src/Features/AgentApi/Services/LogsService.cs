@@ -1,6 +1,6 @@
 using MongoDB.Bson;
-using XiansAi.Server.Features.AgentApi.Models;
-using XiansAi.Server.Features.AgentApi.Repositories;
+using Features.AgentApi.Models;
+using Features.AgentApi.Repositories;
 using Shared.Data;
 using Shared.Auth;
 

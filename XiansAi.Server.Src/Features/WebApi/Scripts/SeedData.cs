@@ -9,7 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Shared.Configuration;
 using Shared.Repositories;
 
-namespace XiansAi.Server.Features.WebApi.Scripts;
+namespace Features.WebApi.Scripts;
 
 public class SeedData
 {

@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using MongoDB.Bson;
 using Microsoft.Extensions.Logging;
 using XiansAi.Server.Tests.TestUtils;
-using XiansAi.Server.Features.AgentApi.Models;
+using Features.AgentApi.Models;
 using Features.AgentApi.Services.Lib;
 
 

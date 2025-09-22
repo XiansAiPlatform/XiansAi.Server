@@ -1,4 +1,4 @@
-namespace XiansAi.Server.Features.AgentApi.Models
+namespace Features.AgentApi.Models
 {
     public class WebhookRegistrationDto
     {

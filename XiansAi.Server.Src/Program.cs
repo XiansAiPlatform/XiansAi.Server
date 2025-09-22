@@ -5,7 +5,7 @@ using Features.WebApi.Configuration;
 using Shared.Auth;
 using Features.WebApi.Auth;
 using Shared.Data;
-using XiansAi.Server.Features.WebApi.Scripts;
+using Features.WebApi.Scripts;
 using Features.UserApi.Configuration;
 
 /// <summary>
