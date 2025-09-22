@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Redis implementation of the cache provider using IDistributedCache

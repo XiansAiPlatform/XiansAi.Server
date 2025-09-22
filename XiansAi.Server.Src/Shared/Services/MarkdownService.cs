@@ -32,10 +32,10 @@ public class MarkdownService : IMarkdownService
     {
         var instruction = MarkDownPrompt.Value;
         
-        var messages = new List<XiansAi.Server.Providers.ChatMessage>
+        var messages = new List<Shared.Providers.ChatMessage>
         {
-            new XiansAi.Server.Providers.ChatMessage { Role = "system", Content = instruction },
-            new XiansAi.Server.Providers.ChatMessage { Role = "user", Content = "Workflow code:\n" + source }
+            new Shared.Providers.ChatMessage { Role = "system", Content = instruction },
+            new Shared.Providers.ChatMessage { Role = "user", Content = "Workflow code:\n" + source }
         };
         var markdown = await _llmService.GetChatCompletionAsync(messages, _llmService.GetModel());
 

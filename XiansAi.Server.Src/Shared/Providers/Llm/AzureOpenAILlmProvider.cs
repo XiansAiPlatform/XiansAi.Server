@@ -5,7 +5,7 @@ using System.Text.Json;
 using Shared.Auth;
 using Shared.Utils.GenAi;
 
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Azure OpenAI implementation of the LLM provider

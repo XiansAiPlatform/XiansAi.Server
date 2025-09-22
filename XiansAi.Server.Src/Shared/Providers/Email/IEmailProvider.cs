@@ -1,4 +1,4 @@
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Interface for email providers that abstracts email implementation details

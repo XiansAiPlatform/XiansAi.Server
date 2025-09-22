@@ -1,6 +1,6 @@
 using Shared.Auth;
 using Shared.Utils;
-using XiansAi.Server.Providers;
+using Shared.Providers;
 using Shared.Utils.Temporal;
 using Shared.Data;
 using Shared.Services;
