@@ -7,7 +7,6 @@ using Temporalio.Api.WorkflowService.V1;
 using Temporalio.Api.TaskQueue.V1;
 using Shared.Utils.Temporal;
 using Shared.Data;
-using Shared.Data.Models;
 using Features.WebApi.Repositories;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -15,7 +14,6 @@ using Features.WebApi.Models;
 using Temporalio.Common;
 using Temporalio.Api.History.V1;
 using Shared.Services;
-using MongoDB.Bson;
 
 namespace Features.WebApi.Services;
 

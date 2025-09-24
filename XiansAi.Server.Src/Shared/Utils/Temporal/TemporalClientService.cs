@@ -1,10 +1,5 @@
 using Temporalio.Client;
 using System.Collections.Concurrent;
-using Temporalio.Api.Cloud.CloudService.V1;
-using Temporalio.Api.Cloud.Namespace.V1;
-using Temporalio.Api.Cloud.Identity.V1;
-using Google.Protobuf.WellKnownTypes;
-using Shared.Auth;
 
 namespace Shared.Utils.Temporal;
 

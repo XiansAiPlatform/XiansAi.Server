@@ -2,7 +2,6 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data.Models.Validation;
 using System.ComponentModel.DataAnnotations;
-using System.Text.RegularExpressions;
 
 namespace Shared.Data.Models;
 

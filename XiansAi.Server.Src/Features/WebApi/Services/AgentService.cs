@@ -1,6 +1,5 @@
 using Shared.Auth;
 using Shared.Repositories;
-using Shared.Data;
 using Shared.Data.Models;
 using Shared.Utils.Services;
 using Features.WebApi.Models;

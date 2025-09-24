@@ -1,6 +1,5 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
-using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
 

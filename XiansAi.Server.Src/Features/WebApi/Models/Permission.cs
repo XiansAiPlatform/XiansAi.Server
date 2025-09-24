@@ -1,6 +1,5 @@
 using System.Text.Json;
 using MongoDB.Bson.Serialization.Attributes;
-using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 
 namespace Shared.Data;

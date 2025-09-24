@@ -3,7 +3,6 @@ using Shared.Utils.Temporal;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Api.History.V1;
 using Temporalio.Client;
-using Shared.Services;
 using Shared.Utils.Services;
 
 namespace Features.WebApi.Services;

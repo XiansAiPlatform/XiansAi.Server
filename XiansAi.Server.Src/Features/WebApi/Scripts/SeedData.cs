@@ -1,11 +1,7 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
 using Shared.Data;
-using Features.WebApi.Models;
 using Shared.Data.Models;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
 using Shared.Configuration;
 using Shared.Repositories;
 

@@ -1,4 +1,3 @@
-using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;

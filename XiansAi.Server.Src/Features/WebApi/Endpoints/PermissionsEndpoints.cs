@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Shared.Services;
 using Shared.Utils.Services;

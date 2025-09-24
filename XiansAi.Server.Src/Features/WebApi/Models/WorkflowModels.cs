@@ -1,4 +1,3 @@
-using Shared.Data.Models;
 
 namespace Features.WebApi.Models;
 

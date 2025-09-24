@@ -2,7 +2,6 @@ using DotNetEnv;
 using Features.AgentApi.Configuration;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
-using Shared.Auth;
 using Features.WebApi.Auth;
 using Shared.Data;
 using Features.WebApi.Scripts;
