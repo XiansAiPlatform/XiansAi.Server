@@ -7,16 +7,16 @@ using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Data;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
 {
     private const string TestUserId = "test-user";
 
     /*
-    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.WebApi.KnowledgeEndpointsTests.GetLatestAll_WithValidTenant_ReturnsKnowledgeList"
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.WebApi.KnowledgeEndpointsTests.GetLatestAll_WithValidTenant_ReturnsKnowledgeList"
     */
 
     public KnowledgeEndpointsTests(MongoDbFixture mongoDbFixture) : base(mongoDbFixture)
@@ -135,7 +135,7 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
 
 
     /*
-    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.WebApi.KnowledgeEndpointsTests.GetLatestByName_WithValidNameAndAgent_ReturnsKnowledge"
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.WebApi.KnowledgeEndpointsTests.GetLatestByName_WithValidNameAndAgent_ReturnsKnowledge"
     */
     [Fact]
     public async Task GetLatestByName_WithValidNameAndAgent_ReturnsKnowledge()

@@ -1,10 +1,10 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Features.AgentApi.Endpoints;
 using Features.AgentApi.Endpoints.Models;
 
-namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
+namespace Tests.IntegrationTests.AgentApi;
 
 /// <summary>
 /// Cache endpoint tests that run with Production environment configuration
@@ -32,7 +32,7 @@ public class CacheEndpointProductionTests : ProductionIntegrationTestBase, IClas
     }
 
     /*
-    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointProductionTests.SetAndGetCacheValue_ReturnsExpectedResult_WithProductionConfig"
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.CacheEndpointProductionTests.SetAndGetCacheValue_ReturnsExpectedResult_WithProductionConfig"
     */
     [Fact]
     public async Task SetAndGetCacheValue_ReturnsExpectedResult_WithProductionConfig()

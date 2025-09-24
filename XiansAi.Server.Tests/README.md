@@ -45,7 +45,7 @@ ASPNETCORE_ENVIRONMENT=Tests dotnet test
 ```bash
 # Run tests with Test configuration
 export ASPNETCORE_ENVIRONMENT=Test
-dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
+dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
 
 # Run tests with Staging configuration
 export ASPNETCORE_ENVIRONMENT=Staging
@@ -60,7 +60,7 @@ dotnet test
 
 ```bash
 # Run specific test with production configuration
-./run-tests-with-environment.sh production "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
+./run-tests-with-environment.sh production "FullyQualifiedName=Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
 
 # Run all cache tests with staging configuration
 ./run-tests-with-environment.sh staging "FullyQualifiedName~CacheEndpointTests"
@@ -98,7 +98,7 @@ public class CacheEndpointProductionTests : ProductionIntegrationTestBase, IClas
 
 ```bash
 # Production environment
-ASPNETCORE_ENVIRONMENT=Production dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
+ASPNETCORE_ENVIRONMENT=Production dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
 
 # Staging environment
 ASPNETCORE_ENVIRONMENT=Staging dotnet test --filter "FullyQualifiedName~CacheEndpointTests"
@@ -155,7 +155,7 @@ Some tests are marked with `[Fact(Skip = "Requires proper certificate authentica
 ASPNETCORE_ENVIRONMENT=Production dotnet test --filter "FullyQualifiedName~CacheEndpointProductionTests"
 
 # Test specific production scenario
-./run-tests-with-environment.sh production "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.CacheEndpointProductionTests.SetAndGetCacheValue_ReturnsExpectedResult_WithProductionConfig"
+./run-tests-with-environment.sh production "FullyQualifiedName=Tests.IntegrationTests.AgentApi.CacheEndpointProductionTests.SetAndGetCacheValue_ReturnsExpectedResult_WithProductionConfig"
 ```
 
 ### Testing Configuration Differences

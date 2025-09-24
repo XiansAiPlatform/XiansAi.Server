@@ -4,7 +4,7 @@ using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace XiansAi.Server.Tests.UnitTests.Shared.Utils.Serialization;
+namespace Tests.UnitTests.Shared.Utils.Serialization;
 
 public class TimeSpanTypeConverterTests
 {

@@ -4,12 +4,12 @@ using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Xunit;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Data;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<MongoDbFixture>
 {

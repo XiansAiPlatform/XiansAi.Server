@@ -8,8 +8,6 @@ using Shared.Utils.Services;
 using System.Configuration;
 using System.IdentityModel.Tokens.Jwt;
 using Shared.Providers.Auth;
-using Shared.Utils;
-
 
 namespace Features.WebApi.Services;
 

@@ -1,5 +1,5 @@
 using Xunit;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authorization;
@@ -11,7 +11,7 @@ using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public abstract class WebApiIntegrationTestBase : IntegrationTestBase
 {

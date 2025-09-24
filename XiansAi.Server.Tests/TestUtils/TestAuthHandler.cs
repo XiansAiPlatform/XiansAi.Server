@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using System.Collections.Generic;
 using Shared.Auth;
 
-namespace XiansAi.Server.Tests.TestUtils;
+namespace Tests.TestUtils;
 
 public class TestAuthenticationOptions : AuthenticationSchemeOptions
 {

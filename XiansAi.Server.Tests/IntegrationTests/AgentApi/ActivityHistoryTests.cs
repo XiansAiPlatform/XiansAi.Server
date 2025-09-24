@@ -1,5 +1,5 @@
 using System.Net.Http.Json;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Features.AgentApi.Services.Lib;
 using System.Net;
 using System.Text.Json;
@@ -9,7 +9,7 @@ using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Services;
 
-namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
+namespace Tests.IntegrationTests.AgentApi;
 
 
 public class ActivityHistoryTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
@@ -23,7 +23,7 @@ public class ActivityHistoryTests : IntegrationTestBase, IClassFixture<MongoDbFi
     }
 
     /*
-    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.ActivityHistoryTests.CreateActivityHistory_WithValidData_ReturnsOk"
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ActivityHistoryTests.CreateActivityHistory_WithValidData_ReturnsOk"
     */
     [Fact]
     public async Task CreateActivityHistory_WithValidData_ReturnsOk()
