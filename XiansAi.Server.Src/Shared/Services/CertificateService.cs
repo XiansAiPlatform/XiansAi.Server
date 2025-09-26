@@ -1,5 +1,4 @@
 using System.Security.Cryptography.X509Certificates;
-using System.Security.Claims;
 using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 using Features.AgentApi.Repositories;

@@ -6,14 +6,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Shared.Utils.Services;
 using Shared.Services;
 using Moq;
-using XiansAi.Server.Tests.TestUtils;
-using XiansAi.Server.Utils;
+using Tests.TestUtils;
+using Shared.Utils;
 using System.Text;
 using Shared.Providers.Auth.Auth0;
 using Microsoft.AspNetCore.Hosting;
 using Shared.Auth;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class PublicEndpointsTests : WebApiIntegrationTestBase
 {

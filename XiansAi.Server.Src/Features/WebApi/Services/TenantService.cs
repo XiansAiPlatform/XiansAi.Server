@@ -4,8 +4,6 @@ using Shared.Utils.Services;
 using Shared.Data.Models;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Driver;
-using Auth0.ManagementApi.Models;
-using Microsoft.AspNetCore.Authentication;
 using Shared.Repositories;
 
 namespace Features.WebApi.Services;

@@ -1,6 +1,6 @@
 using Azure.Communication.Email;
 
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 
 /// <summary>

@@ -1,6 +1,5 @@
 using Shared.Data;
 using Shared.Auth;
-using Shared.Data.Models;
 
 namespace Shared.Repositories;
 

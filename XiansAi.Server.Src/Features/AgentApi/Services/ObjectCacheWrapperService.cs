@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using XiansAi.Server.Utils;
+using Shared.Utils;
 using System.Text.Json;
 
 namespace Features.AgentApi.Services.Lib;

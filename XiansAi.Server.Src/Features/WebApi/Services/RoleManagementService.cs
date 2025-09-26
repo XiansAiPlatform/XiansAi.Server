@@ -6,7 +6,7 @@ using Shared.Providers.Auth;
 using Shared.Services;
 using Shared.Repositories;
 
-namespace XiansAi.Server.Features.WebApi.Services
+namespace Features.WebApi.Services
 {
     public class RoleDto
     {

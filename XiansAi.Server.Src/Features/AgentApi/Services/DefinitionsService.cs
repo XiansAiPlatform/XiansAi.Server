@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Data.Models;
-using Shared.Data;
 using Shared.Repositories;
 using Shared.Services;
 

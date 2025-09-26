@@ -1,5 +1,4 @@
 using Shared.Auth;
-using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;

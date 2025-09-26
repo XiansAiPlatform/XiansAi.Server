@@ -6,11 +6,11 @@ using Shared.Data;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Features.WebApi.Models;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Xunit;
 using MongoDB.Bson;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class AgentEndpointsTests : WebApiIntegrationTestBase
 {

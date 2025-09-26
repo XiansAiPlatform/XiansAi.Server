@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using MongoDB.Bson;
 using Shared.Data.Models;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 
-namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
+namespace Tests.IntegrationTests.AgentApi;
 
 public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
@@ -16,7 +16,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
     }
 
     /*
-    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_ReturnsLatestInstruction"
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_ReturnsLatestInstruction"
     */
     [Fact]
     public async Task GetLatestInstruction_ReturnsLatestInstruction()
@@ -80,7 +80,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
     }
 
     /*
-    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_WithNonExistentName_ReturnsNotFound"
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_WithNonExistentName_ReturnsNotFound"
     */
     [Fact]
     public async Task GetLatestInstruction_WithNonExistentName_ReturnsNotFound()
@@ -96,7 +96,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
     }
 
     /*
-    dotnet test --filter "FullyQualifiedName=XiansAi.Server.Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_WithMultipleVersions_ReturnsNewestByCreatedAt"
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_WithMultipleVersions_ReturnsNewestByCreatedAt"
     */
     [Fact]
     public async Task GetLatestInstruction_WithMultipleVersions_ReturnsNewestByCreatedAt()

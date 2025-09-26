@@ -3,14 +3,14 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using Xunit;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Features.WebApi.Models;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
 using Microsoft.Extensions.Logging;
 using Shared.Data;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<MongoDbFixture>
 {

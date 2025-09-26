@@ -2,12 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using MongoDB.Bson;
 using Microsoft.Extensions.Logging;
-using XiansAi.Server.Tests.TestUtils;
-using XiansAi.Server.Features.AgentApi.Models;
+using Tests.TestUtils;
+using Features.AgentApi.Models;
 using Features.AgentApi.Services.Lib;
 
 
-namespace XiansAi.Server.Tests.IntegrationTests.AgentApi;
+namespace Tests.IntegrationTests.AgentApi;
 
 public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {

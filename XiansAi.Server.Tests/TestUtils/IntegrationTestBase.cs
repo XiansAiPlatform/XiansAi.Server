@@ -1,11 +1,11 @@
 using Xunit;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Microsoft.AspNetCore.Mvc.Testing;
 using MongoDB.Driver;
 using System.Net.Http.Headers;
 using System.Net;
 
-namespace XiansAi.Server.Tests.TestUtils;
+namespace Tests.TestUtils;
 
 public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
 {

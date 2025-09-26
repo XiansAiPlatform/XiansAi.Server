@@ -1,6 +1,5 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
-using Shared.Auth;
 using Shared.Data;
 
 namespace Shared.Repositories

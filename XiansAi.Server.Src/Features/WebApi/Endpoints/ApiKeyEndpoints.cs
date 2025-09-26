@@ -4,7 +4,7 @@ using Shared.Auth;
 using Features.WebApi.Auth;
 using Shared.Utils.Services; 
 
-namespace XiansAi.Server.Features.WebApi.Endpoints
+namespace Features.WebApi.Endpoints
 {
     public static class ApiKeyEndpoints
     {

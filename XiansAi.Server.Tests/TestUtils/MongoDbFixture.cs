@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Mongo2Go;
 using System.Threading;
 
-namespace XiansAi.Server.Tests.TestUtils;
+namespace Tests.TestUtils;
 
 public class TestMongoDbContext : IMongoDbContext
 {

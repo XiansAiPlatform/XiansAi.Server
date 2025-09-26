@@ -4,9 +4,9 @@ using System.Text.Json;
 using Xunit;
 using Features.WebApi.Services;
 using MongoDB.Bson;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class TenantEndpointsTests : WebApiIntegrationTestBase
 {

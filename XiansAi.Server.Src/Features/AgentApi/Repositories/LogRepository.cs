@@ -1,8 +1,8 @@
 using MongoDB.Driver;
 using Shared.Data;
-using XiansAi.Server.Features.AgentApi.Models;
+using Features.AgentApi.Models;
 
-namespace XiansAi.Server.Features.AgentApi.Repositories;
+namespace Features.AgentApi.Repositories;
 
 public interface ILogRepository
 {

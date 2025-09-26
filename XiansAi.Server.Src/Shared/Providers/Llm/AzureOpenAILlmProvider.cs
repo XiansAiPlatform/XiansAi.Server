@@ -1,11 +1,9 @@
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Shared.Auth;
 using Shared.Utils.GenAi;
 
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Azure OpenAI implementation of the LLM provider

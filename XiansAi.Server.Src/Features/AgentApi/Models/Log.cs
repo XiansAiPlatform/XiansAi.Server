@@ -1,7 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace XiansAi.Server.Features.AgentApi.Models;
+namespace Features.AgentApi.Models;
 
 [BsonIgnoreExtraElements]
 public class Log

@@ -1,7 +1,7 @@
 using Azure;
 using Azure.Communication.Email;
 
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Azure Communication Services implementation of the email provider

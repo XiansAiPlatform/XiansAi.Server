@@ -1,12 +1,9 @@
 using Features.WebApi.Auth;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Shared.Auth;
-using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Shared.Services;
 
-namespace XiansAi.Server.Features.WebApi.Endpoints;
+namespace Features.WebApi.Endpoints;
 
 public static class UserManagementEndpoints
 {

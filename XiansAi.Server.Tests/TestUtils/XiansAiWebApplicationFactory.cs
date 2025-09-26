@@ -16,7 +16,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Auth;
 
-namespace XiansAi.Server.Tests.TestUtils;
+namespace Tests.TestUtils;
 
 public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
 {

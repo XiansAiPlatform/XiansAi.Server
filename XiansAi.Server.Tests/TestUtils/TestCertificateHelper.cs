@@ -4,7 +4,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace XiansAi.Server.Tests.TestUtils;
+namespace Tests.TestUtils;
 
 public static class TestCertificateHelper
 {

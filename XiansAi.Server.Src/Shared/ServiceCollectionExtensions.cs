@@ -1,8 +1,7 @@
-using Microsoft.Extensions.DependencyInjection;
 using Shared.Repositories;
 using Shared.Services;
 
-namespace XiansAi.Server.Shared;
+namespace Shared;
 
 public static class ServiceCollectionExtensions
 {

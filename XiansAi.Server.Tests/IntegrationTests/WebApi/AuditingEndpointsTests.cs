@@ -9,9 +9,9 @@ using Shared.Repositories;
 using Shared.Data.Models;
 using Shared.Data;
 using Microsoft.Extensions.Logging;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class AuditingEndpointsTests : WebApiIntegrationTestBase
 {

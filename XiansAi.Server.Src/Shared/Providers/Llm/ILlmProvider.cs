@@ -1,4 +1,4 @@
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Interface for LLM providers that abstracts LLM implementation details

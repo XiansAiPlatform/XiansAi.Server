@@ -1,6 +1,6 @@
-using XiansAi.Server.Providers;
+using Shared.Providers;
 
-namespace XiansAi.Server.Utils;
+namespace Shared.Utils;
 
 /// <summary>
 /// Service for handling cached objects with customizable expiration policies

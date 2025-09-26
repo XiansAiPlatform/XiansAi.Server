@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Builder;
 
 namespace Features.AgentApi.Auth;
 

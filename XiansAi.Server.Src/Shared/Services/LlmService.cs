@@ -1,4 +1,4 @@
-using XiansAi.Server.Providers;
+using Shared.Providers;
 
 namespace Shared.Services;
 

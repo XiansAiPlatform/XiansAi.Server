@@ -1,7 +1,7 @@
 using Shared.Auth;
 using Shared.Utils.GenAi;
 
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Anthropic implementation of the LLM provider (placeholder implementation)

@@ -1,5 +1,4 @@
 using MongoDB.Driver;
-using Microsoft.Extensions.Logging;
 using System.Net.Sockets;
 
 namespace Shared.Utils;

@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using Shared.Auth;
 using Shared.Utils.GenAi;
 
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// OpenAI implementation of the LLM provider

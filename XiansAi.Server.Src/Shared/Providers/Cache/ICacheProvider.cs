@@ -1,4 +1,4 @@
-namespace XiansAi.Server.Providers;
+namespace Shared.Providers;
 
 /// <summary>
 /// Interface for cache providers that abstracts caching implementation details

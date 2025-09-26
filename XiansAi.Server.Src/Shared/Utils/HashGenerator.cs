@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace XiansAi.Server.Utils;
+namespace Shared.Utils;
 
 public static class HashGenerator
 {

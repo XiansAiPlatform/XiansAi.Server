@@ -8,12 +8,12 @@ using Features.WebApi.Services;
 using MongoDB.Bson;
 using Shared.Utils.Services;
 using Shared.Services;
-using XiansAi.Server.Tests.TestUtils;
+using Tests.TestUtils;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net.Http.Json;
 using System.Text;
 
-namespace XiansAi.Server.Tests.IntegrationTests.WebApi;
+namespace Tests.IntegrationTests.WebApi;
 
 public class WebhookEndpointsTests : WebApiIntegrationTestBase
 {

@@ -1,6 +1,5 @@
 using Features.UserApi.Services;
 using Shared.Auth;
-using Shared.Utils.Temporal;
 
 namespace Features.UserApi.Utils;
 
