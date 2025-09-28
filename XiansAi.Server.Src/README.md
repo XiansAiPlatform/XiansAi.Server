@@ -29,6 +29,9 @@ dotnet run
 # Run with specific environment file
 dotnet run --env-file .env.local
 
+# Run with absolute path
+dotnet run --env-file ~/Documents/Work/Xians/platform/community-edition/server/.env.local
+
 # Run with multiple environment files (comma-separated)
 dotnet run --env-file .env.base,.env.local
 
