@@ -17,8 +17,6 @@ public class UserDto
     public string Email { get; set; } = string.Empty;
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
-    [JsonPropertyName("tenantId")]
-    public string TenantId { get; set; } = string.Empty;
 }
 
 public class EditUserDto
@@ -255,12 +253,7 @@ public class UserManagementService : IUserManagementService
             }
             // to assign first user as SysAdmin
             var anyUser = await _userRepository.GetAnyUserAsync();
-            var tenantRole = new TenantRole
-            {
-                Tenant = userDto.TenantId,
-                Roles = new List<string> { SystemRoles.TenantUser },
-                IsApproved = false
-            };
+
             var newUser = new User
             {
                 UserId = userDto.UserId,
@@ -270,7 +263,7 @@ public class UserManagementService : IUserManagementService
                 IsLockedOut = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
-                TenantRoles = !String.IsNullOrEmpty(userDto.TenantId) ? new List<TenantRole> { tenantRole }  : new List<TenantRole>()
+                TenantRoles = new List<TenantRole>()
             };
 
             try
@@ -473,7 +466,6 @@ public class UserManagementService : IUserManagementService
             UserId = u.UserId,
             Email = u.Email,
             Name = u.Name,
-            TenantId = u.TenantRoles.FirstOrDefault()?.Tenant ?? string.Empty
         }).ToList();
         return ServiceResult<List<UserDto>>.Success(userDtos);
     }

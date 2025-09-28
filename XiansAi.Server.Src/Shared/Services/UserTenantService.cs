@@ -484,7 +484,6 @@ public class UserTenantService : IUserTenantService
             UserId = jwtResult.UserId,
             Email = jwtResult.Email ?? string.Empty,
             Name = jwtResult.Name ?? string.Empty,
-            TenantId = _tenantContext.TenantId
         };
 
         var createdUser = await _userManagementService.CreateNewUser(newUser);

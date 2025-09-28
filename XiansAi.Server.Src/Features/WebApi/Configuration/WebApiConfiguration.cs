@@ -18,7 +18,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
-        builder.Services.AddScoped<IPublicService, PublicService>();        
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 
         // Register repositories
@@ -37,7 +36,6 @@ public static class WebApiConfiguration
         SettingsEndpoints.MapSettingsEndpoints(app);
         TenantEndpoints.MapTenantEndpoints(app);
         WebhookEndpoints.MapWebhookEndpoints(app);
-        PublicEndpoints.MapPublicEndpoints(app);
         MessagingEndpoints.MapMessagingEndpoints(app);
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);

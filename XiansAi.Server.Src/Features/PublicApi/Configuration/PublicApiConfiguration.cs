@@ -107,7 +107,6 @@ public static class PublicApiConfiguration
         app.UseRateLimiter();
         
         // Map Public API endpoints (no authentication required, but rate limited)
-        SampleEndpoints.MapSampleEndpoints(app);
         RegisterEndpoints.MapRegisterEndpoints(app);
         
         return app;

@@ -88,5 +88,49 @@ public static class RegisterEndpoints
             return operation;
         })
         .RequireRateLimiting("PublicApiGet");
+
+        registerGroup.MapPost("/new-tenant", async (
+            [FromBody] PublicCreateTenantRequest request,
+            [FromServices] IPublicRegistrationService registrationService,
+            HttpContext httpContext) =>
+        {
+            // Extract token from Authorization header
+            var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
+            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            {
+                return Results.BadRequest(new { 
+                    error = "Authorization header required", 
+                    message = "Please provide a valid Bearer token in the Authorization header" 
+                });
+            }
+
+            var userToken = authHeader.Substring("Bearer ".Length);
+            var result = await registrationService.CreateNewTenant(request, userToken);
+            return result.ToHttpResult<PublicCreateTenantResponse>();
+        })
+        .WithName("Create New Tenant")
+        .WithOpenApi(operation => {
+            operation.Summary = "Create a new tenant";
+            operation.Description = "Create a new tenant with the current user as the tenant administrator. Requires a valid JWT token in the Authorization header (Bearer <token>). The tenant ID and domain must be unique. Rate limited to 5 requests per minute per IP.";
+            operation.RequestBody.Description = "New tenant request containing tenant ID, name, domain, and optional description";
+            
+            // Add Authorization header parameter
+            operation.Parameters ??= new List<Microsoft.OpenApi.Models.OpenApiParameter>();
+            operation.Parameters.Add(new Microsoft.OpenApi.Models.OpenApiParameter
+            {
+                Name = "Authorization",
+                In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                Required = true,
+                Description = "Bearer token for user authentication",
+                Schema = new Microsoft.OpenApi.Models.OpenApiSchema
+                {
+                    Type = "string",
+                    Example = new Microsoft.OpenApi.Any.OpenApiString("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
+                }
+            });
+            
+            return operation;
+        })
+        .RequireRateLimiting("PublicApiRegistration");
     }
 }
