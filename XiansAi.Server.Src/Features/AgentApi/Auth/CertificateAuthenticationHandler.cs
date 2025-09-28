@@ -8,7 +8,6 @@ using Features.AgentApi.Repositories;
 using System.Security.Cryptography;
 using Shared.Auth;
 using Shared.Utils;
-using Features.WebApi.Services;
 using Shared.Repositories;
 
 namespace Features.AgentApi.Auth;
@@ -27,10 +26,8 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         UrlEncoder encoder,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        IConfiguration configuration,
         ITenantContext tenantContext,
         ICertificateValidationCache certValidationCache,
-        ITenantService tenantService,
         ITenantRepository tenantRepository) 
         : base(options, logger, encoder)
     {

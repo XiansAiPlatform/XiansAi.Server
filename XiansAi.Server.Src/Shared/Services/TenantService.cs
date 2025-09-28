@@ -5,8 +5,9 @@ using Shared.Data.Models;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Driver;
 using Shared.Repositories;
+using Features.WebApi.Services;
 
-namespace Features.WebApi.Services;
+namespace Shared.Services;
 
 // Request DTOs
 public class CreateTenantRequest
@@ -45,14 +46,10 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId);
     Task<ServiceResult<Tenant>> GetCurrentTenantInfo();
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
-    Task<ServiceResult<List<string>>> GetTenantList();
+    Task<ServiceResult<List<string>>> GetTenantIdList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request);
     Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
     Task<ServiceResult<bool>> DeleteTenant(string id);
-    Task<ServiceResult<bool>> AddAgent(string tenantId, Agent agent);
-    Task<ServiceResult<bool>> UpdateAgent(string tenantId, string agentName, Agent agent);
-    Task<ServiceResult<bool>> RemoveAgent(string tenantId, string agentName);
-    Task<ServiceResult<bool>> AddFlowToAgent(string tenantId, string agentName, Flow flow);
 }
 
 public class TenantService : ITenantService
@@ -60,16 +57,19 @@ public class TenantService : ITenantService
     private readonly ITenantRepository _tenantRepository;
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly IRoleManagementService _roleManagementService;
 
 
     public TenantService(
         ITenantRepository tenantRepository,
         ILogger<TenantService> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IRoleManagementService roleManagementService)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -252,7 +252,13 @@ public class TenantService : ITenantService
     {
         try
         {
-            EnsureTenantAccessOrThrow(_tenantContext.TenantId);
+            // Only SysAdmin can get all tenants
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                _logger.LogWarning("Unauthorized attempt to get all tenants by user {UserId}", _tenantContext.LoggedInUser);
+                return ServiceResult<List<Tenant>>.Forbidden("Access denied: Only system administrators can retrieve all tenants");
+            }
+
             var tenants = await _tenantRepository.GetAllAsync();
             return ServiceResult<List<Tenant>>.Success(tenants);
         }
@@ -263,12 +269,19 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<List<string>>> GetTenantList()
+    public async Task<ServiceResult<List<string>>> GetTenantIdList()
     {
         try
         {
-            var tenants = await _tenantRepository.GetTenantListAsync();
-            return ServiceResult<List<string>>.Success(tenants);
+            // Only SysAdmin can get tenant list
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                _logger.LogWarning("Unauthorized attempt to get tenant list by user {UserId}", _tenantContext.LoggedInUser);
+                return ServiceResult<List<string>>.Forbidden("Access denied: Only system administrators can retrieve tenant list");
+            }
+
+            var tenants = await _tenantRepository.GetAllAsync();
+            return ServiceResult<List<string>>.Success(tenants.Select(t => t.TenantId).ToList());
         }
         catch (Exception ex)
         {
@@ -394,6 +407,7 @@ public class TenantService : ITenantService
     {
         try
         {
+            EnsureTenantAccessOrThrow(id);
             id = SanitizeAndValidateId(id);
 
             var success = await _tenantRepository.DeleteAsync(id);
@@ -420,128 +434,4 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<bool>> AddAgent(string tenantId, Agent agent)
-    {
-        try
-        {
-            agent.CreatedAt = DateTime.UtcNow;
-            agent.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
-
-            var validatedTenantId = SanitizeAndValidateId(tenantId);
-            var validatedAgent = agent.SanitizeAndValidate();
-            var success = await _tenantRepository.AddAgentAsync(validatedTenantId, validatedAgent);
-            if (success)
-            {
-                _logger.LogInformation("Added agent {AgentName} to tenant {TenantId}", validatedAgent.Name, validatedTenantId);
-                return ServiceResult<bool>.Success(true);
-            }
-            else
-            {
-                _logger.LogWarning("Failed to add agent {AgentName} to tenant {TenantId}", agent.Name, tenantId);
-                return ServiceResult<bool>.NotFound("Tenant not found");
-            }
-        }
-        catch (ValidationException ex)
-        {
-            _logger.LogWarning("Validation failed while adding agent: {Message}", ex.Message);
-            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error adding agent {AgentName} to tenant {TenantId}", agent.Name, tenantId);
-            return ServiceResult<bool>.InternalServerError("An error occurred while adding the agent.");
-        }
-    }
-
-    public async Task<ServiceResult<bool>> UpdateAgent(string tenantId, string agentName, Agent agent)
-    {
-        try
-        {
-            var validatedTenantId = SanitizeAndValidateId(tenantId);
-            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
-            var validatedAgent = agent.SanitizeAndValidate();
-            var success = await _tenantRepository.UpdateAgentAsync(validatedTenantId, validatedAgentName, validatedAgent);
-            if (success)
-            {
-                _logger.LogInformation("Updated agent {AgentName} in tenant {TenantId}", validatedAgentName, validatedTenantId);
-                return ServiceResult<bool>.Success(true);
-            }
-            else
-            {
-                _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", agentName, tenantId);
-                return ServiceResult<bool>.NotFound("Agent not found");
-            }
-        }
-        catch (ValidationException ex)
-        {
-            _logger.LogWarning("Validation failed while updating agent: {Message}", ex.Message);
-            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error updating agent {AgentName} in tenant {TenantId}", agentName, tenantId);
-            return ServiceResult<bool>.InternalServerError("An error occurred while updating the agent.");
-        }
-    }
-
-    public async Task<ServiceResult<bool>> RemoveAgent(string tenantId, string agentName)
-    {
-        try
-        { var validatedTenantId = SanitizeAndValidateId(tenantId);
-            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
-
-            var success = await _tenantRepository.RemoveAgentAsync(validatedTenantId, validatedAgentName);
-            if (success)
-            {
-                _logger.LogInformation("Removed agent {AgentName} from tenant {TenantId}", validatedAgentName, validatedTenantId);
-                return ServiceResult<bool>.Success(true);
-            }
-            else
-            {
-                _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", agentName, tenantId);
-                return ServiceResult<bool>.NotFound("Agent not found");
-            }
-        }
-        catch (ValidationException ex)
-        {
-            _logger.LogWarning("Validation failed while removing agent: {Message}", ex.Message);
-            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error removing agent {AgentName} from tenant {TenantId}", agentName, tenantId);
-            return ServiceResult<bool>.InternalServerError("An error occurred while removing the agent.");
-        }
-    }
-
-    public async Task<ServiceResult<bool>> AddFlowToAgent(string tenantId, string agentName, Flow flow)
-    {
-        try
-        {
-            var validatedTenantId = SanitizeAndValidateId(tenantId);
-            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
-            var validatedFlow = flow.SanitizeAndValidate();
-
-            flow.CreatedAt = DateTime.UtcNow;
-            flow.UpdatedAt = DateTime.UtcNow;
-            flow.CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
-
-            var success = await _tenantRepository.AddFlowToAgentAsync(validatedTenantId, validatedAgentName, validatedFlow);
-            if (success)
-            {
-                _logger.LogInformation("Added flow {FlowName} to agent {AgentName} in tenant {TenantId}", flow.Name, agentName, tenantId);
-                return ServiceResult<bool>.Success(true);
-            }
-            else
-            {
-                _logger.LogWarning("Failed to add flow {FlowName} to agent {AgentName} in tenant {TenantId}", flow.Name, agentName, tenantId);
-                return ServiceResult<bool>.NotFound("Agent not found");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error adding flow {FlowName} to agent {AgentName} in tenant {TenantId}", flow.Name, agentName, tenantId);
-            return ServiceResult<bool>.InternalServerError("An error occurred while adding the flow.");
-        }
-    }
 }

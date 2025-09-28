@@ -255,9 +255,9 @@ public class UserRepository : IUserRepository
         if (user == null)
             return new List<string>();
 
-        var roles = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId)?.Roles;
-        var result = roles ?? new List<string>();
-
+        // Only return roles for approved tenants
+        var tenantRole = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId && tr.IsApproved);
+        var result = tenantRole?.Roles ?? new List<string>();
 
         if (user.IsSysAdmin)
         {

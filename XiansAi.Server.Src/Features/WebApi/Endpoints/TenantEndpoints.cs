@@ -1,8 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Shared.Utils.Services;
-using System.Security.Claims;
+using Shared.Services;
 
 namespace Features.WebApi.Endpoints;
 
@@ -36,7 +35,7 @@ public static class TenantEndpoints
             HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetTenantList();
+            var result = await endpoint.GetTenantIdList();
             return result.ToHttpResult();
         })
         .WithName("Get Tenant List")
@@ -76,7 +75,8 @@ public static class TenantEndpoints
             operation.Summary = "Get current tenant info";
             operation.Description = "Retrieves current tenant information";
             return operation;
-        });
+        })
+        .RequiresValidTenantAdmin();
 
         tenantsGroup.MapGet("/by-domain/{domain}", async (
             string domain,

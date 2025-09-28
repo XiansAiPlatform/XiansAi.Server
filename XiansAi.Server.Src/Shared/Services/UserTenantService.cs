@@ -2,9 +2,9 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Utils.Services;
-using System.IdentityModel.Tokens.Jwt;
 using Shared.Data.Models;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -49,6 +49,7 @@ public class UserTenantService : IUserTenantService
     private readonly IAuthMgtConnect _authMgtConnect;
     private readonly IConfiguration _configuration;
     private readonly IUserManagementService _userManagementService;
+    private readonly IJwtClaimsExtractor _jwtClaimsExtractor;
 
     public UserTenantService(IUserRepository userRepository,
         ILogger<UserTenantService> logger,
@@ -56,7 +57,8 @@ public class UserTenantService : IUserTenantService
         IAuthMgtConnect authMgtConnect,
         IConfiguration configuration,
         IUserManagementService userManagementService,
-        ITenantRepository tenantRepository)
+        ITenantRepository tenantRepository,
+        IJwtClaimsExtractor jwtClaimsExtractor)
     {
         _userRepository = userRepository;
         _logger = logger;
@@ -65,6 +67,7 @@ public class UserTenantService : IUserTenantService
         _authMgtConnect = authMgtConnect;
         _configuration = configuration;
         _userManagementService = userManagementService;
+        _jwtClaimsExtractor = jwtClaimsExtractor;
     }
 
     public async Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token)
@@ -461,74 +464,40 @@ public class UserTenantService : IUserTenantService
         return ServiceResult<bool>.Success(true);
     }
 
+    /// <summary>
+    /// Creates a user from a JWT token with proper validation using the centralized JWT utility
+    /// SECURITY: Uses centralized JWT validation with JWKS before processing claims
+    /// </summary>
     private async Task<UserDto> createUserFromToken(string token)
     {
-        var handler = new JwtSecurityTokenHandler();
-        var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
-
-        if (jsonToken == null)
+        // Validate and extract user information using the centralized JWT utility
+        var jwtResult = await _jwtClaimsExtractor.ValidateAndExtractClaimsAsync(token);
+        if (!jwtResult.IsValid || string.IsNullOrEmpty(jwtResult.UserId))
         {
-            _logger.LogWarning("Invalid JWT token format");
-            throw new ArgumentException("Invalid token format", nameof(token));
+            _logger.LogWarning("JWT token validation failed in createUserFromToken: {Error}", 
+                jwtResult.ErrorMessage);
+            throw new ArgumentException(jwtResult.ErrorMessage ?? "Invalid or expired token", nameof(token));
         }
 
-        // First try the standard 'sub' claim
-        var userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-        if (!string.IsNullOrEmpty(userId))
-        {
-            _logger.LogDebug("Found user ID in 'sub' claim: {UserId}", userId);
-        }
-        else
-        {
-            // Fallback to preferred_username for Keycloak tokens missing 'sub' claim
-            userId = jsonToken.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
-            if (!string.IsNullOrEmpty(userId))
-            {
-                _logger.LogInformation("Using 'preferred_username' as user ID: {UserId}", userId);
-            }
-            else
-            {
-                // Try other common alternative claim names
-                var alternativeClaimTypes = new[] { "user_id", "uid", "id", "email", "username" };
-                foreach (var claimType in alternativeClaimTypes)
-                {
-                    userId = jsonToken.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
-                    if (!string.IsNullOrEmpty(userId))
-                    {
-                        _logger.LogInformation("Found user ID in '{ClaimType}' claim: {UserId}", claimType, userId);
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            _logger.LogWarning("User ID claim not found in token");
-            throw new ArgumentException("User ID not found in token", nameof(token));
-        }
-
-        // var authProviderConfig = _configuration.GetSection("AuthProvider").Get<AuthProviderConfig>() ??
-        //     new AuthProviderConfig();
-        var name = jsonToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? string.Empty;
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "upn")?.Value ?? string.Empty;
         var newUser = new UserDto
         {
-            UserId = userId,
-            Email = email ?? string.Empty,
-            Name = name,
+            UserId = jwtResult.UserId,
+            Email = jwtResult.Email ?? string.Empty,
+            Name = jwtResult.Name ?? string.Empty,
             TenantId = _tenantContext.TenantId
         };
+
         var createdUser = await _userManagementService.CreateNewUser(newUser);
 
         if (!createdUser.IsSuccess && createdUser.StatusCode == StatusCode.Conflict)
         {
-            _logger.LogInformation("User {UserId} already exists, returning existing user", userId);
+            _logger.LogInformation("User {UserId} already exists, returning existing user", jwtResult.UserId);
             return newUser;
         }
 
         return createdUser.IsSuccess
             ? newUser
-            : throw new Exception($"Failed to create user {userId} from token. Error: {createdUser.ErrorMessage}");
+            : throw new Exception($"Failed to create user {jwtResult.UserId} from token. Error: {createdUser.ErrorMessage}");
     }
+
 }

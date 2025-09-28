@@ -92,18 +92,7 @@ public class AzureB2CProvider : IAuthProvider
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
                             //handle role for default tenant
-                            if (tenantId == Constants.DefaultTenantId)
-                            {
-                                if (roles == null)
-                                {
-                                    roles = new List<string>();
-                                }
 
-                                if (!roles.Contains(SystemRoles.TenantUser))
-                                {
-                                    roles.Add(SystemRoles.TenantUser);
-                                }
-                            }
 
                             foreach (var role in roles)
                             {

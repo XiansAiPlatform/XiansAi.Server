@@ -1,4 +1,5 @@
 using Features.PublicApi.Endpoints;
+using Features.PublicApi.Services;
 using System.Threading.RateLimiting;
 
 namespace Features.PublicApi.Configuration;
@@ -8,6 +9,8 @@ public static class PublicApiConfiguration
     public static WebApplicationBuilder AddPublicApiServices(this WebApplicationBuilder builder)
     {
         // Register Public API specific services (no authentication services needed)
+        builder.Services.AddScoped<IPublicRegistrationService, PublicRegistrationService>();
+        
         // Add rate limiting services
         builder.Services.AddRateLimiter(rateLimiterOptions =>
         {
@@ -33,6 +36,18 @@ public static class PublicApiConfiguration
                         Window = TimeSpan.FromMinutes(1),
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         QueueLimit = 5
+                    }));
+
+            // Very strict rate limit for registration endpoints - 5 requests per minute per IP
+            rateLimiterOptions.AddPolicy("PublicApiRegistration", httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: partition => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 5,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 2
                     }));
 
             // Very permissive rate limit for GET endpoints - 200 requests per minute per IP
@@ -93,6 +108,7 @@ public static class PublicApiConfiguration
         
         // Map Public API endpoints (no authentication required, but rate limited)
         SampleEndpoints.MapSampleEndpoints(app);
+        RegisterEndpoints.MapRegisterEndpoints(app);
         
         return app;
     }

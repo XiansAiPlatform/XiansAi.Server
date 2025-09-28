@@ -5,6 +5,7 @@ using Xunit;
 using Features.WebApi.Services;
 using MongoDB.Bson;
 using Tests.TestUtils;
+using Shared.Services;
 
 namespace Tests.IntegrationTests.WebApi;
 

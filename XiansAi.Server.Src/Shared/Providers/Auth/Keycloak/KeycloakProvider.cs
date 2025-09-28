@@ -137,19 +137,6 @@ public class KeycloakProvider : IAuthProvider
                             var roles = await roleCacheService.GetUserRolesAsync(userId, tenantId);
 
                             //handle role for default tenant
-                            if (tenantId == Constants.DefaultTenantId)
-                            {
-                                if (roles == null)
-                                {
-                                    roles = new List<string>();
-                                }
-                                
-                                // Only add TenantUser role if it doesn't already exist
-                                if (!roles.Contains(SystemRoles.TenantUser))
-                                {
-                                    roles.Add(SystemRoles.TenantUser);
-                                }
-                            }
 
                             // Remove existing role claims to prevent accumulation
                             var existingRoleClaims = identity.Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
@@ -239,7 +226,7 @@ public class KeycloakProvider : IAuthProvider
             {
                 Tenants = keycloakUser.Attributes?.ContainsKey("tenants") == true
                     ? keycloakUser.Attributes["tenants"].ToArray()
-                    : new List<string> { Constants.DefaultTenantId }.ToArray()
+                    : new List<string>().ToArray()
             };
 
             return new UserInfo

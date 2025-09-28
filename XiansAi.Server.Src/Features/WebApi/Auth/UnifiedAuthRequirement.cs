@@ -150,9 +150,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             return false;
         }
         // If no tenant ids are returned, set the default tenant id
-        if (authorizedTenantIds == null || authorizedTenantIds.Count() == 0) {
-            authorizedTenantIds = new List<string> { Constants.DefaultTenantId };
-        }
+
         
         // Set user info to tenant context
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds ?? new List<string>();
@@ -177,7 +175,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         }
         
         // Verify user has access to this tenant
-        if (currentTenantId != Constants.DefaultTenantId && !authorizedTenantIds!.Contains(currentTenantId))
+        //if (currentTenantId != Constants.DefaultTenantId && !authorizedTenantIds!.Contains(currentTenantId))
+        if (!authorizedTenantIds!.Contains(currentTenantId))
         {
             var logMessage = bypassCache 
                 ? "Tenant ID {TenantId} is not authorized for user {UserId} even after fresh token validation"
@@ -197,8 +196,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Validate tenant configuration if required
         if (requirement.Options.ValidateTenantConfig)
         {
-            if (currentTenantId != Constants.DefaultTenantId)
-            { 
+            // if (currentTenantId != Constants.DefaultTenantId)
+            // { 
                 var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
                 if (!tenantResult.IsSuccess || tenantResult.Data == null)
                 {
@@ -207,7 +206,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                         $"Tenant {currentTenantId} configuration not found"));
                     return false;
                 }
-            }
+            //}
         }
 
         if (httpContext.User.Identity is ClaimsIdentity identity)

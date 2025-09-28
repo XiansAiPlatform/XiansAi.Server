@@ -6,6 +6,7 @@ using Shared.Providers.Auth.AzureB2C;
 using Shared.Providers.Auth.Keycloak;
 using Shared.Providers.Auth;
 using Shared.Auth;
+using Shared.Utils;
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
@@ -115,8 +116,9 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
 
-        // Register Utility service
+        // Register Utility services
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();
+        builder.Services.AddScoped<IJwtClaimsExtractor, JwtClaimsExtractor>();
 
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();

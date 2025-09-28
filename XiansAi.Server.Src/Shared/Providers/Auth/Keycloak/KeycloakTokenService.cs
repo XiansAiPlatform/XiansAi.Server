@@ -65,13 +65,12 @@ public class KeycloakTokenService : ITokenService
     {
         try
         {
-            var defaultTenantId = Constants.DefaultTenantId;
             // Find the organization claim
             var organizationClaim = token.Claims.FirstOrDefault(c => c.Type == _organizationClaimType);
             if (organizationClaim == null)
             {
                 _logger.LogWarning("No organization claim found in token");
-                return new List<string> { defaultTenantId };
+                return new List<string>();
             }
 
             // The organization claim contains a JSON object with tenant IDs as properties
@@ -79,7 +78,7 @@ public class KeycloakTokenService : ITokenService
             if (string.IsNullOrEmpty(organizationJson))
             {
                 _logger.LogWarning("Organization claim is empty");
-                return new List<string> { defaultTenantId };
+                return new List<string>();
             }
 
             // Parse the organization JSON
@@ -92,7 +91,6 @@ public class KeycloakTokenService : ITokenService
                     // Extract tenant IDs which are the keys of the dictionary
                     tenantIds.AddRange(organizationObj.Keys);
                 }
-                tenantIds.Add(defaultTenantId);
             }
             catch (JsonException ex)
             {

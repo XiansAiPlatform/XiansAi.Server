@@ -1,11 +1,11 @@
 using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Utils.Services;
-using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json.Serialization;
 using Shared.Repositories;
 using Shared.Data.Models;
 using MongoDB.Bson.Serialization.Attributes;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -130,6 +130,7 @@ public class UserManagementService : IUserManagementService
     private readonly IConfiguration _configuration;
     private readonly IInvitationRepository _invitationRepository;
     private readonly IEmailService _emailService;
+    private readonly IJwtClaimsExtractor _jwtClaimsExtractor;
 
     private const string EMAIL_SUBJECT = "Xians.ai - Invitation";
 
@@ -140,6 +141,7 @@ public class UserManagementService : IUserManagementService
         IConfiguration configuration,
         IInvitationRepository invitationRepository,
         IEmailService emailService,
+        IJwtClaimsExtractor jwtClaimsExtractor,
         ILogger<UserManagementService> logger)
     {
         _userRepository = userRepository;
@@ -149,6 +151,7 @@ public class UserManagementService : IUserManagementService
         _configuration = configuration;
         _invitationRepository = invitationRepository;
         _emailService = emailService;
+        _jwtClaimsExtractor = jwtClaimsExtractor;
     }
 
     public async Task<ServiceResult<bool>> LockUserAsync(string userId, string reason)
@@ -387,7 +390,7 @@ public class UserManagementService : IUserManagementService
     {
         try
         {
-            var email = getUserEmailfromToken(token);
+            var email = await getUserEmailfromToken(token);
             var invitation = await _invitationRepository.GetByEmailAsync(email);
             if (invitation == null)
             {
@@ -480,22 +483,42 @@ public class UserManagementService : IUserManagementService
         var deleted = await _invitationRepository.DeleteInvitation(token);
         return ServiceResult<bool>.Success(deleted);
     }
-    private string getUserEmailfromToken(string token)
+    /// <summary>
+    /// Extracts email from JWT token with proper validation using the centralized JWT utility
+    /// SECURITY: Uses centralized JWT validation with JWKS before processing claims
+    /// </summary>
+    private async Task<string> getUserEmailfromToken(string token)
     {
-        var handler = new JwtSecurityTokenHandler();
-        var jsonToken = handler.ReadToken(token) as JwtSecurityToken;
-        if (jsonToken == null)
+        try
         {
-            _logger.LogWarning("Invalid JWT token format");
-            throw new ArgumentException("Invalid token format", nameof(token));
+            // Validate and extract user information using the centralized JWT utility
+            var jwtResult = await _jwtClaimsExtractor.ValidateAndExtractClaimsAsync(token);
+            if (!jwtResult.IsValid)
+            {
+                _logger.LogWarning("JWT token validation failed in getUserEmailfromToken: {Error}", 
+                    jwtResult.ErrorMessage);
+                throw new ArgumentException(jwtResult.ErrorMessage ?? "Invalid or expired token", nameof(token));
+            }
+            
+            if (string.IsNullOrWhiteSpace(jwtResult.Email))
+            {
+                _logger.LogWarning("Email claim not found in validated token for user: {UserId}", jwtResult.UserId);
+                throw new ArgumentException("Email not found in token", nameof(token));
+            }
+
+            _logger.LogDebug("Successfully extracted email from validated token for user: {UserId}", jwtResult.UserId);
+            return jwtResult.Email;
         }
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? jsonToken.Claims.FirstOrDefault(c => c.Type == "upn")?.Value;
-        if (string.IsNullOrWhiteSpace(email))
+        catch (ArgumentException)
         {
-            _logger.LogWarning("Email claim not found in token");
-            throw new ArgumentException("Email not found in token", nameof(token));
+            // Re-throw argument exceptions (these are expected validation failures)
+            throw;
         }
-        return email;
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error extracting email from token in UserManagementService");
+            throw new ArgumentException("Failed to extract email from token", nameof(token), ex);
+        }
     }
 
     private string GetEmailBody(string expiry)

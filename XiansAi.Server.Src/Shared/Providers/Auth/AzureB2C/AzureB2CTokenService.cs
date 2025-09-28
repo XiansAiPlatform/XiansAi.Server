@@ -46,11 +46,7 @@ public class AzureB2CTokenService : ITokenService
             .Select(c => c.Value)
             .ToList();
 
-        if (tenantIds.Count == 0)
-        {
-            _logger.LogWarning("No tenant IDs found in token");
-            return new List<string> { Constants.DefaultTenantId };
-        }
+
 
         return tenantIds;
     }

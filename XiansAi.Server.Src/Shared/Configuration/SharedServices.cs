@@ -47,6 +47,10 @@ public static class SharedServices
         
         // Register a factory service for tenant-aware temporal operations
         services.AddScoped<ITemporalClientFactory, TemporalClientFactory>();
+
+        // Register tenant service
+        services.AddScoped<ITenantService, TenantService>();
+
         
         // Register cache service
         services.AddScoped<ObjectCache>();

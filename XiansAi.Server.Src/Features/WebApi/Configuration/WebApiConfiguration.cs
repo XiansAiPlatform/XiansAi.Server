@@ -14,7 +14,6 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IWorkflowFinderService, WorkflowFinderService>();
         builder.Services.AddScoped<IWorkflowCancelService, WorkflowCancelService>();
         builder.Services.AddScoped<ILogsService, LogsService>();
-        builder.Services.AddScoped<ITenantService, TenantService>();
         builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
