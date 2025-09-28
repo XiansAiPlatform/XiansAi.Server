@@ -47,7 +47,7 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetCurrentTenantInfo();
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
     Task<ServiceResult<List<string>>> GetTenantIdList();
-    Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request);
+    Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null);
     Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
     Task<ServiceResult<bool>> DeleteTenant(string id);
 }
@@ -290,7 +290,7 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request)
+    public async Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null)
     {
         try
         {
@@ -305,7 +305,7 @@ public class TenantService : ITenantService
                 Theme = request.Theme,
                 Timezone = request.Timezone,
                 Enabled = request.Enabled,
-                CreatedBy = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set"),
+                CreatedBy = createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set"),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };

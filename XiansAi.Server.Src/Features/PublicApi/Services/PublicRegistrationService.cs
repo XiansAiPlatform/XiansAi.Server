@@ -73,6 +73,29 @@ public class PublicRegistrationService : IPublicRegistrationService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Sanitizes a domain by removing URL protocol prefixes (http:// or https://)
+    /// </summary>
+    /// <param name="domain">The domain that may contain URL protocol</param>
+    /// <returns>The domain without protocol prefix</returns>
+    private static string SanitizeDomainFromUrl(string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+            return domain;
+
+        // Remove http:// or https:// prefix if present (case insensitive)
+        if (domain.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return domain.Substring(8); // Remove "https://"
+        }
+        else if (domain.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            return domain.Substring(7); // Remove "http://"
+        }
+
+        return domain;
+    }
+
     public async Task<ServiceResult<PublicJoinTenantResponse>> RequestToJoinTenant(PublicJoinTenantRequest request, string userToken)
     {
         try
@@ -221,6 +244,12 @@ public class PublicRegistrationService : IPublicRegistrationService
                 return ServiceResult<PublicCreateTenantResponse>.BadRequest("UserToken is required");
             }
 
+            // Sanitize domain by removing protocol prefixes if present
+            if (!string.IsNullOrWhiteSpace(request.Domain))
+            {
+                request.Domain = SanitizeDomainFromUrl(request.Domain);
+            }
+
             // Validate tenant name using the existing validation rules
             try
             {
@@ -230,17 +259,6 @@ public class PublicRegistrationService : IPublicRegistrationService
             {
                 _logger.LogWarning("Invalid tenant ID provided: {TenantId}, Error: {Error}", request.TenantId, ex.Message);
                 return ServiceResult<PublicCreateTenantResponse>.BadRequest($"Invalid tenant ID: {ex.Message}");
-            }
-
-            // Validate domain format
-            try
-            {
-                Tenant.SanitizeAndValidateDomain(request.Domain);
-            }
-            catch (ValidationException ex)
-            {
-                _logger.LogWarning("Invalid domain provided: {Domain}, Error: {Error}", request.Domain, ex.Message);
-                return ServiceResult<PublicCreateTenantResponse>.BadRequest($"Invalid domain: {ex.Message}");
             }
 
             // Check if tenant already exists
@@ -257,6 +275,23 @@ public class PublicRegistrationService : IPublicRegistrationService
             {
                 return ServiceResult<PublicCreateTenantResponse>.BadRequest(
                     jwtResult.ErrorMessage ?? "Invalid user token");
+            }
+
+            // Create the tenant
+            var createTenantRequest = new CreateTenantRequest
+            {
+                TenantId = request.TenantId,
+                Name = request.Name,
+                Domain = request.Domain,
+                Description = request.Description,
+                Enabled = true
+            };
+
+            var tenantResult = await _tenantService.CreateTenant(createTenantRequest, jwtResult.UserId);
+            if (!tenantResult.IsSuccess)
+            {
+                _logger.LogError("Failed to create tenant {TenantId}: {Error}", request.TenantId, tenantResult.ErrorMessage);
+                return ServiceResult<PublicCreateTenantResponse>.BadRequest(tenantResult.ErrorMessage ?? "Failed to create tenant");
             }
 
             // Check if user exists, if not create them
@@ -286,23 +321,6 @@ public class PublicRegistrationService : IPublicRegistrationService
                 }
             }
 
-            // Create the tenant
-            var createTenantRequest = new CreateTenantRequest
-            {
-                TenantId = request.TenantId,
-                Name = request.Name,
-                Domain = request.Domain,
-                Description = request.Description,
-                Enabled = true
-            };
-
-            var tenantResult = await _tenantService.CreateTenant(createTenantRequest);
-            if (!tenantResult.IsSuccess)
-            {
-                _logger.LogError("Failed to create tenant {TenantId}: {Error}", request.TenantId, tenantResult.ErrorMessage);
-                return ServiceResult<PublicCreateTenantResponse>.BadRequest(tenantResult.ErrorMessage ?? "Failed to create tenant");
-            }
-
             // Add the current user as tenant admin
             var roleDto = new RoleDto
             {
@@ -314,9 +332,9 @@ public class PublicRegistrationService : IPublicRegistrationService
             var roleResult = await _roleManagementService.AssignTenantRoletoUserAsync(roleDto, skipValidation: true);
             if (!roleResult.IsSuccess)
             {
-                _logger.LogWarning("Created tenant {TenantId} but failed to assign admin role to user {UserId}: {Error}", 
+                _logger.LogError("Created tenant {TenantId} but failed to assign admin role to user {UserId}: {Error}", 
                     request.TenantId, jwtResult.UserId, roleResult.ErrorMessage);
-                // Don't fail the entire operation, just log the warning
+                return ServiceResult<PublicCreateTenantResponse>.InternalServerError("Failed to assign admin role to user. Pelase contact support.");
             }
 
             _logger.LogInformation("User {UserId} ({Email}) created new tenant {TenantId} and was assigned as admin", 
@@ -326,8 +344,7 @@ public class PublicRegistrationService : IPublicRegistrationService
             {
                 Success = true,
                 Message = "Tenant created successfully and you have been assigned as the tenant administrator",
-                TenantId = request.TenantId,
-                Id = tenantResult.Data!.Tenant.Id
+                TenantId = request.TenantId
             });
         }
         catch (Exception ex)
