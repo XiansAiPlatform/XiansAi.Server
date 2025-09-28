@@ -1,9 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
-using Xunit;
-using Features.WebApi.Services;
-using MongoDB.Bson;
 using Tests.TestUtils;
 using Shared.Services;
 
