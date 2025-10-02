@@ -19,6 +19,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
+        builder.Services.AddScoped<ITemplateService, TemplateService>();
 
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
@@ -44,6 +45,7 @@ public static class WebApiConfiguration
         UserTenantEndpoints.MapUserTenantEndpoints(app);
         UserManagementEndpoints.MapUserManagementEndpoints(app);
         OidcConfigEndpoints.MapOidcConfigEndpoints(app);
+        TemplateEndpoints.MapTemplateEndpoints(app);
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
         

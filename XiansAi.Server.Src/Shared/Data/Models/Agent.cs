@@ -44,6 +44,9 @@ public class Agent : ModelValidatorBase<Agent>
     [BsonElement("system_scoped")]
     public bool SystemScoped { get; set; } = false;
 
+    [BsonElement("onboarding_json")]
+    public string? OnboardingJson { get; set; }
+
     public bool HasPermission(string userId, string[] userRoles, PermissionLevel requiredLevel)
     {
         if (requiredLevel == PermissionLevel.None)
@@ -110,7 +113,9 @@ public class Agent : ModelValidatorBase<Agent>
             CreatedAt = this.CreatedAt,
             OwnerAccess = ValidationHelpers.SanitizeStringList(this.OwnerAccess),
             ReadAccess = ValidationHelpers.SanitizeStringList(this.ReadAccess),
-            WriteAccess = ValidationHelpers.SanitizeStringList(this.WriteAccess)
+            WriteAccess = ValidationHelpers.SanitizeStringList(this.WriteAccess),
+            SystemScoped = this.SystemScoped,
+            OnboardingJson = ValidationHelpers.SanitizeString(this.OnboardingJson)
         };
 
         return sanitizedAgent;
@@ -158,6 +163,19 @@ public class Agent : ModelValidatorBase<Agent>
         {
             if (!ValidationHelpers.IsValidList(WriteAccess, item => !string.IsNullOrEmpty(item)))
                 throw new ValidationException("Write access list contains invalid items");
+        }
+
+        // Validate onboarding JSON if provided
+        if (!string.IsNullOrEmpty(OnboardingJson))
+        {
+            try
+            {
+                JsonSerializer.Deserialize<JsonElement>(OnboardingJson);
+            }
+            catch (JsonException)
+            {
+                throw new ValidationException("OnboardingJson contains invalid JSON format");
+            }
         }
     }
 

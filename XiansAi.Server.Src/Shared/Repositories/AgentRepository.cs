@@ -31,6 +31,7 @@ public interface IAgentRepository
     Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
+    Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
 
 }
 
@@ -258,6 +259,55 @@ public class AgentRepository : IAgentRepository
         }).ToList();
 
         _logger.LogInformation("Returning {Count} agents with their definitions for user {UserId}", result.Count, userId);
+        return result;
+    }
+
+    public async Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false)
+    {
+        _logger.LogInformation("Getting system-scoped agents with definitions (no permission checks)");
+
+        // Get all system-scoped agents (where SystemScoped = true)
+        var systemScopedAgents = await _agents.Find(x => x.SystemScoped == true).ToListAsync();
+        
+        if (!systemScopedAgents.Any())
+        {
+            _logger.LogInformation("No system-scoped agents found");
+            return new List<AgentWithDefinitions>();
+        }
+
+        var agentNames = systemScopedAgents.Select(a => a.Name).ToList();
+        var filterBuilder = Builders<FlowDefinition>.Filter;
+        var filter = filterBuilder.In(x => x.Agent, agentNames);
+
+        var findFluent = _definitions.Find(filter).SortByDescending(x => x.UpdatedAt);
+        List<FlowDefinition> allDefinitions;
+        
+        if (basicDataOnly)
+        {
+            // Project only basic fields
+            allDefinitions = await findFluent
+                .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
+                    .Include(x => x.Agent)
+                    .Include(x => x.WorkflowType)
+                    .Include(x => x.CreatedAt)
+                    .Include(x => x.UpdatedAt))
+                .ToListAsync();
+        }
+        else
+        {
+            allDefinitions = await findFluent.ToListAsync();
+        }
+
+        var definitionsByAgent = allDefinitions.GroupBy(d => d.Agent)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = systemScopedAgents.Select(agent => new AgentWithDefinitions
+        {
+            Agent = agent,
+            Definitions = definitionsByAgent.TryGetValue(agent.Name, out var defs) ? defs : new List<FlowDefinition>()
+        }).ToList();
+
+        _logger.LogInformation("Returning {Count} system-scoped agents with their definitions", result.Count);
         return result;
     }
 
