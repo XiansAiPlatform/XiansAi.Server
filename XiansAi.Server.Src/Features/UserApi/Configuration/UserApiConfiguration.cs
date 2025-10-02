@@ -6,6 +6,7 @@ using Features.UserApi.Endpoints;
 
 using Shared.Services;
 using Shared.Repositories;
+using Shared.Auth;
 
 namespace Features.UserApi.Configuration
 {
