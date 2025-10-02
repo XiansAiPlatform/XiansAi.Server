@@ -40,6 +40,30 @@ flow_definitions:
     keys:
       hash: asc
       workflow_type: asc
+  - name: tenant_1_system_scoped_1
+    keys:
+      tenant: asc
+      system_scoped: asc
+    background: true
+  - name: workflow_type_1_tenant_1_system_scoped_1
+    keys:
+      workflow_type: asc
+      tenant: asc
+      system_scoped: asc
+    background: true
+  - name: agent_1_tenant_1_system_scoped_1
+    keys:
+      agent: asc
+      tenant: asc
+      system_scoped: asc
+    background: true
+  - name: hash_1_workflow_type_1_tenant_1_system_scoped_1
+    keys:
+      hash: asc
+      workflow_type: asc
+      tenant: asc
+      system_scoped: asc
+    background: true
 
 conversation_message:
   - name: bot_message_lookup

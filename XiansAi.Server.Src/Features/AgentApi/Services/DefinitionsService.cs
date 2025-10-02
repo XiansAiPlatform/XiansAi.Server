@@ -32,6 +32,9 @@ public class FlowDefinitionRequest
     public required List<ParameterDefinitionRequest> ParameterDefinitions { get; set; }
     [JsonPropertyName("systemScoped")]
     public bool SystemScoped { get; set; } = false;
+
+    [JsonPropertyName("onboardingJson")]
+    public string? OnboardingJson { get; set; }
 }
 
 public class ActivityDefinitionRequest
@@ -64,7 +67,7 @@ public class ParameterDefinitionRequest
 public interface IDefinitionsService
 {
     Task<IResult> CreateAsync(FlowDefinitionRequest request);
-    Task<IResult> CheckHash(string workflowType, string hash);
+    Task<IResult> CheckHash(string workflowType, bool systemScoped, string hash);
 }
 
 public class DefinitionsService : IDefinitionsService
@@ -105,8 +108,15 @@ public class DefinitionsService : IDefinitionsService
 
         var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
         
+        // Only system admins can create system agents
+        if (request.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        {
+            _logger.LogError("User {UserId} attempted to create system agent {AgentName} without system admin permission", currentUser, request.Agent);
+            throw new InvalidOperationException("User does not have system admin permission to create `system` agents");
+        }
+
         // Ensure agent exists using thread-safe upsert operation
-        await _agentRepository.UpsertAgentAsync(request.Agent, request.SystemScoped, _tenantContext.TenantId, currentUser);
+        await _agentRepository.UpsertAgentAsync(request.Agent, request.SystemScoped, _tenantContext.TenantId, currentUser, request.OnboardingJson);
 
         // Check if the user has permissions for this agent
         var hasPermission = await CheckPermissions(request.Agent, PermissionLevel.Write);
@@ -122,8 +132,9 @@ public class DefinitionsService : IDefinitionsService
                 statusCode: StatusCodes.Status403Forbidden);
         }
         
-        var existingDefinition = await _flowDefinitionRepository.GetByWorkflowTypeAsync(request.WorkflowType);
-        var definition = CreateFlowDefinitionFromRequest(request, existingDefinition);
+        // Use tenant-aware method to get existing definition
+        var existingDefinition = await _flowDefinitionRepository.GetByWorkflowTypeAsync(request.WorkflowType, request.SystemScoped, _tenantContext.TenantId );
+        var definition = CreateFlowDefinitionFromRequest(request, existingDefinition, request.SystemScoped);
         
         if (existingDefinition != null)
         {
@@ -147,9 +158,10 @@ public class DefinitionsService : IDefinitionsService
         return Results.Ok("New definition created successfully");
     }
 
-    public async Task<IResult> CheckHash(string workflowType, string hash)
+    public async Task<IResult> CheckHash(string workflowType, bool systemScoped, string hash)
     {
-        var existingDefinition = await _flowDefinitionRepository.GetByWorkflowTypeAsync(workflowType);
+        // Use tenant-aware method to check hash
+        var existingDefinition = await _flowDefinitionRepository.GetByWorkflowTypeAsync(workflowType, systemScoped, _tenantContext.TenantId);
         if (existingDefinition == null)
             return Results.NotFound("No existing definition");
 
@@ -171,7 +183,7 @@ public class DefinitionsService : IDefinitionsService
         definition.UpdatedAt = DateTime.UtcNow;
     }
 
-    private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null)
+    private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null, bool systemScoped = false)
     {
         var userId = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found. Check the certificate.");
 
@@ -183,6 +195,8 @@ public class DefinitionsService : IDefinitionsService
             Hash = ComputeHash(JsonSerializer.Serialize(request)),
             Source = string.IsNullOrEmpty(request.Source) ? string.Empty : request.Source,
             Markdown = string.IsNullOrEmpty(existingDefinition?.Markdown) ? string.Empty : existingDefinition.Markdown,
+            SystemScoped = systemScoped,
+            Tenant = systemScoped ? null : _tenantContext.TenantId,
             ActivityDefinitions = request.ActivityDefinitions.Select(a => new ActivityDefinition
             {
                 ActivityName = a.ActivityName,

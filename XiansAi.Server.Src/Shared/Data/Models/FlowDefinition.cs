@@ -58,6 +58,14 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Created by must be between 1 and 100 characters")]
     public required string CreatedBy { get; set; }
 
+    [BsonElement("tenant")]
+    [StringLength(50, MinimumLength = 1, ErrorMessage = "Tenant must be between 1 and 50 characters")]
+    [RegularExpression(@"^[a-zA-Z0-9._@|+\-:/\\,#=]+$", ErrorMessage = "Tenant contains invalid characters")]
+    public string? Tenant { get; set; }
+
+    [BsonElement("system_scoped")]
+    public bool SystemScoped { get; set; } = false;
+
      public override FlowDefinition SanitizeAndReturn()
     {
         // Create a new flow definition with sanitized data
@@ -70,6 +78,8 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
             Source = ValidationHelpers.SanitizeString(Source),
             Markdown = ValidationHelpers.SanitizeString(Markdown),
             CreatedBy = ValidationHelpers.SanitizeString(CreatedBy),
+            Tenant = ValidationHelpers.SanitizeString(Tenant),
+            SystemScoped = SystemScoped,
             CreatedAt = CreatedAt,
             UpdatedAt = UpdatedAt,
             ActivityDefinitions = ActivityDefinitions?.Select(a =>

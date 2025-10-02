@@ -25,10 +25,10 @@ public interface IAgentRepository
     Task<bool> DeleteAsync(string id, string userId, string[] userRoles);
     
     // Internal methods without permission checking (for system use)
-    Task<Agent?> GetByNameInternalAsync(string name, string tenant);
+    Task<Agent?> GetByNameInternalAsync(string name, string? tenant);
     Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
-    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy);
+    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
     Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
@@ -75,8 +75,13 @@ public class AgentRepository : IAgentRepository
         return agent;
     }
 
-    public async Task<Agent?> GetByNameInternalAsync(string name, string tenant)
+    public async Task<Agent?> GetByNameInternalAsync(string name, string? tenant)
     {
+        // Handle null tenant explicitly for system-scoped agents
+        if (tenant == null)
+        {
+            return await _agents.Find(x => x.Name == name && x.Tenant == null).FirstOrDefaultAsync();
+        }
         return await _agents.Find(x => x.Name == name && x.Tenant == tenant).FirstOrDefaultAsync();
     }
 
@@ -85,11 +90,16 @@ public class AgentRepository : IAgentRepository
         var filterBuilder = Builders<Agent>.Filter;
         var filters = new List<FilterDefinition<Agent>>();
 
+        // Build tenant filter - handle null explicitly for system-scoped agents
+        var tenantFilter = tenant == null 
+            ? filterBuilder.Eq(x => x.Tenant, null)
+            : filterBuilder.Eq(x => x.Tenant, tenant);
+
         // System admin has access to everything in all tenants
         if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
             // For system admin, we only filter by tenant if provided
-            return await _agents.Find(filterBuilder.Eq(x => x.Tenant, tenant)).ToListAsync();
+            return await _agents.Find(tenantFilter).ToListAsync();
         }
 
         // Tenant admin has access to everything in their tenant
@@ -98,7 +108,7 @@ public class AgentRepository : IAgentRepository
             // For tenant admin, we ensure they can only access their tenant
             if (_tenantContext.TenantId.Equals(tenant, StringComparison.OrdinalIgnoreCase))
             {
-                return await _agents.Find(filterBuilder.Eq(x => x.Tenant, tenant)).ToListAsync();
+                return await _agents.Find(tenantFilter).ToListAsync();
             }
         }
 
@@ -119,7 +129,6 @@ public class AgentRepository : IAgentRepository
     };
 
         var permissionFilter = filterBuilder.Or(permissionFilters);
-        var tenantFilter = filterBuilder.Eq(x => x.Tenant, tenant);
 
         // Combine filters
         var finalFilter = filterBuilder.And(permissionFilter, tenantFilter);
@@ -174,9 +183,14 @@ public class AgentRepository : IAgentRepository
             return false;
         }
 
+        // Handle null tenant explicitly for system-scoped agents
+        var tenantFilter = tenant == null
+            ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
+            : Builders<Agent>.Filter.Eq(x => x.Tenant, tenant);
+
         var filter = Builders<Agent>.Filter.And(
             Builders<Agent>.Filter.Eq(x => x.Name, name),
-            Builders<Agent>.Filter.Eq(x => x.Tenant, tenant)
+            tenantFilter
         );
         
         var update = Builders<Agent>.Update.Set(x => x.OwnerAccess, permissions.OwnerAccess)
@@ -202,6 +216,17 @@ public class AgentRepository : IAgentRepository
             return false;
         }
 
+        // Delete associated flow definitions first
+        var definitionFilter = Builders<FlowDefinition>.Filter.And(
+            Builders<FlowDefinition>.Filter.Eq(x => x.Agent, agent.Name),
+            Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, agent.Tenant),
+            Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, agent.SystemScoped)
+        );
+
+        var definitionDeleteResult = await _definitions.DeleteManyAsync(definitionFilter);
+        _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", definitionDeleteResult.DeletedCount, agent.Name);
+
+        // Delete the agent
         var result = await _agents.DeleteOneAsync(x => x.Id == id);
         return result.DeletedCount > 0;
     }
@@ -221,9 +246,16 @@ public class AgentRepository : IAgentRepository
 
         var agentNames = allowedAgents.Select(a => a.Name).ToList();
         var filterBuilder = Builders<FlowDefinition>.Filter;
+        
+        // Handle null tenant explicitly for system-scoped agents
+        var tenantFilter = tenant == null
+            ? filterBuilder.Eq(x => x.Tenant, null)
+            : filterBuilder.Eq(x => x.Tenant, tenant);
+        
         var filters = new List<FilterDefinition<FlowDefinition>>
         {
-            filterBuilder.In(x => x.Agent, agentNames)
+            filterBuilder.In(x => x.Agent, agentNames),
+            tenantFilter
         };
         if (startTime.HasValue)
             filters.Add(filterBuilder.Gte(x => x.UpdatedAt, startTime.Value));
@@ -277,7 +309,10 @@ public class AgentRepository : IAgentRepository
 
         var agentNames = systemScopedAgents.Select(a => a.Name).ToList();
         var filterBuilder = Builders<FlowDefinition>.Filter;
-        var filter = filterBuilder.In(x => x.Agent, agentNames);
+        var filter = filterBuilder.And(
+            filterBuilder.In(x => x.Agent, agentNames),
+            filterBuilder.Eq(x => x.SystemScoped, true)
+        );
 
         var findFluent = _definitions.Find(filter).SortByDescending(x => x.UpdatedAt);
         List<FlowDefinition> allDefinitions;
@@ -311,7 +346,7 @@ public class AgentRepository : IAgentRepository
         return result;
     }
 
-    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy)
+    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null)
     {
         _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}", agentName, createdBy, tenant);
         
@@ -326,16 +361,10 @@ public class AgentRepository : IAgentRepository
             CreatedAt = DateTime.UtcNow,
             OwnerAccess = new List<string>(),
             ReadAccess = new List<string>(),
-            WriteAccess = new List<string>()
+            WriteAccess = new List<string>(),
+            OnboardingJson = onboardingJson
         };
         newAgent.GrantOwnerAccess(createdBy);
-
-        // Only system admins can create system agents
-        if (newAgent.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
-        {
-            _logger.LogWarning("User {UserId} attempted to create system agent {AgentName} without system admin permission", createdBy, agentName);
-            throw new InvalidOperationException("User does not have system admin permission to create `system` agents");
-        }
 
         try
         {
@@ -349,9 +378,31 @@ public class AgentRepository : IAgentRepository
             _logger.LogInformation("Agent {AgentName} already exists, retrieving existing agent", agentName);
             
             // Agent already exists, get the existing one
-            var existingAgent = await GetByNameInternalAsync(agentName, tenant);
+            // Use the actual tenant value from the new agent (which is null for system-scoped agents)
+            var existingAgent = await GetByNameInternalAsync(agentName, newAgent.Tenant);
             if (existingAgent != null)
             {
+                // Update OnboardingJson if provided
+                if (!string.IsNullOrEmpty(onboardingJson))
+                {
+                    _logger.LogInformation("Updating OnboardingJson for existing agent {AgentName}", agentName);
+                    
+                    var tenantFilter = existingAgent.Tenant == null
+                        ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
+                        : Builders<Agent>.Filter.Eq(x => x.Tenant, existingAgent.Tenant);
+                    
+                    var filter = Builders<Agent>.Filter.And(
+                        Builders<Agent>.Filter.Eq(x => x.Name, agentName),
+                        tenantFilter
+                    );
+                    
+                    var update = Builders<Agent>.Update.Set(x => x.OnboardingJson, onboardingJson);
+                    await _agents.UpdateOneAsync(filter, update);
+                    
+                    // Update the local object to reflect the change
+                    existingAgent.OnboardingJson = onboardingJson;
+                }
+                
                 return existingAgent;
             }
             

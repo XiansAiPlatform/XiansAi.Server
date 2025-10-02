@@ -34,10 +34,11 @@ public static class DefinitionsEndpoints
 
         definitionsGroup.MapGet("/check", async (
             [FromQuery] string workflowType,
+            [FromQuery] bool systemScoped,
             [FromQuery] string hash,
             [FromServices] IDefinitionsService endpoint) =>
         {
-            return await endpoint.CheckHash(workflowType, hash);
+            return await endpoint.CheckHash(workflowType, systemScoped, hash);
         })
         .WithOpenApi(operation =>
         {

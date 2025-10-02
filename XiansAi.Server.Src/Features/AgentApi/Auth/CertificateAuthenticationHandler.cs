@@ -212,7 +212,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             .Any(oid => oid.Value == "1.3.6.1.5.5.7.3.2"); // Client Authentication OID
     }
 
-    private Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert)
+    private async Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert)
     {
         var tenantId = GetSubjectValue(cert.Subject, "O");
         var userId = GetSubjectValue(cert.Subject, "OU");
@@ -221,18 +221,44 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
 
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(userId))
         {
-            return Task.FromResult(AuthenticateResult.Fail("Invalid certificate subject format"));
+            return AuthenticateResult.Fail("Invalid certificate subject format");
         }
 
-        var user = _userRepository.GetByUserIdAsync(userId).Result;
+        var user = await _userRepository.GetByUserIdAsync(userId);
         if (user == null)
         {
-            return Task.FromResult(AuthenticateResult.Fail("Invalid user ID"));
+            return AuthenticateResult.Fail("Invalid user ID");
         }
 
         var roles = user.TenantRoles.Where(tr => tr.Tenant == tenantId).FirstOrDefault()?.Roles ?? new List<string>();
 
         if(user.IsSysAdmin) roles.Add(SystemRoles.SysAdmin);
+
+        // Handle X-Tenant-Id header
+        if (Request.Headers.TryGetValue("X-Tenant-Id", out var requestedTenantId) && 
+            !string.IsNullOrWhiteSpace(requestedTenantId))
+        {
+            var requestedTenantIdStr = requestedTenantId.ToString();
+            
+            if (user.IsSysAdmin)
+            {
+                // Sys admin can impersonate any tenant
+                _logger.LogInformation("Sys admin {UserId} impersonating tenant {ImpersonatedTenantId} (original tenant: {OriginalTenantId})", 
+                    userId, requestedTenantIdStr, tenantId);
+                tenantId = requestedTenantIdStr;
+            }
+            else
+            {
+                // Non-admin users must match their certificate's tenant ID
+                if (!tenantId.Equals(requestedTenantIdStr, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Non admin User `{UserId}` attempted to access tenant `{RequestedTenantId}` but certificate is for tenant `{CertTenantId}`", 
+                        userId, requestedTenantIdStr, tenantId);
+                    return AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID");
+                }
+                _logger.LogDebug("User {UserId} X-Tenant-Id header matches certificate tenant {TenantId}", userId, tenantId);
+            }
+        }
 
         // Set up TenantContext
         _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", userId, UserType.AgentApiKey);
@@ -253,6 +279,6 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
-        return Task.FromResult(AuthenticateResult.Success(ticket));
+        return AuthenticateResult.Success(ticket);
     }
 }

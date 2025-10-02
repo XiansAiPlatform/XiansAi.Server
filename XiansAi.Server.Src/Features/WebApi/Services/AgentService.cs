@@ -91,6 +91,7 @@ public class AgentService : IAgentService
     {
         try
         {
+            _logger.LogInformation("Getting grouped definitions for user {UserId} in tenant {Tenant}", _tenantContext.LoggedInUser, _tenantContext.TenantId);   
             var definitions = await _agentRepository.GetAgentsWithDefinitionsAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId, null, null, basicDataOnly: basicDataOnly);
             return ServiceResult<List<AgentWithDefinitions>>.Success(definitions);
         }
@@ -196,11 +197,7 @@ public class AgentService : IAgentService
                 return ServiceResult<AgentDeleteResult>.NotFound("Agent not found");
             }
 
-            // Delete all flow definitions for this agent
-            var deletedDefinitionsCount = (int)await _definitionRepository.DeleteByAgentAsync(validatedgentName);
-            _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", deletedDefinitionsCount, validatedgentName);
-
-            // Delete the agent itself
+            // Delete the agent (this will also delete associated flow definitions)
             var agentDeleted = await _agentRepository.DeleteAsync(agent.Id, _tenantContext.LoggedInUser, _tenantContext.UserRoles);
             if (!agentDeleted)
             {
@@ -208,13 +205,11 @@ public class AgentService : IAgentService
                 return ServiceResult<AgentDeleteResult>.BadRequest("Failed to delete the agent");
             }
 
-            _logger.LogInformation("Successfully deleted agent {AgentName} and {Count} associated flow definitions",
-                agentName, deletedDefinitionsCount);
+            _logger.LogInformation("Successfully deleted agent {AgentName} and its associated flow definitions", agentName);
 
             var result = new AgentDeleteResult
             {
-                Message = "Agent deleted successfully",
-                DeletedFlowDefinitions = deletedDefinitionsCount
+                Message = "Agent and its associated flow definitions deleted successfully",
             };
 
             return ServiceResult<AgentDeleteResult>.Success(result);
@@ -261,7 +256,7 @@ public class AgentService : IAgentService
             }
 
             // Get definitions for the specific agent directly from the definition repository
-            var definitions = await _definitionRepository.GetByNameAsync(validatedAgentName);
+            var definitions = await _definitionRepository.GetByNameAsync(validatedAgentName, _tenantContext.TenantId);
 
             return ServiceResult<List<FlowDefinition>>.Success(definitions);
         }

@@ -6,8 +6,7 @@ namespace Features.AgentApi.Repositories;
 
 public interface IFlowDefinitionRepository
 {
-    Task<FlowDefinition?> GetByWorkflowTypeAsync(string workflowType);
-    Task<bool> UpdateAsync(string id, FlowDefinition definition);
+    Task<FlowDefinition?> GetByWorkflowTypeAsync(string workflowType, bool systemScoped, string? tenant);
     Task CreateAsync(FlowDefinition definition);
     Task<bool> DeleteAsync(string id);
 }
@@ -22,21 +21,36 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
     }
 
-    public async Task<FlowDefinition?> GetByWorkflowTypeAsync(string workflowType)
+
+    public async Task<FlowDefinition?> GetByWorkflowTypeAsync(string workflowType, bool systemScoped, string? tenant)
     {
-        return await _definitions.Find(x => x.WorkflowType == workflowType).FirstOrDefaultAsync();
+        var filters = new List<FilterDefinition<FlowDefinition>>
+        {
+            Builders<FlowDefinition>.Filter.Eq(x => x.WorkflowType, workflowType)
+        };
+
+        if (systemScoped)
+        {
+            filters.Add(Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, true));
+        }
+        else
+        {
+            // Handle null tenant explicitly for system-scoped agents
+            var tenantFilter = tenant == null
+                ? Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, null)
+                : Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, tenant);
+            filters.Add(tenantFilter);
+        }
+
+        var filter = Builders<FlowDefinition>.Filter.And(filters);
+        
+        return await _definitions.Find(filter).FirstOrDefaultAsync();
     }
 
     public async Task CreateAsync(FlowDefinition definition)
     {
         definition.CreatedAt = DateTime.UtcNow;
         await _definitions.InsertOneAsync(definition);
-    }
-
-    public async Task<bool> UpdateAsync(string id, FlowDefinition definition)
-    {
-        var result = await _definitions.ReplaceOneAsync(x => x.Id == id, definition);
-        return result.ModifiedCount > 0;
     }
 
     public async Task<bool> DeleteAsync(string id)
