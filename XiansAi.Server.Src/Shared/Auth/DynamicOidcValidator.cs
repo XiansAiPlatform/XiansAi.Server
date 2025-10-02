@@ -7,9 +7,8 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Json;
-using Shared.Auth;
 
-namespace Features.UserApi.Auth;
+namespace Shared.Auth;
 
 public interface IDynamicOidcValidator
 {
