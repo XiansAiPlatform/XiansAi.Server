@@ -30,6 +30,8 @@ public class FlowDefinitionRequest
     [Required]
     [JsonPropertyName("parameterDefinitions")]
     public required List<ParameterDefinitionRequest> ParameterDefinitions { get; set; }
+    [JsonPropertyName("systemScoped")]
+    public bool SystemScoped { get; set; } = false;
 }
 
 public class ActivityDefinitionRequest
@@ -104,7 +106,7 @@ public class DefinitionsService : IDefinitionsService
         var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
         
         // Ensure agent exists using thread-safe upsert operation
-        await _agentRepository.UpsertAgentAsync(request.Agent, _tenantContext.TenantId, currentUser);
+        await _agentRepository.UpsertAgentAsync(request.Agent, request.SystemScoped, _tenantContext.TenantId, currentUser);
 
         // Check if the user has permissions for this agent
         var hasPermission = await CheckPermissions(request.Agent, PermissionLevel.Write);
@@ -131,7 +133,7 @@ public class DefinitionsService : IDefinitionsService
                 await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id);
                 await GenerateMarkdown(definition);
                 // Create new definition with fresh ID
-                definition.Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
+                definition.Id = ObjectId.GenerateNewId().ToString();
                 await _flowDefinitionRepository.CreateAsync(definition);
                 return Results.Ok("Definition deleted and recreated successfully");
             }

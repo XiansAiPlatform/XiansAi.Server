@@ -4,6 +4,7 @@ using Shared.Utils.Temporal;
 using Shared.Repositories;
 using Shared.Models;
 using Temporalio.Exceptions;
+using Features.WebApi.Services;
 
 namespace Features.UserApi.Services;
 
@@ -23,14 +24,17 @@ public class WebhookReceiverService : IWebhookReceiverService
     private readonly ITenantContext _tenantContext;
     private readonly IApiKeyRepository _apiKeyRepository;
     private readonly ILogger<WebhookReceiverService> _logger;
+    private readonly IAgentService _agentService;
 
     public WebhookReceiverService(
         ITemporalClientFactory temporalClientFactory,
+        IAgentService agentService,
         ITenantContext tenantContext,
         IApiKeyRepository apiKeyRepository,
         ILogger<WebhookReceiverService> logger)
     {
         _temporalClientFactory = temporalClientFactory ?? throw new ArgumentNullException(nameof(temporalClientFactory));
+        _agentService = agentService ?? throw new ArgumentNullException(nameof(agentService));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _apiKeyRepository = apiKeyRepository ?? throw new ArgumentNullException(nameof(apiKeyRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -63,7 +67,8 @@ public class WebhookReceiverService : IWebhookReceiverService
                 queryParams,
                 body,
                 _tenantContext,
-                _temporalClientFactory);
+                _temporalClientFactory,
+                _agentService);
 
             _logger.LogInformation(
                 "Successfully processed webhook for tenant {TenantId}, workflow {Workflow}, method {Method}",

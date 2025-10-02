@@ -21,7 +21,7 @@ public class Agent : ModelValidatorBase<Agent>
     [StringLength(50, MinimumLength = 1, ErrorMessage = "Tenant must be between 1 and 50 characters")]
     [RegularExpression(@"^[a-zA-Z0-9._@|+\-:/\\,#=]+$", ErrorMessage = "Tenant contains invalid characters")]
     [Required(ErrorMessage = "Tenant is required")]
-    public required string Tenant { get; set; }
+    public required string? Tenant { get; set; }
 
     [BsonElement("created_by")]  
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Created by must be between 1 and 100 characters")]
@@ -41,15 +41,8 @@ public class Agent : ModelValidatorBase<Agent>
     [BsonElement("write_access")]
     public List<string> WriteAccess { get; set; } = new();
 
-    // public Permission? Permissions {
-    //     get {
-    //         return new Permission() {
-    //             OwnerAccess = OwnerAccess,
-    //             ReadAccess = ReadAccess,
-    //             WriteAccess = WriteAccess
-    //         };
-    //     }
-    // }
+    [BsonElement("system_scoped")]
+    public bool SystemScoped { get; set; } = false;
 
     public bool HasPermission(string userId, string[] userRoles, PermissionLevel requiredLevel)
     {

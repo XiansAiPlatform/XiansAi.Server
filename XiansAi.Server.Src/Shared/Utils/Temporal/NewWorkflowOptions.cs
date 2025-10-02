@@ -6,7 +6,7 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
-    public NewWorkflowOptions(string agentName, string workFlowType, string? proposedId, ITenantContext tenantContext, string? queueName = null)
+    public NewWorkflowOptions(string agentName, bool systemScoped, string workFlowType, string? proposedId, ITenantContext tenantContext)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId) || string.IsNullOrEmpty(tenantContext.LoggedInUser))
         {
@@ -27,8 +27,8 @@ public class NewWorkflowOptions : WorkflowOptions
         }
 
         Id = proposedId;
-        TaskQueue = GetTemporalQueueName(workFlowType, queueName, tenantContext);
-        Memo = GetMemo(tenantContext, queueName, agentName);
+        TaskQueue = GetTemporalQueueName(workFlowType, systemScoped, tenantContext);
+        Memo = GetMemo(tenantContext, agentName, systemScoped);
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName);
         IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting;
     }
@@ -53,29 +53,25 @@ public class NewWorkflowOptions : WorkflowOptions
         return searchAttributesBuilder.ToSearchAttributeCollection();
     }
 
-    private string GetTemporalQueueName(string workFlowType, string? queueName, ITenantContext tenantContext)
+    private string GetTemporalQueueName(string workFlowType, bool systemScoped, ITenantContext tenantContext)
     {
-        var queueFullName = workFlowType;
-        if (!string.IsNullOrEmpty(queueName))
+        // System agents use the same queue as the agent type without the tenant id prefix
+        if (systemScoped)
         {
-            queueFullName = queueName + ":" + workFlowType;
+            return workFlowType;
         }
-        queueFullName =  tenantContext.TenantId + ":" + queueFullName;
-        return queueFullName;
+        return tenantContext.TenantId + ":" + workFlowType;
     }
 
-    private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string? queueName, string agentName)
+    private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string agentName, bool systemScoped)
     {
         var memo = new Dictionary<string, object> {
             { Constants.TenantIdKey, tenantContext.TenantId },
             { Constants.AgentKey, agentName },
             { Constants.UserIdKey, tenantContext.LoggedInUser! },
+            { Constants.SystemScopedKey, systemScoped },
         };
 
-        if (!string.IsNullOrEmpty(queueName))
-        {
-            memo.Add(Constants.QueueNameKey, queueName);
-        }
         return memo;
     }
 

@@ -47,6 +47,17 @@ dotnet run --launch-profile Production
 
 For detailed startup options and microservice configuration, see [Start Options](./docs/START_OPTIONS.md).
 
+### Docker Releases
+
+```bash
+# Define the version
+export VERSION=1.3.7 # or 1.3.7-beta for pre-release
+
+# Create and push a version tag
+git tag -a v$VERSION -m "Release v$VERSION"
+git push origin v$VERSION
+```
+
 ### Using Docker
 
 ```bash

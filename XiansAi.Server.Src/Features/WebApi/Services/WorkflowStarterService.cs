@@ -22,12 +22,10 @@ public class WorkflowRequest
     public string[]? Parameters { get; set; }
 
     [StringLength(100, ErrorMessage = "Agent name cannot exceed 100 characters")]
-    public string? AgentName { get; set; }
+    public required string AgentName { get; set; }
 
     [StringLength(100, ErrorMessage = "Assignment name cannot exceed 100 characters")]
     public string? Assignment { get; set; }
-
-    public string? QueueName { get; set; }
 }
 
 public class WorkflowStartResult
@@ -50,22 +48,25 @@ public class WorkflowStarterService : IWorkflowStarterService
     private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowStarterService> _logger;
     private readonly ITenantContext _tenantContext;
-
+    private readonly IAgentService _agentService;
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowStarterService"/> class.
     /// </summary>
     /// <param name="clientFactory">The Temporal client factory.</param>
     /// <param name="logger">The logger instance.</param>
     /// <param name="tenantContext">The tenant context.</param>
+    /// <param name="agentService">The agent service.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowStarterService(
         ITemporalClientFactory clientFactory,
         ILogger<WorkflowStarterService> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IAgentService agentService)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _agentService = agentService ?? throw new ArgumentNullException(nameof(agentService));
     }
 
     /// <summary>
@@ -93,14 +94,15 @@ public class WorkflowStarterService : IWorkflowStarterService
                 return ServiceResult<WorkflowStartResult>.BadRequest(string.Join(", ", validationResults));
             }
 
-            var agentName = request!.AgentName ?? request.WorkflowType;
+            var agentName = request.AgentName;
+            var systemScoped = _agentService.IsSystemAgent(agentName).Result.Data;
 
             var options = new NewWorkflowOptions(
                 agentName, 
+                systemScoped,
                 request.WorkflowType, 
                 request.WorkflowId, 
-                _tenantContext, 
-                request.QueueName);
+                _tenantContext);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
             var handle = await StartWorkflowAsync(request, options);

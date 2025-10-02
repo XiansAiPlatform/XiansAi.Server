@@ -26,8 +26,9 @@ public interface IAgentRepository
     
     // Internal methods without permission checking (for system use)
     Task<Agent?> GetByNameInternalAsync(string name, string tenant);
+    Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
-    Task<Agent> UpsertAgentAsync(string agentName, string tenant, string createdBy);
+    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
 
@@ -48,6 +49,12 @@ public class AgentRepository : IAgentRepository
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
         _tenantContext = tenantContext; 
     }
+
+    public async Task<bool> IsSystemAgent(string name)
+    {
+        // Tenant is null for system agents
+        return await _agents.Find(x => x.Name == name && x.Tenant == null).FirstOrDefaultAsync() != null;
+    }   
 
     public async Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles)
     {
@@ -254,7 +261,7 @@ public class AgentRepository : IAgentRepository
         return result;
     }
 
-    public async Task<Agent> UpsertAgentAsync(string agentName, string tenant, string createdBy)
+    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy)
     {
         _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}", agentName, createdBy, tenant);
         
@@ -263,7 +270,8 @@ public class AgentRepository : IAgentRepository
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
-            Tenant = tenant,
+            SystemScoped = systemScoped,
+            Tenant = systemScoped ? null : tenant,
             CreatedBy = createdBy,
             CreatedAt = DateTime.UtcNow,
             OwnerAccess = new List<string>(),
@@ -271,6 +279,13 @@ public class AgentRepository : IAgentRepository
             WriteAccess = new List<string>()
         };
         newAgent.GrantOwnerAccess(createdBy);
+
+        // Only system admins can create system agents
+        if (newAgent.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        {
+            _logger.LogWarning("User {UserId} attempted to create system agent {AgentName} without system admin permission", createdBy, agentName);
+            throw new InvalidOperationException("User does not have system admin permission to create `system` agents");
+        }
 
         try
         {
@@ -301,7 +316,7 @@ public class AgentRepository : IAgentRepository
         }
     }
 
-    private bool HasSystemAccess(string agentTenantId)
+    private bool HasSystemAccess(string? agentTenantId)
     {
         // System admin has access to everything
         if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))

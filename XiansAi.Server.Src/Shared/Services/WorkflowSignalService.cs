@@ -2,6 +2,7 @@ using Shared.Auth;
 using Shared.Utils;
 using System.Text.Json.Serialization;
 using Shared.Utils.Temporal;
+using Features.WebApi.Services;
 
 namespace Shared.Services;
 
@@ -64,6 +65,7 @@ public interface IWorkflowSignalService
 
 public class WorkflowSignalService : IWorkflowSignalService
 {
+    private readonly IAgentService _agentService;
     private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowSignalService> _logger;
     private readonly ITenantContext _tenantContext;
@@ -74,12 +76,15 @@ public class WorkflowSignalService : IWorkflowSignalService
     /// <param name="clientFactory">The factory for obtaining Temporal clients.</param>
     /// <param name="logger">The logger for recording operational information.</param>
     /// <param name="tenantContext">The tenant context for the current request.</param>
+    /// <param name="agentService">The agent service for checking if an agent is system scoped.</param>
     /// <exception cref="ArgumentNullException">Thrown when any of the required services is null.</exception>
     public WorkflowSignalService(
+        IAgentService agentService,
         ITemporalClientFactory clientFactory,
         ILogger<WorkflowSignalService> logger,
         ITenantContext tenantContext)
     {
+        _agentService = agentService ?? throw new ArgumentNullException(nameof(agentService));
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
@@ -91,8 +96,11 @@ public class WorkflowSignalService : IWorkflowSignalService
         {
             var client = await _clientFactory.GetClientAsync() ?? throw new Exception("Failed to get Temporal client");
 
+            var systemScoped = _agentService.IsSystemAgent(request.SourceAgent).Result.Data;
+
             var options = new NewWorkflowOptions(
                 request.SourceAgent, 
+                systemScoped,
                 request.TargetWorkflowType, 
                 request.TargetWorkflowId, 
                 _tenantContext);

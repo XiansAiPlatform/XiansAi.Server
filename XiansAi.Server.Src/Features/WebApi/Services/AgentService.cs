@@ -10,11 +10,13 @@ namespace Features.WebApi.Services;
 
 public interface IAgentService
 {
+    Task<ServiceResult<Agent>> GetAgentByNameAsync(string agentName);
     Task<ServiceResult<List<string>>> GetAgentNames();
     Task<ServiceResult<List<AgentWithDefinitions>>> GetGroupedDefinitions(bool basicDataOnly = false);
     Task<ServiceResult<List<FlowDefinition>>> GetDefinitions(string agentName, bool basicDataOnly = false);
     Task<ServiceResult<List<WorkflowResponse>>> GetWorkflowInstances(string? agentName, string? typeName);
     Task<ServiceResult<AgentDeleteResult>> DeleteAgent(string agentName);
+    Task<ServiceResult<bool>> IsSystemAgent(string agentName);
 }
 /// <summary>
 /// Service for managing agent definitions and workflows.
@@ -52,6 +54,22 @@ public class AgentService : IAgentService
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _workflowFinderService = workflowFinderService ?? throw new ArgumentNullException(nameof(workflowFinderService));
         _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
+    }
+
+
+    public async Task<ServiceResult<Agent>> GetAgentByNameAsync(string agentName)
+    {
+        var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
+        if (agent == null)
+        {
+            return ServiceResult<Agent>.NotFound("Agent " + agentName + " not found");
+        }
+        return ServiceResult<Agent>.Success(agent);
+    }
+
+    public async Task<ServiceResult<bool>> IsSystemAgent(string agentName)
+    {
+        return ServiceResult<bool>.Success(await _agentRepository.IsSystemAgent(agentName));
     }
 
     public async Task<ServiceResult<List<string>>> GetAgentNames()

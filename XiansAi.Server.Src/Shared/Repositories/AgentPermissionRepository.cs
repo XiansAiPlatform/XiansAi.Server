@@ -6,7 +6,7 @@ namespace Shared.Repositories;
 public interface IAgentPermissionRepository
 {
     Task<Permission?> GetAgentPermissionsAsync(string agentName);
-    Task<string> GetAgentTenantAsync(string agentName);
+    Task<string?> GetAgentTenantAsync(string agentName);
     Task<bool> UpdateAgentPermissionsAsync(string agentName, Permission permissions);
     Task<bool> AddUserToAgentAsync(string agentName, string userId, PermissionLevel permissionLevel);
     Task<bool> RemoveUserFromAgentAsync(string agentName, string userId);
@@ -52,7 +52,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }; ;
     }
 
-    public async Task<string> GetAgentTenantAsync(string agentName)
+    public async Task<string?> GetAgentTenantAsync(string agentName)
     {
         _logger.LogInformation("Getting tenant for agent: {AgentName}", agentName);
 
@@ -226,7 +226,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         return cleanedPermissions;
     }
 
-    private bool HasSystemAccess(string agentTenantId)
+    private bool HasSystemAccess(string? agentTenantId)
     {
         // System admin has access to everything
         if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))

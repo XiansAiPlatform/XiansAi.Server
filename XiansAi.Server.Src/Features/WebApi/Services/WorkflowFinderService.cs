@@ -627,7 +627,7 @@ public class WorkflowFinderService : IWorkflowFinderService
 
             return recentWorkerCount;
         }
-        catch (System.Exception)
+        catch (Exception)
         {
             _logger.LogWarning("Failed to retrieve recent worker count for TaskQueue {TaskQueue}", taskQueueName);
             return "N/A"; // Return "N/A" if unable to retrieve the count

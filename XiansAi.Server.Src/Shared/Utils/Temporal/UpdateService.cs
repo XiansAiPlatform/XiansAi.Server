@@ -2,6 +2,7 @@ using Temporalio.Client;
 using Temporalio.Exceptions;
 using Shared.Auth;
 using Shared.Models;
+using Features.WebApi.Services;
 
 namespace Shared.Utils.Temporal;
 
@@ -17,6 +18,7 @@ public class UpdateService
     /// <param name="body">Request body from the webhook</param>
     /// <param name="tenantContext">Tenant context for workflow identification</param>
     /// <param name="temporalClientFactory">Factory to get temporal client</param>
+    /// <param name="agentService">Agent service for checking if an agent is system scoped</param>
     /// <param name="timeout">Timeout for the update operation (default: 30 seconds). Manually enforced via cancellation token.</param>
     /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
     /// <returns>WebhookResponse from the workflow update method</returns>
@@ -28,6 +30,7 @@ public class UpdateService
         string body,
         ITenantContext tenantContext,
         ITemporalClientFactory temporalClientFactory,
+        IAgentService agentService,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
@@ -36,10 +39,13 @@ public class UpdateService
         
         // Get the temporal client
         var client = await temporalClientFactory.GetClientAsync();
+
+        var systemScoped = agentService.IsSystemAgent(workflowInfo.AgentName).Result.Data;
         
         // Create workflow options for update-with-start
         var workflowOptions = new NewWorkflowOptions(
             workflowInfo.AgentName,
+            systemScoped,
             workflowInfo.WorkflowType,
             workflowInfo.WorkflowId,
             tenantContext);

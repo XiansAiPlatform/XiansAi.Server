@@ -20,6 +20,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     private readonly ITenantContext _tenantContext;
     private readonly ICertificateValidationCache _certValidationCache;
     private readonly ITenantRepository _tenantRepository;
+    private readonly IUserRepository _userRepository;
     public CertificateAuthenticationHandler(
         IOptionsMonitor<CertificateAuthenticationOptions> options,
         ILoggerFactory logger,
@@ -28,6 +29,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         ICertificateRepository certificateRepository,
         ITenantContext tenantContext,
         ICertificateValidationCache certValidationCache,
+        IUserRepository userRepository,
         ITenantRepository tenantRepository) 
         : base(options, logger, encoder)
     {
@@ -37,6 +39,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         _tenantContext = tenantContext;
         _certValidationCache = certValidationCache;
         _tenantRepository = tenantRepository;
+        _userRepository = userRepository;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -221,12 +224,22 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             return Task.FromResult(AuthenticateResult.Fail("Invalid certificate subject format"));
         }
 
+        var user = _userRepository.GetByUserIdAsync(userId).Result;
+        if (user == null)
+        {
+            return Task.FromResult(AuthenticateResult.Fail("Invalid user ID"));
+        }
+
+        var roles = user.TenantRoles.Where(tr => tr.Tenant == tenantId).FirstOrDefault()?.Roles ?? new List<string>();
+
+        if(user.IsSysAdmin) roles.Add(SystemRoles.SysAdmin);
+
         // Set up TenantContext
         _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", userId, UserType.AgentApiKey);
         _tenantContext.TenantId = tenantId;
         _tenantContext.UserType = UserType.AgentApiKey;
         _tenantContext.LoggedInUser = userId;
-        _tenantContext.UserRoles = new[] { "Agent" }; // Agents get the "Agent" role
+        _tenantContext.UserRoles = roles.ToArray(); // Agents get the "Agent" role
         _tenantContext.AuthorizedTenantIds = new[] { tenantId }; // Agents can only access their own tenant
 
         var claims = new[]
