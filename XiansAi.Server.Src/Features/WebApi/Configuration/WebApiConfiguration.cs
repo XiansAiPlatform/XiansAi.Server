@@ -43,7 +43,10 @@ public static class WebApiConfiguration
         RoleManagementEndpoints.MapRoleManagementEndpoints(app);
         UserTenantEndpoints.MapUserTenantEndpoints(app);
         UserManagementEndpoints.MapUserManagementEndpoints(app);
-        OidcConfigEndpoints.MapOidcConfigEndpoints(app);
+        
+        // OIDC Configuration endpoints
+        OidcConfigEndpoints.MapOidcConfigEndpoints(app);        // User2Agent OIDC
+        GenericOidcConfigEndpoints.MapGenericOidcConfigEndpoints(app); // Generic OIDC
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
         

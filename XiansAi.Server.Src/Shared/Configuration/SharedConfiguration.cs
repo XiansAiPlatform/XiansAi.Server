@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Shared.Providers.Auth.Auth0;
 using Shared.Providers.Auth.AzureB2C;
 using Shared.Providers.Auth.Keycloak;
+using Shared.Providers.Auth.GenericOidc;
 using Shared.Providers.Auth;
 using Shared.Auth;
 using Shared.Utils;
@@ -50,8 +51,12 @@ public static class SharedConfiguration
         builder.Services.AddScoped<Auth0Provider>();
         builder.Services.AddScoped<AzureB2CProvider>();
         builder.Services.AddScoped<KeycloakProvider>();
+        builder.Services.AddScoped<GenericOidcProvider>(); // Uses IDynamicOidcValidator (registered in UserApiConfiguration)
         builder.Services.AddScoped<IAuthProviderFactory, AuthProviderFactory>();
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
+        
+        // Register Dynamic OIDC Validator for per-tenant validation (used by both GenericOidc and UserApi)
+        builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
 
         // Add services using specialized configuration classes
         builder = builder

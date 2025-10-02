@@ -28,10 +28,15 @@ namespace Features.UserApi.Configuration
             AddSignalRServices(builder.Services);
 
             // OIDC per-tenant config storage and encryption
+            // User2Agent OIDC (for User API interactions)
             builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
             builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
-            // ISecureEncryptionService is registered as Singleton in SharedConfiguration
-            builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
+            
+            // Generic OIDC (for general authentication)
+            builder.Services.AddScoped<IGenericOidcConfigRepository, GenericOidcConfigRepository>();
+            builder.Services.AddScoped<IGenericOidcConfigService, GenericOidcConfigService>();
+            
+            // ISecureEncryptionService and IDynamicOidcValidator are registered in SharedConfiguration
 
             // Add Webhook service
             builder.Services.AddScoped<IWebhookReceiverService, WebhookReceiverService>();
