@@ -39,7 +39,8 @@ public enum AuthProviderType
     Auth0,
     AzureB2C,
     Keycloak,
-    GenericOidc
+    GenericOidc,
+    GitHub
 }
 
 /// <summary>

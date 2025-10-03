@@ -2,6 +2,7 @@ using Shared.Providers.Auth.Auth0;
 using Shared.Providers.Auth.AzureB2C;
 using Shared.Providers.Auth.Keycloak;
 using Shared.Providers.Auth.GenericOidc;
+using Shared.Providers.Auth.GitHub;
 
 namespace Shared.Providers.Auth;
 
@@ -32,6 +33,7 @@ public class AuthProviderFactory : IAuthProviderFactory
             AuthProviderType.AzureB2C => _serviceProvider.GetRequiredService<AzureB2CProvider>(),
             AuthProviderType.Keycloak => _serviceProvider.GetRequiredService<KeycloakProvider>(),
             AuthProviderType.GenericOidc => _serviceProvider.GetRequiredService<GenericOidcProvider>(),
+            AuthProviderType.GitHub => _serviceProvider.GetRequiredService<GitHubProvider>(),
             _ => throw new ArgumentException($"Unsupported authentication provider: {providerConfig.Provider}")
         };
     }

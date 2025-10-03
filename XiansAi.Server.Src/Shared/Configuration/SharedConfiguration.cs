@@ -5,6 +5,7 @@ using Shared.Providers.Auth.Auth0;
 using Shared.Providers.Auth.AzureB2C;
 using Shared.Providers.Auth.Keycloak;
 using Shared.Providers.Auth.GenericOidc;
+using Shared.Providers.Auth.GitHub;
 using Shared.Providers.Auth;
 using Shared.Auth;
 using Shared.Utils;
@@ -52,8 +53,12 @@ public static class SharedConfiguration
         builder.Services.AddScoped<AzureB2CProvider>();
         builder.Services.AddScoped<KeycloakProvider>();
         builder.Services.AddScoped<GenericOidcProvider>(); // Uses IDynamicOidcValidator (registered in UserApiConfiguration)
+        builder.Services.AddScoped<GitHubProvider>();
         builder.Services.AddScoped<IAuthProviderFactory, AuthProviderFactory>();
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
+        
+        // Register GitHub JWT issuer
+        builder.Services.AddSingleton<IJwtIssuer, HmacJwtIssuer>();
         
         // Register Dynamic OIDC Validator for per-tenant validation (used by both GenericOidc and UserApi)
         builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
