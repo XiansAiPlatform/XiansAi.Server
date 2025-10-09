@@ -1,6 +1,7 @@
 using Shared.Providers.Auth.Auth0;
 using Shared.Providers.Auth.AzureB2C;
 using Shared.Providers.Auth.Keycloak;
+using Shared.Providers.Auth.Oidc;
 
 namespace Shared.Providers.Auth;
 
@@ -30,6 +31,7 @@ public class TokenServiceFactory : ITokenServiceFactory
             AuthProviderType.Auth0 => _serviceProvider.GetRequiredService<Auth0TokenService>(),
             AuthProviderType.AzureB2C => _serviceProvider.GetRequiredService<AzureB2CTokenService>(),
             AuthProviderType.Keycloak => _serviceProvider.GetRequiredService<KeycloakTokenService>(),
+            AuthProviderType.Oidc => _serviceProvider.GetRequiredService<OidcTokenService>(),
             _ => throw new ArgumentException($"Unsupported authentication provider: {providerConfig.Provider}")
         };
     }
