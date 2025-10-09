@@ -38,7 +38,8 @@ public enum AuthProviderType
 {
     Auth0,
     AzureB2C,
-    Keycloak
+    Keycloak,
+    Oidc
 }
 
 /// <summary>

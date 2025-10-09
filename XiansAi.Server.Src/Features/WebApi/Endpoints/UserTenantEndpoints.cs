@@ -17,7 +17,23 @@ public static class UserTenantEndpoints
             HttpContext httpContext) =>
         {
             var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-            var result = await service.GetCurrentUserTenants(authHeader!.Substring("Bearer ".Length));
+            
+            if (string.IsNullOrEmpty(authHeader))
+            {
+                return Results.Unauthorized();
+            }
+            
+            // Extract token from "Bearer <token>" format
+            var token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? authHeader.Substring("Bearer ".Length).Trim()
+                : authHeader.Trim();
+            
+            if (string.IsNullOrEmpty(token))
+            {
+                return Results.Unauthorized();
+            }
+            
+            var result = await service.GetCurrentUserTenants(token);
             return Results.Ok(result);
         })
         .WithName("GetCurrentUserTenants")
