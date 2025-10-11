@@ -1,5 +1,7 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
+using System.Text.Json;
 using Shared.Data.Models;
 using Shared.Data;
 using Shared.Utils;
@@ -145,7 +147,12 @@ public class DocumentRepository : IDocumentRepository
             {
                 foreach (var kvp in queryFilter.MetadataFilters)
                 {
-                    filter &= builder.Eq($"metadata.{kvp.Key}", kvp.Value);
+                    // Convert JsonElement to BsonValue if needed
+                    var filterValue = kvp.Value is JsonElement jsonElement
+                        ? ConvertJsonElementToBsonValue(jsonElement)
+                        : kvp.Value;
+                    
+                    filter &= builder.Eq($"metadata.{kvp.Key}", filterValue);
                 }
             }
 
@@ -321,5 +328,14 @@ public class DocumentRepository : IDocumentRepository
             _logger.LogError(ex, "Error checking document existence with Type: {Type} and Key: {Key}", type, key);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Converts a JsonElement to a BsonValue for use in MongoDB queries.
+    /// </summary>
+    private static BsonValue ConvertJsonElementToBsonValue(JsonElement element)
+    {
+        var json = JsonSerializer.Serialize(element);
+        return BsonSerializer.Deserialize<BsonValue>(json);
     }
 }

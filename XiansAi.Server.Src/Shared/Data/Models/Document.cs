@@ -18,7 +18,7 @@ public class Document
 
     [BsonElement("content")]
     [JsonPropertyName("content")]
-    public BsonDocument Content { get; set; } = new BsonDocument();
+    public BsonValue Content { get; set; } = new BsonDocument();
 
     [BsonElement("metadata")]
     [JsonPropertyName("metadata")]

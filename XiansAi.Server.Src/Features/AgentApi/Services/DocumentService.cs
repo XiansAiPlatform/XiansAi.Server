@@ -1,4 +1,5 @@
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
 using System.Text.Json;
 using Features.AgentApi.Repositories;
 using Features.AgentApi.Models;
@@ -74,15 +75,15 @@ public class DocumentService : IDocumentService
             // Set content
             if (documentData.Content.ValueKind != JsonValueKind.Undefined && documentData.Content.ValueKind != JsonValueKind.Null)
             {
-                var contentJson = JsonSerializer.Serialize(documentData.Content);
-                document.Content = BsonDocument.Parse(contentJson);
+                document.Content = ConvertJsonElementToBsonValue(documentData.Content);
             }
 
             // Set metadata
             if (documentData.Metadata != null)
             {
                 var metadataJson = JsonSerializer.Serialize(documentData.Metadata);
-                document.Metadata = BsonDocument.Parse(metadataJson);
+                var metadataBson = BsonSerializer.Deserialize<BsonValue>(metadataJson);
+                document.Metadata = metadataBson.AsBsonDocument;
             }
 
             // Handle TTL if specified
@@ -98,9 +99,16 @@ public class DocumentService : IDocumentService
             // Handle UseKeyAsIdentifier option
             if (options?.UseKeyAsIdentifier == true)
             {
-                if (string.IsNullOrEmpty(document.Type) || string.IsNullOrEmpty(document.Key))
+                var missingFields = new List<string>();
+                if (string.IsNullOrEmpty(document.Type)) missingFields.Add("Type");
+                if (string.IsNullOrEmpty(document.Key)) missingFields.Add("Key");
+                
+                if (missingFields.Any())
                 {
-                    return ServiceResult<JsonElement>.BadRequest("Type and Key are required when UseKeyAsIdentifier is true");
+                    var message = $"UseKeyAsIdentifier requires both Type and Key properties. Missing: {string.Join(", ", missingFields)}";
+                    _logger.LogWarning("Document save failed: {Message}. Document Type={Type}, Key={Key}, AgentId={AgentId}", 
+                        message, document.Type, document.Key, document.AgentId);
+                    return ServiceResult<JsonElement>.BadRequest(message);
                 }
 
                 // Check if document with same type and key exists
@@ -301,15 +309,15 @@ public class DocumentService : IDocumentService
             // Update content
             if (documentData.Content.ValueKind != JsonValueKind.Undefined && documentData.Content.ValueKind != JsonValueKind.Null)
             {
-                var contentJson = JsonSerializer.Serialize(documentData.Content);
-                existing.Content = BsonDocument.Parse(contentJson);
+                existing.Content = ConvertJsonElementToBsonValue(documentData.Content);
             }
 
             // Update metadata
             if (documentData.Metadata != null)
             {
                 var metadataJson = JsonSerializer.Serialize(documentData.Metadata);
-                existing.Metadata = BsonDocument.Parse(metadataJson);
+                var metadataBson = BsonSerializer.Deserialize<BsonValue>(metadataJson);
+                existing.Metadata = metadataBson.AsBsonDocument;
             }
 
             // Update expiration if provided
@@ -388,7 +396,7 @@ public class DocumentService : IDocumentService
 
     private DocumentDto<JsonElement> ConvertToDocumentResponse(Document document)
     {
-        // Convert BsonDocument to JsonElement
+        // Convert BsonValue to JsonElement
         JsonElement content = default(JsonElement);
         if (document.Content != null && !document.Content.IsBsonNull)
         {
@@ -418,6 +426,15 @@ public class DocumentService : IDocumentService
             CreatedBy = document.CreatedBy,
             UpdatedBy = document.UpdatedBy
         };
+    }
+
+    /// <summary>
+    /// Converts a JsonElement to a BsonValue, handling all JSON value types.
+    /// </summary>
+    private static BsonValue ConvertJsonElementToBsonValue(JsonElement element)
+    {
+        var json = JsonSerializer.Serialize(element);
+        return BsonSerializer.Deserialize<BsonValue>(json);
     }
 }
 
