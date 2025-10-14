@@ -108,6 +108,7 @@ public static class PublicApiConfiguration
         
         // Map Public API endpoints (no authentication required, but rate limited)
         RegisterEndpoints.MapRegisterEndpoints(app);
+        GitHubAuthEndpoints.MapGitHubAuthEndpoints(app);
         
         return app;
     }

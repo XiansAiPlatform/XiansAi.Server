@@ -1,9 +1,12 @@
 using Shared.Repositories;
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Shared.Providers.Auth.Auth0;
 using Shared.Providers.Auth.AzureB2C;
+using Shared.Providers.Auth.GitHub;
 using Shared.Providers.Auth.Keycloak;
+using Shared.Providers.Auth.Oidc;
 using Shared.Providers.Auth;
 using Shared.Auth;
 using Shared.Utils;
@@ -44,12 +47,28 @@ public static class SharedConfiguration
             var httpClient = serviceProvider.GetRequiredService<HttpClient>();
             return new KeycloakTokenService(logger, configuration, httpClient);
         });
+        builder.Services.AddScoped<OidcTokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<OidcTokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var cache = serviceProvider.GetRequiredService<IMemoryCache>();
+            return new OidcTokenService(logger, configuration, cache);
+        });
+        builder.Services.AddScoped<GitHubTokenService>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<GitHubTokenService>>();
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+            return new GitHubTokenService(logger, configuration, httpClient);
+        });
         builder.Services.AddScoped<ITokenServiceFactory, TokenServiceFactory>();
 
         // Register auth providers
         builder.Services.AddScoped<Auth0Provider>();
         builder.Services.AddScoped<AzureB2CProvider>();
         builder.Services.AddScoped<KeycloakProvider>();
+        builder.Services.AddScoped<OidcProvider>();
+        builder.Services.AddScoped<GitHubProvider>();
         builder.Services.AddScoped<IAuthProviderFactory, AuthProviderFactory>();
         builder.Services.AddScoped<IAuthMgtConnect, AuthMgtConnect>();
 

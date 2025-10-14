@@ -9,7 +9,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Shared.Auth;
 
-namespace Features.UserApi.Auth;
+namespace Shared.Auth;
 
 public interface IDynamicOidcValidator
 {
@@ -163,8 +163,6 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 foreach (var check in providerRule.AdditionalClaims)
                 {
                     var value = principal.Claims.FirstOrDefault(c => c.Type == check.Claim)?.Value;
-                    //?? principal.Claims.FirstOrDefault(c => c.Type == ClaimConstants.TenantId)?.Value
-                    //?? principal.Claims.FirstOrDefault(c => c.Type == ClaimConstants.Tid)?.Value;
                     if (!EvaluateClaim(value, check))
                     {
                         return (false, null, $"Claim check failed: {check.Claim}");
@@ -330,4 +328,5 @@ public class DynamicOidcValidator : IDynamicOidcValidator
         };
     }
 }
+
 
