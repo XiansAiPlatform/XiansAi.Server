@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Features.UserApi.Auth;
+using Shared.Auth;
 using Features.UserApi.Services;
 using Features.UserApi.Endpoints;
 
