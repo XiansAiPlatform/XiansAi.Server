@@ -39,6 +39,7 @@ public class AgentRepository : IAgentRepository
 {
     private readonly IMongoCollection<Agent> _agents;
     private readonly IMongoCollection<FlowDefinition> _definitions;
+    private readonly IMongoCollection<User> _users;
     private readonly ILogger<AgentRepository> _logger;
     private readonly ITenantContext _tenantContext;
 
@@ -48,6 +49,7 @@ public class AgentRepository : IAgentRepository
         _agents = database.GetCollection<Agent>("agents");
         _logger = logger;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
+        _users = database.GetCollection<User>("users");
         _tenantContext = tenantContext; 
     }
 
@@ -279,6 +281,7 @@ public class AgentRepository : IAgentRepository
         else
         {
             allDefinitions = await findFluent.ToListAsync();
+            await ReplaceCreatedByWithUserNames(allDefinitions);
         }
 
         var definitionsByAgent = allDefinitions.GroupBy(d => d.Agent)
@@ -331,6 +334,7 @@ public class AgentRepository : IAgentRepository
         else
         {
             allDefinitions = await findFluent.ToListAsync();
+            await ReplaceCreatedByWithUserNames(allDefinitions);
         }
 
         var definitionsByAgent = allDefinitions.GroupBy(d => d.Agent)
@@ -344,6 +348,48 @@ public class AgentRepository : IAgentRepository
 
         _logger.LogInformation("Returning {Count} system-scoped agents with their definitions", result.Count);
         return result;
+    }
+
+    private async Task ReplaceCreatedByWithUserNames(List<FlowDefinition> definitions)
+    {
+        if (definitions == null || definitions.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var createdByIds = definitions
+                .Select(d => d.CreatedBy)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct()
+                .ToList();
+
+            if (createdByIds.Count == 0)
+            {
+                return;
+            }
+
+            var filter = Builders<User>.Filter.In(u => u.UserId, createdByIds);
+            var projection = Builders<User>.Projection.Expression(u => new { u.UserId, u.Name });
+            var users = await _users.Find(filter).Project(projection).ToListAsync();
+
+            var idToName = users
+                .Where(u => !string.IsNullOrWhiteSpace(u.UserId))
+                .ToDictionary(u => u.UserId, u => u.Name);
+
+            foreach (var def in definitions)
+            {
+                if (!string.IsNullOrWhiteSpace(def.CreatedBy) && idToName.TryGetValue(def.CreatedBy, out var name))
+                {
+                    def.CreatedBy = name;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to replace CreatedBy with user names. Returning original CreatedBy values.");
+        }
     }
 
     public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null)
