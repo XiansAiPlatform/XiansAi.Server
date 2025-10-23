@@ -90,13 +90,25 @@ public class CertificateService
             {
                 if (!prevCert.IsRevoked)
                 {
-                    prevCert.IsRevoked = true;
-                    prevCert.RevokedAt = DateTime.UtcNow;
-                    await _certificateRepository.UpdateAsync(prevCert);
-                    _logger.LogInformation(
-                        "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
+                    // Use RevokeAsync to ensure cache invalidation
+                    var revoked = await _certificateRepository.RevokeAsync(
                         prevCert.Thumbprint, 
-                        userId);
+                        "Replaced by new certificate");
+                    
+                    if (revoked)
+                    {
+                        _logger.LogInformation(
+                            "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
+                            prevCert.Thumbprint, 
+                            userId);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Failed to revoke previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
+                            prevCert.Thumbprint, 
+                            userId);
+                    }
                 }
             }
         }

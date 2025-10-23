@@ -184,6 +184,25 @@ Auth__TokenValidationCacheEntrySize=1
 - Cache entries use normal priority to allow proper eviction under memory pressure
 - Failed validations always trigger fresh validation to prevent attacks
 
+### Certificate Validation Caching (Agent API)
+
+The Agent API uses certificate-based authentication and caches validation results for performance:
+
+```bash
+# Certificate validation cache duration in minutes (default: 10)
+AgentApi__CertificateValidationCacheDurationMinutes=10
+
+# Size per cache entry for eviction policy (default: 1)
+AgentApi__CertificateValidationCacheEntrySize=1
+```
+
+**Security Notes:**
+
+- Only successful certificate validations are cached
+- Cache is automatically invalidated when a certificate is revoked
+- Uses the same global cache size limit as token validation
+- Failed validations always trigger fresh validation
+
 ### SSL and Security Settings
 
 For production environments:

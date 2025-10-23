@@ -65,25 +65,24 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var certBytes = Convert.FromBase64String(certHeader);
             using var cert = X509CertificateLoader.LoadCertificate(certBytes);
 
-            // Check validation cache
+            // Check validation cache (only successful validations are cached)
             var (found, isValid) = _certValidationCache.GetValidation(cert.Thumbprint);
-            if (found)
+            if (found && isValid)
             {
-                if (!isValid)
-                {
-                    return AuthenticateResult.Fail("Certificate validation failed (cached result)");
-                }
+                _logger.LogDebug("Using cached certificate validation for thumbprint: {Thumbprint}", cert.Thumbprint);
                 return await CreateAuthenticationTicket(cert);
             }
 
+            // Cache miss or invalid - perform full validation
             var validationResult = await ValidateCertificateAsync(cert);
             if (!validationResult.IsValid)
             {
                 _logger.LogWarning("Certificate validation failed for tenant ID {TenantId}", cert.Subject);
-                _certValidationCache.CacheValidation(cert.Thumbprint, false);
+                // Note: Invalid results are not cached to prevent cache pollution
                 return AuthenticateResult.Fail(string.Join(", ", validationResult.Errors));
             }
 
+            // Cache successful validation
             _certValidationCache.CacheValidation(cert.Thumbprint, true);
             return await CreateAuthenticationTicket(cert);
         }

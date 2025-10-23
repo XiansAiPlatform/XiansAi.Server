@@ -34,8 +34,9 @@ public static class AgentApiConfiguration
     
     public static WebApplicationBuilder AddAgentApiAuth(this WebApplicationBuilder builder)
     {
-        // Register certificate validation cache - using no-op implementation to disable caching
-        builder.Services.AddScoped<ICertificateValidationCache, NoOpCertificateValidationCache>();
+        // Register certificate validation cache with memory-based caching for performance
+        // Uses IMemoryCache with size limits to prevent DoS attacks
+        builder.Services.AddScoped<ICertificateValidationCache, MemoryCertificateValidationCache>();
         
         // Add certificate authentication scheme
         builder.Services.AddAuthentication()

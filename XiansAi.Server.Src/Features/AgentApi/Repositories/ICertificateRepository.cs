@@ -1,5 +1,6 @@
 // Features/AgentApi/Repositories/ICertificateRepository.cs
 using Features.AgentApi.Models;
+using Features.AgentApi.Auth;
 using MongoDB.Driver;
 using Shared.Data;
 
@@ -19,12 +20,15 @@ public class CertificateRepository : ICertificateRepository
 {
     private readonly IMongoCollection<Certificate> _collection;
     private readonly ILogger<CertificateRepository> _logger;
+    private readonly ICertificateValidationCache _validationCache;
 
     public CertificateRepository(
         IDatabaseService databaseService,
-        ILogger<CertificateRepository> logger)
+        ILogger<CertificateRepository> logger,
+        ICertificateValidationCache validationCache)
     {
         _logger = logger;
+        _validationCache = validationCache;
         var database = databaseService.GetDatabaseAsync().Result;
         _collection = database.GetCollection<Certificate>("certificates");
     }
@@ -57,6 +61,13 @@ public class CertificateRepository : ICertificateRepository
         var result = await _collection.UpdateOneAsync(
             cert => cert.Thumbprint == thumbprint,
             update);
+        
+        if (result.ModifiedCount > 0)
+        {
+            // Invalidate cache entry for revoked certificate
+            _validationCache.RemoveValidation(thumbprint);
+            _logger.LogInformation("Revoked certificate and invalidated cache for thumbprint: {Thumbprint}", thumbprint);
+        }
         
         return result.ModifiedCount > 0;
     }
