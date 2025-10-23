@@ -101,8 +101,9 @@ public class DefinitionsService : IDefinitionsService
         if (string.IsNullOrEmpty(request.Agent))
         {
             _logger.LogWarning("Agent name is empty or null");
-            return Results.Json(
-                new { message = "Agent name is required." }, 
+            return Results.Problem(
+                title: "Bad Request",
+                detail: "Agent name is required.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -113,6 +114,16 @@ public class DefinitionsService : IDefinitionsService
         {
             _logger.LogError("User {UserId} attempted to create system agent {AgentName} without system admin permission", currentUser, request.Agent);
             throw new InvalidOperationException("User does not have system admin permission to create `system` agents");
+        }
+
+        // if not systemScoped and there is an systemscoped agent with the same name, throw an error
+        if (!request.SystemScoped && await _agentRepository.IsSystemAgent(request.Agent))
+        {
+            _logger.LogError("User {UserId} attempted to create non-system agent {AgentName} with the same name as an existing system scoped agent", currentUser, request.Agent);
+            return Results.Problem(
+                title: "Internal Server Error",
+                detail: $"An system scoped agent with the same name already exists. Trying to create definition for {request.WorkflowType} for agent {request.Agent}",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
 
         // Ensure agent exists using thread-safe upsert operation
@@ -127,8 +138,9 @@ public class DefinitionsService : IDefinitionsService
                 Please use a different name or ask the owner to share 
                 the agent with you with write permission.";
             _logger.LogWarning(warningMessage);
-            return Results.Json(
-                new { message = warningMessage }, 
+            return Results.Problem(
+                title: "Forbidden",
+                detail: warningMessage,
                 statusCode: StatusCodes.Status403Forbidden);
         }
         
