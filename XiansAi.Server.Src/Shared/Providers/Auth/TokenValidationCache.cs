@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Shared.Providers.Auth;
 
@@ -31,22 +33,37 @@ public class MemoryTokenValidationCache : ITokenValidationCache
     private readonly IMemoryCache _cache;
     private readonly ILogger<MemoryTokenValidationCache> _logger;
     private readonly TimeSpan _cacheDuration;
+    private readonly long _cacheEntrySizeLimit;
+    
+    // Shared static SHA256 instance for performance (thread-safe in .NET)
+    private static readonly SHA256 _sha256 = SHA256.Create();
+    private static readonly object _hashLock = new object();
 
     public MemoryTokenValidationCache(
         IMemoryCache cache,
         ILogger<MemoryTokenValidationCache> logger,
         IConfiguration configuration)
     {
-        _cache = cache;
-        _logger = logger;
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         // Default to 5 minutes if not configured
         _cacheDuration = TimeSpan.FromMinutes(
             configuration.GetValue<double>("Auth:TokenValidationCacheDurationMinutes", 5));
+        
+        // Default to size of 1 per entry (requires cache to be configured with size limit)
+        _cacheEntrySizeLimit = configuration.GetValue<long>("Auth:TokenValidationCacheEntrySize", 1);
     }
 
     public Task<(bool found, bool valid, string? userId, IEnumerable<string>? tenantIds)> GetValidation(string token)
     {
+        // Input validation
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            _logger.LogWarning("GetValidation called with null or empty token");
+            return Task.FromResult((false, false, (string?)null, (IEnumerable<string>?)null));
+        }
+
         var cacheKey = GetCacheKey(token);
 
         if (_cache.TryGetValue<CachedValidation>(cacheKey, out var cachedResult) && cachedResult != null)
@@ -65,6 +82,13 @@ public class MemoryTokenValidationCache : ITokenValidationCache
 
     public Task CacheValidation(string token, bool valid, string? userId, IEnumerable<string>? tenantIds)
     {
+        // Input validation
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            _logger.LogWarning("CacheValidation called with null or empty token");
+            return Task.CompletedTask;
+        }
+
         // SECURITY IMPROVEMENT: Only cache successful validations to prevent cache pollution
         // and reduce the attack surface. Failed validations should always be re-validated.
         if (!valid || string.IsNullOrEmpty(userId))
@@ -75,9 +99,12 @@ public class MemoryTokenValidationCache : ITokenValidationCache
 
         var cacheKey = GetCacheKey(token);
 
+        // Use Normal priority to allow proper cache eviction when under memory pressure
+        // Set size to enable eviction policy when cache size limit is configured
         var cacheOptions = new MemoryCacheEntryOptions()
             .SetAbsoluteExpiration(_cacheDuration)
-            .SetPriority(CacheItemPriority.High);
+            .SetPriority(CacheItemPriority.Normal)
+            .SetSize(_cacheEntrySizeLimit);
 
         _cache.Set(cacheKey, new CachedValidation
         {
@@ -93,14 +120,25 @@ public class MemoryTokenValidationCache : ITokenValidationCache
     private string GetCacheKey(string token)
     {
         // Use SHA256 hash to avoid collisions and not log the full token
-        using var sha = System.Security.Cryptography.SHA256.Create();
-        var hashBytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(token));
+        // Use shared static instance with lock for thread-safety and performance
+        byte[] hashBytes;
+        lock (_hashLock)
+        {
+            hashBytes = _sha256.ComputeHash(Encoding.UTF8.GetBytes(token));
+        }
         var hash = Convert.ToBase64String(hashBytes);
         return $"token_validation:{hash}";
     }
 
     public Task RemoveValidation(string token)
     {
+        // Input validation
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            _logger.LogWarning("RemoveValidation called with null or empty token");
+            return Task.CompletedTask;
+        }
+
         var cacheKey = GetCacheKey(token);
         _cache.Remove(cacheKey);
         _logger.LogDebug("Removed token validation cache entry");

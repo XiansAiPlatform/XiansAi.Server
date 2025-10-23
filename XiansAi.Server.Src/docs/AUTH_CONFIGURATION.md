@@ -162,12 +162,27 @@ Keycloak__ValidIssuer=https://your-keycloak-server/realms/your-realm-name
 
 ### Token Validation Caching
 
-To improve performance, token validation results can be cached:
+To improve performance, token validation results can be cached. The cache uses an in-memory store with configurable size limits to prevent memory exhaustion attacks:
 
 ```bash
 # Token validation cache duration in minutes (default: 5)
 Auth__TokenValidationCacheDurationMinutes=5
+
+# Maximum number of cache entries to prevent DoS attacks (default: 10000)
+# This limits how many tokens can be cached simultaneously
+Auth__TokenValidationCacheSizeLimit=10000
+
+# Size per cache entry for eviction policy (default: 1)
+# Used by the cache eviction algorithm when size limit is reached
+Auth__TokenValidationCacheEntrySize=1
 ```
+
+**Security Notes:**
+
+- Only successful token validations are cached to prevent cache poisoning
+- Cache uses SHA-256 hashes of tokens as keys to avoid storing sensitive data
+- Cache entries use normal priority to allow proper eviction under memory pressure
+- Failed validations always trigger fresh validation to prevent attacks
 
 ### SSL and Security Settings
 

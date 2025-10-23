@@ -29,7 +29,10 @@ namespace Shared.Services
             if (!_cache.TryGetValue(cacheKey, out List<string>? roles))
             {
                 roles = await _userRepository.GetUserRolesAsync(userId, tenantId);
-                _cache.Set(cacheKey, roles, _cacheDuration);
+                var cacheOptions = new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(_cacheDuration)
+                    .SetSize(1);
+                _cache.Set(cacheKey, roles, cacheOptions);
             }
             return roles ?? new List<string>();
         }

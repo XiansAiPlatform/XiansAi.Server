@@ -112,7 +112,7 @@ public class DocumentService : IDocumentService
                 }
 
                 // Check if document with same type and key exists
-                var existingByKey = await _repository.GetByKeyAsync(document.Type, document.Key, _tenantContext.TenantId);
+                var existingByKey = await _repository.GetByKeyAsync(document.Type!, document.Key!, _tenantContext.TenantId);
                 if (existingByKey != null)
                 {
                     if (!(options?.Overwrite ?? false))

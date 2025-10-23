@@ -112,7 +112,8 @@ public class OidcTokenService : ITokenService
             // Cache successful validation for 5 minutes
             var cacheOptions = new MemoryCacheEntryOptions()
                 .SetAbsoluteExpiration(TimeSpan.FromMinutes(5))
-                .SetPriority(CacheItemPriority.High);
+                .SetPriority(CacheItemPriority.Normal)
+                .SetSize(1);
             _cache.Set(cacheKey, successResult, cacheOptions);
             
             return successResult;

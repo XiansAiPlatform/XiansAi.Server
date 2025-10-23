@@ -171,14 +171,20 @@ namespace Shared.Services
                 // Cache the result (including null results to prevent repeated DB hits for invalid keys)
                 if (apiKey != null)
                 {
-                    _cache.Set(cacheKey, apiKey, ApiKeyCacheExpiration);
+                    var cacheOptions = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(ApiKeyCacheExpiration)
+                        .SetSize(1);
+                    _cache.Set(cacheKey, apiKey, cacheOptions);
                     _logger.LogDebug("Cached API key for tenant {TenantId} with {CacheExpiration} expiration", 
                         tenantId, ApiKeyCacheExpiration);
                 }
                 else
                 {
                     // Cache null results with shorter TTL to prevent brute force attacks
-                    _cache.Set(cacheKey, (ApiKey?)null, TimeSpan.FromMinutes(2));
+                    var cacheOptions = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(2))
+                        .SetSize(1);
+                    _cache.Set(cacheKey, (ApiKey?)null, cacheOptions);
                     _logger.LogDebug("Cached null API key result for tenant {TenantId}", tenantId);
                 }
                 

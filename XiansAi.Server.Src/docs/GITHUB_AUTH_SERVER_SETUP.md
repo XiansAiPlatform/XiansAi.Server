@@ -67,7 +67,7 @@ GitHub__JwtIssuer=http://localhost:8080/auth
 GitHub__JwtAudience=xiansai-api
 GitHub__JwtAccessTokenMinutes=60
 
-GitHub__JwtHmacSecret=dev-super-secret-at-least-64-bytes
+GitHub__JwtHmacSecret=934b7125d7cd260cfe58fb47386858392b7d5fc57a643c8dc9a97a9eed3a5731c8a0731f84d558c70a40cb588ce5a1768b4564c8d81ef70a0ee3fa4f3a625d79
 ```
 
 ## .env (Prod: RSA)
@@ -87,4 +87,3 @@ GitHub__JwtAccessTokenMinutes=60
 GitHub__JwtPrivateKeyPem=-----BEGIN PRIVATE KEY-----\n...your PKCS#8 RSA private key...\n-----END PRIVATE KEY-----
 GitHub__JwtKeyId=key-2025-01
 ```
-

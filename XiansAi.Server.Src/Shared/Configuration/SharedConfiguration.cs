@@ -16,14 +16,19 @@ public static class SharedConfiguration
 {
     public static WebApplicationBuilder AddSharedServices(this WebApplicationBuilder builder)
     {
-        // Register memory cache if not already registered
-        builder.Services.AddMemoryCache();
+        // Register memory cache with size limit to prevent DoS attacks via cache exhaustion
+        // Default size limit: 10,000 entries (configurable via Auth:TokenValidationCacheSizeLimit)
+        var cacheSizeLimit = builder.Configuration.GetValue<long>("Auth:TokenValidationCacheSizeLimit", 10000);
+        builder.Services.AddMemoryCache(options =>
+        {
+            options.SizeLimit = cacheSizeLimit;
+        });
 
         // Register HttpClient for token services
         builder.Services.AddHttpClient();
 
         // Register token validation cache
-        builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
+        builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
 
         // Register token services
         builder.Services.AddScoped<Auth0TokenService>(serviceProvider =>

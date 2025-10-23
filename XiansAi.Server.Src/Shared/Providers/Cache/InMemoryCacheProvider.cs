@@ -73,7 +73,8 @@ public class InMemoryCacheProvider : ICacheProvider
     {
         try
         {
-            var cacheOptions = new MemoryCacheEntryOptions();
+            var cacheOptions = new MemoryCacheEntryOptions()
+                .SetSize(1); // Required when cache has SizeLimit configured
             
             if (absoluteExpiration.HasValue)
             {
