@@ -206,6 +206,15 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                         $"Tenant {currentTenantId} configuration not found"));
                     return false;
                 }
+                
+                // Check if tenant is enabled
+                if (!tenantResult.Data.Enabled)
+                {
+                    _logger.LogWarning("Tenant {TenantId} is disabled", currentTenantId);
+                    context.Fail(new AuthorizationFailureReason(this, 
+                        $"Tenant {currentTenantId} is disabled"));
+                    return false;
+                }
             //}
         }
 

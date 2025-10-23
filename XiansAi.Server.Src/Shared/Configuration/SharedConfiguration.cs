@@ -10,6 +10,9 @@ using Shared.Providers.Auth.Oidc;
 using Shared.Providers.Auth;
 using Shared.Auth;
 using Shared.Utils;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
+
 namespace Features.Shared.Configuration;
 
 public static class SharedConfiguration
@@ -126,6 +129,9 @@ public static class SharedConfiguration
 
         // Add HttpContextAccessor for access to the current HttpContext
         builder.Services.AddHttpContextAccessor();
+
+        // Register custom authorization middleware result handler
+        builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
 
         // Register repositories
         builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
