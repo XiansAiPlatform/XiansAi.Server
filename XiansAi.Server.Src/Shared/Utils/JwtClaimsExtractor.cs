@@ -90,7 +90,7 @@ public class JwtClaimsExtractor : IJwtClaimsExtractor
     // Standard claim type constants for consistency
     private static readonly string[] UserIdClaimTypes = { "sub", "preferred_username", "user_id", "uid", "id", "email", "username" };
     private static readonly string[] EmailClaimTypes = { "email", "upn" };
-    private static readonly string[] NameClaimTypes = { "name", "given_name", "display_name" };
+    private static readonly string[] NameClaimTypes = { "name", "given_name", "display_name", "preferred_username", "username" };
 
     public JwtClaimsExtractor(IAuthProviderFactory authProviderFactory, ILogger<JwtClaimsExtractor> logger)
     {

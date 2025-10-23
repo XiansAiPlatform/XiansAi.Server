@@ -34,12 +34,14 @@ public class UserRepository : IUserRepository
 {
     private readonly IMongoCollection<User> _users;
     private readonly ILogger<UserRepository> _logger;
+    private readonly ITenantRepository _tenantRepository;
 
-    public UserRepository(IDatabaseService databaseService, ILogger<UserRepository> logger)
+    public UserRepository(IDatabaseService databaseService, ILogger<UserRepository> logger, ITenantRepository tenantRepository)
     {
         var database = databaseService.GetDatabaseAsync().Result;
         _users = database.GetCollection<User>("users");
         _logger = logger;
+        _tenantRepository = tenantRepository;
     }
 
     public async Task<PagedUserResult> GetAllUsersAsync(UserFilter filter)
@@ -236,7 +238,41 @@ public class UserRepository : IUserRepository
             .Project(projection)
             .FirstOrDefaultAsync();
 
-        return tenantRoles.Where(x => x.IsApproved)?.Select(tr => tr.Tenant).ToList() ?? new List<string>();
+        if (tenantRoles == null || !tenantRoles.Any())
+        {
+            return new List<string>();
+        }
+
+        // Get approved tenant IDs from user's tenant roles
+        var approvedTenantIds = tenantRoles
+            .Where(x => x.IsApproved)
+            .Select(tr => tr.Tenant)
+            .ToList();
+
+        if (!approvedTenantIds.Any())
+        {
+            return new List<string>();
+        }
+
+        // Validate that each tenant exists and is enabled
+        var validTenantIds = new List<string>();
+        foreach (var tenantId in approvedTenantIds)
+        {
+            try
+            {
+                var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+                if (tenant != null && tenant.Enabled)
+                {
+                    validTenantIds.Add(tenantId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error checking tenant {TenantId} for user {UserId}", tenantId, userId);
+            }
+        }
+
+        return validTenantIds;
     }
 
     public async Task<User?> GetAnyUserAsync()

@@ -283,8 +283,7 @@ public class PublicRegistrationService : IPublicRegistrationService
                 TenantId = request.TenantId,
                 Name = request.Name,
                 Domain = request.Domain,
-                Description = request.Description,
-                Enabled = true
+                Description = request.Description
             };
 
             var tenantResult = await _tenantService.CreateTenant(createTenantRequest, jwtResult.UserId);

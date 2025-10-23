@@ -19,7 +19,6 @@ public class CreateTenantRequest
     public Logo? Logo { get; set; }
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
-    public bool Enabled { get; set; } = true;
 }
 
 public class UpdateTenantRequest
@@ -304,7 +303,7 @@ public class TenantService : ITenantService
                 Logo = request.Logo,
                 Theme = request.Theme,
                 Timezone = request.Timezone,
-                Enabled = request.Enabled,
+                Enabled = false,
                 CreatedBy = createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set"),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow

@@ -116,37 +116,6 @@ public class UserTenantService : IUserTenantService
 
             var tenants = await _userRepository.GetUserTenantsAsync(userId);
 
-            //for backward compatibility, ensure existing users with their Tenants
-            if (tenants.Count == 0)
-            {
-                tenants = await _authMgtConnect.GetUserTenants(userId);
-
-                //check if tenant exist in DB collection
-                foreach (var tenantId in tenants.ToList())
-                {
-                    var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
-                    if (tenant == null)
-                    {
-                        _logger.LogInformation("Tenant {TenantId} not found in database, adding to DB collection", tenantId);
-
-                        var newTenant = new Tenant
-                        {
-                            Id = ObjectId.GenerateNewId().ToString(),
-                            TenantId = tenantId,
-                            Name = tenantId,
-                            Domain = tenantId,
-                            Enabled = true,
-                            CreatedBy = "system",
-                            CreatedAt = DateTime.UtcNow,
-                            UpdatedAt = DateTime.UtcNow
-                        };
-
-                        await _tenantRepository.CreateAsync(newTenant);
-                        _logger.LogInformation("New tenant created successfully with ID: {TenantId}", tenantId);
-                    }
-                }
-            }
-
             return ServiceResult<List<string>>.Success(tenants);
         }
         catch (Exception ex)
