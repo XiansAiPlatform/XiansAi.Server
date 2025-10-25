@@ -13,74 +13,6 @@ public static class UserManagementEndpoints
             .WithTags("WebAPI - User Management")
             .RequireAuthorization();
 
-        group.MapPost("/{userId}/lock", async (
-            string userId,
-            [FromBody] LockUserRequest request,
-            [FromServices] IUserManagementService userManagementService) =>
-        {
-            var result = await userManagementService.LockUserAsync(userId, request.Reason);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .RequiresValidTenantAdmin()
-        .WithName("LockUser")
-        .WithOpenApi(operation => {
-            operation.Summary = "Lock a user";
-            operation.Description = "Locks a user account preventing them from accessing the system";
-            return operation;
-        });
-
-        group.MapPost("/{userId}/unlock", async (
-            string userId,
-            [FromServices] IUserManagementService userManagementService) =>
-        {
-            var result = await userManagementService.UnlockUserAsync(userId);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .RequiresValidTenantAdmin()
-        .WithName("UnlockUser")
-        .WithOpenApi(operation => {
-            operation.Summary = "Unlock a user";
-            operation.Description = "Unlocks a user account allowing them to access the system again";
-            return operation;
-        });
-
-        group.MapGet("/{userId}/lockstatus", async (
-            string userId,
-            [FromServices] IUserManagementService userManagementService) =>
-        {
-            var result = await userManagementService.IsUserLockedOutAsync(userId);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .WithName("GetUserLockStatus")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get user lock status";
-            operation.Description = "Returns whether a user account is currently locked";
-            return operation;
-        });
-
-        group.MapGet("/{userId}", async (
-            string userId,
-            [FromServices] IUserManagementService userManagementService) =>
-        {
-            var result = await userManagementService.GetUserAsync(userId);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .RequiresValidTenantAdmin()
-        .WithName("GetUser")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get user details";
-            operation.Description = "Returns detailed information about a user";
-            return operation;
-        });
-
         group.MapDelete("/{userId}", async (
             string userId,
             [FromServices] IUserManagementService userManagementService) =>
@@ -169,7 +101,7 @@ public static class UserManagementEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("AcceptInvitation")
-        .RequiresToken()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Accept a user invitation";
             operation.Description = "Accepts an invitation using the invitation token and creates the user account.";
@@ -232,7 +164,7 @@ public static class UserManagementEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("UpdateUser")
-        .RequiresToken()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Update user";
             operation.Description = "Update user details";
@@ -249,7 +181,7 @@ public static class UserManagementEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("SearchUsers")
-        .RequiresToken()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Search users";
             operation.Description = "Search users by name, email, or other supported fields";
