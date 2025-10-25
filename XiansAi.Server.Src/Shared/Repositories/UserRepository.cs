@@ -26,8 +26,8 @@ public interface IUserRepository
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
     Task<bool> IsSysAdmin(string userId);
-    Task<bool> DeleteUser(string userId);
-    Task<List<User>> SearchUsersAsync(string query);
+    Task<bool> DeleteUser(string userId, string tenantId);
+    Task<List<User>> SearchUsersAsync(string query, string tenantId);
 }
 
 public class UserRepository : IUserRepository
@@ -377,21 +377,46 @@ public class UserRepository : IUserRepository
         return user?.IsSysAdmin ?? false;
     }
 
-    public async Task<bool> DeleteUser(string userId)
+    public async Task<bool> DeleteUser(string userId, string tenantId)
     {
-        var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
-        var deletedUser = await _users.DeleteOneAsync(filter);
+        // First verify the user exists and belongs to the tenant
+        var userFilter = Builders<User>.Filter.Eq(u => u.UserId, userId);
+        var user = await _users.Find(userFilter).FirstOrDefaultAsync();
+        
+        if (user == null)
+        {
+            _logger.LogWarning("User {UserId} not found", userId);
+            return false;
+        }
 
-        return deletedUser.IsAcknowledged;
+        // Check if user belongs to the specified tenant
+        var belongsToTenant = user.TenantRoles.Any(tr => tr.Tenant == tenantId);
+        if (!belongsToTenant)
+        {
+            _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", userId, tenantId);
+            return false;
+        }
+
+        // Delete the user
+        var deletedUser = await _users.DeleteOneAsync(userFilter);
+        return deletedUser.IsAcknowledged && deletedUser.DeletedCount > 0;
     }
 
-    public async Task<List<User>> SearchUsersAsync(string query)
+    public async Task<List<User>> SearchUsersAsync(string query, string tenantId)
     {
-        var filter = Builders<User>.Filter.Or(
+        // Search only users who belong to the specified tenant
+        var searchFilter = Builders<User>.Filter.Or(
             Builders<User>.Filter.Regex(u => u.Email, new BsonRegularExpression(query, "i")),
             Builders<User>.Filter.Regex(u => u.Name, new BsonRegularExpression(query, "i"))
         );
 
-        return await _users.Find(filter).Limit(20).ToListAsync();
+        var tenantFilter = Builders<User>.Filter.ElemMatch(
+            u => u.TenantRoles,
+            Builders<TenantRole>.Filter.Eq(tr => tr.Tenant, tenantId)
+        );
+
+        var combinedFilter = Builders<User>.Filter.And(searchFilter, tenantFilter);
+
+        return await _users.Find(combinedFilter).Limit(20).ToListAsync();
     }
 }

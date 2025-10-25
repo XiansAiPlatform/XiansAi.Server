@@ -313,6 +313,14 @@ public class UserManagementService : IUserManagementService
             return ServiceResult<bool>.NotFound("User not found");
         }
 
+        // Validate that the user belongs to the current tenant
+        var belongsToTenant = existingUser.TenantRoles.Any(tr => tr.Tenant == _tenantContext.TenantId);
+        if (!belongsToTenant && !existingUser.IsSysAdmin)
+        {
+            _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", user.UserId, _tenantContext.TenantId);
+            return ServiceResult<bool>.Forbidden("User does not belong to the current tenant");
+        }
+
         existingUser.Email = user.Email;
         existingUser.UserId = user.UserId;
         existingUser.Name = user.Name;
@@ -454,13 +462,17 @@ public class UserManagementService : IUserManagementService
 
     public async Task<ServiceResult<bool>> DeleteUser(string userId)
     {
-        var deleted = await _userRepository.DeleteUser(userId);
+        var deleted = await _userRepository.DeleteUser(userId, _tenantContext.TenantId);
+        if (!deleted)
+        {
+            return ServiceResult<bool>.NotFound("User not found or does not belong to the current tenant");
+        }
         return ServiceResult<bool>.Success(deleted);
     }
 
     public async Task<ServiceResult<List<UserDto>>> SearchUsers(string query)
     {
-        var users = await _userRepository.SearchUsersAsync(query);
+        var users = await _userRepository.SearchUsersAsync(query, _tenantContext.TenantId);
         var userDtos = users.Select(u => new UserDto
         {
             UserId = u.UserId,

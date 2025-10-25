@@ -87,10 +87,11 @@ public class MessagingService : IMessagingService
     {
         try
         {
-            var result = await _conversationRepository.DeleteThreadAsync(threadId);
+            var tenantId = _tenantContext.TenantId;
+            var result = await _conversationRepository.DeleteThreadAsync(threadId, tenantId);
             if (!result)
             {
-                return ServiceResult<bool>.BadRequest("Thread not found or could not be deleted");
+                return ServiceResult<bool>.NotFound("Thread not found or does not belong to the current tenant");
             }
             return ServiceResult<bool>.Success(true);
         }
