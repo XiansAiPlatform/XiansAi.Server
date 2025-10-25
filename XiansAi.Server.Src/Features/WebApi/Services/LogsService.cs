@@ -54,7 +54,7 @@ public class LogsService : ILogsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting logs by workflow run id: {WorkflowRunId}", request.WorkflowRunId);
-            return ServiceResult<List<Log>>.InternalServerError("An error occurred while retrieving the logs. Error: " + ex.Message);
+            return ServiceResult<List<Log>>.InternalServerError("An error occurred while retrieving the logs");
         }
     }
 

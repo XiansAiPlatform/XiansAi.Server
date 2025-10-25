@@ -45,7 +45,7 @@ public class ActivitiesService : IActivitiesService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving activity {ActivityId} for workflow {WorkflowId}", activityId, workflowId);
-            return ServiceResult<Activity>.InternalServerError("An error occurred while retrieving the activity. Error: " + ex.Message);
+            return ServiceResult<Activity>.InternalServerError("An error occurred while retrieving the activity");
         }
     }
 }

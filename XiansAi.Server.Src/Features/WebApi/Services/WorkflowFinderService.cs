@@ -106,7 +106,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         {
             _logger.LogError(ex, "Failed to retrieve workflow {WorkflowId}. Error: {ErrorMessage}",
                 workflowId, ex.Message);
-            return ServiceResult<WorkflowResponse>.BadRequest("Failed to retrieve workflow: " + ex.Message);
+            return ServiceResult<WorkflowResponse>.BadRequest("Failed to retrieve workflow");
         }
     }
 
@@ -281,7 +281,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve paginated workflows. Error: {ErrorMessage}", ex.Message);
-            return ServiceResult<PaginatedWorkflowsResponse>.InternalServerError("Failed to retrieve workflows: " + ex.Message);
+            return ServiceResult<PaginatedWorkflowsResponse>.InternalServerError("Failed to retrieve workflows");
         }
     }
 
@@ -368,7 +368,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve workflows. Error: {ErrorMessage}", ex.Message);
-            return ServiceResult<List<WorkflowsWithAgent>>.InternalServerError("Failed to retrieve workflows: " + ex.Message);
+            return ServiceResult<List<WorkflowsWithAgent>>.InternalServerError("Failed to retrieve workflows");
         }
     }
 
@@ -422,7 +422,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve workflows by agent and type. Error: {ErrorMessage}", ex.Message);
-            return ServiceResult<List<WorkflowResponse>>.BadRequest("Failed to retrieve workflows by agent and type: " + ex.Message);
+            return ServiceResult<List<WorkflowResponse>>.BadRequest("Failed to retrieve workflows by agent and type");
         }
     }
 

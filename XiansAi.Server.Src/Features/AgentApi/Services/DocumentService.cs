@@ -181,7 +181,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving document");
-            return ServiceResult<JsonElement>.InternalServerError($"Error saving document: {ex.Message}");
+            return ServiceResult<JsonElement>.InternalServerError("Error saving document");
         }
     }
 
@@ -210,7 +210,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting document with ID: {Id}", id);
-            return ServiceResult<JsonElement?>.InternalServerError($"Error retrieving document: {ex.Message}");
+            return ServiceResult<JsonElement?>.InternalServerError("Error retrieving document");
         }
     }
 
@@ -233,7 +233,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting document with Type: {Type} and Key: {Key}", type, key);
-            return ServiceResult<JsonElement?>.InternalServerError($"Error retrieving document: {ex.Message}");
+            return ServiceResult<JsonElement?>.InternalServerError("Error retrieving document");
         }
     }
 
@@ -265,7 +265,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error querying documents");
-            return ServiceResult<JsonElement>.InternalServerError($"Error querying documents: {ex.Message}");
+            return ServiceResult<JsonElement>.InternalServerError("Error querying documents");
         }
     }
 
@@ -338,7 +338,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating document");
-            return ServiceResult<bool>.BadRequest($"Error updating document: {ex.Message}");
+            return ServiceResult<bool>.BadRequest("Error updating document");
         }
     }
 
@@ -358,7 +358,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting document with ID: {Id}", id);
-            return ServiceResult<bool>.BadRequest($"Error deleting document: {ex.Message}");
+            return ServiceResult<bool>.BadRequest("Error deleting document");
         }
     }
 
@@ -374,7 +374,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting multiple documents");
-            return ServiceResult<BulkDeleteResult>.InternalServerError($"Error deleting documents: {ex.Message}");
+            return ServiceResult<BulkDeleteResult>.InternalServerError("Error deleting documents");
         }
     }
 
@@ -390,7 +390,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error checking document existence with ID: {Id}", id);
-            return ServiceResult<ExistsResult>.InternalServerError($"Error checking document existence: {ex.Message}");
+            return ServiceResult<ExistsResult>.InternalServerError("Error checking document existence");
         }
     }
 

@@ -6,6 +6,7 @@ using Shared.Repositories;
 using Shared.Auth;
 using Shared.Utils;
 using System.Text.Json;
+using Features.Shared.Configuration;
 
 namespace Features.AgentApi.Endpoints
 {
@@ -38,7 +39,8 @@ namespace Features.AgentApi.Endpoints
         {
             var group = app.MapGroup("/api/agent/conversation")
                 .WithTags("AgentAPI - Conversation")
-                .RequiresCertificate();
+                .RequiresCertificate()
+                .WithAgentUserApiRateLimit(); // Apply higher rate limits for agent APIs
 
             group.MapGet("/history", GetConversationHistory)
             .WithName("Get Conversation History")
@@ -99,6 +101,7 @@ namespace Features.AgentApi.Endpoints
             // New synchronous endpoint that waits for responses
             group.MapPost("/converse", async (
                 [FromServices] ILogger<ConversationHistoryQuery> logger,
+                [FromServices] ILoggerFactory loggerFactory,
                 [FromQuery] string type,
                 [FromBody] ChatOrDataRequest chatOrDataRequest,
                 [FromServices] IMessageService messageService,
@@ -155,7 +158,8 @@ namespace Features.AgentApi.Endpoints
 
 
                 // Use the sync message handler to process the complex flow
-                var syncHandler = new SyncMessageHandler(messageService, pendingRequestService);
+                var syncLogger = loggerFactory.CreateLogger<SyncMessageHandler>();
+                var syncHandler = new SyncMessageHandler(messageService, pendingRequestService, syncLogger);
                 var result =  await syncHandler.ProcessSyncMessageAsync(
                     chat,
                     messageType,

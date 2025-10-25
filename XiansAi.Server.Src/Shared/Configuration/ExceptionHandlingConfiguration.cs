@@ -22,35 +22,35 @@ public static class ExceptionHandlingConfiguration
                 switch (exception)
                 {
                     case BadHttpRequestException badRequestEx when badRequestEx.InnerException is JsonException jsonEx:
-                        // Handle model binding validation errors
+                        // Handle model binding validation errors - log detailed error server-side
                         logger.LogInformation("Model binding error: {Message}", jsonEx.Message);
                         context.Response.StatusCode = StatusCodes.Status400BadRequest;
                         await context.Response.WriteAsJsonAsync(new 
                         { 
                             error = "Invalid request format",
-                            message = jsonEx.Message
+                            message = "The request body contains invalid JSON format"
                         });
                         break;
                         
                     case BadHttpRequestException badRequestEx:
-                        // Handle other bad request exceptions
+                        // Handle other bad request exceptions - log detailed error server-side
                         logger.LogInformation("Bad request error: {Message}", badRequestEx.Message);
                         context.Response.StatusCode = StatusCodes.Status400BadRequest;
                         await context.Response.WriteAsJsonAsync(new 
                         { 
                             error = "Bad request",
-                            message = badRequestEx.Message
+                            message = "The request is invalid"
                         });
                         break;
                         
                     default:
-                        // Handle other exceptions
+                        // Handle other exceptions - log detailed error server-side only
                         logger.LogError(exception, "An unhandled exception occurred");
                         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
                         await context.Response.WriteAsJsonAsync(new 
                         { 
-                            error = "An error occurred while processing your request",
-                            message = exception?.Message ?? "Unknown error"
+                            error = "Internal server error",
+                            message = "An error occurred while processing your request"
                         });
                         break;
 

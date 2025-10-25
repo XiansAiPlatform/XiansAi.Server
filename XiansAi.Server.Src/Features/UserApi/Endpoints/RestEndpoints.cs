@@ -4,6 +4,7 @@ using Shared.Services;
 using Shared.Auth;
 using System.Text.Json;
 using Shared.Utils;
+using Features.Shared.Configuration;
 
 namespace Features.UserApi.Endpoints;
 
@@ -13,7 +14,8 @@ public static class RestEndpoints
     {
         var restGroup = app.MapGroup("/api/user/rest")
             .WithTags("UserAPI - Rest")
-            .RequireAuthorization("EndpointAuthPolicy");
+            .RequireAuthorization("EndpointAuthPolicy")
+            .WithAgentUserApiRateLimit(); // Apply higher rate limits for user APIs
 
         restGroup.MapPost("/send", async (
             [FromQuery] string workflow,
@@ -69,6 +71,7 @@ public static class RestEndpoints
             [FromServices] IMessageService messageService,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IPendingRequestService pendingRequestService,
+            [FromServices] ILogger<SyncMessageHandler> logger,
             HttpContext context,
             [FromQuery] int timeoutSeconds = 60,
             [FromQuery] string? requestId = null,
@@ -104,7 +107,7 @@ public static class RestEndpoints
                 tenantContext.Authorization);
 
             // Use the sync message handler to process the complex flow
-            var syncHandler = new SyncMessageHandler(messageService, pendingRequestService);
+            var syncHandler = new SyncMessageHandler(messageService, pendingRequestService, logger);
             return await syncHandler.ProcessSyncMessageAsync(
                 chat,
                 messageType,

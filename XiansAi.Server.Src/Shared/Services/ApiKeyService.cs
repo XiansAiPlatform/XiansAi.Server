@@ -53,7 +53,7 @@ namespace Shared.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating API key for tenant {TenantId}", tenantId);
-                return ServiceResult<(string, ApiKey)>.InternalServerError("An error occurred while creating the API key. " + ex.Message);
+                return ServiceResult<(string, ApiKey)>.InternalServerError("An error occurred while creating the API key");
             }
         }
 
@@ -82,7 +82,7 @@ namespace Shared.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
-                return ServiceResult<bool>.InternalServerError("An error occurred while revoking the API key. " + ex.Message);
+                return ServiceResult<bool>.InternalServerError("An error occurred while revoking the API key");
             }
         }
 
@@ -97,7 +97,7 @@ namespace Shared.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting API keys for tenant {TenantId}", tenantId);
-                return ServiceResult<List<ApiKey>>.InternalServerError("An error occurred while retrieving API keys. " + ex.Message);
+                return ServiceResult<List<ApiKey>>.InternalServerError("An error occurred while retrieving API keys");
             }
         }
 
@@ -128,7 +128,7 @@ namespace Shared.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error rotating API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
-                return ServiceResult<(string, ApiKey)?>.InternalServerError("An error occurred while rotating the API key. " + ex.Message);
+                return ServiceResult<(string, ApiKey)?>.InternalServerError("An error occurred while rotating the API key");
             }
         }
 
@@ -144,7 +144,7 @@ namespace Shared.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting API key by id {ApiKeyId} for tenant {TenantId}", id, tenantId);
-                return ServiceResult<ApiKey?>.InternalServerError("An error occurred while retrieving the API key. " + ex.Message);
+                return ServiceResult<ApiKey?>.InternalServerError("An error occurred while retrieving the API key");
             }
         }
 

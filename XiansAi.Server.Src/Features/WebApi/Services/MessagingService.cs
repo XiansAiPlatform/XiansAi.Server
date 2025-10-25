@@ -98,7 +98,7 @@ public class MessagingService : IMessagingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting thread {ThreadId}", threadId);
-            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread. Error: " + ex.Message);
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
         }
     }
 }

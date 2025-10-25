@@ -70,7 +70,7 @@ public class TemplateService : ITemplateService
             _logger.LogError(ex, "Error retrieving system-scoped agent definitions for user {UserId} in tenant {TenantId}", 
                 _tenantContext.LoggedInUser, _tenantContext.TenantId);
             return ServiceResult<List<AgentWithDefinitions>>.InternalServerError(
-                "An error occurred while retrieving system-scoped agent definitions. Error: " + ex.Message);
+                "An error occurred while retrieving system-scoped agent definitions");
         }
     }
 
@@ -181,7 +181,7 @@ public class TemplateService : ITemplateService
             _logger.LogError(ex, "Error deploying template agent {AgentName} for user {UserId} in tenant {TenantId}", 
                 agentName, _tenantContext.LoggedInUser, _tenantContext.TenantId);
             return ServiceResult<Agent>.InternalServerError(
-                "An error occurred while deploying the template. Error: " + ex.Message);
+                "An error occurred while deploying the template");
         }
     }
 
@@ -269,7 +269,7 @@ public class TemplateService : ITemplateService
         {
             _logger.LogError(ex, "Error deleting system-scoped agent {AgentName}", agentName);
             return ServiceResult<bool>.InternalServerError(
-                "An error occurred while deleting the system-scoped agent. Error: " + ex.Message);
+                "An error occurred while deleting the system-scoped agent");
         }
     }
 }

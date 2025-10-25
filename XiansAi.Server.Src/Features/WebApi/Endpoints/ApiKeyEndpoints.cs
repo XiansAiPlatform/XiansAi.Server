@@ -2,7 +2,8 @@
 using Shared.Services;
 using Shared.Auth;
 using Features.WebApi.Auth;
-using Shared.Utils.Services; 
+using Shared.Utils.Services;
+using Features.Shared.Configuration;
 
 namespace Features.WebApi.Endpoints
 {
@@ -13,7 +14,8 @@ namespace Features.WebApi.Endpoints
             var group = app.MapGroup("/api/client/apikeys")
                 .WithTags("WebAPI - API Keys")
                 .RequiresValidTenant()
-                .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin));
+                .RequireAuthorization(policy => policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin))
+                .WithGlobalRateLimit(); // Apply standard rate limiting
 
             // Create API key
             group.MapPost("/create", async (

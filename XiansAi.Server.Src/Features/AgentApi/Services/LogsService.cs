@@ -88,7 +88,7 @@ public class LogsService : ILogsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating logs, count: {Count}", requests?.Length ?? 0);
-            return Results.BadRequest($"An error occurred while creating the logs: {ex.Message}");
+            return Results.BadRequest("An error occurred while creating the logs");
         }
     }
 
@@ -128,7 +128,7 @@ public class LogsService : ILogsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating log: {Request}", request);
-            return Results.BadRequest($"An error occurred while creating the log: {ex.Message}");
+            return Results.BadRequest("An error occurred while creating the log");
         }
     }
 } 

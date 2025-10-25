@@ -2,6 +2,7 @@ using Features.WebApi.Auth;
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
+using Features.Shared.Configuration;
 
 namespace Features.WebApi.Endpoints;
 
@@ -12,7 +13,8 @@ public static class AgentEndpoints
         var agentGroup = routes.MapGroup("/api/client/agents")
             .WithTags("WebAPI - Agents")
             .RequiresValidTenant()
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .WithGlobalRateLimit(); // Apply standard rate limiting
 
         agentGroup.MapGet("/names", async (
             [FromServices] IAgentService service) =>

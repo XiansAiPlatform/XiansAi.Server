@@ -1,6 +1,7 @@
 using Shared.Services;
 using Shared.Repositories;
 using Shared.Utils.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Shared.Utils
 {
@@ -8,11 +9,16 @@ namespace Shared.Utils
     {
         private readonly IMessageService _messageService;
         private readonly IPendingRequestService _pendingRequestService;
+        private readonly ILogger<SyncMessageHandler> _logger;
 
-        public SyncMessageHandler(IMessageService messageService, IPendingRequestService pendingRequestService)
+        public SyncMessageHandler(
+            IMessageService messageService, 
+            IPendingRequestService pendingRequestService,
+            ILogger<SyncMessageHandler> logger)
         {
             _messageService = messageService;
             _pendingRequestService = pendingRequestService;
+            _logger = logger;
         }
 
         public async Task<object> ProcessSyncMessageAsync(
@@ -77,8 +83,9 @@ namespace Shared.Utils
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error processing sync message request");
                 _pendingRequestService.CancelRequest(chatRequest.RequestId);
-                return Results.Problem($"An error occurred: {ex.Message}", statusCode: 500);
+                return Results.Problem("An error occurred while processing your request", statusCode: 500);
             }
         }
     }

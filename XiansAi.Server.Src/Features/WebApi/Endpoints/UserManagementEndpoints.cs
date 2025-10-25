@@ -2,6 +2,7 @@ using Features.WebApi.Auth;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 using Shared.Services;
+using Features.Shared.Configuration;
 
 namespace Features.WebApi.Endpoints;
 
@@ -11,7 +12,8 @@ public static class UserManagementEndpoints
     {
         var group = app.MapGroup("/api/users")
             .WithTags("WebAPI - User Management")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .WithGlobalRateLimit(); // Apply standard rate limiting
 
         group.MapDelete("/{userId}", async (
             string userId,

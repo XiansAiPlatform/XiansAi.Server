@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.PublicApi.Services;
 using Shared.Utils.Services;
+using Features.Shared.Configuration;
 
 namespace Features.PublicApi.Endpoints;
 
@@ -54,7 +55,7 @@ public static class RegisterEndpoints
             
             return operation;
         })
-        .RequireRateLimiting("PublicApiRegistration");
+        .WithAuthenticationRateLimit(); // Strict rate limiting for registration endpoints
 
         registerGroup.MapGet("/tenant/{tenantId}/info", (
             string tenantId) =>
@@ -87,7 +88,7 @@ public static class RegisterEndpoints
             operation.Description = "Get information about how to join a specific tenant. No authentication required. Rate limited to 200 requests per minute per IP.";
             return operation;
         })
-        .RequireRateLimiting("PublicApiGet");
+        .WithPublicApiRateLimit(); // Standard rate limiting for public GET endpoints
 
         registerGroup.MapPost("/new-tenant", async (
             [FromBody] PublicCreateTenantRequest request,
@@ -131,6 +132,6 @@ public static class RegisterEndpoints
             
             return operation;
         })
-        .RequireRateLimiting("PublicApiRegistration");
+        .WithAuthenticationRateLimit(); // Strict rate limiting for registration endpoints
     }
 }

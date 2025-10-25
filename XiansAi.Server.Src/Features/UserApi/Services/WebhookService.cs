@@ -86,13 +86,13 @@ public class WebhookReceiverService : IWebhookReceiverService
         catch (InvalidOperationException ex)
         {
             _logger.LogError(ex, "Invalid operation while processing webhook");
-            return ServiceResult<WebhookResponse>.BadRequest(ex.Message, StatusCode.BadRequest);
+            return ServiceResult<WebhookResponse>.BadRequest("Invalid webhook operation", StatusCode.BadRequest);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing webhook for workflow {Workflow}, method {Method}", workflow, methodName);
             return ServiceResult<WebhookResponse>.InternalServerError(
-                $"An error occurred while processing the webhook. Exception: {ex.Message}",
+                "An error occurred while processing the webhook",
                 StatusCode.InternalServerError);
         }
     }

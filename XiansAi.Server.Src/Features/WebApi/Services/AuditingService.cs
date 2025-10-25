@@ -81,7 +81,7 @@ public class AuditingService : IAuditingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving participants for agent {Agent}", agent);
-            return ServiceResult<(IEnumerable<string?> participants, long totalCount)>.InternalServerError("An error occurred while retrieving participants. Error: " + ex.Message);
+            return ServiceResult<(IEnumerable<string?> participants, long totalCount)>.InternalServerError("An error occurred while retrieving participants");
         }
     }
 
@@ -108,7 +108,7 @@ public class AuditingService : IAuditingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflow types for agent {Agent} and participant {ParticipantId}", agent, participantId);
-            return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow types. Error: " + ex.Message);
+            return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow types");
         }
     }
 
@@ -143,7 +143,7 @@ public class AuditingService : IAuditingService
         {
             _logger.LogError(ex, "Error retrieving workflow IDs for agent {Agent}, workflow type {WorkflowType}, and participant {ParticipantId}", 
                 agent, workflowType, participantId);
-            return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow IDs. Error: " + ex.Message);
+            return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow IDs");
         }
     }
 
@@ -196,7 +196,7 @@ public class AuditingService : IAuditingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving logs for agent {Agent}", agent);
-            return ServiceResult<(IEnumerable<Log> logs, long totalCount)>.InternalServerError("An error occurred while retrieving logs. Error: " + ex.Message);
+            return ServiceResult<(IEnumerable<Log> logs, long totalCount)>.InternalServerError("An error occurred while retrieving logs");
         }
     }
     
@@ -235,7 +235,7 @@ public class AuditingService : IAuditingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflow types for multiple agents");
-            return ServiceResult<Dictionary<string, IEnumerable<string>>>.InternalServerError("An error occurred while retrieving workflow types. Error: " + ex.Message);
+            return ServiceResult<Dictionary<string, IEnumerable<string>>>.InternalServerError("An error occurred while retrieving workflow types");
         }
     }
     
@@ -325,7 +325,7 @@ public class AuditingService : IAuditingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving grouped error logs");
-            return ServiceResult<List<AgentCriticalGroup>>.InternalServerError("An error occurred while retrieving grouped error logs. Error: " + ex.Message);
+            return ServiceResult<List<AgentCriticalGroup>>.InternalServerError("An error occurred while retrieving grouped error logs");
         }
     }
 } 

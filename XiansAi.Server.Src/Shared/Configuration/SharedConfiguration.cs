@@ -82,7 +82,8 @@ public static class SharedConfiguration
 
         // Add services using specialized configuration classes
         builder = builder
-            .AddCorsConfiguration();
+            .AddCorsConfiguration()
+            .AddRateLimiting();
             
         // Add infrastructure services (clients, data access, etc.)
         builder.Services.AddInfrastructureServices(builder.Configuration);
@@ -185,6 +186,10 @@ public static class SharedConfiguration
         
         // Configure standard middleware
         app.UseCors(corsSettings.PolicyName);
+        
+        // Add rate limiting middleware (must be after routing and before authentication)
+        app.UseRateLimitingMiddleware();
+        
         app.UseAuthentication();
         app.UseAuthorization();
 

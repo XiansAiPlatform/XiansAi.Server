@@ -83,7 +83,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving agent names");
-            return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving agent names. Error: " + ex.Message);
+            return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving agent names");
         }
     }
 
@@ -98,7 +98,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving definitions");
-            return ServiceResult<List<AgentWithDefinitions>>.InternalServerError("An error occurred while retrieving definitions. Error: " + ex.Message);
+            return ServiceResult<List<AgentWithDefinitions>>.InternalServerError("An error occurred while retrieving definitions");
         }
     }
 
@@ -156,7 +156,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflows");
-            return ServiceResult<List<WorkflowResponse>>.InternalServerError("An error occurred while retrieving workflows. Error: " + ex.Message);
+            return ServiceResult<List<WorkflowResponse>>.InternalServerError("An error occurred while retrieving workflows");
         }
     }
 
@@ -222,7 +222,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting agent {AgentName}", agentName);
-            return ServiceResult<AgentDeleteResult>.InternalServerError("An error occurred while deleting the agent. Error: " + ex.Message);
+            return ServiceResult<AgentDeleteResult>.InternalServerError("An error occurred while deleting the agent");
         }
     }
 
@@ -268,7 +268,7 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving definitions for agent {AgentName}", agentName);
-            return ServiceResult<List<FlowDefinition>>.InternalServerError("An error occurred while retrieving agent definitions. Error: " + ex.Message);
+            return ServiceResult<List<FlowDefinition>>.InternalServerError("An error occurred while retrieving agent definitions");
         }
     }
 }

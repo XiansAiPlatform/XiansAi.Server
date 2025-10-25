@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Shared.Providers.Auth.GitHub;
 using System.ComponentModel.DataAnnotations;
+using Features.Shared.Configuration;
 
 namespace Features.PublicApi.Endpoints;
 
@@ -120,7 +121,7 @@ public static class GitHubAuthEndpoints
             operation.RequestBody.Description = "GitHub authorization code and redirect URI";
             return operation;
         })
-        .RequireRateLimiting("PublicApiRegistration"); // Reuse existing rate limit policy
+        .WithAuthenticationRateLimit(); // Apply strict rate limiting for authentication endpoints
 
         // Health check / configuration info endpoint
         githubGroup.MapGet("/config", (
@@ -154,7 +155,7 @@ public static class GitHubAuthEndpoints
             operation.Description = "Returns public GitHub OAuth configuration needed by the frontend to initiate the OAuth flow. No authentication required.";
             return operation;
         })
-        .RequireRateLimiting("PublicApiGet"); // Reuse existing rate limit policy for GET requests
+        .WithPublicApiRateLimit(); // Apply public API rate limiting for GET requests
     }
 }
 

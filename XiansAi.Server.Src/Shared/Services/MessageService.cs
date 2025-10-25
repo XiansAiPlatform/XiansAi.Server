@@ -443,7 +443,7 @@ public class MessageService : IMessageService
         {
             _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}", 
                 workflowId, participantId);
-            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread: " + ex.Message);
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
         }
     }
 

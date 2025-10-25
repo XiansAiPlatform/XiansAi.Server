@@ -119,7 +119,7 @@ public class WorkflowStarterService : IWorkflowStarterService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error starting workflow of type {WorkflowType}", request?.WorkflowType);
-            return ServiceResult<WorkflowStartResult>.InternalServerError($"Workflow Start Failed: {ex.Message}");
+            return ServiceResult<WorkflowStartResult>.InternalServerError("Workflow start failed");
         }
     }
 

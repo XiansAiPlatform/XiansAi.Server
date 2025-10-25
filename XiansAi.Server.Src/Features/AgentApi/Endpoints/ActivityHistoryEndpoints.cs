@@ -37,7 +37,8 @@ public static class ActivityHistoryEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem($"Error creating activity history: {ex.Message}");
+                _logger.LogError(ex, "Error creating activity history");
+                return Results.Problem("Error creating activity history");
             }
         })
         .WithOpenApi(operation => {
