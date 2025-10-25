@@ -120,7 +120,16 @@ public static class UserManagementEndpoints
             HttpContext httpContext) =>
         {
             var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-            var result = await userManagementService.GetInviteByUserEmailAsync(authHeader!.Substring("Bearer ".Length));
+            
+            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            {
+                return Results.BadRequest(new { 
+                    error = "Invalid or missing Authorization header. Expected format: 'Bearer <token>'" 
+                });
+            }
+            
+            var token = authHeader.Substring("Bearer ".Length);
+            var result = await userManagementService.GetInviteByUserEmailAsync(token);
             return result.IsSuccess
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);

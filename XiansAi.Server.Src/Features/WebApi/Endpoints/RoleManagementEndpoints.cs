@@ -116,9 +116,11 @@ public static class RoleManagementEndpoints
             [FromServices] IRoleManagementService roleService) =>
         {
             var existingAdmins = await roleService.GetSystemAdminsAsync();
+
+            // We only allow this endpoint to be called once per system
             if (existingAdmins.Data?.Any() == true)
             {
-                return Results.BadRequest("System admin already exists. Use regular role assignment.");
+                return Results.BadRequest("System admin already exists. Ask the system admin to use regular role assignment.");
             }
 
             var result = await roleService.AssignBootstrapSysAdminRolesToUserAsync();
