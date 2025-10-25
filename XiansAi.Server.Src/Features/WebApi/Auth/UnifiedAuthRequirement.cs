@@ -238,13 +238,12 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     {
         var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
 
-        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+        var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+        if (!success || token == null)
         {
             _logger.LogWarning("No Bearer token found in Authorization header");
             return (false, null, null);
         }
-
-        var token = authHeader.Substring("Bearer ".Length);
 
         // Try to get validation result from cache (unless bypassing)
         if (!bypassCache)

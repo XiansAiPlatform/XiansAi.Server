@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.WebApi.Auth;
 
@@ -39,20 +40,13 @@ public class OidcAuthenticationHandler : AuthenticationHandler<AuthenticationSch
 
             var authHeader = Request.Headers["Authorization"].ToString();
             
-            // Validate Bearer token format
-            if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogDebug("Invalid Authorization header format");
-                return AuthenticateResult.Fail("Invalid Authorization header format. Expected 'Bearer <token>'");
-            }
-
-            // Extract token
-            var token = authHeader.Substring("Bearer ".Length).Trim();
+            // Safely extract Bearer token
+            var (tokenExtracted, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
             
-            if (string.IsNullOrWhiteSpace(token))
+            if (!tokenExtracted || token == null)
             {
-                _logger.LogDebug("Empty token in Authorization header");
-                return AuthenticateResult.Fail("Empty token");
+                _logger.LogDebug("Invalid Authorization header format or empty token");
+                return AuthenticateResult.Fail("Invalid Authorization header format. Expected 'Bearer <token>'");
             }
 
             // Validate token using DynamicOidcValidator (uses "webapi" as pseudo-tenant)

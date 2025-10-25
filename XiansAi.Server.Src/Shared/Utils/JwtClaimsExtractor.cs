@@ -45,6 +45,13 @@ public interface IJwtClaimsExtractor
     /// <param name="token">The validated JWT token</param>
     /// <returns>Display name or null if not found</returns>
     string? ExtractName(string token);
+
+    /// <summary>
+    /// Safely extracts Bearer token from Authorization header
+    /// </summary>
+    /// <param name="authorizationHeader">The Authorization header value</param>
+    /// <returns>Tuple with success flag and extracted token (null if extraction failed)</returns>
+    (bool success, string? token) ExtractBearerToken(string? authorizationHeader);
 }
 
 /// <summary>
@@ -212,5 +219,93 @@ public class JwtClaimsExtractor : IJwtClaimsExtractor
     public string? ExtractName(string token)
     {
         return ExtractClaim(token, NameClaimTypes[0], NameClaimTypes.Skip(1).ToArray());
+    }
+
+    /// <summary>
+    /// Safely extracts Bearer token from Authorization header with comprehensive validation
+    /// Prevents null reference exceptions and validates token format
+    /// </summary>
+    /// <param name="authorizationHeader">The Authorization header value (can be null)</param>
+    /// <returns>Tuple indicating success and the extracted token (null if extraction failed)</returns>
+    public (bool success, string? token) ExtractBearerToken(string? authorizationHeader)
+    {
+        // Validate input is not null or empty
+        if (string.IsNullOrEmpty(authorizationHeader))
+        {
+            _logger.LogDebug("Authorization header is null or empty");
+            return (false, null);
+        }
+
+        // Validate header starts with "Bearer "
+        if (!authorizationHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("Authorization header does not start with 'Bearer '");
+            return (false, null);
+        }
+
+        // Validate header is long enough to contain a token
+        const int bearerPrefixLength = 7; // "Bearer ".Length
+        if (authorizationHeader.Length <= bearerPrefixLength)
+        {
+            _logger.LogDebug("Authorization header contains 'Bearer ' but no token");
+            return (false, null);
+        }
+
+        // Safely extract and trim the token
+        var token = authorizationHeader.Substring(bearerPrefixLength).Trim();
+
+        // Validate extracted token is not empty after trimming
+        if (string.IsNullOrEmpty(token))
+        {
+            _logger.LogDebug("Extracted token is empty after trimming whitespace");
+            return (false, null);
+        }
+
+        _logger.LogDebug("Successfully extracted Bearer token from Authorization header");
+        return (true, token);
+    }
+}
+
+/// <summary>
+/// Static helper class for token extraction when dependency injection is not available
+/// </summary>
+public static class AuthorizationHeaderHelper
+{
+    /// <summary>
+    /// Safely extracts Bearer token from Authorization header without requiring dependency injection
+    /// </summary>
+    /// <param name="authorizationHeader">The Authorization header value (can be null)</param>
+    /// <returns>Tuple indicating success and the extracted token (null if extraction failed)</returns>
+    public static (bool success, string? token) ExtractBearerToken(string? authorizationHeader)
+    {
+        // Validate input is not null or empty
+        if (string.IsNullOrEmpty(authorizationHeader))
+        {
+            return (false, null);
+        }
+
+        // Validate header starts with "Bearer "
+        if (!authorizationHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, null);
+        }
+
+        // Validate header is long enough to contain a token
+        const int bearerPrefixLength = 7; // "Bearer ".Length
+        if (authorizationHeader.Length <= bearerPrefixLength)
+        {
+            return (false, null);
+        }
+
+        // Safely extract and trim the token
+        var token = authorizationHeader.Substring(bearerPrefixLength).Trim();
+
+        // Validate extracted token is not empty after trimming
+        if (string.IsNullOrEmpty(token))
+        {
+            return (false, null);
+        }
+
+        return (true, token);
     }
 }

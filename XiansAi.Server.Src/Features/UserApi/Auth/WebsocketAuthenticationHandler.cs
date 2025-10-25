@@ -4,6 +4,7 @@ using Shared.Auth;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Shared.Utils;
 
 namespace Features.UserApi.Auth
 {
@@ -78,9 +79,11 @@ namespace Features.UserApi.Auth
                 {
                     // Check for Authorization header (preferred method for JWT)
                     var authHeader = Request.Headers["Authorization"].FirstOrDefault();
-                    if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+                    var (tokenExtracted, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+                    
+                    if (tokenExtracted && token != null)
                     {
-                        accessToken = authHeader.Substring("Bearer ".Length);
+                        accessToken = token;
                     }
                 }
 

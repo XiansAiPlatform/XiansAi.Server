@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 using Shared.Services;
 using Features.Shared.Configuration;
+using Shared.Utils;
 
 namespace Features.WebApi.Endpoints;
 
@@ -55,14 +56,14 @@ public static class UserManagementEndpoints
         {
             var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
             
-            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+            if (!success || token == null)
             {
                 return Results.BadRequest(new { 
                     error = "Invalid or missing Authorization header. Expected format: 'Bearer <token>'" 
                 });
             }
             
-            var token = authHeader.Substring("Bearer ".Length);
             var result = await userManagementService.GetInviteByUserEmailAsync(token);
             return result.IsSuccess
                 ? Results.Ok(result.Data)

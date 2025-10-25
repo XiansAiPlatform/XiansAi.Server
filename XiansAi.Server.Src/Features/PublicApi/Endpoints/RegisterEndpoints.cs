@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.PublicApi.Services;
 using Shared.Utils.Services;
 using Features.Shared.Configuration;
+using Shared.Utils;
 
 namespace Features.PublicApi.Endpoints;
 
@@ -20,7 +21,9 @@ public static class RegisterEndpoints
         {
             // Extract token from Authorization header
             var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            var (success, userToken) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+            
+            if (!success || userToken == null)
             {
                 return Results.BadRequest(new { 
                     error = "Authorization header required", 
@@ -28,7 +31,6 @@ public static class RegisterEndpoints
                 });
             }
 
-            var userToken = authHeader.Substring("Bearer ".Length);
             var result = await registrationService.RequestToJoinTenant(request, userToken);
             return result.ToHttpResult<PublicJoinTenantResponse>();
         })
@@ -97,7 +99,9 @@ public static class RegisterEndpoints
         {
             // Extract token from Authorization header
             var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            var (success, userToken) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+            
+            if (!success || userToken == null)
             {
                 return Results.BadRequest(new { 
                     error = "Authorization header required", 
@@ -105,7 +109,6 @@ public static class RegisterEndpoints
                 });
             }
 
-            var userToken = authHeader.Substring("Bearer ".Length);
             var result = await registrationService.CreateNewTenant(request, userToken);
             return result.ToHttpResult<PublicCreateTenantResponse>();
         })

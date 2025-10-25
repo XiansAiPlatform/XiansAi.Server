@@ -112,22 +112,6 @@ public static class RoleManagementEndpoints
             Description = "Assign a user to system roles. Requires System Admin privileges."
         });
 
-        group.MapPost("/bootstrap-admin", async (
-            [FromServices] IRoleManagementService roleService) =>
-        {
-            var existingAdmins = await roleService.GetSystemAdminsAsync();
-
-            // We only allow this endpoint to be called once per system
-            if (existingAdmins.Data?.Any() == true)
-            {
-                return Results.BadRequest("System admin already exists. Ask the system admin to use regular role assignment.");
-            }
-
-            var result = await roleService.AssignBootstrapSysAdminRolesToUserAsync();
-
-            return Results.Ok(result);
-        });
-
         group.MapDelete("/remove", async (
             [FromBody] RoleDto request,
             [FromServices] IRoleManagementService roleService) =>

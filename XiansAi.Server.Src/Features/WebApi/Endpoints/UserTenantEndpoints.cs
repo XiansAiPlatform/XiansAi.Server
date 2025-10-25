@@ -1,6 +1,7 @@
 using Features.WebApi.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Services;
+using Shared.Utils;
 
 namespace Features.WebApi.Endpoints;
 
@@ -18,16 +19,16 @@ public static class UserTenantEndpoints
         {
             var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
             
-            if (string.IsNullOrEmpty(authHeader))
+            // Try Bearer token extraction first
+            var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+            
+            // If Bearer token extraction failed, try using the header value directly (fallback for non-Bearer tokens)
+            if (!success || string.IsNullOrEmpty(token))
             {
-                return Results.Unauthorized();
+                token = authHeader?.Trim();
             }
             
-            // Extract token from "Bearer <token>" format
-            var token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-                ? authHeader.Substring("Bearer ".Length).Trim()
-                : authHeader.Trim();
-            
+            // Final validation
             if (string.IsNullOrEmpty(token))
             {
                 return Results.Unauthorized();

@@ -4,6 +4,7 @@ using Shared.Utils.Services;
 using Features.WebApi.Services;
 using Shared.Services;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Features.WebApi.Endpoints;
 
@@ -14,9 +15,11 @@ public static class MessagingEndpoints
         if (request.Authorization == null)
         {
             var authHeader = context.Request.Headers["Authorization"].ToString();
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+            var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+            
+            if (success && token != null)
             {
-                request.Authorization = authHeader.Substring("Bearer ".Length).Trim();
+                request.Authorization = token;
             }
         }
     }
