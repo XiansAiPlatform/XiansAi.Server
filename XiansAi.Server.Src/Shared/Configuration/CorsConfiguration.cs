@@ -21,13 +21,25 @@ public static class CorsConfiguration
                     corsBuilder.WithMethods(corsConfig.AllowedMethods);
                 }
                 
-                if (corsConfig.AllowAnyHeader)
+                // Only allow specific, necessary headers to prevent CORS-based attacks
+                var allowedHeaders = new[] 
+                { 
+                    "Authorization", 
+                    "Content-Type",
+                    "Accept",
+                    "X-Tenant-Id",
+                    "X-API-Key"
+                };
+                
+                if (corsConfig.AllowedHeaders?.Length > 0)
                 {
-                    corsBuilder.AllowAnyHeader();
-                }
-                else if (corsConfig.AllowedHeaders?.Length > 0)
-                {
+                    // Use configured headers if provided
                     corsBuilder.WithHeaders(corsConfig.AllowedHeaders);
+                }
+                else
+                {
+                    // Use secure defaults
+                    corsBuilder.WithHeaders(allowedHeaders);
                 }
                 
                 if (corsConfig.AllowCredentials)
@@ -52,7 +64,7 @@ public class CorsSettings
     public string[] AllowedOrigins { get; set; } = Array.Empty<string>();
     public bool AllowAnyMethod { get; set; } = true;
     public string[] AllowedMethods { get; set; } = Array.Empty<string>();
-    public bool AllowAnyHeader { get; set; } = true;
+    public bool AllowAnyHeader { get; set; } = false; // Deprecated: Use AllowedHeaders for security
     public string[] AllowedHeaders { get; set; } = Array.Empty<string>();
     public bool AllowCredentials { get; set; } = true;
     public string[] ExposedHeaders { get; set; } = Array.Empty<string>();

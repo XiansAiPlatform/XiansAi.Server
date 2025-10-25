@@ -18,6 +18,34 @@ public static class SharedConfiguration
 {
     public static WebApplicationBuilder AddSharedServices(this WebApplicationBuilder builder)
     {
+        // Configure HSTS for production (must be before other middleware registration)
+        if (!builder.Environment.IsDevelopment())
+        {
+            builder.Services.AddHsts(options =>
+            {
+                options.Preload = true;
+                options.IncludeSubDomains = true;
+                options.MaxAge = TimeSpan.FromDays(365);
+            });
+        }
+        
+        // Configure cookie policy for secure cookies in production
+        builder.Services.Configure<CookiePolicyOptions>(options =>
+        {
+            // In production, require HTTPS for all cookies
+            // In development, allow HTTP for local testing
+            options.Secure = builder.Environment.IsProduction() 
+                ? CookieSecurePolicy.Always 
+                : CookieSecurePolicy.None;
+            
+            // Use Lax for better compatibility with modern auth flows
+            // Strict would block OAuth redirects
+            options.MinimumSameSitePolicy = SameSiteMode.Lax;
+            
+            // Only check consent in production
+            options.CheckConsentNeeded = context => builder.Environment.IsProduction();
+        });
+        
         // Register memory cache with size limit to prevent DoS attacks via cache exhaustion
         // Default size limit: 10,000 entries (configurable via Auth:TokenValidationCacheSizeLimit)
         var cacheSizeLimit = builder.Configuration.GetValue<long>("Auth:TokenValidationCacheSizeLimit", 10000);
@@ -173,6 +201,33 @@ public static class SharedConfiguration
         if (app.Environment.IsDevelopment())
         {
             // Development-only middleware here (if any)
+        }
+        else if (app.Environment.IsProduction())
+        {
+            // Production-only security middleware
+            // Enable HSTS (HTTP Strict Transport Security)
+            app.UseHsts();
+            
+            // Redirect HTTP to HTTPS
+            app.UseHttpsRedirection();
+            
+            // Add security headers
+            app.Use(async (context, next) =>
+            {
+                // HSTS: Force HTTPS for 1 year including all subdomains
+                context.Response.Headers.Append("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+                
+                // Prevent MIME type sniffing
+                context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+                
+                // Prevent clickjacking
+                context.Response.Headers.Append("X-Frame-Options", "DENY");
+                
+                // XSS Protection (legacy browsers)
+                context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
+                
+                await next();
+            });
         }
         
         // Configure middleware using specialized configuration classes

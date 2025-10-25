@@ -52,8 +52,12 @@ COPY --from=publish --chown=xiansai:xiansai /app/publish .
 # Environment variables with defaults
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV SERVICE_TYPE=--all
-ENV ASPNETCORE_URLS=http://+:8080
+# Support both HTTP and HTTPS
+# In production, use HTTPS on 443 and HTTP on 8080 for health checks
+# HTTP requests will be redirected to HTTPS via UseHttpsRedirection middleware
+ENV ASPNETCORE_URLS=http://+:8080;https://+:443
 ENV ASPNETCORE_HTTP_PORTS=8080
+ENV ASPNETCORE_HTTPS_PORTS=443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
