@@ -55,7 +55,6 @@ public static WebApplicationBuilder AddAgentApiServices(this WebApplicationBuild
     builder.Services.AddScoped<IDefinitionsService, DefinitionsService>();
     builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
     builder.Services.AddScoped<IObjectCacheWrapperService, ObjectCacheWrapperService>();
-    builder.Services.AddScoped<IWebhookService, WebhookService>();
 
     return builder;
 }
@@ -78,7 +77,6 @@ public static WebApplicationBuilder AddWebApiServices(this WebApplicationBuilder
     builder.Services.AddScoped<InstructionsService>();
     builder.Services.AddScoped<DefinitionsService>();
     builder.Services.AddScoped<TenantService>();
-    builder.Services.AddScoped<WebhookService>();
     builder.Services.AddScoped<ActivitiesService>();
     builder.Services.AddScoped<IMessagingService, MessagingService>();
 

@@ -124,16 +124,6 @@ conversation_thread:
       tenant_id: asc
       agent: asc
 
-webhooks:
-  - name: tenant_id_1
-    keys:
-      tenant_id: asc
-  - name: workflow_id_1_tenant_id_1
-    keys:
-      workflow_id: asc
-      tenant_id: asc
-    sparse: true
-
 certificates:
   - name: Thumbprint_1
     keys:

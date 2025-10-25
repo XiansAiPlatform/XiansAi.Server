@@ -126,7 +126,6 @@ public static class WebApiConfiguration
         LogsEndpoints.MapLogsEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
         TenantEndpoints.MapTenantEndpoints(app);
-        WebhookEndpoints.MapWebhookEndpoints(app);
         MessagingEndpoints.MapMessagingEndpoints(app);
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);
