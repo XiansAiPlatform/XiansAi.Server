@@ -270,9 +270,9 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         {
             // Validate token through auth provider
             var authProvider = _authProviderFactory.GetProvider();
-            var (success, tokenUserId) = await authProvider.ValidateToken(token);
+            var (tokenSuccess, tokenUserId) = await authProvider.ValidateToken(token);
 
-            if (!success || string.IsNullOrEmpty(tokenUserId))
+            if (!tokenSuccess || string.IsNullOrEmpty(tokenUserId))
             {
                 _logger.LogWarning("Token validation failed from auth provider");
                 return (false, null, null);
