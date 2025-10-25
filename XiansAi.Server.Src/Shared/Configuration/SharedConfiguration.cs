@@ -11,7 +11,6 @@ using Shared.Providers.Auth;
 using Shared.Auth;
 using Shared.Utils;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Policy;
 
 namespace Features.Shared.Configuration;
 
