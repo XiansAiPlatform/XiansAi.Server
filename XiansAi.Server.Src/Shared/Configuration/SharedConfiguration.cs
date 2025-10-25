@@ -208,25 +208,11 @@ public static class SharedConfiguration
             
             // Redirect HTTP to HTTPS
             app.UseHttpsRedirection();
-            
-            // Add security headers
-            app.Use(async (context, next) =>
-            {
-                // HSTS: Force HTTPS for 1 year including all subdomains
-                context.Response.Headers.Append("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-                
-                // Prevent MIME type sniffing
-                context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-                
-                // Prevent clickjacking
-                context.Response.Headers.Append("X-Frame-Options", "DENY");
-                
-                // XSS Protection (legacy browsers)
-                context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
-                
-                await next();
-            });
         }
+        
+        // Apply comprehensive security headers (XSS, clickjacking, MIME-sniffing protection)
+        // This includes CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, etc.
+        app.UseSecurityHeaders();
         
         // Configure middleware using specialized configuration classes
         app = app
