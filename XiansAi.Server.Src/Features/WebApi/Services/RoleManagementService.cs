@@ -49,19 +49,22 @@ namespace Features.WebApi.Services
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<RoleManagementService> _logger;
         private readonly IAuthProviderFactory _authProviderFactory;
+        private readonly ITokenValidationCache _tokenCache;
 
         public RoleManagementService(
             IUserRepository userRepository,
             IRoleCacheService roleCacheService,
             ITenantContext tenantContext,
             ILogger<RoleManagementService> logger,
-            IAuthProviderFactory authProviderFactory)
+            IAuthProviderFactory authProviderFactory,
+            ITokenValidationCache tokenCache)
         {
             _userRepository = userRepository;
             _roleCacheService = roleCacheService;
             _tenantContext = tenantContext;
             _logger = logger;
             _authProviderFactory = authProviderFactory;
+            _tokenCache = tokenCache;
         }
 
         public async Task<ServiceResult<bool>> AssignBootstrapSysAdminRolesToUserAsync()
@@ -85,6 +88,7 @@ namespace Features.WebApi.Services
                 user.IsSysAdmin = true;
                 var result = await _userRepository.UpdateAsync(_tenantContext.LoggedInUser, user);
                 _roleCacheService.InvalidateUserRoles(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+                await _tokenCache.InvalidateUserTokens(_tenantContext.LoggedInUser);
                 return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)
@@ -115,6 +119,7 @@ namespace Features.WebApi.Services
 
                 var result = await _userRepository.UpdateAsync(userId, user);
                 _roleCacheService.InvalidateUserRoles(userId, _tenantContext.TenantId);
+                await _tokenCache.InvalidateUserTokens(userId);
 
                 return ServiceResult<bool>.Success(result);
             }
@@ -142,6 +147,7 @@ namespace Features.WebApi.Services
                 user.IsSysAdmin = false;
                 var result = await _userRepository.UpdateAsync(userId, user);
                 _roleCacheService.InvalidateUserRoles(userId, _tenantContext.TenantId);
+                await _tokenCache.InvalidateUserTokens(userId);
                 return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)
@@ -179,6 +185,7 @@ namespace Features.WebApi.Services
                 var result = await _userRepository.UpdateAsync(roleDto.UserId, user);
 
                 _roleCacheService.InvalidateUserRoles(roleDto.UserId, roleDto.TenantId);
+                await _tokenCache.InvalidateUserTokens(roleDto.UserId);
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception ex)
@@ -328,6 +335,8 @@ namespace Features.WebApi.Services
 
 
                 var result = await _userRepository.UpdateAsync(roleDto.UserId, user);
+                _roleCacheService.InvalidateUserRoles(roleDto.UserId, roleDto.TenantId);
+                await _tokenCache.InvalidateUserTokens(roleDto.UserId);
                 return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)

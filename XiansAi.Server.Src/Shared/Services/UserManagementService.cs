@@ -6,6 +6,7 @@ using Shared.Repositories;
 using Shared.Data.Models;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Utils;
+using Shared.Providers.Auth;
 
 namespace Shared.Services;
 
@@ -129,6 +130,7 @@ public class UserManagementService : IUserManagementService
     private readonly IInvitationRepository _invitationRepository;
     private readonly IEmailService _emailService;
     private readonly IJwtClaimsExtractor _jwtClaimsExtractor;
+    private readonly ITokenValidationCache _tokenCache;
 
     private const string EMAIL_SUBJECT = "Xians.ai - Invitation";
 
@@ -140,6 +142,7 @@ public class UserManagementService : IUserManagementService
         IInvitationRepository invitationRepository,
         IEmailService emailService,
         IJwtClaimsExtractor jwtClaimsExtractor,
+        ITokenValidationCache tokenCache,
         ILogger<UserManagementService> logger)
     {
         _userRepository = userRepository;
@@ -150,6 +153,7 @@ public class UserManagementService : IUserManagementService
         _invitationRepository = invitationRepository;
         _emailService = emailService;
         _jwtClaimsExtractor = jwtClaimsExtractor;
+        _tokenCache = tokenCache;
     }
 
     public async Task<ServiceResult<bool>> LockUserAsync(string userId, string reason)
@@ -168,7 +172,9 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.NotFound("User not found");
             }
 
-            _logger.LogInformation("User {UserId} locked by {AdminUserId}", userId, _tenantContext.LoggedInUser);
+            // Invalidate all cached tokens for this user to ensure locked users cannot access the system
+            await _tokenCache.InvalidateUserTokens(userId);
+            _logger.LogInformation("User {UserId} locked by {AdminUserId} and tokens invalidated", userId, _tenantContext.LoggedInUser);
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -194,7 +200,9 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.NotFound("User not found");
             }
 
-            _logger.LogInformation("User {UserId} unlocked by {AdminUserId}", userId, _tenantContext.LoggedInUser);
+            // Invalidate cached tokens so user needs to re-authenticate with fresh token
+            await _tokenCache.InvalidateUserTokens(userId);
+            _logger.LogInformation("User {UserId} unlocked by {AdminUserId} and tokens invalidated", userId, _tenantContext.LoggedInUser);
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -344,6 +352,10 @@ public class UserManagementService : IUserManagementService
 
         await _userRepository.UpdateAsyncById(user.Id, existingUser);
 
+        // Invalidate all cached tokens for this user to ensure permission changes take effect immediately
+        await _tokenCache.InvalidateUserTokens(user.UserId);
+        _logger.LogInformation("Invalidated cached tokens for user {UserId} after update", user.UserId);
+
         return ServiceResult<bool>.Success(true);
     }
 
@@ -467,6 +479,11 @@ public class UserManagementService : IUserManagementService
         {
             return ServiceResult<bool>.NotFound("User not found or does not belong to the current tenant");
         }
+        
+        // Invalidate all cached tokens for the deleted user
+        await _tokenCache.InvalidateUserTokens(userId);
+        _logger.LogInformation("User {UserId} deleted and tokens invalidated", userId);
+        
         return ServiceResult<bool>.Success(deleted);
     }
 

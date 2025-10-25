@@ -426,7 +426,7 @@ public class MessageService : IMessageService
             _logger.LogInformation("Deleted messages for thread {ThreadId}", threadId);
 
             // Delete the thread
-            var result = await _conversationRepository.DeleteThreadAsync(threadId);
+            var result = await _conversationRepository.DeleteThreadAsync(threadId, _tenantContext.TenantId);
             
             if (!result)
             {

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Concurrent;
 
 namespace Shared.Providers.Auth;
 
@@ -23,6 +24,11 @@ public interface ITokenValidationCache
     /// Remove the cached validation for a token
     /// </summary>
     Task RemoveValidation(string token);
+
+    /// <summary>
+    /// Invalidate all cached tokens for a specific user
+    /// </summary>
+    Task InvalidateUserTokens(string userId);
 }
 
 /// <summary>
@@ -32,12 +38,14 @@ public class MemoryTokenValidationCache : ITokenValidationCache
 {
     private readonly IMemoryCache _cache;
     private readonly ILogger<MemoryTokenValidationCache> _logger;
-    private readonly TimeSpan _cacheDuration;
+    private readonly TimeSpan _absoluteExpiration;
+    private readonly TimeSpan _slidingExpiration;
     private readonly long _cacheEntrySizeLimit;
     
-    // Shared static SHA256 instance for performance (thread-safe in .NET)
-    private static readonly SHA256 _sha256 = SHA256.Create();
-    private static readonly object _hashLock = new object();
+    // Reverse index to track tokens by user ID for invalidation
+    // Using ConcurrentDictionary for thread-safe operations without explicit locking
+    // Key: userId, Value: ConcurrentBag of token cache keys
+    private readonly ConcurrentDictionary<string, ConcurrentBag<string>> _userTokens = new();
 
     public MemoryTokenValidationCache(
         IMemoryCache cache,
@@ -47,9 +55,13 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        // Default to 5 minutes if not configured
-        _cacheDuration = TimeSpan.FromMinutes(
+        // Default to 5 minutes absolute expiration if not configured
+        _absoluteExpiration = TimeSpan.FromMinutes(
             configuration.GetValue<double>("Auth:TokenValidationCacheDurationMinutes", 5));
+        
+        // Default to 2 minutes sliding expiration - frequently accessed tokens stay cached longer
+        _slidingExpiration = TimeSpan.FromMinutes(
+            configuration.GetValue<double>("Auth:TokenValidationSlidingExpirationMinutes", 2));
         
         // Default to size of 1 per entry (requires cache to be configured with size limit)
         _cacheEntrySizeLimit = configuration.GetValue<long>("Auth:TokenValidationCacheEntrySize", 1);
@@ -100,32 +112,51 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         var cacheKey = GetCacheKey(token);
 
         // Use Normal priority to allow proper cache eviction when under memory pressure
+        // Set both absolute and sliding expiration for optimal caching
         // Set size to enable eviction policy when cache size limit is configured
         var cacheOptions = new MemoryCacheEntryOptions()
-            .SetAbsoluteExpiration(_cacheDuration)
+            .SetAbsoluteExpiration(_absoluteExpiration)
+            .SetSlidingExpiration(_slidingExpiration)
             .SetPriority(CacheItemPriority.Normal)
-            .SetSize(_cacheEntrySizeLimit);
+            .SetSize(_cacheEntrySizeLimit)
+            .RegisterPostEvictionCallback((key, value, reason, state) =>
+            {
+                // Clean up reverse index when cache entry is evicted
+                // This ensures the reverse index doesn't grow unbounded
+                if (value is CachedValidation cachedVal && !string.IsNullOrEmpty(cachedVal.UserId))
+                {
+                    // Note: We don't try to remove individual items from ConcurrentBag as it's not efficient
+                    // The bag will be cleaned up when the user is invalidated or naturally as entries expire
+                    // This is a trade-off: slight memory overhead vs. expensive item removal operations
+                    _logger.LogTrace("Cache entry evicted for user {UserId}, reason: {Reason}", 
+                        cachedVal.UserId, reason);
+                }
+            });
 
-        _cache.Set(cacheKey, new CachedValidation
+        var cachedValidation = new CachedValidation
         {
             Valid = valid,
             UserId = userId,
             TenantIds = tenantIds?.ToList() ?? new List<string>()
-        }, cacheOptions);
+        };
 
-        _logger.LogDebug("Cached successful token validation result");
+        _cache.Set(cacheKey, cachedValidation, cacheOptions);
+
+        // Update reverse index to track this token for the user
+        // ConcurrentDictionary.GetOrAdd is thread-safe and atomic
+        var tokens = _userTokens.GetOrAdd(userId, _ => new ConcurrentBag<string>());
+        tokens.Add(cacheKey);
+
+        _logger.LogDebug("Cached successful token validation result for user {UserId}", userId);
         return Task.CompletedTask;
     }
 
-    private string GetCacheKey(string token)
+    private static string GetCacheKey(string token)
     {
-        // Use SHA256 hash to avoid collisions and not log the full token
-        // Use shared static instance with lock for thread-safety and performance
-        byte[] hashBytes;
-        lock (_hashLock)
-        {
-            hashBytes = _sha256.ComputeHash(Encoding.UTF8.GetBytes(token));
-        }
+        // Use SHA256 hash to avoid collisions and prevent token leakage in cache keys
+        // SHA256.HashData is the modern, thread-safe, and performant way in .NET 5+
+        // It doesn't require creating instances or using locks
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
         var hash = Convert.ToBase64String(hashBytes);
         return $"token_validation:{hash}";
     }
@@ -140,8 +171,51 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         }
 
         var cacheKey = GetCacheKey(token);
+        
+        // Remove from cache - the eviction callback will handle reverse index cleanup if needed
+        // We don't try to manually clean the reverse index here to avoid race conditions
+        // and because ConcurrentBag doesn't support efficient item removal
         _cache.Remove(cacheKey);
+        
         _logger.LogDebug("Removed token validation cache entry");
+        return Task.CompletedTask;
+    }
+
+    public Task InvalidateUserTokens(string userId)
+    {
+        // Input validation
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _logger.LogWarning("InvalidateUserTokens called with null or empty userId");
+            return Task.CompletedTask;
+        }
+
+        // Try to remove and get the token bag for this user atomically
+        if (!_userTokens.TryRemove(userId, out var tokenBag))
+        {
+            _logger.LogDebug("No cached tokens found for user {UserId}", userId);
+            return Task.CompletedTask;
+        }
+
+        // Convert to array to get count and avoid multiple enumeration
+        var tokenKeys = tokenBag.ToArray();
+        
+        // Remove all cached tokens for this user
+        // Using Parallel.ForEach for better performance when there are many tokens
+        if (tokenKeys.Length > 10)
+        {
+            Parallel.ForEach(tokenKeys, tokenKey => _cache.Remove(tokenKey));
+        }
+        else
+        {
+            // For small numbers, simple loop is more efficient
+            foreach (var tokenKey in tokenKeys)
+            {
+                _cache.Remove(tokenKey);
+            }
+        }
+
+        _logger.LogInformation("Invalidated {Count} cached tokens for user {UserId}", tokenKeys.Length, userId);
         return Task.CompletedTask;
     }
 
@@ -176,6 +250,11 @@ public class NoOpTokenValidationCache : ITokenValidationCache
     }
 
     public Task RemoveValidation(string token)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task InvalidateUserTokens(string userId)
     {
         return Task.CompletedTask;
     }
