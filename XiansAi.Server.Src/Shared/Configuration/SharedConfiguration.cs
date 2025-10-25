@@ -110,7 +110,8 @@ public static class SharedConfiguration
         // Add services using specialized configuration classes
         builder = builder
             .AddCorsConfiguration()
-            .AddRateLimiting();
+            .AddRateLimiting()
+            .AddRequestLimits();
             
         // Add infrastructure services (clients, data access, etc.)
         builder.Services.AddInfrastructureServices(builder.Configuration);
