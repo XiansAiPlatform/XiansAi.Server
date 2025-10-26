@@ -15,41 +15,6 @@ public static class RoleManagementEndpoints
             .RequiresValidTenant()
             .RequireAuthorization();
 
-        group.MapGet("/user/{userId}/tenant/{tenantId}", async (
-            string userId,
-            string tenantId,
-            [FromServices] IRoleManagementService roleService) =>
-        {
-            var result = await roleService.GetUserRolesAsync(userId, tenantId);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .RequiresValidTenantAdmin()
-        .WithName("GetUserRoles")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get roles for a specific user in a tenant",
-            Description = "Retrieves all roles assigned to a user within a specific tenant"
-        });
-
-        group.MapGet("/tenant/{tenantId}/role/{role}", async (
-            string tenantId,
-            string role,
-            [FromServices] IRoleManagementService roleService) =>
-        {
-            var result = await roleService.GetUsersByRoleAsync(role, tenantId);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .RequiresValidTenantAdmin()
-        .WithName("GetUsersByRole")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get all users with a specific role",
-            Description = "Retrieves all users that have been assigned a specific role within a tenant"
-        });
 
         group.MapGet("/tenant/{tenantId}/admins", async (
             string tenantId,
@@ -82,62 +47,6 @@ public static class RoleManagementEndpoints
         {
             Summary = "Get current user's roles",
             Description = "Retrieves the roles for the currently authenticated user in the current tenant context"
-        });
-
-        group.MapPost("/assign", async (
-            [FromBody] RoleDto request,
-            [FromServices] IRoleManagementService roleService) =>
-        {
-            ServiceResult<bool> result;
-
-            if (request.Role == SystemRoles.SysAdmin)
-            {
-                result = await roleService.AssignSysAdminRolesToUserAsync(request.UserId);
-                return Results.Ok(result);
-            }
-
-            if (string.IsNullOrEmpty(request.TenantId))
-            {
-                return Results.BadRequest("TenantId is required.");
-            }
-
-            result = await roleService.AssignTenantRoletoUserAsync(request);
-
-            return Results.Ok(result);
-        })
-        .RequiresValidSysAdmin()
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Assign a user to a role",
-            Description = "Assign a user to system roles. Requires System Admin privileges."
-        });
-
-        group.MapDelete("/remove", async (
-            [FromBody] RoleDto request,
-            [FromServices] IRoleManagementService roleService) =>
-        {
-            ServiceResult<bool> result;
-
-            if (request.Role == SystemRoles.SysAdmin)
-            {
-                result = await roleService.RemoveSysAdminRolesToUserAsync(request.UserId);
-                return Results.Ok(result);
-            }
-
-            if (string.IsNullOrEmpty(request.TenantId))
-            {
-                return Results.BadRequest("TenantId is required.");
-            }
-
-            result = await roleService.RemoveRoleFromUserAsync(request);
-
-            return Results.Ok(result);
-        })
-        .RequiresValidTenantAdmin()
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Remove a user from a role",
-            Description = "Remove a user from a system roles. Requires System Admin privileges."
         });
 
         group.MapPost("/tenant/{tenantId}/admins", async (

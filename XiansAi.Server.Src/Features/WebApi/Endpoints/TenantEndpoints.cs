@@ -46,22 +46,6 @@ public static class TenantEndpoints
             return operation;
         }).RequiresValidSysAdmin();
 
-        tenantsGroup.MapGet("/{id}", async (
-            string id,
-            [FromServices] ITenantService endpoint) =>
-        {
-            var result = await endpoint.GetTenantById(id);
-            return result.ToHttpResult();
-        })
-        .WithName("Get Tenant")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get tenant by ID";
-            operation.Description = "Retrieves a tenant by its unique ID";
-            return operation;
-        })
-        .RequiresValidTenantAdmin();
-
         tenantsGroup.MapGet("/currentTenantInfo", async (
             HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
@@ -74,21 +58,6 @@ public static class TenantEndpoints
         {
             operation.Summary = "Get current tenant info";
             operation.Description = "Retrieves current tenant information";
-            return operation;
-        })
-        .RequiresValidTenantAdmin();
-
-        tenantsGroup.MapGet("/by-domain/{domain}", async (
-            string domain,
-            [FromServices] ITenantService endpoint) =>
-        {
-            var result = await endpoint.GetTenantByDomain(domain);
-            return result.ToHttpResult();
-        })
-        .WithName("Get Tenant By Domain")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get tenant by domain";
-            operation.Description = "Retrieves a tenant by its domain";
             return operation;
         })
         .RequiresValidTenantAdmin();
