@@ -321,12 +321,15 @@ public class UserManagementService : IUserManagementService
             return ServiceResult<bool>.NotFound("User not found");
         }
 
-        // Validate that the user belongs to the current tenant
-        var belongsToTenant = existingUser.TenantRoles.Any(tr => tr.Tenant == _tenantContext.TenantId);
-        if (!belongsToTenant && !existingUser.IsSysAdmin)
+        // Validate that the user belongs to the current tenant (unless logged-in user is SysAdmin)
+        if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
-            _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", user.UserId, _tenantContext.TenantId);
-            return ServiceResult<bool>.Forbidden("User does not belong to the current tenant");
+            var belongsToTenant = existingUser.TenantRoles.Any(tr => tr.Tenant == _tenantContext.TenantId);
+            if (!belongsToTenant && !existingUser.IsSysAdmin)
+            {
+                _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", user.UserId, _tenantContext.TenantId);
+                return ServiceResult<bool>.Forbidden("User does not belong to the current tenant");
+            }
         }
 
         existingUser.Email = user.Email;
@@ -474,7 +477,12 @@ public class UserManagementService : IUserManagementService
 
     public async Task<ServiceResult<bool>> DeleteUser(string userId)
     {
-        var deleted = await _userRepository.DeleteUser(userId, _tenantContext.TenantId);
+        // System admins can delete users from any tenant, others can only delete from their own tenant
+        var tenantId = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) 
+            ? null 
+            : _tenantContext.TenantId;
+            
+        var deleted = await _userRepository.DeleteUser(userId, tenantId);
         if (!deleted)
         {
             return ServiceResult<bool>.NotFound("User not found or does not belong to the current tenant");
@@ -489,7 +497,12 @@ public class UserManagementService : IUserManagementService
 
     public async Task<ServiceResult<List<UserDto>>> SearchUsers(string query)
     {
-        var users = await _userRepository.SearchUsersAsync(query, _tenantContext.TenantId);
+        // System admins can search users across all tenants, others can only search within their own tenant
+        var tenantId = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) 
+            ? null 
+            : _tenantContext.TenantId;
+            
+        var users = await _userRepository.SearchUsersAsync(query, tenantId);
         var userDtos = users.Select(u => new UserDto
         {
             UserId = u.UserId,

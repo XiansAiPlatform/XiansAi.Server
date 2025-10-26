@@ -93,26 +93,10 @@ public static class UserTenantEndpoints
         .RequiresValidTenant()
         .WithOpenApi(operation => {
             operation.Summary = "Update tenant user";
-            operation.Description = "Update tenant user details";
+            operation.Description = "Update tenant user details (name, email, active status) and tenant-specific roles for the current tenant only. " +
+                                   "Cannot modify system admin status or roles in other tenants. Only tenant admins can use this endpoint.";
             return operation;
         });
-
-        group.MapGet("/{userId}", async (
-            string userId,
-            [FromServices] IUserTenantService service) =>
-        {
-            var result = await service.GetTenantsForUser(userId);
-            return Results.Ok(result);
-        })
-        .WithName("GetUserTenants")
-        .RequireAuthorization("RequireTokenAuth")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get all tenants for a user";
-            operation.Description = "Returns all tenant IDs assigned to a user";
-            return operation;
-        })
-        .RequiresValidSysAdmin();
 
         group.MapGet("/unapprovedUsers", async (
             [FromQuery]string? tenantId,
@@ -143,37 +127,6 @@ public static class UserTenantEndpoints
         {
             operation.Summary = "Approve user";
             operation.Description = "Approve user by assigning a tenant and role to user";
-            return operation;
-        })
-        .RequiresValidTenantAdmin();
-
-        group.MapPost("/requestJoinTenant", async (
-            [FromBody] JoinTenantRequestDto dto,
-            [FromServices] IUserTenantService service) =>
-        {
-            var result = await service.RequestToJoinTenant(dto.TenantId);
-            return Results.Ok(result);
-        })
-        .WithName("RequestJoinTenant")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Join tenant request";
-            operation.Description = "request to join given tenant";
-            return operation;
-        });
-
-        group.MapPost("/", async (
-            [FromBody] UserTenantDto dto,
-            [FromServices] IUserTenantService service) =>
-        {
-            var result = await service.AddTenantToUser(dto.UserId, dto.TenantId);
-            return Results.Ok(result);
-        })
-        .WithName("AddTenantToUser")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Assign a tenant to a user";
-            operation.Description = "Assigns a tenant to a user";
             return operation;
         })
         .RequiresValidTenantAdmin();

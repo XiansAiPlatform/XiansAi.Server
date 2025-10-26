@@ -163,7 +163,7 @@ public interface IConversationRepository
     // Thread operations
     Task<string> CreateOrGetThreadIdAsync(ConversationThread thread);
     Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null);
-    Task<bool> DeleteThreadAsync(string threadId, string tenantId);
+    Task<bool> DeleteThreadAsync(string threadId, string? tenantId = null);
     Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
 
 
@@ -293,9 +293,9 @@ public class ConversationRepository : IConversationRepository
         return results;
     }
 
-    public async Task<bool> DeleteThreadAsync(string id, string tenantId)
+    public async Task<bool> DeleteThreadAsync(string id, string? tenantId = null)
     {
-        // First check if thread exists and belongs to the tenant
+        // First check if thread exists
         var thread = await _threadsCollection.Find(x => x.Id == id).FirstOrDefaultAsync();
         if (thread == null)
         {
@@ -303,8 +303,8 @@ public class ConversationRepository : IConversationRepository
             return false;
         }
 
-        // Validate tenant ownership
-        if (thread.TenantId != tenantId)
+        // Validate tenant ownership (skip check if tenantId is null - SysAdmin action)
+        if (tenantId != null && thread.TenantId != tenantId)
         {
             _logger.LogWarning("Thread {ThreadId} does not belong to tenant {TenantId}. IDOR attempt detected.", id, tenantId);
             return false;

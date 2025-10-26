@@ -25,7 +25,7 @@ public static class UserManagementEndpoints
                 ? Results.Ok(result.Data)
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
-        .RequiresValidTenantAdmin()
+        .RequiresValidSysAdmin()
         .WithName("DeleteUser")
         .WithOpenApi(operation => {
             operation.Summary = "Delete a user";
@@ -87,7 +87,7 @@ public static class UserManagementEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("GetInvitations")
-        .RequiresValidSysAdmin()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Get all invitation";
             operation.Description = "Retrieves all invitations";
@@ -167,7 +167,7 @@ public static class UserManagementEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("UpdateUser")
-        .RequiresValidTenantAdmin()
+        .RequiresValidSysAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Update user";
             operation.Description = "Update user details";

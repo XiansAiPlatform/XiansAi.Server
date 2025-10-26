@@ -26,8 +26,8 @@ public interface IUserRepository
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
     Task<bool> IsSysAdmin(string userId);
-    Task<bool> DeleteUser(string userId, string tenantId);
-    Task<List<User>> SearchUsersAsync(string query, string tenantId);
+    Task<bool> DeleteUser(string userId, string? tenantId = null);
+    Task<List<User>> SearchUsersAsync(string query, string? tenantId = null);
 }
 
 public class UserRepository : IUserRepository
@@ -377,9 +377,9 @@ public class UserRepository : IUserRepository
         return user?.IsSysAdmin ?? false;
     }
 
-    public async Task<bool> DeleteUser(string userId, string tenantId)
+    public async Task<bool> DeleteUser(string userId, string? tenantId = null)
     {
-        // First verify the user exists and belongs to the tenant
+        // First verify the user exists
         var userFilter = Builders<User>.Filter.Eq(u => u.UserId, userId);
         var user = await _users.Find(userFilter).FirstOrDefaultAsync();
         
@@ -389,12 +389,15 @@ public class UserRepository : IUserRepository
             return false;
         }
 
-        // Check if user belongs to the specified tenant
-        var belongsToTenant = user.TenantRoles.Any(tr => tr.Tenant == tenantId);
-        if (!belongsToTenant)
+        // Check if user belongs to the specified tenant (skip check if tenantId is null - SysAdmin action)
+        if (tenantId != null)
         {
-            _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", userId, tenantId);
-            return false;
+            var belongsToTenant = user.TenantRoles.Any(tr => tr.Tenant == tenantId);
+            if (!belongsToTenant)
+            {
+                _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", userId, tenantId);
+                return false;
+            }
         }
 
         // Delete the user
@@ -402,20 +405,28 @@ public class UserRepository : IUserRepository
         return deletedUser.IsAcknowledged && deletedUser.DeletedCount > 0;
     }
 
-    public async Task<List<User>> SearchUsersAsync(string query, string tenantId)
+    public async Task<List<User>> SearchUsersAsync(string query, string? tenantId = null)
     {
-        // Search only users who belong to the specified tenant
+        // Search users by email or name
         var searchFilter = Builders<User>.Filter.Or(
             Builders<User>.Filter.Regex(u => u.Email, new BsonRegularExpression(query, "i")),
             Builders<User>.Filter.Regex(u => u.Name, new BsonRegularExpression(query, "i"))
         );
 
-        var tenantFilter = Builders<User>.Filter.ElemMatch(
-            u => u.TenantRoles,
-            Builders<TenantRole>.Filter.Eq(tr => tr.Tenant, tenantId)
-        );
-
-        var combinedFilter = Builders<User>.Filter.And(searchFilter, tenantFilter);
+        // If tenantId is provided, filter by tenant (otherwise search all users - SysAdmin action)
+        FilterDefinition<User> combinedFilter;
+        if (tenantId != null)
+        {
+            var tenantFilter = Builders<User>.Filter.ElemMatch(
+                u => u.TenantRoles,
+                Builders<TenantRole>.Filter.Eq(tr => tr.Tenant, tenantId)
+            );
+            combinedFilter = Builders<User>.Filter.And(searchFilter, tenantFilter);
+        }
+        else
+        {
+            combinedFilter = searchFilter;
+        }
 
         return await _users.Find(combinedFilter).Limit(20).ToListAsync();
     }

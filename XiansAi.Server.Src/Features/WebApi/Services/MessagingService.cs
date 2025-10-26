@@ -123,7 +123,11 @@ public class MessagingService : IMessagingService
     {
         try
         {
-            var tenantId = _tenantContext.TenantId;
+            // System admins can delete threads from any tenant, others can only delete from their own tenant
+            var tenantId = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) 
+                ? null 
+                : _tenantContext.TenantId;
+                
             var result = await _conversationRepository.DeleteThreadAsync(threadId, tenantId);
             if (!result)
             {

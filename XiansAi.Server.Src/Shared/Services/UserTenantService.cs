@@ -394,12 +394,35 @@ public class UserTenantService : IUserTenantService
 
     public async Task<ServiceResult<bool>> UpdateTenantUser(EditUserDto user)
     {
+        // Security: Validate tenant access
+        var validationResult = ValidateTenantAccess("update tenant user", _tenantContext.TenantId);
+        if (!validationResult.IsSuccess)
+            return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+
         var existingUser = await _userRepository.GetByUserIdAsync(user.UserId);
         if (existingUser == null)
         {
             return ServiceResult<bool>.NotFound("User not found");
         }
 
+        // Security: Prevent modification of system admin status via tenant endpoint
+        if (user.IsSysAdmin != existingUser.IsSysAdmin)
+        {
+            _logger.LogWarning("Attempt to modify system admin status for user {UserId} via tenant endpoint by {LoggedInUser}", 
+                user.UserId, _tenantContext.LoggedInUser);
+            return ServiceResult<bool>.Forbidden("Cannot modify system admin status via this endpoint");
+        }
+
+        // Security: Validate that only current tenant roles are being modified
+        var rolesForOtherTenants = user.TenantRoles.Where(x => x.Tenant != _tenantContext.TenantId).ToList();
+        if (rolesForOtherTenants.Any())
+        {
+            _logger.LogWarning("Attempt to modify roles for other tenants by user {LoggedInUser} in tenant {TenantId}", 
+                _tenantContext.LoggedInUser, _tenantContext.TenantId);
+            return ServiceResult<bool>.Forbidden("Can only modify roles for the current tenant");
+        }
+
+        // Update allowed user properties: Name, Email, Active status
         existingUser.Email = user.Email;
         existingUser.Name = user.Name;
         existingUser.IsLockedOut = !user.Active;
@@ -409,11 +432,29 @@ public class UserTenantService : IUserTenantService
             existingUser.LockedOutBy = _tenantContext.LoggedInUser;
             existingUser.LockedOutReason = "Locked by admin";
         }
+        else
+        {
+            // Clear lockout information when re-activating
+            existingUser.LockedOutBy = null;
+            existingUser.LockedOutReason = null;
+        }
 
+        // Update tenant roles for current tenant only
         var currentTenantRoles = existingUser.TenantRoles.Where(x => x.Tenant == _tenantContext.TenantId).ToList();
         var updatedRoles = user.TenantRoles
             .Where(x => x.Tenant == _tenantContext.TenantId)
             .Select(x => x.Roles).FirstOrDefault() ?? new List<string>();
+
+        // Security: Prevent tenant admin from assigning system-wide roles
+        var systemWideRoles = new[] { SystemRoles.SysAdmin };
+        var hasSystemRoles = updatedRoles.Any(r => systemWideRoles.Contains(r));
+        if (hasSystemRoles && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        {
+            _logger.LogWarning("Attempt to assign system-wide roles by non-sysadmin user {LoggedInUser} in tenant {TenantId}", 
+                _tenantContext.LoggedInUser, _tenantContext.TenantId);
+            return ServiceResult<bool>.Forbidden("Cannot assign system-wide roles");
+        }
+
         if (currentTenantRoles.Count > 0)
         {
             currentTenantRoles[0].Roles = updatedRoles;
@@ -429,6 +470,9 @@ public class UserTenantService : IUserTenantService
         }
 
         await _userRepository.UpdateAsync(existingUser.UserId, existingUser);
+
+        _logger.LogInformation("User {UserId} updated by {LoggedInUser} in tenant {TenantId}", 
+            user.UserId, _tenantContext.LoggedInUser, _tenantContext.TenantId);
 
         return ServiceResult<bool>.Success(true);
     }
