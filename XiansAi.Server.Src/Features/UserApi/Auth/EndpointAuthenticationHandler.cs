@@ -6,6 +6,7 @@ using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Shared.Utils;
+using Shared.Data.Models;
 
 namespace Features.UserApi.Auth
 {
@@ -59,11 +60,8 @@ namespace Features.UserApi.Auth
             var accessToken = Request.Query["apikey"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
             
-            if (string.IsNullOrEmpty(tenantId))
-            {
-                _logger.LogWarning("No tenantId query string or invalid");
-                return AuthenticateResult.Fail("No tenantId provided in query string");
-            } 
+            // Note: tenantId is now optional. If not provided, it will be derived from the API key.
+            // This prevents IDOR vulnerabilities by ensuring the tenant matches the authenticated credential.
 
             _logger.LogDebug("Processing Endpoint request: {Path}", Request.Path);
             if (_tenantContext != null)
@@ -95,11 +93,28 @@ namespace Features.UserApi.Auth
                         if (accessToken.StartsWith("sk-Xnai-"))
                         {
                             // Treat as API key
-                            var apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
-                            if (apiKey == null || apiKey.TenantId != tenantId)
+                            ApiKey? apiKey;
+                            
+                            if (string.IsNullOrEmpty(tenantId))
                             {
-                                _logger.LogWarning("Submitted apiKey not found for tenant {TenantId}", tenantId);
-                                return AuthenticateResult.Fail("Invalid API key or Tenant ID");
+                                // No tenantId provided - look up API key without tenant scoping
+                                // This prevents IDOR by deriving tenant from the authenticated credential
+                                apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken);
+                                if (apiKey == null)
+                                {
+                                    _logger.LogWarning("Invalid API key submitted");
+                                    return AuthenticateResult.Fail("Invalid API key");
+                                }
+                            }
+                            else
+                            {
+                                // tenantId provided (legacy support) - validate it matches the API key
+                                apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
+                                if (apiKey == null || apiKey.TenantId != tenantId)
+                                {
+                                    _logger.LogWarning("API key does not match provided tenant {TenantId}", tenantId);
+                                    return AuthenticateResult.Fail("Invalid API key or Tenant ID");
+                                }
                             }
 
                             _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", apiKey.CreatedBy, UserType.UserApiKey);
@@ -117,7 +132,7 @@ namespace Features.UserApi.Auth
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
                             var principal = new ClaimsPrincipal(identity);
                             var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogInformation("Successfully authenticated Web connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, tenantId);
+                            _logger.LogInformation("Successfully authenticated Web connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, apiKey.TenantId);
 
                             return AuthenticateResult.Success(ticket);
 
@@ -125,6 +140,13 @@ namespace Features.UserApi.Auth
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
                             // Treat as JWT - validate using dynamic OIDC per-tenant rules
+                            // For JWT, tenantId is required to determine which OIDC configuration to use
+                            if (string.IsNullOrEmpty(tenantId))
+                            {
+                                _logger.LogWarning("JWT authentication requires tenantId parameter");
+                                return AuthenticateResult.Fail("tenantId query parameter is required for JWT authentication");
+                            }
+                            
                             var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
                             if (!validation.success || string.IsNullOrEmpty(validation.canonicalUserId))
                             {

@@ -3,6 +3,7 @@ using Features.UserApi.Services;
 using Shared.Utils.Services;
 using System.Text;
 using Features.Shared.Configuration;
+using Shared.Auth;
 
 namespace Features.UserApi.Endpoints;
 
@@ -14,21 +15,31 @@ public static class WebhookEndpoints
         app.MapPost("/api/user/webhooks/{workflow}/{methodName}", async (
             string workflow,
             string methodName,
-            [FromQuery] string tenantId,
             [FromQuery] string apikey,
             HttpContext httpContext,
-            [FromServices] IWebhookReceiverService webhookService) =>
+            [FromServices] IWebhookReceiverService webhookService,
+            [FromServices] ITenantContext tenantContext) =>
         {
             try
             {
+                // Get tenantId from authenticated context (set by EndpointAuthenticationHandler)
+                // This prevents IDOR vulnerabilities by ensuring the tenantId matches the authenticated API key
+                var tenantId = tenantContext.TenantId;
+                
+                if (string.IsNullOrEmpty(tenantId))
+                {
+                    return Results.Problem(
+                        detail: "Tenant context not set. Authentication may have failed.",
+                        statusCode: StatusCodes.Status401Unauthorized);
+                }
+
                 // Read the request body
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
                 var body = await reader.ReadToEndAsync();
 
-                // Extract query parameters (excluding apikey and tenantId which are used for auth)
+                // Extract query parameters (excluding apikey which is used for auth)
                 var queryParams = httpContext.Request.Query
-                    .Where(q => !string.Equals(q.Key, "apikey", StringComparison.OrdinalIgnoreCase) 
-                              && !string.Equals(q.Key, "tenantId", StringComparison.OrdinalIgnoreCase))
+                    .Where(q => !string.Equals(q.Key, "apikey", StringComparison.OrdinalIgnoreCase))
                     .ToDictionary(q => q.Key, q => q.Value.ToString());
 
                 // Process the webhook
@@ -69,19 +80,20 @@ public static class WebhookEndpoints
             operation.Description = @"Receives webhook calls and delivers them as Temporal Updates to the specified workflow.
             
 The webhook URL format is:
-POST /api/user/webhooks/{workflow}/{methodName}?tenantId={tenantId}&apikey={apikey}
+POST /api/user/webhooks/{workflow}/{methodName}?apikey={apikey}
 
 Where:
 - workflow: Either the WorkflowId or WorkflowType
 - methodName: The name of the Temporal Update method to call
-- tenantId: The tenant identifier (query parameter)
 - apikey: A valid API key for authentication (query parameter)
+
+The tenant is automatically determined from the authenticated API key.
 
 The workflow's Update method should have the signature:
 [Update(""method-name"")]
 public async Task<string> WebhookUpdateMethod(IDictionary<string, string> queryParams, string body)
 
-Query parameters (except apikey and tenantId) are passed to the Update method.
+Query parameters (except apikey) are passed to the Update method.
 The request body is passed as a string to the Update method.
 The Update method should return a string response.";
             return operation;

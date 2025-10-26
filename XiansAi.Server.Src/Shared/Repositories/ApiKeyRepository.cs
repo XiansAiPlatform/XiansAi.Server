@@ -15,6 +15,7 @@ namespace Shared.Repositories
         Task<(string apiKey, ApiKey meta)?> RotateAsync(string id, string tenantId);
         Task<ApiKey?> GetByIdAsync(string id, string tenantId);
         Task<ApiKey?> GetByRawKeyAsync(string rawKey, string tenantId);
+        Task<ApiKey?> GetByRawKeyAsync(string rawKey); // Overload without tenantId for authentication
     }
 
     public class ApiKeyRepository : IApiKeyRepository
@@ -140,6 +141,20 @@ namespace Shared.Repositories
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", tenantId);
+                return null;
+            }
+        }
+
+        public async Task<ApiKey?> GetByRawKeyAsync(string rawKey)
+        {
+            try
+            {
+                var hashed = HashApiKey(rawKey);
+                return await _collection.Find(x => x.HashedKey == hashed && x.RevokedAt == null).FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting API key by raw key");
                 return null;
             }
         }

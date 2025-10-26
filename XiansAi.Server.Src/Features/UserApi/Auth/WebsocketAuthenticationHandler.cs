@@ -5,6 +5,7 @@ using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Shared.Utils;
+using Shared.Data.Models;
 
 namespace Features.UserApi.Auth
 {
@@ -52,6 +53,9 @@ namespace Features.UserApi.Auth
             // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
             var accessToken = Request.Query["apikey"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
+            
+            // Note: tenantId is now optional for API keys. If not provided, it will be derived from the API key.
+            // For JWT tokens, tenantId is still required.
 
             if (_tenantContext != null)
             {
@@ -61,11 +65,6 @@ namespace Features.UserApi.Auth
                 {
                     _logger.LogWarning("WebSockets are not enabled in configuration");
                     return AuthenticateResult.Fail("WebSockets are not enabled in configuration");
-                }
-
-                if (string.IsNullOrEmpty(tenantId))
-                {
-                    return AuthenticateResult.Fail("No tenantId provided in query string");
                 }
 
                 // Check for token in different locations based on authentication method
@@ -94,39 +93,48 @@ namespace Features.UserApi.Auth
                         if (accessToken.StartsWith("sk-Xnai-"))
                         {
                             // Treat as API key
-                            var apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
-                            if (apiKey == null)
+                            ApiKey? apiKey;
+                            
+                            if (string.IsNullOrEmpty(tenantId))
                             {
-                                _logger.LogWarning("WebSocket apikey not found");
-                                return AuthenticateResult.Fail("Invalid API key or Tenant ID");
-                            }
-
-                            if (tenantId == apiKey.TenantId)
-                            {
-                                _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", apiKey.CreatedBy, UserType.UserApiKey);
-                                _tenantContext.LoggedInUser = apiKey.CreatedBy;
-                                _tenantContext.UserType = UserType.UserApiKey;
-                                _tenantContext.TenantId = apiKey.TenantId;
-                                _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
-
-                                var claims = new List<Claim>
+                                // No tenantId provided - look up API key without tenant scoping
+                                // This prevents IDOR by deriving tenant from the authenticated credential
+                                apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken);
+                                if (apiKey == null)
                                 {
-                                    new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                                    new Claim("TenantId", apiKey.TenantId)
-                                };
-
-                                var identity = new ClaimsIdentity(claims, Scheme.Name);
-                                var principal = new ClaimsPrincipal(identity);
-                                var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                                _logger.LogInformation("Successfully authenticated Web connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, tenantId);
-
-                                return AuthenticateResult.Success(ticket);
+                                    _logger.LogWarning("Invalid API key submitted for WebSocket");
+                                    return AuthenticateResult.Fail("Invalid API key");
+                                }
                             }
                             else
                             {
-                                _logger.LogWarning("Invalid TenantID {TenantId}", tenantId);
-                                return AuthenticateResult.Fail("Access denied Invalid TenantID");
+                                // tenantId provided (legacy support) - validate it matches the API key
+                                apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
+                                if (apiKey == null || apiKey.TenantId != tenantId)
+                                {
+                                    _logger.LogWarning("API key does not match provided tenant {TenantId}", tenantId);
+                                    return AuthenticateResult.Fail("Invalid API key or Tenant ID");
+                                }
                             }
+
+                            _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", apiKey.CreatedBy, UserType.UserApiKey);
+                            _tenantContext.LoggedInUser = apiKey.CreatedBy;
+                            _tenantContext.UserType = UserType.UserApiKey;
+                            _tenantContext.TenantId = apiKey.TenantId;
+                            _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
+
+                            var claims = new List<Claim>
+                            {
+                                new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
+                                new Claim("TenantId", apiKey.TenantId)
+                            };
+
+                            var identity = new ClaimsIdentity(claims, Scheme.Name);
+                            var principal = new ClaimsPrincipal(identity);
+                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+                            _logger.LogInformation("Successfully authenticated WebSocket connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, apiKey.TenantId);
+
+                            return AuthenticateResult.Success(ticket);
                         }
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
@@ -135,7 +143,15 @@ namespace Features.UserApi.Auth
                                 _logger.LogInformation("Skipping JWT validation for /ws/tenant/chat endpoint");
                                 return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
                             }
+                            
                             // Treat as JWT - validate using dynamic OIDC per-tenant rules
+                            // For JWT, tenantId is required to determine which OIDC configuration to use
+                            if (string.IsNullOrEmpty(tenantId))
+                            {
+                                _logger.LogWarning("JWT authentication requires tenantId parameter for WebSocket");
+                                return AuthenticateResult.Fail("tenantId query parameter is required for JWT authentication");
+                            }
+                            
                             var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
                             if (!validation.success || string.IsNullOrEmpty(validation.canonicalUserId))
                             {

@@ -15,6 +15,7 @@ namespace Shared.Services
         Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId);
         Task<ServiceResult<ApiKey?>> GetApiKeyByIdAsync(string id, string tenantId);
         Task<ApiKey?> GetApiKeyByRawKeyAsync(string rawKey, string tenantId);
+        Task<ApiKey?> GetApiKeyByRawKeyAsync(string rawKey); // Overload without tenantId for authentication
     }
     public class DuplicateApiKeyNameException : Exception
     {
@@ -193,6 +194,54 @@ namespace Shared.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", tenantId);
+                throw;
+            }
+        }
+
+        // Overload without tenantId - used for authentication to prevent IDOR vulnerabilities
+        public async Task<ApiKey?> GetApiKeyByRawKeyAsync(string rawKey)
+        {
+            try
+            {
+                // Generate cache key using only the hashed API key (no tenant scoping needed for auth)
+                var hashedKey = HashApiKey(rawKey);
+                var cacheKey = $"{CacheKeyPrefix}auth:{hashedKey}";
+                
+                // Try to get from cache first
+                if (_cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
+                {
+                    _logger.LogDebug("Retrieved API key from cache (tenant-agnostic lookup)");
+                    return cachedApiKey;
+                }
+                
+                // Cache miss - fetch from database
+                _logger.LogDebug("Cache miss for API key, fetching from database");
+                var apiKey = await _apiKeyRepository.GetByRawKeyAsync(rawKey);
+                
+                // Cache the result (including null results to prevent repeated DB hits for invalid keys)
+                if (apiKey != null)
+                {
+                    var cacheOptions = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(ApiKeyCacheExpiration)
+                        .SetSize(1);
+                    _cache.Set(cacheKey, apiKey, cacheOptions);
+                    _logger.LogDebug("Cached API key with {CacheExpiration} expiration", ApiKeyCacheExpiration);
+                }
+                else
+                {
+                    // Cache null results with shorter TTL to prevent brute force attacks
+                    var cacheOptions = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(2))
+                        .SetSize(1);
+                    _cache.Set(cacheKey, (ApiKey?)null, cacheOptions);
+                    _logger.LogDebug("Cached null API key result");
+                }
+                
+                return apiKey;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting API key by raw key");
                 throw;
             }
         }
