@@ -366,6 +366,25 @@ public class UserManagementService : IUserManagementService
     {
         try
         {
+            // Validate tenant access - tenant admins can only invite to their own tenant
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                if (!_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+                {
+                    _logger.LogWarning("User {UserId} attempted to invite user without admin permissions", 
+                        _tenantContext.LoggedInUser);
+                    return ServiceResult<string>.Forbidden("Only admins can invite users");
+                }
+                
+                // Tenant admin can only invite to their own tenant
+                if (invite.TenantId != _tenantContext.TenantId)
+                {
+                    _logger.LogWarning("Tenant admin {UserId} attempted to invite user to different tenant. Current: {CurrentTenant}, Invite: {InviteTenant}", 
+                        _tenantContext.LoggedInUser, _tenantContext.TenantId, invite.TenantId);
+                    return ServiceResult<string>.Forbidden("Cannot invite users to other tenants");
+                }
+            }
+            
             var existingUser = await _userRepository.GetByUserEmailAsync(invite.Email);
             if (existingUser != null)
                 return ServiceResult<string>.Conflict("User already exists");
@@ -382,7 +401,8 @@ public class UserManagementService : IUserManagementService
             await _invitationRepository.CreateAsync(invitation);
             await _emailService.SendEmailAsync(invite.Email, EMAIL_SUBJECT, GetEmailBody(invitation.ExpiresAt.ToString("f")), false);
 
-            _logger.LogInformation("Invitation created for {Email} (tenant: {TenantId})", invite.Email, invite.TenantId);
+            _logger.LogInformation("Invitation created for {Email} (tenant: {TenantId}) by user {UserId}", 
+                invite.Email, invite.TenantId, _tenantContext.LoggedInUser);
             return ServiceResult<string>.Success(token);
         }
         catch (Exception ex)
@@ -394,12 +414,39 @@ public class UserManagementService : IUserManagementService
 
     public async Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync(string tenantId)
     {
-        var invitations = await _invitationRepository.GetAllAsync(tenantId);
-        var returnData = invitations.Select(x =>
+        try
         {
-            return new InviteDto { Email = x.Email, Token = x.Token, CreatedAt = x.CreatedAt, ExpiresAt = x.ExpiresAt, Status = x.Status };
-        }).ToList();
-        return ServiceResult<List<InviteDto>>.Success(returnData);
+            // Validate tenant access - tenant admins can only see invitations for their own tenant
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                if (!_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+                {
+                    _logger.LogWarning("User {UserId} attempted to get invitations without admin permissions", 
+                        _tenantContext.LoggedInUser);
+                    return ServiceResult<List<InviteDto>>.Forbidden("Only admins can view invitations");
+                }
+                
+                // Tenant admin can only view invitations for their own tenant
+                if (tenantId != _tenantContext.TenantId)
+                {
+                    _logger.LogWarning("Tenant admin {UserId} attempted to get invitations for different tenant. Current: {CurrentTenant}, Requested: {RequestedTenant}", 
+                        _tenantContext.LoggedInUser, _tenantContext.TenantId, tenantId);
+                    return ServiceResult<List<InviteDto>>.Forbidden("Cannot view invitations from other tenants");
+                }
+            }
+            
+            var invitations = await _invitationRepository.GetAllAsync(tenantId);
+            var returnData = invitations.Select(x =>
+            {
+                return new InviteDto { Email = x.Email, Token = x.Token, CreatedAt = x.CreatedAt, ExpiresAt = x.ExpiresAt, Status = x.Status };
+            }).ToList();
+            return ServiceResult<List<InviteDto>>.Success(returnData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting invitations for tenant {TenantId}", tenantId);
+            return ServiceResult<List<InviteDto>>.InternalServerError("An error occurred while retrieving invitations");
+        }
     }
 
     public async Task<ServiceResult<InviteDto?>> GetInviteByUserEmailAsync(string token)
@@ -447,7 +494,23 @@ public class UserManagementService : IUserManagementService
             var existingUser = await _userRepository.GetByUserIdAsync(_tenantContext.LoggedInUser);
             if (existingUser == null)
             {
-                return ServiceResult<bool>.Conflict("User not exist");
+                return ServiceResult<bool>.Conflict("User does not exist");
+            }
+            
+            // Security: Verify invitation email matches the current user's email
+            if (!string.Equals(invitation.Email, existingUser.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("User {UserId} ({Email}) attempted to accept invitation for different email {InvitationEmail}", 
+                    _tenantContext.LoggedInUser, existingUser.Email, invitation.Email);
+                return ServiceResult<bool>.Forbidden("This invitation is for a different email address");
+            }
+            
+            // Check if user already has this tenant
+            if (existingUser.TenantRoles.Any(tr => tr.Tenant == invitation.TenantId))
+            {
+                _logger.LogWarning("User {UserId} already has access to tenant {TenantId}", 
+                    _tenantContext.LoggedInUser, invitation.TenantId);
+                return ServiceResult<bool>.Conflict("You already have access to this tenant");
             }
 
             existingUser.TenantRoles.Add(new TenantRole
@@ -458,7 +521,6 @@ public class UserManagementService : IUserManagementService
             });
 
             var user = await _userRepository.UpdateAsync(_tenantContext.LoggedInUser, existingUser);
-
 
             if (!user)
                 return ServiceResult<bool>.InternalServerError("Failed to accept user invitation");
@@ -514,8 +576,48 @@ public class UserManagementService : IUserManagementService
 
     public async Task<ServiceResult<bool>> DeleteInvitation(string token)
     {
-        var deleted = await _invitationRepository.DeleteInvitation(token);
-        return ServiceResult<bool>.Success(deleted);
+        try
+        {
+            // First, get the invitation to check its tenant
+            var invitation = await _invitationRepository.GetByTokenAsync(token);
+            if (invitation == null)
+            {
+                return ServiceResult<bool>.NotFound("Invitation not found");
+            }
+            
+            // Validate tenant access - only sysadmin or tenant admin of the invitation's tenant can delete it
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                if (!_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+                {
+                    _logger.LogWarning("User {UserId} attempted to delete invitation without admin permissions", 
+                        _tenantContext.LoggedInUser);
+                    return ServiceResult<bool>.Forbidden("Only admins can delete invitations");
+                }
+                
+                // Tenant admin can only delete invitations for their own tenant
+                if (invitation.TenantId != _tenantContext.TenantId)
+                {
+                    _logger.LogWarning("Tenant admin {UserId} attempted to delete invitation for different tenant. Current: {CurrentTenant}, Invitation: {InvitationTenant}", 
+                        _tenantContext.LoggedInUser, _tenantContext.TenantId, invitation.TenantId);
+                    return ServiceResult<bool>.Forbidden("Cannot delete invitations from other tenants");
+                }
+            }
+            
+            var deleted = await _invitationRepository.DeleteInvitation(token);
+            if (!deleted)
+            {
+                return ServiceResult<bool>.InternalServerError("Failed to delete invitation");
+            }
+            
+            _logger.LogInformation("Invitation {Token} deleted by user {UserId}", token, _tenantContext.LoggedInUser);
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting invitation {Token}", token);
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the invitation");
+        }
     }
     /// <summary>
     /// Extracts email from JWT token with proper validation using the centralized JWT utility

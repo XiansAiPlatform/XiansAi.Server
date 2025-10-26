@@ -30,7 +30,7 @@ public interface IUserTenantService
     Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token);
     Task<ServiceResult<List<string>>> GetTenantsForCurrentUser();
     Task<ServiceResult<List<string>>> GetTenantsForUser(string userId);
-    Task<ServiceResult<List<User>>> GetUnapprovedUsers(string? tenantId = null);
+    Task<ServiceResult<List<User>>> GetUnapprovedUsers();
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
     Task<ServiceResult<bool>> ApproveUser(string userId, string tenantId, bool approve);
@@ -255,14 +255,35 @@ public class UserTenantService : IUserTenantService
         }
     }
 
-    public async Task<ServiceResult<List<User>>> GetUnapprovedUsers(string? tenantId = null)
+    public async Task<ServiceResult<List<User>>> GetUnapprovedUsers()
     {
         try
         {
-            var validationResult = ValidateTenantAccess("get unapproved users", _tenantContext.TenantId);
-            if (!validationResult.IsSuccess)
-                return ServiceResult<List<User>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
-            var users = await _userRepository.GetUsersWithUnapprovedTenantAsync(tenantId);
+            // Determine which tenant to query based on user role
+            string? tenantIdToQuery = null;
+            
+            // System admin can see all unapproved users (no tenant filter)
+            if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                tenantIdToQuery = null; // null = all tenants
+            }
+            // Tenant admin can only see unapproved users for their tenant
+            else if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+            {
+                var validationResult = ValidateTenantAccess("get unapproved users", _tenantContext.TenantId);
+                if (!validationResult.IsSuccess)
+                    return ServiceResult<List<User>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+                    
+                tenantIdToQuery = _tenantContext.TenantId;
+            }
+            else
+            {
+                _logger.LogWarning("User {UserId} attempted to get unapproved users without proper permissions",
+                    _tenantContext.LoggedInUser);
+                return ServiceResult<List<User>>.Forbidden("Insufficient permissions to view unapproved users");
+            }
+            
+            var users = await _userRepository.GetUsersWithUnapprovedTenantAsync(tenantIdToQuery);
             return ServiceResult<List<User>>.Success(users);
         }
         catch (Exception ex)

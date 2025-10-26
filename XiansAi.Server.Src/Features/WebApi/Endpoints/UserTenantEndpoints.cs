@@ -72,11 +72,11 @@ public static class UserTenantEndpoints
             return Results.Ok(result);
         })
         .WithName("GetCurrentTenantUsers")
-        .RequiresValidTenant()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation =>
         {
             operation.Summary = "Get all users for current tenant";
-            operation.Description = "Returns all users IDs assigned to current tenant";
+            operation.Description = "Returns all users IDs assigned to current tenant. Only tenant admins can access this.";
             return operation;
         });
 
@@ -90,7 +90,7 @@ public static class UserTenantEndpoints
                 : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
         })
         .WithName("UpdateTenantUser")
-        .RequiresValidTenant()
+        .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Update tenant user";
             operation.Description = "Update tenant user details (name, email, active status) and tenant-specific roles for the current tenant only. " +
@@ -99,21 +99,20 @@ public static class UserTenantEndpoints
         });
 
         group.MapGet("/unapprovedUsers", async (
-            [FromQuery]string? tenantId,
             [FromServices] IUserTenantService service) =>
         {
-            var result = await service.GetUnapprovedUsers(tenantId);
+            var result = await service.GetUnapprovedUsers();
             return Results.Ok(result);
         })
         .WithName("GetUnapprovedUsers")
         .RequireAuthorization("RequireTokenAuth")
         .WithOpenApi(operation =>
         {
-            operation.Summary = "Get list of your without a tenant";
-            operation.Description = "Returns all user without tenant, excluding sysAdmin users";
+            operation.Summary = "Get list of users without a tenant";
+            operation.Description = "Returns all users without tenant, excluding sysAdmin users. Tenant admins see unapproved users for their tenant, sysadmins see all.";
             return operation;
         })
-        .RequiresValidSysAdmin();
+        .RequiresValidTenantAdmin();
 
         group.MapPost("/approveUser", async (
             [FromBody] UserTenantDto dto,
@@ -180,37 +179,16 @@ public static class UserTenantEndpoints
             return operation;
         });
 
-        group.MapGet("/currentUserInvitation", async (
+        group.MapGet("/invitations", async (
             [FromServices] IUserManagementService userManagementService,
             HttpContext httpContext) =>
         {
-            var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
-            
-            var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
-            if (!success || token == null)
+            var tenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+            if (string.IsNullOrEmpty(tenantId))
             {
-                return Results.BadRequest(new { 
-                    error = "Invalid or missing Authorization header. Expected format: 'Bearer <token>'" 
-                });
+                return Results.BadRequest(new { error = "Tenant ID header is required" });
             }
             
-            var result = await userManagementService.GetInviteByUserEmailAsync(token);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .WithName("GetCurrentUserInvitationForTenant")
-        .RequiresToken()
-        .WithOpenApi(operation => {
-            operation.Summary = "Get invitation of current user";
-            operation.Description = "Retrieves an invitation by the current user's email address.";
-            return operation;
-        });
-
-        group.MapGet("/invitations/{tenantId}", async (
-            string tenantId,
-            [FromServices] IUserManagementService userManagementService) =>
-        {
             var result = await userManagementService.GetAllInvitationsAsync(tenantId);
             return result.IsSuccess
                 ? Results.Ok(result.Data)
@@ -219,25 +197,8 @@ public static class UserTenantEndpoints
         .WithName("GetTenantInvitations")
         .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
-            operation.Summary = "Get all invitation";
-            operation.Description = "Retrieves all invitations";
-            return operation;
-        });
-
-        group.MapPost("/accept-invitation", async (
-           [FromBody]InviteDto dto,
-            [FromServices] IUserManagementService userManagementService) =>
-        {
-            var result = await userManagementService.AcceptInvitationAsync(dto.Token);
-            return result.IsSuccess
-                ? Results.Ok(result.Data)
-                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
-        })
-        .WithName("AcceptTenantInvitation")
-        .RequiresValidTenantAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Accept a user invitation";
-            operation.Description = "Accepts an invitation using the invitation token and creates the user account.";
+            operation.Summary = "Get all invitations for current tenant";
+            operation.Description = "Retrieves all invitations for the current tenant specified in X-Tenant-Id header";
             return operation;
         });
 
