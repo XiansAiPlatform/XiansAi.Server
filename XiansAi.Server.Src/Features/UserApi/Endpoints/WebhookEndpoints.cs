@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.UserApi.Services;
 using Shared.Utils.Services;
 using System.Text;
+using Features.Shared.Configuration;
 
 namespace Features.UserApi.Endpoints;
 
@@ -9,7 +10,7 @@ public static class WebhookEndpoints
 {
     public static void MapWebhookEndpoints(this WebApplication app)
     {
-        // Map webhook endpoint with API key authentication
+        // Map webhook endpoint with API key authentication and rate limiting
         app.MapPost("/api/user/webhooks/{workflow}/{methodName}", async (
             string workflow,
             string methodName,
@@ -61,6 +62,7 @@ public static class WebhookEndpoints
         .WithName("Process Webhook")
         .WithTags("User API - Webhooks")
         .RequireAuthorization("EndpointAuthPolicy")
+        .WithAgentUserApiRateLimit() // Apply rate limiting to prevent enumeration attacks
         .WithOpenApi(operation =>
         {
             operation.Summary = "Process a webhook for a temporal workflow";

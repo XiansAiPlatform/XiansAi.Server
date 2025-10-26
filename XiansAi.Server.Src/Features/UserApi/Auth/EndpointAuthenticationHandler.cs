@@ -52,6 +52,9 @@ namespace Features.UserApi.Auth
 
             _logger.LogDebug("Processing UserApi endpoint request: {Path}", Request.Path);
 
+            // Note: Rate limiting is handled by the rate limiting middleware (which runs before authentication)
+            // All UserApi endpoints should use .WithAgentUserApiRateLimit() to prevent enumeration attacks
+
             // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
             var accessToken = Request.Query["apikey"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
@@ -93,38 +96,31 @@ namespace Features.UserApi.Auth
                         {
                             // Treat as API key
                             var apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
-                            if (apiKey == null)
+                            if (apiKey == null || apiKey.TenantId != tenantId)
                             {
                                 _logger.LogWarning("Submitted apiKey not found for tenant {TenantId}", tenantId);
                                 return AuthenticateResult.Fail("Invalid API key or Tenant ID");
                             }
 
-                            if (tenantId == apiKey.TenantId)
+                            _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", apiKey.CreatedBy, UserType.UserApiKey);
+                            _tenantContext.LoggedInUser = apiKey.CreatedBy;
+                            _tenantContext.UserType = UserType.UserApiKey;
+                            _tenantContext.TenantId = apiKey.TenantId;
+                            _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
+
+                            var claims = new List<Claim>
                             {
-                                _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", apiKey.CreatedBy, UserType.UserApiKey);
-                                _tenantContext.LoggedInUser = apiKey.CreatedBy;
-                                _tenantContext.UserType = UserType.UserApiKey;
-                                _tenantContext.TenantId = apiKey.TenantId;
-                                _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
+                                new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
+                                new Claim("TenantId", apiKey.TenantId)
+                            };
 
-                                var claims = new List<Claim>
-                                {
-                                    new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                                    new Claim("TenantId", apiKey.TenantId)
-                                };
+                            var identity = new ClaimsIdentity(claims, Scheme.Name);
+                            var principal = new ClaimsPrincipal(identity);
+                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+                            _logger.LogInformation("Successfully authenticated Web connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, tenantId);
 
-                                var identity = new ClaimsIdentity(claims, Scheme.Name);
-                                var principal = new ClaimsPrincipal(identity);
-                                var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                                _logger.LogInformation("Successfully authenticated Web connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, tenantId);
+                            return AuthenticateResult.Success(ticket);
 
-                                return AuthenticateResult.Success(ticket);
-                            }
-                            else
-                            {
-                                _logger.LogWarning("Invalid TenantID {TenantId}", tenantId);
-                                return AuthenticateResult.Fail("Access denied Invalid TenantID");
-                            }
                         }
                         else if (accessToken.Count(c => c == '.') == 2)
                         {
@@ -197,5 +193,6 @@ namespace Features.UserApi.Auth
                 return AuthenticateResult.Fail("Failed to resolve ITenantContext from request scope");
             }
         }
+
     }
 }

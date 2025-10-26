@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Shared.Auth;
 using Features.UserApi.Services;
 using Features.UserApi.Utils;
+using Features.Shared.Configuration;
 
 namespace Features.UserApi.Endpoints;
 
@@ -13,7 +14,8 @@ public static class SseEndpoints
     {
         var sseGroup = app.MapGroup("/api/user/sse")
             .WithTags("UserAPI - Server-Sent Events")
-            .RequireAuthorization("EndpointAuthPolicy");
+            .RequireAuthorization("EndpointAuthPolicy")
+            .WithAgentUserApiRateLimit(); // Apply rate limiting to prevent enumeration attacks
 
         // Server-Sent Events endpoint for real-time message streaming
         sseGroup.MapGet("/events", async (
