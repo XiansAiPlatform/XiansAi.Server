@@ -276,10 +276,21 @@ public class ConversationRepository : IConversationRepository
 
         if (page.HasValue && pageSize.HasValue)
         {
-            query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
+            var skip = (page.Value - 1) * pageSize.Value;
+            _logger.LogDebug("Applying pagination: page={Page}, pageSize={PageSize}, skip={Skip}, limit={Limit}", 
+                page.Value, pageSize.Value, skip, pageSize.Value);
+            query = query.Skip(skip).Limit(pageSize.Value);
+        }
+        else
+        {
+            _logger.LogDebug("No pagination applied: page={Page}, pageSize={PageSize}", page, pageSize);
         }
 
-        return await query.ToListAsync();
+        var results = await query.ToListAsync();
+        _logger.LogDebug("GetByTenantAndAgentAsync returned {Count} threads for tenant {TenantId} and agent {Agent}", 
+            results.Count, tenantId, agent);
+        
+        return results;
     }
 
     public async Task<bool> DeleteThreadAsync(string id, string tenantId)
@@ -422,7 +433,14 @@ public class ConversationRepository : IConversationRepository
 
         if (page.HasValue && pageSize.HasValue)
         {
-            query = query.Skip((page.Value - 1) * pageSize.Value).Limit(pageSize.Value);
+            var skip = (page.Value - 1) * pageSize.Value;
+            _logger.LogDebug("Applying pagination to messages: page={Page}, pageSize={PageSize}, skip={Skip}, limit={Limit}", 
+                page.Value, pageSize.Value, skip, pageSize.Value);
+            query = query.Skip(skip).Limit(pageSize.Value);
+        }
+        else
+        {
+            _logger.LogDebug("No pagination applied to messages: page={Page}, pageSize={PageSize}", page, pageSize);
         }
 
         // Project only the fields we need
@@ -446,7 +464,7 @@ public class ConversationRepository : IConversationRepository
             DecryptMessageText(message);
         }
         
-        _logger.LogDebug("Found history of {Count} messages", messages.Count);
+        _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, threadId);
         return messages;
     }
 

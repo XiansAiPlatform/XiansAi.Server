@@ -45,12 +45,26 @@ public class MessagingService : IMessagingService
         // Validate pagination parameters
         if (page.HasValue && page.Value <= 0)
         {
-            page = 1;
+            return ServiceResult<List<ConversationMessage>>.BadRequest("Page number must be greater than 0. Pagination is 1-based.");
         }
 
         if (pageSize.HasValue && pageSize.Value <= 0)
         {
-            pageSize = 10;
+            return ServiceResult<List<ConversationMessage>>.BadRequest("Page size must be greater than 0.");
+        }
+
+        // Ensure both page and pageSize are set if either is provided
+        if (page.HasValue || pageSize.HasValue)
+        {
+            if (!page.HasValue)
+            {
+                page = 1;
+            }
+
+            if (!pageSize.HasValue)
+            {
+                pageSize = 10;
+            }
         }
 
         var messages = await _conversationRepository.GetMessagesByThreadIdAsync(tenantId, threadId, page, pageSize);
@@ -59,22 +73,44 @@ public class MessagingService : IMessagingService
 
     public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null)
     {
-        try{
-        var tenantId = _tenantContext.TenantId;
-        var validatedAgentName = Agent.SanitizeAndValidateName(agent);
-        // Validate pagination parameters
-        if (page.HasValue && page.Value <= 0)
+        try
         {
-            page = 1;
-        }
+            var tenantId = _tenantContext.TenantId;
+            var validatedAgentName = Agent.SanitizeAndValidateName(agent);
+            
+            // Validate pagination parameters - fail fast on invalid input
+            if (page.HasValue && page.Value <= 0)
+            {
+                return ServiceResult<List<ConversationThread>>.BadRequest("Page number must be greater than 0. Pagination is 1-based.");
+            }
 
-        if (pageSize.HasValue && pageSize.Value <= 0)
-        {
-            pageSize = 10;
-        }
+            if (pageSize.HasValue && pageSize.Value <= 0)
+            {
+                return ServiceResult<List<ConversationThread>>.BadRequest("Page size must be greater than 0.");
+            }
 
-        var threads = await _conversationRepository.GetByTenantAndAgentAsync(tenantId, validatedAgentName, page, pageSize);
-        return ServiceResult<List<ConversationThread>>.Success(threads);
+            // Ensure both page and pageSize are set if either is provided
+            if (page.HasValue || pageSize.HasValue)
+            {
+                if (!page.HasValue)
+                {
+                    page = 1;
+                }
+
+                if (!pageSize.HasValue)
+                {
+                    pageSize = 10;
+                }
+            }
+
+            _logger.LogDebug("GetThreads called for agent {Agent} with page={Page}, pageSize={PageSize}", 
+                validatedAgentName, page, pageSize);
+
+            var threads = await _conversationRepository.GetByTenantAndAgentAsync(tenantId, validatedAgentName, page, pageSize);
+            
+            _logger.LogDebug("GetThreads returned {Count} threads for agent {Agent}", threads.Count, validatedAgentName);
+            
+            return ServiceResult<List<ConversationThread>>.Success(threads);
         }
         catch (ValidationException ex)
         {

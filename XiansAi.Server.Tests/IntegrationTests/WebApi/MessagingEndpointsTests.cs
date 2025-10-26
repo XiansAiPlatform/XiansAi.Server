@@ -47,17 +47,41 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         for (int i = 0; i < 5; i++)
         {
             await CreateTestThreadAsync(agent: agent);
+            // Small delay to ensure different UpdatedAt timestamps for proper sorting
+            await Task.Delay(10);
         }
 
-        // Act
-        var response = await GetAsync($"/api/client/messaging/threads?agent={agent}&page=1&pageSize=2");
+        // Act - Get page 1
+        var response1 = await GetAsync($"/api/client/messaging/threads?agent={agent}&page=1&pageSize=2");
 
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var threads = await ReadAsJsonAsync<List<ConversationThread>>(response);
-        Assert.NotNull(threads);
-        Assert.True(threads.Count <= 2);
+        // Assert page 1
+        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
+        var page1Threads = await ReadAsJsonAsync<List<ConversationThread>>(response1);
+        Assert.NotNull(page1Threads);
+        Assert.Equal(2, page1Threads.Count);
+
+        // Act - Get page 2
+        var response2 = await GetAsync($"/api/client/messaging/threads?agent={agent}&page=2&pageSize=2");
+
+        // Assert page 2
+        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
+        var page2Threads = await ReadAsJsonAsync<List<ConversationThread>>(response2);
+        Assert.NotNull(page2Threads);
+        Assert.Equal(2, page2Threads.Count);
+
+        // Verify that page 1 and page 2 have different threads (no overlap)
+        var page1Ids = page1Threads.Select(t => t.Id).ToList();
+        var page2Ids = page2Threads.Select(t => t.Id).ToList();
+        Assert.Empty(page1Ids.Intersect(page2Ids));
+
+        // Act - Get page 3
+        var response3 = await GetAsync($"/api/client/messaging/threads?agent={agent}&page=3&pageSize=2");
+
+        // Assert page 3 (should have 1 thread since we only created 5)
+        Assert.Equal(HttpStatusCode.OK, response3.StatusCode);
+        var page3Threads = await ReadAsJsonAsync<List<ConversationThread>>(response3);
+        Assert.NotNull(page3Threads);
+        Assert.Single(page3Threads);
     }
 
     [Fact]
@@ -71,24 +95,85 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     }
 
     [Fact]
+    public async Task GetThreads_WithInvalidPageNumber_ReturnsBadRequest()
+    {
+        // Arrange
+        var agent = $"test-agent-{Guid.NewGuid()}";
+
+        // Act - page=0 is invalid (1-based pagination)
+        var response = await GetAsync($"/api/client/messaging/threads?agent={agent}&page=0&pageSize=20");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page number must be greater than 0", content);
+        Assert.Contains("1-based", content);
+    }
+
+    [Fact]
+    public async Task GetThreads_WithInvalidPageSize_ReturnsBadRequest()
+    {
+        // Arrange
+        var agent = $"test-agent-{Guid.NewGuid()}";
+
+        // Act - pageSize=0 is invalid
+        var response = await GetAsync($"/api/client/messaging/threads?agent={agent}&page=1&pageSize=0");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page size must be greater than 0", content);
+    }
+
+    [Fact]
+    public async Task GetThreads_WithNegativePageNumber_ReturnsBadRequest()
+    {
+        // Arrange
+        var agent = $"test-agent-{Guid.NewGuid()}";
+
+        // Act - page=-1 is invalid
+        var response = await GetAsync($"/api/client/messaging/threads?agent={agent}&page=-1&pageSize=20");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page number must be greater than 0", content);
+    }
+
+    [Fact]
     public async Task GetMessages_WithPagination_ReturnsCorrectPage()
     {
         // Arrange
         var thread = await CreateTestThreadAsync();
         for (int i = 0; i < 5; i++)
         {
-            await CreateTestMessageAsync(thread.Id);
+            await CreateTestMessageAsync(thread.Id, content: $"Message {i + 1}");
+            // Small delay to ensure different CreatedAt timestamps for proper sorting
+            await Task.Delay(10);
         }
 
-        // Act
-        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages?page=1&pageSize=2");
+        // Act - Get page 1
+        var response1 = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages?page=1&pageSize=2");
 
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var messages = await ReadAsJsonAsync<List<ConversationMessage>>(response);
-        Assert.NotNull(messages);
-        Assert.True(messages.Count <= 2);
+        // Assert page 1
+        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
+        var page1Messages = await ReadAsJsonAsync<List<ConversationMessage>>(response1);
+        Assert.NotNull(page1Messages);
+        Assert.Equal(2, page1Messages.Count);
+
+        // Act - Get page 2
+        var response2 = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages?page=2&pageSize=2");
+
+        // Assert page 2
+        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
+        var page2Messages = await ReadAsJsonAsync<List<ConversationMessage>>(response2);
+        Assert.NotNull(page2Messages);
+        Assert.Equal(2, page2Messages.Count);
+
+        // Verify that page 1 and page 2 have different messages (no overlap)
+        var page1Ids = page1Messages.Select(m => m.Id).ToList();
+        var page2Ids = page2Messages.Select(m => m.Id).ToList();
+        Assert.Empty(page1Ids.Intersect(page2Ids));
     }
 
     [Fact]
@@ -102,6 +187,36 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
 
         // Assert - Should return OK even if no messages exist
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMessages_WithInvalidPageNumber_ReturnsBadRequest()
+    {
+        // Arrange
+        var validThreadId = ObjectId.GenerateNewId().ToString();
+
+        // Act - page=0 is invalid
+        var response = await GetAsync($"/api/client/messaging/threads/{validThreadId}/messages?page=0&pageSize=20");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page number must be greater than 0", content);
+    }
+
+    [Fact]
+    public async Task GetMessages_WithInvalidPageSize_ReturnsBadRequest()
+    {
+        // Arrange
+        var validThreadId = ObjectId.GenerateNewId().ToString();
+
+        // Act - pageSize=-5 is invalid
+        var response = await GetAsync($"/api/client/messaging/threads/{validThreadId}/messages?page=1&pageSize=-5");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page size must be greater than 0", content);
     }
 
     [Fact]
