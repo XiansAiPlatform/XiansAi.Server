@@ -162,5 +162,117 @@ public static class UserTenantEndpoints
             return operation;
         })
         .RequiresValidTenantAdmin();
+
+        group.MapPost("/invite", async (
+            [FromBody] InviteUserDto invite,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.InviteUserAsync(invite);
+            return result.IsSuccess
+                ? Results.Ok(new { token = result.Data })
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .RequiresValidTenantAdmin()
+        .WithName("InviteUserToTenant")
+        .WithOpenApi(operation => {
+            operation.Summary = "Invite a user";
+            operation.Description = "Invites a user to join a tenant and assigns roles.";
+            return operation;
+        });
+
+        group.MapGet("/currentUserInvitation", async (
+            [FromServices] IUserManagementService userManagementService,
+            HttpContext httpContext) =>
+        {
+            var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
+            
+            var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+            if (!success || token == null)
+            {
+                return Results.BadRequest(new { 
+                    error = "Invalid or missing Authorization header. Expected format: 'Bearer <token>'" 
+                });
+            }
+            
+            var result = await userManagementService.GetInviteByUserEmailAsync(token);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("GetCurrentUserInvitationForTenant")
+        .RequiresToken()
+        .WithOpenApi(operation => {
+            operation.Summary = "Get invitation of current user";
+            operation.Description = "Retrieves an invitation by the current user's email address.";
+            return operation;
+        });
+
+        group.MapGet("/invitations/{tenantId}", async (
+            string tenantId,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.GetAllInvitationsAsync(tenantId);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("GetTenantInvitations")
+        .RequiresValidTenantAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Get all invitation";
+            operation.Description = "Retrieves all invitations";
+            return operation;
+        });
+
+        group.MapPost("/accept-invitation", async (
+           [FromBody]InviteDto dto,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.AcceptInvitationAsync(dto.Token);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("AcceptTenantInvitation")
+        .RequiresValidTenantAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Accept a user invitation";
+            operation.Description = "Accepts an invitation using the invitation token and creates the user account.";
+            return operation;
+        });
+
+        group.MapDelete("/invitations/{token}", async (
+            string token,
+            [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.DeleteInvitation(token);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("DeleteTenantInvitation")
+        .RequiresValidTenantAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete a invitation";
+            operation.Description = "Delete a invitation by token";
+            return operation;
+        });
+
+        group.MapGet("/search", async (
+        [FromQuery] string query,
+        [FromServices] IUserManagementService userManagementService) =>
+        {
+            var result = await userManagementService.SearchUsers(query);
+            return result.IsSuccess
+                ? Results.Ok(result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("SearchUsersInTenant")
+        .RequiresValidTenantAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Search users";
+            operation.Description = "Search users by name, email, or other supported fields";
+            return operation;
+        });
     }
 }
