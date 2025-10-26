@@ -2,7 +2,6 @@
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 WORKDIR /app
 EXPOSE 8080
-EXPOSE 443
 
 # Install curl for health checks
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
@@ -52,12 +51,11 @@ COPY --from=publish --chown=xiansai:xiansai /app/publish .
 # Environment variables with defaults
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV SERVICE_TYPE=--all
-# Support both HTTP and HTTPS
-# In production, use HTTPS on 443 and HTTP on 8080 for health checks
-# HTTP requests will be redirected to HTTPS via UseHttpsRedirection middleware
-ENV ASPNETCORE_URLS=http://+:8080;https://+:443
+# In production (Azure Container Apps/App Service), SSL/TLS termination happens at the load balancer
+# The container should ONLY listen on HTTP, not HTTPS
+# The load balancer forwards requests to the container over HTTP
+ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_HTTP_PORTS=8080
-ENV ASPNETCORE_HTTPS_PORTS=443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

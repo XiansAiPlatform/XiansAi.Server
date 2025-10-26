@@ -11,6 +11,7 @@ using Shared.Providers.Auth;
 using Shared.Auth;
 using Shared.Utils;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 
 namespace Features.Shared.Configuration;
 
@@ -18,6 +19,26 @@ public static class SharedConfiguration
 {
     public static WebApplicationBuilder AddSharedServices(this WebApplicationBuilder builder)
     {
+        // Configure forwarded headers for production deployments behind reverse proxy/load balancer
+        // This is critical for Azure Container Apps, App Service, and other cloud platforms
+        // where SSL/TLS termination happens at the load balancer level
+        if (!builder.Environment.IsDevelopment())
+        {
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                // Forward the X-Forwarded-For and X-Forwarded-Proto headers
+                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+                
+                // Trust all proxies (safe in Azure Container Apps / App Service)
+                // The platform-managed load balancer is trusted
+                options.KnownNetworks.Clear();
+                options.KnownProxies.Clear();
+                
+                // Limit to 1 proxy hop (Azure load balancer)
+                options.ForwardLimit = 1;
+            });
+        }
+        
         // Configure HSTS for production (must be before other middleware registration)
         if (!builder.Environment.IsDevelopment())
         {
@@ -203,11 +224,17 @@ public static class SharedConfiguration
         }
         else if (app.Environment.IsProduction())
         {
+            // Use forwarded headers FIRST - must be before HSTS and HTTPS redirection
+            // This allows the app to know the original protocol (HTTPS) even though
+            // it receives HTTP from the Azure load balancer
+            app.UseForwardedHeaders();
+            
             // Production-only security middleware
             // Enable HSTS (HTTP Strict Transport Security)
             app.UseHsts();
             
             // Redirect HTTP to HTTPS
+            // This will work correctly because UseForwardedHeaders sets the correct scheme
             app.UseHttpsRedirection();
         }
         

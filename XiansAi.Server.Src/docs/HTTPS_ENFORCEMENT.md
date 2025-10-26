@@ -55,18 +55,25 @@ ASPNETCORE_ENVIRONMENT=Production
 ```
 
 **Behavior:**
-- ✅ HTTPS enforced (https://+:443)
-- ✅ HTTP→HTTPS automatic redirection
+- ✅ Forwarded headers configured (reads X-Forwarded-Proto from load balancer)
+- ✅ HTTP→HTTPS automatic redirection (based on X-Forwarded-Proto)
 - ✅ HSTS headers sent
 - ✅ Cookies require HTTPS
 - ✅ Security headers added
-- ✅ Health check still accessible via HTTP for load balancers
+- ✅ Health check accessible via HTTP for load balancers
 
-**Docker Production:**
+**Docker Production (Azure Container Apps/App Service):**
 ```dockerfile
 ENV ASPNETCORE_ENVIRONMENT=Production
-ENV ASPNETCORE_URLS=http://+:8080;https://+:443
+# Container listens on HTTP only - Azure load balancer handles SSL/TLS termination
+ENV ASPNETCORE_URLS=http://+:8080
 ```
+
+**Important:** In cloud environments (Azure Container Apps, App Service, Kubernetes with ingress), SSL/TLS termination happens at the **load balancer/reverse proxy level**, NOT in your container. Your container should only listen on HTTP port 8080. The load balancer:
+1. Terminates HTTPS traffic on port 443
+2. Forwards requests to your container on HTTP port 8080
+3. Sets `X-Forwarded-Proto: https` header
+4. Your app uses `UseForwardedHeaders()` middleware to detect the original protocol
 
 ## Testing
 
@@ -122,12 +129,19 @@ If you want to test HTTPS locally before deploying:
 
 ## Load Balancer / Reverse Proxy Configuration
 
-If using a load balancer or reverse proxy (e.g., Azure App Service, AWS ALB, nginx):
+If using a load balancer or reverse proxy (e.g., Azure App Service, Azure Container Apps, AWS ALB, nginx):
 
-### Azure App Service
-- The platform handles SSL/TLS termination
-- Keep HTTP port 8080 for health checks
-- HTTPS redirection middleware will work correctly
+### Azure Container Apps / Azure App Service
+- **The platform handles SSL/TLS termination** - your container should ONLY listen on HTTP
+- The load balancer forwards `X-Forwarded-Proto: https` to your container
+- `UseForwardedHeaders()` middleware reads this header to determine original protocol
+- HTTPS redirection middleware works correctly based on the forwarded header
+- Container configuration:
+  ```dockerfile
+  ENV ASPNETCORE_URLS=http://+:8080
+  EXPOSE 8080
+  ```
+- **Do NOT** try to configure HTTPS in your container - this will fail with certificate errors
 
 ### nginx Reverse Proxy
 ```nginx
@@ -195,14 +209,23 @@ To submit your domain to the HSTS preload list:
 
 ## Troubleshooting
 
-### Issue: "This site can't provide a secure connection" in Production
-**Cause**: HTTPS not properly configured on the hosting platform
+### Issue: "Unable to configure HTTPS endpoint. No server certificate was specified" in Production
+**Cause**: Container is trying to bind to HTTPS port but no certificate is configured
 
 **Solution:**
-1. Verify SSL certificate is installed
-2. Check ASPNETCORE_URLS includes `https://+:443`
-3. Verify firewall allows port 443
-4. Check reverse proxy SSL termination settings
+1. **Remove HTTPS binding from ASPNETCORE_URLS** - use `http://+:8080` only
+2. Let the cloud platform (Azure, AWS, etc.) handle SSL/TLS termination at the load balancer
+3. Ensure `UseForwardedHeaders()` middleware is configured in your app
+4. Verify your cloud platform has a valid SSL certificate configured on the load balancer/ingress
+
+### Issue: "This site can't provide a secure connection" in Production (from browser)
+**Cause**: HTTPS not properly configured on the hosting platform's load balancer
+
+**Solution:**
+1. Verify SSL certificate is installed on the cloud platform (not in your container)
+2. Check that your cloud platform's load balancer is configured for HTTPS on port 443
+3. Verify firewall allows port 443 to the load balancer
+4. Ensure your container is listening on HTTP port 8080 (not HTTPS)
 
 ### Issue: "Cookies not being set" in Development
 **Cause**: Browser enforcing secure cookies despite environment setting
@@ -228,10 +251,24 @@ To submit your domain to the HSTS preload list:
 ### Code Location
 - **File**: `XiansAi.Server.Src/Shared/Configuration/SharedConfiguration.cs`
 - **Methods**: 
-  - `AddSharedServices()` - Configures HSTS and cookie policies
-  - `UseSharedMiddleware()` - Applies middleware based on environment
+  - `AddSharedServices()` - Configures forwarded headers, HSTS, and cookie policies
+  - `UseSharedMiddleware()` - Applies middleware based on environment (including UseForwardedHeaders)
 
 ### Key Code Sections
+
+**Forwarded Headers Configuration (Production Only):**
+```csharp
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+        options.ForwardLimit = 1;
+    });
+}
+```
 
 **HSTS Configuration:**
 ```csharp
@@ -257,12 +294,15 @@ builder.Services.Configure<CookiePolicyOptions>(options =>
 });
 ```
 
-**Middleware Application:**
+**Middleware Application (Order Matters!):**
 ```csharp
 if (app.Environment.IsProduction())
 {
+    // MUST be first - reads X-Forwarded-Proto header from load balancer
+    app.UseForwardedHeaders();
+    
     app.UseHsts();
-    app.UseHttpsRedirection();
+    app.UseHttpsRedirection();  // Works correctly because of UseForwardedHeaders
     // Additional security headers...
 }
 ```
