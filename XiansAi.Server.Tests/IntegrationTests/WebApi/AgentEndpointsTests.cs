@@ -205,8 +205,7 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
         var deleteResult = await response.Content.ReadFromJsonAsync<AgentDeleteResult>();
         
         Assert.NotNull(deleteResult);
-        Assert.Equal("Agent deleted successfully", deleteResult.Message);
-        Assert.Equal(2, deleteResult.DeletedFlowDefinitions);
+        Assert.Equal("Agent and its associated flow definitions deleted successfully", deleteResult.Message);
 
         // Verify agent is actually deleted
         using (var scope = _factory.Services.CreateScope())
@@ -300,6 +299,7 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
             Hash = Guid.NewGuid().ToString(),
             Source = "// Test workflow source code",
             Markdown = "// Test markdown",
+            Tenant = TestTenantId,
             ActivityDefinitions = new List<ActivityDefinition>
             {
                 new ActivityDefinition

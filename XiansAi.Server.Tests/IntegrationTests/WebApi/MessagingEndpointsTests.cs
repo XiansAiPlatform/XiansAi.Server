@@ -237,7 +237,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     }
 
     [Fact]
-    public async Task DeleteThread_WithNonExistentThreadId_ReturnsBadRequest()
+    public async Task DeleteThread_WithNonExistentThreadId_ReturnsNotFound()
     {
         // Arrange
         var nonExistentThreadId = "507f1f77bcf86cd799439011"; // Valid ObjectId format that doesn't exist in database
@@ -246,7 +246,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         var response = await DeleteAsync($"/api/client/messaging/threads/{nonExistentThreadId}");
 
         // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode); // API returns BadRequest when thread not found
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode); // API returns NotFound when thread not found
     }
 
     [Fact]
