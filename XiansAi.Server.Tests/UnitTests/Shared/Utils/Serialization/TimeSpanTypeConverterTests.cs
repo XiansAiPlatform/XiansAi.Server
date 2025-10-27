@@ -38,7 +38,6 @@ public class TimeSpanTypeConverterTests
         new object[] { TimeSpan.FromDays(7), "time_to_live: 7d" },
         new object[] { TimeSpan.FromHours(24), "time_to_live: 1d" },
         new object[] { TimeSpan.FromMinutes(60), "time_to_live: 1h" },
-        new object[] { TimeSpan.FromSeconds(3600), "time_to_live: 1h" },
         new object[] { TimeSpan.FromDays(1) + TimeSpan.FromHours(12), "time_to_live: 1d 12h" },
         new object[] { TimeSpan.FromDays(17) + TimeSpan.FromHours(6), "time_to_live: 17d 6h" },
         new object[] { TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(30), "time_to_live: 10m 30s" },
