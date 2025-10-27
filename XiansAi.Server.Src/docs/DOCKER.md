@@ -294,6 +294,31 @@ docker buildx build \
    docker exec xians-server-standalone env
    ```
 
+6. **HTTPS Certificate Error:**
+
+   **Error Message:**
+   ```
+   Unable to configure HTTPS endpoint. No server certificate was specified,
+   and the default developer certificate could not be found or is out of date.
+   ```
+
+   **Cause:** The ASP.NET Core application is trying to bind to HTTPS but no certificate is available in the Docker container.
+
+   **Solution:** Configure the application to listen on HTTP only by setting the `ASPNETCORE_URLS` environment variable:
+
+   ```bash
+   # In your .env file or docker-compose.yml, add:
+   ASPNETCORE_URLS=http://+:8080
+   ```
+
+   **Important:** When running in Docker/production environments:
+   - The container should **only** listen on HTTP port 8080
+   - SSL/TLS termination happens at the load balancer/reverse proxy level
+   - The load balancer forwards requests to your container on HTTP
+   - The app uses `UseForwardedHeaders()` middleware to detect the original protocol
+   
+   See [HTTPS_ENFORCEMENT.md](./HTTPS_ENFORCEMENT.md) for more details.
+
 ### Health Check Failures
 
 If the container health check fails:
