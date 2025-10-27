@@ -46,11 +46,12 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                 config.AddJsonFile(testConfigPath, optional: false, reloadOnChange: false);
             }
 
-            // Override MongoDB connection string
+            // Override MongoDB connection string and add required test configuration
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["MongoDB:ConnectionString"] = _mongoFixture.MongoConfig.ConnectionString,
-                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName
+                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName,
+                ["EncryptionKeys:BaseSecret"] = "test-base-secret-key-for-encryption-in-tests-minimum-32-characters-required"
             });
         });
 

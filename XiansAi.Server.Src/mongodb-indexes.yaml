@@ -269,13 +269,6 @@ documents:
       key: asc
     unique: true
     sparse: true
-  - name: type_key
-    keys:
-      tenant_id: asc
-      workflow_id: asc
-      type: asc
-      key: asc
-    sparse: true
   - name: type_created_at
     keys:
       type: asc
