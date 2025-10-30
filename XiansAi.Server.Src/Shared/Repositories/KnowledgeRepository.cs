@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -37,50 +38,59 @@ public class KnowledgeRepository : IKnowledgeRepository
 
     public async Task<T?> GetLatestByNameAsync<T>(string name, string agent, string? tenantId) where T : IKnowledge
     {
-        var collection = GetTypedCollection<T>();
-        
-        var nameFilter = Builders<T>.Filter.Eq(x => x.Name, name);
-        
-        // Create an agent filter that matches either the specified agent or null agent
-        var agentFilter = !string.IsNullOrEmpty(agent) 
-            ? Builders<T>.Filter.Or(
-                Builders<T>.Filter.Eq(x => x.Agent, agent),
-                Builders<T>.Filter.Eq(x => x.Agent, null))
-            : Builders<T>.Filter.Eq(x => x.Agent, null);
-        
-        // Create a filter for either specific tenantId or null
-        var tenantFilter = Builders<T>.Filter.Or(
-            Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<T>.Filter.Eq(x => x.TenantId, null)
-        );
-        
-        // Combine the filters
-        var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter);
-        
-        // Get all matching items
-        var results = await collection.Find(filter).ToListAsync();
-        
-        // Client-side sort prioritizing:
-        // 1. Tenant-specific items
-        // 2. Items with the specified agent
-        // 3. Most recent items
-        return results
-            .OrderByDescending(x => x.TenantId != null)
-            .ThenByDescending(x => x.Agent == agent) // Prioritize exact agent match
-            .ThenByDescending(x => x.CreatedAt)
-            .FirstOrDefault();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            
+            var nameFilter = Builders<T>.Filter.Eq(x => x.Name, name);
+            
+            // Create an agent filter that matches either the specified agent or null agent
+            var agentFilter = !string.IsNullOrEmpty(agent) 
+                ? Builders<T>.Filter.Or(
+                    Builders<T>.Filter.Eq(x => x.Agent, agent),
+                    Builders<T>.Filter.Eq(x => x.Agent, null))
+                : Builders<T>.Filter.Eq(x => x.Agent, null);
+            
+            // Create a filter for either specific tenantId or null
+            var tenantFilter = Builders<T>.Filter.Or(
+                Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<T>.Filter.Eq(x => x.TenantId, null)
+            );
+            
+            // Combine the filters
+            var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter);
+            
+            // Get all matching items
+            var results = await collection.Find(filter).ToListAsync();
+            
+            // Client-side sort prioritizing:
+            // 1. Tenant-specific items
+            // 2. Items with the specified agent
+            // 3. Most recent items
+            return results
+                .OrderByDescending(x => x.TenantId != null)
+                .ThenByDescending(x => x.Agent == agent) // Prioritize exact agent match
+                .ThenByDescending(x => x.CreatedAt)
+                .FirstOrDefault();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByName");
     }
 
     public async Task<T> GetByIdAsync<T>(string id) where T : IKnowledge
     {
-        var collection = GetTypedCollection<T>();
-        return await collection.Find(x => x.Id == id).FirstOrDefaultAsync();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            return await collection.Find(x => x.Id == id).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetKnowledgeById");
     }
 
     public async Task<T> GetByVersionAsync<T>(string version) where T : IKnowledge
     {
-        var collection = GetTypedCollection<T>();
-        return await collection.Find(x => x.Version == version).FirstOrDefaultAsync();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            return await collection.Find(x => x.Version == version).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetKnowledgeByVersion");
     }
 
     public async Task<List<T>> GetByNameAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge
@@ -140,23 +150,32 @@ public class KnowledgeRepository : IKnowledgeRepository
 
     public async Task CreateAsync<T>(T knowledge) where T : IKnowledge
     {
-        knowledge.CreatedAt = DateTime.UtcNow;
-        var collection = GetTypedCollection<T>();
-        await collection.InsertOneAsync(knowledge);
+        await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            knowledge.CreatedAt = DateTime.UtcNow;
+            var collection = GetTypedCollection<T>();
+            await collection.InsertOneAsync(knowledge);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateKnowledge");
     }
 
     public async Task<bool> DeleteAsync<T>(string id) where T : IKnowledge
     {
-        var collection = GetTypedCollection<T>();
-        var result = await collection.DeleteOneAsync(x => x.Id == id);
-        return result.DeletedCount > 0;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            var result = await collection.DeleteOneAsync(x => x.Id == id);
+            return result.DeletedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteKnowledge");
     }
 
     public async Task<bool> UpdateAsync<T>(string id, T knowledge) where T : IKnowledge
     {
-        var collection = GetTypedCollection<T>();
-        var result = await collection.ReplaceOneAsync(x => x.Id == id, knowledge);
-        return result.ModifiedCount > 0;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            var result = await collection.ReplaceOneAsync(x => x.Id == id, knowledge);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateKnowledge");
     }
 
     public async Task<T?> GetByNameVersionAsync<T>(string name, string version, string agent, string tenantId) where T : IKnowledge

@@ -7,6 +7,7 @@ using Features.UserApi.Websocket;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
 using Shared.Services;
+using Shared.Utils;
 
 
 namespace Features.UserApi.Services
@@ -66,13 +67,19 @@ namespace Features.UserApi.Services
                     var collectionName = "conversation_message";
                     var collection = database.GetCollection<ConversationMessage>(collectionName);
 
-                    // Ensure collection exists
-                    //var filter = Builders<BsonDocument>.Filter.Empty;
-                    var collections = await database.ListCollectionNamesAsync(cancellationToken: stoppingToken);
-                    var exists = await collections.ToListAsync(stoppingToken);
+                    // Ensure collection exists with retry logic
+                    var exists = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+                    {
+                        var collections = await database.ListCollectionNamesAsync(cancellationToken: stoppingToken);
+                        return await collections.ToListAsync(stoppingToken);
+                    }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "ListCollectionNames");
+                    
                     if (!exists.Contains(collectionName))
                     {
-                        await database.CreateCollectionAsync(collectionName, cancellationToken: stoppingToken);
+                        await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+                        {
+                            await database.CreateCollectionAsync(collectionName, cancellationToken: stoppingToken);
+                        }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "CreateCollection");
                     }
 
                     var pipeline = new EmptyPipelineDefinition<ChangeStreamDocument<ConversationMessage>>()
@@ -92,7 +99,13 @@ namespace Features.UserApi.Services
                         FullDocument = ChangeStreamFullDocumentOption.UpdateLookup
                     };
 
-                    using var cursor = await collection.WatchAsync(pipeline, options, cancellationToken: stoppingToken);
+                    // Wrap WatchAsync with retry logic to handle initial connection failures
+                    using var cursor = await MongoRetryHelper.ExecuteWithRetryAsync(
+                        async () => await collection.WatchAsync(pipeline, options, cancellationToken: stoppingToken),
+                        _logger, 
+                        maxRetries: 5, 
+                        baseDelayMs: 2000, 
+                        operationName: "WatchChangeStream");
                     
                     // Iterate using MoveNextAsync and Current
                     while (await cursor.MoveNextAsync(stoppingToken))
@@ -206,6 +219,11 @@ namespace Features.UserApi.Services
                 {
                     _logger.LogWarning(ex, "MongoChangeStreamService: Transient MongoDB error. Retrying in 5 seconds...");
                     await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                }
+                catch (TimeoutException ex)
+                {
+                    _logger.LogWarning(ex, "MongoChangeStreamService: Timeout error. Retrying in 10 seconds...");
+                    await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
                 }
                 catch (Exception ex)
                 {

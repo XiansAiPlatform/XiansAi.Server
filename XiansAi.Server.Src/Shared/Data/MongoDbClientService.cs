@@ -67,9 +67,10 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
         
         // Configure retry settings from configuration
         settings.RetryWrites = Config.RetryWrites;
+        settings.RetryReads = Config.RetryReads;
         
-        _logger.LogDebug("Creating MongoDB client with connection pool: Max={MaxPool}, Min={MinPool}, IdleTimeout={IdleTimeout}", 
-            settings.MaxConnectionPoolSize, settings.MinConnectionPoolSize, settings.MaxConnectionIdleTime);
+        _logger.LogDebug("Creating MongoDB client with connection pool: Max={MaxPool}, Min={MinPool}, IdleTimeout={IdleTimeout}, RetryWrites={RetryWrites}, RetryReads={RetryReads}", 
+            settings.MaxConnectionPoolSize, settings.MinConnectionPoolSize, settings.MaxConnectionIdleTime, settings.RetryWrites, settings.RetryReads);
         
         return new MongoClient(settings);
     }

@@ -234,114 +234,123 @@ public class ConversationRepository : IConversationRepository
 
     public async Task<string> CreateOrGetThreadIdAsync(ConversationThread thread)
     {
-        var existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
-        if (existingThread != null)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogInformation("Found existing thread {ThreadId} for tenantId {TenantId}, workflowId {WorkflowId}, and participantId {ParticipantId}", 
-                existingThread.Id, thread.TenantId, thread.WorkflowId, thread.ParticipantId);
-            return existingThread.Id;
-        }
-
-        thread.CreatedAt = DateTime.UtcNow;
-        thread.UpdatedAt = DateTime.UtcNow;
-
-        try
-        {
-            await _threadsCollection.InsertOneAsync(thread);
-            _logger.LogInformation("Created new thread {ThreadId} for tenantId {TenantId}, workflowId {WorkflowId}, and participantId {ParticipantId}", 
-                thread.Id, thread.TenantId, thread.WorkflowId, thread.ParticipantId);
-            return thread.Id;
-        }
-        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000)
-        {
-            // Handle duplicate key error - another thread was created concurrently
-            _logger.LogWarning("Duplicate key error when creating thread. Attempting to retrieve existing thread.");
-            existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+            var existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
             if (existingThread != null)
             {
+                _logger.LogInformation("Found existing thread {ThreadId} for tenantId {TenantId}, workflowId {WorkflowId}, and participantId {ParticipantId}", 
+                    existingThread.Id, thread.TenantId, thread.WorkflowId, thread.ParticipantId);
                 return existingThread.Id;
             }
-            throw;
-        }
+
+            thread.CreatedAt = DateTime.UtcNow;
+            thread.UpdatedAt = DateTime.UtcNow;
+
+            try
+            {
+                await _threadsCollection.InsertOneAsync(thread);
+                _logger.LogInformation("Created new thread {ThreadId} for tenantId {TenantId}, workflowId {WorkflowId}, and participantId {ParticipantId}", 
+                    thread.Id, thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+                return thread.Id;
+            }
+            catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000)
+            {
+                // Handle duplicate key error - another thread was created concurrently
+                _logger.LogWarning("Duplicate key error when creating thread. Attempting to retrieve existing thread.");
+                existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+                if (existingThread != null)
+                {
+                    return existingThread.Id;
+                }
+                throw;
+            }
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateOrGetThreadId");
     }
 
     public async Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null)
     {
-        var filter = Builders<ConversationThread>.Filter.And(
-            Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent)
-        );
-
-        var query = _threadsCollection.Find(filter).Sort(Builders<ConversationThread>.Sort.Descending(x => x.UpdatedAt));
-
-        if (page.HasValue && pageSize.HasValue)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var skip = (page.Value - 1) * pageSize.Value;
-            _logger.LogDebug("Applying pagination: page={Page}, pageSize={PageSize}, skip={Skip}, limit={Limit}", 
-                page.Value, pageSize.Value, skip, pageSize.Value);
-            query = query.Skip(skip).Limit(pageSize.Value);
-        }
-        else
-        {
-            _logger.LogDebug("No pagination applied: page={Page}, pageSize={PageSize}", page, pageSize);
-        }
+            var filter = Builders<ConversationThread>.Filter.And(
+                Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent)
+            );
 
-        var results = await query.ToListAsync();
-        _logger.LogDebug("GetByTenantAndAgentAsync returned {Count} threads for tenant {TenantId} and agent {Agent}", 
-            results.Count, tenantId, agent);
-        
-        return results;
+            var query = _threadsCollection.Find(filter).Sort(Builders<ConversationThread>.Sort.Descending(x => x.UpdatedAt));
+
+            if (page.HasValue && pageSize.HasValue)
+            {
+                var skip = (page.Value - 1) * pageSize.Value;
+                _logger.LogDebug("Applying pagination: page={Page}, pageSize={PageSize}, skip={Skip}, limit={Limit}", 
+                    page.Value, pageSize.Value, skip, pageSize.Value);
+                query = query.Skip(skip).Limit(pageSize.Value);
+            }
+            else
+            {
+                _logger.LogDebug("No pagination applied: page={Page}, pageSize={PageSize}", page, pageSize);
+            }
+
+            var results = await query.ToListAsync();
+            _logger.LogDebug("GetByTenantAndAgentAsync returned {Count} threads for tenant {TenantId} and agent {Agent}", 
+                results.Count, tenantId, agent);
+            
+            return results;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantAndAgent");
     }
 
     public async Task<bool> DeleteThreadAsync(string id, string? tenantId = null)
     {
-        // First check if thread exists
-        var thread = await _threadsCollection.Find(x => x.Id == id).FirstOrDefaultAsync();
-        if (thread == null)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogWarning("Thread {ThreadId} not found", id);
-            return false;
-        }
-
-        // Validate tenant ownership (skip check if tenantId is null - SysAdmin action)
-        if (tenantId != null && thread.TenantId != tenantId)
-        {
-            _logger.LogWarning("Thread {ThreadId} does not belong to tenant {TenantId}. IDOR attempt detected.", id, tenantId);
-            return false;
-        }
-
-        // Use transaction to delete thread and its messages atomically
-        using var session = await _database.Client.StartSessionAsync();
-        
-        try
-        {
-            var result = await session.WithTransactionAsync(async (session, cancellationToken) =>
+            // First check if thread exists
+            var thread = await _threadsCollection.Find(x => x.Id == id).FirstOrDefaultAsync();
+            if (thread == null)
             {
-                // Delete all messages in the thread
-                var messageDeleteResult = await _messagesCollection.DeleteManyAsync(
-                    session, 
-                    Builders<ConversationMessage>.Filter.Eq(m => m.ThreadId, id), 
-                    cancellationToken: cancellationToken);
-                
-                _logger.LogInformation("Deleted {MessageCount} messages from thread {ThreadId}", 
-                    messageDeleteResult.DeletedCount, id);
+                _logger.LogWarning("Thread {ThreadId} not found", id);
+                return false;
+            }
 
-                // Delete the thread
-                var threadDeleteResult = await _threadsCollection.DeleteOneAsync(
-                    session, 
-                    Builders<ConversationThread>.Filter.Eq(t => t.Id, id), 
-                    cancellationToken: cancellationToken);
+            // Validate tenant ownership (skip check if tenantId is null - SysAdmin action)
+            if (tenantId != null && thread.TenantId != tenantId)
+            {
+                _logger.LogWarning("Thread {ThreadId} does not belong to tenant {TenantId}. IDOR attempt detected.", id, tenantId);
+                return false;
+            }
 
-                return threadDeleteResult.DeletedCount > 0;
-            });
+            // Use transaction to delete thread and its messages atomically
+            using var session = await _database.Client.StartSessionAsync();
+            
+            try
+            {
+                var result = await session.WithTransactionAsync(async (session, cancellationToken) =>
+                {
+                    // Delete all messages in the thread
+                    var messageDeleteResult = await _messagesCollection.DeleteManyAsync(
+                        session, 
+                        Builders<ConversationMessage>.Filter.Eq(m => m.ThreadId, id), 
+                        cancellationToken: cancellationToken);
+                    
+                    _logger.LogInformation("Deleted {MessageCount} messages from thread {ThreadId}", 
+                        messageDeleteResult.DeletedCount, id);
 
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting thread {ThreadId}", id);
-            throw;
-        }
+                    // Delete the thread
+                    var threadDeleteResult = await _threadsCollection.DeleteOneAsync(
+                        session, 
+                        Builders<ConversationThread>.Filter.Eq(t => t.Id, id), 
+                        cancellationToken: cancellationToken);
+
+                    return threadDeleteResult.DeletedCount > 0;
+                });
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting thread {ThreadId}", id);
+                throw;
+            }
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteThread");
     }
 
     #endregion
@@ -407,111 +416,117 @@ public class ConversationRepository : IConversationRepository
     public async Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(
         string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false)
     {
-        // Build message filter
-        var messageFilter = Builders<ConversationMessage>.Filter.And(
-            Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
-        );
-
-        if (!string.IsNullOrEmpty(scope))
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogDebug("Filtering messages by scope `{Scope}`", scope);
-            messageFilter = Builders<ConversationMessage>.Filter.And(
-                messageFilter, 
-                Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope));
-        }
+            // Build message filter
+            var messageFilter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
+            );
 
-        if (chatOnly)
-        {
-            messageFilter = Builders<ConversationMessage>.Filter.And(
-                messageFilter, 
-                Builders<ConversationMessage>.Filter.Eq(x => x.MessageType, MessageType.Chat));
-        }
+            if (!string.IsNullOrEmpty(scope))
+            {
+                _logger.LogDebug("Filtering messages by scope `{Scope}`", scope);
+                messageFilter = Builders<ConversationMessage>.Filter.And(
+                    messageFilter, 
+                    Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope));
+            }
 
-        var query = _messagesCollection.Find(messageFilter)
-            .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt));
+            if (chatOnly)
+            {
+                messageFilter = Builders<ConversationMessage>.Filter.And(
+                    messageFilter, 
+                    Builders<ConversationMessage>.Filter.Eq(x => x.MessageType, MessageType.Chat));
+            }
 
-        if (page.HasValue && pageSize.HasValue)
-        {
-            var skip = (page.Value - 1) * pageSize.Value;
-            _logger.LogDebug("Applying pagination to messages: page={Page}, pageSize={PageSize}, skip={Skip}, limit={Limit}", 
-                page.Value, pageSize.Value, skip, pageSize.Value);
-            query = query.Skip(skip).Limit(pageSize.Value);
-        }
-        else
-        {
-            _logger.LogDebug("No pagination applied to messages: page={Page}, pageSize={PageSize}", page, pageSize);
-        }
+            var query = _messagesCollection.Find(messageFilter)
+                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt));
 
-        // Project only the fields we need
-        var projection = Builders<ConversationMessage>.Projection
-            .Include(x => x.Id)
-            .Include(x => x.TenantId)
-            .Include(x => x.CreatedAt)
-            .Include(x => x.Direction)
-            .Include(x => x.MessageType)
-            .Include(x => x.Text)
-            .Include(x => x.Data)
-            .Include(x => x.Hint)
-            .Include(x => x.RequestId);
+            if (page.HasValue && pageSize.HasValue)
+            {
+                var skip = (page.Value - 1) * pageSize.Value;
+                _logger.LogDebug("Applying pagination to messages: page={Page}, pageSize={PageSize}, skip={Skip}, limit={Limit}", 
+                    page.Value, pageSize.Value, skip, pageSize.Value);
+                query = query.Skip(skip).Limit(pageSize.Value);
+            }
+            else
+            {
+                _logger.LogDebug("No pagination applied to messages: page={Page}, pageSize={PageSize}", page, pageSize);
+            }
 
-        var messages = await query.Project<ConversationMessage>(projection).ToListAsync();
-        
-        // Convert BSON data back to objects and decrypt text
-        foreach (var message in messages)
-        {
-            ConvertBsonDataToObject(message);
-            DecryptMessageText(message);
-        }
-        
-        _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, threadId);
-        return messages;
+            // Project only the fields we need
+            var projection = Builders<ConversationMessage>.Projection
+                .Include(x => x.Id)
+                .Include(x => x.TenantId)
+                .Include(x => x.CreatedAt)
+                .Include(x => x.Direction)
+                .Include(x => x.MessageType)
+                .Include(x => x.Text)
+                .Include(x => x.Data)
+                .Include(x => x.Hint)
+                .Include(x => x.RequestId);
+
+            var messages = await query.Project<ConversationMessage>(projection).ToListAsync();
+            
+            // Convert BSON data back to objects and decrypt text
+            foreach (var message in messages)
+            {
+                ConvertBsonDataToObject(message);
+                DecryptMessageText(message);
+            }
+            
+            _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, threadId);
+            return messages;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessagesByThreadId");
     }
 
     public async Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(
         string workflowId, string participantId, int page, int pageSize, string? scope = null)
     {
-        // Single optimized query using compound index
-        var filterBuilder = Builders<ConversationMessage>.Filter;
-        var filter = filterBuilder.And(
-            filterBuilder.Eq(x => x.TenantId, _tenantContext.TenantId),
-            filterBuilder.Eq(x => x.WorkflowId, workflowId),
-            filterBuilder.Eq(x => x.ParticipantId, participantId)
-        );
-
-        if (!string.IsNullOrEmpty(scope))
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, scope));
-        }
+            // Single optimized query using compound index
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+            var filter = filterBuilder.And(
+                filterBuilder.Eq(x => x.TenantId, _tenantContext.TenantId),
+                filterBuilder.Eq(x => x.WorkflowId, workflowId),
+                filterBuilder.Eq(x => x.ParticipantId, participantId)
+            );
 
-        // Optimized projection for better memory usage
-        var projection = Builders<ConversationMessage>.Projection
-            .Include(x => x.Id)
-            .Include(x => x.TenantId)
-            .Include(x => x.CreatedAt)
-            .Include(x => x.Direction)
-            .Include(x => x.MessageType)
-            .Include(x => x.Text)
-            .Include(x => x.Data)
-            .Include(x => x.Hint)
-            .Include(x => x.RequestId);
+            if (!string.IsNullOrEmpty(scope))
+            {
+                filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, scope));
+            }
 
-        var messages = await _messagesCollection
-            .Find(filter)
-            .Project<ConversationMessage>(projection)
-            .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
-            .Skip((page - 1) * pageSize)
-            .Limit(pageSize)
-            .ToListAsync();
+            // Optimized projection for better memory usage
+            var projection = Builders<ConversationMessage>.Projection
+                .Include(x => x.Id)
+                .Include(x => x.TenantId)
+                .Include(x => x.CreatedAt)
+                .Include(x => x.Direction)
+                .Include(x => x.MessageType)
+                .Include(x => x.Text)
+                .Include(x => x.Data)
+                .Include(x => x.Hint)
+                .Include(x => x.RequestId);
 
-        // Convert BSON data efficiently and decrypt text
-        foreach (var message in messages)
-        {
-            ConvertBsonDataToObject(message);
-            DecryptMessageText(message);
-        }
+            var messages = await _messagesCollection
+                .Find(filter)
+                .Project<ConversationMessage>(projection)
+                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                .Skip((page - 1) * pageSize)
+                .Limit(pageSize)
+                .ToListAsync();
 
-        return messages;
+            // Convert BSON data efficiently and decrypt text
+            foreach (var message in messages)
+            {
+                ConvertBsonDataToObject(message);
+                DecryptMessageText(message);
+            }
+
+            return messages;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessagesByWorkflowAndParticipant");
     }
 
     public async Task<bool> DeleteMessagesByThreadIdAsync(string threadId)
@@ -541,12 +556,15 @@ public class ConversationRepository : IConversationRepository
 
     public async Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId)
     {
-        var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
-        if (thread == null)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
-        }
-        return thread.Id;
+            var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
+            if (thread == null)
+            {
+                throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
+            }
+            return thread.Id;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetThreadId");
     }
 
     #endregion

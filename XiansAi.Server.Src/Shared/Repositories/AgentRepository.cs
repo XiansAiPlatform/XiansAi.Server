@@ -3,6 +3,7 @@ using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -79,12 +80,15 @@ public class AgentRepository : IAgentRepository
 
     public async Task<Agent?> GetByNameInternalAsync(string name, string? tenant)
     {
-        // Handle null tenant explicitly for system-scoped agents
-        if (tenant == null)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _agents.Find(x => x.Name == name && x.Tenant == null).FirstOrDefaultAsync();
-        }
-        return await _agents.Find(x => x.Name == name && x.Tenant == tenant).FirstOrDefaultAsync();
+            // Handle null tenant explicitly for system-scoped agents
+            if (tenant == null)
+            {
+                return await _agents.Find(x => x.Name == name && x.Tenant == null).FirstOrDefaultAsync();
+            }
+            return await _agents.Find(x => x.Name == name && x.Tenant == tenant).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAgentByName");
     }
 
     public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant)
@@ -140,8 +144,11 @@ public class AgentRepository : IAgentRepository
 
     public async Task CreateAsync(Agent agent)
     {
-        agent.CreatedAt = DateTime.UtcNow;
-        await _agents.InsertOneAsync(agent);
+        await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            agent.CreatedAt = DateTime.UtcNow;
+            await _agents.InsertOneAsync(agent);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateAgent");
     }
 
     public async Task<bool> UpdateAsync(string id, Agent agent, string userId, string[] userRoles)
@@ -165,72 +172,81 @@ public class AgentRepository : IAgentRepository
 
     public async Task<bool> UpdateInternalAsync(string id, Agent agent)
     {
-        var result = await _agents.ReplaceOneAsync(x => x.Id == id, agent);
-        return result.ModifiedCount > 0;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var result = await _agents.ReplaceOneAsync(x => x.Id == id, agent);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateAgent");
     }
 
     public async Task<bool> UpdatePermissionsAsync(string name, string tenant, Permission permissions, string userId, string[] userRoles)
     {
-        var agent = await GetByNameInternalAsync(name, tenant);
-        if (agent == null)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogWarning("Agent {AgentName} not found in tenant {Tenant}", name, tenant);
-            return false;
-        }   
+            var agent = await GetByNameInternalAsync(name, tenant);
+            if (agent == null)
+            {
+                _logger.LogWarning("Agent {AgentName} not found in tenant {Tenant}", name, tenant);
+                return false;
+            }   
 
-        // Check if user has owner permission
-        if (!CheckPermissions(agent, PermissionLevel.Owner))
-        {
-            _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", userId, name);
-            return false;
-        }
+            // Check if user has owner permission
+            if (!CheckPermissions(agent, PermissionLevel.Owner))
+            {
+                _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", userId, name);
+                return false;
+            }
 
-        // Handle null tenant explicitly for system-scoped agents
-        var tenantFilter = tenant == null
-            ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
-            : Builders<Agent>.Filter.Eq(x => x.Tenant, tenant);
+            // Handle null tenant explicitly for system-scoped agents
+            var tenantFilter = tenant == null
+                ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
+                : Builders<Agent>.Filter.Eq(x => x.Tenant, tenant);
 
-        var filter = Builders<Agent>.Filter.And(
-            Builders<Agent>.Filter.Eq(x => x.Name, name),
-            tenantFilter
-        );
-        
-        var update = Builders<Agent>.Update.Set(x => x.OwnerAccess, permissions.OwnerAccess)
-            .Set(x => x.ReadAccess, permissions.ReadAccess)
-            .Set(x => x.WriteAccess, permissions.WriteAccess);
-        var result = await _agents.UpdateOneAsync(filter, update);
-        return result.ModifiedCount > 0;
+            var filter = Builders<Agent>.Filter.And(
+                Builders<Agent>.Filter.Eq(x => x.Name, name),
+                tenantFilter
+            );
+            
+            var update = Builders<Agent>.Update.Set(x => x.OwnerAccess, permissions.OwnerAccess)
+                .Set(x => x.ReadAccess, permissions.ReadAccess)
+                .Set(x => x.WriteAccess, permissions.WriteAccess);
+            var result = await _agents.UpdateOneAsync(filter, update);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateAgentPermissions");
     }
 
     public async Task<bool> DeleteAsync(string id, string userId, string[] userRoles)
     {
-        var agent = await _agents.Find(x => x.Id == id).FirstOrDefaultAsync();
-        if (agent == null)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogWarning("Agent with ID {AgentId} not found", id);
-            return false;
-        }
+            var agent = await _agents.Find(x => x.Id == id).FirstOrDefaultAsync();
+            if (agent == null)
+            {
+                _logger.LogWarning("Agent with ID {AgentId} not found", id);
+                return false;
+            }
 
-        // Check if user has owner permission
-        if (!CheckPermissions(agent, PermissionLevel.Owner))
-        {
-            _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", userId, agent.Name);
-            return false;
-        }
+            // Check if user has owner permission
+            if (!CheckPermissions(agent, PermissionLevel.Owner))
+            {
+                _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", userId, agent.Name);
+                return false;
+            }
 
-        // Delete associated flow definitions first
-        var definitionFilter = Builders<FlowDefinition>.Filter.And(
-            Builders<FlowDefinition>.Filter.Eq(x => x.Agent, agent.Name),
-            Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, agent.Tenant),
-            Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, agent.SystemScoped)
-        );
+            // Delete associated flow definitions first
+            var definitionFilter = Builders<FlowDefinition>.Filter.And(
+                Builders<FlowDefinition>.Filter.Eq(x => x.Agent, agent.Name),
+                Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, agent.Tenant),
+                Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, agent.SystemScoped)
+            );
 
-        var definitionDeleteResult = await _definitions.DeleteManyAsync(definitionFilter);
-        _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", definitionDeleteResult.DeletedCount, agent.Name);
+            var definitionDeleteResult = await _definitions.DeleteManyAsync(definitionFilter);
+            _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", definitionDeleteResult.DeletedCount, agent.Name);
 
-        // Delete the agent
-        var result = await _agents.DeleteOneAsync(x => x.Id == id);
-        return result.DeletedCount > 0;
+            // Delete the agent
+            var result = await _agents.DeleteOneAsync(x => x.Id == id);
+            return result.DeletedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteAgent");
     }
 
     public async Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false)
@@ -394,73 +410,76 @@ public class AgentRepository : IAgentRepository
 
     public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null)
     {
-        _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}", agentName, createdBy, tenant);
-        
-        // Create new agent object
-        var newAgent = new Agent
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            Id = ObjectId.GenerateNewId().ToString(),
-            Name = agentName,
-            SystemScoped = systemScoped,
-            Tenant = systemScoped ? null : tenant,
-            CreatedBy = createdBy,
-            CreatedAt = DateTime.UtcNow,
-            OwnerAccess = new List<string>(),
-            ReadAccess = new List<string>(),
-            WriteAccess = new List<string>(),
-            OnboardingJson = onboardingJson
-        };
-        newAgent.GrantOwnerAccess(createdBy);
-
-        try
-        {
-            // Try to insert the new agent - will fail if duplicate exists due to unique index
-            await _agents.InsertOneAsync(newAgent);
-            _logger.LogInformation("Agent {AgentName} created successfully", agentName);
-            return newAgent;
-        }
-        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
-        {
-            _logger.LogInformation("Agent {AgentName} already exists, retrieving existing agent", agentName);
+            _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}", agentName, createdBy, tenant);
             
-            // Agent already exists, get the existing one
-            // Use the actual tenant value from the new agent (which is null for system-scoped agents)
-            var existingAgent = await GetByNameInternalAsync(agentName, newAgent.Tenant);
-            if (existingAgent != null)
+            // Create new agent object
+            var newAgent = new Agent
             {
-                // Update OnboardingJson if provided
-                if (!string.IsNullOrEmpty(onboardingJson))
+                Id = ObjectId.GenerateNewId().ToString(),
+                Name = agentName,
+                SystemScoped = systemScoped,
+                Tenant = systemScoped ? null : tenant,
+                CreatedBy = createdBy,
+                CreatedAt = DateTime.UtcNow,
+                OwnerAccess = new List<string>(),
+                ReadAccess = new List<string>(),
+                WriteAccess = new List<string>(),
+                OnboardingJson = onboardingJson
+            };
+            newAgent.GrantOwnerAccess(createdBy);
+
+            try
+            {
+                // Try to insert the new agent - will fail if duplicate exists due to unique index
+                await _agents.InsertOneAsync(newAgent);
+                _logger.LogInformation("Agent {AgentName} created successfully", agentName);
+                return newAgent;
+            }
+            catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
+            {
+                _logger.LogInformation("Agent {AgentName} already exists, retrieving existing agent", agentName);
+                
+                // Agent already exists, get the existing one
+                // Use the actual tenant value from the new agent (which is null for system-scoped agents)
+                var existingAgent = await GetByNameInternalAsync(agentName, newAgent.Tenant);
+                if (existingAgent != null)
                 {
-                    _logger.LogInformation("Updating OnboardingJson for existing agent {AgentName}", agentName);
+                    // Update OnboardingJson if provided
+                    if (!string.IsNullOrEmpty(onboardingJson))
+                    {
+                        _logger.LogInformation("Updating OnboardingJson for existing agent {AgentName}", agentName);
+                        
+                        var tenantFilter = existingAgent.Tenant == null
+                            ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
+                            : Builders<Agent>.Filter.Eq(x => x.Tenant, existingAgent.Tenant);
+                        
+                        var filter = Builders<Agent>.Filter.And(
+                            Builders<Agent>.Filter.Eq(x => x.Name, agentName),
+                            tenantFilter
+                        );
+                        
+                        var update = Builders<Agent>.Update.Set(x => x.OnboardingJson, onboardingJson);
+                        await _agents.UpdateOneAsync(filter, update);
+                        
+                        // Update the local object to reflect the change
+                        existingAgent.OnboardingJson = onboardingJson;
+                    }
                     
-                    var tenantFilter = existingAgent.Tenant == null
-                        ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
-                        : Builders<Agent>.Filter.Eq(x => x.Tenant, existingAgent.Tenant);
-                    
-                    var filter = Builders<Agent>.Filter.And(
-                        Builders<Agent>.Filter.Eq(x => x.Name, agentName),
-                        tenantFilter
-                    );
-                    
-                    var update = Builders<Agent>.Update.Set(x => x.OnboardingJson, onboardingJson);
-                    await _agents.UpdateOneAsync(filter, update);
-                    
-                    // Update the local object to reflect the change
-                    existingAgent.OnboardingJson = onboardingJson;
+                    return existingAgent;
                 }
                 
-                return existingAgent;
+                // This shouldn't happen, but if it does, throw the original exception
+                _logger.LogError(ex, "Agent {AgentName} duplicate key error but could not retrieve existing agent", agentName);
+                throw new InvalidOperationException($"Agent {agentName} creation failed due to duplicate key, but existing agent could not be retrieved", ex);
             }
-            
-            // This shouldn't happen, but if it does, throw the original exception
-            _logger.LogError(ex, "Agent {AgentName} duplicate key error but could not retrieve existing agent", agentName);
-            throw new InvalidOperationException($"Agent {agentName} creation failed due to duplicate key, but existing agent could not be retrieved", ex);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error while upserting agent {AgentName}", agentName);
-            throw;
-        }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error while upserting agent {AgentName}", agentName);
+                throw;
+            }
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpsertAgent");
     }
 
     private bool HasSystemAccess(string? agentTenantId)

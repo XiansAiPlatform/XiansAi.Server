@@ -1,6 +1,7 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -41,31 +42,40 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
 
     public async Task<FlowDefinition> GetLatestFlowDefinitionAsync(string workflowType)
     {
-        return await _definitions.Find(x => x.WorkflowType == workflowType)
-            .SortByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            return await _definitions.Find(x => x.WorkflowType == workflowType)
+                .SortByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestFlowDefinition");
     }
 
     public async Task<FlowDefinition> GetLatestFlowDefinitionAsync(string workflowType, string? tenant)
     {
-        var filter = Builders<FlowDefinition>.Filter.And(
-            Builders<FlowDefinition>.Filter.Eq(x => x.WorkflowType, workflowType),
-            tenant == null 
-                ? Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, true)
-                : Builders<FlowDefinition>.Filter.Or(
-                    Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, tenant),
-                    Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, true)
-                )
-        );
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<FlowDefinition>.Filter.And(
+                Builders<FlowDefinition>.Filter.Eq(x => x.WorkflowType, workflowType),
+                tenant == null 
+                    ? Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, true)
+                    : Builders<FlowDefinition>.Filter.Or(
+                        Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, tenant),
+                        Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, true)
+                    )
+            );
 
-        return await _definitions.Find(filter)
-            .SortByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync();
+            return await _definitions.Find(filter)
+                .SortByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestFlowDefinitionByTenant");
     }
 
     public async Task<FlowDefinition> GetByIdAsync(string id)
     {
-        return await _definitions.Find(x => x.Id == id).FirstOrDefaultAsync();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            return await _definitions.Find(x => x.Id == id).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetFlowDefinitionById");
     }
 
     public async Task<FlowDefinition> GetByHashAsync(string hash, string workflowType)
@@ -132,36 +142,48 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
 
     public async Task CreateAsync(FlowDefinition definition)
     {
-        definition.CreatedAt = DateTime.UtcNow;
-        await _definitions.InsertOneAsync(definition);
+        await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            definition.CreatedAt = DateTime.UtcNow;
+            await _definitions.InsertOneAsync(definition);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateFlowDefinition");
     }
 
     public async Task<bool> DeleteAsync(string id)
     {
-        var result = await _definitions.DeleteOneAsync(x => x.Id == id);
-        return result.DeletedCount > 0;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var result = await _definitions.DeleteOneAsync(x => x.Id == id);
+            return result.DeletedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteFlowDefinition");
     }
 
     public async Task<long> DeleteByAgentAsync(string agentName, string? tenant)
     {
-        _logger.LogInformation("Deleting all flow definitions for agent: {AgentName} in tenant: {Tenant}", agentName, tenant);
-        
-        // Build filter to match agent name, tenant, and system scoped value
-        var filter = Builders<FlowDefinition>.Filter.And(
-            Builders<FlowDefinition>.Filter.Eq(x => x.Agent, agentName),
-            Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, tenant),
-            Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, tenant == null)
-        );
-        
-        var result = await _definitions.DeleteManyAsync(filter);
-        _logger.LogInformation("Deleted {Count} flow definitions for agent: {AgentName} in tenant: {Tenant}", result.DeletedCount, agentName, tenant);
-        return result.DeletedCount;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            _logger.LogInformation("Deleting all flow definitions for agent: {AgentName} in tenant: {Tenant}", agentName, tenant);
+            
+            // Build filter to match agent name, tenant, and system scoped value
+            var filter = Builders<FlowDefinition>.Filter.And(
+                Builders<FlowDefinition>.Filter.Eq(x => x.Agent, agentName),
+                Builders<FlowDefinition>.Filter.Eq(x => x.Tenant, tenant),
+                Builders<FlowDefinition>.Filter.Eq(x => x.SystemScoped, tenant == null)
+            );
+            
+            var result = await _definitions.DeleteManyAsync(filter);
+            _logger.LogInformation("Deleted {Count} flow definitions for agent: {AgentName} in tenant: {Tenant}", result.DeletedCount, agentName, tenant);
+            return result.DeletedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteFlowDefinitionsByAgent");
     }
 
     public async Task<bool> UpdateAsync(string id, FlowDefinition definition)
     {
-        var result = await _definitions.ReplaceOneAsync(x => x.Id == id, definition);
-        return result.ModifiedCount > 0;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var result = await _definitions.ReplaceOneAsync(x => x.Id == id, definition);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateFlowDefinition");
     }
 
     public async Task<FlowDefinition> GetByNameHashAsync(string workflowType, string hash)

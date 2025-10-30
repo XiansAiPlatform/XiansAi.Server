@@ -3,6 +3,7 @@ using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
 using Shared.Services;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -46,59 +47,62 @@ public class UserRepository : IUserRepository
 
     public async Task<PagedUserResult> GetAllUsersAsync(UserFilter filter)
     {
-        var builder = Builders<User>.Filter;
-        var filters = new List<FilterDefinition<User>>();
-
-        // Filter by user type
-        switch (filter.Type)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            case UserTypeFilter.ADMIN:
-                filters.Add(builder.Eq(u => u.IsSysAdmin, true));
-                break;
-            case UserTypeFilter.NON_ADMIN:
-                filters.Add(builder.Eq(u => u.IsSysAdmin, false));
-                break;
-            case UserTypeFilter.ALL:
-            default:
-                // No additional filter
-                break;
-        }
+            var builder = Builders<User>.Filter;
+            var filters = new List<FilterDefinition<User>>();
 
-        // Filter by tenant
-        if (!string.IsNullOrWhiteSpace(filter.Tenant))
-        {
-            filters.Add(builder.ElemMatch(u => u.TenantRoles, tr => tr.Tenant == filter.Tenant));
-        }
+            // Filter by user type
+            switch (filter.Type)
+            {
+                case UserTypeFilter.ADMIN:
+                    filters.Add(builder.Eq(u => u.IsSysAdmin, true));
+                    break;
+                case UserTypeFilter.NON_ADMIN:
+                    filters.Add(builder.Eq(u => u.IsSysAdmin, false));
+                    break;
+                case UserTypeFilter.ALL:
+                default:
+                    // No additional filter
+                    break;
+            }
 
-        // Search by name or email (case-insensitive, partial match)
-        if (!string.IsNullOrWhiteSpace(filter.Search))
-        {
-            var search = filter.Search.Trim();
-            var nameFilter = builder.Regex(u => u.Name, new MongoDB.Bson.BsonRegularExpression(search, "i"));
-            var emailFilter = builder.Regex(u => u.Email, new MongoDB.Bson.BsonRegularExpression(search, "i"));
-            filters.Add(builder.Or(nameFilter, emailFilter));
-        }
+            // Filter by tenant
+            if (!string.IsNullOrWhiteSpace(filter.Tenant))
+            {
+                filters.Add(builder.ElemMatch(u => u.TenantRoles, tr => tr.Tenant == filter.Tenant));
+            }
 
-        var mongoFilter = filters.Count > 0 ? builder.And(filters) : builder.Empty;
+            // Search by name or email (case-insensitive, partial match)
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var search = filter.Search.Trim();
+                var nameFilter = builder.Regex(u => u.Name, new MongoDB.Bson.BsonRegularExpression(search, "i"));
+                var emailFilter = builder.Regex(u => u.Email, new MongoDB.Bson.BsonRegularExpression(search, "i"));
+                filters.Add(builder.Or(nameFilter, emailFilter));
+            }
 
-        // Paging
-        int page = filter.Page > 0 ? filter.Page : 1;
-        int pageSize = filter.PageSize > 0 ? filter.PageSize : 20;
-        int skip = (page - 1) * pageSize;
+            var mongoFilter = filters.Count > 0 ? builder.And(filters) : builder.Empty;
 
-        var users = await _users
-            .Find(mongoFilter)
-            .Skip(skip)
-            .Limit(pageSize)
-            .ToListAsync();
+            // Paging
+            int page = filter.Page > 0 ? filter.Page : 1;
+            int pageSize = filter.PageSize > 0 ? filter.PageSize : 20;
+            int skip = (page - 1) * pageSize;
 
-        var totalCount = await _users.CountDocumentsAsync(mongoFilter);
+            var users = await _users
+                .Find(mongoFilter)
+                .Skip(skip)
+                .Limit(pageSize)
+                .ToListAsync();
 
-        return new PagedUserResult
-        {
-            Users = users,
-            TotalCount = totalCount,
-        };
+            var totalCount = await _users.CountDocumentsAsync(mongoFilter);
+
+            return new PagedUserResult
+            {
+                Users = users,
+                TotalCount = totalCount,
+            };
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAllUsers");
     }
 
     public async Task<PagedUserResult> GetAllUsersByTenantAsync(UserFilter filter)
@@ -214,18 +218,27 @@ public class UserRepository : IUserRepository
 
     public async Task<User?> GetByIdAsync(string id)
     {
-        return await _users.Find(x => x.Id == id).FirstOrDefaultAsync();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            return await _users.Find(x => x.Id == id).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetUserById");
     }
 
 
     public async Task<User?> GetByUserIdAsync(string userId)
     {
-        return await _users.Find(x => x.UserId == userId).FirstOrDefaultAsync();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            return await _users.Find(x => x.UserId == userId).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserId");
     }
 
     public async Task<User?> GetByUserEmailAsync(string email)
     {
-        return await _users.Find(x => x.Email == email).FirstOrDefaultAsync();
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            return await _users.Find(x => x.Email == email).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserEmail");
     }
 
     public async Task<List<string>> GetUserTenantsAsync(string userId)
@@ -306,103 +319,127 @@ public class UserRepository : IUserRepository
 
     public async Task<bool> CreateAsync(User user)
     {
-        try
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            await _users.InsertOneAsync(user);
-            return true;
-        }
-        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
-        {
-            _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", user.UserId);
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating user {UserId}", user.UserId);
-            return false;
-        }
+            try
+            {
+                await _users.InsertOneAsync(user);
+                return true;
+            }
+            catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+            {
+                _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", user.UserId);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating user {UserId}", user.UserId);
+                return false;
+            }
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateUser");
     }
 
     public async Task<bool> UpdateAsyncById(string id, User user)
     {
-        user.UpdatedAt = DateTime.UtcNow;
-        var result = await _users.ReplaceOneAsync(x => x.Id == id, user);
-        return result.ModifiedCount > 0;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            user.UpdatedAt = DateTime.UtcNow;
+            var result = await _users.ReplaceOneAsync(x => x.Id == id, user);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateUserById");
     }
 
     public async Task<bool> UpdateAsync(string userId, User user)
     {
-        user.UpdatedAt = DateTime.UtcNow;
-        var result = await _users.ReplaceOneAsync(x => x.UserId == userId, user);
-        return result.ModifiedCount > 0;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            user.UpdatedAt = DateTime.UtcNow;
+            var result = await _users.ReplaceOneAsync(x => x.UserId == userId, user);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateUser");
     }
 
     public async Task<bool> LockUserAsync(string userId, string reason, string lockedByUserId)
     {
-        var update = Builders<User>.Update
-            .Set(x => x.IsLockedOut, true)
-            .Set(x => x.LockedOutReason, reason)
-            .Set(x => x.LockedOutAt, DateTime.UtcNow)
-            .Set(x => x.LockedOutBy, lockedByUserId);
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var update = Builders<User>.Update
+                .Set(x => x.IsLockedOut, true)
+                .Set(x => x.LockedOutReason, reason)
+                .Set(x => x.LockedOutAt, DateTime.UtcNow)
+                .Set(x => x.LockedOutBy, lockedByUserId);
 
-        var result = await _users.UpdateOneAsync(x => x.UserId == userId, update);
-        return result.ModifiedCount > 0;
+            var result = await _users.UpdateOneAsync(x => x.UserId == userId, update);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "LockUser");
     }
 
     public async Task<bool> UnlockUserAsync(string userId)
     {
-        var update = Builders<User>.Update
-            .Set(x => x.IsLockedOut, false)
-            .Set(x => x.LockedOutReason, null)
-            .Set(x => x.LockedOutAt, null)
-            .Set(x => x.LockedOutBy, null);
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var update = Builders<User>.Update
+                .Set(x => x.IsLockedOut, false)
+                .Set(x => x.LockedOutReason, null)
+                .Set(x => x.LockedOutAt, null)
+                .Set(x => x.LockedOutBy, null);
 
-        var result = await _users.UpdateOneAsync(x => x.UserId == userId, update);
-        return result.ModifiedCount > 0;
+            var result = await _users.UpdateOneAsync(x => x.UserId == userId, update);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UnlockUser");
     }
 
     public async Task<bool> IsLockedOutAsync(string userId)
     {
-        var user = await _users.Find(x => x.UserId == userId)
-            .Project(x => new { x.IsLockedOut })
-            .FirstOrDefaultAsync();
-        return user?.IsLockedOut ?? false;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var user = await _users.Find(x => x.UserId == userId)
+                .Project(x => new { x.IsLockedOut })
+                .FirstOrDefaultAsync();
+            return user?.IsLockedOut ?? false;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "IsLockedOut");
     }
 
     public async Task<bool> IsSysAdmin(string userId)
     {
-        var user = await _users.Find(x => x.UserId == userId)
-            .Project(x => new { x.IsSysAdmin })
-            .FirstOrDefaultAsync();
-        return user?.IsSysAdmin ?? false;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var user = await _users.Find(x => x.UserId == userId)
+                .Project(x => new { x.IsSysAdmin })
+                .FirstOrDefaultAsync();
+            return user?.IsSysAdmin ?? false;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "IsSysAdmin");
     }
 
     public async Task<bool> DeleteUser(string userId, string? tenantId = null)
     {
-        // First verify the user exists
-        var userFilter = Builders<User>.Filter.Eq(u => u.UserId, userId);
-        var user = await _users.Find(userFilter).FirstOrDefaultAsync();
-        
-        if (user == null)
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogWarning("User {UserId} not found", userId);
-            return false;
-        }
-
-        // Check if user belongs to the specified tenant (skip check if tenantId is null - SysAdmin action)
-        if (tenantId != null)
-        {
-            var belongsToTenant = user.TenantRoles.Any(tr => tr.Tenant == tenantId);
-            if (!belongsToTenant)
+            // First verify the user exists
+            var userFilter = Builders<User>.Filter.Eq(u => u.UserId, userId);
+            var user = await _users.Find(userFilter).FirstOrDefaultAsync();
+            
+            if (user == null)
             {
-                _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", userId, tenantId);
+                _logger.LogWarning("User {UserId} not found", userId);
                 return false;
             }
-        }
 
-        // Delete the user
-        var deletedUser = await _users.DeleteOneAsync(userFilter);
-        return deletedUser.IsAcknowledged && deletedUser.DeletedCount > 0;
+            // Check if user belongs to the specified tenant (skip check if tenantId is null - SysAdmin action)
+            if (tenantId != null)
+            {
+                var belongsToTenant = user.TenantRoles.Any(tr => tr.Tenant == tenantId);
+                if (!belongsToTenant)
+                {
+                    _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", userId, tenantId);
+                    return false;
+                }
+            }
+
+            // Delete the user
+            var deletedUser = await _users.DeleteOneAsync(userFilter);
+            return deletedUser.IsAcknowledged && deletedUser.DeletedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteUser");
     }
 
     public async Task<List<User>> SearchUsersAsync(string query, string? tenantId = null)

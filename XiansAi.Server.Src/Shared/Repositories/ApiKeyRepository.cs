@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Shared.Repositories
 {
@@ -34,129 +35,150 @@ namespace Shared.Repositories
 
         public async Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy)
         {
-            try
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                var apiKey = GenerateApiKey();
-                var hashedKey = HashApiKey(apiKey);
-                var now = DateTime.UtcNow;
-                var doc = new ApiKey
+                try
                 {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    TenantId = tenantId,
-                    Name = name,
-                    HashedKey = hashedKey,
-                    CreatedAt = now,
-                    CreatedBy = createdBy,
-                    RevokedAt = null,
-                    LastRotatedAt = null
-                };
-                await _collection.InsertOneAsync(doc);
-                return (apiKey, doc);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating API key for tenant {TenantId}", tenantId);
-                throw;
-            }
+                    var apiKey = GenerateApiKey();
+                    var hashedKey = HashApiKey(apiKey);
+                    var now = DateTime.UtcNow;
+                    var doc = new ApiKey
+                    {
+                        Id = ObjectId.GenerateNewId().ToString(),
+                        TenantId = tenantId,
+                        Name = name,
+                        HashedKey = hashedKey,
+                        CreatedAt = now,
+                        CreatedBy = createdBy,
+                        RevokedAt = null,
+                        LastRotatedAt = null
+                    };
+                    await _collection.InsertOneAsync(doc);
+                    return (apiKey, doc);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error creating API key for tenant {TenantId}", tenantId);
+                    throw;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateApiKey");
         }
 
         public async Task<bool> RevokeAsync(string id, string tenantId)
         {
-            try
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                var update = Builders<ApiKey>.Update.Set(x => x.RevokedAt, DateTime.UtcNow);
-                var result = await _collection.UpdateOneAsync(
-                    x => x.Id == id && x.TenantId == tenantId && x.RevokedAt == null, update);
-                return result.ModifiedCount > 0;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
-                return false;
-            }
+                try
+                {
+                    var update = Builders<ApiKey>.Update.Set(x => x.RevokedAt, DateTime.UtcNow);
+                    var result = await _collection.UpdateOneAsync(
+                        x => x.Id == id && x.TenantId == tenantId && x.RevokedAt == null, update);
+                    return result.ModifiedCount > 0;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                    return false;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "RevokeApiKey");
         }
 
         public async Task<List<ApiKey>> GetByTenantAsync(string tenantId, bool hasRevoked = false)
         {
-            try
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                if (hasRevoked)
+                try
                 {
-                    return await _collection.Find(x => x.TenantId == tenantId).ToListAsync();
+                    if (hasRevoked)
+                    {
+                        return await _collection.Find(x => x.TenantId == tenantId).ToListAsync();
+                    }
+                    return await _collection.Find(x => x.TenantId == tenantId && x.RevokedAt == null).ToListAsync();
                 }
-                return await _collection.Find(x => x.TenantId == tenantId && x.RevokedAt == null).ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting API keys for tenant {TenantId}", tenantId);
-                return new List<ApiKey>();
-            }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting API keys for tenant {TenantId}", tenantId);
+                    return new List<ApiKey>();
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeysByTenant");
         }
 
         public async Task<(string apiKey, ApiKey meta)?> RotateAsync(string id, string tenantId)
         {
-            try
+            return await MongoRetryHelper.ExecuteWithRetryAsync<(string apiKey, ApiKey meta)?>(async () =>
             {
-                var apiKey = GenerateApiKey();
-                var hashedKey = HashApiKey(apiKey);
-                var now = DateTime.UtcNow;
-                var update = Builders<ApiKey>.Update
-                    .Set(x => x.HashedKey, hashedKey)
-                    .Set(x => x.LastRotatedAt, now)
-                    .Set(x => x.RevokedAt, null);
-                var result = await _collection.FindOneAndUpdateAsync(
-                    x => x.Id == id && x.TenantId == tenantId && x.RevokedAt == null,
-                    update,
-                    new FindOneAndUpdateOptions<ApiKey> { ReturnDocument = ReturnDocument.After });
-                if (result == null) return null;
-                return (apiKey, result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error rotating API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
-                return null;
-            }
+                try
+                {
+                    var apiKey = GenerateApiKey();
+                    var hashedKey = HashApiKey(apiKey);
+                    var now = DateTime.UtcNow;
+                    var update = Builders<ApiKey>.Update
+                        .Set(x => x.HashedKey, hashedKey)
+                        .Set(x => x.LastRotatedAt, now)
+                        .Set(x => x.RevokedAt, null);
+                    var result = await _collection.FindOneAndUpdateAsync(
+                        x => x.Id == id && x.TenantId == tenantId && x.RevokedAt == null,
+                        update,
+                        new FindOneAndUpdateOptions<ApiKey> { ReturnDocument = ReturnDocument.After });
+                    if (result == null) return ((string apiKey, ApiKey meta)?)null;
+                    return (apiKey, result);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error rotating API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                    return ((string apiKey, ApiKey meta)?)null;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "RotateApiKey");
         }
 
         public async Task<ApiKey?> GetByIdAsync(string id, string tenantId)
         {
-            try
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                return await _collection.Find(x => x.Id == id && x.TenantId == tenantId).FirstOrDefaultAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
-                return null;
-            }
+                try
+                {
+                    return await _collection.Find(x => x.Id == id && x.TenantId == tenantId).FirstOrDefaultAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                    return null;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyById");
         }
 
         public async Task<ApiKey?> GetByRawKeyAsync(string rawKey, string tenantId)
         {
-            try
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                var hashed = HashApiKey(rawKey);
-                return await _collection.Find(x => x.HashedKey == hashed && x.TenantId == tenantId && x.RevokedAt == null).FirstOrDefaultAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", tenantId);
-                return null;
-            }
+                try
+                {
+                    var hashed = HashApiKey(rawKey);
+                    return await _collection.Find(x => x.HashedKey == hashed && x.TenantId == tenantId && x.RevokedAt == null).FirstOrDefaultAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", tenantId);
+                    return null;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyByRawKey");
         }
 
         public async Task<ApiKey?> GetByRawKeyAsync(string rawKey)
         {
-            try
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                var hashed = HashApiKey(rawKey);
-                return await _collection.Find(x => x.HashedKey == hashed && x.RevokedAt == null).FirstOrDefaultAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting API key by raw key");
-                return null;
-            }
+                try
+                {
+                    var hashed = HashApiKey(rawKey);
+                    return await _collection.Find(x => x.HashedKey == hashed && x.RevokedAt == null).FirstOrDefaultAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting API key by raw key");
+                    return null;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyByRawKeyNoTenant");
         }
 
         private static string GenerateApiKey()
