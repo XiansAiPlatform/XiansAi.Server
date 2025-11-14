@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.UserApi.Services;
+using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Shared.Models.Schedule;
 using Shared.Utils.Services;

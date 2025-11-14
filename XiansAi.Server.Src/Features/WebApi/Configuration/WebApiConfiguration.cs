@@ -26,8 +26,8 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
         builder.Services.AddScoped<ITemplateService, TemplateService>();
 
-        // Register schedule service (from UserApi)
-        builder.Services.AddScoped<Features.UserApi.Services.IScheduleService, Features.UserApi.Services.ScheduleService>();
+        // Register schedule service
+        builder.Services.AddScoped<IScheduleService, ScheduleService>();
 
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
