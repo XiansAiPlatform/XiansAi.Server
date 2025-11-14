@@ -36,6 +36,9 @@ namespace Features.UserApi.Configuration
             // Add Webhook service
             builder.Services.AddScoped<IWebhookReceiverService, WebhookReceiverService>();
 
+            // Add Schedule service
+            builder.Services.AddScoped<IScheduleService, ScheduleService>();
+
             return builder;
         }
 

@@ -26,6 +26,9 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
         builder.Services.AddScoped<ITemplateService, TemplateService>();
 
+        // Register schedule service (from UserApi)
+        builder.Services.AddScoped<Features.UserApi.Services.IScheduleService, Features.UserApi.Services.ScheduleService>();
+
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();      
@@ -135,6 +138,7 @@ public static class WebApiConfiguration
         UserManagementEndpoints.MapUserManagementEndpoints(app);
         OidcConfigEndpoints.MapOidcConfigEndpoints(app);
         TemplateEndpoints.MapTemplateEndpoints(app);
+        ScheduleEndpoints.MapScheduleEndpoints(app);
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
         
