@@ -393,9 +393,9 @@ public class ScheduleService : IScheduleService
         if (!string.IsNullOrEmpty(request.SearchTerm))
         {
             var searchTerm = request.SearchTerm.ToLowerInvariant();
-            if (!schedule.Description?.ToLowerInvariant().Contains(searchTerm) == true &&
-                !schedule.Id.ToLowerInvariant().Contains(searchTerm) &&
-                !schedule.AgentName.ToLowerInvariant().Contains(searchTerm))
+            if (!(schedule.Description?.ToLowerInvariant().Contains(searchTerm) == true ||
+                  schedule.Id.ToLowerInvariant().Contains(searchTerm) ||
+                  schedule.AgentName.ToLowerInvariant().Contains(searchTerm)))
                 return false;
         }
         
