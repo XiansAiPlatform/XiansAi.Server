@@ -28,7 +28,9 @@ public static class CorsConfiguration
                     "Content-Type",
                     "Accept",
                     "X-Tenant-Id",
-                    "X-API-Key"
+                    "X-API-Key",
+                    "X-Requested-With",
+                    "X-SignalR-User-Agent"
                 };
                 
                 if (corsConfig.AllowedHeaders?.Length > 0)
