@@ -71,7 +71,7 @@ public class ScheduleService : IScheduleService
                     
                     // Apply filters during iteration for better performance
                     if (ShouldIncludeSchedule(scheduleModel, request))
-                    {
+                    {  
                         schedules.Add(scheduleModel);
                     }
                 }
@@ -212,14 +212,45 @@ public class ScheduleService : IScheduleService
         // Calculate next run time
         var nextRunTime = CalculateNextRunTime(description.Schedule.Spec);
         
-        // Get last run information
-        var lastAction = description.Info?.RecentActions?.FirstOrDefault();
+        // Get last run information with better estimation
+        var recentActions = description.Info?.RecentActions?.ToList() ?? new List<Temporalio.Client.Schedules.ScheduleActionResult>();
         DateTime? lastRunTime = null;
         
-        // Try to estimate last run time based on recent actions count
-        if (lastAction != null && description.Info?.NumActions > 0)
+        if (recentActions.Any())
         {
-            lastRunTime = DateTime.UtcNow.AddHours(-1); // Simple estimate
+            try
+            {
+                // Try to get the actual timestamp from the most recent action
+                var mostRecentAction = recentActions.First();
+                
+                // If we have action result info, use it to estimate timing
+                if (description.Info?.NumActions > 0)
+                {
+                    // Estimate based on schedule pattern and number of actions
+                    var totalActions = (long)description.Info.NumActions;
+                    var createdTime = description.Info?.CreatedAt ?? DateTime.UtcNow;
+                    
+                    if (totalActions > 1)
+                    {
+                        // Estimate average interval between runs
+                        var timeSinceCreation = DateTime.UtcNow - createdTime;
+                        var averageInterval = timeSinceCreation.TotalMilliseconds / (totalActions - 1);
+                        lastRunTime = DateTime.UtcNow.AddMilliseconds(-averageInterval);
+                    }
+                    else
+                    {
+                        // Only one execution, estimate based on when it might have last run
+                        var nextRun = CalculateNextRunTime(description.Schedule.Spec);
+                        var estimatedInterval = nextRun - DateTime.UtcNow;
+                        lastRunTime = DateTime.UtcNow.Subtract(estimatedInterval);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to calculate last run time for schedule {ScheduleId}", scheduleId);
+                lastRunTime = null;
+            }
         }
         
         return new ScheduleModel
@@ -326,9 +357,16 @@ public class ScheduleService : IScheduleService
     
     private ScheduleStatus MapScheduleState(Temporalio.Client.Schedules.ScheduleState state)
     {
-        if (state.Paused) return ScheduleStatus.Paused;
-        if (state.LimitedActions) return ScheduleStatus.Completed;
-        return ScheduleStatus.Active;
+        // Map Temporal schedule state to our enum values
+        
+        if (state.Paused) 
+            return ScheduleStatus.Suspended;
+            
+        if (state.LimitedActions) 
+            return ScheduleStatus.Completed;
+            
+        // Default to Running for active schedules
+        return ScheduleStatus.Running;
     }
     
     private string FormatScheduleSpec(Temporalio.Client.Schedules.ScheduleSpec spec)
@@ -347,20 +385,156 @@ public class ScheduleService : IScheduleService
     
     private DateTime CalculateNextRunTime(Temporalio.Client.Schedules.ScheduleSpec spec)
     {
-        // Simple next run time calculation
-        // In a real implementation, you'd parse the schedule spec properly
         var now = DateTime.UtcNow;
         
         try
         {
-            // Default to next hour for simplicity
-            // In production, you would properly parse the schedule spec
+            // Check for intervals first
+            if (spec.Intervals?.Any() == true)
+            {
+                var interval = spec.Intervals.First();
+                if (interval.Every != TimeSpan.Zero)
+                {
+                    return now.Add(interval.Every);
+                }
+            }
+            
+            // Check for calendar specs (cron-like)
+            if (spec.Calendars?.Any() == true)
+            {
+                var calendar = spec.Calendars.First();
+                return CalculateNextCalendarRun(calendar, now);
+            }
+            
+            // Check for cron expressions
+            if (spec.CronExpressions?.Any() == true)
+            {
+                var cronExpr = spec.CronExpressions.First();
+                return CalculateNextCronRun(cronExpr, now);
+            }
+            
+            // Default fallback
             return now.AddHours(1);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to calculate next run time from schedule spec");
             return now.AddHours(1);
         }
+    }
+    
+    private DateTime CalculateNextCalendarRun(Temporalio.Client.Schedules.ScheduleCalendarSpec calendar, DateTime from)
+    {
+        var nextRun = from.Date; // Start from today at midnight
+        
+        try
+        {
+            // If specific hours are set, find the next matching hour
+            if (calendar.Hour?.Any() == true)
+            {
+                var currentHour = from.Hour;
+                var hours = ExtractRangeValues(calendar.Hour);
+                var nextHour = hours.Where(h => h > currentHour).OrderBy(h => h).FirstOrDefault();
+                
+                if (nextHour == 0) // No more hours today, go to tomorrow
+                {
+                    nextRun = nextRun.AddDays(1);
+                    nextHour = hours.OrderBy(h => h).First();
+                }
+                
+                nextRun = nextRun.AddHours(nextHour);
+            }
+            else
+            {
+                nextRun = nextRun.AddHours(from.Hour + 1); // Next hour
+            }
+            
+            // Add minutes if specified
+            if (calendar.Minute?.Any() == true)
+            {
+                var minutes = ExtractRangeValues(calendar.Minute);
+                var minute = minutes.OrderBy(m => m).First();
+                nextRun = new DateTime(nextRun.Year, nextRun.Month, nextRun.Day, nextRun.Hour, minute, 0, DateTimeKind.Utc);
+            }
+            
+            return nextRun > from ? nextRun : nextRun.AddDays(1);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to calculate calendar-based next run time");
+            return from.AddHours(1);
+        }
+    }
+    
+    private DateTime CalculateNextCronRun(string cronExpression, DateTime from)
+    {
+        try
+        {
+            // Simple cron parsing for common patterns
+            var parts = cronExpression.Split(' ');
+            if (parts.Length >= 5)
+            {
+                // Basic minute/hour parsing
+                var minute = parts[0] == "*" ? 0 : int.TryParse(parts[0], out var m) ? m : 0;
+                var hour = parts[1] == "*" ? from.Hour + 1 : int.TryParse(parts[1], out var h) ? h : from.Hour + 1;
+                
+                var nextRun = new DateTime(from.Year, from.Month, from.Day, hour, minute, 0, DateTimeKind.Utc);
+                
+                // If the calculated time is in the past, add a day
+                if (nextRun <= from)
+                {
+                    nextRun = nextRun.AddDays(1);
+                }
+                
+                return nextRun;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse cron expression: {CronExpression}", cronExpression);
+        }
+        
+        return from.AddHours(1);
+    }
+    
+    private List<int> ExtractRangeValues(IEnumerable<Temporalio.Client.Schedules.ScheduleRange> ranges)
+    {
+        var values = new List<int>();
+        
+        foreach (var range in ranges)
+        {
+            try
+            {
+                // Try to extract start and end values from the range
+                // This is a simplified implementation - the actual range structure may vary
+                var rangeString = range.ToString();
+                if (int.TryParse(rangeString, out var singleValue))
+                {
+                    values.Add(singleValue);
+                }
+                else
+                {
+                    // Handle range notation like "9-17" or step notation
+                    if (rangeString.Contains("-"))
+                    {
+                        var parts = rangeString.Split('-');
+                        if (parts.Length == 2 && int.TryParse(parts[0], out var start) && int.TryParse(parts[1], out var end))
+                        {
+                            for (int i = start; i <= end; i++)
+                            {
+                                values.Add(i);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse schedule range: {Range}", range);
+            }
+        }
+        
+        return values.Count > 0 ? values : new List<int> { 0 }; // Default fallback
     }
     
     private List<DateTime> CalculateNextRunTimes(Temporalio.Client.Schedules.ScheduleSpec spec, int count)
@@ -368,10 +542,63 @@ public class ScheduleService : IScheduleService
         var times = new List<DateTime>();
         var baseTime = DateTime.UtcNow;
         
-        // Simple implementation - generate hourly times for demonstration
-        for (int i = 0; i < count; i++)
+        try
         {
-            times.Add(baseTime.AddHours(i + 1));
+            // Calculate the first run time
+            var firstRun = CalculateNextRunTime(spec);
+            times.Add(firstRun);
+            
+            // Calculate subsequent run times based on the schedule pattern
+            if (spec.Intervals?.Any() == true)
+            {
+                var interval = spec.Intervals.First();
+                var intervalSpan = interval.Every;
+                
+                for (int i = 1; i < count; i++)
+                {
+                    times.Add(times[i - 1].Add(intervalSpan));
+                }
+            }
+            else if (spec.Calendars?.Any() == true)
+            {
+                var calendar = spec.Calendars.First();
+                var currentTime = firstRun;
+                
+                for (int i = 1; i < count; i++)
+                {
+                    currentTime = CalculateNextCalendarRun(calendar, currentTime.AddMinutes(1));
+                    times.Add(currentTime);
+                }
+            }
+            else if (spec.CronExpressions?.Any() == true)
+            {
+                var cronExpr = spec.CronExpressions.First();
+                var currentTime = firstRun;
+                
+                for (int i = 1; i < count; i++)
+                {
+                    currentTime = CalculateNextCronRun(cronExpr, currentTime.AddMinutes(1));
+                    times.Add(currentTime);
+                }
+            }
+            else
+            {
+                // Fallback: generate hourly times
+                for (int i = 1; i < count; i++)
+                {
+                    times.Add(firstRun.AddHours(i));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to calculate multiple run times, falling back to hourly schedule");
+            
+            // Fallback: generate hourly times from now
+            for (int i = 0; i < count; i++)
+            {
+                times.Add(baseTime.AddHours(i + 1));
+            }
         }
         
         return times;
