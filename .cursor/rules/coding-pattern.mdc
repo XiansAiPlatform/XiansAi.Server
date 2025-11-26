@@ -22,3 +22,6 @@ alwaysApply: true
 - Always handle errors and edge cases.
 - Consider input validation in functions.
 - If an error is not handled, it should at least be logged.
+
+## User consent
+- Always get user's approval before do any coding changes

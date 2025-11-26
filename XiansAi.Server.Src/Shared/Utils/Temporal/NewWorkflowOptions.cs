@@ -63,7 +63,7 @@ public class NewWorkflowOptions : WorkflowOptions
         return tenantContext.TenantId + ":" + workFlowType;
     }
 
-    private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string agentName, bool systemScoped)
+    private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string agentName, bool systemScoped, Dictionary<string, object>? additionalMemo = null)
     {
         var memo = new Dictionary<string, object> {
             { Constants.TenantIdKey, tenantContext.TenantId },
@@ -71,8 +71,36 @@ public class NewWorkflowOptions : WorkflowOptions
             { Constants.UserIdKey, tenantContext.LoggedInUser! },
             { Constants.SystemScopedKey, systemScoped },
         };
+        
+        // Merge any additional memo entries (e.g., trace context)
+        if (additionalMemo != null)
+        {
+            foreach (var kvp in additionalMemo)
+            {
+                memo[kvp.Key] = kvp.Value;
+            }
+        }
 
         return memo;
+    }
+    
+    /// <summary>
+    /// Adds additional entries to the memo dictionary.
+    /// This allows adding trace context or other metadata after the options are created.
+    /// </summary>
+    public void AddToMemo(string key, object value)
+    {
+        if (Memo is Dictionary<string, object> mutableMemo)
+        {
+            mutableMemo[key] = value;
+        }
+        else
+        {
+            // If memo is read-only, create a new dictionary with the additional entry
+            var newMemo = new Dictionary<string, object>(Memo);
+            newMemo[key] = value;
+            Memo = newMemo;
+        }
     }
 
     public static string GenerateNewWorkflowId(string workflowType, ITenantContext tenantContext)

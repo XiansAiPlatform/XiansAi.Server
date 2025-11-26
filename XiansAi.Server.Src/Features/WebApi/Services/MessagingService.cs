@@ -42,10 +42,16 @@ public class MessagingService : IMessagingService
     {
         var tenantId = _tenantContext.TenantId;
 
-        // Validate pagination parameters
-        if (page.HasValue && page.Value <= 0)
+        // Convert 0-based pagination (from old UI) to 1-based pagination
+        if (page.HasValue && page.Value == 0)
         {
-            return ServiceResult<List<ConversationMessage>>.BadRequest("Page number must be greater than 0. Pagination is 1-based.");
+            page = 1;
+        }
+
+        // Validate pagination parameters
+        if (page.HasValue && page.Value < 0)
+        {
+            return ServiceResult<List<ConversationMessage>>.BadRequest("Page number cannot be negative.");
         }
 
         if (pageSize.HasValue && pageSize.Value <= 0)
@@ -78,10 +84,16 @@ public class MessagingService : IMessagingService
             var tenantId = _tenantContext.TenantId;
             var validatedAgentName = Agent.SanitizeAndValidateName(agent);
             
-            // Validate pagination parameters - fail fast on invalid input
-            if (page.HasValue && page.Value <= 0)
+            // Convert 0-based pagination (from old UI) to 1-based pagination
+            if (page.HasValue && page.Value == 0)
             {
-                return ServiceResult<List<ConversationThread>>.BadRequest("Page number must be greater than 0. Pagination is 1-based.");
+                page = 1;
+            }
+            
+            // Validate pagination parameters - fail fast on invalid input
+            if (page.HasValue && page.Value < 0)
+            {
+                return ServiceResult<List<ConversationThread>>.BadRequest("Page number cannot be negative.");
             }
 
             if (pageSize.HasValue && pageSize.Value <= 0)

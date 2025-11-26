@@ -3,6 +3,7 @@ using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
 using System.Text.Json.Serialization;
+using System.Diagnostics;
 
 namespace Shared.Services;
 
@@ -316,6 +317,33 @@ public class MessageService : IMessageService
         }
 
         var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
+        
+        _logger.LogInformation("[OpenTelemetry] DIAGNOSTIC: SignalWorkflowAsync() extracting trace context");
+        
+        // Extract trace context from current activity to propagate to Temporal workflow
+        var currentActivity = Activity.Current;
+        string? traceParent = null;
+        string? traceState = null;
+        
+        if (currentActivity != null)
+        {
+            _logger.LogInformation("[OpenTelemetry] DIAGNOSTIC: Activity.Current state:");
+            _logger.LogInformation("  - TraceId: {TraceId}", currentActivity.TraceId);
+            _logger.LogInformation("  - SpanId: {SpanId}", currentActivity.SpanId);
+            _logger.LogInformation("  - Source: {Source}", currentActivity.Source.Name);
+            
+            traceParent = $"00-{currentActivity.TraceId}-{currentActivity.SpanId}-{(currentActivity.ActivityTraceFlags.HasFlag(ActivityTraceFlags.Recorded) ? "01" : "00")}";
+            traceState = currentActivity.TraceStateString;
+            
+            _logger.LogInformation("[OpenTelemetry] Trace context extracted for signal payload:");
+            _logger.LogInformation("  - TraceParent: {TraceParent}", traceParent);
+            _logger.LogInformation("  - TraceState: {TraceState}", traceState ?? "null");
+        }
+        else
+        {
+            _logger.LogWarning("[OpenTelemetry] WARNING: Activity.Current is NULL - signal payload will not have trace context");
+        }
+        
         var signalRequest = new WorkflowSignalWithStartRequest
         {
             SignalName = Constants.SIGNAL_INBOUND_CHAT_OR_DATA,
@@ -332,7 +360,10 @@ public class MessageService : IMessageService
                  request.Hint,
                  request.Data,
                  Type = messageType.ToString(),
-                 request.Authorization
+                 request.Authorization,
+                 // Add trace context to payload for existing workflows (memo is only set on workflow creation)
+                 TraceParent = traceParent,
+                 TraceState = traceState
             }
         };
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);
