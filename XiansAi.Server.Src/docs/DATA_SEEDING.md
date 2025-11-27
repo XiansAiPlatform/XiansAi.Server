@@ -69,7 +69,12 @@ Add the `SeedData` section to your `appsettings.json`:
       "Description": "Default tenant created during system initialization",
       "Theme": "default",
       "Timezone": "UTC",
-      "Enabled": true
+      "Enabled": true,
+      "TokenUsage": {
+        "Enabled": true,
+        "MaxTokens": 200000,
+        "WindowSeconds": 86400
+      }
     }
   }
 }
@@ -96,3 +101,9 @@ To disable specific types of seeding:
   }
 }
 ```
+
+### Default Token Usage Limits
+
+When `SeedData.DefaultTenant.TokenUsage.Enabled` is true, the seeder will create a tenant-level token usage limit using the configured `MaxTokens` and `WindowSeconds` values. This ensures the default tenant immediately participates in the token limiting feature without manual setup.
+
+If you prefer to skip seeding usage limits (e.g., because you manage them manually), set `SeedData.DefaultTenant.TokenUsage.Enabled` to `false`.

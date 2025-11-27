@@ -162,7 +162,7 @@ public class LlmService : ILlmService
     /// <param name="messages">The chat messages</param>
     /// <param name="model">The model to use</param>
     /// <returns>The completion response</returns>
-    public async Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model)
+    public virtual async Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model)
     {
         try
         {

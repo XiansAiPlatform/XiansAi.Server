@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Options;
 using Shared.Auth;
 using Shared.Utils;
 using Shared.Providers;
 using Shared.Utils.Temporal;
 using Shared.Data;
 using Shared.Services;
+using Shared.Configuration;
 
 namespace Features.Shared.Configuration;
 
@@ -11,6 +13,10 @@ public static class SharedServices
 {
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
+        // Bind token usage options
+        services.Configure<TokenUsageOptions>(configuration.GetSection(TokenUsageOptions.SectionName));
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<TokenUsageOptions>>().Value);
+
         // Register cache services using the combined factory
         RegisterCacheProviders(services, configuration);
 

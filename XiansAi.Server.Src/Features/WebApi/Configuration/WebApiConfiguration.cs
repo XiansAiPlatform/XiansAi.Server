@@ -141,6 +141,7 @@ public static class WebApiConfiguration
         ScheduleEndpoints.MapScheduleEndpoints(app);
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
+        UsageEndpoints.MapUsageEndpoints(app);
         
         return app;
     }

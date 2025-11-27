@@ -51,4 +51,27 @@ public class DefaultTenantSettings
     /// Whether the default tenant should be enabled. Default is true.
     /// </summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Optional default token usage settings to seed for the tenant.
+    /// </summary>
+    public DefaultTokenUsageSettings TokenUsage { get; set; } = new();
+}
+
+public class DefaultTokenUsageSettings
+{
+    /// <summary>
+    /// Whether to seed a default token usage limit for the tenant.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Max tokens allowed per window for the tenant.
+    /// </summary>
+    public long MaxTokens { get; set; } = 200_000;
+
+    /// <summary>
+    /// Window length in seconds.
+    /// </summary>
+    public int WindowSeconds { get; set; } = 86_400;
 } 

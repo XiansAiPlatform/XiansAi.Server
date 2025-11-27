@@ -131,3 +131,61 @@ curl "https://api.example.com/api/user/rest/send?apikey=sk-key&tenantId=tenant-i
 curl -H "Authorization: Bearer jwt-token" \
      "https://api.example.com/api/user/rest/send?tenantId=tenant-id&..."
 ```
+
+## Token Usage Administration (Manager API)
+
+Tenant admins and system admins can inspect or adjust token usage limits via the manager-facing REST APIs.
+
+### GET /api/client/usage/status
+
+Returns the current usage snapshot for the tenant (and optionally, a specific user).
+
+**Query Parameters:**
+
+- `tenantId` (optional, sys-admin only) – Inspect another tenant.
+- `userId` (optional) – Inspect a specific user. Defaults to the current user.
+
+**Response:**
+
+```json
+{
+  "enabled": true,
+  "maxTokens": 200000,
+  "tokensUsed": 1200,
+  "tokensRemaining": 198800,
+  "windowSeconds": 86400,
+  "windowStart": "2024-11-26T00:00:00Z",
+  "windowEndsAt": "2024-11-27T00:00:00Z",
+  "isExceeded": false
+}
+```
+
+### GET /api/client/usage/limits
+
+Lists tenant-level and user-level limits for the selected tenant.
+
+**Query Parameters:**
+
+- `tenantId` (optional, sys-admin only) – Inspect another tenant.
+
+### POST /api/client/usage/limits
+
+Creates or updates a tenant or user limit.
+
+**Request Body:**
+
+```json
+{
+  "tenantId": "tenant-a",   // optional for current tenant
+  "userId": "user-123",     // omit for tenant-level limit
+  "maxTokens": 50000,
+  "windowSeconds": 7200,
+  "enabled": true
+}
+```
+
+### DELETE /api/client/usage/limits/{id}
+
+Removes a tenant or user override limit by identifier.
+
+> **Note:** All `/api/client/usage/*` endpoints require Tenant Admin privileges (or Sys Admin for cross-tenant operations). Use JWT auth via the Manager UI or CLI.
