@@ -4,7 +4,6 @@ using Shared.Data;
 using Shared.Data.Models;
 using Shared.Configuration;
 using Shared.Repositories;
-using Shared.Data.Models.Usage;
 
 namespace Features.WebApi.Scripts;
 
@@ -24,7 +23,6 @@ public class SeedData
             var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
             var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
             var tenantRepository = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
-            var tokenUsageLimitRepository = scope.ServiceProvider.GetRequiredService<ITokenUsageLimitRepository>();
             
             // Get seeding configuration
             var seedSettings = configuration.GetSection(SeedDataSettings.SectionName).Get<SeedDataSettings>() ?? new SeedDataSettings();
@@ -40,12 +38,7 @@ public class SeedData
             // Seed default tenant
             if (seedSettings.CreateDefaultTenant)
             {
-                var created = await SeedDefaultTenantAsync(tenantRepository, seedSettings.DefaultTenant, logger);
-
-                if (created && seedSettings.DefaultTenant.TokenUsage.Enabled)
-                {
-                    await SeedDefaultTenantTokenUsageAsync(tokenUsageLimitRepository, seedSettings.DefaultTenant, logger);
-                }
+                await SeedDefaultTenantAsync(tenantRepository, seedSettings.DefaultTenant, logger);
             }
             
             // Add more seeding methods here as needed
@@ -103,41 +96,4 @@ public class SeedData
         }
     }
 
-    private static async Task SeedDefaultTenantTokenUsageAsync(
-        ITokenUsageLimitRepository usageRepository,
-        DefaultTenantSettings tenantSettings,
-        ILogger logger)
-    {
-        try
-        {
-            var existing = await usageRepository.GetTenantLimitAsync(tenantSettings.TenantId);
-            if (existing != null)
-            {
-                logger.LogDebug("Token usage limit already exists for tenant {TenantId}, skipping seeding", tenantSettings.TenantId);
-                return;
-            }
-
-            var settings = tenantSettings.TokenUsage;
-            var limit = new TokenUsageLimit
-            {
-                TenantId = tenantSettings.TenantId,
-                UserId = null,
-                MaxTokens = settings.MaxTokens,
-                WindowSeconds = settings.WindowSeconds,
-                Enabled = true,
-                EffectiveFrom = DateTime.UtcNow,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                UpdatedBy = "system"
-            };
-
-            await usageRepository.UpsertAsync(limit);
-            logger.LogInformation("Seeded default token usage limit for tenant {TenantId}", tenantSettings.TenantId);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to seed token usage limit for tenant {TenantId}", tenantSettings.TenantId);
-        }
-    }
-    
 } 

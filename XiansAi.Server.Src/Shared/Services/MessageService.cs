@@ -282,8 +282,6 @@ public class MessageService : IMessageService
 
         _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
-        
-            await EnsureWithinUsageAsync(request.ParticipantId);
 
         // Critical Operation: If the threadId is not provided, we need to create a new thread
         var threadId = await CreateOrGetThread(request);
@@ -320,35 +318,6 @@ public class MessageService : IMessageService
         request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowType}";
     }
 
-    private async Task EnsureWithinUsageAsync(string participantId, CancellationToken cancellationToken = default)
-    {
-        var tenantId = _tenantContext.TenantId ?? throw new InvalidOperationException("Tenant context is required");
-        // Enforce limits primarily on the authenticated user. ParticipantId is an alias only.
-        var userId = _tenantContext.LoggedInUser ?? participantId ?? tenantId;
-
-        _logger.LogInformation(
-            "Token usage pre-check: tenant={TenantId}, user={UserId}, participant={ParticipantId}",
-            tenantId,
-            userId,
-            participantId);
-
-        var status = await _tokenUsageService.CheckAsync(tenantId, userId, cancellationToken);
-        
-        _logger.LogInformation(
-            "Token usage status: tenant={TenantId}, user={UserId}, enabled={Enabled}, used={TokensUsed}, remaining={TokensRemaining}, max={MaxTokens}, windowSeconds={WindowSeconds}",
-            tenantId,
-            userId,
-            status.Enabled,
-            status.TokensUsed,
-            status.TokensRemaining,
-            status.MaxTokens,
-            status.WindowSeconds);
-
-        if (status.IsExceeded)
-        {
-            throw new TokenLimitExceededException($"Token limit exceeded for tenant {tenantId}, user {userId}");
-        }
-    }
 
 
 

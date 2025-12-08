@@ -13,42 +13,6 @@ public static class TokenUsageEndpoints
             .WithTags("AgentAPI - Usage")
             .RequiresCertificate();
 
-        group.MapGet("/status", async (
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITokenUsageService usageService,
-            CancellationToken cancellationToken) =>
-        {
-            if (string.IsNullOrWhiteSpace(tenantContext.TenantId))
-            {
-                return Results.BadRequest("Tenant context is not available.");
-            }
-
-            var userId = ResolveUserId(tenantContext);
-            var status = await usageService.CheckAsync(tenantContext.TenantId, userId, cancellationToken);
-
-            var response = new AgentUsageStatusResponse
-            {
-                TenantId = tenantContext.TenantId,
-                UserId = userId,
-                Enabled = status.Enabled,
-                MaxTokens = status.MaxTokens,
-                TokensUsed = status.TokensUsed,
-                TokensRemaining = status.TokensRemaining,
-                WindowSeconds = status.WindowSeconds,
-                WindowStart = status.WindowStart,
-                WindowEndsAt = status.WindowEndsAt,
-                IsExceeded = status.IsExceeded
-            };
-
-            return Results.Ok(response);
-        })
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get current token usage status";
-            operation.Description = "Returns the remaining token quota for the certificate's tenant/user context.";
-            return operation;
-        });
-
         group.MapPost("/report", async (
             [FromBody] AgentUsageReportRequest request,
             [FromServices] ITenantContext tenantContext,
@@ -60,29 +24,33 @@ public static class TokenUsageEndpoints
                 return Results.BadRequest("Request payload is required.");
             }
 
-            if (request.PromptTokens < 0 || request.CompletionTokens < 0)
+            if (request.PromptTokens < 0 || request.CompletionTokens < 0 || request.TotalTokens < 0)
             {
                 return Results.BadRequest("Token counts cannot be negative.");
             }
 
-            if (request.PromptTokens == 0 && request.CompletionTokens == 0)
+            if (request.PromptTokens == 0 && request.CompletionTokens == 0 && request.TotalTokens == 0)
             {
                 return Results.BadRequest("At least one token count must be greater than zero.");
             }
 
-            if (string.IsNullOrWhiteSpace(tenantContext.TenantId))
+            // Use TenantId from request if provided, otherwise from certificate context
+            var tenantId = request.TenantId ?? tenantContext.TenantId;
+            if (string.IsNullOrWhiteSpace(tenantId))
             {
                 return Results.BadRequest("Tenant context is not available.");
             }
 
-            var userId = request.UserId ?? ResolveUserId(tenantContext);
+            var userId = request.UserId ?? tenantContext.LoggedInUser ?? tenantContext.TenantId;
 
             var record = new TokenUsageRecord(
-                tenantContext.TenantId,
+                tenantId,
                 userId,
                 request.Model,
                 request.PromptTokens,
                 request.CompletionTokens,
+                request.TotalTokens,
+                request.MessageCount,
                 request.WorkflowId,
                 request.RequestId,
                 request.Source,
@@ -100,37 +68,15 @@ public static class TokenUsageEndpoints
         });
     }
 
-    private static string ResolveUserId(ITenantContext tenantContext)
-    {
-        if (!string.IsNullOrWhiteSpace(tenantContext.LoggedInUser))
-        {
-            return tenantContext.LoggedInUser;
-        }
-
-        // Fallback to tenant ID if no user context is available (e.g., system certificate)
-        return tenantContext.TenantId;
-    }
-
-    private sealed class AgentUsageStatusResponse
-    {
-        public required string TenantId { get; init; }
-        public required string UserId { get; init; }
-        public bool Enabled { get; init; }
-        public long MaxTokens { get; init; }
-        public long TokensUsed { get; init; }
-        public long TokensRemaining { get; init; }
-        public int WindowSeconds { get; init; }
-        public DateTime WindowStart { get; init; }
-        public DateTime WindowEndsAt { get; init; }
-        public bool IsExceeded { get; init; }
-    }
-
     private sealed class AgentUsageReportRequest
     {
+        public string? TenantId { get; set; }
         public string? UserId { get; set; }
         public string? Model { get; set; }
         public long PromptTokens { get; set; }
         public long CompletionTokens { get; set; }
+        public long TotalTokens { get; set; }
+        public long MessageCount { get; set; }
         public string? WorkflowId { get; set; }
         public string? RequestId { get; set; }
         public string? Source { get; set; }

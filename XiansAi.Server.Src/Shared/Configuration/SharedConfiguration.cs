@@ -194,8 +194,6 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
-        builder.Services.AddScoped<ITokenUsageLimitRepository, TokenUsageLimitRepository>();
-        builder.Services.AddScoped<ITokenUsageWindowRepository, TokenUsageWindowRepository>();
         builder.Services.AddScoped<ITokenUsageEventRepository, TokenUsageEventRepository>();
 
         // Register Utility services
@@ -208,6 +206,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
         builder.Services.AddScoped<ITokenUsageService, TokenUsageService>();
+        builder.Services.AddScoped<IUsageStatisticsService, UsageStatisticsService>();
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
@@ -215,7 +214,6 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
-        builder.Services.AddScoped<ITokenUsageAdminService, TokenUsageAdminService>();
 
         return builder;
     }

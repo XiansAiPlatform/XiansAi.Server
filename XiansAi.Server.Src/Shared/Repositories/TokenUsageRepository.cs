@@ -7,211 +7,24 @@ using Shared.Utils;
 
 namespace Shared.Repositories;
 
-public interface ITokenUsageLimitRepository
-{
-    Task<TokenUsageLimit?> GetTenantLimitAsync(string tenantId, CancellationToken cancellationToken = default);
-    Task<TokenUsageLimit?> GetUserLimitAsync(string tenantId, string userId, CancellationToken cancellationToken = default);
-    Task<TokenUsageLimit?> GetEffectiveLimitAsync(string tenantId, string? userId, CancellationToken cancellationToken = default);
-    Task<List<TokenUsageLimit>> GetLimitsForTenantAsync(string tenantId, CancellationToken cancellationToken = default);
-    Task<TokenUsageLimit> UpsertAsync(TokenUsageLimit limit, CancellationToken cancellationToken = default);
-    Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default);
-}
-
-public interface ITokenUsageWindowRepository
-{
-    Task<TokenUsageWindow?> GetWindowAsync(string tenantId, string userId, DateTime windowStart, int windowSeconds, CancellationToken cancellationToken = default);
-    Task<TokenUsageWindow> IncrementWindowAsync(string tenantId, string userId, DateTime windowStart, int windowSeconds, long tokensToAdd, CancellationToken cancellationToken = default);
-    Task<bool> ResetWindowAsync(string tenantId, string userId, DateTime windowStart, CancellationToken cancellationToken = default);
-}
-
 public interface ITokenUsageEventRepository
 {
     Task InsertAsync(TokenUsageEvent usageEvent, CancellationToken cancellationToken = default);
     Task<List<TokenUsageEvent>> GetEventsAsync(string tenantId, string? userId, DateTime? since = null, CancellationToken cancellationToken = default);
-}
+    
+    // Generic aggregation method for usage statistics
+    Task<UsageStatisticsResponse> GetUsageStatisticsAsync(
+        string tenantId, 
+        string? userId,  // null or "all" = all users, specific userId = filtered
+        UsageType type,
+        DateTime startDate, 
+        DateTime endDate, 
+        string groupBy = "day",  // "day" | "week" | "month"
+        CancellationToken cancellationToken = default);
 
-public class TokenUsageLimitRepository : ITokenUsageLimitRepository
-{
-    private readonly IMongoCollection<TokenUsageLimit> _collection;
-    private readonly ILogger<TokenUsageLimitRepository> _logger;
-
-    public TokenUsageLimitRepository(IDatabaseService databaseService, ILogger<TokenUsageLimitRepository> logger)
-    {
-        var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
-        _collection = database.GetCollection<TokenUsageLimit>("token_usage_limits");
-        _logger = logger;
-    }
-
-    public async Task<TokenUsageLimit?> GetTenantLimitAsync(string tenantId, CancellationToken cancellationToken = default)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            return await _collection.Find(x => x.TenantId == tenantId && (x.UserId == null || x.UserId == string.Empty))
-                .FirstOrDefaultAsync(cancellationToken);
-        }, _logger, operationName: "GetTenantUsageLimit");
-    }
-
-    public async Task<TokenUsageLimit?> GetUserLimitAsync(string tenantId, string userId, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            return null;
-        }
-
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            return await _collection.Find(x => x.TenantId == tenantId && x.UserId == userId)
-                .FirstOrDefaultAsync(cancellationToken);
-        }, _logger, operationName: "GetUserUsageLimit");
-    }
-
-    public async Task<TokenUsageLimit?> GetEffectiveLimitAsync(string tenantId, string? userId, CancellationToken cancellationToken = default)
-    {
-        if (!string.IsNullOrWhiteSpace(userId))
-        {
-            var userLimit = await GetUserLimitAsync(tenantId, userId, cancellationToken);
-            if (userLimit?.Enabled == true)
-            {
-                return userLimit;
-            }
-        }
-
-        var tenantLimit = await GetTenantLimitAsync(tenantId, cancellationToken);
-        return tenantLimit?.Enabled == true ? tenantLimit : null;
-    }
-
-    public async Task<List<TokenUsageLimit>> GetLimitsForTenantAsync(string tenantId, CancellationToken cancellationToken = default)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            return await _collection.Find(x => x.TenantId == tenantId)
-                .SortBy(x => x.UserId)
-                .ToListAsync(cancellationToken);
-        }, _logger, operationName: "GetUsageLimitsForTenant");
-    }
-
-    public async Task<TokenUsageLimit> UpsertAsync(TokenUsageLimit limit, CancellationToken cancellationToken = default)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var normalizedUserId = string.IsNullOrWhiteSpace(limit.UserId) ? null : limit.UserId;
-            limit.UserId = normalizedUserId;
-
-            var tenantFilter = Builders<TokenUsageLimit>.Filter.Eq(x => x.TenantId, limit.TenantId);
-            FilterDefinition<TokenUsageLimit> userFilter = normalizedUserId == null
-                ? Builders<TokenUsageLimit>.Filter.Or(
-                    Builders<TokenUsageLimit>.Filter.Eq(x => x.UserId, null),
-                    Builders<TokenUsageLimit>.Filter.Eq(x => x.UserId, string.Empty))
-                : Builders<TokenUsageLimit>.Filter.Eq(x => x.UserId, normalizedUserId);
-
-            var filter = Builders<TokenUsageLimit>.Filter.And(tenantFilter, userFilter);
-
-            var now = DateTime.UtcNow;
-
-            var update = Builders<TokenUsageLimit>.Update
-                .Set(x => x.MaxTokens, limit.MaxTokens)
-                .Set(x => x.WindowSeconds, limit.WindowSeconds)
-                .Set(x => x.Enabled, limit.Enabled)
-                .Set(x => x.EffectiveFrom, limit.EffectiveFrom == default ? now : limit.EffectiveFrom)
-                .Set(x => x.UpdatedAt, now)
-                .Set(x => x.UpdatedBy, limit.UpdatedBy)
-                .Set(x => x.UserId, normalizedUserId)
-                .SetOnInsert(x => x.CreatedAt, now)
-                .SetOnInsert(x => x.TenantId, limit.TenantId);
-
-            var options = new FindOneAndUpdateOptions<TokenUsageLimit>
-            {
-                IsUpsert = true,
-                ReturnDocument = ReturnDocument.After
-            };
-
-            return await _collection.FindOneAndUpdateAsync(filter, update, options, cancellationToken);
-        }, _logger, operationName: "UpsertUsageLimit");
-    }
-
-    public async Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<TokenUsageLimit>.Filter.Eq(x => x.Id, id);
-            var result = await _collection.DeleteOneAsync(filter, cancellationToken);
-            return result.DeletedCount > 0;
-        }, _logger, operationName: "DeleteUsageLimit");
-    }
-}
-
-public class TokenUsageWindowRepository : ITokenUsageWindowRepository
-{
-    private readonly IMongoCollection<TokenUsageWindow> _collection;
-    private readonly ILogger<TokenUsageWindowRepository> _logger;
-
-    public TokenUsageWindowRepository(IDatabaseService databaseService, ILogger<TokenUsageWindowRepository> logger)
-    {
-        var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
-        _collection = database.GetCollection<TokenUsageWindow>("token_usage_windows");
-        _logger = logger;
-    }
-
-    public async Task<TokenUsageWindow?> GetWindowAsync(string tenantId, string userId, DateTime windowStart, int windowSeconds, CancellationToken cancellationToken = default)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<TokenUsageWindow>.Filter.And(
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.UserId, userId),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.WindowStart, windowStart),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.WindowSeconds, windowSeconds)
-            );
-
-            return await _collection.Find(filter).FirstOrDefaultAsync(cancellationToken);
-        }, _logger, operationName: "GetUsageWindow");
-    }
-
-    public async Task<TokenUsageWindow> IncrementWindowAsync(string tenantId, string userId, DateTime windowStart, int windowSeconds, long tokensToAdd, CancellationToken cancellationToken = default)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var now = DateTime.UtcNow;
-
-            var filter = Builders<TokenUsageWindow>.Filter.And(
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.UserId, userId),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.WindowStart, windowStart),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.WindowSeconds, windowSeconds)
-            );
-
-            var update = Builders<TokenUsageWindow>.Update
-                .Inc(x => x.TokensUsed, tokensToAdd)
-                .Set(x => x.UpdatedAt, now)
-                .SetOnInsert(x => x.TenantId, tenantId)
-                .SetOnInsert(x => x.UserId, userId)
-                .SetOnInsert(x => x.WindowStart, windowStart)
-                .SetOnInsert(x => x.WindowSeconds, windowSeconds);
-
-            var options = new FindOneAndUpdateOptions<TokenUsageWindow>
-            {
-                IsUpsert = true,
-                ReturnDocument = ReturnDocument.After
-            };
-
-            return await _collection.FindOneAndUpdateAsync(filter, update, options, cancellationToken);
-        }, _logger, operationName: "IncrementUsageWindow");
-    }
-
-    public async Task<bool> ResetWindowAsync(string tenantId, string userId, DateTime windowStart, CancellationToken cancellationToken = default)
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<TokenUsageWindow>.Filter.And(
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.UserId, userId),
-                Builders<TokenUsageWindow>.Filter.Eq(x => x.WindowStart, windowStart)
-            );
-
-            var result = await _collection.DeleteOneAsync(filter, cancellationToken);
-            return result.DeletedCount > 0;
-        }, _logger, operationName: "ResetUsageWindow");
-    }
+    Task<List<UserListItem>> GetUsersWithUsageAsync(
+        string tenantId, 
+        CancellationToken cancellationToken = default);
 }
 
 public class TokenUsageEventRepository : ITokenUsageEventRepository
@@ -261,6 +74,346 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
                 .Limit(1000)
                 .ToListAsync(cancellationToken);
         }, _logger, operationName: "GetUsageEvents");
+    }
+
+    public async Task<UsageStatisticsResponse> GetUsageStatisticsAsync(
+        string tenantId, 
+        string? userId, 
+        UsageType type,
+        DateTime startDate, 
+        DateTime endDate, 
+        string groupBy = "day", 
+        CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            // Build match filter
+            var matchFilter = new BsonDocument
+            {
+                { "tenant_id", tenantId },
+                { "created_at", new BsonDocument
+                    {
+                        { "$gte", startDate },
+                        { "$lte", endDate }
+                    }
+                }
+            };
+
+            if (!string.IsNullOrWhiteSpace(userId) && userId != "all")
+            {
+                matchFilter.Add("user_id", userId);
+            }
+
+            // Build aggregation pipelines based on usage type
+            var (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, sortField) = type switch
+            {
+                UsageType.Tokens => BuildTokenPipelines(matchFilter, groupBy),
+                UsageType.Messages => BuildMessagePipelines(matchFilter, groupBy),
+                _ => throw new ArgumentException($"Unsupported usage type: {type}")
+            };
+
+            // Get totals
+            var totalResult = await _collection.Aggregate<BsonDocument>(totalPipeline, cancellationToken: cancellationToken).FirstOrDefaultAsync(cancellationToken);
+            var totalMetrics = ParseTotalMetrics(totalResult, type);
+
+            // Get time series data
+            var timeSeriesResult = await _collection.Aggregate<BsonDocument>(timeSeriesPipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
+            var timeSeriesData = timeSeriesResult.Select(doc => new TimeSeriesDataPoint
+            {
+                Date = ParseDateFromGrouping(doc["_id"].AsString, groupBy),
+                Metrics = ParseTimeSeriesMetrics(doc, type)
+            }).ToList();
+
+            // Get user breakdown
+            var userBreakdownResult = await _collection.Aggregate<BsonDocument>(userBreakdownPipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
+            var userBreakdown = userBreakdownResult.Select(doc => new UserBreakdown
+            {
+                UserId = doc["_id"].AsString,
+                UserName = doc["_id"].AsString, // Use user ID as name for MVP
+                Metrics = ParseUserMetrics(doc, type)
+            }).ToList();
+
+            return new UsageStatisticsResponse
+            {
+                TenantId = tenantId,
+                UserId = string.IsNullOrWhiteSpace(userId) || userId == "all" ? null : userId,
+                Type = type,
+                StartDate = startDate,
+                EndDate = endDate,
+                TotalMetrics = totalMetrics,
+                TimeSeriesData = timeSeriesData,
+                UserBreakdown = userBreakdown
+            };
+        }, _logger, operationName: $"GetUsageStatistics_{type}");
+    }
+
+    private (BsonDocument[], BsonDocument[], BsonDocument[], string) BuildTokenPipelines(BsonDocument matchFilter, string groupBy)
+    {
+        var dateFormat = GetDateFormat(groupBy);
+
+        var totalPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", BsonNull.Value },
+                { "primaryCount", new BsonDocument("$sum", "$total_tokens") },
+                { "promptCount", new BsonDocument("$sum", "$prompt_tokens") },
+                { "completionCount", new BsonDocument("$sum", "$completion_tokens") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            })
+        };
+
+        var timeSeriesPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument("$dateToString", new BsonDocument
+                    {
+                        { "format", dateFormat },
+                        { "date", "$created_at" }
+                    })
+                },
+                { "primaryCount", new BsonDocument("$sum", "$total_tokens") },
+                { "promptCount", new BsonDocument("$sum", "$prompt_tokens") },
+                { "completionCount", new BsonDocument("$sum", "$completion_tokens") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("_id", 1))
+        };
+
+        var userBreakdownPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", "$user_id" },
+                { "primaryCount", new BsonDocument("$sum", "$total_tokens") },
+                { "promptCount", new BsonDocument("$sum", "$prompt_tokens") },
+                { "completionCount", new BsonDocument("$sum", "$completion_tokens") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("primaryCount", -1)),
+            new BsonDocument("$limit", 100)
+        };
+
+        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, "primaryCount");
+    }
+
+    private (BsonDocument[], BsonDocument[], BsonDocument[], string) BuildMessagePipelines(BsonDocument matchFilter, string groupBy)
+    {
+        var dateFormat = GetDateFormat(groupBy);
+
+        var totalPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", BsonNull.Value },
+                { "primaryCount", new BsonDocument("$sum", "$message_count") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            })
+        };
+
+        var timeSeriesPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument("$dateToString", new BsonDocument
+                    {
+                        { "format", dateFormat },
+                        { "date", "$created_at" }
+                    })
+                },
+                { "primaryCount", new BsonDocument("$sum", "$message_count") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("_id", 1))
+        };
+
+        var userBreakdownPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", "$user_id" },
+                { "primaryCount", new BsonDocument("$sum", "$message_count") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("primaryCount", -1)),
+            new BsonDocument("$limit", 100)
+        };
+
+        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, "primaryCount");
+    }
+
+    private static string GetDateFormat(string groupBy) => groupBy switch
+    {
+        "hour" => "%Y-%m-%dT%H:00:00",  // Hour: 2025-12-08T14:00:00
+        "week" => "%Y-%U",               // Week: 2025-49 (Sunday-based)
+        "month" => "%Y-%m",              // Month: 2025-12
+        _ => "%Y-%m-%d"                  // Day: 2025-12-08 (default)
+    };
+
+    /// <summary>
+    /// Safely converts BsonValue to long, handling both BsonInt32 and BsonInt64
+    /// </summary>
+    private static long ToInt64(BsonValue value)
+    {
+        if (value.IsBsonNull)
+            return 0;
+        
+        return value.BsonType switch
+        {
+            BsonType.Int32 => value.AsInt32,
+            BsonType.Int64 => value.AsInt64,
+            BsonType.Double => (long)value.AsDouble,
+            _ => 0
+        };
+    }
+
+    /// <summary>
+    /// Safely converts BsonValue to int, handling both BsonInt32 and BsonInt64
+    /// </summary>
+    private static int ToInt32(BsonValue value)
+    {
+        if (value.IsBsonNull)
+            return 0;
+        
+        return value.BsonType switch
+        {
+            BsonType.Int32 => value.AsInt32,
+            BsonType.Int64 => (int)value.AsInt64,
+            BsonType.Double => (int)value.AsDouble,
+            _ => 0
+        };
+    }
+
+    private static UsageMetrics ParseTotalMetrics(BsonDocument? doc, UsageType type)
+    {
+        if (doc == null)
+        {
+            return new UsageMetrics
+            {
+                PrimaryCount = 0,
+                RequestCount = 0
+            };
+        }
+
+        return type switch
+        {
+            UsageType.Tokens => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"]),
+                PromptCount = ToInt64(doc["promptCount"]),
+                CompletionCount = ToInt64(doc["completionCount"])
+            },
+            UsageType.Messages => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            _ => throw new ArgumentException($"Unsupported usage type: {type}")
+        };
+    }
+
+    private static UsageMetrics ParseTimeSeriesMetrics(BsonDocument doc, UsageType type)
+    {
+        return type switch
+        {
+            UsageType.Tokens => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"]),
+                PromptCount = ToInt64(doc["promptCount"]),
+                CompletionCount = ToInt64(doc["completionCount"])
+            },
+            UsageType.Messages => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            _ => throw new ArgumentException($"Unsupported usage type: {type}")
+        };
+    }
+
+    private static UsageMetrics ParseUserMetrics(BsonDocument doc, UsageType type)
+    {
+        return type switch
+        {
+            UsageType.Tokens => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"]),
+                PromptCount = ToInt64(doc["promptCount"]),
+                CompletionCount = ToInt64(doc["completionCount"])
+            },
+            UsageType.Messages => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            _ => throw new ArgumentException($"Unsupported usage type: {type}")
+        };
+    }
+
+    public async Task<List<UserListItem>> GetUsersWithUsageAsync(
+        string tenantId, 
+        CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var pipeline = new[]
+            {
+                new BsonDocument("$match", new BsonDocument("tenant_id", tenantId)),
+                new BsonDocument("$group", new BsonDocument
+                {
+                    { "_id", "$user_id" }
+                }),
+                new BsonDocument("$sort", new BsonDocument("_id", 1))
+            };
+
+            var result = await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
+            
+            return result.Select(doc => new UserListItem
+            {
+                UserId = doc["_id"].AsString,
+                UserName = doc["_id"].AsString, // Use user ID as name for MVP
+                Email = null
+            }).ToList();
+        }, _logger, operationName: "GetUsersWithUsage");
+    }
+
+    private static DateTime ParseDateFromGrouping(string dateString, string groupBy)
+    {
+        return groupBy switch
+        {
+            "hour" => DateTime.Parse(dateString, null, System.Globalization.DateTimeStyles.RoundtripKind),
+            "week" => ParseWeekDate(dateString),
+            "month" => DateTime.ParseExact(dateString, "yyyy-MM", null, System.Globalization.DateTimeStyles.None),
+            _ => DateTime.ParseExact(dateString, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None)
+        };
+    }
+
+    private static DateTime ParseWeekDate(string weekString)
+    {
+        // Format: "2025-00" to "2025-53" (year-week from %U format)
+        var parts = weekString.Split('-');
+        var year = int.Parse(parts[0]);
+        var week = int.Parse(parts[1]);
+        
+        // Calculate the first day of the year
+        var jan1 = new DateTime(year, 1, 1);
+        
+        // Find the first Sunday of the year
+        var daysUntilSunday = ((int)DayOfWeek.Sunday - (int)jan1.DayOfWeek + 7) % 7;
+        var firstSunday = jan1.AddDays(daysUntilSunday);
+        
+        // Add weeks
+        return firstSunday.AddDays(week * 7);
     }
 }
 
