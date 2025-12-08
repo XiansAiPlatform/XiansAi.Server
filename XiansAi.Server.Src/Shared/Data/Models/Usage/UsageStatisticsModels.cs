@@ -26,6 +26,8 @@ public record UsageStatisticsResponse
     public required UsageMetrics TotalMetrics { get; init; }
     public required List<TimeSeriesDataPoint> TimeSeriesData { get; init; }
     public required List<UserBreakdown> UserBreakdown { get; init; }
+    public required List<AgentBreakdown> AgentBreakdown { get; init; }
+    public required List<AgentTimeSeriesDataPoint> AgentTimeSeriesData { get; init; }
 }
 
 /// <summary>
@@ -56,12 +58,31 @@ public record TimeSeriesDataPoint
 }
 
 /// <summary>
+/// Agent-based time series data point - shows usage per agent over time.
+/// </summary>
+public record AgentTimeSeriesDataPoint
+{
+    public DateTime Date { get; init; }
+    public required string AgentName { get; init; }
+    public required UsageMetrics Metrics { get; init; }
+}
+
+/// <summary>
 /// User-level breakdown - generic for any usage type.
 /// </summary>
 public record UserBreakdown
 {
     public required string UserId { get; init; }
     public string? UserName { get; init; }
+    public required UsageMetrics Metrics { get; init; }
+}
+
+/// <summary>
+/// Agent-level breakdown - generic for any usage type.
+/// </summary>
+public record AgentBreakdown
+{
+    public required string AgentName { get; init; }
     public required UsageMetrics Metrics { get; init; }
 }
 

@@ -105,7 +105,7 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             }
 
             // Build aggregation pipelines based on usage type
-            var (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, sortField) = type switch
+            var (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, agentBreakdownPipeline, agentTimeSeriesPipeline, sortField) = type switch
             {
                 UsageType.Tokens => BuildTokenPipelines(matchFilter, groupBy),
                 UsageType.Messages => BuildMessagePipelines(matchFilter, groupBy),
@@ -134,6 +134,23 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
                 Metrics = ParseUserMetrics(doc, type)
             }).ToList();
 
+            // Get agent breakdown
+            var agentBreakdownResult = await _collection.Aggregate<BsonDocument>(agentBreakdownPipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
+            var agentBreakdown = agentBreakdownResult.Select(doc => new AgentBreakdown
+            {
+                AgentName = doc["_id"].AsString ?? "Unknown",
+                Metrics = ParseAgentMetrics(doc, type)
+            }).ToList();
+
+            // Get agent time series data (grouped by date and agent)
+            var agentTimeSeriesResult = await _collection.Aggregate<BsonDocument>(agentTimeSeriesPipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
+            var agentTimeSeriesData = agentTimeSeriesResult.Select(doc => new AgentTimeSeriesDataPoint
+            {
+                Date = ParseDateFromGrouping(doc["date"].AsString, groupBy),
+                AgentName = doc["agent"].AsString ?? "Unknown",
+                Metrics = ParseAgentTimeSeriesMetrics(doc, type)
+            }).ToList();
+
             return new UsageStatisticsResponse
             {
                 TenantId = tenantId,
@@ -143,12 +160,31 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
                 EndDate = endDate,
                 TotalMetrics = totalMetrics,
                 TimeSeriesData = timeSeriesData,
-                UserBreakdown = userBreakdown
+                UserBreakdown = userBreakdown,
+                AgentBreakdown = agentBreakdown,
+                AgentTimeSeriesData = agentTimeSeriesData
             };
         }, _logger, operationName: $"GetUsageStatistics_{type}");
     }
 
-    private (BsonDocument[], BsonDocument[], BsonDocument[], string) BuildTokenPipelines(BsonDocument matchFilter, string groupBy)
+    /// <summary>
+    /// Extracts agent name from workflow_id.
+    /// Format: tenant:AgentName:FlowName:optionalId
+    /// Returns the agent name (second part after splitting by ':')
+    /// </summary>
+    private static string ExtractAgentName(string? workflowId)
+    {
+        if (string.IsNullOrWhiteSpace(workflowId))
+            return "Unknown";
+
+        var parts = workflowId.Split(':');
+        if (parts.Length >= 2)
+            return parts[1]; // Agent name is the second part
+        
+        return "Unknown";
+    }
+
+    private (BsonDocument[], BsonDocument[], BsonDocument[], BsonDocument[], BsonDocument[], string) BuildTokenPipelines(BsonDocument matchFilter, string groupBy)
     {
         var dateFormat = GetDateFormat(groupBy);
 
@@ -199,10 +235,76 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$limit", 100)
         };
 
-        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, "primaryCount");
+        var agentBreakdownPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$addFields", new BsonDocument
+            {
+                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                    {
+                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                        2
+                    })
+                }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) },
+                { "primaryCount", new BsonDocument("$sum", "$total_tokens") },
+                { "promptCount", new BsonDocument("$sum", "$prompt_tokens") },
+                { "completionCount", new BsonDocument("$sum", "$completion_tokens") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("primaryCount", -1)),
+            new BsonDocument("$limit", 100)
+        };
+
+        var agentTimeSeriesPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$addFields", new BsonDocument
+            {
+                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                    {
+                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                        2
+                    })
+                }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument
+                    {
+                        { "date", new BsonDocument("$dateToString", new BsonDocument
+                            {
+                                { "format", dateFormat },
+                                { "date", "$created_at" }
+                            })
+                        },
+                        { "agent", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) }
+                    }
+                },
+                { "primaryCount", new BsonDocument("$sum", "$total_tokens") },
+                { "promptCount", new BsonDocument("$sum", "$prompt_tokens") },
+                { "completionCount", new BsonDocument("$sum", "$completion_tokens") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$project", new BsonDocument
+            {
+                { "date", "$_id.date" },
+                { "agent", "$_id.agent" },
+                { "primaryCount", 1 },
+                { "promptCount", 1 },
+                { "completionCount", 1 },
+                { "requestCount", 1 }
+            }),
+            new BsonDocument("$sort", new BsonDocument("date", 1))
+        };
+
+        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, agentBreakdownPipeline, agentTimeSeriesPipeline, "primaryCount");
     }
 
-    private (BsonDocument[], BsonDocument[], BsonDocument[], string) BuildMessagePipelines(BsonDocument matchFilter, string groupBy)
+    private (BsonDocument[], BsonDocument[], BsonDocument[], BsonDocument[], BsonDocument[], string) BuildMessagePipelines(BsonDocument matchFilter, string groupBy)
     {
         var dateFormat = GetDateFormat(groupBy);
 
@@ -247,10 +349,70 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$limit", 100)
         };
 
-        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, "primaryCount");
+        var agentBreakdownPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$addFields", new BsonDocument
+            {
+                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                    {
+                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                        2
+                    })
+                }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) },
+                { "primaryCount", new BsonDocument("$sum", "$message_count") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("primaryCount", -1)),
+            new BsonDocument("$limit", 100)
+        };
+
+        var agentTimeSeriesPipeline = new[]
+        {
+            new BsonDocument("$match", matchFilter),
+            new BsonDocument("$addFields", new BsonDocument
+            {
+                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                    {
+                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                        2
+                    })
+                }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument
+                    {
+                        { "date", new BsonDocument("$dateToString", new BsonDocument
+                            {
+                                { "format", dateFormat },
+                                { "date", "$created_at" }
+                            })
+                        },
+                        { "agent", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) }
+                    }
+                },
+                { "primaryCount", new BsonDocument("$sum", "$message_count") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$project", new BsonDocument
+            {
+                { "date", "$_id.date" },
+                { "agent", "$_id.agent" },
+                { "primaryCount", 1 },
+                { "requestCount", 1 }
+            }),
+            new BsonDocument("$sort", new BsonDocument("date", 1))
+        };
+
+        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, agentBreakdownPipeline, agentTimeSeriesPipeline, "primaryCount");
     }
 
-    private (BsonDocument[], BsonDocument[], BsonDocument[], string) BuildResponseTimePipelines(BsonDocument matchFilter, string groupBy)
+    private (BsonDocument[], BsonDocument[], BsonDocument[], BsonDocument[], BsonDocument[], string) BuildResponseTimePipelines(BsonDocument matchFilter, string groupBy)
     {
         var dateFormat = GetDateFormat(groupBy);
 
@@ -299,7 +461,67 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$limit", 100)
         };
 
-        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, "primaryCount");
+        var agentBreakdownPipeline = new[]
+        {
+            new BsonDocument("$match", matchWithResponseTime),
+            new BsonDocument("$addFields", new BsonDocument
+            {
+                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                    {
+                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                        2
+                    })
+                }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) },
+                { "primaryCount", new BsonDocument("$sum", "$response_time_ms") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("primaryCount", -1)),
+            new BsonDocument("$limit", 100)
+        };
+
+        var agentTimeSeriesPipeline = new[]
+        {
+            new BsonDocument("$match", matchWithResponseTime),
+            new BsonDocument("$addFields", new BsonDocument
+            {
+                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                    {
+                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                        2
+                    })
+                }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument
+                    {
+                        { "date", new BsonDocument("$dateToString", new BsonDocument
+                            {
+                                { "format", dateFormat },
+                                { "date", "$created_at" }
+                            })
+                        },
+                        { "agent", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) }
+                    }
+                },
+                { "primaryCount", new BsonDocument("$sum", "$response_time_ms") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$project", new BsonDocument
+            {
+                { "date", "$_id.date" },
+                { "agent", "$_id.agent" },
+                { "primaryCount", 1 },
+                { "requestCount", 1 }
+            }),
+            new BsonDocument("$sort", new BsonDocument("date", 1))
+        };
+
+        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, agentBreakdownPipeline, agentTimeSeriesPipeline, "primaryCount");
     }
 
     private static string GetDateFormat(string groupBy) => groupBy switch
@@ -404,6 +626,56 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
     }
 
     private static UsageMetrics ParseUserMetrics(BsonDocument doc, UsageType type)
+    {
+        return type switch
+        {
+            UsageType.Tokens => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"]),
+                PromptCount = ToInt64(doc["promptCount"]),
+                CompletionCount = ToInt64(doc["completionCount"])
+            },
+            UsageType.Messages => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            UsageType.ResponseTime => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            _ => throw new ArgumentException($"Unsupported usage type: {type}")
+        };
+    }
+
+    private static UsageMetrics ParseAgentMetrics(BsonDocument doc, UsageType type)
+    {
+        return type switch
+        {
+            UsageType.Tokens => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"]),
+                PromptCount = ToInt64(doc["promptCount"]),
+                CompletionCount = ToInt64(doc["completionCount"])
+            },
+            UsageType.Messages => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            UsageType.ResponseTime => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            _ => throw new ArgumentException($"Unsupported usage type: {type}")
+        };
+    }
+
+    private static UsageMetrics ParseAgentTimeSeriesMetrics(BsonDocument doc, UsageType type)
     {
         return type switch
         {
