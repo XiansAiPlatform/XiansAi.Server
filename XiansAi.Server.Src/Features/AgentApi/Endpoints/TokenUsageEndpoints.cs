@@ -54,7 +54,8 @@ public static class TokenUsageEndpoints
                 request.WorkflowId,
                 request.RequestId,
                 request.Source,
-                request.Metadata);
+                request.Metadata,
+                request.ResponseTimeMs);
 
             await usageService.RecordAsync(record, cancellationToken);
 
@@ -81,6 +82,7 @@ public static class TokenUsageEndpoints
         public string? RequestId { get; set; }
         public string? Source { get; set; }
         public Dictionary<string, string>? Metadata { get; set; }
+        public long? ResponseTimeMs { get; set; }
     }
 }
 

@@ -46,6 +46,9 @@ public class TokenUsageEvent
     [BsonElement("metadata")]
     public Dictionary<string, string>? Metadata { get; set; }
 
+    [BsonElement("response_time_ms")]
+    public long? ResponseTimeMs { get; set; }
+
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

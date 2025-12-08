@@ -16,7 +16,8 @@ public record TokenUsageRecord(
     string? WorkflowId,
     string? RequestId,
     string? Source,
-    Dictionary<string, string>? Metadata);
+    Dictionary<string, string>? Metadata,
+    long? ResponseTimeMs = null);
 
 public interface ITokenUsageService
 {
@@ -52,12 +53,13 @@ public class TokenUsageService : ITokenUsageService
         }
 
         _logger.LogInformation(
-            "Recording token usage: tenant={TenantId}, user={UserId}, totalTokens={TotalTokens}, prompt={PromptTokens}, completion={CompletionTokens}",
+            "Recording token usage: tenant={TenantId}, user={UserId}, totalTokens={TotalTokens}, prompt={PromptTokens}, completion={CompletionTokens}, responseTimeMs={ResponseTimeMs}",
             record.TenantId,
             record.UserId,
             record.TotalTokens,
             record.PromptTokens,
-            record.CompletionTokens);
+            record.CompletionTokens,
+            record.ResponseTimeMs);
 
         var usageEvent = new TokenUsageEvent
         {
@@ -72,6 +74,7 @@ public class TokenUsageService : ITokenUsageService
             RequestId = record.RequestId,
             Source = record.Source,
             Metadata = record.Metadata,
+            ResponseTimeMs = record.ResponseTimeMs,
             CreatedAt = DateTime.UtcNow
         };
 

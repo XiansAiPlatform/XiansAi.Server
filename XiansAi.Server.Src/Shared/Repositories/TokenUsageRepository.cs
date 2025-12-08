@@ -109,6 +109,7 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             {
                 UsageType.Tokens => BuildTokenPipelines(matchFilter, groupBy),
                 UsageType.Messages => BuildMessagePipelines(matchFilter, groupBy),
+                UsageType.ResponseTime => BuildResponseTimePipelines(matchFilter, groupBy),
                 _ => throw new ArgumentException($"Unsupported usage type: {type}")
             };
 
@@ -249,6 +250,58 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
         return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, "primaryCount");
     }
 
+    private (BsonDocument[], BsonDocument[], BsonDocument[], string) BuildResponseTimePipelines(BsonDocument matchFilter, string groupBy)
+    {
+        var dateFormat = GetDateFormat(groupBy);
+
+        // Filter out documents where response_time_ms is null
+        var matchWithResponseTime = matchFilter.DeepClone().AsBsonDocument;
+        matchWithResponseTime.Add("response_time_ms", new BsonDocument("$ne", BsonNull.Value));
+
+        var totalPipeline = new[]
+        {
+            new BsonDocument("$match", matchWithResponseTime),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", BsonNull.Value },
+                { "primaryCount", new BsonDocument("$sum", "$response_time_ms") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            })
+        };
+
+        var timeSeriesPipeline = new[]
+        {
+            new BsonDocument("$match", matchWithResponseTime),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument("$dateToString", new BsonDocument
+                    {
+                        { "format", dateFormat },
+                        { "date", "$created_at" }
+                    })
+                },
+                { "primaryCount", new BsonDocument("$sum", "$response_time_ms") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("_id", 1))
+        };
+
+        var userBreakdownPipeline = new[]
+        {
+            new BsonDocument("$match", matchWithResponseTime),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", "$user_id" },
+                { "primaryCount", new BsonDocument("$sum", "$response_time_ms") },
+                { "requestCount", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument("primaryCount", -1)),
+            new BsonDocument("$limit", 100)
+        };
+
+        return (totalPipeline, timeSeriesPipeline, userBreakdownPipeline, "primaryCount");
+    }
+
     private static string GetDateFormat(string groupBy) => groupBy switch
     {
         "hour" => "%Y-%m-%dT%H:00:00",  // Hour: 2025-12-08T14:00:00
@@ -316,6 +369,11 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
                 PrimaryCount = ToInt64(doc["primaryCount"]),
                 RequestCount = ToInt32(doc["requestCount"])
             },
+            UsageType.ResponseTime => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
             _ => throw new ArgumentException($"Unsupported usage type: {type}")
         };
     }
@@ -336,6 +394,11 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
                 PrimaryCount = ToInt64(doc["primaryCount"]),
                 RequestCount = ToInt32(doc["requestCount"])
             },
+            UsageType.ResponseTime => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
             _ => throw new ArgumentException($"Unsupported usage type: {type}")
         };
     }
@@ -352,6 +415,11 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
                 CompletionCount = ToInt64(doc["completionCount"])
             },
             UsageType.Messages => new UsageMetrics
+            {
+                PrimaryCount = ToInt64(doc["primaryCount"]),
+                RequestCount = ToInt32(doc["requestCount"])
+            },
+            UsageType.ResponseTime => new UsageMetrics
             {
                 PrimaryCount = ToInt64(doc["primaryCount"]),
                 RequestCount = ToInt32(doc["requestCount"])

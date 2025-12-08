@@ -7,6 +7,7 @@ public enum UsageType
 {
     Tokens,
     Messages,
+    ResponseTime,
     ApiCalls,      // Future extension
     StorageBytes,  // Future extension
     ComputeTime    // Future extension
