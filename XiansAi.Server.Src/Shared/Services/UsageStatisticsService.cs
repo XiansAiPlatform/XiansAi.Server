@@ -44,6 +44,7 @@ public class UsageStatisticsService : IUsageStatisticsService
         var stats = await _repository.GetUsageStatisticsAsync(
             request.TenantId,
             request.UserId,
+            request.AgentName,
             request.Type,
             request.StartDate,
             request.EndDate,

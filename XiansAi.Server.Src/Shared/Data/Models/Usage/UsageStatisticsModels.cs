@@ -103,6 +103,7 @@ public record UsageStatisticsRequest
 {
     public required string TenantId { get; init; }
     public string? UserId { get; init; }  // null or "all" = all users
+    public string? AgentName { get; init; }  // null or "all" = all agents
     public required UsageType Type { get; init; }
     public required DateTime StartDate { get; init; }
     public required DateTime EndDate { get; init; }

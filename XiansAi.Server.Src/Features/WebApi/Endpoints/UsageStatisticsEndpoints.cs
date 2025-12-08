@@ -22,6 +22,7 @@ public static class UsageStatisticsEndpoints
             [FromQuery] string? type,           // ← NEW: type parameter
             [FromQuery] string? tenantId,
             [FromQuery] string? userId,
+            [FromQuery] string? agentName,
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
             [FromQuery] string? groupBy,
@@ -47,7 +48,8 @@ public static class UsageStatisticsEndpoints
                 return await GetUsageStatisticsInternal(
                     usageType, 
                     tenantId, 
-                    userId, 
+                    userId,
+                    agentName,
                     startDate, 
                     endDate, 
                     groupBy, 
@@ -201,6 +203,7 @@ public static class UsageStatisticsEndpoints
         UsageType type,
         string? tenantId,
         string? userId,
+        string? agentName,
         DateTime? startDate,
         DateTime? endDate,
         string? groupBy,
@@ -225,6 +228,7 @@ public static class UsageStatisticsEndpoints
         {
             TenantId = effectiveTenantId,
             UserId = effectiveUserId,
+            AgentName = string.IsNullOrWhiteSpace(agentName) || agentName == "all" ? null : agentName,
             Type = type,
             StartDate = startDate.Value,
             EndDate = endDate.Value,

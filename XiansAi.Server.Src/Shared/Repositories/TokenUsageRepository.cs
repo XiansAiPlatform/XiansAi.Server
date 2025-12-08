@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -16,6 +17,7 @@ public interface ITokenUsageEventRepository
     Task<UsageStatisticsResponse> GetUsageStatisticsAsync(
         string tenantId, 
         string? userId,  // null or "all" = all users, specific userId = filtered
+        string? agentName,  // null or "all" = all agents, specific agentName = filtered
         UsageType type,
         DateTime startDate, 
         DateTime endDate, 
@@ -78,7 +80,8 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
 
     public async Task<UsageStatisticsResponse> GetUsageStatisticsAsync(
         string tenantId, 
-        string? userId, 
+        string? userId,
+        string? agentName,
         UsageType type,
         DateTime startDate, 
         DateTime endDate, 
@@ -87,8 +90,8 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Build match filter
-            var matchFilter = new BsonDocument
+            // Build base match filter conditions
+            var baseConditions = new BsonDocument
             {
                 { "tenant_id", tenantId },
                 { "created_at", new BsonDocument
@@ -101,7 +104,45 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
 
             if (!string.IsNullOrWhiteSpace(userId) && userId != "all")
             {
-                matchFilter.Add("user_id", userId);
+                baseConditions.Add("user_id", userId);
+            }
+
+            // Build final match filter - use $and if we need agent filtering with $expr
+            BsonDocument matchFilter;
+            if (!string.IsNullOrWhiteSpace(agentName) && agentName != "all")
+            {
+                // Trim the agent name to handle leading/trailing spaces
+                var trimmedAgentName = agentName.Trim();
+                
+                // Use $expr to extract agent name from workflow_id and compare
+                // We need $and to combine regular field matches with $expr
+                var agentNameCondition = new BsonDocument("$expr", new BsonDocument
+                {
+                    { "$eq", new BsonArray
+                        {
+                            new BsonDocument("$trim", new BsonDocument
+                            {
+                                { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        2
+                                    })
+                                }
+                            }),
+                            trimmedAgentName
+                        }
+                    }
+                });
+                
+                matchFilter = new BsonDocument("$and", new BsonArray
+                {
+                    baseConditions,
+                    agentNameCondition
+                });
+            }
+            else
+            {
+                matchFilter = baseConditions;
             }
 
             // Build aggregation pipelines based on usage type
@@ -240,10 +281,14 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$match", matchFilter),
             new BsonDocument("$addFields", new BsonDocument
             {
-                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                        2
+                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                            {
+                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                2
+                            })
+                        }
                     })
                 }
             }),
@@ -264,10 +309,14 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$match", matchFilter),
             new BsonDocument("$addFields", new BsonDocument
             {
-                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                        2
+                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                            {
+                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                2
+                            })
+                        }
                     })
                 }
             }),
@@ -354,10 +403,14 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$match", matchFilter),
             new BsonDocument("$addFields", new BsonDocument
             {
-                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                        2
+                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                            {
+                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                2
+                            })
+                        }
                     })
                 }
             }),
@@ -376,10 +429,14 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$match", matchFilter),
             new BsonDocument("$addFields", new BsonDocument
             {
-                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                        2
+                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                            {
+                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                2
+                            })
+                        }
                     })
                 }
             }),
@@ -466,10 +523,14 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$match", matchWithResponseTime),
             new BsonDocument("$addFields", new BsonDocument
             {
-                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                        2
+                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                            {
+                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                2
+                            })
+                        }
                     })
                 }
             }),
@@ -488,10 +549,14 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
             new BsonDocument("$match", matchWithResponseTime),
             new BsonDocument("$addFields", new BsonDocument
             {
-                { "agent_name", new BsonDocument("$arrayElemAt", new BsonArray
+                { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                        2
+                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                            {
+                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                2
+                            })
+                        }
                     })
                 }
             }),
