@@ -8,10 +8,10 @@ using Shared.Utils;
 
 namespace Shared.Repositories;
 
-public interface ITokenUsageEventRepository
+public interface IUsageEventRepository
 {
-    Task InsertAsync(TokenUsageEvent usageEvent, CancellationToken cancellationToken = default);
-    Task<List<TokenUsageEvent>> GetEventsAsync(string tenantId, string? userId, DateTime? since = null, CancellationToken cancellationToken = default);
+    Task InsertAsync(UsageEvent usageEvent, CancellationToken cancellationToken = default);
+    Task<List<UsageEvent>> GetEventsAsync(string tenantId, string? userId, DateTime? since = null, CancellationToken cancellationToken = default);
     
     // Generic aggregation method for usage statistics
     Task<UsageStatisticsResponse> GetUsageStatisticsAsync(
@@ -29,19 +29,19 @@ public interface ITokenUsageEventRepository
         CancellationToken cancellationToken = default);
 }
 
-public class TokenUsageEventRepository : ITokenUsageEventRepository
+public class UsageEventRepository : IUsageEventRepository
 {
-    private readonly IMongoCollection<TokenUsageEvent> _collection;
-    private readonly ILogger<TokenUsageEventRepository> _logger;
+    private readonly IMongoCollection<UsageEvent> _collection;
+    private readonly ILogger<UsageEventRepository> _logger;
 
-    public TokenUsageEventRepository(IDatabaseService databaseService, ILogger<TokenUsageEventRepository> logger)
+    public UsageEventRepository(IDatabaseService databaseService, ILogger<UsageEventRepository> logger)
     {
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
-        _collection = database.GetCollection<TokenUsageEvent>("token_usage_events");
+        _collection = database.GetCollection<UsageEvent>("usage_events");
         _logger = logger;
     }
 
-    public async Task InsertAsync(TokenUsageEvent usageEvent, CancellationToken cancellationToken = default)
+    public async Task InsertAsync(UsageEvent usageEvent, CancellationToken cancellationToken = default)
     {
         await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -50,12 +50,12 @@ public class TokenUsageEventRepository : ITokenUsageEventRepository
         }, _logger, operationName: "InsertUsageEvent");
     }
 
-    public async Task<List<TokenUsageEvent>> GetEventsAsync(string tenantId, string? userId, DateTime? since = null, CancellationToken cancellationToken = default)
+    public async Task<List<UsageEvent>> GetEventsAsync(string tenantId, string? userId, DateTime? since = null, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var builder = Builders<TokenUsageEvent>.Filter;
-            var filters = new List<FilterDefinition<TokenUsageEvent>>
+            var builder = Builders<UsageEvent>.Filter;
+            var filters = new List<FilterDefinition<UsageEvent>>
             {
                 builder.Eq(x => x.TenantId, tenantId)
             };

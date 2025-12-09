@@ -98,7 +98,7 @@ public class MessageService : IMessageService
 
     private readonly ILogger<MessageService> _logger;
     private readonly ITenantContext _tenantContext;
-    private readonly ITokenUsageService _tokenUsageService;
+    private readonly IUsageStatisticsService _tokenUsageService;
 
     private readonly IConversationRepository _conversationRepository;
     private readonly IWorkflowSignalService _workflowSignalService;
@@ -108,7 +108,7 @@ public class MessageService : IMessageService
         ITenantContext tenantContext,
         IConversationRepository conversationRepository,
         IWorkflowSignalService workflowSignalService,
-        ITokenUsageService tokenUsageService
+        IUsageStatisticsService tokenUsageService
         )
     {
         _logger = logger;

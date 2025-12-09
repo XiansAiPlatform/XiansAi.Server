@@ -71,7 +71,7 @@ public static class AgentApiConfiguration
         LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
         SettingsEndpoints.MapSettingsEndpoints(app);
         DocumentEndpoints.MapDocumentEndpoints(app, loggerFactory);
-        TokenUsageEndpoints.MapTokenUsageEndpoints(app);
+        UsageEventEndpoints.MapUsageEventEndpoints(app);
         
         return app;
     }

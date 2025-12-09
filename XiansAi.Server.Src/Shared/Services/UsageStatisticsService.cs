@@ -1,18 +1,30 @@
 using Microsoft.Extensions.Logging;
+using Shared.Configuration;
 using Shared.Data.Models.Usage;
 using Shared.Repositories;
 
 namespace Shared.Services;
 
 /// <summary>
-/// Service for retrieving and processing usage statistics.
+/// Service for recording usage events and retrieving usage statistics.
 /// </summary>
 public interface IUsageStatisticsService
 {
+    /// <summary>
+    /// Records a usage event.
+    /// </summary>
+    Task RecordAsync(UsageEventRecord record, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves usage statistics for the specified request.
+    /// </summary>
     Task<UsageStatisticsResponse> GetUsageStatisticsAsync(
         UsageStatisticsRequest request, 
         CancellationToken cancellationToken = default);
     
+    /// <summary>
+    /// Gets a list of users who have usage records.
+    /// </summary>
     Task<List<UserListItem>> GetUsersWithUsageAsync(
         string tenantId, 
         CancellationToken cancellationToken = default);
@@ -20,15 +32,59 @@ public interface IUsageStatisticsService
 
 public class UsageStatisticsService : IUsageStatisticsService
 {
-    private readonly ITokenUsageEventRepository _repository;
+    private readonly IUsageEventRepository _repository;
+    private readonly TokenUsageOptions _options;
     private readonly ILogger<UsageStatisticsService> _logger;
 
     public UsageStatisticsService(
-        ITokenUsageEventRepository repository,
+        IUsageEventRepository repository,
+        TokenUsageOptions options,
         ILogger<UsageStatisticsService> logger)
     {
         _repository = repository;
+        _options = options;
         _logger = logger;
+    }
+
+    public async Task RecordAsync(UsageEventRecord record, CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled || !_options.RecordUsageEvents)
+        {
+            return;
+        }
+
+        if (record.TotalTokens == 0)
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Recording token usage: tenant={TenantId}, user={UserId}, totalTokens={TotalTokens}, prompt={PromptTokens}, completion={CompletionTokens}, responseTimeMs={ResponseTimeMs}",
+            record.TenantId,
+            record.UserId,
+            record.TotalTokens,
+            record.PromptTokens,
+            record.CompletionTokens,
+            record.ResponseTimeMs);
+
+        var usageEvent = new UsageEvent
+        {
+            TenantId = record.TenantId,
+            UserId = record.UserId,
+            Model = record.Model,
+            PromptTokens = record.PromptTokens,
+            CompletionTokens = record.CompletionTokens,
+            TotalTokens = record.TotalTokens,
+            MessageCount = record.MessageCount,
+            WorkflowId = record.WorkflowId,
+            RequestId = record.RequestId,
+            Source = record.Source,
+            Metadata = record.Metadata,
+            ResponseTimeMs = record.ResponseTimeMs,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _repository.InsertAsync(usageEvent, cancellationToken);
     }
 
     public async Task<UsageStatisticsResponse> GetUsageStatisticsAsync(

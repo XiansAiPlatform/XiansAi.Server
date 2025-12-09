@@ -284,7 +284,7 @@ documents:
     background: true
     sparse: true
 
-token_usage_events:
+usage_events:
   - name: idx_tenant_date
     keys:
       tenant_id: asc

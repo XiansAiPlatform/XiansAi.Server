@@ -4,9 +4,9 @@ using Tests.TestUtils;
 
 namespace Tests.IntegrationTests.AgentApi;
 
-public class AgentTokenUsageEndpointsTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
+public class AgentUsageEventEndpointsTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
-    public AgentTokenUsageEndpointsTests(MongoDbFixture mongoFixture) : base(mongoFixture)
+    public AgentUsageEventEndpointsTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
     }
 

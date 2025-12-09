@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Auth;
+using Shared.Data.Models.Usage;
 using Shared.Services;
 
 namespace Features.AgentApi.Endpoints;
 
-public static class TokenUsageEndpoints
+public static class UsageEventEndpoints
 {
-    public static void MapTokenUsageEndpoints(this WebApplication app)
+    public static void MapUsageEventEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/agent/usage")
             .WithTags("AgentAPI - Usage")
@@ -16,7 +17,7 @@ public static class TokenUsageEndpoints
         group.MapPost("/report", async (
             [FromBody] AgentUsageReportRequest request,
             [FromServices] ITenantContext tenantContext,
-            [FromServices] ITokenUsageService usageService,
+            [FromServices] IUsageStatisticsService usageService,
             CancellationToken cancellationToken) =>
         {
             if (request == null)
@@ -43,7 +44,7 @@ public static class TokenUsageEndpoints
 
             var userId = request.UserId ?? tenantContext.LoggedInUser ?? tenantContext.TenantId;
 
-            var record = new TokenUsageRecord(
+            var record = new UsageEventRecord(
                 tenantId,
                 userId,
                 request.Model,
