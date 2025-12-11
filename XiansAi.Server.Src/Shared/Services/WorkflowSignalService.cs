@@ -95,39 +95,11 @@ public class WorkflowSignalService : IWorkflowSignalService
 
     public async Task<IResult> SignalWithStartWorkflow(WorkflowSignalWithStartRequest request)
     {
-        _logger.LogInformation("[OpenTelemetry] DIAGNOSTIC: SignalWithStartWorkflow() called for workflow {WorkflowType}", request.TargetWorkflowType);
+        // Trace context propagation is now handled automatically by TracingInterceptor
+        // The interceptor extracts Activity.Current and adds it to workflow memo/headers automatically
         
-        // IMPORTANT: Extract trace context BEFORE creating a new activity
-        // Once we create a new activity, Activity.Current changes and we lose the HTTP request context
-        var currentActivity = Activity.Current;
-        string? traceParent = null;
-        string? traceState = null;
-        
-        _logger.LogInformation("[OpenTelemetry] DIAGNOSTIC: Activity.Current state during trace extraction:");
-        if (currentActivity != null)
-        {
-            _logger.LogInformation("  - Activity.Current EXISTS");
-            _logger.LogInformation("  - TraceId: {TraceId}", currentActivity.TraceId);
-            _logger.LogInformation("  - SpanId: {SpanId}", currentActivity.SpanId);
-            _logger.LogInformation("  - ParentSpanId: {ParentSpanId}", currentActivity.ParentSpanId);
-            _logger.LogInformation("  - OperationName: {OperationName}", currentActivity.OperationName);
-            _logger.LogInformation("  - Source.Name: {SourceName}", currentActivity.Source.Name);
-            
-            // Format traceparent header: 00-{TraceId}-{SpanId}-{Flags}
-            traceParent = $"00-{currentActivity.TraceId}-{currentActivity.SpanId}-{(currentActivity.ActivityTraceFlags.HasFlag(ActivityTraceFlags.Recorded) ? "01" : "00")}";
-            traceState = currentActivity.TraceStateString;
-            
-            _logger.LogInformation("[OpenTelemetry] Extracted trace context: TraceId={TraceId}, SpanId={SpanId}, TraceParent={TraceParent}", 
-                currentActivity.TraceId, currentActivity.SpanId, traceParent);
-        }
-        else
-        {
-            _logger.LogWarning("[OpenTelemetry] WARNING: Activity.Current is NULL - cannot propagate trace context to Temporal workflow");
-            _logger.LogWarning("  - This means the HTTP request did not create an activity");
-            _logger.LogWarning("  - Or Activity.Current was lost before reaching this point");
-        }
-        
-        // Create a span for the Temporal workflow operation (after extracting trace context)
+        // Create a span for the Temporal workflow operation
+        // Note: TracingInterceptor will also create spans, but this provides additional context
         using var activity = ActivitySource.StartActivity(
             "Temporal.SignalWithStart",
             ActivityKind.Client);
@@ -172,26 +144,8 @@ public class WorkflowSignalService : IWorkflowSignalService
                 request.TargetWorkflowId, 
                 _tenantContext);
             
-            // Add trace context to memo so workflow can restore it
-            if (traceParent != null)
-            {
-                options.AddToMemo("traceparent", traceParent);
-                if (!string.IsNullOrEmpty(traceState))
-                {
-                    options.AddToMemo("tracestate", traceState);
-                }
-                
-                _logger.LogInformation("[OpenTelemetry] DIAGNOSTIC: Successfully added trace context to workflow memo:");
-                _logger.LogInformation("  - traceparent: {TraceParent}", traceParent);
-                _logger.LogInformation("  - tracestate: {TraceState}", traceState ?? "null");
-                _logger.LogInformation("  - This memo will be accessible in the workflow signal handler");
-            }
-            else
-            {
-                _logger.LogWarning("[OpenTelemetry] WARNING: traceParent is null - NOT adding trace context to memo");
-                _logger.LogWarning("  - Workflow will not be able to restore trace context");
-                _logger.LogWarning("  - This will result in a disconnected trace");
-            }
+            // Trace context is automatically added to memo by TracingInterceptor
+            // No manual memo manipulation needed
        
             var signalPayload = new object[] { request };
 

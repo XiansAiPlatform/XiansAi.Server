@@ -28,7 +28,12 @@ public static class OpenTelemetryExtensions
         var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "1.0.0";
         var otlpEndpoint = builder.Configuration.GetValue<string>("OpenTelemetry:OtlpEndpoint") ?? "http://localhost:4317";
 
-        builder.Services.AddOpenTelemetry()
+        Console.WriteLine($"[OpenTelemetry] Initializing OpenTelemetry for service: {serviceName}");
+        Console.WriteLine($"[OpenTelemetry] OTLP Endpoint: {otlpEndpoint}");
+
+        try
+        {
+            builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
                 .AddService(
                     serviceName: serviceName,
@@ -138,10 +143,22 @@ public static class OpenTelemetryExtensions
                 {
                     options.Endpoint = new Uri(otlpEndpoint);
                     options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
+                    // Note: Exporter failures won't break execution - spans/metrics will be buffered or dropped silently
                 }));
 
-        // Log startup information
-        Console.WriteLine($"[OpenTelemetry] OpenTelemetry enabled - exporting to {otlpEndpoint}");
+            Console.WriteLine($"[OpenTelemetry] ✓ OpenTelemetry fully enabled for {serviceName}");
+            Console.WriteLine($"[OpenTelemetry]   - Service: {serviceName} v{serviceVersion}");
+            Console.WriteLine($"[OpenTelemetry]   - OTLP Endpoint: {otlpEndpoint}");
+            Console.WriteLine($"[OpenTelemetry]   - Note: If collector is unreachable, traces/metrics will be buffered or dropped (non-blocking)");
+        }
+        catch (Exception ex)
+        {
+            // OpenTelemetry initialization failures should NOT break the application
+            // Log warning and continue - application will work without telemetry
+            Console.WriteLine($"[OpenTelemetry] ⚠ WARNING: Failed to initialize OpenTelemetry: {ex.Message}");
+            Console.WriteLine($"[OpenTelemetry] ⚠ Application will continue without telemetry export");
+            // Don't rethrow - let application continue
+        }
 
         return builder;
     }

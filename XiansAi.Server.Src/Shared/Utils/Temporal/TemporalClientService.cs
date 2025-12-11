@@ -1,4 +1,5 @@
 using Temporalio.Client;
+using Temporalio.Extensions.OpenTelemetry;
 using System.Collections.Concurrent;
 
 namespace Shared.Utils.Temporal;
@@ -59,6 +60,8 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             var options = new TemporalClientConnectOptions(new(config.FlowServerUrl))
             {
                 Namespace = config.FlowServerNamespace!,
+                // Add OpenTelemetry tracing interceptor for automatic trace propagation
+                Interceptors = new[] { new TracingInterceptor() }
             };
             
             if (config.CertificateBase64 != null && config.PrivateKeyBase64 != null) 
