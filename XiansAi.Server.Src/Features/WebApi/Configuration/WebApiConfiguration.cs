@@ -139,6 +139,7 @@ public static class WebApiConfiguration
         OidcConfigEndpoints.MapOidcConfigEndpoints(app);
         TemplateEndpoints.MapTemplateEndpoints(app);
         ScheduleEndpoints.MapScheduleEndpoints(app);
+        UsageStatisticsEndpoints.MapUsageStatisticsEndpoints(app);
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
         

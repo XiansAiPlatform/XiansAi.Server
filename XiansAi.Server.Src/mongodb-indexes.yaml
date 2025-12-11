@@ -283,3 +283,21 @@ documents:
     expire_after: 0s
     background: true
     sparse: true
+
+usage_events:
+  - name: idx_tenant_date
+    keys:
+      tenant_id: asc
+      created_at: desc
+    background: true
+  - name: idx_tenant_user_date
+    keys:
+      tenant_id: asc
+      user_id: asc
+      created_at: desc
+    background: true
+  - name: usage_events_ttl
+    keys:
+      created_at: asc
+    expire_after: 90d             
+    background: true

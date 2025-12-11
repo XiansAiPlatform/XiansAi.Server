@@ -194,6 +194,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
+        builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
 
         // Register Utility services
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();
@@ -204,6 +205,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IMessageService, MessageService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
+        builder.Services.AddScoped<IUsageEventService, UsageEventService>();
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
