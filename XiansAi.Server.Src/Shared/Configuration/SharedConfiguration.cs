@@ -136,6 +136,9 @@ public static class SharedConfiguration
             
         // Add infrastructure services (clients, data access, etc.)
         builder.Services.AddInfrastructureServices(builder.Configuration);
+
+        // Add OpenTelemetry observability (tracing and metrics)
+        builder.AddOpenTelemetry();
         
         // Add common api-related services
         builder.Services.AddEndpointsApiExplorer();
