@@ -66,13 +66,47 @@ public class ScheduleModel
 }
 
 /// <summary>
-/// Possible states of a schedule
+/// Possible states of a schedule - matches Temporal workflow execution statuses
 /// </summary>
 public enum ScheduleStatus
 {
-    Active,
-    Paused,
+    /// <summary>
+    /// Schedule is active and running normally
+    /// </summary>
+    Running,
+    
+    /// <summary>
+    /// Schedule has completed successfully
+    /// </summary>
     Completed,
+    
+    /// <summary>
+    /// Schedule encountered an error and failed
+    /// </summary>
     Failed,
-    Deleted
+    
+    /// <summary>
+    /// Schedule was canceled
+    /// </summary>
+    Canceled,
+    
+    /// <summary>
+    /// Schedule was forcibly terminated
+    /// </summary>
+    Terminated,
+    
+    /// <summary>
+    /// Schedule exceeded its timeout period
+    /// </summary>
+    TimedOut,
+    
+    /// <summary>
+    /// Schedule continued as a new execution
+    /// </summary>
+    ContinuedAsNew,
+    
+    /// <summary>
+    /// Schedule is suspended (paused)
+    /// </summary>
+    Suspended
 }

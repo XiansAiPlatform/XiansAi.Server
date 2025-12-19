@@ -212,6 +212,13 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
 
+        // Configure JSON serialization options for minimal APIs
+        // This ensures enums are serialized as strings instead of numeric values
+        builder.Services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        });
+
         return builder;
     }
     
