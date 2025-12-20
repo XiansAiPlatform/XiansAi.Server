@@ -14,6 +14,8 @@ public interface IDocumentRepository
     Task<Document?> GetByIdAsync(string id);
     Task<Document?> GetByKeyAsync(string type, string key, string? tenantId);
     Task<List<Document>> QueryAsync(string? tenantId, DocumentQueryFilter filter);
+    Task<long> CountAsync(string? tenantId, DocumentQueryFilter filter);
+    Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId);
     Task<bool> UpdateAsync(Document document);
     Task<bool> DeleteAsync(string id, string? tenantId);
     Task<int> DeleteManyAsync(IEnumerable<string> ids, string? tenantId);
@@ -23,6 +25,7 @@ public interface IDocumentRepository
 
 public class DocumentQueryFilter
 {
+    public string? AgentId { get; set; }
     public string? Type { get; set; }
     public string? Key { get; set; }
     public Dictionary<string, object>? MetadataFilters { get; set; }
@@ -114,57 +117,7 @@ public class DocumentRepository : IDocumentRepository
     {
         try
         {
-            var builder = Builders<Document>.Filter;
-            var filter = builder.Empty;
-
-            // Add tenant filter if provided
-            if (!string.IsNullOrEmpty(tenantId))
-            {
-                filter &= builder.Eq(d => d.TenantId, tenantId);
-            }
-
-            // Add type filter
-            if (!string.IsNullOrEmpty(queryFilter.Type))
-            {
-                filter &= builder.Eq(d => d.Type, queryFilter.Type);
-            }
-
-
-            // Add key filter
-            if (!string.IsNullOrEmpty(queryFilter.Key))
-            {
-                filter &= builder.Eq(d => d.Key, queryFilter.Key);
-            }
-
-            // Add content type filter
-            if (!string.IsNullOrEmpty(queryFilter.ContentType))
-            {
-                filter &= builder.Eq(d => d.ContentType, queryFilter.ContentType);
-            }
-
-            // Add metadata filters
-            if (queryFilter.MetadataFilters != null && queryFilter.MetadataFilters.Any())
-            {
-                foreach (var kvp in queryFilter.MetadataFilters)
-                {
-                    // Convert JsonElement to BsonValue if needed
-                    var filterValue = kvp.Value is JsonElement jsonElement
-                        ? ConvertJsonElementToBsonValue(jsonElement)
-                        : kvp.Value;
-                    
-                    filter &= builder.Eq($"metadata.{kvp.Key}", filterValue);
-                }
-            }
-
-            // Add date filters
-            if (queryFilter.CreatedAfter.HasValue)
-            {
-                filter &= builder.Gte(d => d.CreatedAt, queryFilter.CreatedAfter.Value);
-            }
-            if (queryFilter.CreatedBefore.HasValue)
-            {
-                filter &= builder.Lte(d => d.CreatedAt, queryFilter.CreatedBefore.Value);
-            }
+            var filter = BuildFilter(tenantId, queryFilter);
 
             // Create find options with sort and pagination
             var sortField = queryFilter.SortBy switch
@@ -192,6 +145,129 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error querying documents");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Builds a MongoDB filter from the query filter parameters.
+    /// Extracted to a helper method to ensure consistency between Query and Count operations.
+    /// </summary>
+    private FilterDefinition<Document> BuildFilter(string? tenantId, DocumentQueryFilter queryFilter)
+    {
+        var builder = Builders<Document>.Filter;
+        var filter = builder.Empty;
+
+        // Add tenant filter if provided
+        if (!string.IsNullOrEmpty(tenantId))
+        {
+            filter &= builder.Eq(d => d.TenantId, tenantId);
+        }
+
+        // Add agent filter
+        if (!string.IsNullOrEmpty(queryFilter.AgentId))
+        {
+            filter &= builder.Eq(d => d.AgentId, queryFilter.AgentId);
+        }
+
+        // Add type filter
+        if (!string.IsNullOrEmpty(queryFilter.Type))
+        {
+            filter &= builder.Eq(d => d.Type, queryFilter.Type);
+        }
+
+        // Add key filter
+        if (!string.IsNullOrEmpty(queryFilter.Key))
+        {
+            filter &= builder.Eq(d => d.Key, queryFilter.Key);
+        }
+
+        // Add content type filter
+        if (!string.IsNullOrEmpty(queryFilter.ContentType))
+        {
+            filter &= builder.Eq(d => d.ContentType, queryFilter.ContentType);
+        }
+
+        // Add metadata filters
+        if (queryFilter.MetadataFilters != null && queryFilter.MetadataFilters.Any())
+        {
+            foreach (var kvp in queryFilter.MetadataFilters)
+            {
+                // Convert JsonElement to BsonValue if needed
+                var filterValue = kvp.Value is JsonElement jsonElement
+                    ? ConvertJsonElementToBsonValue(jsonElement)
+                    : kvp.Value;
+                
+                filter &= builder.Eq($"metadata.{kvp.Key}", filterValue);
+            }
+        }
+
+        // Add date filters
+        if (queryFilter.CreatedAfter.HasValue)
+        {
+            filter &= builder.Gte(d => d.CreatedAt, queryFilter.CreatedAfter.Value);
+        }
+        if (queryFilter.CreatedBefore.HasValue)
+        {
+            filter &= builder.Lte(d => d.CreatedAt, queryFilter.CreatedBefore.Value);
+        }
+
+        return filter;
+    }
+
+    public async Task<long> CountAsync(string? tenantId, DocumentQueryFilter queryFilter)
+    {
+        try
+        {
+            var filter = BuildFilter(tenantId, queryFilter);
+
+            return await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.CountDocumentsAsync(filter),
+                _logger);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error counting documents");
+            throw;
+        }
+    }
+
+    public async Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId)
+    {
+        try
+        {
+            var builder = Builders<Document>.Filter;
+            var filter = builder.Empty;
+
+            // Add tenant filter if provided
+            if (!string.IsNullOrEmpty(tenantId))
+            {
+                filter &= builder.Eq(d => d.TenantId, tenantId);
+            }
+
+            // Add agent filter if provided
+            if (!string.IsNullOrEmpty(agentId))
+            {
+                filter &= builder.Eq(d => d.AgentId, agentId);
+            }
+
+            // Use MongoDB's Distinct operation for efficiency
+            var distinctTypes = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.DistinctAsync<string>("type", filter),
+                _logger);
+
+            var types = await distinctTypes.ToListAsync();
+            
+            // Filter out null/empty and sort
+            return types
+                .Where(t => !string.IsNullOrEmpty(t))
+                .OrderBy(t => t)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting distinct document types for tenant {TenantId}, agent {AgentId}", 
+                tenantId, agentId);
             throw;
         }
     }

@@ -1,6 +1,9 @@
 using Shared.Models.Schedule;
 using Shared.Utils.Temporal;
 using Shared.Utils.Services;
+using Shared.Auth;
+using Shared.Services;
+using Shared.Repositories;
 using Temporalio.Client;
 using System.Text.Json;
 
@@ -33,18 +36,27 @@ public interface IScheduleService
 }
 
 /// <summary>
-/// Implementation of schedule service using Temporal.io
+/// Implementation of schedule service using Temporal.io with tenant isolation and permission checks
 /// </summary>
 public class ScheduleService : IScheduleService
 {
     private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITenantContext _tenantContext;
+    private readonly IPermissionsService _permissionsService;
+    private readonly IAgentRepository _agentRepository;
     private readonly ILogger<ScheduleService> _logger;
     
     public ScheduleService(
         ITemporalClientFactory clientFactory,
+        ITenantContext tenantContext,
+        IPermissionsService permissionsService,
+        IAgentRepository agentRepository,
         ILogger<ScheduleService> logger)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
+        _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
     
@@ -56,23 +68,92 @@ public class ScheduleService : IScheduleService
             var client = await _clientFactory.GetClientAsync();
             var schedules = new List<ScheduleModel>();
             
-            _logger.LogInformation("Retrieving schedules with filters: Agent={Agent}, Workflow={Workflow}, Status={Status}", 
-                request.AgentName, request.WorkflowType, request.Status);
+            // Calculate pagination parameters
+            var neededCount = request.PageSize;
+            var skipCount = 0;
+            if (!string.IsNullOrEmpty(request.PageToken) && int.TryParse(request.PageToken, out var pageIndex))
+            {
+                skipCount = pageIndex * request.PageSize;
+            }
             
-            // Use real Temporal schedule API
+            var processedCount = 0;
+            var skippedCount = 0;
+            var totalProcessed = 0;
+            
+            _logger.LogInformation("Retrieving schedules with filters: Agent={Agent}, Workflow={Workflow}, Status={Status}, PageSize={PageSize}, Skip={Skip}", 
+                request.AgentName, request.WorkflowType, request.Status, neededCount, skipCount);
+            
+            // Use real Temporal schedule API with early termination
             await foreach (var schedule in client.ListSchedulesAsync())
             {
+                totalProcessed++;
+                
                 try
                 {
-                    var scheduleHandle = client.GetScheduleHandle(schedule.Id);
+                    var scheduleId = schedule.Id;
+                    
+                    // Early lightweight filtering by schedule ID before describing
+                    // This avoids unnecessary API calls for schedules we can filter out early
+                    if (!string.IsNullOrEmpty(request.AgentName) && 
+                        !scheduleId.Contains(request.AgentName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;  // Skip without describing - saves API call
+                    }
+                    
+                    if (!string.IsNullOrEmpty(request.WorkflowType) && 
+                        !scheduleId.Contains(request.WorkflowType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;  // Skip without describing - saves API call
+                    }
+                    
+                    // Now describe to get full details (expensive operation)
+                    var scheduleHandle = client.GetScheduleHandle(scheduleId);
                     var description = await scheduleHandle.DescribeAsync();
                     
-                    var scheduleModel = MapToScheduleModel(schedule.Id, description);
+                    var scheduleModel = MapToScheduleModel(scheduleId, description);
                     
-                    // Apply filters during iteration for better performance
-                    if (ShouldIncludeSchedule(scheduleModel, request))
-                    {  
-                        schedules.Add(scheduleModel);
+                    // Security check: Tenant isolation
+                    if (!string.IsNullOrEmpty(scheduleModel.TenantId) && 
+                        scheduleModel.TenantId != _tenantContext.TenantId)
+                    {
+                        _logger.LogDebug("Skipping schedule {ScheduleId} - belongs to different tenant", scheduleId);
+                        continue;
+                    }
+                    
+                    // Security check: Agent permission
+                    if (!string.IsNullOrEmpty(scheduleModel.AgentName))
+                    {
+                        var hasPermission = await HasScheduleAccessAsync(scheduleModel.AgentName);
+                        if (!hasPermission)
+                        {
+                            _logger.LogDebug("Skipping schedule {ScheduleId} - user lacks permission for agent {AgentName}", 
+                                scheduleId, scheduleModel.AgentName);
+                            continue;
+                        }
+                    }
+                    
+                    // Apply detailed filters
+                    if (!ShouldIncludeSchedule(scheduleModel, request))
+                    {
+                        continue;
+                    }
+                    
+                    // Handle pagination by skipping
+                    if (skippedCount < skipCount)
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+                    
+                    schedules.Add(scheduleModel);
+                    processedCount++;
+                    
+                    // Early termination - we have enough for this page
+                    if (processedCount >= neededCount)
+                    {
+                        _logger.LogInformation("Collected {Count} schedules for page, stopping iteration early (processed {Total} total)", 
+                            processedCount, totalProcessed);
+                        break;
                     }
                 }
                 catch (Exception ex)
@@ -82,11 +163,10 @@ public class ScheduleService : IScheduleService
                 }
             }
             
-            // Apply pagination
-            var paginatedSchedules = ApplyPagination(schedules, request);
+            _logger.LogInformation("Retrieved {Count} schedules (processed {Processed} total, skipped {Skipped} for pagination)", 
+                schedules.Count, totalProcessed, skippedCount);
             
-            _logger.LogInformation("Retrieved {Count} schedules out of {Total} total", paginatedSchedules.Count, schedules.Count);
-            return ServiceResult<List<ScheduleModel>>.Success(paginatedSchedules);
+            return ServiceResult<List<ScheduleModel>>.Success(schedules);
         }
         catch (Exception ex)
         {
@@ -204,7 +284,8 @@ public class ScheduleService : IScheduleService
     
     private ScheduleModel MapToScheduleModel(string scheduleId, Temporalio.Client.Schedules.ScheduleDescription description)
     {
-        // Extract agent metadata from schedule memo or action
+        // Extract tenant and agent metadata from schedule memo or action
+        var tenantId = ExtractTenantIdFromMemo(description.Schedule.Action);
         var agentName = ExtractAgentNameFromMemo(description.Schedule.Action) ?? "Unknown";
         var workflowType = ExtractWorkflowTypeFromAction(description.Schedule.Action) ?? "Unknown";
         var metadata = ExtractMetadataFromMemo(description.Schedule.Action) ?? new Dictionary<string, object>();
@@ -256,6 +337,7 @@ public class ScheduleService : IScheduleService
         return new ScheduleModel
         {
             Id = scheduleId,
+            TenantId = tenantId,
             AgentName = agentName,
             WorkflowType = workflowType,
             ScheduleSpec = FormatScheduleSpec(description.Schedule.Spec),
@@ -267,6 +349,62 @@ public class ScheduleService : IScheduleService
             LastRunTime = lastRunTime,
             ExecutionCount = description.Info?.NumActions ?? 0
         };
+    }
+    
+    /// <summary>
+    /// Checks if the current user has access to schedules for a specific agent
+    /// </summary>
+    private async Task<bool> HasScheduleAccessAsync(string agentName)
+    {
+        try
+        {
+            // Check if user has read permission for this agent
+            var readPermissionResult = await _permissionsService.HasReadPermission(agentName);
+            
+            if (!readPermissionResult.IsSuccess)
+            {
+                _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
+                    agentName, readPermissionResult.ErrorMessage);
+                return false;
+            }
+            
+            return readPermissionResult.Data;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking schedule access for agent {AgentName}", agentName);
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// Extracts tenant ID from schedule memo
+    /// </summary>
+    private string? ExtractTenantIdFromMemo(Temporalio.Client.Schedules.ScheduleAction action)
+    {
+        try
+        {
+            if (action is Temporalio.Client.Schedules.ScheduleActionStartWorkflow startWorkflow)
+            {
+                if (startWorkflow.Options?.Memo?.ContainsKey("tenantId") == true)
+                {
+                    return startWorkflow.Options.Memo["tenantId"]?.ToString();
+                }
+                
+                // Also check for "TenantId" (capitalized) as fallback
+                if (startWorkflow.Options?.Memo?.ContainsKey("TenantId") == true)
+                {
+                    return startWorkflow.Options.Memo["TenantId"]?.ToString();
+                }
+            }
+            
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to extract tenant ID from schedule memo");
+            return null;
+        }
     }
     
     private string? ExtractAgentNameFromMemo(Temporalio.Client.Schedules.ScheduleAction action)
@@ -629,18 +767,4 @@ public class ScheduleService : IScheduleService
         return true;
     }
     
-    private List<ScheduleModel> ApplyPagination(List<ScheduleModel> schedules, ScheduleFilterRequest request)
-    {
-        // Simple pagination implementation
-        var startIndex = 0;
-        if (!string.IsNullOrEmpty(request.PageToken) && int.TryParse(request.PageToken, out var pageIndex))
-        {
-            startIndex = pageIndex * request.PageSize;
-        }
-        
-        return schedules
-            .Skip(startIndex)
-            .Take(request.PageSize)
-            .ToList();
-    }
 }

@@ -13,6 +13,11 @@ public class ScheduleModel
     public required string Id { get; set; }
     
     /// <summary>
+    /// Tenant ID that owns this schedule
+    /// </summary>
+    public string? TenantId { get; set; }
+    
+    /// <summary>
     /// Name of the agent that owns this schedule
     /// </summary>
     [StringLength(100)]
