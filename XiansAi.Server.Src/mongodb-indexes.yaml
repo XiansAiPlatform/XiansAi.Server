@@ -261,22 +261,25 @@ activity_history:
     background: true
 
 documents:
-  - name: tenant_id_type_key
+  - name: tenant_agent_type_created
     keys:
       tenant_id: asc
-      workflow_id: asc
-      type: asc
-      key: asc
-    unique: true
-    sparse: true
-  - name: type_created_at
-    keys:
+      agent_id: asc
       type: asc
       created_at: desc
-  - name: type_updated_at
+    background: true
+  - name: tenant_agent_type
     keys:
+      tenant_id: asc
+      agent_id: asc
       type: asc
-      updated_at: desc
+    background: true
+  - name: tenant_type_key
+    keys:
+      tenant_id: asc
+      type: asc
+      key: asc
+    background: true
   - name: documents_ttl
     keys:
       expires_at: asc

@@ -57,6 +57,6 @@ public class WorkflowIdentifier
 
     public static string GetAgentName(string workflowType)
     {
-        return workflowType.Split(":")[0];
+        return workflowType.Split(":")[0].Trim();
     }
 }
