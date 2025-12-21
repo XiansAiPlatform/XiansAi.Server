@@ -152,6 +152,7 @@ public class TemplateService : ITemplateService
                     Id = ObjectId.GenerateNewId().ToString(),
                     WorkflowType = templateDefinition.WorkflowType,
                     Agent = agentName, // Keep the same agent name
+                    Name = templateDefinition.Name,
                     Hash = templateDefinition.Hash, // Keep the same hash for consistency
                     Source = templateDefinition.Source,
                     Markdown = templateDefinition.Markdown,

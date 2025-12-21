@@ -25,6 +25,10 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
     [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Agent contains invalid characters")]
     public required string Agent { get; set; }
 
+    [BsonElement("name")]
+    [StringLength(200, ErrorMessage = "Name cannot exceed 200 characters")]
+    public string? Name { get; set; }
+
     [BsonElement("hash")]
     [Required(ErrorMessage = "Hash is required")]
     [StringLength(64, MinimumLength = 1, ErrorMessage = "Hash must be between 1 and 64 characters")]
@@ -74,6 +78,7 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
             Id = ValidationHelpers.SanitizeString(Id),
             WorkflowType = ValidationHelpers.SanitizeString(WorkflowType),
             Agent = ValidationHelpers.SanitizeString(Agent),
+            Name = ValidationHelpers.SanitizeString(Name),
             Hash = ValidationHelpers.SanitizeString(Hash),
             Source = ValidationHelpers.SanitizeString(Source),
             Markdown = ValidationHelpers.SanitizeString(Markdown),
