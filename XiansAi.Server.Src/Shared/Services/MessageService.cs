@@ -315,7 +315,7 @@ public class MessageService : IMessageService
             throw new Exception("WorkflowType is required");
         }
 
-        var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
+        var agent = request.WorkflowType.Split(":").FirstOrDefault()?.Trim() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var signalRequest = new WorkflowSignalWithStartRequest
         {
             SignalName = Constants.SIGNAL_INBOUND_CHAT_OR_DATA,
@@ -345,7 +345,7 @@ public class MessageService : IMessageService
             throw new Exception("WorkflowType is required");
         }
 
-        var agent = request.WorkflowType.Split(":").FirstOrDefault() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
+        var agent = request.WorkflowType.Split(":").FirstOrDefault()?.Trim() ?? throw new Exception("WorkflowType should be in the format of <agent>:<workflowType>");
         var thread = new ConversationThread
         {
             TenantId = _tenantContext.TenantId,

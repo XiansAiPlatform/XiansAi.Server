@@ -290,6 +290,7 @@ public class AgentRepository : IAgentRepository
                 .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
                     .Include(x => x.Agent)
                     .Include(x => x.WorkflowType)
+                    .Include(x => x.Name)
                     .Include(x => x.CreatedAt)
                     .Include(x => x.UpdatedAt))
                 .ToListAsync();
@@ -343,6 +344,7 @@ public class AgentRepository : IAgentRepository
                 .Project<FlowDefinition>(Builders<FlowDefinition>.Projection
                     .Include(x => x.Agent)
                     .Include(x => x.WorkflowType)
+                    .Include(x => x.Name)
                     .Include(x => x.CreatedAt)
                     .Include(x => x.UpdatedAt))
                 .ToListAsync();
