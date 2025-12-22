@@ -131,6 +131,7 @@ public static class WebApiConfiguration
         SettingsEndpoints.MapSettingsEndpoints(app);
         TenantEndpoints.MapTenantEndpoints(app);
         MessagingEndpoints.MapMessagingEndpoints(app);
+        WebApiSseEndpoints.MapWebApiSseEndpoints(app); // Add SSE endpoints for real-time messaging
         AuditingEndpoints.MapAuditingEndpoints(app);
         PermissionsEndpoints.MapPermissionsEndpoints(app);
         AgentEndpoints.MapAgentEndpoints(app);
