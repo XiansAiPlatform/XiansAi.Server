@@ -223,6 +223,8 @@ public class MessageService : IMessageService
             // Get messages directly by workflow and participant IDs
             var messages = await _conversationRepository.GetMessagesByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize, scope);
 
+            _logger.LogInformation("Found {Count} messages for workflowId {WorkflowId}, participant {ParticipantId}", messages.Count, workflowId, participantId);
+
             return ServiceResult<List<ConversationMessage>>.Success(messages);
         }
         catch (Exception ex)

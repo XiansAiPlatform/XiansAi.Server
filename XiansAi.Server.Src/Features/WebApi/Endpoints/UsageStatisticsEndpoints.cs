@@ -61,9 +61,11 @@ public static class UsageStatisticsEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
-                return Results.Forbid();
+                return Results.Json(
+                    new { error = "Forbidden", message = ex.Message },
+                    statusCode: StatusCodes.Status403Forbidden);
             }
             catch (Exception ex)
             {
@@ -103,7 +105,9 @@ public static class UsageStatisticsEndpoints
                 // Only admins can list users
                 if (!IsAdmin(tenantContext))
                 {
-                    return Results.Forbid();
+                    return Results.Json(
+                        new { error = "Forbidden", message = "You do not have permission to list users" },
+                        statusCode: StatusCodes.Status403Forbidden);
                 }
 
                 // Apply security: determine effective tenant

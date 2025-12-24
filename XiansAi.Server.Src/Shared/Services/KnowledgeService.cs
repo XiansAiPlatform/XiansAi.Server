@@ -39,6 +39,7 @@ public interface IKnowledgeService
     Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request);
     Task<IResult> GetLatestAll();
     Task<IResult> Create(KnowledgeRequest request);
+    Task<IResult> GetLatestByAgent(string agent);
 }
 
 public class KnowledgeService : IKnowledgeService
@@ -126,7 +127,9 @@ public class KnowledgeService : IKnowledgeService
         {
             _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
                 knowledge.Agent, _tenantContext.LoggedInUser);
-            return Results.Forbid();
+            return Results.Json(
+                new { error = "Forbidden", message = "You do not have permission to delete this knowledge" },
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         try
@@ -151,9 +154,11 @@ public class KnowledgeService : IKnowledgeService
         var agentNames = await GetUserAgentNamesAsync();
         if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
         {
-            _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
+            _logger.LogWarning("Unauthorized access attempt to delete knowledge for agent {Agent} by user {UserId}",
                 request.Agent, _tenantContext.LoggedInUser);
-            return Results.Forbid();
+            return Results.Json(
+                new { error = "Forbidden", message = "You do not have permission to delete knowledge for this agent" },
+                statusCode: StatusCodes.Status403Forbidden);
         }
         // Only allow deletion of tenant-specific knowledge
         var result = await _knowledgeRepository.DeleteAllVersionsAsync<Knowledge>(request.Name, request.Agent, _tenantContext.TenantId);
@@ -204,7 +209,9 @@ public class KnowledgeService : IKnowledgeService
         {
             _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
                 request.Agent, _tenantContext.LoggedInUser);
-            return Results.Forbid();
+            return Results.Json(
+                new { error = "Forbidden", message = "You do not have permission to create knowledge for this agent" },
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         // Check if the knowledge already exists with the same content hash
@@ -232,6 +239,37 @@ public class KnowledgeService : IKnowledgeService
         };
 
         await _knowledgeRepository.CreateAsync(knowledge);
+        return Results.Ok(knowledge);
+    }
+
+    public async Task<IResult> GetLatestByAgent(string agent)
+    {
+        var agentNames = await GetUserAgentNamesAsync();
+        if (!agentNames.Contains(agent, StringComparer.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Unauthorized access attempt to list knowledge for agent {Agent} by user {UserId}",
+                agent, _tenantContext.LoggedInUser);
+            return Results.Json(
+                new { error = "Forbidden", message = "You do not have permission to list knowledge for this agent" },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        var knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId, new List<string> { agent });
+
+        _logger.LogInformation("Found {Count} knowledge items for agent {Agent}", knowledge.Count, agent);
+
+        foreach (var item in knowledge)
+        {
+            if (!string.IsNullOrWhiteSpace(item.Agent) &&
+                agentNames.Contains(item.Agent, StringComparer.OrdinalIgnoreCase))
+            {
+                item.PermissionLevel = "edit";
+            }
+            else
+            {
+                item.PermissionLevel = "read";
+            }
+        }
         return Results.Ok(knowledge);
     }
 }
