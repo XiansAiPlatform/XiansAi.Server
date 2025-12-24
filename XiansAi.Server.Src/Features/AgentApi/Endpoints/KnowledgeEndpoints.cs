@@ -56,6 +56,40 @@ public static class KnowledgeEndpoints
             operation.Description = "Creates a new knowledge entity";
             return operation;
         });
+
+        knowledgeGroup.MapDelete("/", async (
+            [FromQuery] string name,
+            [FromQuery] string agent,
+            [FromServices] IKnowledgeService service) =>
+        {
+            _logger.LogInformation("Deleting knowledge with name: {Name}, agent: {Agent}", name, agent);
+            var deleteRequest = new DeleteAllVersionsRequest 
+            {
+                Name = name,
+                Agent = agent
+            };
+            var result = await service.DeleteAllVersions(deleteRequest);
+            return result;
+        })
+        .WithOpenApi(operation => {
+            operation.Summary = "Delete knowledge";
+            operation.Description = "Deletes all versions of knowledge for the specified name and agent";
+            return operation;
+        });
+
+        knowledgeGroup.MapGet("/list", async (
+            [FromQuery] string agent,
+            [FromServices] IKnowledgeService service) =>
+        {
+            _logger.LogInformation("Listing knowledge for agent: {Agent}", agent);
+            var result = await service.GetLatestByAgent(agent);
+            return result;
+        })
+        .WithOpenApi(operation => {
+            operation.Summary = "List knowledge";
+            operation.Description = "Lists all knowledge items for the specified agent";
+            return operation;
+        });
     }
 } 
 
