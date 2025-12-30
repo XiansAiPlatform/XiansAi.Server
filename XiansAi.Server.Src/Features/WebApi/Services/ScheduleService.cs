@@ -33,6 +33,26 @@ public interface IScheduleService
     /// Gets schedule details by ID
     /// </summary>
     Task<ServiceResult<ScheduleModel>> GetScheduleByIdAsync(string scheduleId);
+    
+    /// <summary>
+    /// Deletes a specific schedule by ID
+    /// </summary>
+    Task<ServiceResult<bool>> DeleteScheduleByIdAsync(string scheduleId);
+    
+    /// <summary>
+    /// Deletes all schedules for a specific agent
+    /// </summary>
+    Task<ServiceResult<ScheduleDeleteResult>> DeleteAllSchedulesByAgentAsync(string agentName);
+}
+
+/// <summary>
+/// Result model for schedule deletion operations
+/// </summary>
+public class ScheduleDeleteResult
+{
+    public int DeletedCount { get; set; }
+    public List<string> DeletedScheduleIds { get; set; } = new();
+    public List<string> FailedScheduleIds { get; set; } = new();
 }
 
 /// <summary>
@@ -80,11 +100,32 @@ public class ScheduleService : IScheduleService
             var skippedCount = 0;
             var totalProcessed = 0;
             
-            _logger.LogInformation("Retrieving schedules with filters: Agent={Agent}, Workflow={Workflow}, Status={Status}, PageSize={PageSize}, Skip={Skip}", 
-                request.AgentName, request.WorkflowType, request.Status, neededCount, skipCount);
+            // Build search attributes query for server-side filtering
+            var queryParts = new List<string>();
             
-            // Use real Temporal schedule API with early termination
-            await foreach (var schedule in client.ListSchedulesAsync())
+            // Mandatory: Filter by tenant ID for tenant isolation
+            if (!string.IsNullOrEmpty(_tenantContext.TenantId))
+            {
+                queryParts.Add($"tenantId = '{_tenantContext.TenantId}'");
+            }
+            
+            // Optional: Filter by agent name if specified
+            if (!string.IsNullOrEmpty(request.AgentName))
+            {
+                queryParts.Add($"agent = '{request.AgentName}'");
+            }
+            
+            var query = queryParts.Count > 0 ? string.Join(" AND ", queryParts) : string.Empty;
+            
+            _logger.LogInformation("Retrieving schedules with filters: Query={Query}, Workflow={Workflow}, Status={Status}, PageSize={PageSize}, Skip={Skip}", 
+                query, request.WorkflowType, request.Status, neededCount, skipCount);
+            
+            // Use Temporal schedule API with server-side filtering via search attributes
+            var listOptions = !string.IsNullOrEmpty(query) 
+                ? new Temporalio.Client.Schedules.ScheduleListOptions { Query = query }
+                : null;
+            
+            await foreach (var schedule in client.ListSchedulesAsync(listOptions))
             {
                 totalProcessed++;
                 
@@ -92,35 +133,13 @@ public class ScheduleService : IScheduleService
                 {
                     var scheduleId = schedule.Id;
                     
-                    // Early lightweight filtering by schedule ID before describing
-                    // This avoids unnecessary API calls for schedules we can filter out early
-                    if (!string.IsNullOrEmpty(request.AgentName) && 
-                        !scheduleId.Contains(request.AgentName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;  // Skip without describing - saves API call
-                    }
-                    
-                    if (!string.IsNullOrEmpty(request.WorkflowType) && 
-                        !scheduleId.Contains(request.WorkflowType, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;  // Skip without describing - saves API call
-                    }
-                    
                     // Now describe to get full details (expensive operation)
                     var scheduleHandle = client.GetScheduleHandle(scheduleId);
                     var description = await scheduleHandle.DescribeAsync();
                     
                     var scheduleModel = MapToScheduleModel(scheduleId, description);
                     
-                    // Security check: Tenant isolation
-                    if (!string.IsNullOrEmpty(scheduleModel.TenantId) && 
-                        scheduleModel.TenantId != _tenantContext.TenantId)
-                    {
-                        _logger.LogDebug("Skipping schedule {ScheduleId} - belongs to different tenant", scheduleId);
-                        continue;
-                    }
-                    
-                    // Security check: Agent permission
+                    // Security check: Agent permission (still needed for authorization)
                     if (!string.IsNullOrEmpty(scheduleModel.AgentName))
                     {
                         var hasPermission = await HasScheduleAccessAsync(scheduleModel.AgentName);
@@ -132,7 +151,7 @@ public class ScheduleService : IScheduleService
                         }
                     }
                     
-                    // Apply detailed filters
+                    // Apply additional client-side filters (workflow type, status, search term)
                     if (!ShouldIncludeSchedule(scheduleModel, request))
                     {
                         continue;
@@ -155,6 +174,11 @@ public class ScheduleService : IScheduleService
                             processedCount, totalProcessed);
                         break;
                     }
+                }
+                catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
+                {
+                    _logger.LogDebug("Schedule {ScheduleId} was found in listing but not found when describing - likely recently deleted or stale cache", schedule.Id);
+                    // Continue with other schedules - this is normal when schedules are recently deleted
                 }
                 catch (Exception ex)
                 {
@@ -386,15 +410,12 @@ public class ScheduleService : IScheduleService
         {
             if (action is Temporalio.Client.Schedules.ScheduleActionStartWorkflow startWorkflow)
             {
-                if (startWorkflow.Options?.Memo?.ContainsKey("tenantId") == true)
+                if (startWorkflow.Options?.Memo?.TryGetValue("tenantId", out var memoValue) == true)
                 {
-                    return startWorkflow.Options.Memo["tenantId"]?.ToString();
-                }
-                
-                // Also check for "TenantId" (capitalized) as fallback
-                if (startWorkflow.Options?.Memo?.ContainsKey("TenantId") == true)
-                {
-                    return startWorkflow.Options.Memo["TenantId"]?.ToString();
+                    if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
+                    {
+                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                    }
                 }
             }
             
@@ -414,16 +435,12 @@ public class ScheduleService : IScheduleService
             if (action is Temporalio.Client.Schedules.ScheduleActionStartWorkflow startWorkflow)
             {
                 // Try to extract from memo
-                if (startWorkflow.Options?.Memo?.ContainsKey("agentName") == true)
+                if (startWorkflow.Options?.Memo?.TryGetValue("agent", out var memoValue) == true)
                 {
-                    return startWorkflow.Options.Memo["agentName"]?.ToString();
-                }
-                
-                // Fallback: try to extract from workflow type
-                var workflowType = startWorkflow.Workflow;
-                if (!string.IsNullOrEmpty(workflowType) && workflowType.Contains("Agent"))
-                {
-                    return workflowType.Replace("Workflow", "").Replace("Agent", "") + "Agent";
+                    if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
+                    {
+                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                    }
                 }
             }
             
@@ -451,9 +468,12 @@ public class ScheduleService : IScheduleService
         {
             if (action is Temporalio.Client.Schedules.ScheduleActionStartWorkflow startWorkflow)
             {
-                if (startWorkflow.Options?.Memo?.ContainsKey("description") == true)
+                if (startWorkflow.Options?.Memo?.TryGetValue("description", out var memoValue) == true)
                 {
-                    return startWorkflow.Options.Memo["description"]?.ToString();
+                    if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
+                    {
+                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                    }
                 }
             }
             return null;
@@ -477,9 +497,17 @@ public class ScheduleService : IScheduleService
                 {
                     foreach (var kvp in startWorkflow.Options.Memo)
                     {
-                        if (kvp.Key != "agentName" && kvp.Key != "description")
+                        if (kvp.Key != "agent" && kvp.Key != "description" && kvp.Key != "tenantId")
                         {
-                            metadata[kvp.Key] = kvp.Value ?? "";
+                            if (kvp.Value is Temporalio.Converters.IEncodedRawValue encodedValue)
+                            {
+                                var decodedValue = encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "") ?? "";
+                                metadata[kvp.Key] = decodedValue;
+                            }
+                            else
+                            {
+                                metadata[kvp.Key] = kvp.Value ?? "";
+                            }
                         }
                     }
                 }
@@ -765,6 +793,158 @@ public class ScheduleService : IScheduleService
         }
         
         return true;
+    }
+    
+    public async Task<ServiceResult<bool>> DeleteScheduleByIdAsync(string scheduleId)
+    {
+        if (string.IsNullOrWhiteSpace(scheduleId))
+        {
+            return ServiceResult<bool>.BadRequest("Schedule ID is required");
+        }
+        
+        try
+        {
+            var client = await _clientFactory.GetClientAsync();
+            
+            // First, get the schedule to verify permissions and tenant
+            var scheduleHandle = client.GetScheduleHandle(scheduleId);
+            var description = await scheduleHandle.DescribeAsync();
+            
+            var scheduleModel = MapToScheduleModel(scheduleId, description);
+            
+            // Security check: Tenant isolation
+            if (!string.IsNullOrEmpty(scheduleModel.TenantId) && 
+                scheduleModel.TenantId != _tenantContext.TenantId)
+            {
+                _logger.LogWarning("Attempted to delete schedule {ScheduleId} from different tenant. Schedule tenant: {ScheduleTenant}, Current tenant: {CurrentTenant}", 
+                    scheduleId, scheduleModel.TenantId, _tenantContext.TenantId);
+                return ServiceResult<bool>.Forbidden("You do not have permission to delete this schedule");
+            }
+            
+            // Security check: Agent permission
+            if (!string.IsNullOrEmpty(scheduleModel.AgentName))
+            {
+                var hasWritePermission = await _permissionsService.HasWritePermission(scheduleModel.AgentName);
+                if (!hasWritePermission.IsSuccess || !hasWritePermission.Data)
+                {
+                    _logger.LogWarning("User lacks write permission for agent {AgentName} when attempting to delete schedule {ScheduleId}", 
+                        scheduleModel.AgentName, scheduleId);
+                    return ServiceResult<bool>.Forbidden($"You do not have permission to delete schedules for agent {scheduleModel.AgentName}");
+                }
+            }
+            
+            // Delete the schedule
+            await scheduleHandle.DeleteAsync();
+            
+            _logger.LogInformation("Successfully deleted schedule {ScheduleId} for agent {AgentName}", 
+                scheduleId, scheduleModel.AgentName);
+            
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
+        {
+            _logger.LogWarning("Schedule {ScheduleId} not found", scheduleId);
+            return ServiceResult<bool>.NotFound($"Schedule {scheduleId} not found");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete schedule {ScheduleId}", scheduleId);
+            return ServiceResult<bool>.InternalServerError($"Failed to delete schedule: {ex.Message}");
+        }
+    }
+    
+    public async Task<ServiceResult<ScheduleDeleteResult>> DeleteAllSchedulesByAgentAsync(string agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            return ServiceResult<ScheduleDeleteResult>.BadRequest("Agent name is required");
+        }
+        
+        try
+        {
+            // Security check: Verify user has write permission for this agent
+            var hasWritePermission = await _permissionsService.HasWritePermission(agentName);
+            if (!hasWritePermission.IsSuccess || !hasWritePermission.Data)
+            {
+                _logger.LogWarning("User lacks write permission for agent {AgentName}", agentName);
+                return ServiceResult<ScheduleDeleteResult>.Forbidden($"You do not have permission to delete schedules for agent {agentName}");
+            }
+            
+            // Verify agent exists in current tenant
+            var agent = await _agentRepository.GetByNameAsync(
+                agentName, 
+                _tenantContext.TenantId, 
+                _tenantContext.LoggedInUser, 
+                _tenantContext.UserRoles.ToArray());
+            
+            if (agent == null)
+            {
+                _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", agentName, _tenantContext.TenantId);
+                return ServiceResult<ScheduleDeleteResult>.NotFound($"Agent {agentName} not found");
+            }
+            
+            var client = await _clientFactory.GetClientAsync();
+            var result = new ScheduleDeleteResult();
+            
+            // Build query to find all schedules for this agent in the current tenant
+            var queryParts = new List<string>();
+            
+            // Mandatory: Filter by tenant ID for tenant isolation
+            if (!string.IsNullOrEmpty(_tenantContext.TenantId))
+            {
+                queryParts.Add($"tenantId = '{_tenantContext.TenantId}'");
+            }
+            
+            // Filter by agent name
+            queryParts.Add($"agent = '{agentName}'");
+            
+            var query = string.Join(" AND ", queryParts);
+            
+            _logger.LogInformation("Deleting all schedules for agent {AgentName} with query: {Query}", agentName, query);
+            
+            var listOptions = !string.IsNullOrEmpty(query) 
+                ? new Temporalio.Client.Schedules.ScheduleListOptions { Query = query }
+                : null;
+            
+            // Collect all schedule IDs first
+            var scheduleIds = new List<string>();
+            await foreach (var schedule in client.ListSchedulesAsync(listOptions))
+            {
+                scheduleIds.Add(schedule.Id);
+            }
+            
+            _logger.LogInformation("Found {Count} schedules to delete for agent {AgentName}", scheduleIds.Count, agentName);
+            
+            // Delete each schedule
+            foreach (var scheduleId in scheduleIds)
+            {
+                try
+                {
+                    var scheduleHandle = client.GetScheduleHandle(scheduleId);
+                    await scheduleHandle.DeleteAsync();
+                    
+                    result.DeletedScheduleIds.Add(scheduleId);
+                    result.DeletedCount++;
+                    
+                    _logger.LogInformation("Successfully deleted schedule {ScheduleId}", scheduleId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", scheduleId);
+                    result.FailedScheduleIds.Add(scheduleId);
+                }
+            }
+            
+            _logger.LogInformation("Deleted {DeletedCount} schedules for agent {AgentName}. Failed: {FailedCount}", 
+                result.DeletedCount, agentName, result.FailedScheduleIds.Count);
+            
+            return ServiceResult<ScheduleDeleteResult>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete schedules for agent {AgentName}", agentName);
+            return ServiceResult<ScheduleDeleteResult>.InternalServerError($"Failed to delete schedules: {ex.Message}");
+        }
     }
     
 }

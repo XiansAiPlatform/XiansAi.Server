@@ -46,10 +46,3 @@ public class Knowledge : IKnowledge
     [BsonIgnore]
     public string? PermissionLevel { get; set; }
 }
-
-public enum InstructionType
-{
-    json,
-    text,
-    markdown
-} 
