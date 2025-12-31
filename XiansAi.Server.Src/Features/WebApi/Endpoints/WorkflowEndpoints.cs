@@ -15,16 +15,20 @@ public static class WorkflowEndpoints
             .RequiresValidTenant()
             .RequireAuthorization();
 
-        workflowsGroup.MapGet("/{workflowId}/{runId}", async (
-            string workflowId,
-            string? runId,
+        workflowsGroup.MapGet("/", async (
+            [FromQuery] string workflowId,
+            [FromQuery] string? runId,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
             var result = await endpoint.GetWorkflow(workflowId, runId);
             return result.ToHttpResult();
         })
         .WithName("Get Workflow")
-        .WithOpenApi();
+        .WithOpenApi(operation => {
+            operation.Summary = "Get workflow by ID";
+            operation.Description = "Retrieves detailed information about a specific workflow by its workflow ID and optional run ID (passed as query parameters). Supports complex workflow IDs with special characters and embedded URLs.";
+            return operation;
+        });
 
         workflowsGroup.MapPost("/", async (
             [FromBody] WorkflowRequest request,
@@ -36,17 +40,21 @@ public static class WorkflowEndpoints
         .WithName("Create New Workflow")
         .WithOpenApi();
 
-        workflowsGroup.MapGet("/{workflowId}/events", async (
-            string workflowId,
+        workflowsGroup.MapGet("/events", async (
+            [FromQuery] string workflowId,
             [FromServices] IWorkflowEventsService endpoint) =>
         {
             var result = await endpoint.GetWorkflowEvents(workflowId);
             return result.ToHttpResult();
         })
         .WithName("Get Workflow Events")
-        .WithOpenApi();
+        .WithOpenApi(operation => {
+            operation.Summary = "Get workflow events";
+            operation.Description = "Retrieves the event history for a specific workflow (pass workflowId as query parameter)";
+            return operation;
+        });
 
-        workflowsGroup.MapGet("/", async (
+        workflowsGroup.MapGet("/list", async (
             [FromQuery] string? status,
             [FromQuery] string? agent,
             [FromQuery] int? pageSize,
@@ -63,8 +71,8 @@ public static class WorkflowEndpoints
             return operation;
         });
 
-        workflowsGroup.MapPost("/{workflowId}/cancel", async (
-            string workflowId,
+        workflowsGroup.MapPost("/cancel", async (
+            [FromQuery] string workflowId,
             [FromQuery] bool force,
             [FromServices] IWorkflowCancelService endpoint) =>
         {
@@ -72,18 +80,22 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Cancel Workflow")
-        .WithOpenApi();
+        .WithOpenApi(operation => {
+            operation.Summary = "Cancel a workflow";
+            operation.Description = "Cancels a running workflow (pass workflowId and force as query parameters)";
+            return operation;
+        });
 
-        workflowsGroup.MapGet("/{workflowId}/events/stream", (
+        workflowsGroup.MapGet("/events/stream", (
             [FromServices] IWorkflowEventsService endpoint,
-            string workflowId) =>
+            [FromQuery] string workflowId) =>
         {
             return endpoint.StreamWorkflowEvents(workflowId);
         })
         .WithName("Stream Workflow Events")
         .WithOpenApi(operation => {
             operation.Summary = "Stream workflow events in real-time";
-            operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events";
+            operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events (pass workflowId as query parameter)";
             return operation;
         });
     }

@@ -128,6 +128,62 @@ public class WorkflowEventsService : IWorkflowEventsService
                     Result = completedAttrs.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
                 };
                 return activityEvent;
+            case EventType.TimerStarted:
+                var timerAttrs = evt.TimerStartedEventAttributes;
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = "Timer Started",
+                    ActivityId = timerAttrs.TimerId,
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                    Result = $"Duration: {timerAttrs.StartToFireTimeout?.ToTimeSpan()}"
+                };
+            case EventType.WorkflowExecutionSignaled:
+                var signalAttrs = evt.WorkflowExecutionSignaledEventAttributes;
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = $"Signal: {signalAttrs.SignalName}",
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                    Inputs = signalAttrs.Input?.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray()
+                };
+            case EventType.ChildWorkflowExecutionStarted:
+                var childStartedAttrs = evt.ChildWorkflowExecutionStartedEventAttributes;
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = $"Child Workflow Started: {childStartedAttrs.WorkflowType?.Name}",
+                    ActivityId = childStartedAttrs.WorkflowExecution?.WorkflowId,
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o")
+                };
+            case EventType.ChildWorkflowExecutionCompleted:
+                var childCompletedAttrs = evt.ChildWorkflowExecutionCompletedEventAttributes;
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = $"Child Workflow Completed: {childCompletedAttrs.WorkflowType?.Name}",
+                    ActivityId = childCompletedAttrs.WorkflowExecution?.WorkflowId,
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                    Result = childCompletedAttrs.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
+                };
+            case EventType.ChildWorkflowExecutionCanceled:
+                var childCanceledAttrs = evt.ChildWorkflowExecutionCanceledEventAttributes;
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = $"Child Workflow Canceled: {childCanceledAttrs.WorkflowType?.Name}",
+                    ActivityId = childCanceledAttrs.WorkflowExecution?.WorkflowId,
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o")
+                };
+            case EventType.ChildWorkflowExecutionTerminated:
+                var childTerminatedAttrs = evt.ChildWorkflowExecutionTerminatedEventAttributes;
+                return new WorkflowActivityEvent
+                {
+                    ID = evt.EventId,
+                    ActivityName = $"Child Workflow Terminated: {childTerminatedAttrs.WorkflowType?.Name}",
+                    ActivityId = childTerminatedAttrs.WorkflowExecution?.WorkflowId,
+                    StartedTime = evt.EventTime?.ToDateTime().ToString("o")
+                };
             default:
                 return null;
         }
@@ -217,6 +273,62 @@ public class WorkflowEventsService : IWorkflowEventsService
                         Result = completedAttrs.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
                     };
                     activityEvents.Add(activityEvent);
+                    break;
+                case EventType.TimerStarted:
+                    var timerAttrs = evt.TimerStartedEventAttributes;
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = "Timer Started",
+                        ActivityId = timerAttrs.TimerId,
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                        Result = $"Duration: {timerAttrs.StartToFireTimeout?.ToTimeSpan()}"
+                    });
+                    break;
+                case EventType.WorkflowExecutionSignaled:
+                    var signalAttrs = evt.WorkflowExecutionSignaledEventAttributes;
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = $"Signal: {signalAttrs.SignalName}",
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                        Inputs = signalAttrs.Input?.Payloads_.Select(p => p.Data.ToStringUtf8()).ToArray()
+                    });
+                    break;
+                case EventType.ChildWorkflowExecutionStarted:
+                    var childStartedAttrs = evt.ChildWorkflowExecutionStartedEventAttributes;
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = $"Child Workflow Started: {childStartedAttrs.WorkflowType?.Name}",
+                        ActivityId = childStartedAttrs.WorkflowExecution?.WorkflowId,
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o")
+                    });
+                    break;
+                case EventType.ChildWorkflowExecutionCompleted:
+                    var childCompletedAttrs = evt.ChildWorkflowExecutionCompletedEventAttributes;
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = $"Child Workflow Completed: {childCompletedAttrs.WorkflowType?.Name}",
+                        ActivityId = childCompletedAttrs.WorkflowExecution?.WorkflowId,
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o"),
+                        Result = childCompletedAttrs.Result?.Payloads_.FirstOrDefault()?.Data.ToStringUtf8()
+                    });
+                    break;
+                case EventType.ChildWorkflowExecutionCanceled:
+                    var childCanceledAttrs = evt.ChildWorkflowExecutionCanceledEventAttributes;
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = $"Child Workflow Canceled: {childCanceledAttrs.WorkflowType?.Name}",
+                        ActivityId = childCanceledAttrs.WorkflowExecution?.WorkflowId,
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o")
+                    });
+                    break;
+                case EventType.ChildWorkflowExecutionTerminated:
+                    var childTerminatedAttrs = evt.ChildWorkflowExecutionTerminatedEventAttributes;
+                    activityEvents.Add(new WorkflowActivityEvent
+                    {
+                        ActivityName = $"Child Workflow Terminated: {childTerminatedAttrs.WorkflowType?.Name}",
+                        ActivityId = childTerminatedAttrs.WorkflowExecution?.WorkflowId,
+                        StartedTime = evt.EventTime?.ToDateTime().ToString("o")
+                    });
                     break;
             }
         }
