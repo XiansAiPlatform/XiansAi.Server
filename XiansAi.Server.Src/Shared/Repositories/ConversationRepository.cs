@@ -198,6 +198,9 @@ public interface IConversationRepository
     // Topics operations
     Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize);
 
+    // Hint operations
+    Task<string?> GetLastHintAsync(string tenantId, string workflowId, string participantId, string? scope = null);
+
 }
 
 /// <summary>
@@ -737,6 +740,51 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 }
             };
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTopicsByThreadId");
+    }
+
+    public async Task<string?> GetLastHintAsync(string tenantId, string workflowId, string participantId, string? scope = null)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+            var filter = filterBuilder.And(
+                filterBuilder.Eq(x => x.TenantId, tenantId),
+                filterBuilder.Eq(x => x.WorkflowId, workflowId),
+                filterBuilder.Eq(x => x.ParticipantId, participantId),
+                filterBuilder.Ne(x => x.Hint, null),
+                filterBuilder.Ne(x => x.Hint, "")
+            );
+
+            // Apply scope filter if provided
+            if (scope != null)
+            {
+                if (string.IsNullOrEmpty(scope))
+                {
+                    _logger.LogDebug("Filtering messages with no scope (null) for last hint");
+                    filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, null));
+                }
+                else
+                {
+                    _logger.LogDebug("Filtering messages by scope `{Scope}` for last hint", scope);
+                    filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, scope));
+                }
+            }
+
+            // Get the most recent message with a hint
+            var projection = Builders<ConversationMessage>.Projection.Include(x => x.Hint);
+            
+            var message = await _messagesCollection
+                .Find(filter)
+                .Project<ConversationMessage>(projection)
+                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                .Limit(1)
+                .FirstOrDefaultAsync();
+
+            _logger.LogDebug("Last hint for workflow {WorkflowId}, participant {ParticipantId}, scope {Scope}: {Hint}", 
+                workflowId, participantId, scope ?? "null", message?.Hint ?? "none");
+
+            return message?.Hint;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastHint");
     }
 
     #endregion
