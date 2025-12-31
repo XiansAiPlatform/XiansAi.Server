@@ -367,6 +367,8 @@ public class MessageService : IMessageService
     
     private async Task<ConversationMessage> SaveMessage(string threadId,ChatOrDataRequest request, MessageDirection direction, MessageType messageType)
     {
+        // Normalize empty scope to null (empty string and null both represent the default topic)
+        var normalizedScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
 
         var message = new ConversationMessage
         {
@@ -374,7 +376,7 @@ public class MessageService : IMessageService
             ParticipantId = request.ParticipantId,
             TenantId = _tenantContext.TenantId,
             Hint = request.Hint,
-            Scope = request.Scope,
+            Scope = normalizedScope,  // Use normalized scope
             RequestId = request.RequestId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,

@@ -88,6 +88,13 @@ conversation_message:
       created_at: desc
     background: true
     sparse: true
+  - name: thread_scope_lookup
+    keys:
+      tenant_id: asc
+      thread_id: asc
+      scope: asc
+      created_at: desc
+    background: true
   - name: tenant_lookup
     keys:
       tenant_id: asc

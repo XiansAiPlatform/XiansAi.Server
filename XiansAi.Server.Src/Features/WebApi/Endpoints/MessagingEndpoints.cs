@@ -81,14 +81,30 @@ public static class MessagingEndpoints
             [FromServices] IMessagingService endpoint,
             [FromRoute] string threadId,
             [FromQuery] int? page = null,
-            [FromQuery] int? pageSize = null) => {
-            var result = await endpoint.GetMessages(threadId, page, pageSize);  
+            [FromQuery] int? pageSize = null,
+            [FromQuery] string? scope = null) => {
+            var result = await endpoint.GetMessages(threadId, page, pageSize, scope);  
             return result.ToHttpResult();
         })
         .WithName("Get Messages for a thread")
         .WithOpenApi(operation => {
             operation.Summary = "Get all messages for a thread";
-            operation.Description = "Gets all messages for a given thread";
+            operation.Description = "Gets all messages for a given thread. Optionally filter by scope (topic). Pass empty string or null to get messages with no scope.";
+            return operation;
+        });
+
+        messagingGroup.MapGet("/threads/{threadId}/topics", async (
+            [FromServices] IMessagingService endpoint,
+            [FromRoute] string threadId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50) => {
+            var result = await endpoint.GetTopics(threadId, page, pageSize);  
+            return result.ToHttpResult();
+        })
+        .WithName("Get Topics for a thread")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get all topics (scopes) for a thread";
+            operation.Description = "Gets all unique topics (scopes) for a given thread with message counts and last activity timestamp. Results are sorted by most recent activity first. Supports pagination with default page size of 50 and maximum of 100.";
             return operation;
         });   
 

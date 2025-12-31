@@ -158,6 +158,28 @@ public class ConversationThread
 /// Unified conversation repository that combines thread and message operations
 /// with optimized performance using transactions and atomic operations
 /// </summary>
+public class TopicInfo
+{
+    public string? Scope { get; set; }
+    public int MessageCount { get; set; }
+    public DateTime LastMessageAt { get; set; }
+}
+
+public class TopicsResult
+{
+    public required List<TopicInfo> Topics { get; set; }
+    public required PaginationMetadata Pagination { get; set; }
+}
+
+public class PaginationMetadata
+{
+    public int CurrentPage { get; set; }
+    public int PageSize { get; set; }
+    public int TotalTopics { get; set; }
+    public int TotalPages { get; set; }
+    public bool HasMore { get; set; }
+}
+
 public interface IConversationRepository
 {
     // Thread operations
@@ -172,6 +194,9 @@ public interface IConversationRepository
     Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
     Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null);
     Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
+
+    // Topics operations
+    Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize);
 
 }
 
@@ -414,7 +439,7 @@ public class ConversationRepository : IConversationRepository
     }
 
     public async Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(
-        string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false)
+string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -424,12 +449,26 @@ public class ConversationRepository : IConversationRepository
                 Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId)
             );
 
-            if (!string.IsNullOrEmpty(scope))
+            // Handle scope filtering:
+            // - If scope is not provided (null): return all messages (no filtering)
+            // - If scope is empty string: return only messages with null scope
+            // - If scope has a value: return only messages with that exact scope
+            if (scope != null)
             {
-                _logger.LogDebug("Filtering messages by scope `{Scope}`", scope);
-                messageFilter = Builders<ConversationMessage>.Filter.And(
-                    messageFilter, 
-                    Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope));
+                if (string.IsNullOrEmpty(scope))
+                {
+                    _logger.LogDebug("Filtering messages with no scope (null)");
+                    messageFilter = Builders<ConversationMessage>.Filter.And(
+                        messageFilter,
+                        Builders<ConversationMessage>.Filter.Eq(x => x.Scope, null));
+                }
+                else
+                {
+                    _logger.LogDebug("Filtering messages by scope `{Scope}`", scope);
+                    messageFilter = Builders<ConversationMessage>.Filter.And(
+                        messageFilter, 
+                        Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope));
+                }
             }
 
             if (chatOnly)
@@ -457,14 +496,23 @@ public class ConversationRepository : IConversationRepository
             // Project only the fields we need
             var projection = Builders<ConversationMessage>.Projection
                 .Include(x => x.Id)
+                .Include(x => x.ThreadId)
                 .Include(x => x.TenantId)
+                .Include(x => x.ParticipantId)
+                .Include(x => x.WorkflowId)
+                .Include(x => x.WorkflowType)
                 .Include(x => x.CreatedAt)
+                .Include(x => x.UpdatedAt)
+                .Include(x => x.CreatedBy)
                 .Include(x => x.Direction)
                 .Include(x => x.MessageType)
                 .Include(x => x.Text)
                 .Include(x => x.Data)
+                .Include(x => x.Status)
                 .Include(x => x.Hint)
-                .Include(x => x.RequestId);
+                .Include(x => x.Scope)
+                .Include(x => x.RequestId)
+                .Include(x => x.Origin);
 
             var messages = await query.Project<ConversationMessage>(projection).ToListAsync();
             
@@ -501,14 +549,23 @@ public class ConversationRepository : IConversationRepository
             // Optimized projection for better memory usage
             var projection = Builders<ConversationMessage>.Projection
                 .Include(x => x.Id)
+                .Include(x => x.ThreadId)
                 .Include(x => x.TenantId)
+                .Include(x => x.ParticipantId)
+                .Include(x => x.WorkflowId)
+                .Include(x => x.WorkflowType)
                 .Include(x => x.CreatedAt)
+                .Include(x => x.UpdatedAt)
+                .Include(x => x.CreatedBy)
                 .Include(x => x.Direction)
                 .Include(x => x.MessageType)
                 .Include(x => x.Text)
                 .Include(x => x.Data)
+                .Include(x => x.Status)
                 .Include(x => x.Hint)
-                .Include(x => x.RequestId);
+                .Include(x => x.Scope)
+                .Include(x => x.RequestId)
+                .Include(x => x.Origin);
 
             var messages = await _messagesCollection
                 .Find(filter)
@@ -565,6 +622,121 @@ public class ConversationRepository : IConversationRepository
             }
             return thread.Id;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetThreadId");
+    }
+
+    public async Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            
+            _logger.LogDebug("Getting topics for thread {ThreadId}, page={Page}, pageSize={PageSize}", 
+                threadId, page, pageSize);
+
+            var skip = (page - 1) * pageSize;
+
+            // OPTIMIZATION: Single aggregation using $facet to get count and data in one query
+            // This eliminates the need for two separate aggregations, cutting query time in half
+            var pipeline = new[]
+            {
+                // Match documents for this thread
+                new BsonDocument("$match", new BsonDocument
+                {
+                    { "tenant_id", tenantId },
+                    { "thread_id", threadId }
+                }),
+                // Group by scope to get topic statistics
+                new BsonDocument("$group", new BsonDocument
+                {
+                    { "_id", "$scope" },
+                    { "message_count", new BsonDocument("$sum", 1) },
+                    { "last_message_at", new BsonDocument("$max", "$created_at") }
+                }),
+                // Use $facet to get both count and paginated data in single pass
+                new BsonDocument("$facet", new BsonDocument
+                {
+                    // Count total topics
+                    { "totalCount", new BsonArray
+                        {
+                            new BsonDocument("$count", "count")
+                        }
+                    },
+                    // Get paginated topic data
+                    { "data", new BsonArray
+                        {
+                            new BsonDocument("$sort", new BsonDocument
+                            {
+                                { "last_message_at", -1 },  // Most recent first
+                                { "_id", 1 }                  // Stable sort by scope name
+                            }),
+                            new BsonDocument("$skip", skip),
+                            new BsonDocument("$limit", pageSize)
+                        }
+                    }
+                })
+            };
+
+            // OPTIMIZATION: AllowDiskUse prevents memory errors on large datasets
+            // OPTIMIZATION: MaxTime prevents runaway queries
+            var aggregateOptions = new AggregateOptions 
+            { 
+                AllowDiskUse = true,
+                MaxTime = TimeSpan.FromSeconds(30)
+            };
+
+            var result = await _messagesCollection
+                .Aggregate<BsonDocument>(pipeline, aggregateOptions)
+                .FirstOrDefaultAsync();
+
+            // Extract count from facet result
+            var totalTopics = 0;
+            if (result != null && result.Contains("totalCount"))
+            {
+                var countArray = result["totalCount"].AsBsonArray;
+                if (countArray.Count > 0)
+                {
+                    totalTopics = countArray[0]["count"].ToInt32();
+                }
+            }
+
+            // Extract data from facet result
+            var dataArray = result?["data"]?.AsBsonArray ?? new BsonArray();
+            var topics = dataArray.Select(doc => new TopicInfo
+            {
+                Scope = doc["_id"].IsBsonNull ? null : doc["_id"].AsString,
+                MessageCount = doc["message_count"].ToInt32(),
+                LastMessageAt = doc["last_message_at"].ToUniversalTime()
+            }).ToList();
+
+            // Calculate pagination metadata
+            var totalPages = totalTopics > 0 ? (int)Math.Ceiling((double)totalTopics / pageSize) : 0;
+            var hasMore = page < totalPages;
+
+            stopwatch.Stop();
+            
+            _logger.LogDebug("Found {Count} topics for thread {ThreadId} (page {Page} of {TotalPages}) in {Duration}ms", 
+                topics.Count, threadId, page, totalPages, stopwatch.ElapsedMilliseconds);
+
+            // Log slow queries for monitoring
+            if (stopwatch.ElapsedMilliseconds > 1000)
+            {
+                _logger.LogWarning("SLOW QUERY: Topics aggregation took {Duration}ms for thread {ThreadId}, page {Page}",
+                    stopwatch.ElapsedMilliseconds, threadId, page);
+            }
+
+            return new TopicsResult
+            {
+                Topics = topics,
+                Pagination = new PaginationMetadata
+                {
+                    CurrentPage = page,
+                    PageSize = pageSize,
+                    TotalTopics = totalTopics,
+                    TotalPages = totalPages,
+                    HasMore = hasMore
+                }
+            };
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTopicsByThreadId");
     }
 
     #endregion
