@@ -36,9 +36,10 @@ public static class TaskEndpoints
             [FromQuery] int? pageSize = null,
             [FromQuery] string? pageToken = null,
             [FromQuery] string? agent = null,
-            [FromQuery] string? participantId = null) => 
+            [FromQuery] string? participantId = null,
+            [FromQuery] string? status = null) => 
         {
-            var result = await taskService.GetTasks(pageSize, pageToken, agent, participantId);
+            var result = await taskService.GetTasks(pageSize, pageToken, agent, participantId, status);
             return result.ToHttpResult();
         })
         .WithName("Get Tasks")
@@ -46,7 +47,7 @@ public static class TaskEndpoints
         {
             operation.Summary = "Get paginated list of tasks";
             operation.Description = @"Retrieves a paginated list of tasks filtered by tenant. 
-                Optional filters: agent (agent name), participantId (user ID). 
+                Optional filters: agent (agent name), participantId (user ID), status (workflow execution status: Running, Completed, Failed, Terminated, Canceled, etc.). 
                 Pagination: pageSize (default: 20, max: 100), pageToken (continuation token from previous response).";
             return operation;
         });

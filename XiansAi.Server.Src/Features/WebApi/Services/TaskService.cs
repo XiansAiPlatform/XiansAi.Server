@@ -16,7 +16,7 @@ public interface ITaskService
     Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft);
     Task<ServiceResult<object>> CompleteTask(string workflowId);
     Task<ServiceResult<object>> RejectTask(string workflowId, string rejectionMessage);
-    Task<ServiceResult<PaginatedTasksResponse>> GetTasks(int? pageSize, string? pageToken, string? agent, string? participantId);
+    Task<ServiceResult<PaginatedTasksResponse>> GetTasks(int? pageSize, string? pageToken, string? agent, string? participantId, string? status);
 }
 
 /// <summary>
@@ -241,16 +241,18 @@ public class TaskService : ITaskService
     /// <param name="pageToken">Token for pagination continuation.</param>
     /// <param name="agent">Optional agent filter.</param>
     /// <param name="participantId">Optional participant/user ID filter.</param>
+    /// <param name="status">Optional workflow execution status filter.</param>
     /// <returns>A result containing the paginated list of tasks.</returns>
     public async Task<ServiceResult<PaginatedTasksResponse>> GetTasks(
         int? pageSize, 
         string? pageToken, 
         string? agent, 
-        string? participantId)
+        string? participantId,
+        string? status)
     {
         _logger.LogInformation(
-            "Retrieving paginated tasks - PageSize: {PageSize}, PageToken: {PageToken}, Agent: {Agent}, ParticipantId: {ParticipantId}",
-            pageSize ?? 20, pageToken ?? "null", agent ?? "null", participantId ?? "null");
+            "Retrieving paginated tasks - PageSize: {PageSize}, PageToken: {PageToken}, Agent: {Agent}, ParticipantId: {ParticipantId}, Status: {Status}",
+            pageSize ?? 20, pageToken ?? "null", agent ?? "null", participantId ?? "null", status ?? "null");
 
         // Validate page size
         var actualPageSize = pageSize ?? 20;
@@ -281,6 +283,12 @@ public class TaskService : ITaskService
             if (!string.IsNullOrEmpty(participantId))
             {
                 queryParts.Add($"{Constants.UserIdKey} = '{participantId}'");
+            }
+
+            // Add status filter if specified
+            if (!string.IsNullOrEmpty(status))
+            {
+                queryParts.Add($"ExecutionStatus = '{status}'");
             }
 
             var listQuery = string.Join(" and ", queryParts);
