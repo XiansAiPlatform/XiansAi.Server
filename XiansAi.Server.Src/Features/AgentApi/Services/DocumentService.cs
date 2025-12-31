@@ -6,6 +6,8 @@ using Features.AgentApi.Models;
 using Shared.Data.Models;
 using Shared.Utils.Services;
 using Shared.Auth;
+using Shared.Repositories;
+using Shared.Data;
 
 namespace Features.AgentApi.Services;
 
@@ -26,14 +28,18 @@ public class DocumentService : IDocumentService
     private readonly IDocumentRepository _repository;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<DocumentService> _logger;
+    private readonly IAgentPermissionRepository _agentPermissionRepository;
+    
     public DocumentService(
         IDocumentRepository repository,
         ITenantContext tenantContext,
-        ILogger<DocumentService> logger)
+        ILogger<DocumentService> logger,
+        IAgentPermissionRepository agentPermissionRepository)
     {
         _repository = repository;
         _tenantContext = tenantContext;
         _logger = logger;
+        _agentPermissionRepository = agentPermissionRepository;
     }
 
     public async Task<ServiceResult<JsonElement>> SaveAsync(JsonElement requestElement)
@@ -58,6 +64,22 @@ public class DocumentService : IDocumentService
 
             var documentData = request.Document;
             var options = request.Options;
+
+            // Validate that AgentId is provided
+            if (string.IsNullOrEmpty(documentData.AgentId))
+            {
+                _logger.LogWarning("Document save attempted without AgentId");
+                return ServiceResult<JsonElement>.BadRequest("AgentId is required for document operations");
+            }
+
+            // Check write permissions for the agent
+            var hasPermission = await CheckPermissions(documentData.AgentId, PermissionLevel.Write);
+            if (!hasPermission)
+            {
+                _logger.LogWarning("User {UserId} attempted to save document for agent {AgentId} without write permission", 
+                    _tenantContext.LoggedInUser, documentData.AgentId);
+                return ServiceResult<JsonElement>.Forbidden("Write access required for this agent");
+            }
 
             // Convert to MongoDB document
             var document = new Document
@@ -202,6 +224,22 @@ public class DocumentService : IDocumentService
                 return ServiceResult<JsonElement?>.Forbidden("Access denied");
             }
 
+            // Validate that AgentId is present
+            if (string.IsNullOrEmpty(document.AgentId))
+            {
+                _logger.LogWarning("Document {Id} has no AgentId, denying access", id);
+                return ServiceResult<JsonElement?>.Forbidden("Document has no associated agent");
+            }
+
+            // Check read permissions for the agent
+            var hasPermission = await CheckPermissions(document.AgentId, PermissionLevel.Read);
+            if (!hasPermission)
+            {
+                _logger.LogWarning("User {UserId} attempted to get document {Id} for agent {AgentId} without read permission", 
+                    _tenantContext.LoggedInUser, id, document.AgentId);
+                return ServiceResult<JsonElement?>.Forbidden("Read access required for this agent");
+            }
+
             var responseDocument = ConvertToDocumentResponse(document);
             var responseJson = JsonSerializer.SerializeToElement(responseDocument);
             
@@ -225,6 +263,22 @@ public class DocumentService : IDocumentService
                 return ServiceResult<JsonElement?>.NotFound("Document not found");
             }
 
+            // Validate that AgentId is present
+            if (string.IsNullOrEmpty(document.AgentId))
+            {
+                _logger.LogWarning("Document with Type: {Type} and Key: {Key} has no AgentId, denying access", type, key);
+                return ServiceResult<JsonElement?>.Forbidden("Document has no associated agent");
+            }
+
+            // Check read permissions for the agent
+            var hasPermission = await CheckPermissions(document.AgentId, PermissionLevel.Read);
+            if (!hasPermission)
+            {
+                _logger.LogWarning("User {UserId} attempted to get document with Type: {Type} and Key: {Key} for agent {AgentId} without read permission", 
+                    _tenantContext.LoggedInUser, type, key, document.AgentId);
+                return ServiceResult<JsonElement?>.Forbidden("Read access required for this agent");
+            }
+
             var responseDocument = ConvertToDocumentResponse(document);
             var responseJson = JsonSerializer.SerializeToElement(responseDocument);
             
@@ -241,8 +295,20 @@ public class DocumentService : IDocumentService
     {
         try
         {
+            // Get all agent names the user has read access to (filtered at DB level)
+            var authorizedAgentNames = await _agentPermissionRepository.GetAgentNamesWithPermissionAsync(PermissionLevel.Read);
+            
+            // If user has no access to any agents, return empty result
+            if (!authorizedAgentNames.Any())
+            {
+                _logger.LogInformation("User {UserId} has no read access to any agents", _tenantContext.LoggedInUser);
+                var emptyResult = JsonSerializer.SerializeToElement(new List<object>());
+                return ServiceResult<JsonElement>.Success(emptyResult);
+            }
+
             var filter = new DocumentQueryFilter
             {
+                AgentIds = authorizedAgentNames, // Filter at DB level for performance
                 Type = request.Query.Type,
                 Key = request.Query.Key,
                 MetadataFilters = request.Query.MetadataFilters,
@@ -255,6 +321,7 @@ public class DocumentService : IDocumentService
                 ContentType = request.ContentType
             };
 
+            // Query documents - already filtered by authorized agents at DB level
             var documents = await _repository.QueryAsync(_tenantContext.TenantId, filter);
             
             var responseDocuments = documents.Select(ConvertToDocumentResponse).ToList();
@@ -299,6 +366,22 @@ public class DocumentService : IDocumentService
             if (!string.IsNullOrEmpty(existing.TenantId) && existing.TenantId != _tenantContext.TenantId)
             {
                 return ServiceResult<bool>.Forbidden("Access denied");
+            }
+
+            // Validate that AgentId is present
+            if (string.IsNullOrEmpty(existing.AgentId))
+            {
+                _logger.LogWarning("Document {Id} has no AgentId, denying update", documentData.Id);
+                return ServiceResult<bool>.Forbidden("Document has no associated agent");
+            }
+
+            // Check write permissions for the agent
+            var hasPermission = await CheckPermissions(existing.AgentId, PermissionLevel.Write);
+            if (!hasPermission)
+            {
+                _logger.LogWarning("User {UserId} attempted to update document {Id} for agent {AgentId} without write permission", 
+                    _tenantContext.LoggedInUser, documentData.Id, existing.AgentId);
+                return ServiceResult<bool>.Forbidden("Write access required for this agent");
             }
 
             // Update document
@@ -346,6 +429,35 @@ public class DocumentService : IDocumentService
     {
         try
         {
+            // First get the document to check permissions
+            var document = await _repository.GetByIdAsync(id);
+            if (document == null)
+            {
+                return ServiceResult<bool>.NotFound("Document not found");
+            }
+
+            // Check tenant access
+            if (!string.IsNullOrEmpty(document.TenantId) && document.TenantId != _tenantContext.TenantId)
+            {
+                return ServiceResult<bool>.Forbidden("Access denied");
+            }
+
+            // Validate that AgentId is present
+            if (string.IsNullOrEmpty(document.AgentId))
+            {
+                _logger.LogWarning("Document {Id} has no AgentId, denying delete", id);
+                return ServiceResult<bool>.Forbidden("Document has no associated agent");
+            }
+
+            // Check write permissions for the agent
+            var hasPermission = await CheckPermissions(document.AgentId, PermissionLevel.Write);
+            if (!hasPermission)
+            {
+                _logger.LogWarning("User {UserId} attempted to delete document {Id} for agent {AgentId} without write permission", 
+                    _tenantContext.LoggedInUser, id, document.AgentId);
+                return ServiceResult<bool>.Forbidden("Write access required for this agent");
+            }
+
             var deleted = await _repository.DeleteAsync(id, _tenantContext.TenantId);
             
             if (!deleted)
@@ -366,7 +478,27 @@ public class DocumentService : IDocumentService
     {
         try
         {
-            var deletedCount = await _repository.DeleteManyAsync(ids, _tenantContext.TenantId);
+            var idList = ids.ToList();
+            
+            if (!idList.Any())
+            {
+                var emptyResult = new BulkDeleteResult { DeletedCount = 0 };
+                return ServiceResult<BulkDeleteResult>.Success(emptyResult);
+            }
+
+            // Get all agent names the user has write access to (filtered at DB level)
+            var authorizedAgentNames = await _agentPermissionRepository.GetAgentNamesWithPermissionAsync(PermissionLevel.Write);
+            
+            // If user has no write access to any agents, return 0 deleted
+            if (!authorizedAgentNames.Any())
+            {
+                _logger.LogWarning("User {UserId} has no write access to any agents, cannot delete documents", _tenantContext.LoggedInUser);
+                var zeroResult = new BulkDeleteResult { DeletedCount = 0 };
+                return ServiceResult<BulkDeleteResult>.Success(zeroResult);
+            }
+
+            // Delete documents - filtered by both IDs and authorized agent names at DB level
+            var deletedCount = await _repository.DeleteManyByIdsAndAgentsAsync(idList, authorizedAgentNames, _tenantContext.TenantId);
             
             var result = new BulkDeleteResult { DeletedCount = deletedCount };
             return ServiceResult<BulkDeleteResult>.Success(result);
@@ -382,10 +514,37 @@ public class DocumentService : IDocumentService
     {
         try
         {
-            var exists = await _repository.ExistsAsync(id, _tenantContext.TenantId);
+            // Get the document to check permissions
+            var document = await _repository.GetByIdAsync(id);
             
-            var result = new ExistsResult { Exists = exists };
-            return ServiceResult<ExistsResult>.Success(result);
+            // If document doesn't exist or belongs to different tenant, return false
+            if (document == null || 
+                (!string.IsNullOrEmpty(document.TenantId) && document.TenantId != _tenantContext.TenantId))
+            {
+                var result = new ExistsResult { Exists = false };
+                return ServiceResult<ExistsResult>.Success(result);
+            }
+
+            // If document has no AgentId, deny access
+            if (string.IsNullOrEmpty(document.AgentId))
+            {
+                _logger.LogWarning("Document {Id} has no AgentId, denying existence check", id);
+                return ServiceResult<ExistsResult>.Forbidden("Document has no associated agent");
+            }
+
+            // Check read permissions for the agent
+            var hasPermission = await CheckPermissions(document.AgentId, PermissionLevel.Read);
+            if (!hasPermission)
+            {
+                _logger.LogWarning("User {UserId} attempted to check existence of document {Id} for agent {AgentId} without read permission", 
+                    _tenantContext.LoggedInUser, id, document.AgentId);
+                // Return false for documents the user doesn't have access to (don't reveal existence)
+                var result = new ExistsResult { Exists = false };
+                return ServiceResult<ExistsResult>.Success(result);
+            }
+            
+            var existsResult = new ExistsResult { Exists = true };
+            return ServiceResult<ExistsResult>.Success(existsResult);
         }
         catch (Exception ex)
         {
@@ -435,6 +594,46 @@ public class DocumentService : IDocumentService
     {
         var json = JsonSerializer.Serialize(element);
         return BsonSerializer.Deserialize<BsonValue>(json);
+    }
+
+    /// <summary>
+    /// Checks if the current user has system-level access (SysAdmin or TenantAdmin for the agent's tenant)
+    /// </summary>
+    private async Task<bool> HasSystemAccess(string agentId)
+    {
+        // System admin has access to everything
+        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            return true;
+
+        // Tenant admin has access to everything in their tenant
+        if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
+        {
+            var agentTenantId = await _agentPermissionRepository.GetAgentTenantAsync(agentId);
+            return !string.IsNullOrEmpty(agentTenantId) &&
+                   _tenantContext.TenantId.Equals(agentTenantId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if the current user has the required permission level for the specified agent
+    /// </summary>
+    private async Task<bool> CheckPermissions(string agentId, PermissionLevel requiredLevel)
+    {
+        if (await HasSystemAccess(agentId))
+        {
+            return true;
+        }
+
+        var currentPermissions = await _agentPermissionRepository.GetAgentPermissionsAsync(agentId);
+        if (currentPermissions == null)
+        {
+            _logger.LogWarning("No permissions found for agent: {AgentId}", agentId);
+            return false;
+        }
+
+        return currentPermissions.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel);
     }
 }
 

@@ -11,6 +11,7 @@ public interface IAgentPermissionRepository
     Task<bool> AddUserToAgentAsync(string agentName, string userId, PermissionLevel permissionLevel);
     Task<bool> RemoveUserFromAgentAsync(string agentName, string userId);
     Task<bool> UpdateUserPermissionAsync(string agentName, string userId, PermissionLevel newPermissionLevel);
+    Task<List<string>> GetAgentNamesWithPermissionAsync(PermissionLevel requiredLevel);
 }
 
 public class AgentPermissionRepository : IAgentPermissionRepository
@@ -250,5 +251,28 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         }
 
         return agent?.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel) ?? false;
+    }
+
+    public async Task<List<string>> GetAgentNamesWithPermissionAsync(PermissionLevel requiredLevel)
+    {
+        _logger.LogInformation("Getting agent names with {PermissionLevel} permission for user {UserId} in tenant {TenantId}", 
+            requiredLevel, _tenantContext.LoggedInUser, _tenantContext.TenantId);
+
+        var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+        
+        // Filter agents based on required permission level
+        var authorizedAgents = agents.Where(agent => 
+        {
+            if (HasSystemAccess(agent.Tenant))
+                return true;
+            
+            return agent.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel);
+        }).ToList();
+
+        var agentNames = authorizedAgents.Select(a => a.Name).ToList();
+        
+        _logger.LogInformation("User has {PermissionLevel} access to {Count} agents", requiredLevel, agentNames.Count);
+        
+        return agentNames;
     }
 }

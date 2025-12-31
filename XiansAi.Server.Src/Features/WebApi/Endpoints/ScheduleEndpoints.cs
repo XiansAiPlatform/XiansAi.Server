@@ -57,58 +57,78 @@ public static class ScheduleEndpoints
         .WithDescription("Deletes all schedules associated with a specific agent. Requires write permission for the agent.")
         .WithOpenApi();
 
-        // Get upcoming runs for a schedule (more specific route - must come before /{scheduleId})
-        schedulesGroup.MapGet("/{scheduleId}/upcoming-runs", async (
-            string scheduleId,
+        // Get upcoming runs for a schedule
+        schedulesGroup.MapGet("/upcoming-runs", async (
+            [FromQuery] string scheduleId,
             [FromServices] IScheduleService scheduleService,
             [FromQuery] int count = 10) =>
         {
+            if (string.IsNullOrWhiteSpace(scheduleId))
+            {
+                return Results.BadRequest("scheduleId is required");
+            }
+            
             var result = await scheduleService.GetUpcomingRunsAsync(scheduleId, count);
             return result.ToHttpResult();
         })
         .WithName("GetUpcomingRuns")
         .WithSummary("Get upcoming runs for a schedule")
-        .WithDescription("Retrieves the next scheduled executions for a specific schedule")
+        .WithDescription("Retrieves the next scheduled executions for a specific schedule. Provide scheduleId as a query parameter.")
         .WithOpenApi();
 
-        // Get execution history for a schedule (more specific route - must come before /{scheduleId})
-        schedulesGroup.MapGet("/{scheduleId}/history", async (
-            string scheduleId,
+        // Get execution history for a schedule
+        schedulesGroup.MapGet("/history", async (
+            [FromQuery] string scheduleId,
             [FromServices] IScheduleService scheduleService,
             [FromQuery] int count = 50) =>
         {
+            if (string.IsNullOrWhiteSpace(scheduleId))
+            {
+                return Results.BadRequest("scheduleId is required");
+            }
+            
             var result = await scheduleService.GetScheduleHistoryAsync(scheduleId, count);
             return result.ToHttpResult();
         })
         .WithName("GetScheduleHistory")
         .WithSummary("Get schedule execution history")
-        .WithDescription("Retrieves the execution history for a specific schedule")
+        .WithDescription("Retrieves the execution history for a specific schedule. Provide scheduleId as a query parameter.")
         .WithOpenApi();
 
-        // Get schedule by ID (less specific route)
-        schedulesGroup.MapGet("/{scheduleId}", async (
-            string scheduleId,
+        // Get schedule by ID
+        schedulesGroup.MapGet("/by-id", async (
+            [FromQuery] string scheduleId,
             [FromServices] IScheduleService scheduleService) =>
         {
+            if (string.IsNullOrWhiteSpace(scheduleId))
+            {
+                return Results.BadRequest("scheduleId is required");
+            }
+            
             var result = await scheduleService.GetScheduleByIdAsync(scheduleId);
             return result.ToHttpResult();
         })
         .WithName("GetScheduleById")
         .WithSummary("Get schedule by ID")
-        .WithDescription("Retrieves detailed information about a specific schedule")
+        .WithDescription("Retrieves detailed information about a specific schedule. Provide scheduleId as a query parameter.")
         .WithOpenApi();
 
-        // Delete a specific schedule by ID (less specific route)
-        schedulesGroup.MapDelete("/{scheduleId}", async (
-            string scheduleId,
+        // Delete a specific schedule by ID
+        schedulesGroup.MapDelete("/by-id", async (
+            [FromQuery] string scheduleId,
             [FromServices] IScheduleService scheduleService) =>
         {
+            if (string.IsNullOrWhiteSpace(scheduleId))
+            {
+                return Results.BadRequest("scheduleId is required");
+            }
+            
             var result = await scheduleService.DeleteScheduleByIdAsync(scheduleId);
             return result.ToHttpResult();
         })
         .WithName("DeleteScheduleById")
         .WithSummary("Delete a schedule by ID")
-        .WithDescription("Deletes a specific schedule. Requires write permission for the associated agent.")
+        .WithDescription("Deletes a specific schedule. Requires write permission for the associated agent. Provide scheduleId as a query parameter.")
         .WithOpenApi();
     }
 }

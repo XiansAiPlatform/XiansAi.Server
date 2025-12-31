@@ -4,6 +4,8 @@ using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 using Shared.Utils.Temporal;
 using Shared.Utils.Services;
+using Shared.Repositories;
+using Features.WebApi.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -49,6 +51,8 @@ public class WorkflowStarterService : IWorkflowStarterService
     private readonly ILogger<WorkflowStarterService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IAgentService _agentService;
+    private readonly IFlowDefinitionRepository _flowDefinitionRepository;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowStarterService"/> class.
     /// </summary>
@@ -56,17 +60,20 @@ public class WorkflowStarterService : IWorkflowStarterService
     /// <param name="logger">The logger instance.</param>
     /// <param name="tenantContext">The tenant context.</param>
     /// <param name="agentService">The agent service.</param>
+    /// <param name="flowDefinitionRepository">The flow definition repository.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowStarterService(
         ITemporalClientFactory clientFactory,
         ILogger<WorkflowStarterService> logger,
         ITenantContext tenantContext,
-        IAgentService agentService)
+        IAgentService agentService,
+        IFlowDefinitionRepository flowDefinitionRepository)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _agentService = agentService ?? throw new ArgumentNullException(nameof(agentService));
+        _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
     }
 
     /// <summary>
@@ -97,6 +104,34 @@ public class WorkflowStarterService : IWorkflowStarterService
             var agentName = request.AgentName;
             var systemScoped = _agentService.IsSystemAgent(agentName).Result.Data;
 
+            // Retrieve the flow definition to get parameter type information
+            var flowDefinition = await _flowDefinitionRepository.GetLatestFlowDefinitionAsync(
+                request.WorkflowType, 
+                systemScoped ? null : _tenantContext.TenantId);
+
+            if (flowDefinition == null)
+            {
+                _logger.LogWarning("Flow definition not found for workflow type: {WorkflowType}", request.WorkflowType);
+                return ServiceResult<WorkflowStartResult>.NotFound($"Workflow definition not found for type: {request.WorkflowType}");
+            }
+
+            // Convert parameters based on the flow definition
+            object[] convertedParameters;
+            try
+            {
+                convertedParameters = request.Parameters != null && request.Parameters.Length > 0
+                    ? WorkflowParameterConverter.ConvertParameters(request.Parameters, flowDefinition.ParameterDefinitions)
+                    : Array.Empty<object>();
+                
+                _logger.LogDebug("Converted {Count} parameters for workflow {WorkflowType}", 
+                    convertedParameters.Length, request.WorkflowType);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Parameter conversion failed for workflow {WorkflowType}", request.WorkflowType);
+                return ServiceResult<WorkflowStartResult>.BadRequest($"Parameter conversion error: {ex.Message}");
+            }
+
             var options = new NewWorkflowOptions(
                 agentName, 
                 systemScoped,
@@ -105,7 +140,7 @@ public class WorkflowStarterService : IWorkflowStarterService
                 _tenantContext);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
-            var handle = await StartWorkflowAsync(request, options);
+            var handle = await StartWorkflowAsync(convertedParameters, options, request.WorkflowType);
             
             var result = new WorkflowStartResult
             {
@@ -127,16 +162,17 @@ public class WorkflowStarterService : IWorkflowStarterService
     /// Starts the workflow asynchronously using the Temporal client.
     /// </summary>
     private async Task<WorkflowHandle> StartWorkflowAsync(
-        WorkflowRequest request,
-        WorkflowOptions options)
+        object[] parameters,
+        WorkflowOptions options,
+        string workflowType)
     {
-        _logger.LogDebug("Starting workflow {WorkflowType} with options {Options}", 
-            request.WorkflowType, JsonSerializer.Serialize(options));
+        _logger.LogDebug("Starting workflow {WorkflowType} with {ParamCount} parameters", 
+            workflowType, parameters.Length);
         
         var client = await _clientFactory.GetClientAsync();
         return await client.StartWorkflowAsync(
-            request.WorkflowType,
-            request.Parameters ?? Array.Empty<string>(),
+            workflowType,
+            parameters,
             options
         );
     }
