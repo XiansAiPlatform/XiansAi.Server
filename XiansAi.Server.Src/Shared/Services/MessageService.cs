@@ -241,6 +241,14 @@ public class MessageService : IMessageService
 
         try
         {
+            // Generate RequestId if not provided for request tracking and correlation
+            if (string.IsNullOrEmpty(request.RequestId))
+            {
+                request.RequestId = MessageRequestProcessor.GenerateRequestId(
+                    request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}", 
+                    request.ParticipantId);
+            }
+
             var threadId = await CreateOrGetThread(request);
 
             var message = await SaveMessage(threadId, request, MessageDirection.Outgoing, messageType);
@@ -269,6 +277,14 @@ public class MessageService : IMessageService
         if (request.Authorization == null && _tenantContext.Authorization != null)
         {
             request.Authorization = _tenantContext.Authorization;
+        }
+
+        // Generate RequestId if not provided for request tracking and correlation
+        if (string.IsNullOrEmpty(request.RequestId))
+        {
+            request.RequestId = MessageRequestProcessor.GenerateRequestId(
+                request.WorkflowId!, 
+                request.ParticipantId);
         }
 
         //check if starts with tenantId
