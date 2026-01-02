@@ -91,6 +91,7 @@ public interface IMessageService
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false);
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
     Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
+    Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null);
 }
 
 public class MessageService : IMessageService
@@ -241,6 +242,14 @@ public class MessageService : IMessageService
 
         try
         {
+            // Generate RequestId if not provided for request tracking and correlation
+            if (string.IsNullOrEmpty(request.RequestId))
+            {
+                request.RequestId = MessageRequestProcessor.GenerateRequestId(
+                    request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}", 
+                    request.ParticipantId);
+            }
+
             var threadId = await CreateOrGetThread(request);
 
             var message = await SaveMessage(threadId, request, MessageDirection.Outgoing, messageType);
@@ -269,6 +278,14 @@ public class MessageService : IMessageService
         if (request.Authorization == null && _tenantContext.Authorization != null)
         {
             request.Authorization = _tenantContext.Authorization;
+        }
+
+        // Generate RequestId if not provided for request tracking and correlation
+        if (string.IsNullOrEmpty(request.RequestId))
+        {
+            request.RequestId = MessageRequestProcessor.GenerateRequestId(
+                request.WorkflowId!, 
+                request.ParticipantId);
         }
 
         //check if starts with tenantId
@@ -367,6 +384,8 @@ public class MessageService : IMessageService
     
     private async Task<ConversationMessage> SaveMessage(string threadId,ChatOrDataRequest request, MessageDirection direction, MessageType messageType)
     {
+        // Normalize empty scope to null (empty string and null both represent the default topic)
+        var normalizedScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
 
         var message = new ConversationMessage
         {
@@ -374,7 +393,7 @@ public class MessageService : IMessageService
             ParticipantId = request.ParticipantId,
             TenantId = _tenantContext.TenantId,
             Hint = request.Hint,
-            Scope = request.Scope,
+            Scope = normalizedScope,  // Use normalized scope
             RequestId = request.RequestId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -446,6 +465,43 @@ public class MessageService : IMessageService
             _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}", 
                 workflowId, participantId);
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
+        }
+    }
+
+    public async Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null)
+    {
+        try
+        {
+            _logger.LogInformation("Getting last hint for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
+                workflowId, participantId, scope ?? "null");
+
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
+            {
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
+                    workflowId, participantId);
+                return ServiceResult<string?>.BadRequest("WorkflowId and ParticipantId are required");
+            }
+
+            var hint = await _conversationRepository.GetLastHintAsync(_tenantContext.TenantId, workflowId, participantId, scope);
+
+            if (hint == null)
+            {
+                _logger.LogInformation("No hint found for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
+                    workflowId, participantId, scope ?? "null");
+            }
+            else
+            {
+                _logger.LogInformation("Found hint for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
+                    workflowId, participantId, scope ?? "null");
+            }
+
+            return ServiceResult<string?>.Success(hint);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting last hint for workflowId {WorkflowId}, participant {ParticipantId}", 
+                workflowId, participantId);
+            return ServiceResult<string?>.InternalServerError("An error occurred while retrieving the last hint");
         }
     }
 

@@ -62,9 +62,15 @@ public static class KnowledgeEndpoints
         .WithOpenApi();
 
         knowledgeGroup.MapDelete("/all", async (
-            [FromBody] DeleteAllVersionsRequest request,
+            [FromQuery] string name,
+            [FromQuery] string agent,
             [FromServices] IKnowledgeService endpoint) =>
         {
+            var request = new DeleteAllVersionsRequest 
+            {
+                Name = name,
+                Agent = agent
+            };
             return await endpoint.DeleteAllVersions(request);
         })
         .WithName("Delete All Versions")

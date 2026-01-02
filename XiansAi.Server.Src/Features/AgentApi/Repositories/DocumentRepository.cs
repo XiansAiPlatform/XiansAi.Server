@@ -19,6 +19,7 @@ public interface IDocumentRepository
     Task<bool> UpdateAsync(Document document);
     Task<bool> DeleteAsync(string id, string? tenantId);
     Task<int> DeleteManyAsync(IEnumerable<string> ids, string? tenantId);
+    Task<int> DeleteManyByIdsAndAgentsAsync(IEnumerable<string> ids, IEnumerable<string> agentNames, string? tenantId);
     Task<bool> ExistsAsync(string id, string? tenantId);
     Task<bool> ExistsByKeyAsync(string type, string key, string? tenantId);
 }
@@ -26,6 +27,7 @@ public interface IDocumentRepository
 public class DocumentQueryFilter
 {
     public string? AgentId { get; set; }
+    public List<string>? AgentIds { get; set; }
     public string? Type { get; set; }
     public string? Key { get; set; }
     public Dictionary<string, object>? MetadataFilters { get; set; }
@@ -164,8 +166,12 @@ public class DocumentRepository : IDocumentRepository
             filter &= builder.Eq(d => d.TenantId, tenantId);
         }
 
-        // Add agent filter
-        if (!string.IsNullOrEmpty(queryFilter.AgentId))
+        // Add agent filter - support both single AgentId and multiple AgentIds
+        if (queryFilter.AgentIds != null && queryFilter.AgentIds.Any())
+        {
+            filter &= builder.In(d => d.AgentId, queryFilter.AgentIds);
+        }
+        else if (!string.IsNullOrEmpty(queryFilter.AgentId))
         {
             filter &= builder.Eq(d => d.AgentId, queryFilter.AgentId);
         }
@@ -351,6 +357,43 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting multiple documents");
+            throw;
+        }
+    }
+
+    public async Task<int> DeleteManyByIdsAndAgentsAsync(IEnumerable<string> ids, IEnumerable<string> agentNames, string? tenantId)
+    {
+        try
+        {
+            var idList = ids.ToList();
+            var agentList = agentNames.ToList();
+            
+            if (!idList.Any() || !agentList.Any())
+            {
+                return 0;
+            }
+
+            var builder = Builders<Document>.Filter;
+            var filter = builder.And(
+                builder.In(d => d.Id, idList),
+                builder.In(d => d.AgentId, agentList)
+            );
+            
+            // Add tenant filter if provided for security
+            if (!string.IsNullOrEmpty(tenantId))
+            {
+                filter &= builder.Eq(d => d.TenantId, tenantId);
+            }
+
+            var result = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.DeleteManyAsync(filter),
+                _logger);
+
+            return (int)result.DeletedCount;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting multiple documents by IDs and agents");
             throw;
         }
     }

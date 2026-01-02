@@ -53,6 +53,15 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
+            group.MapGet("/last-hint", GetLastHint)
+            .WithName("Get Last Hint")
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Get last hint from message history";
+                operation.Description = "Gets the most recent hint from message history for a given workflow, participant, and optional scope";
+                return operation;
+            });
+
             group.MapPost("/outbound/chat", async (
                 [FromBody] ChatOrDataRequest request,
                 [FromServices] IMessageService messageService) =>
@@ -200,6 +209,34 @@ namespace Features.AgentApi.Endpoints
                 return result.ToHttpResult();
             }
             
+        }
+
+        private static async Task<IResult> GetLastHint(
+            [FromQuery] string? workflowType,
+            [FromQuery] string? workflowId,
+            [FromQuery] string participantId,
+            [FromQuery] string? scope,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] IMessageService messageService)
+        {
+            if (string.IsNullOrEmpty(workflowType) && string.IsNullOrEmpty(workflowId))
+            {
+                return ServiceResult<string?>.BadRequest("WorkflowType or WorkflowId is required").ToHttpResult();
+            }
+
+            if (string.IsNullOrEmpty(participantId))
+            {
+                return ServiceResult<string?>.BadRequest("ParticipantId is required").ToHttpResult();
+            }
+
+            // Construct full workflowId if only workflowType is provided
+            if (workflowId == null)
+            {
+                workflowId = $"{tenantContext.TenantId}:{workflowType}";
+            }
+
+            var result = await messageService.GetLastHintAsync(workflowId, participantId, scope);
+            return result.ToHttpResult();
         }
     }
 } 

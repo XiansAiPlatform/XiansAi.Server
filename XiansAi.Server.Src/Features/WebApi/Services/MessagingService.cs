@@ -8,7 +8,8 @@ namespace Features.WebApi.Services;
 public interface IMessagingService
 {
     Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null);
-    Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null);
+    Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null, string? scope = null);
+    Task<ServiceResult<TopicsResult>> GetTopics(string threadId, int page, int pageSize);
     Task<ServiceResult<bool>> DeleteThread(string threadId);
 }
 
@@ -38,7 +39,7 @@ public class MessagingService : IMessagingService
     }
 
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null, string? scope = null)
     {
         var tenantId = _tenantContext.TenantId;
 
@@ -67,8 +68,71 @@ public class MessagingService : IMessagingService
             }
         }
 
-        var messages = await _conversationRepository.GetMessagesByThreadIdAsync(tenantId, threadId, page, pageSize);
+        // Handle scope parameter:
+        // - null: no filtering (return all messages)
+        // - empty string: filter for messages with null scope
+        // - value: filter for messages with that scope
+        // Trim whitespace from non-empty scopes
+        string? normalizedScope = scope;
+        if (!string.IsNullOrEmpty(scope))
+        {
+            normalizedScope = scope.Trim();
+            // If after trimming it's empty, treat as empty string (filter for null scopes)
+            if (string.IsNullOrEmpty(normalizedScope))
+            {
+                normalizedScope = string.Empty;
+            }
+        }
+
+        var messages = await _conversationRepository.GetMessagesByThreadIdAsync(tenantId, threadId, page, pageSize, normalizedScope);
         return ServiceResult<List<ConversationMessage>>.Success(messages);
+    }
+
+    public async Task<ServiceResult<TopicsResult>> GetTopics(string threadId, int page, int pageSize)
+    {
+        try
+        {
+            var tenantId = _tenantContext.TenantId;
+
+            // Validate pagination parameters
+            if (page <= 0)
+            {
+                return ServiceResult<TopicsResult>.BadRequest("Page number must be greater than 0. Pagination is 1-based.");
+            }
+
+            if (pageSize <= 0)
+            {
+                return ServiceResult<TopicsResult>.BadRequest("Page size must be greater than 0.");
+            }
+
+            if (pageSize > 100)
+            {
+                return ServiceResult<TopicsResult>.BadRequest("Page size cannot exceed 100.");
+            }
+
+            // OPTIMIZATION: Limit maximum page number to prevent deep pagination performance issues
+            // For accessing topics beyond page 100, users should use search functionality
+            const int MAX_PAGE = 100;
+            if (page > MAX_PAGE)
+            {
+                return ServiceResult<TopicsResult>.BadRequest(
+                    $"Page number cannot exceed {MAX_PAGE}. For accessing older topics, please use search functionality or contact support.");
+            }
+
+            _logger.LogDebug("GetTopics called for thread {ThreadId} with page={Page}, pageSize={PageSize}", 
+                threadId, page, pageSize);
+
+            var result = await _conversationRepository.GetTopicsByThreadIdAsync(tenantId, threadId, page, pageSize);
+            
+            _logger.LogDebug("GetTopics returned {Count} topics for thread {ThreadId}", result.Topics.Count, threadId);
+            
+            return ServiceResult<TopicsResult>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving topics for thread {ThreadId}", threadId);
+            return ServiceResult<TopicsResult>.InternalServerError("An error occurred while retrieving topics");
+        }
     }
 
     public async Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null)

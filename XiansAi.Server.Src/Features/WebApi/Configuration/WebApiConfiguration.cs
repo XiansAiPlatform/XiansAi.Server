@@ -29,6 +29,9 @@ public static class WebApiConfiguration
 
         // Register schedule service
         builder.Services.AddScoped<IScheduleService, ScheduleService>();
+        
+        // Register task service
+        builder.Services.AddScoped<ITaskService, TaskService>();
 
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
@@ -143,6 +146,7 @@ public static class WebApiConfiguration
         ScheduleEndpoints.MapScheduleEndpoints(app);
         UsageStatisticsEndpoints.MapUsageStatisticsEndpoints(app);
         DocumentEndpoints.MapDocumentEndpoints(app);
+        TaskEndpoints.MapTaskEndpoints(app);
 
         ApiKeyEndpoints.MapApiKeyEndpoints(app);
         

@@ -339,4 +339,405 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         
         return await collection.Find(t => t.Id == threadId).FirstOrDefaultAsync();
     }
+
+    private async Task<ConversationMessage> CreateTestMessageWithScopeAsync(
+        string threadId,
+        string? scope = null,
+        string content = "Test message",
+        MessageDirection direction = MessageDirection.Incoming)
+    {
+        using var scope2 = _factory.Services.CreateScope();
+        var databaseService = scope2.ServiceProvider.GetRequiredService<IDatabaseService>();
+
+        // Normalize scope: empty string and whitespace should be treated as null (default topic)
+        var normalizedScope = string.IsNullOrWhiteSpace(scope) ? null : scope.Trim();
+
+        var message = new ConversationMessage
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            ThreadId = threadId,
+            TenantId = TestTenantId,
+            ParticipantId = $"test-participant-{Guid.NewGuid()}",
+            WorkflowId = $"test-workflow-{Guid.NewGuid()}",
+            WorkflowType = "TestWorkflowType",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CreatedBy = TestUserId,
+            Direction = direction,
+            Text = content,
+            Scope = normalizedScope,  // Use normalized scope
+            Status = MessageStatus.DeliveredToWorkflow
+        };
+
+        // Insert directly into repository
+        var database = await databaseService.GetDatabaseAsync();
+        var collection = database.GetCollection<ConversationMessage>("conversation_message");
+        await collection.InsertOneAsync(message);
+
+        return message;
+    }
+
+    #region Topics Tests
+
+    [Fact]
+    public async Task GetTopics_WithValidThreadId_ReturnsTopics()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create messages with different scopes
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing question");
+        await Task.Delay(10);
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "support", content: "Support question");
+        await Task.Delay(10);
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "General message");
+
+        // Act
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        
+        var result = await ReadAsJsonAsync<TopicsResult>(response);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Topics);
+        Assert.Equal(3, result.Topics.Count); // billing, support, null
+        
+        // Verify pagination metadata
+        Assert.NotNull(result.Pagination);
+        Assert.Equal(1, result.Pagination.CurrentPage);
+        Assert.Equal(50, result.Pagination.PageSize);
+        Assert.Equal(3, result.Pagination.TotalTopics);
+        Assert.Equal(1, result.Pagination.TotalPages);
+        Assert.False(result.Pagination.HasMore);
+        
+        // Verify topics are sorted by most recent activity
+        Assert.Equal("General message", result.Topics[0].Scope == null ? "General message" : result.Topics[0].Scope);
+        Assert.Equal(1, result.Topics.First(t => t.Scope == null).MessageCount);
+        Assert.Equal(1, result.Topics.First(t => t.Scope == "support").MessageCount);
+        Assert.Equal(1, result.Topics.First(t => t.Scope == "billing").MessageCount);
+    }
+
+    [Fact]
+    public async Task GetTopics_WithPagination_ReturnsCorrectPage()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create messages with 5 different scopes
+        for (int i = 0; i < 5; i++)
+        {
+            await CreateTestMessageWithScopeAsync(thread.Id, scope: $"topic-{i}", content: $"Message {i}");
+            await Task.Delay(10); // Ensure different timestamps
+        }
+
+        // Act - Get page 1 with pageSize 2
+        var response1 = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=2");
+
+        // Assert page 1
+        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
+        var result1 = await ReadAsJsonAsync<TopicsResult>(response1);
+        Assert.NotNull(result1);
+        Assert.Equal(2, result1.Topics.Count);
+        Assert.Equal(1, result1.Pagination.CurrentPage);
+        Assert.Equal(2, result1.Pagination.PageSize);
+        Assert.Equal(5, result1.Pagination.TotalTopics);
+        Assert.Equal(3, result1.Pagination.TotalPages);
+        Assert.True(result1.Pagination.HasMore);
+
+        // Act - Get page 2
+        var response2 = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=2&pageSize=2");
+
+        // Assert page 2
+        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
+        var result2 = await ReadAsJsonAsync<TopicsResult>(response2);
+        Assert.NotNull(result2);
+        Assert.Equal(2, result2.Topics.Count);
+        Assert.Equal(2, result2.Pagination.CurrentPage);
+        Assert.True(result2.Pagination.HasMore);
+
+        // Act - Get page 3 (last page)
+        var response3 = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=3&pageSize=2");
+
+        // Assert page 3
+        Assert.Equal(HttpStatusCode.OK, response3.StatusCode);
+        var result3 = await ReadAsJsonAsync<TopicsResult>(response3);
+        Assert.NotNull(result3);
+        Assert.Single(result3.Topics); // Only 1 topic left
+        Assert.Equal(3, result3.Pagination.CurrentPage);
+        Assert.False(result3.Pagination.HasMore);
+    }
+
+    [Fact]
+    public async Task GetTopics_SortedByMostRecentActivity()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create messages with different scopes at different times
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "old-topic", content: "Old message");
+        await Task.Delay(50);
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "middle-topic", content: "Middle message");
+        await Task.Delay(50);
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "new-topic", content: "New message");
+
+        // Act
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<TopicsResult>(response);
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Topics.Count);
+        
+        // Verify topics are sorted by most recent first
+        Assert.Equal("new-topic", result.Topics[0].Scope);
+        Assert.Equal("middle-topic", result.Topics[1].Scope);
+        Assert.Equal("old-topic", result.Topics[2].Scope);
+        
+        // Verify timestamps are in descending order
+        Assert.True(result.Topics[0].LastMessageAt > result.Topics[1].LastMessageAt);
+        Assert.True(result.Topics[1].LastMessageAt > result.Topics[2].LastMessageAt);
+    }
+
+    [Fact]
+    public async Task GetTopics_WithMultipleMessagesInSameTopic_CountsCorrectly()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create multiple messages with the same scope
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Message 1");
+        await Task.Delay(10);
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Message 2");
+        await Task.Delay(10);
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Message 3");
+
+        // Act
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<TopicsResult>(response);
+        Assert.NotNull(result);
+        Assert.Single(result.Topics); // Only one topic
+        Assert.Equal("billing", result.Topics[0].Scope);
+        Assert.Equal(3, result.Topics[0].MessageCount);
+    }
+
+    [Fact]
+    public async Task GetTopics_WithInvalidPageNumber_ReturnsBadRequest()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+
+        // Act - page=0 is invalid
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=0&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page number must be greater than 0", content);
+    }
+
+    [Fact]
+    public async Task GetTopics_WithInvalidPageSize_ReturnsBadRequest()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+
+        // Act - pageSize=0 is invalid
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=0");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page size must be greater than 0", content);
+    }
+
+    [Fact]
+    public async Task GetTopics_WithPageSizeExceedingMax_ReturnsBadRequest()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+
+        // Act - pageSize=101 exceeds max of 100
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=101");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page size cannot exceed 100", content);
+    }
+
+    [Fact]
+    public async Task GetTopics_WithEmptyThread_ReturnsEmptyList()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        // Don't create any messages
+
+        // Act
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<TopicsResult>(response);
+        Assert.NotNull(result);
+        Assert.Empty(result.Topics);
+        Assert.Equal(0, result.Pagination.TotalTopics);
+        Assert.Equal(0, result.Pagination.TotalPages);
+        Assert.False(result.Pagination.HasMore);
+    }
+
+    [Fact]
+    public async Task GetTopics_WithPageExceedingMaximum_ReturnsBadRequest()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+
+        // Act - page=101 exceeds maximum of 100
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=101&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page number cannot exceed 100", content);
+        Assert.Contains("search functionality", content);
+    }
+
+    [Fact]
+    public async Task GetMessages_WithScopeFilter_ReturnsOnlyMatchingMessages()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create messages with different scopes
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing message 1");
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing message 2");
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "support", content: "Support message");
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "General message");
+
+        // Act - Filter by "billing" scope
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages?page=1&pageSize=50&scope=billing");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var messages = await ReadAsJsonAsync<List<ConversationMessage>>(response);
+        Assert.NotNull(messages);
+        Assert.Equal(2, messages.Count);
+        Assert.All(messages, m => Assert.Equal("billing", m.Scope));
+    }
+
+    [Fact]
+    public async Task GetMessages_WithNullScope_ReturnsOnlyMessagesWithoutScope()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create messages with different scopes
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing message");
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "General message 1");
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "General message 2");
+
+        // Act - Filter by null scope (empty string)
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages?page=1&pageSize=50&scope=");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var messages = await ReadAsJsonAsync<List<ConversationMessage>>(response);
+        Assert.NotNull(messages);
+        Assert.Equal(2, messages.Count);
+        Assert.All(messages, m => Assert.Null(m.Scope));
+    }
+
+    [Fact]
+    public async Task GetMessages_WithoutScopeFilter_ReturnsAllMessages()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create messages with different scopes
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing message");
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "support", content: "Support message");
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "General message");
+
+        // Act - No scope filter
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages?page=1&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var messages = await ReadAsJsonAsync<List<ConversationMessage>>(response);
+        Assert.NotNull(messages);
+        Assert.Equal(3, messages.Count);
+    }
+
+    [Fact]
+    public async Task GetTopics_NewMessageInExistingTopic_UpdatesLastMessageAt()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create initial message in topic
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Old message");
+        await Task.Delay(100);
+        
+        // Get initial topics
+        var response1 = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
+        var result1 = await ReadAsJsonAsync<TopicsResult>(response1);
+        var initialLastMessageAt = result1!.Topics.First(t => t.Scope == "billing").LastMessageAt;
+        
+        // Add new message to same topic
+        await Task.Delay(100);
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "New message");
+
+        // Act - Get topics again
+        var response2 = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
+        var result2 = await ReadAsJsonAsync<TopicsResult>(response2);
+        Assert.NotNull(result2);
+        var updatedTopic = result2.Topics.First(t => t.Scope == "billing");
+        Assert.Equal(2, updatedTopic.MessageCount);
+        Assert.True(updatedTopic.LastMessageAt > initialLastMessageAt);
+    }
+
+    [Fact]
+    public async Task GetTopics_EmptyStringAndNullScope_CombinedIntoSingleDefaultTopic()
+    {
+        // Arrange
+        var thread = await CreateTestThreadAsync();
+        
+        // Create messages with null scope
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "Message with null scope");
+        await Task.Delay(10);
+        
+        // Create messages with empty string scope (should be normalized to null)
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "", content: "Message with empty scope");
+        await Task.Delay(10);
+        
+        // Create messages with whitespace scope (should be normalized to null)
+        await CreateTestMessageWithScopeAsync(thread.Id, scope: "   ", content: "Message with whitespace scope");
+
+        // Act
+        var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<TopicsResult>(response);
+        Assert.NotNull(result);
+        
+        // Should only have ONE topic (the default topic with scope = null)
+        Assert.Single(result.Topics);
+        
+        // The single topic should be the default topic (null scope)
+        var defaultTopic = result.Topics[0];
+        Assert.Null(defaultTopic.Scope);
+        
+        // Should contain all 3 messages
+        Assert.Equal(3, defaultTopic.MessageCount);
+    }
+
+    #endregion
 } 
