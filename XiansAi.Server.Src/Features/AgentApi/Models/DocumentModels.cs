@@ -64,6 +64,9 @@ public class DocumentOptions
 /// </summary>
 public class DocumentQuery
 {
+    [JsonPropertyName("agentId")]
+    public string? AgentId { get; set; }
+
     [JsonPropertyName("type")]
     public string? Type { get; set; }
 

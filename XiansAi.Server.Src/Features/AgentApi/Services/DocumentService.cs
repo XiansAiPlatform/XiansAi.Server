@@ -295,7 +295,7 @@ public class DocumentService : IDocumentService
     {
         try
         {
-            // Get all agent names the user has read access to (filtered at DB level)
+            // Get all agent names the user has read access to
             var authorizedAgentNames = await _agentPermissionRepository.GetAgentNamesWithPermissionAsync(PermissionLevel.Read);
             
             // If user has no access to any agents, return empty result
@@ -306,9 +306,29 @@ public class DocumentService : IDocumentService
                 return ServiceResult<JsonElement>.Success(emptyResult);
             }
 
+            // If a specific AgentId is requested, verify permission and use it
+            List<string> agentIdsToQuery;
+            if (!string.IsNullOrEmpty(request.Query.AgentId))
+            {
+                // Check if user has access to the requested agent
+                if (!authorizedAgentNames.Contains(request.Query.AgentId))
+                {
+                    _logger.LogWarning("User {UserId} attempted to query agent {AgentId} without permission", 
+                        _tenantContext.LoggedInUser, request.Query.AgentId);
+                    var emptyResult = JsonSerializer.SerializeToElement(new List<object>());
+                    return ServiceResult<JsonElement>.Success(emptyResult);
+                }
+                agentIdsToQuery = new List<string> { request.Query.AgentId };
+            }
+            else
+            {
+                // No specific agent requested, use all authorized agents
+                agentIdsToQuery = authorizedAgentNames;
+            }
+
             var filter = new DocumentQueryFilter
             {
-                AgentIds = authorizedAgentNames, // Filter at DB level for performance
+                AgentIds = agentIdsToQuery, // Filter by specific agent or all authorized
                 Type = request.Query.Type,
                 Key = request.Query.Key,
                 MetadataFilters = request.Query.MetadataFilters,
@@ -321,7 +341,7 @@ public class DocumentService : IDocumentService
                 ContentType = request.ContentType
             };
 
-            // Query documents - already filtered by authorized agents at DB level
+            // Query documents - filtered by authorized agents at DB level
             var documents = await _repository.QueryAsync(_tenantContext.TenantId, filter);
             
             var responseDocuments = documents.Select(ConvertToDocumentResponse).ToList();
