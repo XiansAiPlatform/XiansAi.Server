@@ -29,23 +29,27 @@ public class KeycloakTokenService : ITokenService
 
     public string? ExtractUserId(JwtSecurityToken token)
     {
-        // First try the standard 'sub' claim
-        var userId = token.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+        // Prefer 'preferred_username' over 'sub' for readable user IDs
+        // 'preferred_username' is a standard OIDC claim (RFC) and provides human-readable identifiers
+        // This aligns with database design where user_id is stored as readable strings (e.g., "admin")
+        var userId = token.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
         if (!string.IsNullOrEmpty(userId))
         {
-            _logger.LogDebug("Found user ID in 'sub' claim: {UserId}", userId);
+            _logger.LogDebug("Found user ID in 'preferred_username' claim: {UserId}", userId);
             return userId;
         }
 
-        // Fallback to preferred_username for Keycloak tokens missing 'sub' claim
-        userId = token.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+        // Fallback to standard 'sub' claim (UUID/immutable identifier)
+        // 'sub' is always present in OIDC tokens and is immutable, making it reliable for providers
+        // that don't include 'preferred_username' or when it's not available
+        userId = token.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
         if (!string.IsNullOrEmpty(userId))
         {
-            _logger.LogInformation("Using 'preferred_username' as user ID: {UserId}", userId);
+            _logger.LogDebug("Using 'sub' claim as user ID: {UserId}", userId);
             return userId;
         }
 
-        // Try other common alternative claim names
+        // Try other common alternative claim names as last resort
         var alternativeClaimTypes = new[] { "user_id", "uid", "id", "email", "username" };
         foreach (var claimType in alternativeClaimTypes)
         {

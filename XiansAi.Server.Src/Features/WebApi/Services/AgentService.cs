@@ -34,7 +34,7 @@ public class AgentService : IAgentService
     /// Initializes a new instance of the <see cref="AgentService"/> class.
     /// </summary>
     /// <param name="definitionRepository">Repository for flow definition operations.</param>
-    /// <param name="agentRepository">Repository for agent operations.</param>
+    /// <param name="agentRepository">Repository for agent operations (templates and instances).</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     /// <param name="workflowFinderService">Service for workflow finder operations.</param>
@@ -59,12 +59,21 @@ public class AgentService : IAgentService
 
     public async Task<ServiceResult<Agent>> GetAgentByNameAsync(string agentName)
     {
+        // Check agents collection (tenant-scoped instances or system-scoped templates)
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
-        if (agent == null)
+        if (agent != null)
         {
-            return ServiceResult<Agent>.NotFound("Agent " + agentName + " not found");
+            return ServiceResult<Agent>.Success(agent);
         }
-        return ServiceResult<Agent>.Success(agent);
+
+        // Also check system-scoped agents (templates)
+        var systemAgent = await _agentRepository.GetByNameInternalAsync(agentName, null);
+        if (systemAgent != null && systemAgent.SystemScoped)
+        {
+            return ServiceResult<Agent>.Success(systemAgent);
+        }
+
+        return ServiceResult<Agent>.NotFound("Agent " + agentName + " not found");
     }
 
     public async Task<ServiceResult<bool>> IsSystemAgent(string agentName)
@@ -76,8 +85,14 @@ public class AgentService : IAgentService
     {
         try
         {
+            // Get agent names from agents collection (includes both templates and instances)
             var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
-            var agentNames = agents.Select(a => a.Name).ToList();
+
+            // Get unique agent names
+            var agentNames = agents.Select(a => a.Name)
+                .Distinct()
+                .ToList();
+
             return ServiceResult<List<string>>.Success(agentNames);
         }
         catch (Exception ex)
@@ -91,9 +106,14 @@ public class AgentService : IAgentService
     {
         try
         {
-            _logger.LogInformation("Getting grouped definitions for user {UserId} in tenant {Tenant}", _tenantContext.LoggedInUser, _tenantContext.TenantId);   
-            var definitions = await _agentRepository.GetAgentsWithDefinitionsAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId, null, null, basicDataOnly: basicDataOnly);
-            return ServiceResult<List<AgentWithDefinitions>>.Success(definitions);
+            _logger.LogInformation("Getting grouped definitions for user {UserId} in tenant {Tenant}", _tenantContext.LoggedInUser, _tenantContext.TenantId);
+            
+            // Get agents with definitions from agents collection (includes both templates and instances)
+            var agentDefinitions = await _agentRepository.GetAgentsWithDefinitionsAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId, null, null, basicDataOnly: basicDataOnly);
+            
+            _logger.LogInformation("Returning {Count} agents with definitions", agentDefinitions.Count);
+            
+            return ServiceResult<List<AgentWithDefinitions>>.Success(agentDefinitions);
         }
         catch (Exception ex)
         {
@@ -189,12 +209,19 @@ public class AgentService : IAgentService
                 return ServiceResult<AgentDeleteResult>.Forbidden("You must have owner permission to delete this agent");
             }
 
-            // Get the agent to retrieve its ID for deletion
+            // Get agent from agents collection
             var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
             if (agent == null)
             {
                 _logger.LogWarning("Agent {AgentName} not found for deletion", agentName);
                 return ServiceResult<AgentDeleteResult>.NotFound("Agent not found");
+            }
+
+            // Don't allow deletion of system-scoped agents through this endpoint
+            if (agent.SystemScoped)
+            {
+                _logger.LogWarning("Attempted to delete system-scoped agent {AgentName} through regular delete endpoint", agentName);
+                return ServiceResult<AgentDeleteResult>.BadRequest("System-scoped agents cannot be deleted through this endpoint. Use the template deletion endpoint instead.");
             }
 
             // Delete the agent (this will also delete associated flow definitions)

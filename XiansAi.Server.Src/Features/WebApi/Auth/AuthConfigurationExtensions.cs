@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Shared.Auth;
 using Shared.Providers.Auth;
 
 namespace Features.WebApi.Auth;

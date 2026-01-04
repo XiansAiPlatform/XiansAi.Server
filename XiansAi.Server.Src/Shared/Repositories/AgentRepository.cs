@@ -34,6 +34,17 @@ public interface IAgentRepository
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
     Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
 
+    // Helper methods for instance management (using metadata)
+    Task<bool> ExistsAsync(string name, string tenant);
+    Task<bool> AddReportingTargetAsync(string agentId, ReportingTo reportingTarget);
+    Task<bool> RemoveReportingTargetAsync(string agentId, string targetId);
+    
+    // Legacy methods for backward compatibility
+    [Obsolete("Use AddReportingTargetAsync instead")]
+    Task<bool> AddReportingUserAsync(string agentId, string userId);
+    [Obsolete("Use RemoveReportingTargetAsync instead")]
+    Task<bool> RemoveReportingUserAsync(string agentId, string userId);
+
 }
 
 public class AgentRepository : IAgentRepository
@@ -43,21 +54,33 @@ public class AgentRepository : IAgentRepository
     private readonly IMongoCollection<User> _users;
     private readonly ILogger<AgentRepository> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly IAgentTemplateRepository _agentTemplateRepository;
 
-    public AgentRepository(IDatabaseService databaseService, ILogger<AgentRepository> logger, ITenantContext tenantContext)
+    public AgentRepository(IDatabaseService databaseService, ILogger<AgentRepository> logger, ITenantContext tenantContext, IAgentTemplateRepository agentTemplateRepository)
     {
         var database = databaseService.GetDatabaseAsync().Result;
         _agents = database.GetCollection<Agent>("agents");
         _logger = logger;
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
         _users = database.GetCollection<User>("users");
-        _tenantContext = tenantContext; 
+        _tenantContext = tenantContext;
+        _agentTemplateRepository = agentTemplateRepository;
     }
 
     public async Task<bool> IsSystemAgent(string name)
     {
-        // Tenant is null for system agents
-        return await _agents.Find(x => x.Name == name && x.Tenant == null).FirstOrDefaultAsync() != null;
+        // Check both collections:
+        // 1. Legacy system-scoped agents in agents collection (Tenant is null)
+        // 2. New agent templates in agent_templates collection
+        var legacyAgent = await _agents.Find(x => x.Name == name && x.Tenant == null).FirstOrDefaultAsync();
+        if (legacyAgent != null)
+        {
+            return true;
+        }
+        
+        // Check agent_templates collection
+        var template = await _agentTemplateRepository.GetByNameAsync(name);
+        return template != null;
     }   
 
     public async Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles)
@@ -414,74 +437,155 @@ public class AgentRepository : IAgentRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}", agentName, createdBy, tenant);
+            _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}, systemScoped: {SystemScoped}", 
+                agentName, createdBy, tenant, systemScoped);
             
-            // Create new agent object
-            var newAgent = new Agent
+            // For system-scoped agents, use agent_templates collection
+            if (systemScoped)
             {
-                Id = ObjectId.GenerateNewId().ToString(),
-                Name = agentName,
-                SystemScoped = systemScoped,
-                Tenant = systemScoped ? null : tenant,
-                CreatedBy = createdBy,
-                CreatedAt = DateTime.UtcNow,
-                OwnerAccess = new List<string>(),
-                ReadAccess = new List<string>(),
-                WriteAccess = new List<string>(),
-                OnboardingJson = onboardingJson
-            };
-            newAgent.GrantOwnerAccess(createdBy);
-
-            try
-            {
-                // Try to insert the new agent - will fail if duplicate exists due to unique index
-                await _agents.InsertOneAsync(newAgent);
-                _logger.LogInformation("Agent {AgentName} created successfully", agentName);
-                return newAgent;
+                return await UpsertSystemScopedAgentAsync(agentName, createdBy, onboardingJson);
             }
-            catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
+            
+            // For tenant-scoped agents, use agents collection (existing behavior)
+            return await UpsertTenantScopedAgentAsync(agentName, tenant, createdBy, onboardingJson);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpsertAgent");
+    }
+
+    /// <summary>
+    /// Upserts a system-scoped agent template in the agent_templates collection.
+    /// </summary>
+    private async Task<Agent> UpsertSystemScopedAgentAsync(string agentName, string createdBy, string? onboardingJson = null)
+    {
+        // Check if template already exists
+        var existingTemplate = await _agentTemplateRepository.GetByNameAsync(agentName);
+        
+        if (existingTemplate != null)
+        {
+            _logger.LogInformation("Agent template {AgentName} already exists, updating if needed", agentName);
+            
+            // Update OnboardingJson if provided
+            if (!string.IsNullOrEmpty(onboardingJson) && existingTemplate.OnboardingJson != onboardingJson)
             {
-                _logger.LogInformation("Agent {AgentName} already exists, retrieving existing agent", agentName);
-                
-                // Agent already exists, get the existing one
-                // Use the actual tenant value from the new agent (which is null for system-scoped agents)
-                var existingAgent = await GetByNameInternalAsync(agentName, newAgent.Tenant);
-                if (existingAgent != null)
+                existingTemplate.OnboardingJson = onboardingJson;
+                await _agentTemplateRepository.UpdateAsync(existingTemplate.Id, existingTemplate);
+                _logger.LogInformation("Updated OnboardingJson for existing agent template {AgentName}", agentName);
+            }
+            
+            // Convert AgentTemplate to Agent for backward compatibility
+            return ConvertTemplateToAgent(existingTemplate);
+        }
+        
+        // Create new template
+        _logger.LogInformation("Creating new agent template {AgentName} in agent_templates collection", agentName);
+        
+        var newTemplate = new AgentTemplate
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            Name = agentName,
+            CreatedBy = createdBy,
+            CreatedAt = DateTime.UtcNow,
+            OnboardingJson = onboardingJson,
+            OwnerAccess = new List<string>(),
+            ReadAccess = new List<string>(),
+            WriteAccess = new List<string>(),
+            Metadata = new Dictionary<string, object>()
+        };
+        newTemplate.GrantOwnerAccess(createdBy);
+        
+        await _agentTemplateRepository.CreateAsync(newTemplate);
+        _logger.LogInformation("Agent template {AgentName} created successfully in agent_templates collection", agentName);
+        
+        // Convert AgentTemplate to Agent for backward compatibility
+        return ConvertTemplateToAgent(newTemplate);
+    }
+
+    /// <summary>
+    /// Upserts a tenant-scoped agent in the agents collection (existing behavior).
+    /// </summary>
+    private async Task<Agent> UpsertTenantScopedAgentAsync(string agentName, string tenant, string createdBy, string? onboardingJson = null)
+    {
+        // Create new agent object
+        var newAgent = new Agent
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            Name = agentName,
+            SystemScoped = false,
+            Tenant = tenant,
+            CreatedBy = createdBy,
+            CreatedAt = DateTime.UtcNow,
+            OwnerAccess = new List<string>(),
+            ReadAccess = new List<string>(),
+            WriteAccess = new List<string>(),
+            OnboardingJson = onboardingJson
+        };
+        newAgent.GrantOwnerAccess(createdBy);
+
+        try
+        {
+            // Try to insert the new agent - will fail if duplicate exists due to unique index
+            await _agents.InsertOneAsync(newAgent);
+            _logger.LogInformation("Agent {AgentName} created successfully in agents collection", agentName);
+            return newAgent;
+        }
+        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
+        {
+            _logger.LogInformation("Agent {AgentName} already exists, retrieving existing agent", agentName);
+            
+            // Agent already exists, get the existing one
+            var existingAgent = await GetByNameInternalAsync(agentName, tenant);
+            if (existingAgent != null)
+            {
+                // Update OnboardingJson if provided
+                if (!string.IsNullOrEmpty(onboardingJson) && existingAgent.OnboardingJson != onboardingJson)
                 {
-                    // Update OnboardingJson if provided
-                    if (!string.IsNullOrEmpty(onboardingJson))
-                    {
-                        _logger.LogInformation("Updating OnboardingJson for existing agent {AgentName}", agentName);
-                        
-                        var tenantFilter = existingAgent.Tenant == null
-                            ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
-                            : Builders<Agent>.Filter.Eq(x => x.Tenant, existingAgent.Tenant);
-                        
-                        var filter = Builders<Agent>.Filter.And(
-                            Builders<Agent>.Filter.Eq(x => x.Name, agentName),
-                            tenantFilter
-                        );
-                        
-                        var update = Builders<Agent>.Update.Set(x => x.OnboardingJson, onboardingJson);
-                        await _agents.UpdateOneAsync(filter, update);
-                        
-                        // Update the local object to reflect the change
-                        existingAgent.OnboardingJson = onboardingJson;
-                    }
+                    _logger.LogInformation("Updating OnboardingJson for existing agent {AgentName}", agentName);
                     
-                    return existingAgent;
+                    var filter = Builders<Agent>.Filter.And(
+                        Builders<Agent>.Filter.Eq(x => x.Name, agentName),
+                        Builders<Agent>.Filter.Eq(x => x.Tenant, tenant)
+                    );
+                    
+                    var update = Builders<Agent>.Update.Set(x => x.OnboardingJson, onboardingJson);
+                    await _agents.UpdateOneAsync(filter, update);
+                    
+                    // Update the local object to reflect the change
+                    existingAgent.OnboardingJson = onboardingJson;
                 }
                 
-                // This shouldn't happen, but if it does, throw the original exception
-                _logger.LogError(ex, "Agent {AgentName} duplicate key error but could not retrieve existing agent", agentName);
-                throw new InvalidOperationException($"Agent {agentName} creation failed due to duplicate key, but existing agent could not be retrieved", ex);
+                return existingAgent;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error while upserting agent {AgentName}", agentName);
-                throw;
-            }
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpsertAgent");
+            
+            // This shouldn't happen, but if it does, throw the original exception
+            _logger.LogError(ex, "Agent {AgentName} duplicate key error but could not retrieve existing agent", agentName);
+            throw new InvalidOperationException($"Agent {agentName} creation failed due to duplicate key, but existing agent could not be retrieved", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while upserting tenant-scoped agent {AgentName}", agentName);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Converts AgentTemplate to Agent for backward compatibility.
+    /// </summary>
+    private Agent ConvertTemplateToAgent(AgentTemplate template)
+    {
+        return new Agent
+        {
+            Id = template.Id,
+            Name = template.Name,
+            Tenant = null, // System-scoped
+            SystemScoped = true,
+            CreatedBy = template.CreatedBy,
+            CreatedAt = template.CreatedAt,
+            OwnerAccess = template.OwnerAccess,
+            ReadAccess = template.ReadAccess,
+            WriteAccess = template.WriteAccess,
+            OnboardingJson = template.OnboardingJson,
+            AgentTemplateId = template.Id, // Reference to the template
+            Metadata = template.Metadata != null ? new Dictionary<string, object>(template.Metadata) : null
+        };
     }
 
     private bool HasSystemAccess(string? agentTenantId)
@@ -508,5 +612,67 @@ public class AgentRepository : IAgentRepository
         }
 
         return agent?.HasPermission(_tenantContext.LoggedInUser, _tenantContext.UserRoles, requiredLevel) ?? false;
+    }
+
+    public async Task<bool> ExistsAsync(string name, string tenant)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var agent = await _agents.Find(x => x.Name == name && x.Tenant == tenant && x.SystemScoped == false).FirstOrDefaultAsync();
+            return agent != null;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CheckAgentExists");
+    }
+
+    public async Task<bool> AddReportingTargetAsync(string agentId, ReportingTo reportingTarget)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var agent = await _agents.Find(x => x.Id == agentId).FirstOrDefaultAsync();
+            if (agent == null)
+            {
+                _logger.LogWarning("Agent with ID {AgentId} not found", agentId);
+                return false;
+            }
+
+            agent.AddReportingTarget(reportingTarget);
+            var result = await _agents.ReplaceOneAsync(x => x.Id == agentId, agent);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddReportingTarget");
+    }
+
+    public async Task<bool> RemoveReportingTargetAsync(string agentId, string targetId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var agent = await _agents.Find(x => x.Id == agentId).FirstOrDefaultAsync();
+            if (agent == null)
+            {
+                _logger.LogWarning("Agent with ID {AgentId} not found", agentId);
+                return false;
+            }
+
+            agent.RemoveReportingTarget(targetId);
+            var result = await _agents.ReplaceOneAsync(x => x.Id == agentId, agent);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "RemoveReportingTarget");
+    }
+
+    // Legacy methods for backward compatibility
+    [Obsolete("Use AddReportingTargetAsync instead")]
+    public async Task<bool> AddReportingUserAsync(string agentId, string userId)
+    {
+        var reportingTarget = new ReportingTo 
+        { 
+            Id = userId, 
+            Attributes = new Dictionary<string, string> { { "type", "user" } },
+            AddedAt = DateTime.UtcNow
+        };
+        return await AddReportingTargetAsync(agentId, reportingTarget);
+    }
+
+    [Obsolete("Use RemoveReportingTargetAsync instead")]
+    public async Task<bool> RemoveReportingUserAsync(string agentId, string userId)
+    {
+        return await RemoveReportingTargetAsync(agentId, userId);
     }
 } 

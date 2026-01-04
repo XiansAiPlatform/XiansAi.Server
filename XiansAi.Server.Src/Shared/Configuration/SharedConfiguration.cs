@@ -188,6 +188,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
+        builder.Services.AddScoped<IAgentTemplateRepository, AgentTemplateRepository>();
         builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
         builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -250,6 +251,9 @@ public static class SharedConfiguration
         // Apply comprehensive security headers (XSS, clickjacking, MIME-sniffing protection)
         // This includes CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, etc.
         app.UseSecurityHeaders();
+        
+        // Enable static files to serve OpenAPI documentation
+        app.UseStaticFiles();
         
         // Configure middleware using specialized configuration classes
         app = app

@@ -1,5 +1,6 @@
 using Features.WebApi.Auth;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Auth;
 using Shared.Utils.Services;
 using System.Text.Json.Serialization;
 using Features.WebApi.Services;

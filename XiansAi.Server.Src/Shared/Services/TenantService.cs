@@ -57,21 +57,24 @@ public class TenantService : ITenantService
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IRoleManagementService _roleManagementService;
+    private readonly IUserRepository _userRepository;
 
 
     public TenantService(
         ITenantRepository tenantRepository,
         ILogger<TenantService> logger,
         ITenantContext tenantContext,
-        IRoleManagementService roleManagementService)
+        IRoleManagementService roleManagementService,
+        IUserRepository userRepository)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
+        _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
     }
 
-    private string EnsureTenantAccessOrThrow(string tenantId)
+    private async Task<string> EnsureTenantAccessOrThrowAsync(string tenantId)
     {
         try
         {
@@ -83,8 +86,15 @@ public class TenantService : ITenantService
             throw new Exception($"Validation failed: {ex.Message}");
         }
 
-        // If system admin, return null (indicating unrestricted access)
-        if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        // Check if user is SysAdmin - first check UserRoles, then database if needed
+        bool isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+        if (!isSysAdmin && !string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+        {
+            isSysAdmin = await _userRepository.IsSysAdmin(_tenantContext.LoggedInUser);
+        }
+        
+        // If system admin, return tenantId (indicating unrestricted access)
+        if (isSysAdmin)
         {
             return tenantId;
         }
@@ -119,11 +129,23 @@ public class TenantService : ITenantService
         try
         {
             id = SanitizeAndValidateId(id);
-            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
-            if (accessableTenantId == null)
+            
+            // Check if user is SysAdmin - if so, allow access to any tenant
+            bool isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+            if (!isSysAdmin && !string.IsNullOrEmpty(_tenantContext.LoggedInUser))
             {
-                _logger.LogWarning("Unauthorized access attempt to tenant with ID {Id}", id);
-                return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+                isSysAdmin = await _userRepository.IsSysAdmin(_tenantContext.LoggedInUser);
+            }
+            
+            // If not SysAdmin, check authorized tenant IDs
+            if (!isSysAdmin)
+            {
+                var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
+                if (accessableTenantId == null)
+                {
+                    _logger.LogWarning("Unauthorized access attempt to tenant with ID {Id}", id);
+                    return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+                }
             }
 
             var tenant = await _tenantRepository.GetByIdAsync(id);
@@ -251,8 +273,16 @@ public class TenantService : ITenantService
     {
         try
         {
-            // Only SysAdmin can get all tenants
-            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            // Check if user is SysAdmin - first check UserRoles, then database if needed
+            bool isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+            
+            // If not in UserRoles (e.g., AdminApi calls without X-Tenant-Id), check database directly
+            if (!isSysAdmin && !string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+            {
+                isSysAdmin = await _userRepository.IsSysAdmin(_tenantContext.LoggedInUser);
+            }
+            
+            if (!isSysAdmin)
             {
                 _logger.LogWarning("Unauthorized attempt to get all tenants by user {UserId}", _tenantContext.LoggedInUser);
                 return ServiceResult<List<Tenant>>.Forbidden("Access denied: Only system administrators can retrieve all tenants");
@@ -272,8 +302,16 @@ public class TenantService : ITenantService
     {
         try
         {
-            // Only SysAdmin can get tenant list
-            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            // Check if user is SysAdmin - first check UserRoles, then database if needed
+            bool isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+            
+            // If not in UserRoles (e.g., AdminApi calls without X-Tenant-Id), check database directly
+            if (!isSysAdmin && !string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+            {
+                isSysAdmin = await _userRepository.IsSysAdmin(_tenantContext.LoggedInUser);
+            }
+            
+            if (!isSysAdmin)
             {
                 _logger.LogWarning("Unauthorized attempt to get tenant list by user {UserId}", _tenantContext.LoggedInUser);
                 return ServiceResult<List<string>>.Forbidden("Access denied: Only system administrators can retrieve tenant list");
@@ -351,7 +389,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
-            EnsureTenantAccessOrThrow(existingTenant.TenantId);
+            await EnsureTenantAccessOrThrowAsync(existingTenant.TenantId);
 
             // Update only the properties that are provided in the request
             if (request.Name != null)
@@ -406,7 +444,7 @@ public class TenantService : ITenantService
     {
         try
         {
-            EnsureTenantAccessOrThrow(id);
+            await EnsureTenantAccessOrThrowAsync(id);
             id = SanitizeAndValidateId(id);
 
             var success = await _tenantRepository.DeleteAsync(id);

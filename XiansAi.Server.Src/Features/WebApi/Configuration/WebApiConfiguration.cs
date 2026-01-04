@@ -2,6 +2,7 @@ using Features.WebApi.Endpoints;
 using Features.WebApi.Repositories;
 using Features.WebApi.Services;
 using Features.WebApi.Auth;
+using Shared.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
@@ -24,7 +25,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IAuditingService, AuditingService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
-        builder.Services.AddScoped<ITemplateService, TemplateService>();
+        builder.Services.AddScoped<ITemplateService, TemplateService>(); // Now in Shared.Services
         builder.Services.AddScoped<Features.WebApi.Services.IDocumentService, Features.WebApi.Services.DocumentService>();
 
         // Register schedule service

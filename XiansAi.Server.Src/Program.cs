@@ -3,6 +3,7 @@ using Features.AgentApi.Configuration;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
 using Features.WebApi.Auth;
+using Features.AdminApi.Configuration;
 using Shared.Data;
 using Features.WebApi.Scripts;
 using Features.UserApi.Configuration;
@@ -168,6 +169,8 @@ public class Program
             case ServiceType.WebApi:
                 builder.AddWebApiServices();
                 builder.AddWebApiAuth();
+                builder.AddAdminApiServices();
+                builder.AddAdminApiAuth();
                 break;
             
             case ServiceType.LibApi:
@@ -188,6 +191,8 @@ public class Program
                 builder.AddAgentApiServices();
                 builder.AddAgentApiAuth();
                 builder.AddWebApiAuth();
+                builder.AddAdminApiServices();
+                builder.AddAdminApiAuth();
                 builder.AddUserApiServices();
                 builder.AddUserApiAuth();
                 builder.AddPublicApiServices();
@@ -235,6 +240,7 @@ public class Program
         {
             case ServiceType.WebApi:
                 app.UseWebApiEndpoints();
+                app.UseAdminApiEndpoints();
                 break;
             
             case ServiceType.LibApi:
@@ -249,6 +255,7 @@ public class Program
             case ServiceType.All:
             default:
                 app.UseWebApiEndpoints();
+                app.UseAdminApiEndpoints();
                 app.UseAgentApiEndpoints(loggerFactory);
                 app.UseUserApiEndpoints();
                 app.UsePublicApiEndpoints();

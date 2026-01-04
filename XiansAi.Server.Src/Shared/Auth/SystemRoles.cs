@@ -1,3 +1,5 @@
+namespace Shared.Auth;
+
 public static class SystemRoles
 {
     public const string SysAdmin = "SysAdmin";

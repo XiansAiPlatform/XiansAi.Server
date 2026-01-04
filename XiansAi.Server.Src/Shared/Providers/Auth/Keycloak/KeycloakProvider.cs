@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.IdentityModel.Tokens.Jwt;
+using Shared.Auth;
 using Shared.Providers.Auth.Auth0;
 using Shared.Services;
 

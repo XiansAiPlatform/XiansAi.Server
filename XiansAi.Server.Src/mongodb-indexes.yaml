@@ -22,6 +22,12 @@ agents:
       write_access: asc
     background: true
 
+agent_templates:
+  - name: name_1
+    keys:
+      name: asc
+    unique: true
+
 flow_definitions:
   - name: created_at_-1
     keys:

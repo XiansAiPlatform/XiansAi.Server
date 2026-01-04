@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Shared.Auth;
 using Shared.Providers.Auth.Auth0;
 using Shared.Services;
 using System.IdentityModel.Tokens.Jwt;

@@ -137,7 +137,7 @@ public class OidcTokenService : ITokenService
 
     public string? ExtractUserId(JwtSecurityToken token)
     {
-        // Try the configured user ID claim first
+        // Try the configured user ID claim first (allows per-provider customization)
         var userId = token.Claims.FirstOrDefault(c => c.Type == _config.ClaimMappings.UserIdClaim)?.Value;
         if (!string.IsNullOrEmpty(userId))
         {
@@ -145,7 +145,19 @@ public class OidcTokenService : ITokenService
             return userId;
         }
 
-        // Fallback to standard 'sub' claim if configured claim is not found
+        // Prefer 'preferred_username' over 'sub' for readable user IDs
+        // 'preferred_username' is a standard OIDC claim (RFC) and provides human-readable identifiers
+        // This aligns with database design where user_id is stored as readable strings (e.g., "admin")
+        userId = token.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            _logger.LogDebug("Found user ID in 'preferred_username' claim: {UserId}", userId);
+            return userId;
+        }
+
+        // Fallback to standard 'sub' claim (UUID/immutable identifier)
+        // 'sub' is always present in OIDC tokens and is immutable, making it reliable for providers
+        // that don't include 'preferred_username' or when it's not available
         userId = token.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
         if (!string.IsNullOrEmpty(userId))
         {
@@ -153,8 +165,8 @@ public class OidcTokenService : ITokenService
             return userId;
         }
 
-        // Try other common alternative claim names
-        var alternativeClaimTypes = new[] { "user_id", "uid", "id", "email", "preferred_username" };
+        // Try other common alternative claim names as last resort
+        var alternativeClaimTypes = new[] { "user_id", "uid", "id", "email", "username" };
         foreach (var claimType in alternativeClaimTypes)
         {
             userId = token.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
