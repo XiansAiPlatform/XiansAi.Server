@@ -26,6 +26,7 @@ public static class WebhookEndpoints
             [FromServices] IMessageService messageService,
             [FromServices] IPendingRequestService pendingRequestService,
             [FromServices] ITenantContext tenantContext,
+            [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
             [FromServices] ILogger<SyncMessageHandler> logger,
             [FromQuery] int timeoutSeconds = 60,
             [FromQuery] string? participantId = null,
@@ -65,6 +66,26 @@ public static class WebhookEndpoints
                 {
                     return Results.BadRequest("Timeout must be between 1 and 300 seconds");
                 }
+
+                // Validate that the flow definition exists for this agent, workflow, and tenant
+                // Build the workflow type in the format: "AgentName:WorkflowName"
+                var workflowType = WorkflowIdentifier.BuildBuiltinWorkflowType(agentName, workflowName);
+                var flowDefinition = await flowDefinitionRepository.GetLatestFlowDefinitionAsync(workflowType, tenantId);
+                
+                if (flowDefinition == null)
+                {
+                    logger.LogWarning(
+                        "Flow definition not found for webhook request. WorkflowType: {WorkflowType}, Tenant: {TenantId}, Agent: {AgentName}, Workflow: {WorkflowName}", 
+                        workflowType, tenantId, agentName, workflowName);
+                    
+                    return Results.Problem(
+                        detail: $"Flow definition not found for agent '{agentName}' and workflow '{workflowName}' in tenant '{tenantId}'. Please ensure the workflow is deployed.",
+                        statusCode: StatusCodes.Status404NotFound);
+                }
+
+                logger.LogDebug(
+                    "Flow definition validated successfully. WorkflowType: {WorkflowType}, Tenant: {TenantId}", 
+                    workflowType, tenantId);
 
                 // Read the request body
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
@@ -266,6 +287,7 @@ This allows the workflow to control the HTTP response returned to the webhook ca
         .Produces<object>(StatusCodes.Status200OK)
         .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
         .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
+        .Produces<ProblemDetails>(StatusCodes.Status404NotFound)
         .Produces<ProblemDetails>(StatusCodes.Status408RequestTimeout)
         .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
