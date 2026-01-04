@@ -55,6 +55,20 @@ namespace Shared.Utils
                     Origin = origin
                 };
             }
+            else if (messageType == MessageType.Webhook)
+            {
+                // Webhook messages are similar to Data messages but with explicit webhook origin
+                return new ChatOrDataRequest
+                {
+                    RequestId = requestId,
+                    ParticipantId = participantId,
+                    WorkflowId = workflowId,
+                    Text = text,
+                    Data = request?.ValueKind == JsonValueKind.Undefined ? null : request,
+                    Authorization = authorization,
+                    Origin = origin ?? "webhook"
+                };
+            }
             else
             {
                 throw new ArgumentException($"Unsupported message type: {messageType}", nameof(messageType));
@@ -63,7 +77,7 @@ namespace Shared.Utils
 
         public static string GenerateRequestId(string workflow, string participantId)
         {
-            return $"{workflow}:{participantId}:{Guid.NewGuid()}";
+            return $"{Guid.NewGuid()}";
         }
 
         private static string? ExtractTextFromJsonElement(JsonElement request)
