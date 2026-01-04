@@ -92,6 +92,21 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
+            group.MapPost("/outbound/webhook", async (
+                [FromBody] ChatOrDataRequest request,
+                [FromServices] IMessageService messageService) =>
+            {
+                var result = await messageService.ProcessOutgoingMessage(request, MessageType.Webhook);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Outbound Webhook from Agent")
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Process outbound webhook response from Agent";
+                operation.Description = "Processes an outbound webhook response for agent webhook handlers and returns the result";
+                return operation;
+            });
+
             group.MapPost("/outbound/handoff", async (
                 [FromBody] HandoffRequest request,
                 [FromServices] IMessageService messageService,

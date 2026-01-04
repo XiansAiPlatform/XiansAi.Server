@@ -29,7 +29,8 @@ public enum MessageType
 {
     Chat,
     Data,
-    Handoff
+    Handoff,
+    Webhook
 }
 
 public enum ConversationThreadStatus

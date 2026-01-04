@@ -34,6 +34,16 @@ public class WorkflowIdentifier
         }
     }
 
+    public static string BuildBuiltinWorkflowType(string agent, string workflowName)
+    {
+        return agent + ":BuiltIn Workflow" + (workflowName != null ? $"-{workflowName}" : "");
+    }
+
+    public static string BuildBuiltinWorkflowId(string agent, string builtInWorkflowName, ITenantContext tenantContext)
+    {
+        return tenantContext.TenantId + ":" + BuildBuiltinWorkflowType(agent, builtInWorkflowName);
+    }
+
     public static string GetWorkflowId(string workflowType, ITenantContext tenantContext)
     {
         return tenantContext.TenantId + ":" + workflowType;
