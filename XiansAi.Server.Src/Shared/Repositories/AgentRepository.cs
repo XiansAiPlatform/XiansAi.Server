@@ -456,28 +456,7 @@ public class AgentRepository : IAgentRepository
     /// </summary>
     private async Task<Agent> UpsertSystemScopedAgentAsync(string agentName, string createdBy, string? onboardingJson = null)
     {
-        // Check if template already exists
-        var existingTemplate = await _agentTemplateRepository.GetByNameAsync(agentName);
-        
-        if (existingTemplate != null)
-        {
-            _logger.LogInformation("Agent template {AgentName} already exists, updating if needed", agentName);
-            
-            // Update OnboardingJson if provided
-            if (!string.IsNullOrEmpty(onboardingJson) && existingTemplate.OnboardingJson != onboardingJson)
-            {
-                existingTemplate.OnboardingJson = onboardingJson;
-                await _agentTemplateRepository.UpdateAsync(existingTemplate.Id, existingTemplate);
-                _logger.LogInformation("Updated OnboardingJson for existing agent template {AgentName}", agentName);
-            }
-            
-            // Convert AgentTemplate to Agent for backward compatibility
-            return ConvertTemplateToAgent(existingTemplate);
-        }
-        
-        // Create new template
-        _logger.LogInformation("Creating new agent template {AgentName} in agent_templates collection", agentName);
-        
+        // Create new template object
         var newTemplate = new AgentTemplate
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -491,12 +470,37 @@ public class AgentRepository : IAgentRepository
             Metadata = new Dictionary<string, object>()
         };
         newTemplate.GrantOwnerAccess(createdBy);
-        
-        await _agentTemplateRepository.CreateAsync(newTemplate);
-        _logger.LogInformation("Agent template {AgentName} created successfully in agent_templates collection", agentName);
-        
-        // Convert AgentTemplate to Agent for backward compatibility
-        return ConvertTemplateToAgent(newTemplate);
+
+        try
+        {
+            // Try to insert the new template - will fail if duplicate exists due to unique index
+            await _agentTemplateRepository.CreateAsync(newTemplate);
+            _logger.LogInformation("Agent template {AgentName} created successfully in agent_templates collection", agentName);
+            return ConvertTemplateToAgent(newTemplate);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
+        {
+            _logger.LogInformation("Agent template {AgentName} already exists, retrieving existing template", agentName);
+            
+            // Template already exists, get the existing one
+            var existingTemplate = await _agentTemplateRepository.GetByNameAsync(agentName);
+            if (existingTemplate != null)
+            {
+                // Update OnboardingJson if provided
+                if (!string.IsNullOrEmpty(onboardingJson) && existingTemplate.OnboardingJson != onboardingJson)
+                {
+                    _logger.LogInformation("Updating OnboardingJson for existing agent template {AgentName}", agentName);
+                    existingTemplate.OnboardingJson = onboardingJson;
+                    await _agentTemplateRepository.UpdateAsync(existingTemplate.Id, existingTemplate);
+                }
+                
+                return ConvertTemplateToAgent(existingTemplate);
+            }
+            
+            // This shouldn't happen, but if it does, throw the original exception
+            _logger.LogError(ex, "Agent template {AgentName} duplicate key error but could not retrieve existing template", agentName);
+            throw new InvalidOperationException($"Agent template {agentName} creation failed due to duplicate key, but existing template could not be retrieved", ex);
+        }
     }
 
     /// <summary>

@@ -50,8 +50,21 @@ public class AgentTemplateRepository : IAgentTemplateRepository
     {
         await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            await _templates.InsertOneAsync(template);
-            _logger.LogInformation("Created agent template {TemplateName} with ID {TemplateId}", template.Name, template.Id);
+            try
+            {
+                await _templates.InsertOneAsync(template);
+                _logger.LogInformation("Created agent template {TemplateName} with ID {TemplateId}", template.Name, template.Id);
+            }
+            catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
+            {
+                _logger.LogWarning("Attempted to create agent template with duplicate name: {TemplateName}", template.Name);
+                throw new InvalidOperationException($"An agent template with the name '{template.Name}' already exists.", ex);
+            }
+            catch (MongoBulkWriteException ex) when (ex.WriteErrors.Any(e => e.Code == 11000)) // Duplicate key error in bulk operation
+            {
+                _logger.LogWarning("Attempted to create agent template with duplicate name: {TemplateName}", template.Name);
+                throw new InvalidOperationException($"An agent template with the name '{template.Name}' already exists.", ex);
+            }
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateAgentTemplate");
     }
 
