@@ -128,7 +128,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-    put:
+    patch:
       tags:
         - Tenant Management
       summary: Update Tenant

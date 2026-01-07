@@ -37,8 +37,8 @@ public static class AdminReportingUsersEndpoints
     /// </summary>
     public static void MapAdminReportingUsersEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var adminReportingGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/reporting-users")
-            .WithTags("AdminAPI - Agent Reporting Users")
+        var adminReportingGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/reporting-targets")
+            .WithTags("AdminAPI - Agent Reporting Targets")
             .RequiresAdminApiAuth();
 
         // Get Reporting Users
@@ -151,7 +151,7 @@ public static class AdminReportingUsersEndpoints
                 var added = await agentRepository.AddReportingTargetAsync(agent.Id, reportingTarget);
                 if (added)
                 {
-                    return Results.Created($"{AdminApiConfiguration.GetBasePath()}/tenants/{tenantId}/agents/{agentId}/reporting-users/{request.Id}", 
+                    return Results.Created($"{AdminApiConfiguration.GetBasePath()}/tenants/{tenantId}/agents/{agentId}/reporting-targets/{request.Id}", 
                         new { 
                             message = "Reporting target added successfully", 
                             id = reportingTarget.Id,

@@ -4,7 +4,7 @@ info:
   description: |
     **Admin APIs** for managing agents, their definitions, ownership, and tokens.
     
-    These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed, configured, and assigned to reporting users. A marketplace is one example use case where agent templates can be browsed and deployed.
+    These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed, configured, and assigned to reporting targets. A marketplace is one example use case where agent templates can be browsed and deployed.
     
     **Important Notes:**
     - All endpoints are under `/api/v1/admin/` prefix (API versioning via URL path)
@@ -30,8 +30,8 @@ servers:
 tags:
   - name: Agent CRUD
     description: Agent creation, reading, updating, and deletion operations
-  - name: Agent Reporting Users
-    description: Management of reporting users for agents
+  - name: Agent Reporting Targets
+    description: Management of reporting targets (users, groups, etc.) for agents
   - name: Agent Definitions
     description: Agent definition and configuration management
   - name: Agent Ownership
@@ -165,10 +165,10 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-    put:
+    patch:
       tags:
         - Agent CRUD
-      summary: Update Agent
+      summary: Update Agent (Partial)
       description: "Update agent configuration. Agent ID format: {tenantName}@{agentName}"
       operationId: updateAgent
       parameters:
@@ -233,10 +233,10 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/reporting-users:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/reporting-targets:
     get:
       tags:
-        - Agent Reporting Users
+        - Agent Reporting Targets
       summary: Get Reporting Targets
       description: Get list of reporting targets (users, groups, etc.) for an agent
       operationId: getReportingTargets
@@ -270,7 +270,7 @@ paths:
 
     post:
       tags:
-        - Agent Reporting Users
+        - Agent Reporting Targets
       summary: Add Reporting Target
       description: Add a reporting target (user, group, etc.) to an agent. Both keys and values in attributes are strings.
       operationId: addReportingTarget
@@ -308,10 +308,10 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/reporting-users/{targetId}:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/reporting-targets/{targetId}:
     delete:
       tags:
-        - Agent Reporting Users
+        - Agent Reporting Targets
       summary: Remove Reporting Target
       description: Remove a reporting target from an agent by target ID
       operationId: removeReportingTarget
@@ -419,10 +419,10 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-    put:
+    patch:
       tags:
         - Agent Ownership
-      summary: Update Ownership / Transfer Admin
+      summary: Transfer Ownership
       description: |
         Transfer agent administration to another user (by user identifier). Only the current admin can perform this operation. 
         Agent ID format: `{tenantName}@{agentName}`.
@@ -763,10 +763,10 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-    put:
+    patch:
       tags:
         - Agent Templates
-      summary: Update Agent Template Metadata (System Admin)
+      summary: Update Agent Template Metadata (System Admin - Partial)
       description: |
         Update metadata of an agent template (category, description, icon, samplePrompts).
         Category supports multiple values as comma-separated string (e.g., "customer-support,beta").
@@ -847,10 +847,10 @@ paths:
         - apiKey: []
 
   /api/v1/admin/agentTemplates/{templateObjectId}/Metadata:
-    put:
+    patch:
       tags:
         - Agent Templates
-      summary: Update Agent Template Metadata (System Admin)
+      summary: Update Agent Template Metadata (System Admin - Partial)
       description: |
         Update metadata of an agent template (category, description, icon, samplePrompts).
         Category supports multiple values as comma-separated string (e.g., "customer-support,beta").
@@ -1062,10 +1062,10 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-    put:
+    patch:
       tags:
         - Agent Knowledge
-      summary: Update Knowledge (Creates New Version)
+      summary: Update Knowledge (Creates New Version - Partial)
       description: |
         Update knowledge by creating a new version. This maintains version history.
         The old version remains in the database.
@@ -1379,7 +1379,7 @@ components:
               addedBy: "admin@example.com"
         metadata:
           type: object
-          description: Flexible metadata dictionary containing instance-specific data (adminId, reportingUsers, deployedAt, deployedById, configuration, etc.)
+          description: Flexible metadata dictionary containing instance-specific data (adminId, reportingTargets, deployedAt, deployedById, configuration, etc.)
           additionalProperties: true
           example:
             adminId: admin@example.com
