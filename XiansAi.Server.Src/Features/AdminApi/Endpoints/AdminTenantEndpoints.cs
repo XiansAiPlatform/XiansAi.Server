@@ -110,7 +110,7 @@ public static class AdminTenantEndpoints
         });
 
         // Update Tenant - No X-Tenant-Id header required (tenant ID is in path)
-        adminTenantGroup.MapPut("/{id}", async (
+        adminTenantGroup.MapPatch("/{id}", async (
             string id,
             [FromBody] UpdateTenantRequest request,
             HttpContext httpContext,

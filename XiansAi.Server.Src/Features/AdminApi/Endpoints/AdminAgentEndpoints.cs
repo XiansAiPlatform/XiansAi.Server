@@ -341,7 +341,7 @@ public static class AdminAgentEndpoints
         });
 
         // Update Agent Instance
-        adminAgentGroup.MapPut("/{agentId}", async (
+        adminAgentGroup.MapPatch("/{agentId}", async (
             string tenantId,
             string agentId,
             [FromBody] UpdateAgentRequest request,

@@ -165,7 +165,7 @@ public static class AdminTemplateEndpoints
 
         // Update Agent Template Metadata - System Admin only, no X-Tenant-Id required
         // Note: Templates are created when deploying agents, not via a separate create endpoint
-        adminApiGroup.MapPut("/agentTemplate/{templateObjectId}/Metadata", async (
+        adminApiGroup.MapPatch("/agentTemplate/{templateObjectId}/Metadata", async (
             string templateObjectId,
             [FromBody] UpdateAgentTemplateRequest request,
             HttpContext httpContext,

@@ -7,7 +7,7 @@ info:
     These APIs are designed for **administrators** to manage tenants across the system. Tenant management includes creating, updating, deleting, and querying tenant information. All tenant management operations require appropriate admin permissions (SysAdmin for create/update/delete, TenantAdmin or SysAdmin for read operations).
     
     **Important Notes:**
-    - All endpoints are under `/api/admin/tenants` prefix
+    - All endpoints are under `/api/v1/admin/tenants` prefix (API versioning via URL path)
     - Tenant creation requires SysAdmin role
     - Tenant updates and deletions require SysAdmin role
     - Tenant queries require admin permissions (TenantAdmin or SysAdmin)
@@ -436,7 +436,7 @@ components:
         location:
           type: string
           description: Location header value for the created tenant
-          example: "/api/admin/tenants/507f1f77bcf86cd799439011"
+          example: "/api/v1/admin/tenants/507f1f77bcf86cd799439011"
 
     Logo:
       type: object

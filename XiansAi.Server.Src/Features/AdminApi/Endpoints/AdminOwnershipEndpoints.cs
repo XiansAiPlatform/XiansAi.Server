@@ -110,7 +110,7 @@ public static class AdminOwnershipEndpoints
         });
 
         // Transfer Ownership
-        adminOwnershipGroup.MapPut("", async (
+        adminOwnershipGroup.MapPatch("", async (
             string tenantId,
             string agentId,
             [FromBody] TransferOwnershipRequest request,
@@ -137,13 +137,14 @@ public static class AdminOwnershipEndpoints
                     return Results.NotFound(new { error = $"Agent '{agentId}' not found" });
                 }
 
-                // Check permissions (must be current admin or SysAdmin)
+                // Check permissions (must be current admin, TenantAdmin, or SysAdmin)
                 var currentAdminId = agent.GetAdminId();
                 var isCurrentAdmin = (currentAdminId != null && currentAdminId.Equals(tenantContext.LoggedInUser, StringComparison.OrdinalIgnoreCase)) ||
                                     agent.OwnerAccess.Contains(tenantContext.LoggedInUser);
                 var isSysAdmin = tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+                var isTenantAdmin = tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin);
 
-                if (!isCurrentAdmin && !isSysAdmin)
+                if (!isCurrentAdmin && !isSysAdmin && !isTenantAdmin)
                 {
                     return Results.Forbid();
                 }

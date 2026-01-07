@@ -6,7 +6,6 @@ using Shared.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
-using Shared.Services;
 
 namespace Features.WebApi.Configuration;
 

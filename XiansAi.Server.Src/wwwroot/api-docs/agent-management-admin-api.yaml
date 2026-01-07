@@ -7,7 +7,8 @@ info:
     These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed, configured, and assigned to reporting users. A marketplace is one example use case where agent templates can be browsed and deployed.
     
     **Important Notes:**
-    - All endpoints are under `/api/admin/` prefix
+    - All endpoints are under `/api/v1/admin/` prefix (API versioning via URL path)
+    - Current API version: **v1**
     - Agent ID format: `{tenantName}@{agentName}` (e.g., `acme@support-agent`)
     - When an agent is added to a tenant, the user who performs the deployment automatically becomes the **admin** of that agent instance
     - Users are identified by user identifiers (userId, email, username, etc. - system dependent)
@@ -39,9 +40,11 @@ tags:
     description: Agent token management for external integrations
   - name: Agent Templates
     description: Browse and discover agent templates (system-scoped reusable agent definitions)
+  - name: Agent Knowledge
+    description: Knowledge management for deployed agents (instructions, knowledge bases, etc.)
 
 paths:
-  /admin/tenants/{tenantId}/agents:
+  /api/v1/admin/tenants/{tenantId}/agents:
     post:
       tags:
         - Agent CRUD
@@ -135,7 +138,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /admin/tenants/{tenantId}/agents/{agentId}:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}:
     get:
       tags:
         - Agent CRUD
@@ -230,7 +233,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/admin/tenants/{tenantId}/agents/{agentId}/reporting-users:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/reporting-users:
     get:
       tags:
         - Agent Reporting Users
@@ -305,7 +308,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/admin/tenants/{tenantId}/agents/{agentId}/reporting-users/{targetId}:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/reporting-users/{targetId}:
     delete:
       tags:
         - Agent Reporting Users
@@ -345,7 +348,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /admin/tenants/{tenantId}/agents/{agentId}/definition:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/definition:
     post:
       tags:
         - Agent Definitions
@@ -384,7 +387,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /admin/tenants/{tenantId}/agents/{agentId}/ownership:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/ownership:
     get:
       tags:
         - Agent Ownership
@@ -454,7 +457,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /admin/tenants/{tenantId}/agents/{agentId}/tokens:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/tokens:
     post:
       tags:
         - Agent Tokens
@@ -554,7 +557,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /admin/tenants/{tenantId}/agents/{agentId}/tokens/{tokenId}:
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/tokens/{tokenId}:
     get:
       tags:
         - Agent Tokens
@@ -641,7 +644,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/admin/agentTemplates:
+  /api/v1/admin/agentTemplates:
     get:
       tags:
         - Agent Templates
@@ -680,7 +683,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/admin/tenants/{tenantId}/agentTemplates:
+  /api/v1/admin/tenants/{tenantId}/agentTemplates:
     get:
       tags:
         - Agent Templates
@@ -721,7 +724,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/admin/agentTemplate/{templateObjectId}:
+  /api/v1/admin/agentTemplates/{templateObjectId}:
     get:
       tags:
         - Agent Templates
@@ -843,7 +846,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/admin/agentTemplate/{templateObjectId}/Metadata:
+  /api/v1/admin/agentTemplates/{templateObjectId}/Metadata:
     put:
       tags:
         - Agent Templates
@@ -851,7 +854,7 @@ paths:
       description: |
         Update metadata of an agent template (category, description, icon, samplePrompts).
         Category supports multiple values as comma-separated string (e.g., "customer-support,beta").
-        This is an alias for PUT /api/admin/agentTemplate/{templateObjectId}.
+        This is an alias for PUT /api/admin/agentTemplates/{templateObjectId}.
         **System admin only. No X-Tenant-Id header required.**
       operationId: updateAgentTemplateMetadataExplicit
       parameters:
@@ -889,7 +892,7 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/admin/agentTemplate/{templateObjectId}/deploy:
+  /api/v1/admin/agentTemplates/{templateObjectId}/deploy:
     post:
       tags:
         - Agent Templates
@@ -933,6 +936,322 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/knowledge:
+    get:
+      tags:
+        - Agent Knowledge
+      summary: List Agent Knowledge
+      description: |
+        Retrieve all knowledge items associated with a deployed agent.
+        **Only deployed agents (in the agents collection) can have knowledge.**
+        X-Tenant-Id header required.
+      operationId: listAgentKnowledge
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: List of knowledge items retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agentId:
+                    type: string
+                    example: acme@support-agent
+                  tenantId:
+                    type: string
+                    example: acme-corp
+                  knowledge:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KnowledgeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    post:
+      tags:
+        - Agent Knowledge
+      summary: Create Knowledge
+      description: |
+        Create a new knowledge item for a deployed agent.
+        If a knowledge item with the same content hash already exists, returns the existing item.
+        **Only deployed agents (in the agents collection) can have knowledge.**
+        X-Tenant-Id header required.
+      operationId: createKnowledge
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeRequest'
+      responses:
+        '201':
+          description: Knowledge created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/knowledge/{knowledgeId}:
+    get:
+      tags:
+        - Agent Knowledge
+      summary: Get Knowledge by ID
+      description: |
+        Retrieve a specific knowledge item by its MongoDB ObjectId for a deployed agent.
+        **Only deployed agents (in the agents collection) can have knowledge.**
+        X-Tenant-Id header required.
+      operationId: getKnowledgeById
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - name: knowledgeId
+          in: path
+          required: true
+          description: Knowledge MongoDB ObjectId
+          schema:
+            type: string
+            example: 6959f2ffb50bd67dcb893912
+      responses:
+        '200':
+          description: Knowledge retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    put:
+      tags:
+        - Agent Knowledge
+      summary: Update Knowledge (Creates New Version)
+      description: |
+        Update knowledge by creating a new version. This maintains version history.
+        The old version remains in the database.
+        **Only deployed agents (in the agents collection) can have knowledge.**
+        X-Tenant-Id header required.
+      operationId: updateKnowledge
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - name: knowledgeId
+          in: path
+          required: true
+          description: Knowledge MongoDB ObjectId
+          schema:
+            type: string
+            example: 6959f2ffb50bd67dcb893912
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateKnowledgeRequest'
+      responses:
+        '200':
+          description: Knowledge updated successfully (new version created)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    delete:
+      tags:
+        - Agent Knowledge
+      summary: Delete Knowledge
+      description: |
+        Delete a specific knowledge item by its MongoDB ObjectId.
+        **Only deployed agents (in the agents collection) can have knowledge.**
+        X-Tenant-Id header required.
+      operationId: deleteKnowledge
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - name: knowledgeId
+          in: path
+          required: true
+          description: Knowledge MongoDB ObjectId
+          schema:
+            type: string
+            example: 6959f2ffb50bd67dcb893912
+      responses:
+        '200':
+          description: Knowledge deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Knowledge deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /api/v1/admin/tenants/{tenantId}/agents/{agentId}/knowledge/{name}/versions:
+    get:
+      tags:
+        - Agent Knowledge
+      summary: Get Knowledge Versions
+      description: |
+        Retrieve all versions of a knowledge item with a specific name for an agent.
+        **Only deployed agents (in the agents collection) can have knowledge.**
+        X-Tenant-Id header required.
+      operationId: getKnowledgeVersions
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - name: name
+          in: path
+          required: true
+          description: Knowledge name
+          schema:
+            type: string
+            example: Product Information
+      responses:
+        '200':
+          description: List of knowledge versions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agentId:
+                    type: string
+                    example: acme@support-agent
+                  tenantId:
+                    type: string
+                    example: acme-corp
+                  name:
+                    type: string
+                    example: Product Information
+                  versions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KnowledgeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    delete:
+      tags:
+        - Agent Knowledge
+      summary: Delete All Knowledge Versions
+      description: |
+        Delete all versions of a knowledge item with a specific name for an agent.
+        **Only deployed agents (in the agents collection) can have knowledge.**
+        X-Tenant-Id header required.
+      operationId: deleteAllKnowledgeVersions
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - name: name
+          in: path
+          required: true
+          description: Knowledge name
+          schema:
+            type: string
+            example: Product Information
+      responses:
+        '200':
+          description: All versions deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: All versions deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
 components:
   securitySchemes:
     bearerAuth:
@@ -959,10 +1278,12 @@ components:
       name: agentId
       in: path
       required: true
-      description: Agent ID in format `{tenantName}@{agentName}`
+      description: |
+        Agent ID. Supports two formats:
+        - `{tenantName}@{agentName}` (e.g., `acme@support-agent`)
+        - `{agentName}` (uses tenantId from path as default tenant)
       schema:
         type: string
-        pattern: '^[^@]+@[^@]+$'
         example: acme@support-agent
 
   schemas:
@@ -1480,6 +1801,104 @@ components:
         hasPrevious:
           type: boolean
           example: false
+
+    CreateKnowledgeRequest:
+      type: object
+      required:
+        - name
+        - content
+        - type
+      properties:
+        name:
+          type: string
+          description: Knowledge name/identifier
+          minLength: 1
+          maxLength: 200
+          example: Product Information
+        content:
+          type: string
+          description: Knowledge content (the actual knowledge text/data)
+          example: "Our product line includes three main categories: Enterprise, Professional, and Starter. Each tier offers different features and support levels."
+        type:
+          type: string
+          description: Knowledge type (e.g., instruction, document, database)
+          minLength: 1
+          maxLength: 50
+          example: instruction
+        version:
+          type: string
+          description: Optional version identifier. If not provided, a hash will be generated from content and type.
+          nullable: true
+          example: "1.0.0"
+
+    UpdateKnowledgeRequest:
+      type: object
+      required:
+        - content
+        - type
+      properties:
+        content:
+          type: string
+          description: Updated knowledge content
+          example: "Our product line includes four main categories: Enterprise, Professional, Starter, and Basic. Each tier offers different features and support levels."
+        type:
+          type: string
+          description: Knowledge type (e.g., instruction, document, database)
+          minLength: 1
+          maxLength: 50
+          example: instruction
+        version:
+          type: string
+          description: Optional version identifier. If not provided, a hash will be generated from content and type.
+          nullable: true
+          example: "2.0.0"
+
+    KnowledgeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Knowledge MongoDB ObjectId
+          example: 6959f2ffb50bd67dcb893912
+        name:
+          type: string
+          description: Knowledge name/identifier
+          example: Product Information
+        content:
+          type: string
+          description: Knowledge content
+          example: "Our product line includes three main categories: Enterprise, Professional, and Starter."
+        type:
+          type: string
+          description: Knowledge type (e.g., instruction, document, database)
+          example: instruction
+        version:
+          type: string
+          description: Version identifier (hash of content + type)
+          example: a1b2c3d4e5f6g7h8i9j0
+        agent:
+          type: string
+          description: Agent name this knowledge belongs to
+          example: support-agent
+        tenantId:
+          type: string
+          description: Tenant ID this knowledge belongs to
+          example: acme-corp
+        createdBy:
+          type: string
+          description: User identifier who created this knowledge
+          example: admin@example.com
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when knowledge was created
+          example: "2024-01-15T10:30:00Z"
+        permissionLevel:
+          type: string
+          description: Permission level (read or edit) - only present in list responses
+          enum: [read, edit]
+          nullable: true
+          example: edit
 
     ErrorResponse:
       type: object
