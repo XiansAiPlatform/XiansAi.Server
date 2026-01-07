@@ -1,6 +1,8 @@
 using Features.AdminApi.Auth;
+using Features.AdminApi.Configuration;
 using Features.AdminApi.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Shared.Repositories;
 using Shared.Auth;
 using Shared.Utils.Services;
@@ -33,9 +35,9 @@ public static class AdminReportingUsersEndpoints
     /// <summary>
     /// Maps all AdminApi reporting users endpoints.
     /// </summary>
-    public static void MapAdminReportingUsersEndpoints(this WebApplication app)
+    public static void MapAdminReportingUsersEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var adminReportingGroup = app.MapGroup("/api/admin/tenants/{tenantId}/agents/{agentId}/reporting-users")
+        var adminReportingGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/reporting-users")
             .WithTags("AdminAPI - Agent Reporting Users")
             .RequiresAdminApiAuth();
 
@@ -149,7 +151,7 @@ public static class AdminReportingUsersEndpoints
                 var added = await agentRepository.AddReportingTargetAsync(agent.Id, reportingTarget);
                 if (added)
                 {
-                    return Results.Created($"/api/admin/tenants/{tenantId}/agents/{agentId}/reporting-users/{request.Id}", 
+                    return Results.Created($"{AdminApiConfiguration.GetBasePath()}/tenants/{tenantId}/agents/{agentId}/reporting-users/{request.Id}", 
                         new { 
                             message = "Reporting target added successfully", 
                             id = reportingTarget.Id,

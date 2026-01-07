@@ -1,9 +1,11 @@
 using Features.AdminApi.Auth;
+using Features.AdminApi.Configuration;
 using Features.AdminApi.Utils;
 using Shared.Services;
 using Shared.Repositories;
 using Shared.Auth;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Shared.Data.Models;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
@@ -14,7 +16,7 @@ namespace Features.AdminApi.Endpoints;
 /// <summary>
 /// AdminApi endpoints for agent management.
 /// These are administrative operations, separate from WebApi (UI) endpoints.
-/// All endpoints are under /api/admin/ prefix.
+/// All endpoints are under /api/v{version}/admin/ prefix (versioned).
 /// </summary>
 public static class AdminAgentEndpoints
 {
@@ -64,9 +66,9 @@ public static class AdminAgentEndpoints
     /// <summary>
     /// Maps all AdminApi agent management endpoints.
     /// </summary>
-    public static void MapAdminAgentEndpoints(this WebApplication app)
+    public static void MapAdminAgentEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var adminAgentGroup = app.MapGroup("/api/admin/tenants/{tenantId}/agents")
+        var adminAgentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents")
             .WithTags("AdminAPI - Agent Management")
             .RequiresAdminApiAuth();
 
@@ -143,7 +145,7 @@ public static class AdminAgentEndpoints
                         await agentRepository.UpdateInternalAsync(agent.Id, agent);
                     }
 
-                    return Results.Created($"/api/admin/tenants/{tenantId}/agents/{tenantId}@{agent.Name}", agent);
+                    return Results.Created($"{AdminApiConfiguration.GetBasePath()}/tenants/{tenantId}/agents/{tenantId}@{agent.Name}", agent);
                 }
                 else
                 {
@@ -216,7 +218,7 @@ public static class AdminAgentEndpoints
                     }
 
                     await agentRepository.CreateAsync(newAgent);
-                    return Results.Created($"/api/admin/tenants/{tenantId}/agents/{tenantId}@{newAgent.Name}", newAgent);
+                    return Results.Created($"{AdminApiConfiguration.GetBasePath()}/tenants/{tenantId}/agents/{tenantId}@{newAgent.Name}", newAgent);
                 }
             }
             catch (Exception ex)

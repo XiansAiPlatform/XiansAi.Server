@@ -6,6 +6,7 @@ using Shared.Auth;
 using Shared.Repositories;
 using Shared.Data.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson;
@@ -68,10 +69,10 @@ public static class AdminTemplateEndpoints
     /// <summary>
     /// Maps all AdminApi template endpoints.
     /// </summary>
-    public static void MapAdminTemplateEndpoints(this WebApplication app)
+    public static void MapAdminTemplateEndpoints(this RouteGroupBuilder adminApiGroup)
     {
         // List Agent Templates (plural) - System Admin only, no X-Tenant-Id required
-        app.MapGet("/api/admin/agentTemplates", async (
+        adminApiGroup.MapGet("/agentTemplates", async (
             [FromQuery] bool? basicDataOnly,
             HttpContext httpContext,
             [FromServices] ITemplateService templateService,
@@ -103,7 +104,7 @@ public static class AdminTemplateEndpoints
         });
 
         // List Agent Templates for Tenant - Tenant-scoped, X-Tenant-Id required
-        app.MapGet("/api/admin/tenants/{tenantId}/agentTemplates", async (
+        adminApiGroup.MapGet("/tenants/{tenantId}/agentTemplates", async (
             string tenantId,
             [FromQuery] bool? basicDataOnly,
             [FromServices] ITemplateService templateService) =>
@@ -123,7 +124,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Get Agent Template Details (singular) - System Admin only, no X-Tenant-Id required
-        app.MapGet("/api/admin/agentTemplate/{templateObjectId}", async (
+        adminApiGroup.MapGet("/agentTemplate/{templateObjectId}", async (
             string templateObjectId,
             [FromQuery] bool? basicDataOnly,
             HttpContext httpContext,
@@ -164,7 +165,7 @@ public static class AdminTemplateEndpoints
 
         // Update Agent Template Metadata - System Admin only, no X-Tenant-Id required
         // Note: Templates are created when deploying agents, not via a separate create endpoint
-        app.MapPut("/api/admin/agentTemplate/{templateObjectId}/Metadata", async (
+        adminApiGroup.MapPut("/agentTemplate/{templateObjectId}/Metadata", async (
             string templateObjectId,
             [FromBody] UpdateAgentTemplateRequest request,
             HttpContext httpContext,
@@ -248,7 +249,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Delete Agent Template - System Admin only, no X-Tenant-Id required
-        app.MapDelete("/api/admin/agentTemplate/{templateObjectId}", async (
+        adminApiGroup.MapDelete("/agentTemplate/{templateObjectId}", async (
             string templateObjectId,
             HttpContext httpContext,
             [FromServices] IAgentTemplateRepository templateRepository,
@@ -294,7 +295,7 @@ public static class AdminTemplateEndpoints
         // Deploy Template to Tenant - X-Tenant-Id required
         // Note: This endpoint uses template name (not ObjectId) because DeployTemplateToTenant expects the name
         // Future: Eligibility validation will be implemented here
-        app.MapPost("/api/admin/agentTemplate/{templateObjectId}/deploy", async (
+        adminApiGroup.MapPost("/agentTemplate/{templateObjectId}/deploy", async (
             string templateObjectId,
             [FromQuery] string tenantId,
             [FromServices] ITemplateService templateService,

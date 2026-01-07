@@ -1,5 +1,6 @@
 using Features.AdminApi.Auth;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Shared.Repositories;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
@@ -26,9 +27,9 @@ public static class AdminTokenEndpoints
     /// <summary>
     /// Maps all AdminApi token endpoints.
     /// </summary>
-    public static void MapAdminTokenEndpoints(this WebApplication app)
+    public static void MapAdminTokenEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var adminTokenGroup = app.MapGroup("/api/admin/tenants/{tenantId}/agents/{agentId}/tokens")
+        var adminTokenGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/tokens")
             .WithTags("AdminAPI - Agent Tokens")
             .RequiresAdminApiAuth();
 

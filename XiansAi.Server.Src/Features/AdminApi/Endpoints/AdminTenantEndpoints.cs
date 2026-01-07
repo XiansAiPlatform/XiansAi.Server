@@ -5,6 +5,7 @@ using Shared.Services;
 using Shared.Auth;
 using Shared.Data.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
 using Shared.Repositories;
@@ -14,16 +15,16 @@ namespace Features.AdminApi.Endpoints;
 /// <summary>
 /// AdminApi endpoints for tenant management.
 /// These are administrative operations for managing tenants.
-/// All endpoints are under /api/admin/ prefix.
+/// All endpoints are under /api/v{version}/admin/ prefix (versioned).
 /// </summary>
 public static class AdminTenantEndpoints
 {
     /// <summary>
     /// Maps all AdminApi tenant endpoints.
     /// </summary>
-    public static void MapAdminTenantEndpoints(this WebApplication app)
+    public static void MapAdminTenantEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var adminTenantGroup = app.MapGroup("/api/admin/tenants")
+        var adminTenantGroup = adminApiGroup.MapGroup("/tenants")
             .WithTags("AdminAPI - Tenant Management");
 
         // List All Tenants - No X-Tenant-Id header required (you need to list tenants first!)

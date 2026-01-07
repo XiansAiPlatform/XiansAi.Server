@@ -1,6 +1,7 @@
 using Features.AdminApi.Auth;
 using Features.AdminApi.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Shared.Repositories;
 using Shared.Auth;
 using Shared.Utils.Services;
@@ -26,9 +27,9 @@ public static class AdminOwnershipEndpoints
     /// <summary>
     /// Maps all AdminApi ownership endpoints.
     /// </summary>
-    public static void MapAdminOwnershipEndpoints(this WebApplication app)
+    public static void MapAdminOwnershipEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var adminOwnershipGroup = app.MapGroup("/api/admin/tenants/{tenantId}/agents/{agentId}/ownership")
+        var adminOwnershipGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/ownership")
             .WithTags("AdminAPI - Agent Ownership")
             .RequiresAdminApiAuth();
 

@@ -36,28 +36,44 @@ public static class AdminApiConfiguration
     }
 
     /// <summary>
+    /// The current API version for AdminApi endpoints.
+    /// Change this value to update all AdminApi endpoints to a new version.
+    /// </summary>
+    private const string ApiVersion = "v1";
+
+    /// <summary>
+    /// Gets the base path for AdminApi endpoints with the current version.
+    /// Used for constructing absolute URLs in responses (e.g., Results.Created).
+    /// </summary>
+    public static string GetBasePath() => $"/api/{ApiVersion}/admin";
+
+    /// <summary>
     /// Maps AdminApi endpoints to the application.
-    /// All AdminApi endpoints are under /api/admin/ prefix.
+    /// All AdminApi endpoints are under /api/v{version}/admin/ prefix (versioned).
     /// </summary>
     public static WebApplication UseAdminApiEndpoints(this WebApplication app)
     {
+        // Create a versioned route group for all AdminApi endpoints
+        // This automatically prefixes all child routes with /api/v{version}/admin
+        var adminApiGroup = app.MapGroup($"/api/{ApiVersion}/admin");
+
         // Map AdminApi tenant management endpoints
-        AdminTenantEndpoints.MapAdminTenantEndpoints(app);
+        AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
         
         // Map AdminApi agent management endpoints
-        AdminAgentEndpoints.MapAdminAgentEndpoints(app);
+        AdminAgentEndpoints.MapAdminAgentEndpoints(adminApiGroup);
         
         // Map AdminApi template endpoints
-        AdminTemplateEndpoints.MapAdminTemplateEndpoints(app);
+        AdminTemplateEndpoints.MapAdminTemplateEndpoints(adminApiGroup);
         
         // Map AdminApi reporting users endpoints
-        AdminReportingUsersEndpoints.MapAdminReportingUsersEndpoints(app);
+        AdminReportingUsersEndpoints.MapAdminReportingUsersEndpoints(adminApiGroup);
         
         // Map AdminApi ownership endpoints
-        AdminOwnershipEndpoints.MapAdminOwnershipEndpoints(app);
+        AdminOwnershipEndpoints.MapAdminOwnershipEndpoints(adminApiGroup);
         
         // Map AdminApi token endpoints
-        AdminTokenEndpoints.MapAdminTokenEndpoints(app);
+        AdminTokenEndpoints.MapAdminTokenEndpoints(adminApiGroup);
         
         return app;
     }
