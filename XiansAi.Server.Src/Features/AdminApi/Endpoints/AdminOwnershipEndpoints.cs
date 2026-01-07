@@ -43,25 +43,19 @@ public static class AdminOwnershipEndpoints
             try
             {
                 // Parse agent ID
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
 
                 // Validate tenant matches (unless SysAdmin)
                 if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
                     !parsedTenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
                 {
                     return Results.Forbid();
-                }
-
-                // Get agent
-                var agent = await agentRepository.GetByNameAsync(
-                    agentName, 
-                    parsedTenant, 
-                    tenantContext.LoggedInUser, 
-                    tenantContext.UserRoles.ToArray());
-
-                if (agent == null)
-                {
-                    return Results.NotFound(new { error = $"Agent '{agentId}' not found" });
                 }
 
                 var adminId = agent.GetAdminId();
@@ -121,7 +115,13 @@ public static class AdminOwnershipEndpoints
             try
             {
                 // Parse agent ID
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
 
                 // Validate tenant matches (unless SysAdmin)
                 if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
@@ -131,11 +131,6 @@ public static class AdminOwnershipEndpoints
                 }
 
                 // Get agent
-                var agent = await agentRepository.GetByNameInternalAsync(agentName, parsedTenant);
-                if (agent == null)
-                {
-                    return Results.NotFound(new { error = $"Agent '{agentId}' not found" });
-                }
 
                 // Check permissions (must be current admin, TenantAdmin, or SysAdmin)
                 var currentAdminId = agent.GetAdminId();

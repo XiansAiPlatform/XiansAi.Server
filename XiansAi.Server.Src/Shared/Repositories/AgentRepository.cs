@@ -19,6 +19,7 @@ public class AgentWithDefinitions
 public interface IAgentRepository
 {
     Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles);
+    Task<Agent?> GetByIdAsync(string id, string userId, string[] userRoles);
     Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant);
     Task CreateAsync(Agent agent);
     Task<bool> UpdateAsync(string id, Agent agent, string userId, string[] userRoles);
@@ -27,6 +28,7 @@ public interface IAgentRepository
     
     // Internal methods without permission checking (for system use)
     Task<Agent?> GetByNameInternalAsync(string name, string? tenant);
+    Task<Agent?> GetByIdInternalAsync(string id);
     Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
     Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null);
@@ -112,6 +114,36 @@ public class AgentRepository : IAgentRepository
             }
             return await _agents.Find(x => x.Name == name && x.Tenant == tenant).FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAgentByName");
+    }
+
+    public async Task<Agent?> GetByIdAsync(string id, string userId, string[] userRoles)
+    {
+        var agent = await GetByIdInternalAsync(id);
+        if (agent == null)
+        {
+            return null;
+        }
+
+        // Check if user has at least read permission
+        if (!CheckPermissions(agent, PermissionLevel.Read))
+        {
+            _logger.LogWarning("User {UserId} attempted to access agent {AgentId} without read permission", userId, id);
+            return null;
+        }
+
+        return agent;
+    }
+
+    public async Task<Agent?> GetByIdInternalAsync(string id)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            if (!ObjectId.TryParse(id, out _))
+            {
+                return null;
+            }
+            return await _agents.Find(x => x.Id == id).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAgentById");
     }
 
     public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant)
@@ -452,10 +484,31 @@ public class AgentRepository : IAgentRepository
     }
 
     /// <summary>
-    /// Upserts a system-scoped agent template in the agent_templates collection.
+    /// Upserts a system-scoped agent template.
+    /// First checks agents collection for legacy system-scoped agents (backward compatibility).
+    /// If not found, creates/updates in agent_templates collection.
     /// </summary>
     private async Task<Agent> UpsertSystemScopedAgentAsync(string agentName, string createdBy, string? onboardingJson = null)
     {
+        // STEP 1: Check if this is a legacy system-scoped agent in the agents collection
+        // This handles backward compatibility for old agents that are just restarting
+        var legacyAgent = await GetByNameInternalAsync(agentName, null);
+        if (legacyAgent != null && legacyAgent.SystemScoped)
+        {
+            _logger.LogInformation("Found legacy system-scoped agent {AgentName} in agents collection, using existing agent (not creating in agent_templates)", agentName);
+            
+            // Update OnboardingJson if provided
+            if (!string.IsNullOrEmpty(onboardingJson) && legacyAgent.OnboardingJson != onboardingJson)
+            {
+                _logger.LogInformation("Updating OnboardingJson for legacy system-scoped agent {AgentName}", agentName);
+                legacyAgent.OnboardingJson = onboardingJson;
+                await UpdateInternalAsync(legacyAgent.Id, legacyAgent);
+            }
+            
+            return legacyAgent;
+        }
+        
+        // STEP 2: No legacy agent found, proceed with agent_templates collection
         // Create new template object
         var newTemplate = new AgentTemplate
         {
@@ -480,7 +533,7 @@ public class AgentRepository : IAgentRepository
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
         {
-            _logger.LogInformation("Agent template {AgentName} already exists, retrieving existing template", agentName);
+            _logger.LogInformation("Agent template {AgentName} already exists in agent_templates, retrieving existing template", agentName);
             
             // Template already exists, get the existing one
             var existingTemplate = await _agentTemplateRepository.GetByNameAsync(agentName);

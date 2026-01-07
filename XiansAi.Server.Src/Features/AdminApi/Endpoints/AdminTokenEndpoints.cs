@@ -151,7 +151,13 @@ public static class AdminTokenEndpoints
             try
             {
                 // Parse agent ID
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 var fullAgentId = $"{parsedTenant}@{agentName}";
 
                 // Validate tenant matches (unless SysAdmin)
@@ -161,12 +167,6 @@ public static class AdminTokenEndpoints
                     return Results.Forbid();
                 }
 
-                // Verify agent exists
-                var agent = await agentRepository.GetByNameInternalAsync(agentName, parsedTenant);
-                if (agent == null)
-                {
-                    return Results.NotFound(new { error = "Agent not found" });
-                }
 
                 // Check permissions (must be owner, TenantAdmin, or SysAdmin)
                 if (!CanModifyAgentResource(tenantContext, agent))
@@ -244,7 +244,13 @@ public static class AdminTokenEndpoints
             try
             {
                 // Parse agent ID
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 var fullAgentId = $"{parsedTenant}@{agentName}";
 
                 // Validate tenant matches (unless SysAdmin)
@@ -304,7 +310,13 @@ public static class AdminTokenEndpoints
             try
             {
                 // Parse agent ID
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 var fullAgentId = $"{parsedTenant}@{agentName}";
 
                 // Validate tenant matches (unless SysAdmin)
@@ -368,7 +380,13 @@ public static class AdminTokenEndpoints
             try
             {
                 // Parse agent ID
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 var fullAgentId = $"{parsedTenant}@{agentName}";
 
                 // Validate tenant matches (unless SysAdmin)
@@ -376,13 +394,6 @@ public static class AdminTokenEndpoints
                     !parsedTenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
                 {
                     return Results.Forbid();
-                }
-
-                // Verify agent exists and check permissions
-                var agent = await agentRepository.GetByNameInternalAsync(agentName, parsedTenant);
-                if (agent == null)
-                {
-                    return Results.NotFound(new { error = "Agent not found" });
                 }
 
                 // Check permissions (must be owner, TenantAdmin, or SysAdmin)

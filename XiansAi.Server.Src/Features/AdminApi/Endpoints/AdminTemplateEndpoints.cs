@@ -124,7 +124,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Get Agent Template Details (singular) - System Admin only, no X-Tenant-Id required
-        adminApiGroup.MapGet("/agentTemplate/{templateObjectId}", async (
+        adminApiGroup.MapGet("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
             [FromQuery] bool? basicDataOnly,
             HttpContext httpContext,
@@ -165,7 +165,7 @@ public static class AdminTemplateEndpoints
 
         // Update Agent Template Metadata - System Admin only, no X-Tenant-Id required
         // Note: Templates are created when deploying agents, not via a separate create endpoint
-        adminApiGroup.MapPatch("/agentTemplate/{templateObjectId}/Metadata", async (
+        adminApiGroup.MapPatch("/agentTemplates/{templateObjectId}/Metadata", async (
             string templateObjectId,
             [FromBody] UpdateAgentTemplateRequest request,
             HttpContext httpContext,
@@ -249,7 +249,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Delete Agent Template - System Admin only, no X-Tenant-Id required
-        adminApiGroup.MapDelete("/agentTemplate/{templateObjectId}", async (
+        adminApiGroup.MapDelete("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
             HttpContext httpContext,
             [FromServices] IAgentTemplateRepository templateRepository,
@@ -293,28 +293,48 @@ public static class AdminTemplateEndpoints
         });
 
         // Deploy Template to Tenant - X-Tenant-Id required
-        // Note: This endpoint uses template name (not ObjectId) because DeployTemplateToTenant expects the name
+        // This endpoint handles both:
+        // 1. New templates from agent_templates collection (by ObjectId)
+        // 2. Legacy system-scoped templates from agents collection (by ObjectId, SystemScoped = true)
         // Future: Eligibility validation will be implemented here
-        adminApiGroup.MapPost("/agentTemplate/{templateObjectId}/deploy", async (
+        adminApiGroup.MapPost("/agentTemplates/{templateObjectId}/deploy", async (
             string templateObjectId,
             [FromQuery] string tenantId,
             [FromServices] ITemplateService templateService,
             [FromServices] IAgentTemplateRepository templateRepository,
+            [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext) =>
         {
             // X-Tenant-Id is required (enforced by RequiresAdminApiAuth)
             // Future: Add eligibility validation here
             
-            // Get template by ObjectId and extract the name
+            string? agentName = null;
+            
+            // First, try to find in agent_templates collection (new templates)
             var template = await templateRepository.GetByIdAsync(templateObjectId);
-            if (template == null)
+            if (template != null)
             {
-                return Results.NotFound($"Agent template with ID '{templateObjectId}' not found");
+                agentName = template.Name;
+            }
+            else
+            {
+                // If not found, try agents collection (legacy system-scoped templates)
+                var legacyAgent = await agentRepository.GetByIdInternalAsync(templateObjectId);
+                if (legacyAgent != null && legacyAgent.SystemScoped)
+                {
+                    agentName = legacyAgent.Name;
+                }
+            }
+            
+            if (string.IsNullOrWhiteSpace(agentName))
+            {
+                return Results.NotFound($"Agent template with ID '{templateObjectId}' not found in either agent_templates or agents collection");
             }
 
             // Deploy template to specific tenant (AdminApi allows deploying to any tenant)
             // Use DeployTemplateToTenant method which accepts explicit tenant/user parameters
-            var result = await templateService.DeployTemplateToTenant(template.Name, tenantId, tenantContext.LoggedInUser, null);
+            // This method handles both new templates and legacy agents
+            var result = await templateService.DeployTemplateToTenant(agentName, tenantId, tenantContext.LoggedInUser, null);
             return result.ToHttpResult();
         })
         .WithTags("AdminAPI - Agent Templates")

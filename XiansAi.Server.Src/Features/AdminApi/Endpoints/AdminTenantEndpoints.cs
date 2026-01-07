@@ -54,9 +54,9 @@ public static class AdminTenantEndpoints
             Description = "Retrieve all tenants in the system. Requires admin permissions. X-Tenant-Id header is NOT required for this endpoint."
         });
 
-        // Get Tenant by ID - No X-Tenant-Id header required (tenant ID is in path)
-        adminTenantGroup.MapGet("/{id}", async (
-            string id,
+        // Get Tenant by TenantId - No X-Tenant-Id header required (tenant ID is in path)
+        adminTenantGroup.MapGet("/{tenantId}", async (
+            string tenantId,
             HttpContext httpContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ITenantContext tenantContext,
@@ -69,15 +69,15 @@ public static class AdminTenantEndpoints
                 return errorResult!;
             }
             
-            var result = await tenantService.GetTenantById(id);
+            var result = await tenantService.GetTenantByTenantId(tenantId);
             return result.ToHttpResult();
         })
         .RequiresToken() // Role check done in endpoint
-        .WithName("GetTenantById")
+        .WithName("GetTenantByTenantId")
         .WithOpenApi(operation => new(operation)
         {
-            Summary = "Get Tenant by ID",
-            Description = "Retrieve a specific tenant by its ID. Requires admin permissions. X-Tenant-Id header is NOT required."
+            Summary = "Get Tenant by TenantId",
+            Description = "Retrieve a specific tenant by its tenantId (e.g., 'spacex01'). Requires admin permissions. X-Tenant-Id header is NOT required."
         });
 
         // Create Tenant - No X-Tenant-Id header required (creating new tenant)
@@ -110,8 +110,8 @@ public static class AdminTenantEndpoints
         });
 
         // Update Tenant - No X-Tenant-Id header required (tenant ID is in path)
-        adminTenantGroup.MapPatch("/{id}", async (
-            string id,
+        adminTenantGroup.MapPatch("/{tenantId}", async (
+            string tenantId,
             [FromBody] UpdateTenantRequest request,
             HttpContext httpContext,
             [FromServices] ITenantService tenantService,
@@ -125,7 +125,15 @@ public static class AdminTenantEndpoints
                 return errorResult!;
             }
             
-            var result = await tenantService.UpdateTenant(id, request);
+            // First get tenant by tenantId to get the ObjectId
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+            {
+                return tenantResult.ToHttpResult();
+            }
+            
+            // Use the ObjectId for the update operation
+            var result = await tenantService.UpdateTenant(tenantResult.Data.Id, request);
             return result.ToHttpResult();
         })
         .RequiresToken() // Role check done in endpoint (SysAdmin only)
@@ -133,12 +141,12 @@ public static class AdminTenantEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Update Tenant",
-            Description = "Update an existing tenant. Requires system admin permissions. X-Tenant-Id header is NOT required."
+            Description = "Update an existing tenant by tenantId (e.g., 'spacex01'). Requires system admin permissions. X-Tenant-Id header is NOT required."
         });
 
         // Delete Tenant - No X-Tenant-Id header required (tenant ID is in path)
-        adminTenantGroup.MapDelete("/{id}", async (
-            string id,
+        adminTenantGroup.MapDelete("/{tenantId}", async (
+            string tenantId,
             HttpContext httpContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ITenantContext tenantContext,
@@ -151,7 +159,15 @@ public static class AdminTenantEndpoints
                 return errorResult!;
             }
 
-            var result = await tenantService.DeleteTenant(id);
+            // First get tenant by tenantId to get the ObjectId
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+            {
+                return tenantResult.ToHttpResult();
+            }
+            
+            // Use the ObjectId for the delete operation
+            var result = await tenantService.DeleteTenant(tenantResult.Data.Id);
             return result.ToHttpResult();
         })
         .RequiresToken() // Role check done in endpoint (SysAdmin only)
@@ -159,7 +175,7 @@ public static class AdminTenantEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Delete Tenant",
-            Description = "Delete a tenant by its ID. Requires system admin permissions. X-Tenant-Id header is NOT required."
+            Description = "Delete a tenant by tenantId (e.g., 'spacex01'). Requires system admin permissions. X-Tenant-Id header is NOT required."
         });
     }
 }

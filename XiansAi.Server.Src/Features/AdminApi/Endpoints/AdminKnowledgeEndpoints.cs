@@ -103,7 +103,13 @@ public static class AdminKnowledgeEndpoints
                 }
 
                 // Parse agent ID to get agent name
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent with ID '{agentId}' not found" }, statusCode: 404);
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -113,14 +119,6 @@ public static class AdminKnowledgeEndpoints
                         statusCode: 400);
                 }
 
-                // Verify agent exists and belongs to tenant
-                var agent = await agentRepository.GetByNameAsync(agentName, tenantId, tenantContext.LoggedInUser, tenantContext.UserRoles.ToArray());
-                if (agent == null)
-                {
-                    return Results.Json(
-                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
-                        statusCode: 404);
-                }
 
                 // Get all knowledge for this agent
                 var knowledge = await knowledgeRepository.GetUniqueLatestAsync<Knowledge>(tenantId, new List<string> { agentName });
@@ -162,7 +160,13 @@ public static class AdminKnowledgeEndpoints
                 }
 
                 // Parse agent ID to get agent name
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent with ID '{agentId}' not found" }, statusCode: 404);
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -172,14 +176,6 @@ public static class AdminKnowledgeEndpoints
                         statusCode: 400);
                 }
 
-                // Verify agent exists and belongs to tenant
-                var agent = await agentRepository.GetByNameAsync(agentName, tenantId, tenantContext.LoggedInUser, tenantContext.UserRoles.ToArray());
-                if (agent == null)
-                {
-                    return Results.Json(
-                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
-                        statusCode: 404);
-                }
 
                 // Get knowledge by ID
                 var knowledge = await knowledgeRepository.GetByIdAsync<Knowledge>(knowledgeId);
@@ -235,7 +231,13 @@ public static class AdminKnowledgeEndpoints
                 }
 
                 // Parse agent ID to get agent name
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent with ID '{agentId}' not found" }, statusCode: 404);
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -245,14 +247,6 @@ public static class AdminKnowledgeEndpoints
                         statusCode: 400);
                 }
 
-                // Verify agent exists and belongs to tenant
-                var agent = await agentRepository.GetByNameAsync(agentName, tenantId, tenantContext.LoggedInUser, tenantContext.UserRoles.ToArray());
-                if (agent == null)
-                {
-                    return Results.Json(
-                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
-                        statusCode: 404);
-                }
 
                 // Check permissions (must be owner, TenantAdmin, or SysAdmin)
                 if (!CanModifyAgentResource(tenantContext, agent))
@@ -330,7 +324,13 @@ public static class AdminKnowledgeEndpoints
                 }
 
                 // Parse agent ID to get agent name
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent with ID '{agentId}' not found" }, statusCode: 404);
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -340,14 +340,6 @@ public static class AdminKnowledgeEndpoints
                         statusCode: 400);
                 }
 
-                // Verify agent exists and belongs to tenant
-                var agent = await agentRepository.GetByNameAsync(agentName, tenantId, tenantContext.LoggedInUser, tenantContext.UserRoles.ToArray());
-                if (agent == null)
-                {
-                    return Results.Json(
-                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
-                        statusCode: 404);
-                }
 
                 // Check permissions (must be owner, TenantAdmin, or SysAdmin)
                 if (!CanModifyAgentResource(tenantContext, agent))
@@ -435,7 +427,13 @@ public static class AdminKnowledgeEndpoints
                 }
 
                 // Parse agent ID to get agent name
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent with ID '{agentId}' not found" }, statusCode: 404);
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -445,14 +443,6 @@ public static class AdminKnowledgeEndpoints
                         statusCode: 400);
                 }
 
-                // Verify agent exists and belongs to tenant
-                var agent = await agentRepository.GetByNameAsync(agentName, tenantId, tenantContext.LoggedInUser, tenantContext.UserRoles.ToArray());
-                if (agent == null)
-                {
-                    return Results.Json(
-                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
-                        statusCode: 404);
-                }
 
                 // Check permissions (must be owner, TenantAdmin, or SysAdmin)
                 if (!CanModifyAgentResource(tenantContext, agent))
@@ -525,7 +515,13 @@ public static class AdminKnowledgeEndpoints
                 }
 
                 // Parse agent ID to get agent name
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent with ID '{agentId}' not found" }, statusCode: 404);
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -535,14 +531,6 @@ public static class AdminKnowledgeEndpoints
                         statusCode: 400);
                 }
 
-                // Verify agent exists and belongs to tenant
-                var agent = await agentRepository.GetByNameAsync(agentName, tenantId, tenantContext.LoggedInUser, tenantContext.UserRoles.ToArray());
-                if (agent == null)
-                {
-                    return Results.Json(
-                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
-                        statusCode: 404);
-                }
 
                 // Get all versions of knowledge with this name
                 var versions = await knowledgeRepository.GetByNameAsync<Knowledge>(name, agentName, tenantId);
@@ -584,7 +572,13 @@ public static class AdminKnowledgeEndpoints
                 }
 
                 // Parse agent ID to get agent name
-                var (parsedTenant, agentName) = AgentIdParser.Parse(agentId, tenantId);
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent with ID '{agentId}' not found" }, statusCode: 404);
+                }
+                var parsedTenant = agent.Tenant;
+                var agentName = agent.Name;
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -594,14 +588,6 @@ public static class AdminKnowledgeEndpoints
                         statusCode: 400);
                 }
 
-                // Verify agent exists and belongs to tenant
-                var agent = await agentRepository.GetByNameAsync(agentName, tenantId, tenantContext.LoggedInUser, tenantContext.UserRoles.ToArray());
-                if (agent == null)
-                {
-                    return Results.Json(
-                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
-                        statusCode: 404);
-                }
 
                 // Check permissions (must be owner, TenantAdmin, or SysAdmin)
                 if (!CanModifyAgentResource(tenantContext, agent))

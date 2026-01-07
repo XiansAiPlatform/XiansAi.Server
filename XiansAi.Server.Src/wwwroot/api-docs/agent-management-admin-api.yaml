@@ -6,10 +6,16 @@ info:
     
     These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed, configured, and assigned to reporting targets. A marketplace is one example use case where agent templates can be browsed and deployed.
     
+    **Template Collections:** Agent templates are stored in two collections for backward compatibility:
+    - **New templates** in `agent_templates` collection
+    - **Legacy templates** in `agents` collection (where `SystemScoped = true`)
+    
+    The GET endpoints return templates from both collections, and the deploy endpoint automatically detects which collection a template belongs to based on the ObjectId provided.
+    
     **Important Notes:**
     - All endpoints are under `/api/v1/admin/` prefix (API versioning via URL path)
     - Current API version: **v1**
-    - Agent ID format: `{tenantName}@{agentName}` (e.g., `acme@support-agent`)
+    - Agent ID format: MongoDB ObjectId (24-character hexadecimal string, e.g., `507f1f77bcf86cd799439011`)
     - When an agent is added to a tenant, the user who performs the deployment automatically becomes the **admin** of that agent instance
     - Users are identified by user identifiers (userId, email, username, etc. - system dependent)
     - The `adminId` field is automatically set to the user identifier of the authenticated user who creates the agent
@@ -45,52 +51,6 @@ tags:
 
 paths:
   /api/v1/admin/tenants/{tenantId}/agents:
-    post:
-      tags:
-        - Agent CRUD
-      summary: Create Agent / Deploy Agent Template
-      description: |
-        Create a new agent instance in a tenant or deploy an agent template as an agent instance. 
-        The authenticated user who creates/deploys the agent automatically becomes the **admin** of the agent instance.
-      operationId: createAgent
-      parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - name: fromTemplate
-          in: query
-          description: If true, deploy from agent template using templateId
-          required: false
-          schema:
-            type: boolean
-            default: false
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateAgentRequest'
-      responses:
-        '201':
-          description: Agent created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          description: Agent already exists in tenant
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-      security:
-        - bearerAuth: []
-        - apiKey: []
-
     get:
       tags:
         - Agent CRUD
@@ -143,7 +103,7 @@ paths:
       tags:
         - Agent CRUD
       summary: Get Agent
-      description: "Get agent details by ID. Agent ID format: {tenantName}@{agentName}"
+      description: "Get agent details by MongoDB ObjectId (24-character hexadecimal string)"
       operationId: getAgent
       parameters:
         - $ref: '#/components/parameters/TenantId'
@@ -394,7 +354,7 @@ paths:
       summary: View Ownership
       description: |
         Get ownership and administration information for an agent. 
-        Agent ID format: `{tenantName}@{agentName}`.
+        Agent ID format: MongoDB ObjectId (24-character hexadecimal string).
         
         The `adminId` is the user identifier of the user who originally deployed/created the agent. 
         Only the admin can transfer ownership or modify critical agent settings.
@@ -651,6 +611,9 @@ paths:
       summary: Browse Agent Templates (System Admin)
       description: |
         Browse all available agent templates (system-scoped reusable agent definitions).
+        This endpoint returns templates from both collections:
+        - New templates from agent_templates collection
+        - Legacy system-scoped templates from agents collection (SystemScoped = true)
         **System admin only. No X-Tenant-Id header required.**
       operationId: browseAgentTemplates
       parameters:
@@ -690,6 +653,9 @@ paths:
       summary: Browse Agent Templates for Tenant
       description: |
         Browse agent templates eligible for a specific tenant.
+        This endpoint returns templates from both collections:
+        - New templates from agent_templates collection
+        - Legacy system-scoped templates from agents collection (SystemScoped = true)
         **X-Tenant-Id header required.**
         Future: Eligibility filtering will be implemented.
       operationId: browseAgentTemplatesForTenant
@@ -899,6 +865,9 @@ paths:
       summary: Deploy Agent Template to Tenant
       description: |
         Deploy an agent template to a specific tenant, creating a new agent instance.
+        This endpoint handles both:
+        - New templates from agent_templates collection (by ObjectId)
+        - Legacy system-scoped templates from agents collection (by ObjectId, SystemScoped = true)
         **X-Tenant-Id header required.**
         Future: Eligibility validation will be implemented.
       operationId: deployAgentTemplate
@@ -1279,52 +1248,14 @@ components:
       in: path
       required: true
       description: |
-        Agent ID. Supports two formats:
-        - `{tenantName}@{agentName}` (e.g., `acme@support-agent`)
-        - `{agentName}` (uses tenantId from path as default tenant)
+        Agent ID - MongoDB ObjectId (24-character hexadecimal string).
+        This is the unique identifier for a deployed agent instance.
       schema:
         type: string
-        example: acme@support-agent
+        pattern: '^[0-9a-fA-F]{24}$'
+        example: 507f1f77bcf86cd799439011
 
   schemas:
-    CreateAgentRequest:
-      type: object
-      required:
-        - name
-      properties:
-        name:
-          type: string
-          description: Agent name
-          example: support-agent
-        description:
-          type: string
-          description: Agent description
-          example: Customer support agent for handling inquiries
-        category:
-          type: string
-          enum: [marketing, sales, service]
-          description: Agent category
-          example: service
-        configuration:
-          type: object
-          description: Agent configuration
-          additionalProperties: true
-        reportingTargets:
-          type: array
-          items:
-            $ref: '#/components/schemas/ReportingTo'
-          description: List of reporting targets (users, groups, etc.) with flexible attributes
-          example:
-            - id: "user123"
-              attributes:
-                type: "user"
-                email: "manager@example.com"
-                name: "John Manager"
-        templateId:
-          type: string
-          description: Agent template ID (required if fromTemplate=true)
-          example: support-agent-v1
-
     UpdateAgentRequest:
       type: object
       properties:

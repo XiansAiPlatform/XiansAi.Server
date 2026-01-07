@@ -93,22 +93,22 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /admin/tenants/{id}:
+  /admin/tenants/{tenantId}:
     get:
       tags:
         - Tenant Management
-      summary: Get Tenant by ID
-      description: Retrieve a specific tenant by its MongoDB ObjectId. Requires admin permissions.
-      operationId: getTenantById
+      summary: Get Tenant by TenantId
+      description: Retrieve a specific tenant by its tenantId (business identifier, e.g., 'spacex01'). Requires admin permissions.
+      operationId: getTenantByTenantId
       parameters:
-        - name: id
+        - name: tenantId
           in: path
           required: true
-          description: MongoDB ObjectId of the tenant
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
           schema:
             type: string
-            pattern: '^[0-9a-fA-F]{24}$'
-            example: "507f1f77bcf86cd799439011"
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
       responses:
         '200':
           description: Tenant retrieved successfully
@@ -132,17 +132,17 @@ paths:
       tags:
         - Tenant Management
       summary: Update Tenant
-      description: Update an existing tenant. Requires system admin permissions.
+      description: Update an existing tenant by tenantId (business identifier, e.g., 'spacex01'). Requires system admin permissions.
       operationId: updateTenant
       parameters:
-        - name: id
+        - name: tenantId
           in: path
           required: true
-          description: MongoDB ObjectId of the tenant
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
           schema:
             type: string
-            pattern: '^[0-9a-fA-F]{24}$'
-            example: "507f1f77bcf86cd799439011"
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
       requestBody:
         required: true
         content:
@@ -174,17 +174,17 @@ paths:
       tags:
         - Tenant Management
       summary: Delete Tenant
-      description: Delete a tenant by its MongoDB ObjectId. Requires system admin permissions.
+      description: Delete a tenant by tenantId (business identifier, e.g., 'spacex01'). Requires system admin permissions.
       operationId: deleteTenant
       parameters:
-        - name: id
+        - name: tenantId
           in: path
           required: true
-          description: MongoDB ObjectId of the tenant
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
           schema:
             type: string
-            pattern: '^[0-9a-fA-F]{24}$'
-            example: "507f1f77bcf86cd799439011"
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
       responses:
         '200':
           description: Tenant deleted successfully
@@ -196,41 +196,6 @@ paths:
                   success:
                     type: boolean
                     example: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-      security:
-        - bearerAuth: []
-        - apiKey: []
-
-  /admin/tenants/by-tenant-id/{tenantId}:
-    get:
-      tags:
-        - Tenant Management
-      summary: Get Tenant by TenantId
-      description: Retrieve a specific tenant by its tenant ID (the business identifier, not MongoDB ObjectId). Requires admin permissions.
-      operationId: getTenantByTenantId
-      parameters:
-        - name: tenantId
-          in: path
-          required: true
-          description: Tenant ID (business identifier)
-          schema:
-            type: string
-            pattern: '^[a-zA-Z0-9._@-]+$'
-            example: "acme-corp"
-      responses:
-        '200':
-          description: Tenant retrieved successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TenantResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
