@@ -282,7 +282,14 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", tokenUserId, UserType.UserToken);
             _tenantContext.LoggedInUser = tokenUserId;
             _tenantContext.UserType = UserType.UserToken;
-            var userTenants = await _userTenantService.GetTenantsForCurrentUser();
+            var userTenants = await _userTenantService.GetCurrentUserTenants(token);
+            
+            if (!userTenants.IsSuccess)
+            {
+                _logger.LogWarning("Failed to get or create user tenants for {UserId}: {Error}", tokenUserId, userTenants.ErrorMessage);
+                return (false, null, null);
+            }
+            
             var tokenTenantIds = userTenants?.Data ?? new List<string>();
 
             // Cache the result (always cache fresh validation results)
