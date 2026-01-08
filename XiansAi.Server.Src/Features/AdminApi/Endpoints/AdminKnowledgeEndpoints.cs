@@ -1,4 +1,3 @@
-using Features.AdminApi.Auth;
 using Features.AdminApi.Constants;
 using Features.AdminApi.Utils;
 using Shared.Repositories;
@@ -80,8 +79,7 @@ public static class AdminKnowledgeEndpoints
     public static void MapAdminKnowledgeEndpoints(this RouteGroupBuilder adminApiGroup)
     {
         var adminKnowledgeGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/knowledge")
-            .WithTags("AdminAPI - Knowledge Management")
-            .RequiresAdminApiAuth();
+            .WithTags("AdminAPI - Knowledge Management");
 
         // List all knowledge for an agent
         adminKnowledgeGroup.MapGet("", async (

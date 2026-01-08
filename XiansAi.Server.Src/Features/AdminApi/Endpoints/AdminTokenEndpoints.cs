@@ -1,5 +1,3 @@
-using Features.AdminApi.Auth;
-using Features.AdminApi.Utils;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using MongoDB.Bson;
@@ -136,7 +134,7 @@ public static class AdminTokenEndpoints
     {
         var adminTokenGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/tokens")
             .WithTags("AdminAPI - Agent Tokens")
-            .RequiresAdminApiAuth();
+;
 
         // Issue Token
         adminTokenGroup.MapPost("", async (

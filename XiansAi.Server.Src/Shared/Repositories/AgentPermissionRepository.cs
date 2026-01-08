@@ -18,20 +18,17 @@ public interface IAgentPermissionRepository
 public class AgentPermissionRepository : IAgentPermissionRepository
 {
     private readonly IAgentRepository _agentRepository;
-    private readonly IAgentTemplateRepository _agentTemplateRepository;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly ILogger<AgentPermissionRepository> _logger;
     private readonly ITenantContext _tenantContext;
 
     public AgentPermissionRepository(
         IAgentRepository agentRepository,
-        IAgentTemplateRepository agentTemplateRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
         ILogger<AgentPermissionRepository> logger,
         ITenantContext tenantContext)
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
-        _agentTemplateRepository = agentTemplateRepository ?? throw new ArgumentNullException(nameof(agentTemplateRepository));
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
@@ -277,45 +274,16 @@ public class AgentPermissionRepository : IAgentPermissionRepository
             return agent;
         }
 
-        // Check legacy system-scoped agents in agents collection
+        // Check system-scoped agents (templates) in agents collection
         var systemAgent = await _agentRepository.GetByNameInternalAsync(agentName, null);
         if (systemAgent != null && systemAgent.SystemScoped)
         {
             return systemAgent;
         }
 
-        // Check new agent templates in agent_templates collection
-        var template = await _agentTemplateRepository.GetByNameAsync(agentName);
-        if (template != null)
-        {
-            // Convert AgentTemplate to Agent for backward compatibility
-            return ConvertTemplateToAgent(template);
-        }
-
         return null;
     }
 
-    /// <summary>
-    /// Converts AgentTemplate to Agent for backward compatibility.
-    /// </summary>
-    private Agent ConvertTemplateToAgent(AgentTemplate template)
-    {
-        return new Agent
-        {
-            Id = template.Id,
-            Name = template.Name,
-            Tenant = null, // System-scoped
-            SystemScoped = true,
-            CreatedBy = template.CreatedBy,
-            CreatedAt = template.CreatedAt,
-            OwnerAccess = template.OwnerAccess,
-            ReadAccess = template.ReadAccess,
-            WriteAccess = template.WriteAccess,
-            OnboardingJson = template.OnboardingJson,
-            AgentTemplateId = template.Id, // Reference to the template
-            Metadata = template.Metadata != null ? new Dictionary<string, object>(template.Metadata) : null
-        };
-    }
 
     public async Task<List<string>> GetAgentNamesWithPermissionAsync(PermissionLevel requiredLevel)
     {

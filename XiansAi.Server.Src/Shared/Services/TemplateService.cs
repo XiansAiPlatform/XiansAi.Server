@@ -21,7 +21,6 @@ public interface ITemplateService
 public class TemplateService : ITemplateService
 {
     private readonly IAgentRepository _agentRepository;
-    private readonly IAgentTemplateRepository _agentTemplateRepository;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IUserRepository _userRepository;
     private readonly ILogger<TemplateService> _logger;
@@ -31,14 +30,12 @@ public class TemplateService : ITemplateService
     /// Initializes a new instance of the <see cref="TemplateService"/> class.
     /// </summary>
     /// <param name="agentRepository">Repository for agent operations.</param>
-    /// <param name="agentTemplateRepository">Repository for agent template operations.</param>
     /// <param name="flowDefinitionRepository">Repository for flow definition operations.</param>
     /// <param name="userRepository">Repository for user operations.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     public TemplateService(
         IAgentRepository agentRepository,
-        IAgentTemplateRepository agentTemplateRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
         IUserRepository userRepository,
         ILogger<TemplateService> logger,
@@ -46,7 +43,6 @@ public class TemplateService : ITemplateService
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
-        _agentTemplateRepository = agentTemplateRepository ?? throw new ArgumentNullException(nameof(agentTemplateRepository));
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -68,53 +64,13 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Retrieving agent templates from both collections for user {UserId} in tenant {TenantId} (no permission checks)", 
                 _tenantContext.LoggedInUser, _tenantContext.TenantId);
 
-            // Get legacy system-scoped agents from agents collection
+            // Get all system-scoped agents (templates) from agents collection
             var systemScopedAgents = await _agentRepository.GetSystemScopedAgentsWithDefinitionsAsync(basicDataOnly);
-            
-            // Get new agent templates from agent_templates collection
-            var agentTemplates = await _agentTemplateRepository.GetAllAsync();
-            
-            // Convert AgentTemplate to AgentWithDefinitions
-            var templateWithDefinitions = new List<AgentWithDefinitions>();
-            foreach (var template in agentTemplates)
-            {
-                // Find flow definitions for this template (FlowDefinition.Agent = AgentTemplate.Name)
-                var templateDefinitions = await GetFlowDefinitionsForTemplate(template.Name, basicDataOnly);
-                
-                // Convert AgentTemplate to Agent for backward compatibility
-                var agent = ConvertTemplateToAgent(template);
-                
-                templateWithDefinitions.Add(new AgentWithDefinitions
-                {
-                    Agent = agent,
-                    Definitions = templateDefinitions
-                });
-            }
-            
-            // Merge results (templates from agent_templates take precedence if name matches)
-            var mergedTemplates = new List<AgentWithDefinitions>();
-            var processedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
-            // Add new templates first (they take precedence)
-            foreach (var templateDef in templateWithDefinitions)
-            {
-                mergedTemplates.Add(templateDef);
-                processedNames.Add(templateDef.Agent.Name);
-            }
-            
-            // Add legacy agents that don't have templates
-            foreach (var agentDef in systemScopedAgents)
-            {
-                if (!processedNames.Contains(agentDef.Agent.Name))
-                {
-                    mergedTemplates.Add(agentDef);
-                }
-            }
 
-            _logger.LogInformation("Found {TotalCount} templates ({LegacyCount} from agents, {TemplateCount} from agent_templates) for user {UserId}", 
-                mergedTemplates.Count, systemScopedAgents.Count, templateWithDefinitions.Count, _tenantContext.LoggedInUser);
+            _logger.LogInformation("Found {TotalCount} system-scoped agent templates for user {UserId}", 
+                systemScopedAgents.Count, _tenantContext.LoggedInUser);
 
-            return ServiceResult<List<AgentWithDefinitions>>.Success(mergedTemplates);
+            return ServiceResult<List<AgentWithDefinitions>>.Success(systemScopedAgents);
         }
         catch (Exception ex)
         {
@@ -141,27 +97,6 @@ public class TemplateService : ITemplateService
         return definitions;
     }
     
-    /// <summary>
-    /// Converts AgentTemplate to Agent for backward compatibility.
-    /// </summary>
-    private Agent ConvertTemplateToAgent(AgentTemplate template)
-    {
-        return new Agent
-        {
-            Id = template.Id,
-            Name = template.Name,
-            Tenant = null, // System-scoped
-            SystemScoped = true,
-            CreatedBy = template.CreatedBy,
-            CreatedAt = template.CreatedAt,
-            OwnerAccess = template.OwnerAccess,
-            ReadAccess = template.ReadAccess,
-            WriteAccess = template.WriteAccess,
-            OnboardingJson = template.OnboardingJson,
-            AgentTemplateId = template.Id, // Reference to the template
-            Metadata = template.Metadata // Copy metadata (Category, SamplePrompts, etc.)
-        };
-    }
 
     /// <summary>
     /// Deploys a system-scoped agent template to the current user's tenant (from tenant context).
@@ -227,16 +162,14 @@ public class TemplateService : ITemplateService
             // Find the template by name - check both collections
             Agent? templateAgent = null;
             List<FlowDefinition>? templateDefinitions = null;
-            string? templateId = null; // For AgentTemplateId reference
+            string? templateId = null;
             
-            // First check agent_templates collection (new templates)
-            var agentTemplate = await _agentTemplateRepository.GetByNameAsync(agentName);
-            if (agentTemplate != null)
+            // Check agents collection for system-scoped agent (template)
+            var systemAgent = await _agentRepository.GetByNameInternalAsync(agentName, null);
+            if (systemAgent != null && systemAgent.SystemScoped)
             {
-                // Convert AgentTemplate to Agent
-                templateAgent = ConvertTemplateToAgent(agentTemplate);
-                templateId = agentTemplate.Id; // Store AgentTemplate ID
-                // Get flow definitions for this template (FlowDefinition.Agent = AgentTemplate.Name)
+                templateAgent = systemAgent;
+                templateId = systemAgent.Id;
                 templateDefinitions = await GetFlowDefinitionsForTemplate(agentName, false);
             }
             else

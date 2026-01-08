@@ -56,9 +56,7 @@ public class AgentRepository : IAgentRepository
     private readonly IMongoCollection<User> _users;
     private readonly ILogger<AgentRepository> _logger;
     private readonly ITenantContext _tenantContext;
-    private readonly IAgentTemplateRepository _agentTemplateRepository;
-
-    public AgentRepository(IDatabaseService databaseService, ILogger<AgentRepository> logger, ITenantContext tenantContext, IAgentTemplateRepository agentTemplateRepository)
+    public AgentRepository(IDatabaseService databaseService, ILogger<AgentRepository> logger, ITenantContext tenantContext)
     {
         var database = databaseService.GetDatabaseAsync().Result;
         _agents = database.GetCollection<Agent>("agents");
@@ -66,7 +64,6 @@ public class AgentRepository : IAgentRepository
         _definitions = database.GetCollection<FlowDefinition>("flow_definitions");
         _users = database.GetCollection<User>("users");
         _tenantContext = tenantContext;
-        _agentTemplateRepository = agentTemplateRepository;
     }
 
     public async Task<bool> IsSystemAgent(string name)
@@ -80,9 +77,8 @@ public class AgentRepository : IAgentRepository
             return true;
         }
         
-        // Check agent_templates collection
-        var template = await _agentTemplateRepository.GetByNameAsync(name);
-        return template != null;
+        // No need to check agent_templates - all templates are system-scoped agents now
+        return false;
     }   
 
     public async Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles)
@@ -490,30 +486,29 @@ public class AgentRepository : IAgentRepository
     /// </summary>
     private async Task<Agent> UpsertSystemScopedAgentAsync(string agentName, string createdBy, string? onboardingJson = null)
     {
-        // STEP 1: Check if this is a legacy system-scoped agent in the agents collection
-        // This handles backward compatibility for old agents that are just restarting
-        var legacyAgent = await GetByNameInternalAsync(agentName, null);
-        if (legacyAgent != null && legacyAgent.SystemScoped)
+        // Check if system-scoped agent already exists in the 'agents' collection
+        var existingAgent = await GetByNameInternalAsync(agentName, null); // Tenant is null for system-scoped
+        if (existingAgent != null && existingAgent.SystemScoped)
         {
-            _logger.LogInformation("Found legacy system-scoped agent {AgentName} in agents collection, using existing agent (not creating in agent_templates)", agentName);
-            
-            // Update OnboardingJson if provided
-            if (!string.IsNullOrEmpty(onboardingJson) && legacyAgent.OnboardingJson != onboardingJson)
+            _logger.LogInformation("System-scoped agent {AgentName} found in 'agents' collection. Returning existing agent.", agentName);
+            // Update onboardingJson if it's different
+            if (!string.IsNullOrEmpty(onboardingJson) && existingAgent.OnboardingJson != onboardingJson)
             {
-                _logger.LogInformation("Updating OnboardingJson for legacy system-scoped agent {AgentName}", agentName);
-                legacyAgent.OnboardingJson = onboardingJson;
-                await UpdateInternalAsync(legacyAgent.Id, legacyAgent);
+                _logger.LogInformation("Updating OnboardingJson for system-scoped agent {AgentName}", agentName);
+                existingAgent.OnboardingJson = onboardingJson;
+                await UpdateInternalAsync(existingAgent.Id, existingAgent);
             }
             
-            return legacyAgent;
+            return existingAgent;
         }
         
-        // STEP 2: No legacy agent found, proceed with agent_templates collection
-        // Create new template object
-        var newTemplate = new AgentTemplate
+        // Create new system-scoped agent in agents collection
+        var newAgent = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = agentName,
+            SystemScoped = true,
+            Tenant = null, // System-scoped agents have no tenant
             CreatedBy = createdBy,
             CreatedAt = DateTime.UtcNow,
             OnboardingJson = onboardingJson,
@@ -522,37 +517,40 @@ public class AgentRepository : IAgentRepository
             WriteAccess = new List<string>(),
             Metadata = new Dictionary<string, object>()
         };
-        newTemplate.GrantOwnerAccess(createdBy);
+        newAgent.GrantOwnerAccess(createdBy);
 
         try
         {
-            // Try to insert the new template - will fail if duplicate exists due to unique index
-            await _agentTemplateRepository.CreateAsync(newTemplate);
-            _logger.LogInformation("Agent template {AgentName} created successfully in agent_templates collection", agentName);
-            return ConvertTemplateToAgent(newTemplate);
+            await _agents.InsertOneAsync(newAgent);
+            _logger.LogInformation("System-scoped agent {AgentName} created successfully in agents collection", agentName);
+            return newAgent;
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
+        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
         {
-            _logger.LogInformation("Agent template {AgentName} already exists in agent_templates, retrieving existing template", agentName);
+            _logger.LogInformation("System-scoped agent {AgentName} already exists, retrieving existing agent", agentName);
             
-            // Template already exists, get the existing one
-            var existingTemplate = await _agentTemplateRepository.GetByNameAsync(agentName);
-            if (existingTemplate != null)
+            // Agent already exists, get the existing one
+            var existing = await GetByNameInternalAsync(agentName, null);
+            if (existing != null)
             {
                 // Update OnboardingJson if provided
-                if (!string.IsNullOrEmpty(onboardingJson) && existingTemplate.OnboardingJson != onboardingJson)
+                if (!string.IsNullOrEmpty(onboardingJson) && existing.OnboardingJson != onboardingJson)
                 {
-                    _logger.LogInformation("Updating OnboardingJson for existing agent template {AgentName}", agentName);
-                    existingTemplate.OnboardingJson = onboardingJson;
-                    await _agentTemplateRepository.UpdateAsync(existingTemplate.Id, existingTemplate);
+                    _logger.LogInformation("Updating OnboardingJson for existing system-scoped agent {AgentName}", agentName);
+                    existing.OnboardingJson = onboardingJson;
+                    await UpdateInternalAsync(existing.Id, existing);
                 }
                 
-                return ConvertTemplateToAgent(existingTemplate);
+                return existing;
             }
             
-            // This shouldn't happen, but if it does, throw the original exception
-            _logger.LogError(ex, "Agent template {AgentName} duplicate key error but could not retrieve existing template", agentName);
-            throw new InvalidOperationException($"Agent template {agentName} creation failed due to duplicate key, but existing template could not be retrieved", ex);
+            _logger.LogError(ex, "System-scoped agent {AgentName} duplicate key error but could not retrieve existing agent", agentName);
+            throw new InvalidOperationException($"System-scoped agent {agentName} creation failed due to duplicate key, but existing agent could not be retrieved", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while upserting system-scoped agent {AgentName}", agentName);
+            throw;
         }
     }
 
@@ -623,27 +621,6 @@ public class AgentRepository : IAgentRepository
         }
     }
 
-    /// <summary>
-    /// Converts AgentTemplate to Agent for backward compatibility.
-    /// </summary>
-    private Agent ConvertTemplateToAgent(AgentTemplate template)
-    {
-        return new Agent
-        {
-            Id = template.Id,
-            Name = template.Name,
-            Tenant = null, // System-scoped
-            SystemScoped = true,
-            CreatedBy = template.CreatedBy,
-            CreatedAt = template.CreatedAt,
-            OwnerAccess = template.OwnerAccess,
-            ReadAccess = template.ReadAccess,
-            WriteAccess = template.WriteAccess,
-            OnboardingJson = template.OnboardingJson,
-            AgentTemplateId = template.Id, // Reference to the template
-            Metadata = template.Metadata != null ? new Dictionary<string, object>(template.Metadata) : null
-        };
-    }
 
     private bool HasSystemAccess(string? agentTenantId)
     {

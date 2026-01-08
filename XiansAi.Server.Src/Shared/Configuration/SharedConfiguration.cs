@@ -188,7 +188,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
-        builder.Services.AddScoped<IAgentTemplateRepository, AgentTemplateRepository>();
+        // AgentTemplateRepository removed - using Agent collection with SystemScoped=true
         builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
         builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
         builder.Services.AddScoped<IUserRepository, UserRepository>();

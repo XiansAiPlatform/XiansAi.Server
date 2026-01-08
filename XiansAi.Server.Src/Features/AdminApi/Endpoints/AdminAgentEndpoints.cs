@@ -1,6 +1,3 @@
-using Features.AdminApi.Auth;
-using Features.AdminApi.Configuration;
-using Features.AdminApi.Utils;
 using Shared.Services;
 using Shared.Repositories;
 using Shared.Auth;
@@ -9,7 +6,6 @@ using Microsoft.AspNetCore.Routing;
 using Shared.Data.Models;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
-using MongoDB.Bson;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -38,8 +34,7 @@ public static class AdminAgentEndpoints
     public static void MapAdminAgentEndpoints(this RouteGroupBuilder adminApiGroup)
     {
         var adminAgentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents")
-            .WithTags("AdminAPI - Agent Management")
-            .RequiresAdminApiAuth();
+            .WithTags("AdminAPI - Agent Management");
 
         // List Agent Instances
         adminAgentGroup.MapGet("", async (
@@ -51,16 +46,9 @@ public static class AdminAgentEndpoints
         {
             try
             {
-                // Validate tenant matches (unless SysAdmin)
-                if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
-                    !tenantId.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.Forbid();
-                }
-
                 // Get tenant-scoped agents (instances) - SystemScoped = false
                 var agents = await agentRepository.GetAgentsWithPermissionAsync(
-                    tenantContext.LoggedInUser, 
+                    tenantContext.LoggedInUser ?? "system", 
                     tenantId);
                 
                 // Filter to only tenant-scoped instances (not system-scoped templates)
@@ -103,27 +91,16 @@ public static class AdminAgentEndpoints
         adminAgentGroup.MapGet("/{agentId}", async (
             string tenantId,
             string agentId,
-            [FromServices] IAgentRepository agentRepository,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] IAgentRepository agentRepository) =>
         {
             try
             {
                 // Get agent by MongoDB ObjectId
-                var agent = await agentRepository.GetByIdAsync(
-                    agentId, 
-                    tenantContext.LoggedInUser, 
-                    tenantContext.UserRoles.ToArray());
+                var agent = await agentRepository.GetByIdInternalAsync(agentId);
 
                 if (agent == null)
                 {
                     return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
-                }
-
-                // Validate tenant matches (unless SysAdmin)
-                if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
-                    !agent.Tenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.Forbid();
                 }
 
                 return Results.Ok(agent);
@@ -145,8 +122,7 @@ public static class AdminAgentEndpoints
             string tenantId,
             string agentId,
             [FromBody] UpdateAgentRequest request,
-            [FromServices] IAgentRepository agentRepository,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] IAgentRepository agentRepository) =>
         {
             try
             {
@@ -155,21 +131,6 @@ public static class AdminAgentEndpoints
                 if (agent == null)
                 {
                     return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
-                }
-
-                // Validate tenant matches (unless SysAdmin)
-                if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
-                    !agent.Tenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.Forbid();
-                }
-
-                // Check permissions (must be owner or admin)
-                if (!agent.OwnerAccess.Contains(tenantContext.LoggedInUser) &&
-                    !tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) &&
-                    !tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
-                {
-                    return Results.Forbid();
                 }
 
                 // Update fields
@@ -202,18 +163,10 @@ public static class AdminAgentEndpoints
                     agent.SetConfiguration(config);
                 }
 
-                var updated = await agentRepository.UpdateAsync(
-                    agent.Id, 
-                    agent, 
-                    tenantContext.LoggedInUser, 
-                    tenantContext.UserRoles.ToArray());
+                // Use internal update method
+                await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-                if (updated)
-                {
-                    return Results.Ok(agent);
-                }
-
-                return Results.Problem("Failed to update agent");
+                return Results.Ok(agent);
             }
             catch (ArgumentException ex)
             {
@@ -228,15 +181,14 @@ public static class AdminAgentEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Update Agent Instance",
-            Description = "Update agent instance configuration. Agent ID format: {tenantName}@{agentName}."
+            Description = "Update agent instance configuration."
         });
 
         // Delete Agent Instance
         adminAgentGroup.MapDelete("/{agentId}", async (
             string tenantId,
             string agentId,
-            [FromServices] IAgentRepository agentRepository,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] IAgentRepository agentRepository) =>
         {
             try
             {
@@ -247,32 +199,15 @@ public static class AdminAgentEndpoints
                     return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
                 }
 
-                // Validate tenant matches (unless SysAdmin)
-                if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
-                    !agent.Tenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
+                // Delete the agent using repository method
+                var deleted = await agentRepository.DeleteAsync(agent.Id, "system", new string[] { });
+
+                if (!deleted)
                 {
-                    return Results.Forbid();
+                    return Results.Problem("Failed to delete agent");
                 }
 
-                // Check permissions (must be owner or admin)
-                if (!agent.OwnerAccess.Contains(tenantContext.LoggedInUser) &&
-                    !tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) &&
-                    !tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
-                {
-                    return Results.Forbid();
-                }
-
-                var deleted = await agentRepository.DeleteAsync(
-                    agent.Id, 
-                    tenantContext.LoggedInUser, 
-                    tenantContext.UserRoles.ToArray());
-
-                if (deleted)
-                {
-                    return Results.Ok(new { message = $"Agent '{agentId}' deleted successfully" });
-                }
-
-                return Results.Problem("Failed to delete agent");
+                return Results.Ok(new { message = $"Agent '{agentId}' deleted successfully" });
             }
             catch (ArgumentException ex)
             {
@@ -287,8 +222,7 @@ public static class AdminAgentEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Delete Agent Instance",
-            Description = "Delete an agent instance. Agent ID format: {tenantName}@{agentName}."
+            Description = "Delete an agent instance."
         });
     }
 }
-

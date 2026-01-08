@@ -4,22 +4,15 @@ info:
   description: |
     **Admin APIs** for managing agents, their definitions, ownership, and tokens.
     
-    These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed, configured, and assigned to reporting targets. A marketplace is one example use case where agent templates can be browsed and deployed.
+    These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed and configured. A marketplace is one example use case where agent templates can be browsed and deployed.
     
-    **Template Collections:** Agent templates are stored in two collections for backward compatibility:
-    - **New templates** in `agent_templates` collection
-    - **Legacy templates** in `agents` collection (where `SystemScoped = true`)
-    
-    The GET endpoints return templates from both collections, and the deploy endpoint automatically detects which collection a template belongs to based on the ObjectId provided.
+    **Template Collections:** Agent templates are stored in a single `agents` collection where `SystemScoped = true` represents templates.
     
     **Important Notes:**
     - All endpoints are under `/api/v1/admin/` prefix (API versioning via URL path)
     - Current API version: **v1**
     - Agent ID format: MongoDB ObjectId (24-character hexadecimal string, e.g., `507f1f77bcf86cd799439011`)
-    - When an agent is added to a tenant, the user who performs the deployment automatically becomes the **admin** of that agent instance
-    - Users are identified by user identifiers (userId, email, username, etc. - system dependent)
-    - The `adminId` field is automatically set to the user identifier of the authenticated user who creates the agent
-    - Requires admin authentication (SysAdmin or TenantAdmin)
+    - Authentication removed for clean slate integration
   version: 1.0.0
   contact:
     name: API Support
@@ -36,8 +29,6 @@ servers:
 tags:
   - name: Agent CRUD
     description: Agent creation, reading, updating, and deletion operations
-  - name: Agent Reporting Targets
-    description: Management of reporting targets (users, groups, etc.) for agents
   - name: Agent Definitions
     description: Agent definition and configuration management
   - name: Agent Ownership
