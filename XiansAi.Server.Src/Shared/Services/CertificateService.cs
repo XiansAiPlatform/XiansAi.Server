@@ -135,7 +135,8 @@ public class CertificateService
                 TenantId = _tenantContext.TenantId,
                 IssuedTo = userId,
                 IssuedAt = DateTime.UtcNow,
-                ExpiresAt = cert.NotAfter.ToUniversalTime(),
+                // Explicitly specify UTC DateTimeKind to avoid timezone issues
+                ExpiresAt = DateTime.SpecifyKind(cert.NotAfter.ToUniversalTime(), DateTimeKind.Utc),
                 IsRevoked = false
             };
 

@@ -1,0 +1,481 @@
+openapi: 3.0.3
+info:
+  title: Tenant Management API (Admin)
+  description: |
+    **Admin APIs** for managing tenants in the system.
+    
+    These APIs are designed for **administrators** to manage tenants across the system. Tenant management includes creating, updating, deleting, and querying tenant information. All tenant management operations require appropriate admin permissions (SysAdmin for create/update/delete, TenantAdmin or SysAdmin for read operations).
+    
+    **Important Notes:**
+    - All endpoints are under `/api/v1/admin/tenants` prefix (API versioning via URL path)
+    - Tenant creation requires SysAdmin role
+    - Tenant updates and deletions require SysAdmin role
+    - Tenant queries require admin permissions (TenantAdmin or SysAdmin)
+    - Tenants are created with `enabled = false` by default
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: https://api.example.com
+    description: Production server
+  - url: https://staging-api.example.com
+    description: Staging server
+  - url: http://localhost:5000
+    description: Local development server
+
+tags:
+  - name: Tenant Management
+    description: Tenant CRUD operations and management
+
+paths:
+  /admin/tenants:
+    get:
+      tags:
+        - Tenant Management
+      summary: List All Tenants
+      description: Retrieve all tenants in the system. Requires admin permissions.
+      operationId: listTenants
+      responses:
+        '200':
+          description: List of tenants retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TenantResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    post:
+      tags:
+        - Tenant Management
+      summary: Create Tenant
+      description: Create a new tenant. Requires system admin permissions. The tenant will be created with `enabled = false` by default.
+      operationId: createTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          description: Tenant created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantCreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Tenant with this ID or domain already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /admin/tenants/{tenantId}:
+    get:
+      tags:
+        - Tenant Management
+      summary: Get Tenant by TenantId
+      description: Retrieve a specific tenant by its tenantId (business identifier, e.g., 'spacex01'). Requires admin permissions.
+      operationId: getTenantByTenantId
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
+      responses:
+        '200':
+          description: Tenant retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    patch:
+      tags:
+        - Tenant Management
+      summary: Update Tenant
+      description: Update an existing tenant by tenantId (business identifier, e.g., 'spacex01'). Requires system admin permissions.
+      operationId: updateTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantRequest'
+      responses:
+        '200':
+          description: Tenant updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    delete:
+      tags:
+        - Tenant Management
+      summary: Delete Tenant
+      description: Delete a tenant by tenantId (business identifier, e.g., 'spacex01'). Requires system admin permissions.
+      operationId: deleteTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
+      responses:
+        '200':
+          description: Tenant deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /admin/tenants/by-domain/{domain}:
+    get:
+      tags:
+        - Tenant Management
+      summary: Get Tenant by Domain
+      description: Retrieve a specific tenant by its domain. Requires admin permissions.
+      operationId: getTenantByDomain
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          description: Tenant domain
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._\-+:|=#]+(\.[a-zA-Z]{2,})$'
+            example: "acme.com"
+      responses:
+        '200':
+          description: Tenant retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+  schemas:
+    CreateTenantRequest:
+      type: object
+      required:
+        - tenantId
+        - name
+        - domain
+      properties:
+        tenantId:
+          type: string
+          description: Unique tenant identifier (business ID)
+          pattern: '^[a-zA-Z0-9._@-]+$'
+          minLength: 1
+          maxLength: 50
+          example: "acme-corp"
+        name:
+          type: string
+          description: Display name of the tenant
+          minLength: 1
+          maxLength: 100
+          example: "Acme Corporation"
+        domain:
+          type: string
+          description: Domain associated with the tenant
+          pattern: '^[a-zA-Z0-9._\-+:|=#]+(\.[a-zA-Z]{2,})$'
+          minLength: 1
+          maxLength: 255
+          example: "acme.com"
+        description:
+          type: string
+          description: Optional description of the tenant
+          maxLength: 500
+          example: "Acme Corporation - Main tenant"
+        logo:
+          $ref: '#/components/schemas/Logo'
+        theme:
+          type: string
+          description: Theme identifier for the tenant
+          maxLength: 50
+          example: "corporate-blue"
+        timezone:
+          type: string
+          description: Timezone for the tenant
+          maxLength: 50
+          example: "America/New_York"
+
+    UpdateTenantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Display name of the tenant
+          minLength: 1
+          maxLength: 100
+          example: "Acme Corporation"
+        domain:
+          type: string
+          description: Domain associated with the tenant
+          pattern: '^[a-zA-Z0-9._\-+:|=#]+(\.[a-zA-Z]{2,})$'
+          minLength: 1
+          maxLength: 255
+          example: "acme.com"
+        description:
+          type: string
+          description: Optional description of the tenant
+          maxLength: 500
+          example: "Acme Corporation - Main tenant"
+        logo:
+          $ref: '#/components/schemas/Logo'
+        theme:
+          type: string
+          description: Theme identifier for the tenant
+          maxLength: 50
+          example: "corporate-blue"
+        timezone:
+          type: string
+          description: Timezone for the tenant
+          maxLength: 50
+          example: "America/New_York"
+        enabled:
+          type: boolean
+          description: Whether the tenant is enabled
+          example: true
+
+    TenantResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectId
+          example: "507f1f77bcf86cd799439011"
+        tenantId:
+          type: string
+          description: Business tenant identifier
+          example: "acme-corp"
+        name:
+          type: string
+          description: Display name
+          example: "Acme Corporation"
+        domain:
+          type: string
+          description: Domain
+          example: "acme.com"
+        description:
+          type: string
+          description: Description
+          example: "Acme Corporation - Main tenant"
+        logo:
+          $ref: '#/components/schemas/Logo'
+        theme:
+          type: string
+          description: Theme identifier
+          example: "corporate-blue"
+        timezone:
+          type: string
+          description: Timezone
+          example: "America/New_York"
+        enabled:
+          type: boolean
+          description: Whether the tenant is enabled
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2024-01-15T10:30:00Z"
+        createdBy:
+          type: string
+          description: User who created the tenant
+          example: "admin@example.com"
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last update timestamp
+          example: "2024-01-16T14:20:00Z"
+
+    TenantCreatedResponse:
+      type: object
+      properties:
+        tenant:
+          $ref: '#/components/schemas/TenantResponse'
+        location:
+          type: string
+          description: Location header value for the created tenant
+          example: "/api/v1/admin/tenants/507f1f77bcf86cd799439011"
+
+    Logo:
+      type: object
+      properties:
+        url:
+          type: string
+          description: URL of the logo image
+          maxLength: 500
+          example: "https://example.com/logo.png"
+        imgBase64:
+          type: string
+          description: Base64 encoded image data
+          maxLength: 1000000
+          example: "iVBORw0KGgoAAAANSUhEUgAA..."
+        width:
+          type: integer
+          description: Width of the logo in pixels
+          minimum: 1
+          maximum: 10000
+          example: 200
+        height:
+          type: integer
+          description: Height of the logo in pixels
+          minimum: 1
+          maximum: 10000
+          example: 100
+      oneOf:
+        - required: [url, width, height]
+        - required: [imgBase64, width, height]
+      description: Either url or imgBase64 must be provided, but not both
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Error message"
+        message:
+          type: string
+          example: "Detailed error message"
+        details:
+          type: object
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Forbidden - Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+

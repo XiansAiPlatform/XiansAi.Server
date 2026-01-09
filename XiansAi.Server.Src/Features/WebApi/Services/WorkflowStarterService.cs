@@ -19,7 +19,7 @@ public class WorkflowRequest
     public required string WorkflowType { get; set; }
 
     [StringLength(200, MinimumLength = 1, ErrorMessage = "WorkflowId must be between 1 and 200 characters")]
-    public string? WorkflowId { get; set; }
+    public string? WorkflowIdPostfix { get; set; }
 
     public string[]? Parameters { get; set; }
 
@@ -136,7 +136,7 @@ public class WorkflowStarterService : IWorkflowStarterService
                 agentName, 
                 systemScoped,
                 request.WorkflowType, 
-                request.WorkflowId, 
+                request.WorkflowIdPostfix, 
                 _tenantContext);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
