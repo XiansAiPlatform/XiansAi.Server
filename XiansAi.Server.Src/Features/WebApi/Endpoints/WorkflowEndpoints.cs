@@ -57,17 +57,32 @@ public static class WorkflowEndpoints
         workflowsGroup.MapGet("/list", async (
             [FromQuery] string? status,
             [FromQuery] string? agent,
+            [FromQuery] string? workflowType,
             [FromQuery] int? pageSize,
             [FromQuery] string? pageToken,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
-            var result = await endpoint.GetWorkflows(status, agent, pageSize, pageToken);
+            var result = await endpoint.GetWorkflows(status, agent, workflowType, pageSize, pageToken);
             return result.ToHttpResult();
         })
         .WithName("Get Workflows")
         .WithOpenApi(operation => {
             operation.Summary = "Get workflows with optional filters and pagination";
-            operation.Description = "Retrieves workflows with optional filtering by status and agent, with pagination support";
+            operation.Description = "Retrieves workflows with optional filtering by status, agent, and workflow type, with pagination support";
+            return operation;
+        });
+
+        workflowsGroup.MapGet("/types", async (
+            [FromQuery] string agent,
+            [FromServices] IWorkflowFinderService endpoint) =>
+        {
+            var result = await endpoint.GetWorkflowTypes(agent);
+            return result.ToHttpResult();
+        })
+        .WithName("Get Workflow Types")
+        .WithOpenApi(operation => {
+            operation.Summary = "Get workflow types for an agent";
+            operation.Description = "Retrieves all unique workflow types for a specific agent";
             return operation;
         });
 

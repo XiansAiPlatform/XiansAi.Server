@@ -69,7 +69,7 @@ public static class WebhookEndpoints
 
                 // Validate that the flow definition exists for this agent, workflow, and tenant
                 // Build the workflow type in the format: "AgentName:WorkflowName"
-                var workflowType = WorkflowIdentifier.BuildBuiltinWorkflowType(agentName, workflowName);
+                var workflowType = $"{agentName}:{workflowName}";
                 var flowDefinition = await flowDefinitionRepository.GetLatestFlowDefinitionAsync(workflowType, tenantId);
                 
                 if (flowDefinition == null)
@@ -99,7 +99,7 @@ public static class WebhookEndpoints
 
                 // Build workflowId from workflowName (format: tenant:workflowName)
                 // Using webhookName as the scope/method identifier
-                var workflowId = WorkflowIdentifier.BuildBuiltinWorkflowId(agentName, workflowName, tenantContext);
+                var workflowId = $"{tenantId}:{workflowType}";
                 
                 // Use participantId from query or default to "webhook" for identification
                 var resolvedParticipantId = participantId ?? "webhook";

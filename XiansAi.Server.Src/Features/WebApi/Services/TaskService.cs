@@ -7,6 +7,8 @@ using Temporalio.Common;
 using Shared.Utils.Temporal;
 using Temporalio.Converters;
 using Temporalio.Api.Enums.V1;
+using Shared.Repositories;
+using Shared.Services;
 
 namespace Features.WebApi.Services;
 
@@ -28,7 +30,8 @@ public class TaskService : ITaskService
     private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<TaskService> _logger;
     private readonly ITenantContext _tenantContext;
-    private const string TaskWorkflowType = "Platform:Task Workflow";
+    private readonly IAgentRepository _agentRepository;
+    private readonly IPermissionsService _permissionsService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TaskService"/> class.
@@ -36,14 +39,20 @@ public class TaskService : ITaskService
     /// <param name="clientFactory">The Temporal client factory for workflow operations.</param>
     /// <param name="logger">Logger for recording operational events.</param>
     /// <param name="tenantContext">Context containing tenant-specific information.</param>
+    /// <param name="agentRepository">The agent repository for accessing agent information.</param>
+    /// <param name="permissionsService">The permissions service for checking permissions.</param>
     public TaskService(
         ITemporalClientFactory clientFactory,
         ILogger<TaskService> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IAgentRepository agentRepository,
+        IPermissionsService permissionsService)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
+        _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
     }
 
     /// <summary>
@@ -269,14 +278,42 @@ public class TaskService : ITaskService
             // Build query with filters
             var queryParts = new List<string>
             {
-                $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'",
-                $"WorkflowType = '{TaskWorkflowType}'"
+                $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'"
             };
 
             // Add agent filter if specified
             if (!string.IsNullOrEmpty(agent))
             {
+                // Check if user has permission to read this agent
+                var hasReadPermission = await _permissionsService.HasReadPermission(agent);
+                if (!hasReadPermission.Data)
+                {
+                    return ServiceResult<PaginatedTasksResponse>.BadRequest("You do not have read permission to this agent");
+                }
                 queryParts.Add($"{Constants.AgentKey} = '{agent}'");
+                queryParts.Add($"WorkflowType = '{agent}:Task Workflow'");
+            }
+            else
+            {
+                // If no specific agent, get all agents user has permission to
+                var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+                if (agents == null || agents.Count == 0)
+                {
+                    return ServiceResult<PaginatedTasksResponse>.Success(new PaginatedTasksResponse
+                    {
+                        Tasks = new List<TaskInfoResponse>(),
+                        NextPageToken = null,
+                        PageSize = actualPageSize,
+                        HasNextPage = false,
+                        TotalCount = 0
+                    });
+                }
+                var agentNames = agents.Select(a => a.Name).ToArray();
+                queryParts.Add($"{Constants.AgentKey} in ({string.Join(",", agentNames.Select(a => "'" + a + "'"))})");
+                
+                // Add workflow type filter for all agents (Task Workflow)
+                var workflowTypes = agentNames.Select(a => $"'{a}:Task Workflow'").ToArray();
+                queryParts.Add($"WorkflowType in ({string.Join(",", workflowTypes)})");
             }
 
             // Add participantId filter if specified
