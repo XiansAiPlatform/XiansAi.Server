@@ -67,8 +67,9 @@ Retrieves a paginated list of tasks with optional filtering.
 **Query Parameters:**
 - `pageSize` (optional): Number of items per page (default: 20, max: 100)
 - `pageToken` (optional): Continuation token from previous response
-- `agent` (optional): Filter by agent name
+- `agent` (optional): Filter by agent name. If not specified, returns tasks from all agents the user has permission to access
 - `participantId` (optional): Filter by participant/user ID
+- `status` (optional): Filter by workflow execution status (Running, Completed, Failed, Terminated, Canceled, etc.)
 
 **Response:**
 ```json
@@ -84,7 +85,9 @@ Retrieves a paginated list of tasks with optional filtering.
 **Filtering:**
 - Always filtered by tenant ID (automatic)
 - Uses Temporal search attributes for agent and participantId filtering
-- Workflow type is automatically filtered to "Platform:Task Workflow"
+- Workflow type is automatically filtered to "{agent}:Task Workflow"
+- When agent is not specified, returns tasks from all agents the user has read permission to
+- Permission checks are performed to ensure users only see tasks from agents they have access to
 
 ### 3. Update Task Draft
 
@@ -160,7 +163,7 @@ Rejects a task with a reason, signaling the workflow that the task cannot be com
 
 Tasks use a specific workflow ID format:
 ```
-{tenantId}:Platform:Task Workflow:{taskId}
+{tenantId}:{agent}:Task Workflow:{taskId}
 ```
 
 ### Workflow Signals
@@ -178,8 +181,9 @@ The service sends the following signals to task workflows:
 
 Tasks use the following Temporal search attributes for filtering:
 - `tenantId`: Tenant identifier (always filtered)
-- `agent`: Agent name (optional filter)
+- `agent`: Agent name (optional filter, defaults to all agents user has permission to)
 - `userId`: Participant/user ID (optional filter, mapped to participantId)
+- `ExecutionStatus`: Workflow execution status (optional filter, e.g., Running, Completed, Failed)
 
 ## Memo Fields
 

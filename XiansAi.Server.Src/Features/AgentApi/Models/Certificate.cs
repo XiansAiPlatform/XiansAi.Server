@@ -24,12 +24,20 @@ public class Certificate : ModelValidatorBase<Certificate>
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Issued to must be between 1 and 100 characters")]
     [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Issued to contains invalid characters")]
     public string IssuedTo { get; set; } = string.Empty;
+    
+    [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
     public DateTime IssuedAt { get; set; }
+    
+    [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
     public DateTime ExpiresAt { get; set; }
+    
     public bool IsRevoked { get; set; }
+    
     [StringLength(500, ErrorMessage = "Revocation reason cannot exceed 500 characters")]
     [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Revocation reason contains invalid characters")]
     public string? RevocationReason { get; set; }
+    
+    [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
     public DateTime? RevokedAt { get; set; }
 
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]

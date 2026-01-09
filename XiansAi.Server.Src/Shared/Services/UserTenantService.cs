@@ -111,7 +111,9 @@ public class UserTenantService : IUserTenantService
             if (isSysAdmin)
             {
                 var allTenants = await _tenantRepository.GetAllAsync();
-                return ServiceResult<List<string>>.Success(allTenants.Select(t => t.TenantId).ToList());
+                // Filter out disabled tenants
+                var enabledTenantIds = allTenants.Where(t => t.Enabled).Select(t => t.TenantId).ToList();
+                return ServiceResult<List<string>>.Success(enabledTenantIds);
             }
 
             var tenants = await _userRepository.GetUserTenantsAsync(userId);
@@ -138,7 +140,9 @@ public class UserTenantService : IUserTenantService
             if (isSysAdmin)
             {
                 var allTenants = await _tenantRepository.GetAllAsync();
-                return ServiceResult<List<string>>.Success(allTenants.Select(t => t.TenantId).ToList());
+                // Filter out disabled tenants
+                var enabledTenantIds = allTenants.Where(t => t.Enabled).Select(t => t.TenantId).ToList();
+                return ServiceResult<List<string>>.Success(enabledTenantIds);
             }
 
             var tenants = await _userRepository.GetUserTenantsAsync(userId);

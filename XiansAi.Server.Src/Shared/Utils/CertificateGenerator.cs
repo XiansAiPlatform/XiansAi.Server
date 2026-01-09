@@ -220,7 +220,9 @@ public class CertificateGenerator
         var proposedNotBefore = now.AddMinutes(-10); // Buffer for clock skew
         
         // Ensure client certificate's notBefore is not earlier than issuer certificate's NotBefore
-        var issuerNotBefore = new DateTimeOffset(rootCertificate.NotBefore.ToUniversalTime(), TimeSpan.Zero);
+        // Explicitly specify UTC DateTimeKind to avoid timezone conversion issues
+        var issuerNotBeforeUtc = DateTime.SpecifyKind(rootCertificate.NotBefore.ToUniversalTime(), DateTimeKind.Utc);
+        var issuerNotBefore = new DateTimeOffset(issuerNotBeforeUtc, TimeSpan.Zero);
         var notBefore = proposedNotBefore > issuerNotBefore ? proposedNotBefore : issuerNotBefore;
 
         if (proposedNotBefore <= issuerNotBefore)
@@ -238,7 +240,11 @@ public class CertificateGenerator
             _logger.LogDebug("Creating certificate with notBefore={NotBefore}, notAfter={NotAfter}", 
                 notBefore, notAfter);
             
-            var cert = req.Create(rootCertificate, notBefore.DateTime, notAfter.DateTime, Guid.NewGuid().ToByteArray());
+            // Explicitly specify UTC DateTimeKind to avoid timezone conversion issues
+            var notBeforeUtc = DateTime.SpecifyKind(notBefore.UtcDateTime, DateTimeKind.Utc);
+            var notAfterUtc = DateTime.SpecifyKind(notAfter.UtcDateTime, DateTimeKind.Utc);
+            
+            var cert = req.Create(rootCertificate, notBeforeUtc, notAfterUtc, Guid.NewGuid().ToByteArray());
 
             // Create a certificate with private key
             var certWithKey = cert.CopyWithPrivateKey(rsa);

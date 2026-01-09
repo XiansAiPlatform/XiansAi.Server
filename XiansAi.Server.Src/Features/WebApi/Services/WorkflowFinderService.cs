@@ -21,8 +21,9 @@ public interface IWorkflowFinderService
 {
     Task<ServiceResult<WorkflowResponse>> GetWorkflow(string workflowId, string? runId = null);
     Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(string? status);
-    Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, int? pageSize, string? pageToken);
+    Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, int? pageSize, string? pageToken);
     Task<ServiceResult<List<WorkflowResponse>>> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName);
+    Task<ServiceResult<List<string>>> GetWorkflowTypes(string agent);
 }
 
 /// <summary>
@@ -115,13 +116,14 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// </summary>
     /// <param name="status">Optional status filter for workflows.</param>
     /// <param name="agent">Optional agent filter for workflows.</param>
+    /// <param name="workflowType">Optional workflow type filter for workflows.</param>
     /// <param name="pageSize">Number of items per page (default: 20, max: 100).</param>
     /// <param name="pageToken">Token for pagination continuation.</param>
     /// <returns>A result containing the paginated list of workflows.</returns>
-    public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, int? pageSize, string? pageToken)
+    public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, int? pageSize, string? pageToken)
     {
-        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, PageSize: {PageSize}, PageToken: {PageToken}", 
-            status ?? "null", agent ?? "null", pageSize ?? 20, pageToken ?? "null");
+        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, WorkflowType: {WorkflowType}, PageSize: {PageSize}, PageToken: {PageToken}", 
+            status ?? "null", agent ?? "null", workflowType ?? "null", pageSize ?? 20, pageToken ?? "null");
 
         // Validate page size
         var actualPageSize = pageSize ?? 20;
@@ -187,6 +189,12 @@ public class WorkflowFinderService : IWorkflowFinderService
                     _ => status
                 };
                 queryParts.Add($"ExecutionStatus = '{normalizedStatus}'");
+            }
+
+            // Add workflow type filter if specified
+            if (!string.IsNullOrEmpty(workflowType))
+            {
+                queryParts.Add($"WorkflowType = '{workflowType}'");
             }
 
             var listQuery = string.Join(" and ", queryParts);
@@ -369,6 +377,61 @@ public class WorkflowFinderService : IWorkflowFinderService
         {
             _logger.LogError(ex, "Failed to retrieve workflows. Error: {ErrorMessage}", ex.Message);
             return ServiceResult<List<WorkflowsWithAgent>>.InternalServerError("Failed to retrieve workflows");
+        }
+    }
+
+    /// <summary>
+    /// Retrieves all unique workflow types for a specific agent.
+    /// </summary>
+    /// <param name="agent">The agent name to filter workflows by.</param>
+    /// <returns>A result containing the list of unique workflow types.</returns>
+    public async Task<ServiceResult<List<string>>> GetWorkflowTypes(string agent)
+    {
+        if (string.IsNullOrWhiteSpace(agent))
+        {
+            _logger.LogWarning("Attempt to retrieve workflow types with empty agent");
+            return ServiceResult<List<string>>.BadRequest("Agent cannot be empty");
+        }
+
+        _logger.LogInformation("Retrieving workflow types for agent: {Agent}", agent);
+
+        try
+        {
+            // Check if user has permission to read this agent
+            var hasReadPermission = await _permissionsService.HasReadPermission(agent);
+            if (!hasReadPermission.Data)
+            {
+                return ServiceResult<List<string>>.BadRequest("You do not have read permission to this agent");
+            }
+
+            var client = await _clientFactory.GetClientAsync();
+            var workflowTypes = new HashSet<string>();
+
+            var queryParts = new List<string>
+            {
+                $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'",
+                $"{Constants.AgentKey} = '{agent}'"
+            };
+
+            var listQuery = string.Join(" and ", queryParts);
+            _logger.LogDebug("Executing workflow types query: {Query}", listQuery);
+
+            await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
+            {
+                if (!string.IsNullOrEmpty(workflow.WorkflowType))
+                {
+                    workflowTypes.Add(workflow.WorkflowType);
+                }
+            }
+
+            var sortedTypes = workflowTypes.OrderBy(t => t).ToList();
+            _logger.LogInformation("Retrieved {Count} unique workflow types for agent {Agent}", sortedTypes.Count, agent);
+            return ServiceResult<List<string>>.Success(sortedTypes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve workflow types for agent {Agent}. Error: {ErrorMessage}", agent, ex.Message);
+            return ServiceResult<List<string>>.InternalServerError("Failed to retrieve workflow types");
         }
     }
 
