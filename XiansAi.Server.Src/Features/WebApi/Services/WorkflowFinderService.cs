@@ -21,7 +21,7 @@ public interface IWorkflowFinderService
 {
     Task<ServiceResult<WorkflowResponse>> GetWorkflow(string workflowId, string? runId = null);
     Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(string? status);
-    Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, int? pageSize, string? pageToken);
+    Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, string? user, int? pageSize, string? pageToken);
     Task<ServiceResult<List<WorkflowResponse>>> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName);
     Task<ServiceResult<List<string>>> GetWorkflowTypes(string agent);
 }
@@ -117,13 +117,14 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="status">Optional status filter for workflows.</param>
     /// <param name="agent">Optional agent filter for workflows.</param>
     /// <param name="workflowType">Optional workflow type filter for workflows.</param>
+    /// <param name="user">Optional user filter for workflows.</param>
     /// <param name="pageSize">Number of items per page (default: 20, max: 100).</param>
     /// <param name="pageToken">Token for pagination continuation.</param>
     /// <returns>A result containing the paginated list of workflows.</returns>
-    public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, int? pageSize, string? pageToken)
+    public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, string? user, int? pageSize, string? pageToken)
     {
-        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, WorkflowType: {WorkflowType}, PageSize: {PageSize}, PageToken: {PageToken}", 
-            status ?? "null", agent ?? "null", workflowType ?? "null", pageSize ?? 20, pageToken ?? "null");
+        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, WorkflowType: {WorkflowType}, User: {User}, PageSize: {PageSize}, PageToken: {PageToken}", 
+            status ?? "null", agent ?? "null", workflowType ?? "null", user ?? "null", pageSize ?? 20, pageToken ?? "null");
 
         // Validate page size
         var actualPageSize = pageSize ?? 20;
@@ -195,6 +196,12 @@ public class WorkflowFinderService : IWorkflowFinderService
             if (!string.IsNullOrEmpty(workflowType))
             {
                 queryParts.Add($"WorkflowType = '{workflowType}'");
+            }
+
+            // Add user filter if specified
+            if (!string.IsNullOrEmpty(user))
+            {
+                queryParts.Add($"{Constants.UserIdKey} = '{user}'");
             }
 
             var listQuery = string.Join(" and ", queryParts);

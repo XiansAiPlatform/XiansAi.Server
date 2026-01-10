@@ -20,6 +20,8 @@ public class KnowledgeRequest
     public required string Type { get; set; }
     [JsonPropertyName("agent")]
     public required string Agent { get; set; }
+    [JsonPropertyName("system_scoped")]
+    public bool SystemScoped { get; set; } = false;
 }
 
 public class DeleteAllVersionsRequest
@@ -33,11 +35,12 @@ public class DeleteAllVersionsRequest
 public interface IKnowledgeService
 {
     Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent);
+    Task<ServiceResult<Knowledge>> GetLatestSystemByNameAsync(string name, string agent);
     Task<IResult> GetById(string id);
     Task<IResult> GetVersions(string name, string? agent);
     Task<IResult> DeleteById(string id);
     Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request);
-    Task<IResult> GetLatestAll();
+    Task<IResult> GetLatestAll(string? scope = null);
     Task<IResult> Create(KnowledgeRequest request);
     Task<IResult> GetLatestByAgent(string agent);
 }
@@ -82,22 +85,31 @@ public class KnowledgeService : IKnowledgeService
     public async Task<IResult> GetById(string id)
     {
         var knowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(id);
-        var agentNames = await GetUserAgentNamesAsync();
-        // Check if the agent is in the list of agents with permission
-        if (knowledge != null && !string.IsNullOrWhiteSpace(knowledge.Agent) &&
-            agentNames.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
+        
+        if (knowledge == null)
+            return Results.NotFound("Knowledge not found");
+
+        var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+        
+        // System-scoped knowledge can only be edited by system admins
+        if (knowledge.SystemScoped)
         {
-            knowledge.PermissionLevel = "edit";
+            knowledge.PermissionLevel = isSysAdmin ? "edit" : "read";
         }
         else
         {
-            if (knowledge != null)
+            // Tenant-scoped knowledge can be edited if user has agent permission
+            var agentNames = await GetUserAgentNamesAsync();
+            if (!string.IsNullOrWhiteSpace(knowledge.Agent) &&
+                agentNames.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
+            {
+                knowledge.PermissionLevel = "edit";
+            }
+            else
             {
                 knowledge.PermissionLevel = "read";
             }
         }
-        if (knowledge == null)
-            return Results.NotFound("Knowledge not found");
 
         try
         {
@@ -122,14 +134,36 @@ public class KnowledgeService : IKnowledgeService
         var knowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(id);
         if (knowledge == null)
             return Results.NotFound("Knowledge not found");
-        var agentNames = await GetUserAgentNamesAsync();
-        if (!agentNames.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
+
+        // Check if it's system-scoped knowledge
+        if (knowledge.SystemScoped)
         {
-            _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
-                knowledge.Agent, _tenantContext.LoggedInUser);
-            return Results.Json(
-                new { error = "Forbidden", message = "You do not have permission to delete this knowledge" },
-                statusCode: StatusCodes.Status403Forbidden);
+            // Only system admins can delete system-scoped knowledge
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                _logger.LogWarning("Unauthorized access attempt to delete system-scoped knowledge by user {UserId}",
+                    _tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { error = "Forbidden", message = "Only system administrators can delete system-scoped knowledge" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+        }
+        else
+        {
+            // For tenant-scoped knowledge, check agent permissions (system admins bypass this check)
+            var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+            if (!isSysAdmin)
+            {
+                var agentNames = await GetUserAgentNamesAsync();
+                if (!agentNames.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Unauthorized access attempt to delete knowledge for agent {Agent} by user {UserId}",
+                        knowledge.Agent, _tenantContext.LoggedInUser);
+                    return Results.Json(
+                        new { error = "Forbidden", message = "You do not have permission to delete this knowledge" },
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+            }
         }
 
         try
@@ -151,36 +185,90 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request)
     {
-        var agentNames = await GetUserAgentNamesAsync();
-        if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
+        // First, get the latest knowledge to check if it's system-scoped
+        var existingKnowledge = await _knowledgeRepository.GetLatestByNameAsync<Knowledge>(request.Name, request.Agent, _tenantContext.TenantId);
+        
+        if (existingKnowledge == null)
+            return Results.NotFound("Knowledge not found");
+
+        // Check if it's system-scoped knowledge
+        if (existingKnowledge.SystemScoped)
         {
-            _logger.LogWarning("Unauthorized access attempt to delete knowledge for agent {Agent} by user {UserId}",
-                request.Agent, _tenantContext.LoggedInUser);
-            return Results.Json(
-                new { error = "Forbidden", message = "You do not have permission to delete knowledge for this agent" },
-                statusCode: StatusCodes.Status403Forbidden);
+            // Only system admins can delete system-scoped knowledge
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                _logger.LogWarning("Unauthorized access attempt to delete system-scoped knowledge by user {UserId}",
+                    _tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { error = "Forbidden", message = "Only system administrators can delete system-scoped knowledge" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
         }
-        // Only allow deletion of tenant-specific knowledge
-        var result = await _knowledgeRepository.DeleteAllVersionsAsync<Knowledge>(request.Name, request.Agent, _tenantContext.TenantId);
+        else
+        {
+            // For tenant-scoped knowledge, check agent permissions (system admins bypass this check)
+            var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+            if (!isSysAdmin)
+            {
+                var agentNames = await GetUserAgentNamesAsync();
+                if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Unauthorized access attempt to delete knowledge for agent {Agent} by user {UserId}",
+                        request.Agent, _tenantContext.LoggedInUser);
+                    return Results.Json(
+                        new { error = "Forbidden", message = "You do not have permission to delete knowledge for this agent" },
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+            }
+        }
+
+        // Delete with appropriate tenantId (null for system-scoped, tenantId for tenant-scoped)
+        var tenantIdToDelete = existingKnowledge.SystemScoped ? null : _tenantContext.TenantId;
+        var result = await _knowledgeRepository.DeleteAllVersionsAsync<Knowledge>(request.Name, request.Agent, tenantIdToDelete);
+        
         if (!result)
             return Results.NotFound("Knowledge not found or could not be deleted");
 
         return Results.Ok(new { message = "All versions deleted" });
     }
 
-    public async Task<IResult> GetLatestAll()
+    public async Task<IResult> GetLatestAll(string? scope = null)
     {
         var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
         var agentNames = agents.Select(a => a.Name).ToList();
 
-        var knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId, agentNames);
+        List<Knowledge> knowledge;
+        
+        // Filter by scope if specified
+        if (string.Equals(scope, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            // Get only system-scoped knowledge (TenantId is null and SystemScoped is true)
+            knowledge = await _knowledgeRepository.GetUniqueLatestSystemScopedAsync<Knowledge>(agentNames);
+        }
+        else if (string.Equals(scope, "Tenant", StringComparison.OrdinalIgnoreCase))
+        {
+            // Get only tenant-scoped knowledge (TenantId matches current tenant)
+            knowledge = await _knowledgeRepository.GetUniqueLatestTenantScopedAsync<Knowledge>(_tenantContext.TenantId, agentNames);
+        }
+        else
+        {
+            // Default: get all knowledge (both system and tenant scoped)
+            knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId, agentNames);
+        }
 
+        _logger.LogInformation("Found {Count} knowledge items for scope: {Scope}", knowledge.Count, scope ?? "all");
 
-        _logger.LogInformation("Found {Count} knowledge items", knowledge.Count);
+        var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
 
         foreach (var item in knowledge)
         {
-            if (!string.IsNullOrWhiteSpace(item.Agent) &&
+            // System-scoped knowledge can only be edited by system admins
+            if (item.SystemScoped)
+            {
+                item.PermissionLevel = isSysAdmin ? "edit" : "read";
+            }
+            // Tenant-scoped knowledge can be edited if user has agent permission
+            else if (!string.IsNullOrWhiteSpace(item.Agent) &&
                 agentNames.Contains(item.Agent, StringComparer.OrdinalIgnoreCase))
             {
                 item.PermissionLevel = "edit";
@@ -202,25 +290,51 @@ public class KnowledgeService : IKnowledgeService
         return ServiceResult<Knowledge>.Success(knowledge);
     }
 
+    public async Task<ServiceResult<Knowledge>> GetLatestSystemByNameAsync(string name, string agent)
+    {
+        var knowledge = await _knowledgeRepository.GetLatestSystemByNameAsync<Knowledge>(name, agent);
+        if (knowledge == null || knowledge.TenantId != null || !knowledge.SystemScoped)
+            return ServiceResult<Knowledge>.NotFound("System knowledge not found");
+
+        return ServiceResult<Knowledge>.Success(knowledge);
+    }
+
     public async Task<IResult> Create(KnowledgeRequest request)
     {
-        var agentNames = await GetUserAgentNamesAsync();
-        if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
+        // Check system admin permission for system-scoped knowledge
+        if (request.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
-            _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
-                request.Agent, _tenantContext.LoggedInUser);
+            _logger.LogWarning("Unauthorized access attempt to create system-scoped knowledge by user {UserId}",
+                _tenantContext.LoggedInUser);
             return Results.Json(
-                new { error = "Forbidden", message = "You do not have permission to create knowledge for this agent" },
+                new { error = "Forbidden", message = "Only system administrators can create system-scoped knowledge" },
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
-        // Check if the knowledge already exists with the same content hash
+        // System admins have access to all agents
+        var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+        if (!isSysAdmin)
+        {
+            var agentNames = await GetUserAgentNamesAsync();
+            if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
+                    request.Agent, _tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { error = "Forbidden", message = "You do not have permission to create knowledge for this agent" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+        }
+
+        // Check if the knowledge already exists with the same content hash and SystemScoped flag
         var newContentHash = HashGenerator.GenerateContentHash(request.Content + request.Type);
         var currentLatestKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
 
-        if (currentLatestKnowledge.IsSuccess && currentLatestKnowledge.Data?.Version == newContentHash)
+        if (currentLatestKnowledge.IsSuccess && 
+            currentLatestKnowledge.Data?.Version == newContentHash &&
+            currentLatestKnowledge.Data?.SystemScoped == request.SystemScoped)
         {
-            _logger.LogInformation("Knowledge {Name} already exists with the same content hash", request.Name);
+            _logger.LogInformation("Knowledge {Name} already exists with the same content hash and scope", request.Name);
             return Results.Ok(currentLatestKnowledge.Data);
         }
 
@@ -234,8 +348,9 @@ public class KnowledgeService : IKnowledgeService
             Version = newContentHash,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = _tenantContext.LoggedInUser,
-            TenantId = _tenantContext.TenantId,
-            Agent = request.Agent
+            TenantId = request.SystemScoped ? null : _tenantContext.TenantId,
+            Agent = request.Agent,
+            SystemScoped = request.SystemScoped
         };
 
         await _knowledgeRepository.CreateAsync(knowledge);
@@ -244,24 +359,37 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> GetLatestByAgent(string agent)
     {
-        var agentNames = await GetUserAgentNamesAsync();
-        if (!agentNames.Contains(agent, StringComparer.OrdinalIgnoreCase))
+        // System admins have access to all agents
+        var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+        List<string> agentNames = new List<string>();
+        
+        if (!isSysAdmin)
         {
-            _logger.LogWarning("Unauthorized access attempt to list knowledge for agent {Agent} by user {UserId}",
-                agent, _tenantContext.LoggedInUser);
-            return Results.Json(
-                new { error = "Forbidden", message = "You do not have permission to list knowledge for this agent" },
-                statusCode: StatusCodes.Status403Forbidden);
+            agentNames = await GetUserAgentNamesAsync();
+            if (!agentNames.Contains(agent, StringComparer.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Unauthorized access attempt to list knowledge for agent {Agent} by user {UserId}",
+                    agent, _tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { error = "Forbidden", message = "You do not have permission to list knowledge for this agent" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
         }
 
         var knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId, new List<string> { agent });
 
         _logger.LogInformation("Found {Count} knowledge items for agent {Agent}", knowledge.Count, agent);
-
+        
         foreach (var item in knowledge)
         {
-            if (!string.IsNullOrWhiteSpace(item.Agent) &&
-                agentNames.Contains(item.Agent, StringComparer.OrdinalIgnoreCase))
+            // System-scoped knowledge can only be edited by system admins
+            if (item.SystemScoped)
+            {
+                item.PermissionLevel = isSysAdmin ? "edit" : "read";
+            }
+            // Tenant-scoped knowledge can be edited if user has agent permission
+            else if (!string.IsNullOrWhiteSpace(item.Agent) &&
+                (isSysAdmin || agentNames.Contains(item.Agent, StringComparer.OrdinalIgnoreCase)))
             {
                 item.PermissionLevel = "edit";
             }

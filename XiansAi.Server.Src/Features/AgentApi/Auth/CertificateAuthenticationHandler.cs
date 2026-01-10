@@ -1,6 +1,8 @@
 // Features/AgentApi/Auth/CertificateAuthenticationHandler.cs
+using System.Collections.Generic;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using System.Linq;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -66,11 +68,10 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             using var cert = X509CertificateLoader.LoadCertificate(certBytes);
 
             // Check validation cache (only successful validations are cached)
-            var (found, isValid) = _certValidationCache.GetValidation(cert.Thumbprint);
-            if (found && isValid)
+            var (found, validation) = _certValidationCache.GetValidation(cert.Thumbprint);
+            if (found && validation?.IsValid == true)
             {
-                _logger.LogDebug("Using cached certificate validation for thumbprint: {Thumbprint}", cert.Thumbprint);
-                return await CreateAuthenticationTicket(cert);
+                return await CreateAuthenticationTicket(cert, validation);
             }
 
             // Cache miss or invalid - perform full validation
@@ -82,9 +83,15 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
                 return AuthenticateResult.Fail(string.Join(", ", validationResult.Errors));
             }
 
-            // Cache successful validation
-            _certValidationCache.CacheValidation(cert.Thumbprint, true);
-            return await CreateAuthenticationTicket(cert);
+            // Build cached validation payload (includes user + roles) to avoid DB on future hits
+            var cacheBuildResult = await BuildCachedValidationAsync(cert);
+            if (!cacheBuildResult.success)
+            {
+                return AuthenticateResult.Fail(cacheBuildResult.error ?? "Certificate validation cache build failed");
+            }
+
+            _certValidationCache.CacheValidation(cert.Thumbprint, cacheBuildResult.validation);
+            return await CreateAuthenticationTicket(cert, cacheBuildResult.validation);
         }
         catch (Exception ex)
         {
@@ -211,27 +218,49 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             .Any(oid => oid.Value == "1.3.6.1.5.5.7.3.2"); // Client Authentication OID
     }
 
-    private async Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert)
+    private async Task<(bool success, string? error, CachedCertificateValidation validation)> BuildCachedValidationAsync(X509Certificate2 cert)
     {
         var tenantId = GetSubjectValue(cert.Subject, "O");
         var userId = GetSubjectValue(cert.Subject, "OU");
 
-        _logger.LogInformation("Creating authentication ticket for tenant ID {TenantId} and user ID {UserId}", tenantId, userId);
-
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(userId))
         {
-            return AuthenticateResult.Fail("Invalid certificate subject format");
+            return (false, "Invalid certificate subject format", new CachedCertificateValidation { IsValid = false });
         }
 
         var user = await _userRepository.GetByUserIdAsync(userId);
         if (user == null)
         {
-            return AuthenticateResult.Fail("Invalid user ID");
+            return (false, "Invalid user ID", new CachedCertificateValidation { IsValid = false });
         }
 
-        var roles = user.TenantRoles.Where(tr => tr.Tenant == tenantId).FirstOrDefault()?.Roles ?? new List<string>();
+        var roles = user.TenantRoles
+            .FirstOrDefault(tr => tr.Tenant == tenantId)?.Roles?.ToList() ?? new List<string>();
 
-        if(user.IsSysAdmin) roles.Add(SystemRoles.SysAdmin);
+        if (user.IsSysAdmin && !roles.Contains(SystemRoles.SysAdmin))
+        {
+            roles.Add(SystemRoles.SysAdmin);
+        }
+
+        var validation = new CachedCertificateValidation
+        {
+            IsValid = true,
+            TenantId = tenantId,
+            UserId = userId,
+            Roles = roles.ToArray(), // Use array for immutability (matches default Array.Empty<string>())
+            IsSysAdmin = user.IsSysAdmin
+        };
+
+        return (true, null, validation);
+    }
+
+    private Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert, CachedCertificateValidation validation)
+    {
+        var tenantId = validation.TenantId;
+        var userId = validation.UserId;
+        var roles = validation.Roles ?? Array.Empty<string>();
+
+        // Note: SysAdmin role is already included in cached validation.Roles if user.IsSysAdmin
 
         // Handle X-Tenant-Id header
         if (Request.Headers.TryGetValue("X-Tenant-Id", out var requestedTenantId) && 
@@ -239,7 +268,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         {
             var requestedTenantIdStr = requestedTenantId.ToString();
             
-            if (user.IsSysAdmin)
+            if (validation.IsSysAdmin)
             {
                 // Sys admin can impersonate any tenant
                 _logger.LogInformation("Sys admin {UserId} impersonating tenant {ImpersonatedTenantId} (original tenant: {OriginalTenantId})", 
@@ -253,31 +282,36 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
                 {
                     _logger.LogWarning("Non admin User `{UserId}` attempted to access tenant `{RequestedTenantId}` but certificate is for tenant `{CertTenantId}`", 
                         userId, requestedTenantIdStr, tenantId);
-                    return AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID");
+                    return Task.FromResult(AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID"));
                 }
                 _logger.LogDebug("User {UserId} X-Tenant-Id header matches certificate tenant {TenantId}", userId, tenantId);
             }
         }
 
-        // Set up TenantContext
-        _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", userId, UserType.AgentApiKey);
+        // Set up TenantContext (roles is already an array from cached validation)
         _tenantContext.TenantId = tenantId;
         _tenantContext.UserType = UserType.AgentApiKey;
         _tenantContext.LoggedInUser = userId;
-        _tenantContext.UserRoles = roles.ToArray(); // Agents get the "Agent" role
+        _tenantContext.UserRoles = roles is string[] rolesArray ? rolesArray : roles.ToArray();
         _tenantContext.AuthorizedTenantIds = new[] { tenantId }; // Agents can only access their own tenant
 
-        var claims = new[]
+        // Build claims list with all user roles
+        var claimsList = new List<Claim>
         {
             new Claim(ClaimTypes.Name, userId),
-            new Claim(ClaimTypes.Role, "Agent"),
             new Claim("Tenant", tenantId)
         };
 
-        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        // Add all roles as separate role claims for authorization to work
+        foreach (var role in roles)
+        {
+            claimsList.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        var identity = new ClaimsIdentity(claimsList, Scheme.Name);
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
-        return AuthenticateResult.Success(ticket);
+        return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }

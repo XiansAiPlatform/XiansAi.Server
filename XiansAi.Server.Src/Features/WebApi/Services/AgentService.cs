@@ -11,7 +11,7 @@ namespace Features.WebApi.Services;
 public interface IAgentService
 {
     Task<ServiceResult<Agent>> GetAgentByNameAsync(string agentName);
-    Task<ServiceResult<List<string>>> GetAgentNames();
+    Task<ServiceResult<List<string>>> GetAgentNames(string? scope = null);
     Task<ServiceResult<List<AgentWithDefinitions>>> GetGroupedDefinitions(bool basicDataOnly = false);
     Task<ServiceResult<List<FlowDefinition>>> GetDefinitions(string agentName, bool basicDataOnly = false);
     Task<ServiceResult<List<WorkflowResponse>>> GetWorkflowInstances(string? agentName, string? typeName);
@@ -72,17 +72,28 @@ public class AgentService : IAgentService
         return ServiceResult<bool>.Success(await _agentRepository.IsSystemAgent(agentName));
     }
 
-    public async Task<ServiceResult<List<string>>> GetAgentNames()
+    public async Task<ServiceResult<List<string>>> GetAgentNames(string? scope = null)
     {
         try
         {
-            var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+            // Determine the tenantId based on scope
+            string? tenantIdToQuery = scope switch
+            {
+                "System" => null,  // System scope = template agents
+                "Tenant" => _tenantContext.TenantId,  // Tenant scope = deployed agents
+                _ => _tenantContext.TenantId  // Default
+            };
+
+            var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, tenantIdToQuery);
             var agentNames = agents.Select(a => a.Name).ToList();
+            
+            _logger.LogInformation("Found {Count} agents for scope {Scope}", agentNames.Count, scope ?? "default");
+            
             return ServiceResult<List<string>>.Success(agentNames);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agent names");
+            _logger.LogError(ex, "Error retrieving agent names for scope {Scope}", scope ?? "default");
             return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving agent names");
         }
     }

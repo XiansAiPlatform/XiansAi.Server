@@ -9,6 +9,7 @@ namespace Shared.Repositories;
 public interface IKnowledgeRepository
 {
     Task<T?> GetLatestByNameAsync<T>(string name, string agent, string? tenantId) where T : IKnowledge;
+    Task<T?> GetLatestSystemByNameAsync<T>(string name, string agent) where T : IKnowledge;
     Task<T> GetByIdAsync<T>(string id) where T : IKnowledge;
     Task<T> GetByVersionAsync<T>(string version) where T : IKnowledge;
     Task<List<T>> GetByNameAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge;
@@ -18,8 +19,11 @@ public interface IKnowledgeRepository
     Task<bool> UpdateAsync<T>(string id, T knowledge) where T : IKnowledge;
     Task<T?> GetByNameVersionAsync<T>(string name, string version, string agent, string tenantId) where T : IKnowledge;
     Task<List<T>> SearchAsync<T>(string searchTerm, string tenantId) where T : IKnowledge;
-    Task<List<T>> GetUniqueLatestAsync<T>(string tenantId, List<string> agentNames) where T : IKnowledge;
-    Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge;
+    Task<List<T>> GetUniqueLatestAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge;
+    Task<List<T>> GetUniqueLatestSystemScopedAsync<T>(List<string> agentNames) where T : IKnowledge;
+    Task<List<T>> GetUniqueLatestTenantScopedAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge;
+    Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string? tenantId) where T : IKnowledge;
+    Task<List<T>> GetSystemScopedByAgentAsync<T>(string agentName) where T : IKnowledge;
 }
 
 public class KnowledgeRepository : IKnowledgeRepository
@@ -73,6 +77,32 @@ public class KnowledgeRepository : IKnowledgeRepository
                 .ThenByDescending(x => x.CreatedAt)
                 .FirstOrDefault();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByName");
+    }
+
+    public async Task<T?> GetLatestSystemByNameAsync<T>(string name, string agent) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+
+            var nameFilter = Builders<T>.Filter.Eq(x => x.Name, name);
+            var agentFilter = !string.IsNullOrEmpty(agent)
+                ? Builders<T>.Filter.Or(
+                    Builders<T>.Filter.Eq(x => x.Agent, agent),
+                    Builders<T>.Filter.Eq(x => x.Agent, null))
+                : Builders<T>.Filter.Eq(x => x.Agent, null);
+            var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, null);
+            var systemScopeFilter = Builders<T>.Filter.Eq("system_scoped", true);
+
+            var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter, systemScopeFilter);
+
+            var results = await collection.Find(filter).ToListAsync();
+
+            return results
+                .OrderByDescending(x => x.Agent == agent)
+                .ThenByDescending(x => x.CreatedAt)
+                .FirstOrDefault();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestSystemKnowledgeByName");
     }
 
     public async Task<T> GetByIdAsync<T>(string id) where T : IKnowledge
@@ -236,7 +266,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             .ToListAsync();
     }
 
-    public async Task<List<T>> GetUniqueLatestAsync<T>(string tenantId, List<string> agentNames) where T : IKnowledge
+    public async Task<List<T>> GetUniqueLatestAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge
     {
         var collection = GetTypedCollection<T>();
         
@@ -276,7 +306,91 @@ public class KnowledgeRepository : IKnowledgeRepository
             .ToList();
     }
 
-    public async Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge
+    public async Task<List<T>> GetUniqueLatestSystemScopedAsync<T>(List<string> agentNames) where T : IKnowledge
+    {
+        var collection = GetTypedCollection<T>();
+        
+        // Handle case where agentNames is empty or null - return empty list
+        if (agentNames == null || agentNames.Count == 0)
+        {
+            return new List<T>();
+        }
+        
+        // System-scoped: TenantId is null AND SystemScoped is true
+        var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, null);
+        var systemScopedFilter = Builders<T>.Filter.Eq("system_scoped", true);
+        
+        // Create agent filter that matches any of the specified agents 
+        var agentFilters = agentNames.Select(agent => 
+                Builders<T>.Filter.Eq(x => x.Agent, agent)).ToList();
+        var agentFilter = Builders<T>.Filter.Or(agentFilters);
+        
+        // Combine the filters
+        var filter = Builders<T>.Filter.And(tenantFilter, systemScopedFilter, agentFilter);
+        
+        // Define projection to exclude Content field
+        var projection = Builders<T>.Projection.Exclude("Content");
+        
+        // Get all items sorted by creation date
+        var allItems = await collection.Find(filter)
+            .Project<T>(projection)
+            .SortByDescending(x => x.CreatedAt)
+            .ToListAsync();
+            
+        // Process in memory to get the latest for each name/agent combination
+        return allItems
+            .GroupBy(x => new { x.Name, x.Agent })
+            .Select(group => group
+                .OrderByDescending(x => x.CreatedAt)
+                .First())
+            .ToList();
+    }
+
+    public async Task<List<T>> GetUniqueLatestTenantScopedAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge
+    {
+        var collection = GetTypedCollection<T>();
+        
+        // Handle case where agentNames is empty or null - return empty list
+        if (agentNames == null || agentNames.Count == 0)
+        {
+            return new List<T>();
+        }
+        
+        // Tenant-scoped: TenantId matches the provided tenant (not null)
+        var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
+        // Exclude system-scoped items (SystemScoped should be false or not set)
+        var notSystemScopedFilter = Builders<T>.Filter.Or(
+            Builders<T>.Filter.Eq("system_scoped", false),
+            Builders<T>.Filter.Exists("system_scoped", false)
+        );
+        
+        // Create agent filter that matches any of the specified agents 
+        var agentFilters = agentNames.Select(agent => 
+                Builders<T>.Filter.Eq(x => x.Agent, agent)).ToList();
+        var agentFilter = Builders<T>.Filter.Or(agentFilters);
+        
+        // Combine the filters
+        var filter = Builders<T>.Filter.And(tenantFilter, notSystemScopedFilter, agentFilter);
+        
+        // Define projection to exclude Content field
+        var projection = Builders<T>.Projection.Exclude("Content");
+        
+        // Get all items sorted by creation date
+        var allItems = await collection.Find(filter)
+            .Project<T>(projection)
+            .SortByDescending(x => x.CreatedAt)
+            .ToListAsync();
+            
+        // Process in memory to get the latest for each name/agent combination
+        return allItems
+            .GroupBy(x => new { x.Name, x.Agent })
+            .Select(group => group
+                .OrderByDescending(x => x.CreatedAt)
+                .First())
+            .ToList();
+    }
+
+    public async Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string? tenantId) where T : IKnowledge
     {
         var collection = GetTypedCollection<T>();
         
@@ -293,16 +407,40 @@ public class KnowledgeRepository : IKnowledgeRepository
             agentFilter = Builders<T>.Filter.Eq(x => x.Agent, null);
         }
         
-        // Add tenant filter
-        var tenantFilter = Builders<T>.Filter.Or(
-            Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
-            Builders<T>.Filter.Eq(x => x.TenantId, null)
-        );
+        // Add tenant filter - when tenantId is null, only delete system-scoped knowledge
+        var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
         
         var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter);
         
         var result = await collection.DeleteManyAsync(filter);
         return result.DeletedCount > 0;
+    }
+
+    public async Task<List<T>> GetSystemScopedByAgentAsync<T>(string agentName) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            
+            // Filter for system-scoped knowledge (TenantId is null) associated with the specific agent
+            var agentFilter = Builders<T>.Filter.Eq(x => x.Agent, agentName);
+            var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, null);
+            
+            var filter = Builders<T>.Filter.And(agentFilter, tenantFilter);
+            
+            // Get all system-scoped knowledge for this agent
+            var allKnowledge = await collection.Find(filter)
+                .SortByDescending(x => x.CreatedAt)
+                .ToListAsync();
+            
+            // Get the latest version of each unique knowledge name
+            return allKnowledge
+                .GroupBy(x => x.Name)
+                .Select(group => group
+                    .OrderByDescending(x => x.CreatedAt)
+                    .First())
+                .ToList();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetSystemScopedByAgent");
     }
 
     private IMongoCollection<T> GetTypedCollection<T>() where T : IKnowledge

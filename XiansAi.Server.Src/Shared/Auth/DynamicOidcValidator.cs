@@ -179,7 +179,6 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             }
             else if(_tenantContext.UserType != UserType.UserApiKey)
             {
-                _logger.LogDebug("Setting tenant context with user ID: {userId} and user type: {userType}", userId, UserType.UserToken);
                 // Set tenant context
                 _tenantContext.LoggedInUser = userId;
                 _tenantContext.UserType = UserType.UserToken;

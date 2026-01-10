@@ -1,6 +1,21 @@
 using Microsoft.Extensions.Caching.Memory;
+using System;
+using System.Collections.Generic;
 
 namespace Features.AgentApi.Auth;
+
+/// <summary>
+/// Cached data for a validated certificate.
+/// Includes minimal user/tenant context so cache hits can avoid DB calls.
+/// </summary>
+public record CachedCertificateValidation
+{
+    public bool IsValid { get; init; }
+    public string TenantId { get; init; } = string.Empty;
+    public string UserId { get; init; } = string.Empty;
+    public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
+    public bool IsSysAdmin { get; init; }
+}
 
 /// <summary>
 /// Interface for certificate validation caching
@@ -10,12 +25,12 @@ public interface ICertificateValidationCache
     /// <summary>
     /// Gets validation result from cache if available
     /// </summary>
-    (bool found, bool isValid) GetValidation(string thumbprint);
+    (bool found, CachedCertificateValidation? validation) GetValidation(string thumbprint);
     
     /// <summary>
     /// Caches validation result for future use
     /// </summary>
-    void CacheValidation(string thumbprint, bool isValid);
+    void CacheValidation(string thumbprint, CachedCertificateValidation validation);
     
     /// <summary>
     /// Removes a cached validation result
@@ -50,28 +65,27 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
         _cacheEntrySize = configuration.GetValue<long>("AgentApi:CertificateValidationCacheEntrySize", 1);
     }
 
-    public (bool found, bool isValid) GetValidation(string thumbprint)
+    public (bool found, CachedCertificateValidation? validation) GetValidation(string thumbprint)
     {
         // Input validation
         if (string.IsNullOrWhiteSpace(thumbprint))
         {
             _logger.LogWarning("GetValidation called with null or empty thumbprint");
-            return (false, false);
+            return (false, null);
         }
 
         var cacheKey = GetCacheKey(thumbprint);
         
-        if (_cache.TryGetValue<bool>(cacheKey, out var isValid))
+        if (_cache.TryGetValue<CachedCertificateValidation>(cacheKey, out var validation))
         {
-            _logger.LogDebug("Certificate validation cache hit for thumbprint: {Thumbprint}", thumbprint);
-            return (true, isValid);
+            return (true, validation);
         }
         
         _logger.LogDebug("Certificate validation cache miss for thumbprint: {Thumbprint}", thumbprint);
-        return (false, false);
+        return (false, null);
     }
 
-    public void CacheValidation(string thumbprint, bool isValid)
+    public void CacheValidation(string thumbprint, CachedCertificateValidation validation)
     {
         // Input validation
         if (string.IsNullOrWhiteSpace(thumbprint))
@@ -80,9 +94,8 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
             return;
         }
 
-        // SECURITY IMPROVEMENT: Only cache successful validations to prevent cache pollution
-        // Invalid certificates should always be re-validated (could be temporarily invalid)
-        if (!isValid)
+        // Only cache successful validations to prevent cache pollution
+        if (!validation.IsValid)
         {
             _logger.LogDebug("Skipping cache for invalid certificate validation result for thumbprint: {Thumbprint}", thumbprint);
             return;
@@ -97,7 +110,7 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
             .SetPriority(CacheItemPriority.Normal)
             .SetSize(_cacheEntrySize);
         
-        _cache.Set(cacheKey, isValid, cacheOptions);
+        _cache.Set(cacheKey, validation, cacheOptions);
         _logger.LogDebug("Cached successful certificate validation for thumbprint: {Thumbprint}", thumbprint);
     }
 
@@ -134,12 +147,12 @@ public class NoOpCertificateValidationCache : ICertificateValidationCache
         _logger = logger;
     }
 
-    public (bool found, bool isValid) GetValidation(string thumbprint)
+    public (bool found, CachedCertificateValidation? validation) GetValidation(string thumbprint)
     {
-        return (false, false);
+        return (false, null);
     }
 
-    public void CacheValidation(string thumbprint, bool isValid)
+    public void CacheValidation(string thumbprint, CachedCertificateValidation validation)
     {
         // No-op: caching is disabled
     }
