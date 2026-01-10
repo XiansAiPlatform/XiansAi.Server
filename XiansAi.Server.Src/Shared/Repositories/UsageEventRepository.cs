@@ -13,6 +13,8 @@ public interface IUsageEventRepository
     Task InsertAsync(UsageEvent usageEvent, CancellationToken cancellationToken = default);
     Task<List<UsageEvent>> GetEventsAsync(string tenantId, string? userId, DateTime? since = null, CancellationToken cancellationToken = default);
     
+    Task<int> DeleteByAgentAsync(string tenantId, string agentName, CancellationToken cancellationToken = default);
+    
     // Generic aggregation method for usage events statistics
     Task<UsageEventsResponse> GetUsageEventsAsync(
         string tenantId, 
@@ -48,6 +50,24 @@ public class UsageEventRepository : IUsageEventRepository
             usageEvent.CreatedAt = usageEvent.CreatedAt == default ? DateTime.UtcNow : usageEvent.CreatedAt;
             await _collection.InsertOneAsync(usageEvent, cancellationToken: cancellationToken);
         }, _logger, operationName: "InsertUsageEvent");
+    }
+
+    public async Task<int> DeleteByAgentAsync(string tenantId, string agentName, CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var agentRegex = new BsonRegularExpression($":{Regex.Escape(agentName)}:", "i");
+            var tenantFilter = string.IsNullOrEmpty(tenantId)
+                ? Builders<UsageEvent>.Filter.Or(
+                    Builders<UsageEvent>.Filter.Eq(x => x.TenantId, null),
+                    Builders<UsageEvent>.Filter.Eq(x => x.TenantId, string.Empty))
+                : Builders<UsageEvent>.Filter.Eq(x => x.TenantId, tenantId);
+
+            var filter = Builders<UsageEvent>.Filter.And(tenantFilter, Builders<UsageEvent>.Filter.Regex(x => x.WorkflowId, agentRegex));
+
+            var result = await _collection.DeleteManyAsync(filter, cancellationToken);
+            return (int)result.DeletedCount;
+        }, _logger, operationName: "DeleteUsageEventsByAgent");
     }
 
     public async Task<List<UsageEvent>> GetEventsAsync(string tenantId, string? userId, DateTime? since = null, CancellationToken cancellationToken = default)

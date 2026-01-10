@@ -58,17 +58,18 @@ public static class WorkflowEndpoints
             [FromQuery] string? status,
             [FromQuery] string? agent,
             [FromQuery] string? workflowType,
+            [FromQuery] string? user,
             [FromQuery] int? pageSize,
             [FromQuery] string? pageToken,
             [FromServices] IWorkflowFinderService endpoint) =>
         {
-            var result = await endpoint.GetWorkflows(status, agent, workflowType, pageSize, pageToken);
+            var result = await endpoint.GetWorkflows(status, agent, workflowType, user, pageSize, pageToken);
             return result.ToHttpResult();
         })
         .WithName("Get Workflows")
         .WithOpenApi(operation => {
             operation.Summary = "Get workflows with optional filters and pagination";
-            operation.Description = "Retrieves workflows with optional filtering by status, agent, and workflow type, with pagination support";
+            operation.Description = "Retrieves workflows with optional filtering by status, agent, workflow type, and user, with pagination support";
             return operation;
         });
 

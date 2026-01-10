@@ -19,7 +19,7 @@ public class AgentWithDefinitions
 public interface IAgentRepository
 {
     Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles);
-    Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant);
+    Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string? tenant);
     Task CreateAsync(Agent agent);
     Task<bool> UpdateAsync(string id, Agent agent, string userId, string[] userRoles);
     Task<bool> UpdatePermissionsAsync(string name, string tenant, Permission permissions, string userId, string[] userRoles);
@@ -29,7 +29,7 @@ public interface IAgentRepository
     Task<Agent?> GetByNameInternalAsync(string name, string? tenant);
     Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
-    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null);
+    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? version = null, string? author = null);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
     Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
@@ -91,7 +91,7 @@ public class AgentRepository : IAgentRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAgentByName");
     }
 
-    public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string tenant)
+    public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string? tenant)
     {
         var filterBuilder = Builders<Agent>.Filter;
         var filters = new List<FilterDefinition<Agent>>();
@@ -410,7 +410,7 @@ public class AgentRepository : IAgentRepository
         }
     }
 
-    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null)
+    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? version = null, string? author = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -428,7 +428,10 @@ public class AgentRepository : IAgentRepository
                 OwnerAccess = new List<string>(),
                 ReadAccess = new List<string>(),
                 WriteAccess = new List<string>(),
-                OnboardingJson = onboardingJson
+                OnboardingJson = onboardingJson,
+                Description = description,
+                Version = version,
+                Author = author
             };
             newAgent.GrantOwnerAccess(createdBy);
 
@@ -448,10 +451,42 @@ public class AgentRepository : IAgentRepository
                 var existingAgent = await GetByNameInternalAsync(agentName, newAgent.Tenant);
                 if (existingAgent != null)
                 {
-                    // Update OnboardingJson if provided
+                    // Update fields if provided
+                    bool hasUpdates = false;
+                    var updateBuilder = Builders<Agent>.Update;
+                    var updates = new List<UpdateDefinition<Agent>>();
+                    
                     if (!string.IsNullOrEmpty(onboardingJson))
                     {
-                        _logger.LogInformation("Updating OnboardingJson for existing agent {AgentName}", agentName);
+                        updates.Add(updateBuilder.Set(x => x.OnboardingJson, onboardingJson));
+                        existingAgent.OnboardingJson = onboardingJson;
+                        hasUpdates = true;
+                    }
+                    
+                    if (!string.IsNullOrEmpty(description))
+                    {
+                        updates.Add(updateBuilder.Set(x => x.Description, description));
+                        existingAgent.Description = description;
+                        hasUpdates = true;
+                    }
+                    
+                    if (!string.IsNullOrEmpty(version))
+                    {
+                        updates.Add(updateBuilder.Set(x => x.Version, version));
+                        existingAgent.Version = version;
+                        hasUpdates = true;
+                    }
+                    
+                    if (!string.IsNullOrEmpty(author))
+                    {
+                        updates.Add(updateBuilder.Set(x => x.Author, author));
+                        existingAgent.Author = author;
+                        hasUpdates = true;
+                    }
+                    
+                    if (hasUpdates)
+                    {
+                        _logger.LogInformation("Updating fields for existing agent {AgentName}", agentName);
                         
                         var tenantFilter = existingAgent.Tenant == null
                             ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
@@ -462,11 +497,8 @@ public class AgentRepository : IAgentRepository
                             tenantFilter
                         );
                         
-                        var update = Builders<Agent>.Update.Set(x => x.OnboardingJson, onboardingJson);
-                        await _agents.UpdateOneAsync(filter, update);
-                        
-                        // Update the local object to reflect the change
-                        existingAgent.OnboardingJson = onboardingJson;
+                        var combinedUpdate = updateBuilder.Combine(updates);
+                        await _agents.UpdateOneAsync(filter, combinedUpdate);
                     }
                     
                     return existingAgent;

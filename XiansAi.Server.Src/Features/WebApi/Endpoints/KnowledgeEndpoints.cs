@@ -16,9 +16,10 @@ public static class KnowledgeEndpoints
             .RequireAuthorization();
 
         knowledgeGroup.MapGet("/latest/all", async (
+            [FromQuery] string? scope,
             [FromServices] IKnowledgeService endpoint) =>
         {
-            return await endpoint.GetLatestAll();
+            return await endpoint.GetLatestAll(scope);
         })
         .WithName("Get Latest Instructions")
         .WithOpenApi();

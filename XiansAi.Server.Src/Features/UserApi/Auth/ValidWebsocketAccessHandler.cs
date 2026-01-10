@@ -49,7 +49,6 @@ namespace Features.UserApi.Auth
             {
                 try
                 {
-                    _logger.LogDebug("Setting tenant context with user ID: {userId}", loggedInUser);
                     _tenantContext.LoggedInUser = loggedInUser;
                     _tenantContext.TenantId = tenantId;
                     _tenantContext.AuthorizedTenantIds = new[] { tenantId };

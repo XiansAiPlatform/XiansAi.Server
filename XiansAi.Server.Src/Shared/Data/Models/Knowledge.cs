@@ -43,6 +43,9 @@ public class Knowledge : IKnowledge
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    [BsonElement("system_scoped")]
+    public bool SystemScoped { get; set; } = false;
+
     [BsonIgnore]
     public string? PermissionLevel { get; set; }
 }

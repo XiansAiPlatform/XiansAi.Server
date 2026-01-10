@@ -36,6 +36,21 @@ public static class KnowledgeEndpoints
             return operation;
         });
 
+        knowledgeGroup.MapGet("/latest/system", async (
+            [FromQuery] string name,
+            [FromQuery] string agent,
+            [FromServices] IKnowledgeService service) =>
+        {
+            _logger.LogInformation("Getting latest system knowledge for name: {name}, agent: {agent}", name, agent);
+            var result = await service.GetLatestSystemByNameAsync(name, agent);
+            return result.ToHttpResult();
+        })
+        .WithOpenApi(operation => {
+            operation.Summary = "Get latest system knowledge";
+            operation.Description = "Retrieves the most recent system-scoped knowledge (no tenant) for the specified name and agent";
+            return operation;
+        });
+
         knowledgeGroup.MapPost("/", async (
             [FromBody] KnowledgeCreateRequest request,
             [FromServices] IKnowledgeService endpoint) =>
@@ -46,7 +61,8 @@ public static class KnowledgeEndpoints
                 Name = request.Name,
                 Content = request.Content,
                 Agent = request.Agent,
-                Type = request.Type
+                Type = request.Type,
+                SystemScoped = request.SystemScoped
             };
             var result = await endpoint.Create(knowledgeRequest);
             return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
@@ -99,4 +115,5 @@ public record KnowledgeCreateRequest
     public required string Content { get; init; }
     public required string Agent { get; init; }
     public required string Type { get; init; }
+    public bool SystemScoped { get; init; } = false;
 } 

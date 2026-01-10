@@ -32,11 +32,21 @@ public class FlowDefinitionRequest
     [Required]
     [JsonPropertyName("parameterDefinitions")]
     public required List<ParameterDefinitionRequest> ParameterDefinitions { get; set; }
+    
     [JsonPropertyName("systemScoped")]
     public bool SystemScoped { get; set; } = false;
 
     [JsonPropertyName("onboardingJson")]
     public string? OnboardingJson { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
+
+    [JsonPropertyName("author")]
+    public string? Author { get; set; }
 }
 
 public class ActivityDefinitionRequest
@@ -66,10 +76,33 @@ public class ParameterDefinitionRequest
     public required string Type { get; set; }
 }
 
+public class CreateAgentRequest
+{
+    [Required]
+    [JsonPropertyName("agentName")]
+    public required string AgentName { get; set; }
+
+    [JsonPropertyName("systemScoped")]
+    public bool SystemScoped { get; set; } = false;
+
+    [JsonPropertyName("onboardingJson")]
+    public string? OnboardingJson { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
+
+    [JsonPropertyName("author")]
+    public string? Author { get; set; }
+}
+
 public interface IDefinitionsService
 {
     Task<IResult> CreateAsync(FlowDefinitionRequest request);
     Task<IResult> CheckHash(string workflowType, bool systemScoped, string hash);
+    Task<IResult> CreateAgentAsync(CreateAgentRequest request);
 }
 
 public class DefinitionsService : IDefinitionsService
@@ -129,7 +162,15 @@ public class DefinitionsService : IDefinitionsService
         }
 
         // Ensure agent exists using thread-safe upsert operation
-        await _agentRepository.UpsertAgentAsync(request.Agent, request.SystemScoped, _tenantContext.TenantId, currentUser, request.OnboardingJson);
+        await _agentRepository.UpsertAgentAsync(
+            request.Agent, 
+            request.SystemScoped, 
+            _tenantContext.TenantId, 
+            currentUser, 
+            request.OnboardingJson,
+            request.Description,
+            request.Version,
+            request.Author);
 
         // Check if the user has permissions for this agent
         var hasPermission = await CheckPermissions(request.Agent, PermissionLevel.Write);
@@ -184,6 +225,64 @@ public class DefinitionsService : IDefinitionsService
         }
 
         return Results.NotFound("Hash does not match");
+    }
+
+    public async Task<IResult> CreateAgentAsync(CreateAgentRequest request)
+    {
+        if (string.IsNullOrEmpty(request.AgentName))
+        {
+            _logger.LogWarning("Agent name is empty or null");
+            return Results.Problem(
+                title: "Bad Request",
+                detail: "Agent name is required.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var currentUser = _tenantContext.LoggedInUser ?? throw new InvalidOperationException("No logged in user found");
+        
+        // Only system admins can create system agents
+        if (request.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        {
+            _logger.LogError("User {UserId} attempted to create system agent {AgentName} without system admin permission", currentUser, request.AgentName);
+            return Results.Problem(
+                title: "Forbidden",
+                detail: "User does not have system admin permission to create `system` agents",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        // if not systemScoped and there is a systemscoped agent with the same name, throw an error
+        if (!request.SystemScoped && await _agentRepository.IsSystemAgent(request.AgentName))
+        {
+            _logger.LogError("User {UserId} attempted to create non-system agent {AgentName} with the same name as an existing system scoped agent", currentUser, request.AgentName);
+            return Results.Problem(
+                title: "Conflict",
+                detail: $"A system scoped agent with the same name already exists. Agent name: {request.AgentName}",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        // Create or update agent using thread-safe upsert operation
+        var agent = await _agentRepository.UpsertAgentAsync(
+            request.AgentName, 
+            request.SystemScoped, 
+            _tenantContext.TenantId, 
+            currentUser, 
+            request.OnboardingJson,
+            request.Description,
+            request.Version,
+            request.Author);
+        
+        _logger.LogInformation("Agent {AgentName} created/updated successfully by user {UserId}", request.AgentName, currentUser);
+        
+        return Results.Ok(new 
+        { 
+            message = "Agent created successfully",
+            agentName = agent.Name,
+            systemScoped = agent.SystemScoped,
+            createdBy = agent.CreatedBy,
+            description = agent.Description,
+            version = agent.Version,
+            author = agent.Author
+        });
     }
 
 

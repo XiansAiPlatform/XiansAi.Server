@@ -17,9 +17,10 @@ public static class AgentEndpoints
             .WithGlobalRateLimit(); // Apply standard rate limiting
 
         agentGroup.MapGet("/names", async (
+            [FromQuery] string? scope,
             [FromServices] IAgentService service) =>
         {
-            var result = await service.GetAgentNames();
+            var result = await service.GetAgentNames(scope);
             return result.ToHttpResult();
         })
         .WithName("Get Agent Names")

@@ -47,6 +47,19 @@ public class Agent : ModelValidatorBase<Agent>
     [BsonElement("onboarding_json")]
     public string? OnboardingJson { get; set; }
 
+    [BsonElement("description")]
+    [StringLength(1000, ErrorMessage = "Description must not exceed 1000 characters")]
+    public string? Description { get; set; }
+
+    [BsonElement("version")]
+    [StringLength(50, ErrorMessage = "Version must not exceed 50 characters")]
+    [RegularExpression(@"^[a-zA-Z0-9._\-]+$", ErrorMessage = "Version contains invalid characters")]
+    public string? Version { get; set; }
+
+    [BsonElement("author")]
+    [StringLength(200, ErrorMessage = "Author must not exceed 200 characters")]
+    public string? Author { get; set; }
+
     public bool HasPermission(string userId, string[] userRoles, PermissionLevel requiredLevel)
     {
         if (requiredLevel == PermissionLevel.None)
@@ -115,7 +128,10 @@ public class Agent : ModelValidatorBase<Agent>
             ReadAccess = ValidationHelpers.SanitizeStringList(this.ReadAccess),
             WriteAccess = ValidationHelpers.SanitizeStringList(this.WriteAccess),
             SystemScoped = this.SystemScoped,
-            OnboardingJson = ValidationHelpers.SanitizeString(this.OnboardingJson)
+            OnboardingJson = ValidationHelpers.SanitizeString(this.OnboardingJson),
+            Description = ValidationHelpers.SanitizeString(this.Description),
+            Version = ValidationHelpers.SanitizeString(this.Version),
+            Author = ValidationHelpers.SanitizeString(this.Author)
         };
 
         return sanitizedAgent;

@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Shared.Data;
 using Shared.Auth;
 
@@ -20,6 +23,8 @@ public class AgentPermissionRepository : IAgentPermissionRepository
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly ILogger<AgentPermissionRepository> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly Dictionary<string, Permission?> _permissionsCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string?> _agentTenantCache = new(StringComparer.OrdinalIgnoreCase);
 
     public AgentPermissionRepository(
         IAgentRepository agentRepository,
@@ -37,32 +42,52 @@ public class AgentPermissionRepository : IAgentPermissionRepository
     {
         _logger.LogInformation("Getting permissions for agent: {AgentName}", agentName);
 
+        // Check cache first (request-scoped cache to avoid repeated DB calls)
+        if (_permissionsCache.TryGetValue(agentName, out var cachedPermissions))
+        {
+            _logger.LogDebug("Agent permissions cache hit for agent: {AgentName}", agentName);
+            return cachedPermissions;
+        }
+
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
 
         if (agent == null)
         {
             _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            _permissionsCache[agentName] = null;
             return null;
         }
 
-        return new Permission()
+        var permission = new Permission()
         {
             OwnerAccess = agent.OwnerAccess,
             ReadAccess = agent.ReadAccess,
             WriteAccess = agent.WriteAccess
-        }; ;
+        };
+
+        _permissionsCache[agentName] = permission;
+        _logger.LogDebug("Agent permissions cache miss for agent: {AgentName}, loaded from DB", agentName);
+        return permission;
     }
 
     public async Task<string?> GetAgentTenantAsync(string agentName)
     {
         _logger.LogInformation("Getting tenant for agent: {AgentName}", agentName);
 
+        if (_agentTenantCache.TryGetValue(agentName, out var cachedTenant))
+        {
+            return cachedTenant;
+        }
+
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
         if (agent == null)
         {
             _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            _agentTenantCache[agentName] = string.Empty;
             return string.Empty;
         }
+
+        _agentTenantCache[agentName] = agent.Tenant;
         return agent.Tenant;
     }
 
@@ -83,6 +108,10 @@ public class AgentPermissionRepository : IAgentPermissionRepository
             _logger.LogWarning("Failed to update permissions for agent {AgentName} - either not found or insufficient permissions", agentName);
             return false;
         }
+
+        // Invalidate cache since permissions have changed
+        _permissionsCache.Remove(agentName);
+        _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", agentName);
 
         return true;
     }
@@ -130,6 +159,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         // Use the internal update method since we've already verified permissions
         var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
 
+        if (result)
+        {
+            // Invalidate cache since permissions have changed
+            _permissionsCache.Remove(agentName);
+            _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", agentName);
+        }
+
         return result;
     }
 
@@ -165,6 +201,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
         // Use the internal update method since we've already verified permissions
         var result = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
+
+        if (result)
+        {
+            // Invalidate cache since permissions have changed
+            _permissionsCache.Remove(agentName);
+            _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", agentName);
+        }
 
         // If the user wasn't found in any permission list, still consider it successful (idempotent operation)
         if (!wasUserFound)

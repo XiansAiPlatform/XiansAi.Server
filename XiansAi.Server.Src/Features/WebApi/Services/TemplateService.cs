@@ -20,6 +20,7 @@ public class TemplateService : ITemplateService
 {
     private readonly IAgentRepository _agentRepository;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
+    private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly ILogger<TemplateService> _logger;
     private readonly ITenantContext _tenantContext;
 
@@ -28,17 +29,20 @@ public class TemplateService : ITemplateService
     /// </summary>
     /// <param name="agentRepository">Repository for agent operations.</param>
     /// <param name="flowDefinitionRepository">Repository for flow definition operations.</param>
+    /// <param name="knowledgeRepository">Repository for knowledge operations.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     public TemplateService(
         IAgentRepository agentRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
+        IKnowledgeRepository knowledgeRepository,
         ILogger<TemplateService> logger,
         ITenantContext tenantContext
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
+        _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
@@ -130,6 +134,9 @@ public class TemplateService : ITemplateService
                 CreatedAt = DateTime.UtcNow,
                 SystemScoped = false, // User tenant agents are not system scoped
                 OnboardingJson = templateAgent.Agent.OnboardingJson,
+                Description = templateAgent.Agent.Description,
+                Version = templateAgent.Agent.Version,
+                Author = templateAgent.Agent.Author,
                 OwnerAccess = new List<string>(),
                 ReadAccess = new List<string>(),
                 WriteAccess = new List<string>()
@@ -172,8 +179,35 @@ public class TemplateService : ITemplateService
                     templateDefinition.WorkflowType, agentName);
             }
 
-            _logger.LogInformation("Successfully deployed template agent {AgentName} with {DefinitionsCount} flow definitions for user {UserId} in tenant {TenantId}", 
-                agentName, clonedDefinitionsCount, _tenantContext.LoggedInUser, _tenantContext.TenantId);
+            // Clone all system-scoped knowledge associated with the template agent
+            var systemKnowledge = await _knowledgeRepository.GetSystemScopedByAgentAsync<Knowledge>(agentName);
+            var clonedKnowledgeCount = 0;
+            
+            foreach (var templateKnowledge in systemKnowledge)
+            {
+                var newKnowledge = new Knowledge
+                {
+                    Id = ObjectId.GenerateNewId().ToString(),
+                    Name = templateKnowledge.Name,
+                    Content = templateKnowledge.Content,
+                    Type = templateKnowledge.Type,
+                    Version = templateKnowledge.Version,
+                    Agent = agentName, // Keep the same agent name
+                    TenantId = _tenantContext.TenantId, // Assign to user's tenant
+                    CreatedBy = _tenantContext.LoggedInUser,
+                    CreatedAt = DateTime.UtcNow,
+                    SystemScoped = false // User tenant knowledge is not system scoped
+                };
+
+                await _knowledgeRepository.CreateAsync(newKnowledge);
+                clonedKnowledgeCount++;
+                
+                _logger.LogDebug("Cloned knowledge {KnowledgeName} for agent {AgentName}", 
+                    templateKnowledge.Name, agentName);
+            }
+
+            _logger.LogInformation("Successfully deployed template agent {AgentName} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items for user {UserId} in tenant {TenantId}", 
+                agentName, clonedDefinitionsCount, clonedKnowledgeCount, _tenantContext.LoggedInUser, _tenantContext.TenantId);
 
             return ServiceResult<Agent>.Success(newAgent);
         }
