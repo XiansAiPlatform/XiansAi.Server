@@ -1,0 +1,507 @@
+### Variables
+@baseUrl = http://localhost:5005
+@apiVersion = v1
+@tenantId = new-tenant-22
+
+# API Key Authentication
+# Replace with your actual API key (must start with "sk-Xnai-")
+# The API key must belong to a user with SysAdmin role
+@apiKey = sk-Xnai-qxR8A-JhR_dOWhbNcPw-KPOAHP2XwLlcIOafpgP686Y
+
+# Note: Replace these with actual values from your database
+# tenantObjectId: MongoDB ObjectId from list tenants response (e.g., "6959f2ffb50bd67dcb893910")
+@tenantObjectId = 6959f2ffb50bd67dcb893910
+# agentName: Agent name (e.g., "my-agent")
+@agentName = My Conversational Agent
+# templateObjectId: MongoDB ObjectId from list templates response (e.g., "6959f2ffb50bd67dcb893911")
+# Use this for GET/PUT/DELETE operations
+@templateObjectId = 69596ca63f39925d6e26b216
+# templateName: Template name (e.g., "My Conversational Agent")
+# Use this for deploy operation (or use templateObjectId - both work)
+@templateName = My Conversational Agent
+
+### ============================================
+### API Key Authentication
+### ============================================
+# AdminApi uses API key authentication via:
+# 1. Authorization header (preferred): Authorization: Bearer <api-key>
+# 2. Query parameter (fallback): ?apikey=<api-key>
+#
+# The API key must belong to a user with SysAdmin role.
+# Tenant ID can be provided via:
+# - Query parameter: ?tenantId=<tenant-id>
+# - Route parameter: /tenants/{tenantId}/...
+# - X-Tenant-Id header: X-Tenant-Id: <tenant-id>
+
+### ============================================
+### Tenant Management (No X-Tenant-Id required)
+### ============================================
+
+### 1. List All Tenants
+# Get all tenants in the system
+# Note: No X-Tenant-Id header required for this endpoint
+# API key authentication via Authorization header (preferred method)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### 2. Get Tenant by ID
+# Get a specific tenant by MongoDB ObjectId
+# Note: Get the ObjectId from the list tenants response
+# No X-Tenant-Id header required for this endpoint
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### 3. Update Tenant
+# Update tenant properties (name, domain, description, etc.)
+# Note: Replace {{tenantObjectId}} with actual tenant ID from list tenants response
+# No X-Tenant-Id header required for this endpoint
+PUT {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "SUPER Updated Tenant Name",
+  "domain": "updated.SUPER.com",
+  "description": "SUPER Updated tenant description",
+  "enabled": true,
+  "theme": "dark"
+}
+
+###
+
+### Create Tenant
+# Create a new tenant
+# No X-Tenant-Id header required for this endpoint
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "tenantId": "new-tenant-22",
+  "name": "New Tenant",
+  "domain": "newtenant.example.com",
+  "description": "A new tenant for testing",
+  "enabled": true
+}
+
+###
+
+### Delete Tenant
+# Delete a tenant by MongoDB ObjectId
+# No X-Tenant-Id header required for this endpoint
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+### ============================================
+### Agent Template Management
+### ============================================
+
+### System-Level Operations (SysAdmin only, NO X-Tenant-Id required)
+### ============================================
+
+### List All Agent Templates (System Admin)
+# Browse all available agent templates
+# System admin only - NO X-Tenant-Id header required
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Get Agent Template Details (System Admin)
+# Get detailed information about a specific template
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (not template name) - get from list templates response
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Update Agent Template Metadata (System Admin)
+# Update metadata of an existing agent template (category, description, icon, samplePrompts)
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (not template name) - get from list templates response
+# Category supports multiple values as comma-separated string (e.g., "customer-support,beta")
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/Metadata
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "category": "customer-support,beta",
+  "description": "Customer support agent template with multiple categories",
+  "icon": "headset",
+  "samplePrompts": [
+    {
+      "id": "prompt-1",
+      "title": "Handle Customer Complaint",
+      "prompt": "A customer is complaining about a delayed order. Help them resolve the issue.",
+      "description": "Tests the agent's ability to handle customer complaints",
+      "icon": "message-alert",
+      "category": "basic"
+    },
+    {
+      "id": "prompt-2",
+      "title": "Process Refund Request",
+      "prompt": "Customer wants a refund for order #12345. Process the refund request.",
+      "description": "Tests refund processing capabilities",
+      "icon": "cash-refund",
+      "category": "advanced"
+    },
+    {
+      "id": "prompt-3",
+      "title": "Product Information Query",
+      "prompt": "What are the specifications of product XYZ?",
+      "description": "Tests product information retrieval",
+      "icon": "information",
+      "category": "basic"
+    }
+  ]
+}
+
+###
+
+### Delete Agent Template (System Admin)
+# Delete an agent template
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (not template name) - get from list templates response
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Tenant-Scoped Operations (X-Tenant-Id required)
+### ============================================
+
+### List Agent Templates for Tenant
+# Browse agent templates eligible for a specific tenant
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Future: Eligibility filtering will be implemented
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentTemplates
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### ============================================
+### Agent Deployment (X-Tenant-Id required)
+### ============================================
+
+### 5. Deploy Agent from Template to Tenant
+# Deploy an agent template to a specific tenant
+# This creates a new agent instance in the tenant
+# Note: Uses MongoDB ObjectId - get from list templates response
+# Tenant ID can be provided via query parameter, route parameter, or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/deploy?tenantId={{tenantId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Alternative: Deploy Agent via Agent Endpoint
+# Deploy an agent from template using the agent endpoint
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "fromTemplate": true,
+  "templateId": "{{templateObjectId}}",
+  "name": "deployed-customer-support-agent",
+  "reportingTargets": [
+    {
+      "id": "user123",
+      "attributes": {
+        "type": "user",
+        "email": "manager@example.com",
+        "name": "John Manager"
+      }
+    }
+  ],
+  "configuration": {
+    "maxConcurrentSessions": 10,
+    "responseTimeout": 30
+  }
+}
+
+###
+
+### Create Agent Directly (Not from Template)
+# Create a new agent instance directly without using a template
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "my-custom-agent",
+  "fromTemplate": false,
+  "onboardingJson": "{\"description\":\"My custom agent\"}",
+  "reportingTargets": [],
+  "configuration": {}
+}
+
+###
+
+### List Agents for Tenant
+# Get all agents deployed in a tenant
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Get Specific Agent
+# Get details of a specific agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Update Agent
+# Update agent configuration
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "onboardingJson": "{\"description\":\"Updated agent description\"}",
+  "configuration": {
+    "maxConcurrentSessions": 20
+  }
+}
+
+###
+
+### Delete Agent
+# Delete an agent instance
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+### ============================================
+### Reporting Targets Management (X-Tenant-Id required)
+### ============================================
+
+### 6. Get Reporting Targets for an Agent
+# Get all reporting targets (users, groups, etc.) for a deployed agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/reporting-users
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### 6. Add Reporting Target to Deployed Agent
+# Add a reporting target (user, group, etc.) to a deployed agent
+# Reporting targets can be users, groups, or any entity that receives reports
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/reporting-users
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "id": "user123",
+  "attributes": {
+    "type": "user",
+    "email": "manager@example.com",
+    "name": "John Manager",
+    "role": "team-lead",
+    "department": "customer-support"
+  }
+}
+
+###
+
+### Add Reporting Target - Group Example
+# Add a group as a reporting target
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/reporting-users
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "id": "group-support-team",
+  "attributes": {
+    "type": "group",
+    "name": "Support Team",
+    "description": "Customer support team members",
+    "memberCount": "15"
+  }
+}
+
+###
+
+### Add Reporting Target - Simple User (Minimal Attributes)
+# Add a user with minimal attributes (just ID)
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/reporting-users
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "id": "admin",
+  "attributes": {
+    "type": "user"
+  }
+}
+
+###
+
+### Remove Reporting Target
+# Remove a reporting target from an agent by target ID
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/reporting-users/user123
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### ============================================
+### Complete Workflow Example
+### ============================================
+
+### Step 1: List tenants to find tenant ID
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Step 2: Get tenant details by ID (from Step 1)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Step 3: List available templates (System Admin - no X-Tenant-Id)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Step 3b: List templates for tenant (with X-Tenant-Id)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentTemplates
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Step 4: Update template metadata with category and sample prompts
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (get from list templates response)
+# Category supports multiple values as comma-separated string (e.g., "sales,beta,premium")
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/Metadata
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "category": "sales,beta,premium",
+  "description": "Sales agent template with multiple categories",
+  "icon": "chart-line",
+  "samplePrompts": [
+    {
+      "id": "sales-prompt-1",
+      "title": "Generate Sales Report",
+      "prompt": "Generate a sales report for Q1 2024",
+      "description": "Tests report generation",
+      "icon": "chart",
+      "category": "basic"
+    },
+    {
+      "id": "sales-prompt-2",
+      "title": "Revenue Analysis",
+      "prompt": "Analyze revenue trends for the past 6 months",
+      "description": "Tests revenue analysis capabilities",
+      "icon": "trending-up",
+      "category": "advanced"
+    }
+  ]
+}
+
+###
+
+### Step 5: Deploy template to tenant
+# Note: Uses MongoDB ObjectId (get from list templates response)
+POST {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/deploy?tenantId={{tenantId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Step 6: Add reporting targets to deployed agent
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/reporting-users
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "id": "sales-manager",
+  "attributes": {
+    "type": "user",
+    "email": "sales.manager@example.com",
+    "name": "Sales Manager"
+  }
+}
+
+###
+
+### Step 7: Verify reporting targets were added
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/reporting-users
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### ============================================
+### Alternative: API Key via Query Parameter
+### ============================================
+# You can also pass the API key as a query parameter (less secure, not recommended)
+# Example:
+# GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants?apikey={{apiKey}}
+# Note: Authorization header (Bearer token) is the preferred method
+
+###

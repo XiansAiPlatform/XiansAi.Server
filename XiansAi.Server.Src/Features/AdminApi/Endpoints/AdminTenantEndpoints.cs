@@ -20,7 +20,8 @@ public static class AdminTenantEndpoints
     public static void MapAdminTenantEndpoints(this RouteGroupBuilder adminApiGroup)
     {
         var adminTenantGroup = adminApiGroup.MapGroup("/tenants")
-            .WithTags("AdminAPI - Tenant Management");
+            .WithTags("AdminAPI - Tenant Management")
+            .RequireAuthorization("AdminEndpointAuthPolicy");
 
         // List All Tenants - No X-Tenant-Id header required
         adminTenantGroup.MapGet("", async (

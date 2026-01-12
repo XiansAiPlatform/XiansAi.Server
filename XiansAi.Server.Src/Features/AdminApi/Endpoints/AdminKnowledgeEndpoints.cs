@@ -79,7 +79,8 @@ public static class AdminKnowledgeEndpoints
     public static void MapAdminKnowledgeEndpoints(this RouteGroupBuilder adminApiGroup)
     {
         var adminKnowledgeGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/knowledge")
-            .WithTags("AdminAPI - Knowledge Management");
+            .WithTags("AdminAPI - Knowledge Management")
+            .RequireAuthorization("AdminEndpointAuthPolicy");
 
         // List all knowledge for an agent
         adminKnowledgeGroup.MapGet("", async (

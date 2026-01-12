@@ -134,7 +134,7 @@ public static class AdminTokenEndpoints
     {
         var adminTokenGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/tokens")
             .WithTags("AdminAPI - Agent Tokens")
-;
+            .RequireAuthorization("AdminEndpointAuthPolicy");
 
         // Issue Token
         adminTokenGroup.MapPost("", async (

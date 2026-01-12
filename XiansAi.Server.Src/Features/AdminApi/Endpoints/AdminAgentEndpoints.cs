@@ -34,7 +34,8 @@ public static class AdminAgentEndpoints
     public static void MapAdminAgentEndpoints(this RouteGroupBuilder adminApiGroup)
     {
         var adminAgentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents")
-            .WithTags("AdminAPI - Agent Management");
+            .WithTags("AdminAPI - Agent Management")
+            .RequireAuthorization("AdminEndpointAuthPolicy");
 
         // List Agent Instances
         adminAgentGroup.MapGet("", async (

@@ -30,7 +30,7 @@ public static class AdminOwnershipEndpoints
     {
         var adminOwnershipGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/ownership")
             .WithTags("AdminAPI - Agent Ownership")
-;
+            .RequireAuthorization("AdminEndpointAuthPolicy");
 
         // Get Ownership Information
         adminOwnershipGroup.MapGet("", async (

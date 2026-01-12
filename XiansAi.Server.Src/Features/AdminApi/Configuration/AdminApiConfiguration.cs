@@ -1,7 +1,10 @@
 using Features.AdminApi.Constants;
 using Features.AdminApi.Endpoints;
+using Features.AdminApi.Auth;
 using Features.WebApi.Services;
 using Shared.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Features.AdminApi.Configuration;
 
@@ -23,11 +26,35 @@ public static class AdminApiConfiguration
 
     /// <summary>
     /// Configures authentication for AdminApi.
-    /// AdminApi uses the same authentication as WebApi (OIDC) but with admin role requirements.
+    /// AdminApi supports API key authentication (similar to UserApi) for programmatic access.
     /// </summary>
     public static WebApplicationBuilder AddAdminApiAuth(this WebApplicationBuilder builder)
     {
-        // AdminApi uses the same authentication as WebApi
+        // Configure authentication scheme for AdminApi endpoints
+        builder.Services.AddAuthentication(options =>
+        {
+            // Optionally set a default scheme if desired
+        })
+        .AddScheme<AuthenticationSchemeOptions, AdminEndpointAuthenticationHandler>(
+            "AdminEndpointApiKeyScheme", options => { });
+
+        // Register authorization handler
+        builder.Services.AddScoped<IAuthorizationHandler, ValidAdminEndpointAccessHandler>();
+
+        // Add authorization policy for AdminApi endpoints
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("AdminEndpointAuthPolicy", policy =>
+            {
+                // Important: Only use the AdminEndpointApiKeyScheme to prevent JWT authentication from running first
+                // This ensures API key authentication is properly handled without JWT interference
+                policy.AuthenticationSchemes.Clear();
+                policy.AddAuthenticationSchemes("AdminEndpointApiKeyScheme");
+                policy.RequireAuthenticatedUser();
+                policy.Requirements.Add(new ValidAdminEndpointAccessRequirement());
+            });
+        });
+
         return builder;
     }
 

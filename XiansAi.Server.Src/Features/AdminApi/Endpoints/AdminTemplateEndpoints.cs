@@ -42,15 +42,18 @@ public static class AdminTemplateEndpoints
     /// </summary>
     public static void MapAdminTemplateEndpoints(this RouteGroupBuilder adminApiGroup)
     {
+        var adminTemplateGroup = adminApiGroup.MapGroup("")
+            .WithTags("AdminAPI - Agent Templates")
+            .RequireAuthorization("AdminEndpointAuthPolicy");
+
         // List Agent Templates - System-scoped agents (SystemScoped = true)
-        adminApiGroup.MapGet("/agentTemplates", async (
+        adminTemplateGroup.MapGet("/agentTemplates", async (
             [FromQuery] bool? basicDataOnly,
             [FromServices] ITemplateService templateService) =>
         {
             var result = await templateService.GetSystemScopedAgentDefinitions(basicDataOnly ?? false);
             return result.ToHttpResult();
         })
-        .WithTags("AdminAPI - Agent Templates")
         .WithName("BrowseAgentTemplates")
         .WithOpenApi(operation => new(operation)
         {
@@ -59,7 +62,7 @@ public static class AdminTemplateEndpoints
         });
 
         // List Agent Templates for Tenant
-        adminApiGroup.MapGet("/tenants/{tenantId}/agentTemplates", async (
+        adminTemplateGroup.MapGet("/tenants/{tenantId}/agentTemplates", async (
             string tenantId,
             [FromQuery] bool? basicDataOnly,
             [FromServices] ITemplateService templateService) =>
@@ -67,7 +70,6 @@ public static class AdminTemplateEndpoints
             var result = await templateService.GetSystemScopedAgentDefinitions(basicDataOnly ?? false);
             return result.ToHttpResult();
         })
-        .WithTags("AdminAPI - Agent Templates")
         .WithName("BrowseAgentTemplatesForTenant")
         .WithOpenApi(operation => new(operation)
         {
@@ -76,7 +78,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Get Agent Template Details by ObjectId
-        adminApiGroup.MapGet("/agentTemplates/{templateObjectId}", async (
+        adminTemplateGroup.MapGet("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
             [FromServices] IAgentRepository agentRepository) =>
         {
@@ -89,7 +91,6 @@ public static class AdminTemplateEndpoints
 
             return Results.Ok(template);
         })
-        .WithTags("AdminAPI - Agent Templates")
         .WithName("GetAgentTemplateDetails")
         .WithOpenApi(operation => new(operation)
         {
@@ -98,7 +99,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Update Agent Template Metadata
-        adminApiGroup.MapPatch("/agentTemplates/{templateObjectId}/Metadata", async (
+        adminTemplateGroup.MapPatch("/agentTemplates/{templateObjectId}/Metadata", async (
             string templateObjectId,
             [FromBody] UpdateAgentTemplateRequest request,
             [FromServices] IAgentRepository agentRepository) =>
@@ -156,7 +157,6 @@ public static class AdminTemplateEndpoints
 
             return Results.Ok(existingTemplate);
         })
-        .WithTags("AdminAPI - Agent Templates")
         .WithName("UpdateAgentTemplateMetadata")
         .WithOpenApi(operation => new(operation)
         {
@@ -165,7 +165,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Delete Agent Template
-        adminApiGroup.MapDelete("/agentTemplates/{templateObjectId}", async (
+        adminTemplateGroup.MapDelete("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
             [FromServices] IAgentRepository agentRepository) =>
         {
@@ -184,7 +184,6 @@ public static class AdminTemplateEndpoints
 
             return Results.NoContent();
         })
-        .WithTags("AdminAPI - Agent Templates")
         .WithName("DeleteAgentTemplate")
         .WithOpenApi(operation => new(operation)
         {
@@ -193,7 +192,7 @@ public static class AdminTemplateEndpoints
         });
 
         // Deploy Template to Tenant
-        adminApiGroup.MapPost("/agentTemplates/{templateObjectId}/deploy", async (
+        adminTemplateGroup.MapPost("/agentTemplates/{templateObjectId}/deploy", async (
             string templateObjectId,
             [FromQuery] string tenantId,
             [FromServices] ITemplateService templateService,
@@ -211,7 +210,6 @@ public static class AdminTemplateEndpoints
             var result = await templateService.DeployTemplateToTenant(agentName, tenantId, tenantContext.LoggedInUser ?? "system", null);
             return result.ToHttpResult();
         })
-        .WithTags("AdminAPI - Agent Templates")
         .WithName("DeployTemplateToTenant")
         .WithOpenApi(operation => new(operation)
         {
