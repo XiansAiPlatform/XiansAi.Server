@@ -51,6 +51,10 @@ public class Agent : ModelValidatorBase<Agent>
     [StringLength(1000, ErrorMessage = "Description must not exceed 1000 characters")]
     public string? Description { get; set; }
 
+    [BsonElement("summary")]
+    [StringLength(500, ErrorMessage = "Summary must not exceed 500 characters")]
+    public string? Summary { get; set; }
+
     [BsonElement("version")]
     [StringLength(50, ErrorMessage = "Version must not exceed 50 characters")]
     [RegularExpression(@"^[a-zA-Z0-9._\-]+$", ErrorMessage = "Version contains invalid characters")]
@@ -130,6 +134,7 @@ public class Agent : ModelValidatorBase<Agent>
             SystemScoped = this.SystemScoped,
             OnboardingJson = ValidationHelpers.SanitizeString(this.OnboardingJson),
             Description = ValidationHelpers.SanitizeString(this.Description),
+            Summary = ValidationHelpers.SanitizeString(this.Summary),
             Version = ValidationHelpers.SanitizeString(this.Version),
             Author = ValidationHelpers.SanitizeString(this.Author)
         };

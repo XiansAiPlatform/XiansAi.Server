@@ -42,6 +42,9 @@ public class FlowDefinitionRequest
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 
+    [JsonPropertyName("summary")]
+    public string? Summary { get; set; }
+
     [JsonPropertyName("version")]
     public string? Version { get; set; }
 
@@ -90,6 +93,9 @@ public class CreateAgentRequest
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; set; }
 
     [JsonPropertyName("version")]
     public string? Version { get; set; }
@@ -169,6 +175,7 @@ public class DefinitionsService : IDefinitionsService
             currentUser, 
             request.OnboardingJson,
             request.Description,
+            request.Summary,
             request.Version,
             request.Author);
 
@@ -268,6 +275,7 @@ public class DefinitionsService : IDefinitionsService
             currentUser, 
             request.OnboardingJson,
             request.Description,
+            request.Summary,
             request.Version,
             request.Author);
         
@@ -280,6 +288,7 @@ public class DefinitionsService : IDefinitionsService
             systemScoped = agent.SystemScoped,
             createdBy = agent.CreatedBy,
             description = agent.Description,
+            summary = agent.Summary,
             version = agent.Version,
             author = agent.Author
         });
