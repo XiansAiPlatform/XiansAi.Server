@@ -1,9 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Services.Lib;
-using Features.WebApi.Services;
-using Shared.Utils.Services;
 using Shared.Services;
+using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 

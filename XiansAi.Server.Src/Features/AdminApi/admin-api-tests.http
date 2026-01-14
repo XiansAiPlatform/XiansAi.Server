@@ -1,0 +1,480 @@
+### Variables
+@baseUrl = http://localhost:5005
+@apiVersion = v1
+@tenantId = new-tenant-22
+
+# API Key Authentication
+# Replace with your actual API key (must start with "sk-Xnai-")
+# The API key must belong to a user with SysAdmin role
+@apiKey = sk-Xnai-aH9m_QKEr797ziDXGcHB90gZ8qEMSx-ps5OBxG12utg
+
+# Note: Replace these with actual values from your database
+# tenantObjectId: MongoDB ObjectId from list tenants response (e.g., "6959f2ffb50bd67dcb893910")
+@tenantObjectId = 695b9043d86f4d3206668f07
+# agentName: Agent name (e.g., "my-agent")
+@agentName = My Conversational Agent
+# templateObjectId: MongoDB ObjectId from list templates response (e.g., "6959f2ffb50bd67dcb893911")
+# Use this for GET/PUT/DELETE operations
+@templateObjectId = 69596ca63f39925d6e26b216
+# templateName: Template name (e.g., "My Conversational Agent")
+# Use this for deploy operation (or use templateObjectId - both work)
+@templateName = My Conversational Agent
+# workflowId: Workflow ID (e.g., "workflow-123")
+@workflowId = workflow-123
+# runId: Optional workflow run ID
+@runId = 
+
+### ============================================
+### API Key Authentication
+### ============================================
+# AdminApi uses API key authentication via:
+# 1. Authorization header (preferred): Authorization: Bearer <api-key>
+# 2. Query parameter (fallback): ?apikey=<api-key>
+#
+# The API key must belong to a user with SysAdmin role.
+# Tenant ID can be provided via:
+# - Query parameter: ?tenantId=<tenant-id>
+# - Route parameter: /tenants/{tenantId}/...
+# - X-Tenant-Id header: X-Tenant-Id: <tenant-id>
+
+### ============================================
+### Tenant Management (No X-Tenant-Id required)
+### ============================================
+
+### 1. List All Tenants
+# Get all tenants in the system
+# Note: No X-Tenant-Id header required for this endpoint
+# API key authentication via Authorization header (preferred method)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### 2. Get Tenant by ID
+# Get a specific tenant by MongoDB ObjectId
+# Note: Get the ObjectId from the list tenants response
+# No X-Tenant-Id header required for this endpoint
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### 3. Update Tenant
+# Update tenant properties (name, domain, description, etc.)
+# Note: Replace {{tenantObjectId}} with actual tenant ID from list tenants response
+# No X-Tenant-Id header required for this endpoint
+PUT {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "SUPER Updated Tenant Name",
+  "domain": "updated.SUPER.com",
+  "description": "SUPER Updated tenant description",
+  "enabled": true,
+  "theme": "dark"
+}
+
+###
+
+### Create Tenant
+# Create a new tenant
+# No X-Tenant-Id header required for this endpoint
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "tenantId": "new-tenant-33",
+  "name": "New Tenant",
+  "domain": "newtenant.example.com",
+  "description": "A new tenant for testing",
+  "enabled": true
+}
+
+###
+
+### Delete Tenant
+# Delete a tenant by MongoDB ObjectId
+# No X-Tenant-Id header required for this endpoint
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+### ============================================
+### Agent Template Management
+### ============================================
+
+### System-Level Operations (SysAdmin only, NO X-Tenant-Id required)
+### ============================================
+
+### List All Agent Templates (System Admin)
+# Browse all available agent templates
+# System admin only - NO X-Tenant-Id header required
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Get Agent Template Details (System Admin)
+# Get detailed information about a specific template
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (not template name) - get from list templates response
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Update Agent Template (System Admin)
+# Update an existing agent template (description, onboardingJson, permissions)
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (not template name) - get from list templates response
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "description": "Customer support agent template",
+  "onboardingJson": "{\"description\":\"Customer support agent\"}",
+  "ownerAccess": [],
+  "readAccess": [],
+  "writeAccess": []
+}
+
+###
+
+### Delete Agent Template (System Admin)
+# Delete an agent template
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (not template name) - get from list templates response
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Tenant-Scoped Operations (X-Tenant-Id required)
+### ============================================
+
+### List Agent Templates for Tenant
+# Browse agent templates eligible for a specific tenant
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Future: Eligibility filtering will be implemented
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentTemplates
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### ============================================
+### Agent Deployment (X-Tenant-Id required)
+### ============================================
+
+### 5. Deploy Agent from Template to Tenant
+# Deploy an agent template to a specific tenant
+# This creates a new agent instance in the tenant
+# Note: Uses MongoDB ObjectId - get from list templates response
+# Tenant ID can be provided via query parameter, route parameter, or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/deploy?tenantId={{tenantId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Alternative: Deploy Agent via Agent Endpoint
+# Deploy an agent from template using the agent endpoint
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "fromTemplate": true,
+  "templateId": "{{templateObjectId}}",
+  "name": "deployed-customer-support-agent"
+}
+
+###
+
+### Create Agent Directly (Not from Template)
+# Create a new agent instance directly without using a template
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "my-custom-agent",
+  "fromTemplate": false,
+  "onboardingJson": "{\"description\":\"My custom agent\"}"
+}
+
+###
+
+### List Agents for Tenant
+# Get all agents deployed in a tenant
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Get Specific Agent
+# Get details of a specific agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Update Agent
+# Update agent (name, description, onboardingJson)
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses MongoDB ObjectId (not agent name) - get from list agents response
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "description": "Updated agent description",
+  "onboardingJson": "{\"description\":\"Updated agent description\"}"
+}
+
+###
+
+### Delete Agent
+# Delete an agent instance
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+### ============================================
+### Agent Ownership Management (X-Tenant-Id required)
+### ============================================
+
+### Get Ownership Information
+# Get ownership information for an agent instance
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses MongoDB ObjectId (not agent name) - get from list agents response
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/ownership
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Transfer Ownership
+# Transfer agent instance ownership by adding a new user to OwnerAccess
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses MongoDB ObjectId (not agent name) - get from list agents response
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/ownership
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "newAdminId": "user123"
+}
+
+###
+
+### ============================================
+### Complete Workflow Example
+### ============================================
+
+### Step 1: List tenants to find tenant ID
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Step 2: Get tenant details by ID (from Step 1)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantObjectId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Step 3: List available templates (System Admin - no X-Tenant-Id)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Step 3b: List templates for tenant (with X-Tenant-Id)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentTemplates
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Step 4: Update template
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId (get from list templates response)
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "description": "Sales agent template",
+  "onboardingJson": "{\"description\":\"Sales agent\"}"
+}
+
+###
+
+### Step 5: Deploy template to tenant
+# Note: Uses MongoDB ObjectId (get from list templates response)
+POST {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/deploy?tenantId={{tenantId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Step 6: Get ownership information for deployed agent
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/ownership
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Step 7: Transfer ownership to another user
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentName}}/ownership
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "newAdminId": "sales-manager"
+}
+
+###
+
+### ============================================
+### Workflow Management (X-Tenant-Id required)
+### ============================================
+
+### Activate Workflow (Start/Create New Workflow)
+# Activate (start) a new workflow for a specific tenant
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/activate
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "MyWorkflowType",
+  "agentName": "{{agentName}}",
+  "workflowIdPostfix": "custom-id",
+  "parameters": ["param1", "param2"],
+  "assignment": "assignment-name"
+}
+
+###
+
+### Get Workflow by ID
+# Get detailed information about a specific workflow
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Pass workflowId and optional runId as query parameters
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows?workflowId={{workflowId}}&runId={{runId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### List Workflows
+# Get all workflows with optional filtering and pagination
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Optional query parameters: status, agent, workflowType, user, pageSize, pageToken
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/list?status=RUNNING&agent={{agentName}}&pageSize=10
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Get Workflow Events
+# Get event history for a specific workflow
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Pass workflowId as query parameter
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/events?workflowId={{workflowId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Stream Workflow Events
+# Stream workflow events in real-time using Server-Sent Events (SSE)
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Pass workflowId as query parameter
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/events/stream?workflowId={{workflowId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: text/event-stream
+
+###
+
+### Get Workflow Types
+# Get all unique workflow types for a specific agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Pass agent name as query parameter
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/types?agent={{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Cancel Workflow
+# Cancel a running workflow
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Pass workflowId and force (boolean) as query parameters
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/cancel?workflowId={{workflowId}}&force=false
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### ============================================
+### Alternative: API Key via Query Parameter
+### ============================================
+# You can also pass the API key as a query parameter (less secure, not recommended)
+# Example:
+# GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants?apikey={{apiKey}}
+# Note: Authorization header (Bearer token) is the preferred method
+
+###
+
+

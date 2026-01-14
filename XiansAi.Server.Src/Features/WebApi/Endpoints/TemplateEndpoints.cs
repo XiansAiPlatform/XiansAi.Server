@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
-using Features.WebApi.Services;
+using Shared.Services;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
 
