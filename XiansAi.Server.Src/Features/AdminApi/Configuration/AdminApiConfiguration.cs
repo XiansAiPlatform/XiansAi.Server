@@ -86,9 +86,9 @@ public static class AdminApiConfiguration
         AdminAgentEndpoints.MapAdminAgentEndpoints(adminApiGroup);
         AdminTemplateEndpoints.MapAdminTemplateEndpoints(adminApiGroup);
         AdminOwnershipEndpoints.MapAdminOwnershipEndpoints(adminApiGroup);
-        AdminTokenEndpoints.MapAdminTokenEndpoints(adminApiGroup);
         AdminKnowledgeEndpoints.MapAdminKnowledgeEndpoints(adminApiGroup);
         WorkflowManagementEndpoints.MapWorkflowManagementEndpoints(adminApiGroup);
+        AdminMessagingEndpoints.MapAdminMessagingEndpoints(adminApiGroup);
     }
 }
 

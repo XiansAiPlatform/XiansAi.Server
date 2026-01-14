@@ -23,6 +23,8 @@
 @workflowId = workflow-123
 # runId: Optional workflow run ID
 @runId = 
+# threadId: Thread ID for messaging (e.g., "thread-123")
+@threadId = thread-123 
 
 ### ============================================
 ### API Key Authentication
@@ -464,6 +466,23 @@ POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/cancel?
 Authorization: Bearer {{apiKey}}
 X-Tenant-Id: {{tenantId}}
 Accept: application/json
+
+###
+
+### ============================================
+### Messaging (X-Tenant-Id required)
+### ============================================
+
+### Stream Thread Message Events (SSE)
+# Subscribe to real-time message events for a specific conversation thread using Server-Sent Events (SSE)
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: This is a streaming endpoint that will keep the connection open and send events in real-time
+# Optional query parameter: heartbeatSeconds (1-300 seconds, default: 5)
+# Note: In REST Client, SSE streams may not display properly. Use a dedicated SSE client or browser for testing.
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/messaging/threads/{{threadId}}/events?heartbeatSeconds=5
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: text/event-stream
 
 ###
 

@@ -95,6 +95,9 @@ namespace Features.AdminApi.Auth
                 tenantId = Request.Headers["X-Tenant-Id"].FirstOrDefault() ?? string.Empty;
             }
             
+            // Preserve the original tenantId from request for validation
+            var originalTenantIdFromRequest = tenantId;
+            
             // Note: tenantId is now optional. If not provided, it will be derived from the API key.
             // This prevents IDOR vulnerabilities by ensuring the tenant matches the authenticated credential.
 
@@ -143,11 +146,58 @@ namespace Features.AdminApi.Auth
                         // Get user roles for the tenant context
                         var userRoles = await _userRepository.GetUserRolesAsync(apiKey.CreatedBy, apiKey.TenantId);
                         
+                        // Check if user has SysAdmin or TenantAdmin role
+                        var hasSysAdmin = userRoles.Contains(SystemRoles.SysAdmin);
+                        var hasTenantAdmin = userRoles.Contains(SystemRoles.TenantAdmin);
+                        
+                        // Validate role requirements
+                        if (!hasSysAdmin && !hasTenantAdmin)
+                        {
+                            _logger.LogWarning("User {UserId} does not have SysAdmin or TenantAdmin role. Roles: {Roles}", 
+                                apiKey.CreatedBy, string.Join(", ", userRoles));
+                            return AuthenticateResult.Fail("User does not have required admin role");
+                        }
+                        
+                        // Determine tenantId based on role
+                        string finalTenantId;
+                        if (hasSysAdmin)
+                        {
+                            // SysAdmin must provide tenantId explicitly
+                            if (string.IsNullOrEmpty(originalTenantIdFromRequest))
+                            {
+                                _logger.LogWarning("SysAdmin user {UserId} must provide tenantId as query parameter, route parameter, or X-Tenant-Id header", 
+                                    apiKey.CreatedBy);
+                                return AuthenticateResult.Fail("SysAdmin must provide tenantId");
+                            }
+                            finalTenantId = originalTenantIdFromRequest;
+                        }
+                        else
+                        {
+                            // TenantAdmin only - validate tenantId if provided
+                            if (!string.IsNullOrEmpty(originalTenantIdFromRequest))
+                            {
+                                // If tenantId was provided, it must match the API key's tenantId
+                                if (originalTenantIdFromRequest != apiKey.TenantId)
+                                {
+                                    _logger.LogWarning("TenantAdmin user {UserId} provided tenantId {ProvidedTenantId} that does not match API key tenantId {ApiKeyTenantId}", 
+                                        apiKey.CreatedBy, originalTenantIdFromRequest, apiKey.TenantId);
+                                    return AuthenticateResult.Fail("Tenant ID does not match API key tenant");
+                                }
+                                finalTenantId = originalTenantIdFromRequest;
+                                _logger.LogDebug("TenantAdmin user {UserId} validated tenantId: {TenantId}", 
+                                    apiKey.CreatedBy, finalTenantId);
+                            }
+                            else
+                            {
+                                return AuthenticateResult.Fail("Tenant ID must be provided");
+                            }
+                        }
+                        
                         _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}", 
                             apiKey.CreatedBy, UserType.UserApiKey, string.Join(", ", userRoles));
                         _tenantContext.LoggedInUser = apiKey.CreatedBy;
                         _tenantContext.UserType = UserType.UserApiKey;
-                        _tenantContext.TenantId = tenantId;
+                        _tenantContext.TenantId = finalTenantId;
                         _tenantContext.UserRoles = userRoles.ToArray();
                         _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
                         _tenantContext.Authorization = accessToken;
@@ -155,13 +205,14 @@ namespace Features.AdminApi.Auth
                         var claims = new List<Claim>
                         {
                             new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                            new Claim("TenantId", apiKey.TenantId)
+                            new Claim("TenantId", finalTenantId)
                         };
 
                         var identity = new ClaimsIdentity(claims, Scheme.Name);
                         var principal = new ClaimsPrincipal(identity);
                         var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                        _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, apiKey.TenantId);
+                        _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 
+                            apiKey.CreatedBy, finalTenantId, string.Join(", ", userRoles));
 
                         return AuthenticateResult.Success(ticket);
                     }
