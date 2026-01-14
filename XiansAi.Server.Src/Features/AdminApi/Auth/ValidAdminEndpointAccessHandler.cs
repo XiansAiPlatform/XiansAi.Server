@@ -130,15 +130,19 @@ namespace Features.AdminApi.Auth
                 string finalTenantId;
                 if (hasSysAdmin)
                 {
-                    // SysAdmin must provide tenantId explicitly
-                    if (string.IsNullOrEmpty(tenantIdFromRequest))
+                    // SysAdmin: use provided tenantId if available, otherwise use API key's tenantId
+                    if (!string.IsNullOrEmpty(tenantIdFromRequest))
                     {
-                        _logger.LogWarning("SysAdmin user {UserId} must provide tenantId as query parameter, route parameter, or X-Tenant-Id header", 
-                            loggedInUser);
-                        context.Fail();
-                        return;
+                        finalTenantId = tenantIdFromRequest;
+                        _logger.LogDebug("SysAdmin user {UserId} using provided tenantId: {TenantId}", 
+                            loggedInUser, finalTenantId);
                     }
-                    finalTenantId = tenantIdFromRequest;
+                    else
+                    {
+                        finalTenantId = apiKey.TenantId;
+                        _logger.LogDebug("SysAdmin user {UserId} using API key tenantId: {TenantId}", 
+                            loggedInUser, finalTenantId);
+                    }
                 }
                 else
                 {
@@ -159,10 +163,10 @@ namespace Features.AdminApi.Auth
                     }
                     else
                     {
-                        _logger.LogWarning("TenantAdmin user {UserId} must provide tenantId as query parameter, route parameter, or X-Tenant-Id header", 
-                            loggedInUser);
-                        context.Fail();
-                        return;
+                        // No tenantId provided - use API key's tenantId
+                        finalTenantId = apiKey.TenantId;
+                        _logger.LogDebug("TenantAdmin user {UserId} using API key tenantId: {TenantId}", 
+                            loggedInUser, finalTenantId);
                     }
                 }
                 

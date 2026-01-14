@@ -73,9 +73,9 @@ Content-Type: application/json
 Accept: application/json
 
 {
-  "name": "SUPER Updated Tenant Name",
+  "name": "SUPER Updated Tenant Name1",
   "domain": "updated.SUPER.com",
-  "description": "SUPER Updated tenant description",
+  "description": "SUPER Updated tenant description - hello",
   "enabled": true,
   "theme": "dark"
 }
@@ -387,6 +387,25 @@ Accept: application/json
 ### Activate Workflow (Start/Create New Workflow)
 # Activate (start) a new workflow for a specific tenant
 # Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Optional userId query parameter to override the default user ID from authentication context
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/activate?userId=admin-user-123
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "MyWorkflowType",
+  "agentName": "{{agentName}}",
+  "workflowIdPostfix": "custom-id",
+  "parameters": ["param1", "param2"],
+  "assignment": "assignment-name"
+}
+
+###
+
+### Activate Workflow (without userId - uses authenticated user)
+# Activate (start) a new workflow without specifying userId (uses authenticated user from context)
 POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/activate
 Authorization: Bearer {{apiKey}}
 X-Tenant-Id: {{tenantId}}

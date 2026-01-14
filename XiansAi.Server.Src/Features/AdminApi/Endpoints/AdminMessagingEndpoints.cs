@@ -59,7 +59,7 @@ public static class AdminMessagingEndpoints
 
             return await streamHandler.HandleStreamAsync();
         })
-        .WithName("StreamThreadMessageEvents")
+        .WithName("StreamThreadMessageEventsForAdminApi")
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Stream Thread Message Events",

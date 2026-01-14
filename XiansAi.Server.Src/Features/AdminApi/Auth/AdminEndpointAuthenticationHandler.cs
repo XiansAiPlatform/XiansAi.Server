@@ -162,14 +162,19 @@ namespace Features.AdminApi.Auth
                         string finalTenantId;
                         if (hasSysAdmin)
                         {
-                            // SysAdmin must provide tenantId explicitly
-                            if (string.IsNullOrEmpty(originalTenantIdFromRequest))
+                            // SysAdmin: use provided tenantId if available, otherwise use API key's tenantId
+                            if (!string.IsNullOrEmpty(originalTenantIdFromRequest))
                             {
-                                _logger.LogWarning("SysAdmin user {UserId} must provide tenantId as query parameter, route parameter, or X-Tenant-Id header", 
-                                    apiKey.CreatedBy);
-                                return AuthenticateResult.Fail("SysAdmin must provide tenantId");
+                                finalTenantId = originalTenantIdFromRequest;
+                                _logger.LogDebug("SysAdmin user {UserId} using provided tenantId: {TenantId}", 
+                                    apiKey.CreatedBy, finalTenantId);
                             }
-                            finalTenantId = originalTenantIdFromRequest;
+                            else
+                            {
+                                finalTenantId = apiKey.TenantId;
+                                _logger.LogDebug("SysAdmin user {UserId} using API key tenantId: {TenantId}", 
+                                    apiKey.CreatedBy, finalTenantId);
+                            }
                         }
                         else
                         {
@@ -189,7 +194,10 @@ namespace Features.AdminApi.Auth
                             }
                             else
                             {
-                                return AuthenticateResult.Fail("Tenant ID must be provided");
+                                // No tenantId provided - use API key's tenantId
+                                finalTenantId = apiKey.TenantId;
+                                _logger.LogDebug("TenantAdmin user {UserId} using API key tenantId: {TenantId}", 
+                                    apiKey.CreatedBy, finalTenantId);
                             }
                         }
                         

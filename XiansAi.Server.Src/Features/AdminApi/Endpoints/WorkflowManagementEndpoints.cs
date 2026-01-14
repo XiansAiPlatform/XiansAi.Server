@@ -25,16 +25,17 @@ public static class WorkflowManagementEndpoints
         adminWorkflowGroup.MapPost("/activate", async (
             string tenantId,
             [FromBody] WorkflowRequest request,
+            [FromQuery] string? userId,
             [FromServices] IWorkflowStarterService workflowStarterService) =>
         {
-            var result = await workflowStarterService.HandleStartWorkflow(request);
+            var result = await workflowStarterService.HandleStartWorkflow(request, userId);
             return result.ToHttpResult();
         })
         .WithName("ActivateWorkflow")
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Activate Workflow",
-            Description = "Activate (start) a new workflow for a specific tenant. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
+            Description = "Activate (start) a new workflow for a specific tenant. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header. Optional userId query parameter to override the default user ID from authentication context."
         });
 
         // Get Workflow by ID
