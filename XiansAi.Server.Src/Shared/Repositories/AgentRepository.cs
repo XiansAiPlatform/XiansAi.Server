@@ -29,7 +29,7 @@ public interface IAgentRepository
     Task<Agent?> GetByNameInternalAsync(string name, string? tenant);
     Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
-    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? version = null, string? author = null);
+    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
     Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
@@ -410,7 +410,7 @@ public class AgentRepository : IAgentRepository
         }
     }
 
-    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? version = null, string? author = null)
+    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -430,6 +430,7 @@ public class AgentRepository : IAgentRepository
                 WriteAccess = new List<string>(),
                 OnboardingJson = onboardingJson,
                 Description = description,
+                Summary = summary,
                 Version = version,
                 Author = author
             };
@@ -467,6 +468,13 @@ public class AgentRepository : IAgentRepository
                     {
                         updates.Add(updateBuilder.Set(x => x.Description, description));
                         existingAgent.Description = description;
+                        hasUpdates = true;
+                    }
+                    
+                    if (!string.IsNullOrEmpty(summary))
+                    {
+                        updates.Add(updateBuilder.Set(x => x.Summary, summary));
+                        existingAgent.Summary = summary;
                         hasUpdates = true;
                     }
                     
