@@ -68,7 +68,7 @@ public static class AdminApiConfiguration
     public static WebApplication UseAdminApiEndpoints(this WebApplication app)
     {
         // Map v1 endpoints (current version)
-        MapAdminApiVersion(app, "v1");
+        MapAdminApiVersion(app, AdminApiConstants.CurrentVersion);
         
         return app;
     }

@@ -176,7 +176,7 @@ namespace Features.AdminApi.Auth
                 _tenantContext.UserType = UserType.UserApiKey;
                 _tenantContext.TenantId = finalTenantId;
                 _tenantContext.UserRoles = userRoles.ToArray();
-                _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
+                _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
                 _tenantContext.Authorization = accessToken;
 
                 _logger.LogInformation("Successfully authorized AdminApi Endpoint Connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 

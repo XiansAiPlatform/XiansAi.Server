@@ -1,0 +1,86 @@
+### Variables
+@baseUrl = http://localhost:5005
+@apiVersion = v1
+@tenantId = new-tenant-22
+
+# API Key Authentication
+# Replace with your actual API key (must start with "sk-Xnai-")
+# The API key must belong to a user with SysAdmin role
+@apiKey = sk-Xnai-aH9m_QKEr797ziDXGcHB90gZ8qEMSx-ps5OBxG12utg
+
+# threadId: Thread ID for messaging (e.g., "thread-123")
+@threadId = 6968d6e13500e135b6f01af7
+
+### ============================================
+### API Key Authentication
+### ============================================
+# AdminApi uses API key authentication via:
+# 1. Authorization header (preferred): Authorization: Bearer <api-key>
+# 2. Query parameter (fallback): ?apikey=<api-key>
+#
+# The API key must belong to a user with SysAdmin role.
+# Tenant ID can be provided via:
+# - Query parameter: ?tenantId=<tenant-id>
+# - Route parameter: /tenants/{tenantId}/...
+# - X-Tenant-Id header: X-Tenant-Id: <tenant-id>
+
+### ============================================
+### Messaging (X-Tenant-Id required)
+### ============================================
+
+### Stream Thread Message Events (SSE)
+# Subscribe to real-time message events for a specific conversation thread using Server-Sent Events (SSE)
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: This is a streaming endpoint that will keep the connection open and send events in real-time
+# Optional query parameter: heartbeatSeconds (1-300 seconds, default: 5)
+# Note: In REST Client, SSE streams may not display properly. Use a dedicated SSE client or browser for testing.
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/messaging/threads/{{threadId}}/events?heartbeatSeconds=30
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: text/event-stream
+
+###
+
+### Send Data to Workflow
+# Send data to a workflow for a specific tenant
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/messaging/inbound/data
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+
+{
+  "agent": "Percy v5-dev-kav-main",
+  "workflowType": "Percy v5-dev-kav-main: Super Agent",
+  "workflowId": "{{tenantId}}:Percy v5-dev-kav-main: Super Agent",
+  "participantId": "test2",
+  "text": null,
+  "data": {
+    "key": "value",
+    "message": "Test data message"
+  },
+  "threadId": "{{threadId}}"
+}
+
+###
+
+### Send Chat to Workflow
+# Send a chat message to a workflow for a specific tenant
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/messaging/inbound/chat
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+
+{
+  "agent": "Percy v5-dev-kav-main",
+  "workflowType": "Percy v5-dev-kav-main: Super Agent",
+  "workflowId": "{{tenantId}}:Percy v5-dev-kav-main: Super Agent",
+  "participantId": "test2",
+  "text": "hi im kavish",
+  "data": null,
+  "threadId": "{{threadId}}"
+}
+
+###
+

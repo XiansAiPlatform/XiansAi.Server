@@ -3,6 +3,10 @@ using Microsoft.AspNetCore.Routing;
 using Features.UserApi.Services;
 using Features.WebApi.Utils;
 using Shared.Auth;
+using Shared.Services;
+using Shared.Utils.Services;
+using Shared.Repositories;
+using Shared.Utils;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -18,6 +22,20 @@ public class AdminMessagingEndpointsLogger { }
 /// </summary>
 public static class AdminMessagingEndpoints
 {
+    private static void SetAuthorizationFromHeader(ChatOrDataRequest request, HttpContext context)
+    {
+        if (request.Authorization == null)
+        {
+            var authHeader = context.Request.Headers["Authorization"].ToString();
+            var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+            
+            if (success && token != null)
+            {
+                request.Authorization = token;
+            }
+        }
+    }
+
     /// <summary>
     /// Maps all AdminApi messaging endpoints.
     /// </summary>
@@ -64,6 +82,42 @@ public static class AdminMessagingEndpoints
         {
             Summary = "Stream Thread Message Events",
             Description = "Subscribe to real-time message events for a specific conversation thread using Server-Sent Events (SSE). Requires threadId parameter. Optional heartbeatSeconds parameter (1-300 seconds, default 5) for heartbeat interval. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
+        });
+
+        // Send Data to workflow endpoint
+        adminMessagingGroup.MapPost("/inbound/data", async (
+            string tenantId,
+            [FromBody] ChatOrDataRequest request,
+            [FromServices] IMessageService messageService,
+            HttpContext context) =>
+        {
+            SetAuthorizationFromHeader(request, context);
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Data);
+            return result.ToHttpResult();
+        })
+        .WithName("SendDataToWorkflowForAdminApi")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Send Data to Workflow",
+            Description = "Send data to a workflow for a specific tenant. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
+        });
+
+        // Send Chat to workflow endpoint
+        adminMessagingGroup.MapPost("/inbound/chat", async (
+            string tenantId,
+            [FromBody] ChatOrDataRequest request,
+            [FromServices] IMessageService messageService,
+            HttpContext context) =>
+        {
+            SetAuthorizationFromHeader(request, context);
+            var result = await messageService.ProcessIncomingMessage(request, MessageType.Chat);
+            return result.ToHttpResult();
+        })
+        .WithName("SendChatToWorkflowForAdminApi")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Send Chat to Workflow",
+            Description = "Send a chat message to a workflow for a specific tenant. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
         });
     }
 }

@@ -119,29 +119,23 @@ namespace Features.AdminApi.Auth
                         // Look up API key
                         ApiKey? apiKey;
                         
+                        // Always look up API key by token first to establish identity
+                        // This allows SysAdmins (Tenant=System) to access other tenants (Tenant=Target)
+                        apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken);
+
+                        if (apiKey == null)
+                        {
+                            _logger.LogWarning("Invalid API key submitted");
+                            return AuthenticateResult.Fail("Invalid API key");
+                        }
+
                         if (string.IsNullOrEmpty(tenantId))
                         {
-                            // No tenantId provided - look up API key without tenant scoping
+                            // No tenantId provided - use API key's tenantId
                             // This prevents IDOR by deriving tenant from the authenticated credential
-                            apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken);
-                            if (apiKey == null)
-                            {
-                                _logger.LogWarning("Invalid API key submitted");
-                                return AuthenticateResult.Fail("Invalid API key");
-                            }
-                            // Set tenantId from the API key
                             tenantId = apiKey.TenantId;
                         }
-                        else
-                        {
-                            // tenantId provided (legacy support) - validate it matches the API key
-                            apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
-                            if (apiKey == null || apiKey.TenantId != tenantId)
-                            {
-                                _logger.LogWarning("API key does not match provided tenant {TenantId}", tenantId);
-                                return AuthenticateResult.Fail("Invalid API key or Tenant ID");
-                            }
-                        }
+                        // If tenantId was provided, we validate it against roles later in this method
 
                         // Get user roles for the tenant context
                         var userRoles = await _userRepository.GetUserRolesAsync(apiKey.CreatedBy, apiKey.TenantId);
@@ -207,7 +201,7 @@ namespace Features.AdminApi.Auth
                         _tenantContext.UserType = UserType.UserApiKey;
                         _tenantContext.TenantId = finalTenantId;
                         _tenantContext.UserRoles = userRoles.ToArray();
-                        _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
+                        _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
                         _tenantContext.Authorization = accessToken;
 
                         var claims = new List<Claim>
