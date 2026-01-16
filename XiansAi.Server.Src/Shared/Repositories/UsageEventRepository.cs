@@ -134,18 +134,35 @@ public class UsageEventRepository : IUsageEventRepository
                 // Trim the agent name to handle leading/trailing spaces
                 var trimmedAgentName = agentName.Trim();
                 
-                // Use $expr to extract agent name from workflow_id and compare
-                // We need $and to combine regular field matches with $expr
+                // Use $expr to extract workflow name from workflow_id and compare
+                // Handles both formats: "tenant:AgentName:FlowName" and "AgentName:FlowName"
+                // If workflow_id has 3+ parts, workflow name is at index 2; if 2 parts, workflow name is at index 1
                 var agentNameCondition = new BsonDocument("$expr", new BsonDocument
                 {
                     { "$eq", new BsonArray
                         {
                             new BsonDocument("$trim", new BsonDocument
                             {
-                                { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                                { "input", new BsonDocument("$cond", new BsonDocument
                                     {
-                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                                        2
+                                        { "if", new BsonDocument("$gte", new BsonArray
+                                            {
+                                                new BsonDocument("$size", new BsonDocument("$split", new BsonArray { "$workflow_id", ":" })),
+                                                3
+                                            })
+                                        },
+                                        { "then", new BsonDocument("$arrayElemAt", new BsonArray
+                                            {
+                                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                                2
+                                            })
+                                        },
+                                        { "else", new BsonDocument("$arrayElemAt", new BsonArray
+                                            {
+                                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                                1
+                                            })
+                                        }
                                     })
                                 }
                             }),
@@ -229,9 +246,10 @@ public class UsageEventRepository : IUsageEventRepository
     }
 
     /// <summary>
-    /// Extracts agent name from workflow_id.
-    /// Format: tenant:AgentName:FlowName:optionalId
-    /// Returns the agent name (second part after splitting by ':')
+    /// Extracts workflow name from workflow_id (for display/grouping purposes).
+    /// Handles two formats:
+    /// - With tenant: "tenant:AgentName:FlowName" -> workflow name is at index 2
+    /// - Without tenant (A2A): "AgentName:FlowName" -> workflow name is at index 1
     /// </summary>
     private static string ExtractAgentName(string? workflowId)
     {
@@ -239,8 +257,16 @@ public class UsageEventRepository : IUsageEventRepository
             return "Unknown";
 
         var parts = workflowId.Split(':');
-        if (parts.Length >= 2)
-            return parts[1]; // Agent name is the second part
+        if (parts.Length >= 3)
+        {
+            // Format: tenant:AgentName:FlowName (with tenant prefix)
+            return parts[2].Trim(); // Workflow name is the third part
+        }
+        else if (parts.Length >= 2)
+        {
+            // Format: AgentName:FlowName (A2A context, no tenant prefix)
+            return parts[1].Trim(); // Workflow name is the second part
+        }
         
         return "Unknown";
     }
@@ -270,7 +296,8 @@ public class UsageEventRepository : IUsageEventRepository
                 { "_id", new BsonDocument("$dateToString", new BsonDocument
                     {
                         { "format", dateFormat },
-                        { "date", "$created_at" }
+                        { "date", "$created_at" },
+                        { "timezone", "UTC" }
                     })
                 },
                 { "primaryCount", new BsonDocument("$sum", "$total_tokens") },
@@ -303,10 +330,26 @@ public class UsageEventRepository : IUsageEventRepository
             {
                 { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                        { "input", new BsonDocument("$cond", new BsonDocument
                             {
-                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                                2
+                                { "if", new BsonDocument("$gte", new BsonArray
+                                    {
+                                        new BsonDocument("$size", new BsonDocument("$split", new BsonArray { "$workflow_id", ":" })),
+                                        3
+                                    })
+                                },
+                                { "then", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        2
+                                    })
+                                },
+                                { "else", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        1
+                                    })
+                                }
                             })
                         }
                     })
@@ -331,10 +374,26 @@ public class UsageEventRepository : IUsageEventRepository
             {
                 { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                        { "input", new BsonDocument("$cond", new BsonDocument
                             {
-                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                                2
+                                { "if", new BsonDocument("$gte", new BsonArray
+                                    {
+                                        new BsonDocument("$size", new BsonDocument("$split", new BsonArray { "$workflow_id", ":" })),
+                                        3
+                                    })
+                                },
+                                { "then", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        2
+                                    })
+                                },
+                                { "else", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        1
+                                    })
+                                }
                             })
                         }
                     })
@@ -347,7 +406,8 @@ public class UsageEventRepository : IUsageEventRepository
                         { "date", new BsonDocument("$dateToString", new BsonDocument
                             {
                                 { "format", dateFormat },
-                                { "date", "$created_at" }
+                                { "date", "$created_at" },
+                                { "timezone", "UTC" }
                             })
                         },
                         { "agent", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) }
@@ -396,7 +456,8 @@ public class UsageEventRepository : IUsageEventRepository
                 { "_id", new BsonDocument("$dateToString", new BsonDocument
                     {
                         { "format", dateFormat },
-                        { "date", "$created_at" }
+                        { "date", "$created_at" },
+                        { "timezone", "UTC" }
                     })
                 },
                 { "primaryCount", new BsonDocument("$sum", "$message_count") },
@@ -425,10 +486,26 @@ public class UsageEventRepository : IUsageEventRepository
             {
                 { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                        { "input", new BsonDocument("$cond", new BsonDocument
                             {
-                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                                2
+                                { "if", new BsonDocument("$gte", new BsonArray
+                                    {
+                                        new BsonDocument("$size", new BsonDocument("$split", new BsonArray { "$workflow_id", ":" })),
+                                        3
+                                    })
+                                },
+                                { "then", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        2
+                                    })
+                                },
+                                { "else", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        1
+                                    })
+                                }
                             })
                         }
                     })
@@ -451,10 +528,26 @@ public class UsageEventRepository : IUsageEventRepository
             {
                 { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                        { "input", new BsonDocument("$cond", new BsonDocument
                             {
-                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                                2
+                                { "if", new BsonDocument("$gte", new BsonArray
+                                    {
+                                        new BsonDocument("$size", new BsonDocument("$split", new BsonArray { "$workflow_id", ":" })),
+                                        3
+                                    })
+                                },
+                                { "then", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        2
+                                    })
+                                },
+                                { "else", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        1
+                                    })
+                                }
                             })
                         }
                     })
@@ -467,7 +560,8 @@ public class UsageEventRepository : IUsageEventRepository
                         { "date", new BsonDocument("$dateToString", new BsonDocument
                             {
                                 { "format", dateFormat },
-                                { "date", "$created_at" }
+                                { "date", "$created_at" },
+                                { "timezone", "UTC" }
                             })
                         },
                         { "agent", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) }
@@ -516,7 +610,8 @@ public class UsageEventRepository : IUsageEventRepository
                 { "_id", new BsonDocument("$dateToString", new BsonDocument
                     {
                         { "format", dateFormat },
-                        { "date", "$created_at" }
+                        { "date", "$created_at" },
+                        { "timezone", "UTC" }
                     })
                 },
                 { "primaryCount", new BsonDocument("$sum", "$response_time_ms") },
@@ -545,10 +640,26 @@ public class UsageEventRepository : IUsageEventRepository
             {
                 { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                        { "input", new BsonDocument("$cond", new BsonDocument
                             {
-                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                                2
+                                { "if", new BsonDocument("$gte", new BsonArray
+                                    {
+                                        new BsonDocument("$size", new BsonDocument("$split", new BsonArray { "$workflow_id", ":" })),
+                                        3
+                                    })
+                                },
+                                { "then", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        2
+                                    })
+                                },
+                                { "else", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        1
+                                    })
+                                }
                             })
                         }
                     })
@@ -571,10 +682,26 @@ public class UsageEventRepository : IUsageEventRepository
             {
                 { "agent_name", new BsonDocument("$trim", new BsonDocument
                     {
-                        { "input", new BsonDocument("$arrayElemAt", new BsonArray
+                        { "input", new BsonDocument("$cond", new BsonDocument
                             {
-                                new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
-                                2
+                                { "if", new BsonDocument("$gte", new BsonArray
+                                    {
+                                        new BsonDocument("$size", new BsonDocument("$split", new BsonArray { "$workflow_id", ":" })),
+                                        3
+                                    })
+                                },
+                                { "then", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        2
+                                    })
+                                },
+                                { "else", new BsonDocument("$arrayElemAt", new BsonArray
+                                    {
+                                        new BsonDocument("$split", new BsonArray { "$workflow_id", ":" }),
+                                        1
+                                    })
+                                }
                             })
                         }
                     })
@@ -587,7 +714,8 @@ public class UsageEventRepository : IUsageEventRepository
                         { "date", new BsonDocument("$dateToString", new BsonDocument
                             {
                                 { "format", dateFormat },
-                                { "date", "$created_at" }
+                                { "date", "$created_at" },
+                                { "timezone", "UTC" }
                             })
                         },
                         { "agent", new BsonDocument("$ifNull", new BsonArray { "$agent_name", "Unknown" }) }
@@ -611,10 +739,10 @@ public class UsageEventRepository : IUsageEventRepository
 
     private static string GetDateFormat(string groupBy) => groupBy switch
     {
-        "hour" => "%Y-%m-%dT%H:00:00",  // Hour: 2025-12-08T14:00:00
-        "week" => "%Y-%U",               // Week: 2025-49 (Sunday-based)
-        "month" => "%Y-%m",              // Month: 2025-12
-        _ => "%Y-%m-%d"                  // Day: 2025-12-08 (default)
+        "hour" => "%Y-%m-%dT%H:00:00Z",  // Hour: 2025-12-08T14:00:00Z
+        "week" => "%Y-%U",                // Week: 2025-49 (Sunday-based) - no Z needed
+        "month" => "%Y-%m",               // Month: 2025-12 - no Z needed
+        _ => "%Y-%m-%dZ"                  // Day: 2025-12-08Z (default)
     };
 
     /// <summary>
@@ -816,10 +944,11 @@ public class UsageEventRepository : IUsageEventRepository
     {
         return groupBy switch
         {
-            "hour" => DateTime.Parse(dateString, null, System.Globalization.DateTimeStyles.RoundtripKind),
+            // For hour: parse ISO string with 'Z' suffix as UTC
+            "hour" => DateTime.ParseExact(dateString, "yyyy-MM-ddTHH:mm:ssZ", null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal),
             "week" => ParseWeekDate(dateString),
-            "month" => DateTime.ParseExact(dateString, "yyyy-MM", null, System.Globalization.DateTimeStyles.None),
-            _ => DateTime.ParseExact(dateString, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None)
+            "month" => DateTime.SpecifyKind(DateTime.ParseExact(dateString, "yyyy-MM", null, System.Globalization.DateTimeStyles.None), DateTimeKind.Utc),
+            _ => DateTime.SpecifyKind(DateTime.ParseExact(dateString.TrimEnd('Z'), "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None), DateTimeKind.Utc)
         };
     }
 
@@ -830,8 +959,8 @@ public class UsageEventRepository : IUsageEventRepository
         var year = int.Parse(parts[0]);
         var week = int.Parse(parts[1]);
         
-        // Calculate the first day of the year
-        var jan1 = new DateTime(year, 1, 1);
+        // Calculate the first day of the year in UTC
+        var jan1 = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         
         // Find the first Sunday of the year
         var daysUntilSunday = ((int)DayOfWeek.Sunday - (int)jan1.DayOfWeek + 7) % 7;
