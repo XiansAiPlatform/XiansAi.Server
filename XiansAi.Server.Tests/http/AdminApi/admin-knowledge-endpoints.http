@@ -1,0 +1,134 @@
+### Variables
+@baseUrl = http://localhost:5005
+@apiVersion = v1
+@tenantId = default
+
+# API Key Authentication
+# Replace with your actual API key (must start with "sk-Xnai-")
+# The API key must belong to a user with SysAdmin role
+@apiKey = sk-Xnai-aH9m_QKEr797ziDXGcHB90gZ8qEMSx-ps5OBxG12utg
+
+# Note: Replace these with actual values from your database
+# agentId: MongoDB ObjectId from list agents response (e.g., "6959f2ffb50bd67dcb893910")
+@agentId = 6967484255229f26307c705f
+# knowledgeId: MongoDB ObjectId from list knowledge response (e.g., "6959f2ffb50bd67dcb893911")
+@knowledgeId = 696788c73500e135b6f01ab6
+# knowledgeName: Knowledge name (e.g., "my-knowledge")
+@knowledgeName = my-knowledge
+
+### ============================================
+### API Key Authentication
+### ============================================
+# AdminApi uses API key authentication via:
+# 1. Authorization header (preferred): Authorization: Bearer <api-key>
+# 2. Query parameter (fallback): ?apikey=<api-key>
+#
+# The API key must belong to a user with SysAdmin role.
+# Tenant ID can be provided via:
+# - Query parameter: ?tenantId=<tenant-id>
+# - Route parameter: /tenants/{tenantId}/...
+# - X-Tenant-Id header: X-Tenant-Id: <tenant-id>
+
+### ============================================
+### Knowledge Management (X-Tenant-Id required)
+### ============================================
+# Knowledge is only connected to deployed agents (in the agents collection).
+# All operations require tenant ID and agent ID.
+
+### List Agent Knowledge
+# Get all knowledge items associated with a deployed agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Only deployed agents (in the agents collection) can have knowledge
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentId}}/knowledge
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Get Knowledge by ID
+# Get a specific knowledge item by its ID for a deployed agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses MongoDB ObjectId - get from list knowledge response
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentId}}/knowledge/{{knowledgeId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Create Knowledge
+# Create a new knowledge item for a deployed agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# If a knowledge item with the same content hash already exists, returns the existing item
+# Requires: owner, TenantAdmin, or SysAdmin permissions
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentId}}/knowledge
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "my-knowledge-item",
+  "content": "This is the knowledge content",
+  "type": "text",
+  "version": "optional-version-identifier"
+}
+
+###
+
+### Update Knowledge (creates new version)
+# Update knowledge by creating a new version
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# This maintains version history. The old version remains in the database.
+# Requires: owner, TenantAdmin, or SysAdmin permissions
+# Note: Uses MongoDB ObjectId - get from list knowledge response
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentId}}/knowledge/{{knowledgeId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "content": "Updated knowledge content",
+  "type": "text",
+  "version": "optional-version-identifier"
+}
+
+###
+
+### Delete Knowledge
+# Delete a specific knowledge item by its ID
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Requires: owner, TenantAdmin, or SysAdmin permissions
+# Note: Uses MongoDB ObjectId - get from list knowledge response
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentId}}/knowledge/{{knowledgeId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Get Knowledge Versions
+# Get all versions of a knowledge item with a specific name for an agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses knowledge name (not ID) in the URL path
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentId}}/knowledge/{{knowledgeName}}/versions
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Delete All Knowledge Versions
+# Delete all versions of a knowledge item with a specific name for an agent
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Requires: owner, TenantAdmin, or SysAdmin permissions
+# Note: Uses knowledge name (not ID) in the URL path
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agents/{{agentId}}/knowledge/{{knowledgeName}}/versions
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+

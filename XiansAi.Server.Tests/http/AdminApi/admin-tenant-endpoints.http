@@ -1,0 +1,96 @@
+### Variables
+@baseUrl = http://localhost:5005
+@apiVersion = v1
+@tenantId =new-tenant-43
+
+# API Key Authentication
+# Replace with your actual API key (must start with "sk-Xnai-")
+# The API key must belong to a user with SysAdmin role
+@apiKey = sk-Xnai-aH9m_QKEr797ziDXGcHB90gZ8qEMSx-ps5OBxG12utg
+
+# Note: Replace these with actual values from your database
+# tenantObjectId: MongoDB ObjectId from list tenants response (e.g., "6959f2ffb50bd67dcb893910")
+@tenantObjectId = 695b9043d86f4d3206668f07
+
+### ============================================
+### API Key Authentication
+### ============================================
+# AdminApi uses API key authentication via:
+# 1. Authorization header (preferred): Authorization: Bearer <api-key>
+# 2. Query parameter (fallback): ?apikey=<api-key>
+#
+# The API key must belong to a user with SysAdmin role.
+# Tenant ID can be provided via:
+# - Query parameter: ?tenantId=<tenant-id>
+# - Route parameter: /tenants/{tenantId}/...
+# - X-Tenant-Id header: X-Tenant-Id: <tenant-id>
+
+### ============================================
+### Tenant Management (No X-Tenant-Id required)
+### ============================================
+
+### 1. List All Tenants
+# Get all tenants in the system
+# Note: No X-Tenant-Id header required for this endpoint
+# API key authentication via Authorization header (preferred method)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### 2. Get Tenant by ID
+# Get a specific tenant by tenantId (e.g., 'spacex01')
+# Note: No X-Tenant-Id header required for this endpoint
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### 3. Create Tenant
+# Create a new tenant
+# Note: No X-Tenant-Id header required for this endpoint
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "tenantId": "new-tenant-63",
+  "name": "New Tenant",
+  "domain": "newtenant.example.com",
+  "description": "A new tenant for testing",
+  "enabled": true
+}
+
+###
+
+### 4. Update Tenant
+# Update tenant properties (name, domain, description, etc.)
+# Note: Uses tenantId (e.g., 'spacex01') in the URL path
+# No X-Tenant-Id header required for this endpoint
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Updated Tenant Name",
+  "domain": "updated.example.com",
+  "description": "Updated tenant description",
+  "enabled": true,
+  "theme": "dark"
+}
+
+###
+
+### 5. Delete Tenant
+# Delete a tenant by tenantId (e.g., 'spacex01')
+# Note: No X-Tenant-Id header required for this endpoint
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+

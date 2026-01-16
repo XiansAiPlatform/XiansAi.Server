@@ -19,6 +19,7 @@ public class AgentWithDefinitions
 public interface IAgentRepository
 {
     Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles);
+    Task<Agent?> GetByIdAsync(string id, string userId, string[] userRoles);
     Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string? tenant);
     Task CreateAsync(Agent agent);
     Task<bool> UpdateAsync(string id, Agent agent, string userId, string[] userRoles);
@@ -27,6 +28,7 @@ public interface IAgentRepository
     
     // Internal methods without permission checking (for system use)
     Task<Agent?> GetByNameInternalAsync(string name, string? tenant);
+    Task<Agent?> GetByIdInternalAsync(string id);
     Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
     Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null);
@@ -89,6 +91,36 @@ public class AgentRepository : IAgentRepository
             }
             return await _agents.Find(x => x.Name == name && x.Tenant == tenant).FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAgentByName");
+    }
+
+    public async Task<Agent?> GetByIdAsync(string id, string userId, string[] userRoles)
+    {
+        var agent = await GetByIdInternalAsync(id);
+        if (agent == null)
+        {
+            return null;
+        }
+
+        // Check if user has at least read permission
+        if (!CheckPermissions(agent, PermissionLevel.Read))
+        {
+            _logger.LogWarning("User {UserId} attempted to access agent {AgentId} without read permission", userId, id);
+            return null;
+        }
+
+        return agent;
+    }
+
+    public async Task<Agent?> GetByIdInternalAsync(string id)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            if (!ObjectId.TryParse(id, out _))
+            {
+                return null;
+            }
+            return await _agents.Find(x => x.Id == id).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAgentById");
     }
 
     public async Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string? tenant)

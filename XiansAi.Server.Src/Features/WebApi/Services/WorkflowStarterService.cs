@@ -39,7 +39,7 @@ public class WorkflowStartResult
 
 public interface IWorkflowStarterService
 {
-    Task<ServiceResult<WorkflowStartResult>> HandleStartWorkflow(WorkflowRequest request);
+    Task<ServiceResult<WorkflowStartResult>> HandleStartWorkflow(WorkflowRequest request, string? userId = null);
 }
 
 /// <summary>
@@ -80,8 +80,9 @@ public class WorkflowStarterService : IWorkflowStarterService
     /// Handles the request to start a workflow.
     /// </summary>
     /// <param name="request">The workflow request containing workflow configuration.</param>
+    /// <param name="userId">Optional user ID to override the default user ID from authentication context.</param>
     /// <returns>A ServiceResult containing the workflow start result.</returns>
-    public async Task<ServiceResult<WorkflowStartResult>> HandleStartWorkflow(WorkflowRequest request)
+    public async Task<ServiceResult<WorkflowStartResult>> HandleStartWorkflow(WorkflowRequest request, string? userId = null)
     {
         _logger.LogInformation("Received workflow start request of type {WorkflowType} with data {Request}", 
             request?.WorkflowType ?? "null", JsonSerializer.Serialize(request));
@@ -137,7 +138,8 @@ public class WorkflowStarterService : IWorkflowStarterService
                 systemScoped,
                 request.WorkflowType, 
                 request.WorkflowIdPostfix, 
-                _tenantContext);
+                _tenantContext,
+                userId);
             
             _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
             var handle = await StartWorkflowAsync(convertedParameters, options, request.WorkflowType);
