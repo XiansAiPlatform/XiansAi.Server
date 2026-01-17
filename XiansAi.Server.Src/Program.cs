@@ -239,7 +239,10 @@ public class Program
         switch (serviceType)
         {
             case ServiceType.WebApi:
+                // Configure AdminApi middleware and endpoints (WebApi includes AdminApi)
+                app.UseAdminApiMiddleware();
                 app.UseWebApiEndpoints();
+                app.UseAdminApiEndpoints();
                 break;
             
             case ServiceType.LibApi:
@@ -256,6 +259,7 @@ public class Program
                 app.UseWebApiEndpoints();                
                 app.UseAgentApiEndpoints(loggerFactory);
                 app.UseUserApiEndpoints();
+                app.UseAdminApiMiddleware();
                 app.UseAdminApiEndpoints();
                 app.UsePublicApiEndpoints();
                 break;

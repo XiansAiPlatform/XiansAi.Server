@@ -110,6 +110,12 @@ public static class AdminKnowledgeEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.Json(new { error = "BadRequest", message = "Agent tenant is not set" }, statusCode: 400);
+                }
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -167,6 +173,12 @@ public static class AdminKnowledgeEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.Json(new { error = "BadRequest", message = "Agent tenant is not set" }, statusCode: 400);
+                }
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -222,6 +234,12 @@ public static class AdminKnowledgeEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.Json(new { error = "BadRequest", message = "Agent tenant is not set" }, statusCode: 400);
+                }
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -255,7 +273,10 @@ public static class AdminKnowledgeEndpoints
                 if (result is Microsoft.AspNetCore.Http.HttpResults.Ok<Knowledge> okResult)
                 {
                     var knowledge = okResult.Value;
-                    return Results.Created(AdminApiConstants.BuildVersionedPath($"tenants/{tenantId}/agents/{agentId}/knowledge/{knowledge.Id}"), knowledge);
+                    if (knowledge != null)
+                    {
+                        return Results.Created(AdminApiConstants.BuildVersionedPath($"tenants/{tenantId}/agents/{agentId}/knowledge/{knowledge.Id}"), knowledge);
+                    }
                 }
                 
                 return result;
@@ -303,6 +324,12 @@ public static class AdminKnowledgeEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.Json(new { error = "BadRequest", message = "Agent tenant is not set" }, statusCode: 400);
+                }
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -406,6 +433,12 @@ public static class AdminKnowledgeEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.Json(new { error = "BadRequest", message = "Agent tenant is not set" }, statusCode: 400);
+                }
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -473,6 +506,12 @@ public static class AdminKnowledgeEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.Json(new { error = "BadRequest", message = "Agent tenant is not set" }, statusCode: 400);
+                }
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
@@ -533,6 +572,12 @@ public static class AdminKnowledgeEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.Json(new { error = "BadRequest", message = "Agent tenant is not set" }, statusCode: 400);
+                }
                 
                 // Validate tenant matches parsed tenant
                 if (!parsedTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))

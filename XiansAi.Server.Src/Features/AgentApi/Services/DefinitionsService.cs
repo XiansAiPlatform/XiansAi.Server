@@ -77,6 +77,12 @@ public class ParameterDefinitionRequest
     [Required]
     [JsonPropertyName("type")]
     public required string Type { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("optional")]
+    public bool Optional { get; set; } = false;
 }
 
 public class CreateAgentRequest
@@ -320,6 +326,8 @@ public class DefinitionsService : IDefinitionsService
             Markdown = string.IsNullOrEmpty(existingDefinition?.Markdown) ? string.Empty : existingDefinition.Markdown,
             SystemScoped = systemScoped,
             Tenant = systemScoped ? null : _tenantContext.TenantId,
+            Summary = request.Summary,
+            OnboardingJson = request.OnboardingJson,
             ActivityDefinitions = request.ActivityDefinitions.Select(a => new ActivityDefinition
             {
                 ActivityName = a.ActivityName,
@@ -328,13 +336,17 @@ public class DefinitionsService : IDefinitionsService
                 ParameterDefinitions = a.ParameterDefinitions.Select(p => new ParameterDefinition
                 {
                     Name = p.Name,
-                    Type = p.Type
+                    Type = p.Type,
+                    Description = p.Description,
+                    Optional = p.Optional
                 }).ToList()
             }).ToList(),
             ParameterDefinitions = request.ParameterDefinitions.Select(p => new ParameterDefinition
             {
                 Name = p.Name,
-                Type = p.Type
+                Type = p.Type,
+                Description = p.Description,
+                Optional = p.Optional
             }).ToList(),
             CreatedAt = existingDefinition?.CreatedAt ?? DateTime.UtcNow,
             CreatedBy = existingDefinition?.CreatedBy ?? userId,

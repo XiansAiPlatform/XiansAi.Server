@@ -50,6 +50,12 @@ public static class AdminOwnershipEndpoints
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
 
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.BadRequest(new { error = "Agent tenant is not set" });
+                }
+
                 // Validate tenant matches (unless SysAdmin)
                 if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
                     !parsedTenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
@@ -103,6 +109,12 @@ public static class AdminOwnershipEndpoints
                 }
                 var parsedTenant = agent.Tenant;
                 var agentName = agent.Name;
+
+                // Validate parsedTenant is not null
+                if (string.IsNullOrEmpty(parsedTenant))
+                {
+                    return Results.BadRequest(new { error = "Agent tenant is not set" });
+                }
 
                 // Validate tenant matches (unless SysAdmin)
                 if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 

@@ -120,9 +120,10 @@ public class WorkflowStarterService : IWorkflowStarterService
             object[] convertedParameters;
             try
             {
-                convertedParameters = request.Parameters != null && request.Parameters.Length > 0
-                    ? WorkflowParameterConverter.ConvertParameters(request.Parameters, flowDefinition.ParameterDefinitions)
-                    : Array.Empty<object>();
+                // Always call the converter to handle validation of required vs optional parameters
+                convertedParameters = WorkflowParameterConverter.ConvertParameters(
+                    request.Parameters ?? Array.Empty<string>(), 
+                    flowDefinition.ParameterDefinitions);
                 
                 _logger.LogDebug("Converted {Count} parameters for workflow {WorkflowType}", 
                     convertedParameters.Length, request.WorkflowType);
@@ -212,13 +213,8 @@ public class WorkflowStarterService : IWorkflowStarterService
             errors.Add("Assignment name cannot exceed 100 characters");
         }
 
-        if (request.Parameters != null)
-        {
-            if (request.Parameters.Any(p => p == null))
-            {
-                errors.Add("Workflow parameters cannot contain null values");
-            }
-        }
+        // Note: Parameter validation (including null/empty checks for optional parameters)
+        // is handled by WorkflowParameterConverter.ConvertParameters()
 
         return errors;
     }

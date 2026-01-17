@@ -1,6 +1,7 @@
 using Features.AdminApi.Constants;
 using Features.AdminApi.Endpoints;
 using Features.AdminApi.Auth;
+using Features.AdminApi.Utils;
 using Features.WebApi.Services;
 using Shared.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -59,6 +60,18 @@ public static class AdminApiConfiguration
         });
 
         return builder;
+    }
+
+    /// <summary>
+    /// Configures AdminApi middleware (debug logging, etc.)
+    /// Should be called before UseAdminApiEndpoints.
+    /// </summary>
+    public static WebApplication UseAdminApiMiddleware(this WebApplication app)
+    {
+        // Add debug logging middleware (only active when AdminApi:EnableDebugLogging = true)
+        app.UseMiddleware<AdminApiDebugLoggingMiddleware>();
+        
+        return app;
     }
 
     /// <summary>
