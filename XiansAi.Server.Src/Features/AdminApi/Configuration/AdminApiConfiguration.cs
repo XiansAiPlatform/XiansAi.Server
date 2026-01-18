@@ -24,6 +24,7 @@ public static class AdminApiConfiguration
     {
         // Register AdminApi specific services
         builder.Services.AddScoped<IAdminAgentService, AdminAgentService>();
+        builder.Services.AddScoped<IActivationService, ActivationService>();
         // AdminApi reuses existing services from WebApi
         return builder;
     }
@@ -96,7 +97,8 @@ public static class AdminApiConfiguration
         var adminApiGroup = app.MapGroup(AdminApiConstants.GetVersionedBasePath(version));
         
         AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
-        AdminAgentEndpoints.MapAdminAgentEndpoints(adminApiGroup);
+        AdminAgentDeploymentEndpoints.MapAdminAgentDeploymentsEndpoints(adminApiGroup);
+        AdminAgentActivationEndpoints.MapAdminAgentActivationEndpoints(adminApiGroup);
         AdminTemplateEndpoints.MapAdminTemplateEndpoints(adminApiGroup);
         AdminOwnershipEndpoints.MapAdminOwnershipEndpoints(adminApiGroup);
         AdminKnowledgeEndpoints.MapAdminKnowledgeEndpoints(adminApiGroup);

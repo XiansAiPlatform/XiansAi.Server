@@ -43,6 +43,7 @@ public class AgentDeletionService : IAgentDeletionService
     private readonly ITenantContext _tenantContext;
     private readonly IScheduleService _scheduleService;
     private readonly IDatabaseService _databaseService;
+    private readonly IActivationRepository _activationRepository;
     private readonly ILogger<AgentService> _logger;
 
     private IMongoCollection<BsonDocument> LogsCollection => _databaseService.GetDatabaseAsync().Result.GetCollection<BsonDocument>("logs");
@@ -58,6 +59,7 @@ public class AgentDeletionService : IAgentDeletionService
         ITenantContext tenantContext,
         IScheduleService scheduleService,
         IDatabaseService databaseService,
+        IActivationRepository activationRepository,
         ILogger<AgentService> logger)
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -69,6 +71,7 @@ public class AgentDeletionService : IAgentDeletionService
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _scheduleService = scheduleService ?? throw new ArgumentNullException(nameof(scheduleService));
         _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
+        _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -109,6 +112,18 @@ public class AgentDeletionService : IAgentDeletionService
             if (agent == null)
             {
                 return ServiceResult<AgentDeletionResult>.NotFound("Agent not found");
+            }
+
+            // Check if there are any activations for this agent
+            if (tenantId != null)
+            {
+                var activations = await _activationRepository.GetByAgentNameAsync(sanitizedAgentName, tenantId);
+                if (activations != null && activations.Count > 0)
+                {
+                    _logger.LogWarning("Cannot delete agent {AgentName} - {Count} activation(s) exist", sanitizedAgentName, activations.Count);
+                    return ServiceResult<AgentDeletionResult>.Conflict(
+                        $"Cannot delete agent '{sanitizedAgentName}' because it has {activations.Count} activation(s). Please delete all activations first.");
+                }
             }
 
             var result = new AgentDeletionResult();

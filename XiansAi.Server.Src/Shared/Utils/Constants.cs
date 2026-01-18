@@ -6,6 +6,7 @@ public static class Constants {
     public const string UserIdKey = "userId";
     public const string AgentKey = "agent";
     public const string SystemScopedKey = "systemScoped";
+    public const string IdPostfixKey = "idPostfix";
     public const string RootAdmin= "RootAdmin";
     public const string TenantAdmin= "TenantAdmin";
     public const string SIGNAL_INBOUND_CHAT_OR_DATA = "HandleInboundChatOrData";

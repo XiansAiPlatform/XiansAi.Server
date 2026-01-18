@@ -1,5 +1,6 @@
 using Temporalio.Client;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 using Shared.Utils.Temporal;

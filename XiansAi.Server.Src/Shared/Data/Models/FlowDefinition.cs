@@ -70,6 +70,9 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
     [BsonElement("system_scoped")]
     public bool SystemScoped { get; set; } = false;
 
+    [BsonElement("activable")]
+    public bool Activable { get; set; } = false;
+
     [BsonElement("summary")]
     [StringLength(500, ErrorMessage = "Summary cannot exceed 500 characters")]
     public string? Summary { get; set; }
@@ -93,6 +96,7 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
             CreatedBy = ValidationHelpers.SanitizeString(CreatedBy),
             Tenant = ValidationHelpers.SanitizeString(Tenant),
             SystemScoped = SystemScoped,
+            Activable = Activable,
             Summary = ValidationHelpers.SanitizeString(Summary),
             OnboardingJson = ValidationHelpers.SanitizeString(OnboardingJson),
             CreatedAt = CreatedAt,
