@@ -16,14 +16,13 @@ public interface ITaskService
 {
     Task<ServiceResult<TaskInfoResponse>> GetTaskById(string workflowId);
     Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft);
-    Task<ServiceResult<object>> CompleteTask(string workflowId);
-    Task<ServiceResult<object>> RejectTask(string workflowId, string rejectionMessage);
+    Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment);
     Task<ServiceResult<PaginatedTasksResponse>> GetTasks(int? pageSize, string? pageToken, string? agent, string? participantId, string? status);
 }
 
 /// <summary>
 /// Service for managing human-in-the-loop task workflows.
-/// Provides methods to query, update, complete, and reject tasks.
+/// Provides methods to query, update, and perform actions on tasks.
 /// </summary>
 public class TaskService : ITaskService
 {
@@ -33,14 +32,6 @@ public class TaskService : ITaskService
     private readonly IAgentRepository _agentRepository;
     private readonly IPermissionsService _permissionsService;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TaskService"/> class.
-    /// </summary>
-    /// <param name="clientFactory">The Temporal client factory for workflow operations.</param>
-    /// <param name="logger">Logger for recording operational events.</param>
-    /// <param name="tenantContext">Context containing tenant-specific information.</param>
-    /// <param name="agentRepository">The agent repository for accessing agent information.</param>
-    /// <param name="permissionsService">The permissions service for checking permissions.</param>
     public TaskService(
         ITemporalClientFactory clientFactory,
         ILogger<TaskService> logger,
@@ -58,8 +49,6 @@ public class TaskService : ITaskService
     /// <summary>
     /// Retrieves task information by workflow ID.
     /// </summary>
-    /// <param name="workflowId">The workflow ID of the task.</param>
-    /// <returns>A result containing the task information if found.</returns>
     public async Task<ServiceResult<TaskInfoResponse>> GetTaskById(string workflowId)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
@@ -91,10 +80,24 @@ public class TaskService : ITaskService
             string? taskId = parsedTaskInfo.TryGetProperty("TaskId", out var taskIdProp) ? taskIdProp.GetString() : null;
             string? title = parsedTaskInfo.TryGetProperty("Title", out var titleProp) ? titleProp.GetString() : null;
             string? description = parsedTaskInfo.TryGetProperty("Description", out var descProp) ? descProp.GetString() : null;
-            string? currentDraft = parsedTaskInfo.TryGetProperty("CurrentDraft", out var draftProp) ? draftProp.GetString() : null;
+            string? initialWork = parsedTaskInfo.TryGetProperty("InitialWork", out var initialWorkProp) ? initialWorkProp.GetString() : null;
+            string? finalWork = parsedTaskInfo.TryGetProperty("FinalWork", out var finalWorkProp) ? finalWorkProp.GetString() : null;
             string? participantId = parsedTaskInfo.TryGetProperty("ParticipantId", out var partProp) ? partProp.GetString() : null;
-            bool isCompleted = parsedTaskInfo.TryGetProperty("IsCompleted", out var completedProp) ? completedProp.GetBoolean() : false;
-            string? rejectionReason = parsedTaskInfo.TryGetProperty("RejectionReason", out var rejectProp) ? rejectProp.GetString() : null;
+            bool isCompleted = parsedTaskInfo.TryGetProperty("IsCompleted", out var completedProp) && completedProp.GetBoolean();
+            
+            // Extract new action-based fields
+            string? performedAction = parsedTaskInfo.TryGetProperty("PerformedAction", out var actionProp) ? actionProp.GetString() : null;
+            string? comment = parsedTaskInfo.TryGetProperty("Comment", out var commentProp) ? commentProp.GetString() : null;
+            
+            // Extract available actions
+            string[]? availableActions = null;
+            if (parsedTaskInfo.TryGetProperty("AvailableActions", out var actionsProp) && actionsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                availableActions = actionsProp.EnumerateArray()
+                    .Where(a => a.ValueKind == System.Text.Json.JsonValueKind.String)
+                    .Select(a => a.GetString()!)
+                    .ToArray();
+            }
 
             // Extract metadata if present
             Dictionary<string, object>? metadata = null;
@@ -111,11 +114,14 @@ public class TaskService : ITaskService
                 RunId = workflowDescription.RunId ?? "unknown",
                 Title = title ?? "Untitled Task",
                 Description = description ?? "",
-                CurrentDraft = currentDraft,
+                InitialWork = initialWork,
+                FinalWork = finalWork,
                 ParticipantId = participantId,
                 Status = workflowDescription.Status.ToString(),
                 IsCompleted = isCompleted,
-                Error = rejectionReason,
+                AvailableActions = availableActions,
+                PerformedAction = performedAction,
+                Comment = comment,
                 StartTime = workflowDescription.StartTime,
                 CloseTime = workflowDescription.CloseTime,
                 Metadata = metadata
@@ -135,9 +141,6 @@ public class TaskService : ITaskService
     /// <summary>
     /// Updates the draft work for a task.
     /// </summary>
-    /// <param name="workflowId">The workflow ID of the task.</param>
-    /// <param name="updatedDraft">The updated draft content.</param>
-    /// <returns>A result indicating success or failure.</returns>
     public async Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
@@ -168,90 +171,48 @@ public class TaskService : ITaskService
     }
 
     /// <summary>
-    /// Marks a task as completed.
+    /// Performs an action on a task with an optional comment.
     /// </summary>
-    /// <param name="workflowId">The workflow ID of the task.</param>
-    /// <returns>A result indicating success or failure.</returns>
-    public async Task<ServiceResult<object>> CompleteTask(string workflowId)
+    public async Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
         {
-            _logger.LogWarning("Attempt to complete task with empty workflowId");
+            _logger.LogWarning("Attempt to perform action with empty workflowId");
             return ServiceResult<object>.BadRequest("WorkflowId cannot be empty");
+        }
+
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            _logger.LogWarning("Attempt to perform action with empty action for task {WorkflowId}", workflowId);
+            return ServiceResult<object>.BadRequest("Action cannot be empty");
         }
 
         try
         {
-            _logger.LogInformation("Completing task {WorkflowId}", workflowId);
+            _logger.LogInformation("Performing action '{Action}' on task {WorkflowId} with comment: {Comment}", 
+                action, workflowId, comment ?? "(none)");
             var client = await _clientFactory.GetClientAsync();
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 
-            // Send CompleteTask signal
-            await workflowHandle.SignalAsync("CompleteTask", Array.Empty<object>());
+            // Send PerformAction signal with TaskActionRequest payload
+            var actionRequest = new { Action = action, Comment = comment };
+            await workflowHandle.SignalAsync("PerformAction", new object[] { actionRequest });
 
-            _logger.LogInformation("Successfully completed task {WorkflowId}", workflowId);
-            return ServiceResult<object>.Success(new { message = "Task completed successfully" });
+            _logger.LogInformation("Successfully performed action '{Action}' on task {WorkflowId}", action, workflowId);
+            return ServiceResult<object>.Success(new { message = $"Action '{action}' performed successfully" });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to complete task {WorkflowId}. Error: {ErrorMessage}",
-                workflowId, ex.Message);
-            return ServiceResult<object>.BadRequest($"Failed to complete task: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Rejects a task with a rejection message.
-    /// </summary>
-    /// <param name="workflowId">The workflow ID of the task.</param>
-    /// <param name="rejectionMessage">The reason for rejection.</param>
-    /// <returns>A result indicating success or failure.</returns>
-    public async Task<ServiceResult<object>> RejectTask(string workflowId, string rejectionMessage)
-    {
-        if (string.IsNullOrWhiteSpace(workflowId))
-        {
-            _logger.LogWarning("Attempt to reject task with empty workflowId");
-            return ServiceResult<object>.BadRequest("WorkflowId cannot be empty");
-        }
-
-        if (string.IsNullOrWhiteSpace(rejectionMessage))
-        {
-            _logger.LogWarning("Attempt to reject task {WorkflowId} with empty rejection message", workflowId);
-            return ServiceResult<object>.BadRequest("Rejection message cannot be empty");
-        }
-
-        try
-        {
-            _logger.LogInformation("Rejecting task {WorkflowId} with message: {RejectionMessage}", 
-                workflowId, rejectionMessage);
-            var client = await _clientFactory.GetClientAsync();
-
-            var workflowHandle = client.GetWorkflowHandle(workflowId);
-
-            // Send RejectTask signal
-            await workflowHandle.SignalAsync("RejectTask", new object[] { rejectionMessage });
-
-            _logger.LogInformation("Successfully rejected task {WorkflowId}", workflowId);
-            return ServiceResult<object>.Success(new { message = "Task rejected successfully" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to reject task {WorkflowId}. Error: {ErrorMessage}",
-                workflowId, ex.Message);
-            return ServiceResult<object>.BadRequest($"Failed to reject task: {ex.Message}");
+            _logger.LogError(ex, "Failed to perform action '{Action}' on task {WorkflowId}. Error: {ErrorMessage}",
+                action, workflowId, ex.Message);
+            return ServiceResult<object>.BadRequest($"Failed to perform action: {ex.Message}");
         }
     }
 
     /// <summary>
     /// Retrieves a paginated list of tasks with optional filtering.
     /// </summary>
-    /// <param name="pageSize">Number of items per page (default: 20, max: 100).</param>
-    /// <param name="pageToken">Token for pagination continuation.</param>
-    /// <param name="agent">Optional agent filter.</param>
-    /// <param name="participantId">Optional participant/user ID filter.</param>
-    /// <param name="status">Optional workflow execution status filter.</param>
-    /// <returns>A result containing the paginated list of tasks.</returns>
     public async Task<ServiceResult<PaginatedTasksResponse>> GetTasks(
         int? pageSize, 
         string? pageToken, 
@@ -410,14 +371,21 @@ public class TaskService : ITaskService
 
     /// <summary>
     /// Maps a Temporal workflow execution to a task info response.
+    /// Extracts available actions from the workflow memo.
     /// </summary>
-    /// <param name="workflow">The workflow execution to map.</param>
-    /// <returns>A TaskInfoResponse containing the mapped data.</returns>
     private TaskInfoResponse MapWorkflowToTaskInfo(WorkflowExecution workflow)
     {
         var taskTitle = ExtractMemoValue(workflow.Memo, Constants.TaskTitleKey) ?? "Untitled Task";
         var taskDescription = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionKey) ?? "";
         var participantId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
+        var taskActionsStr = ExtractMemoValue(workflow.Memo, Constants.TaskActionsKey);
+
+        // Parse available actions from comma-separated string
+        string[]? availableActions = null;
+        if (!string.IsNullOrEmpty(taskActionsStr))
+        {
+            availableActions = taskActionsStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
 
         // Extract taskId from workflow ID (format: tenantId:WorkflowType:taskId)
         var taskId = workflow.Id.Split(':').LastOrDefault() ?? workflow.Id;
@@ -432,6 +400,7 @@ public class TaskService : ITaskService
             ParticipantId = participantId,
             Status = workflow.Status.ToString(),
             IsCompleted = workflow.Status != Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running,
+            AvailableActions = availableActions,
             StartTime = workflow.StartTime,
             CloseTime = workflow.CloseTime
         };
@@ -440,9 +409,6 @@ public class TaskService : ITaskService
     /// <summary>
     /// Extracts a value from the workflow memo dictionary.
     /// </summary>
-    /// <param name="memo">The memo dictionary containing workflow metadata.</param>
-    /// <param name="key">The key to extract.</param>
-    /// <returns>The extracted string value, or null if not found.</returns>
     private string? ExtractMemoValue(IReadOnlyDictionary<string, Temporalio.Converters.IEncodedRawValue> memo, string key)
     {
         if (memo.TryGetValue(key, out var memoValue))
@@ -452,4 +418,3 @@ public class TaskService : ITaskService
         return null;
     }
 }
-

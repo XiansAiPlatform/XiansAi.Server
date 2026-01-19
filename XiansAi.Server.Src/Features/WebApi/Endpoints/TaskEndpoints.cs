@@ -27,7 +27,7 @@ public static class TaskEndpoints
         .WithOpenApi(operation => 
         {
             operation.Summary = "Get task by workflow ID";
-            operation.Description = "Retrieves detailed information about a specific task by its workflow ID (pass as query parameter)";
+            operation.Description = "Retrieves detailed information about a specific task by its workflow ID (pass as query parameter). Returns available actions for the task.";
             return operation;
         });
 
@@ -48,7 +48,8 @@ public static class TaskEndpoints
             operation.Summary = "Get paginated list of tasks";
             operation.Description = @"Retrieves a paginated list of tasks filtered by tenant. 
                 Optional filters: agent (agent name), participantId (user ID), status (workflow execution status: Running, Completed, Failed, Terminated, Canceled, etc.). 
-                Pagination: pageSize (default: 20, max: 100), pageToken (continuation token from previous response).";
+                Pagination: pageSize (default: 20, max: 100), pageToken (continuation token from previous response).
+                Each task includes available actions from the workflow memo.";
             return operation;
         });
 
@@ -69,36 +70,20 @@ public static class TaskEndpoints
             return operation;
         });
 
-        taskGroup.MapPost("/complete", async (
+        taskGroup.MapPost("/action", async (
             [FromQuery] string workflowId,
+            [FromBody] PerformActionRequest request,
             [FromServices] ITaskService taskService) => 
         {
-            var result = await taskService.CompleteTask(workflowId);
+            var result = await taskService.PerformAction(workflowId, request.Action, request.Comment);
             return result.ToHttpResult();
         })
-        .WithName("Complete Task")
+        .WithName("Perform Task Action")
         .WithOpenApi(operation => 
         {
-            operation.Summary = "Complete a task";
-            operation.Description = "Marks a task as completed (pass workflowId as query parameter). This signals the workflow that the human has finished their work and the workflow can continue.";
-            return operation;
-        });
-
-        taskGroup.MapPost("/reject", async (
-            [FromQuery] string workflowId,
-            [FromBody] RejectTaskRequest request,
-            [FromServices] ITaskService taskService) => 
-        {
-            var result = await taskService.RejectTask(workflowId, request.RejectionMessage);
-            return result.ToHttpResult();
-        })
-        .WithName("Reject Task")
-        .WithOpenApi(operation => 
-        {
-            operation.Summary = "Reject a task";
-            operation.Description = "Rejects a task with a reason (pass workflowId as query parameter). This signals the workflow that the human cannot or will not complete the task.";
+            operation.Summary = "Perform an action on a task";
+            operation.Description = "Performs an action on a task (e.g., approve, reject, hold). The action should be one of the task's available actions. An optional comment can be provided.";
             return operation;
         });
     }
 }
-

@@ -220,7 +220,7 @@ public class ActivationCleanupService : IActivationCleanupService
     }
 
     /// <summary>
-    /// Cancels all running workflows by their IDs.
+    /// Cancels all running workflows by their IDs, then verifies and terminates any that remain running.
     /// </summary>
     public async Task<ServiceResult<WorkflowCleanupResult>> CancelWorkflowsAsync(
         List<string> workflowIds, 
@@ -240,33 +240,31 @@ public class ActivationCleanupService : IActivationCleanupService
         try
         {
             var client = await _temporalClientService.GetClientAsync(tenantId);
+            var workflowsToVerify = new List<string>();
 
+            // Step 1: Send cancellation requests to all running workflows
             foreach (var workflowId in workflowIds)
             {
                 try
                 {
                     var handle = client.GetWorkflowHandle(workflowId);
                     
-                    // Check if workflow is still running before attempting to cancel
                     try
                     {
                         var description = await handle.DescribeAsync();
                         var status = description.Status;
 
-                        // Only try to cancel if the workflow is in a running state
                         if (status == Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running ||
                             status == Temporalio.Api.Enums.V1.WorkflowExecutionStatus.ContinuedAsNew)
                         {
                             await handle.CancelAsync();
-                            result.CancelledWorkflowIds.Add(workflowId);
-                            result.CancelledCount++;
-                            _logger.LogInformation("Cancelled workflow {WorkflowId}", workflowId);
+                            workflowsToVerify.Add(workflowId);
+                            _logger.LogInformation("Sent cancellation request to workflow {WorkflowId}", workflowId);
                         }
                         else
                         {
                             _logger.LogDebug("Workflow {WorkflowId} is not running (status: {Status}), skipping cancellation", 
                                 workflowId, status);
-                            // Don't count as failed since it's already stopped
                             result.CancelledWorkflowIds.Add(workflowId);
                             result.CancelledCount++;
                         }
@@ -277,17 +275,61 @@ public class ActivationCleanupService : IActivationCleanupService
                             "Failed to describe workflow {WorkflowId}, attempting cancellation anyway", 
                             workflowId);
                         
-                        // Try to cancel anyway
                         await handle.CancelAsync();
-                        result.CancelledWorkflowIds.Add(workflowId);
-                        result.CancelledCount++;
+                        workflowsToVerify.Add(workflowId);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to cancel workflow {WorkflowId}", workflowId);
+                    _logger.LogWarning(ex, "Failed to send cancellation to workflow {WorkflowId}", workflowId);
                     result.FailedWorkflowIds.Add(workflowId);
                     result.FailedCount++;
+                }
+            }
+
+            // Step 2: Wait for workflows to gracefully shut down
+            if (workflowsToVerify.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Waiting for {Count} workflows to gracefully shut down...", 
+                    workflowsToVerify.Count);
+                await Task.Delay(TimeSpan.FromSeconds(3));
+
+                // Step 3: Verify and terminate any workflows still running
+                foreach (var workflowId in workflowsToVerify)
+                {
+                    try
+                    {
+                        var handle = client.GetWorkflowHandle(workflowId);
+                        var description = await handle.DescribeAsync();
+                        var status = description.Status;
+
+                        if (status == Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running ||
+                            status == Temporalio.Api.Enums.V1.WorkflowExecutionStatus.ContinuedAsNew)
+                        {
+                            _logger.LogWarning(
+                                "Workflow {WorkflowId} still running after cancellation, terminating forcefully", 
+                                workflowId);
+                            
+                            await handle.TerminateAsync("Forcefully terminated during deactivation cleanup");
+                            result.CancelledWorkflowIds.Add(workflowId);
+                            result.CancelledCount++;
+                            _logger.LogInformation("Terminated workflow {WorkflowId}", workflowId);
+                        }
+                        else
+                        {
+                            result.CancelledWorkflowIds.Add(workflowId);
+                            result.CancelledCount++;
+                            _logger.LogInformation("Workflow {WorkflowId} successfully cancelled (status: {Status})", 
+                                workflowId, status);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to verify/terminate workflow {WorkflowId}", workflowId);
+                        result.FailedWorkflowIds.Add(workflowId);
+                        result.FailedCount++;
+                    }
                 }
             }
 

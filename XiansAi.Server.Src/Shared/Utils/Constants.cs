@@ -15,4 +15,5 @@ public static class Constants {
     public const string UPDATE_INBOUND_CHAT_OR_DATA = "HandleInboundChatOrDataSync";
     public const string TaskTitleKey = "taskTitle";
     public const string TaskDescriptionKey = "taskDescription";
+    public const string TaskActionsKey = "taskActions";
 }
