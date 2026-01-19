@@ -88,7 +88,7 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false);
+    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc");
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
     Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
     Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null);
@@ -197,12 +197,12 @@ public class MessageService : IMessageService
         return ServiceResult<List<ConversationMessage>>.Success(messages);
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false)
+    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc")
     {
         try
         {
-            _logger.LogInformation("Getting message history for workflowId {WorkflowId}, participant {ParticipantId}, page {Page}, pageSize {PageSize}",
-                workflowId, participantId, page, pageSize);
+            _logger.LogInformation("Getting message history for workflowId {WorkflowId}, participant {ParticipantId}, page {Page}, pageSize {PageSize}, sortOrder {SortOrder}",
+                workflowId, participantId, page, pageSize, sortOrder);
 
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
@@ -223,7 +223,7 @@ public class MessageService : IMessageService
             }
 
             // Get messages directly by workflow and participant IDs
-            var messages = await _conversationRepository.GetMessagesByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize, scope);
+            var messages = await _conversationRepository.GetMessagesByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize, scope, sortOrder);
 
             _logger.LogInformation("Found {Count} messages for workflowId {WorkflowId}, participant {ParticipantId}", messages.Count, workflowId, participantId);
 
@@ -540,13 +540,20 @@ public class MessageService : IMessageService
                 // Return empty result when thread doesn't exist
                 return ServiceResult<TopicsResult>.Success(new TopicsResult
                 {
-                    Topics = new List<TopicInfo>(),
+                    Topics = new List<TopicInfo>
+                    {
+                        new TopicInfo
+                        {
+                            Scope = null,
+                            MessageCount = 0
+                        }
+                    },
                     Pagination = new PaginationMetadata
                     {
                         CurrentPage = page,
                         PageSize = pageSize,
-                        TotalTopics = 0,
-                        TotalPages = 0,
+                        TotalTopics = 1,
+                        TotalPages = 1,
                         HasMore = false
                     }
                 });

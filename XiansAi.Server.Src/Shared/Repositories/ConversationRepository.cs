@@ -193,7 +193,7 @@ public interface IConversationRepository
     // Message operations
     Task<string> SaveMessageAsync(ConversationMessage message);
     Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
-    Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null);
+    Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null, string sortOrder = "desc");
     Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
 
     // Topics operations
@@ -533,7 +533,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     }
 
     public async Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(
-        string workflowId, string participantId, int page, int pageSize, string? scope = null)
+        string workflowId, string participantId, int page, int pageSize, string? scope = null, string sortOrder = "desc")
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -545,8 +545,17 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 filterBuilder.Eq(x => x.ParticipantId, participantId)
             );
 
-            if (!string.IsNullOrEmpty(scope))
+            // Handle scope filtering:
+            // - If scope is not provided (null) or empty string: return only messages with null scope
+            // - If scope has a value: return only messages with that exact scope
+            if (string.IsNullOrEmpty(scope))
             {
+                _logger.LogDebug("Filtering messages with no scope (null) for workflowId {WorkflowId}", workflowId);
+                filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, null));
+            }
+            else
+            {
+                _logger.LogDebug("Filtering messages by scope `{Scope}` for workflowId {WorkflowId}", scope, workflowId);
                 filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, scope));
             }
 
@@ -571,10 +580,15 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .Include(x => x.RequestId)
                 .Include(x => x.Origin);
 
+            // Apply sort order based on parameter
+            var sort = sortOrder.ToLowerInvariant() == "asc" 
+                ? Builders<ConversationMessage>.Sort.Ascending(x => x.CreatedAt)
+                : Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt);
+
             var messages = await _messagesCollection
                 .Find(filter)
                 .Project<ConversationMessage>(projection)
-                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                .Sort(sort)
                 .Skip((page - 1) * pageSize)
                 .Limit(pageSize)
                 .ToListAsync();
