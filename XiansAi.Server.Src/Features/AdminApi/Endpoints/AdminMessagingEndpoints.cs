@@ -119,6 +119,46 @@ public static class AdminMessagingEndpoints
             Summary = "Send Chat to Workflow",
             Description = "Send a chat message to a workflow for a specific tenant. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
         });
+
+        // Get topics (distinct scopes) for a specific agent activation and participant
+        adminMessagingGroup.MapGet("/topics", async (
+            string tenantId,
+            [FromQuery] string agentName,
+            [FromQuery] string activationName,
+            [FromQuery] string participantId,
+            [FromServices] IMessageService messageService,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20) =>
+        {
+            // Validate required parameters
+            if (string.IsNullOrWhiteSpace(agentName))
+            {
+                return Results.BadRequest("agentName query parameter is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(activationName))
+            {
+                return Results.BadRequest("activationName query parameter is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(participantId))
+            {
+                return Results.BadRequest("participantId query parameter is required");
+            }
+
+            // Construct the workflow ID as per specification:
+            // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
+            var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
+
+            var result = await messageService.GetTopicsByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize);
+            return result.ToHttpResult();
+        })
+        .WithName("GetTopicsForAdminApi")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Get Topics (Scopes) for Agent Activation",
+            Description = "Retrieves distinct scopes (topics) from message threads for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:Supervisor Workflow:{activationName}. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=20)."
+        });
     }
 }
 

@@ -92,6 +92,7 @@ public interface IMessageService
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
     Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
     Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null);
+    Task<ServiceResult<TopicsResult>> GetTopicsByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize);
 }
 
 public class MessageService : IMessageService
@@ -502,6 +503,68 @@ public class MessageService : IMessageService
             _logger.LogError(ex, "Error getting last hint for workflowId {WorkflowId}, participant {ParticipantId}", 
                 workflowId, participantId);
             return ServiceResult<string?>.InternalServerError("An error occurred while retrieving the last hint");
+        }
+    }
+
+    public async Task<ServiceResult<TopicsResult>> GetTopicsByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize)
+    {
+        try
+        {
+            _logger.LogInformation("Getting topics for workflowId {WorkflowId}, participant {ParticipantId}, page {Page}, pageSize {PageSize}",
+                workflowId, participantId, page, pageSize);
+
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
+            {
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
+                    workflowId, participantId);
+                return ServiceResult<TopicsResult>.BadRequest("WorkflowId and ParticipantId are required");
+            }
+
+            if (page < 1 || pageSize < 1)
+            {
+                _logger.LogWarning("Invalid request: page {Page} and pageSize {PageSize} must be greater than 0", page, pageSize);
+                return ServiceResult<TopicsResult>.BadRequest("Page and PageSize must be greater than 0");
+            }
+
+            // Get the thread ID using workflowId and participantId
+            string threadId;
+            try
+            {
+                threadId = await _conversationRepository.GetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogInformation("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. Returning empty topics list.", 
+                    workflowId, participantId, _tenantContext.TenantId);
+                
+                // Return empty result when thread doesn't exist
+                return ServiceResult<TopicsResult>.Success(new TopicsResult
+                {
+                    Topics = new List<TopicInfo>(),
+                    Pagination = new PaginationMetadata
+                    {
+                        CurrentPage = page,
+                        PageSize = pageSize,
+                        TotalTopics = 0,
+                        TotalPages = 0,
+                        HasMore = false
+                    }
+                });
+            }
+
+            // Get topics for the thread
+            var topicsResult = await _conversationRepository.GetTopicsByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize);
+
+            _logger.LogInformation("Found {Count} topics for workflowId {WorkflowId}, participant {ParticipantId}", 
+                topicsResult.Topics.Count, workflowId, participantId);
+
+            return ServiceResult<TopicsResult>.Success(topicsResult);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting topics for workflowId {WorkflowId}, participant {ParticipantId}", 
+                workflowId, participantId);
+            return ServiceResult<TopicsResult>.InternalServerError("An error occurred while retrieving topics");
         }
     }
 
