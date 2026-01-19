@@ -26,7 +26,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var agent2 = await CreateTestAgentAsync($"agent-2-{Guid.NewGuid()}", tenantId);
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -56,7 +56,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         }
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents?page=1&pageSize=2");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments?page=1&pageSize=2");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -78,7 +78,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -100,7 +100,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{invalidId}");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{invalidId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -124,7 +124,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         };
 
         // Act
-        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}", updateRequest);
+        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}", updateRequest);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -150,7 +150,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         };
 
         // Act
-        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agents/{invalidId}", updateRequest);
+        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{invalidId}", updateRequest);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -167,13 +167,13 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
 
         // Act
-        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}");
+        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         
         // Verify deletion
-        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}");
+        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
@@ -188,14 +188,14 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
-        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agents/{invalidId}");
+        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{invalidId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task ListAgentInstances_WithoutAdminRole_ReturnsForbidden()
+    public async Task ListAgentInstances_WithoutAdminRole_ReturnsUnauthorized()
     {
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
@@ -203,10 +203,39 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         await CreateTestTenantAsync(tenantId);
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments");
 
         // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteAgentDeployment_WithActivations_ReturnsConflict()
+    {
+        // Arrange
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        
+        // Create an activation for the agent
+        var activation = await CreateTestActivationAsync(agent.Name, tenantId);
+
+        // Act - Try to delete the agent deployment
+        var deleteResponse = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
+
+        // Assert - Should fail with Conflict
+        Assert.Equal(HttpStatusCode.Conflict, deleteResponse.StatusCode);
+        
+        var errorContent = await deleteResponse.Content.ReadAsStringAsync();
+        Assert.Contains("activation", errorContent, StringComparison.OrdinalIgnoreCase);
+        
+        // Cleanup - Delete the activation first, then the agent should be deletable
+        await DeleteTestActivationAsync(activation.Id);
+        
+        var deleteAfterCleanup = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
+        Assert.Equal(HttpStatusCode.OK, deleteAfterCleanup.StatusCode);
     }
 }
 

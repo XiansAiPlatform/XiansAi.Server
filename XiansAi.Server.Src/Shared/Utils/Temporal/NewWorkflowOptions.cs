@@ -1,3 +1,4 @@
+using Castle.Components.DictionaryAdapter;
 using Shared.Auth;
 using Shared.Utils;
 using Temporalio.Api.Enums.V1;
@@ -6,7 +7,9 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
-    public NewWorkflowOptions(string agentName, bool systemScoped, string workFlowType, string? proposedId, ITenantContext tenantContext, string? userId = null)
+
+    
+    public NewWorkflowOptions(string agentName, bool systemScoped, string workflowType, string? idPostfix, ITenantContext tenantContext, string? userId = null)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId))
         {
@@ -20,27 +23,34 @@ public class NewWorkflowOptions : WorkflowOptions
             throw new InvalidOperationException("UserId is required to create workflow options (either provided or from tenant context)");
         }
 
-        if (string.IsNullOrEmpty(proposedId))
+        // for backward compatibility, if idPostfix starts with tenantid:workflowType, remove it
+        if (!string.IsNullOrEmpty(idPostfix) && idPostfix.StartsWith(tenantContext.TenantId + ":"))
         {
-            proposedId = GenerateNewWorkflowId(workFlowType, tenantContext);
-        }
-        else
-        {
-            if (!proposedId.StartsWith(tenantContext.TenantId + ":"))
+            //remove tenantid:workflowType from the beginning of the idPostfix
+            idPostfix = idPostfix.Replace(tenantContext.TenantId + ":" + workflowType, "");
+            //if remaining is starts with : then remove it
+            if (idPostfix.StartsWith(":"))
             {
-                proposedId = tenantContext.TenantId + ":" + proposedId;
+                idPostfix = idPostfix.Substring(1);
             }
-
         }
 
-        Id = proposedId;
-        TaskQueue = GetTemporalQueueName(workFlowType, systemScoped, tenantContext);
-        Memo = GetMemo(tenantContext, agentName, systemScoped, effectiveUserId);
-        TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName, effectiveUserId);
+        // WorkflowId is always the tenant id + workflow type
+        var workflowId = $"{tenantContext.TenantId}:{workflowType}";
+
+        if (!string.IsNullOrEmpty(idPostfix))
+        {
+            workflowId += ":" + idPostfix;
+        }
+
+        Id = workflowId;
+        TaskQueue = GetTemporalQueueName(workflowType, systemScoped, tenantContext);
+        Memo = GetMemo(tenantContext, agentName, systemScoped, effectiveUserId, idPostfix ?? string.Empty);
+        TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName, effectiveUserId, idPostfix ?? string.Empty);
         IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting;
     }
 
-    private SearchAttributeCollection GetSearchAttributes(ITenantContext tenantContext, string agent, string userId)
+    private SearchAttributeCollection GetSearchAttributes(ITenantContext tenantContext, string agent, string userId, string idPostfix)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId))
         {
@@ -60,7 +70,8 @@ public class NewWorkflowOptions : WorkflowOptions
         var searchAttributesBuilder = new SearchAttributeCollection.Builder()
                     .Set(SearchAttributeKey.CreateKeyword(Constants.TenantIdKey), tenantContext.TenantId)
                     .Set(SearchAttributeKey.CreateKeyword(Constants.AgentKey), agent)
-                    .Set(SearchAttributeKey.CreateKeyword(Constants.UserIdKey), userId);
+                    .Set(SearchAttributeKey.CreateKeyword(Constants.UserIdKey), userId)
+                    .Set(SearchAttributeKey.CreateKeyword(Constants.IdPostfixKey), idPostfix);
 
         return searchAttributesBuilder.ToSearchAttributeCollection();
     }
@@ -75,7 +86,7 @@ public class NewWorkflowOptions : WorkflowOptions
         return tenantContext.TenantId + ":" + workFlowType;
     }
 
-    private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string agentName, bool systemScoped, string userId)
+    private Dictionary<string, object> GetMemo(ITenantContext tenantContext, string agentName, bool systemScoped, string userId, string idPostfix)
     {
         if (string.IsNullOrEmpty(userId))
         {
@@ -87,15 +98,9 @@ public class NewWorkflowOptions : WorkflowOptions
             { Constants.AgentKey, agentName },
             { Constants.UserIdKey, userId },
             { Constants.SystemScopedKey, systemScoped },
+            { Constants.IdPostfixKey, idPostfix },
         };
 
         return memo;
-    }
-
-    public static string GenerateNewWorkflowId(string workflowType, ITenantContext tenantContext)
-    {
-        var id = $"{workflowType}:{Guid.NewGuid()}";
-        var tenantWorkflowId = tenantContext.TenantId + ":" + id;
-        return tenantWorkflowId;
     }
 }

@@ -1,6 +1,7 @@
 using Features.AdminApi.Constants;
 using Features.AdminApi.Endpoints;
 using Features.AdminApi.Auth;
+using Features.AdminApi.Utils;
 using Features.WebApi.Services;
 using Shared.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -23,6 +24,8 @@ public static class AdminApiConfiguration
     {
         // Register AdminApi specific services
         builder.Services.AddScoped<IAdminAgentService, AdminAgentService>();
+        builder.Services.AddScoped<IActivationService, ActivationService>();
+        builder.Services.AddScoped<IActivationCleanupService, ActivationCleanupService>();
         // AdminApi reuses existing services from WebApi
         return builder;
     }
@@ -62,6 +65,18 @@ public static class AdminApiConfiguration
     }
 
     /// <summary>
+    /// Configures AdminApi middleware (debug logging, etc.)
+    /// Should be called before UseAdminApiEndpoints.
+    /// </summary>
+    public static WebApplication UseAdminApiMiddleware(this WebApplication app)
+    {
+        // Add debug logging middleware (only active when AdminApi:EnableDebugLogging = true)
+        app.UseMiddleware<AdminApiDebugLoggingMiddleware>();
+        
+        return app;
+    }
+
+    /// <summary>
     /// Maps AdminApi endpoints to the application.
     /// Supports multiple API versions (v1, v2, etc.) following the versioning guide pattern.
     /// </summary>
@@ -83,7 +98,8 @@ public static class AdminApiConfiguration
         var adminApiGroup = app.MapGroup(AdminApiConstants.GetVersionedBasePath(version));
         
         AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
-        AdminAgentEndpoints.MapAdminAgentEndpoints(adminApiGroup);
+        AdminAgentDeploymentEndpoints.MapAdminAgentDeploymentsEndpoints(adminApiGroup);
+        AdminAgentActivationEndpoints.MapAdminAgentActivationEndpoints(adminApiGroup);
         AdminTemplateEndpoints.MapAdminTemplateEndpoints(adminApiGroup);
         AdminOwnershipEndpoints.MapAdminOwnershipEndpoints(adminApiGroup);
         AdminKnowledgeEndpoints.MapAdminKnowledgeEndpoints(adminApiGroup);

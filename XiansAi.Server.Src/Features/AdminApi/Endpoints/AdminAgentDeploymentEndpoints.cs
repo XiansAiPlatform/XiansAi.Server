@@ -14,85 +14,85 @@ namespace Features.AdminApi.Endpoints;
 /// These are administrative operations, separate from WebApi (UI) endpoints.
 /// All endpoints are under /api/v{version}/admin/ prefix (versioned).
 /// </summary>
-public static class AdminAgentEndpoints
+public static class AdminAgentDeploymentEndpoints
 {
 
     /// <summary>
     /// Maps all AdminApi agent management endpoints.
     /// </summary>
-    public static void MapAdminAgentEndpoints(this RouteGroupBuilder adminApiGroup)
+    public static void MapAdminAgentDeploymentsEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var adminAgentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents")
-            .WithTags("AdminAPI - Agent Management")
+        var adminAgentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agentDeployments")
+            .WithTags("AdminAPI - Agent Deployment")
             .RequireAuthorization("AdminEndpointAuthPolicy");
 
-        // List Agent Instances
+        // List Agent deployments
         adminAgentGroup.MapGet("", async (
             string tenantId,
             [FromQuery] int? page,
             [FromQuery] int? pageSize,
             [FromServices] IAdminAgentService adminAgentService) =>
         {
-            var result = await adminAgentService.GetAgentInstancesAsync(tenantId, page, pageSize);
+            var result = await adminAgentService.GetAgentDeploymentsAsync(tenantId, page, pageSize);
             return result.ToHttpResult();
         })
-        .WithName("ListAgentInstances")
+        .WithName("ListAgentDeployments")
         .WithOpenApi(operation => new(operation)
         {
-            Summary = "List Agent Instances",
-            Description = "List all agent instances for a tenant with optional pagination."
+            Summary = "List Agent Deployments",
+            Description = "List all agent deployments for a tenant with optional pagination."
         });
 
         // Get Agent Instance
-        adminAgentGroup.MapGet("/{agentId}", async (
+        adminAgentGroup.MapGet("/{agentName}", async (
             string tenantId,
-            string agentId,
+            string agentName,
             [FromServices] IAdminAgentService adminAgentService) =>
         {
-            var result = await adminAgentService.GetAgentInstanceByIdAsync(agentId);
+            var result = await adminAgentService.GetAgentDeploymentByNameAsync(agentName, tenantId);
             return result.ToHttpResult();
         })
-        .WithName("GetAgentInstance")
+        .WithName("GetAgentDeployment")
         .WithOpenApi(operation => new(operation)
         {
-            Summary = "Get Agent Instance",
-            Description = "Get agent instance details by MongoDB ObjectId."
+            Summary = "Get Agent Deployment",
+            Description = "Get agent deployment details by agent name."
         });
 
         // Update Agent Instance
-        adminAgentGroup.MapPatch("/{agentId}", async (
+        adminAgentGroup.MapPatch("/{agentName}", async (
             string tenantId,
-            string agentId,
+            string agentName,
             [FromBody] UpdateAgentRequest request,
             [FromServices] IAdminAgentService adminAgentService) =>
         {
-            var result = await adminAgentService.UpdateAgentInstanceAsync(agentId, request);
+            var result = await adminAgentService.UpdateAgentDeploymentAsync(agentName, tenantId, request);
             return result.ToHttpResult();
         })
-        .WithName("UpdateAgentInstance")
+        .WithName("UpdateAgentDeployment")
         .WithOpenApi(operation => new(operation)
         {
-            Summary = "Update Agent Instance",
-            Description = "Update agent instance (name, description, onboardingJson)."
+            Summary = "Update Agent Deployment",
+            Description = "Update agent deployment (name, description, onboardingJson)."
         });
 
         // Delete Agent Instance
-        adminAgentGroup.MapDelete("/{agentId}", async (
+        adminAgentGroup.MapDelete("/{agentName}", async (
             string tenantId,
-            string agentId,
+            string agentName,
             [FromServices] IAdminAgentService adminAgentService) =>
         {
-            var result = await adminAgentService.DeleteAgentInstanceAsync(agentId);
+            var result = await adminAgentService.DeleteAgentDeploymentAsync(agentName, tenantId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
             }
-            return Results.Ok(new { message = $"Agent '{agentId}' deleted successfully" });
+            return Results.Ok(new { message = $"Agent '{agentName}' deleted successfully" });
         })
-        .WithName("DeleteAgentInstance")
+        .WithName("DeleteAgentDeployment")
         .WithOpenApi(operation => new(operation)
         {
-            Summary = "Delete Agent Instance",
+            Summary = "Delete Agent Deployment",
             Description = "Delete an agent instance."
         });
     }

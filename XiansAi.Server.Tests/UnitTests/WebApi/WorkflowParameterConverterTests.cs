@@ -209,20 +209,20 @@ public class WorkflowParameterConverterTests
     }
 
     [Fact]
-    public void ConvertParameters_WithMismatchedParameterCount_ThrowsArgumentException()
+    public void ConvertParameters_WithTooManyParameters_ThrowsArgumentException()
     {
         // Arrange
         var stringParams = new[] { "value1", "value2" };
         var paramDefs = new List<ParameterDefinition>
         {
-            new ParameterDefinition { Name = "param1", Type = "string" }
+            new ParameterDefinition { Name = "param1", Type = "string", Optional = false }
         };
 
         // Act & Assert
         var exception = Assert.Throws<ArgumentException>(() =>
             WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs));
         
-        Assert.Contains("Parameter count mismatch", exception.Message);
+        Assert.Contains("Too many parameters", exception.Message);
     }
 
     [Fact]
@@ -298,9 +298,9 @@ public class WorkflowParameterConverterTests
         var stringParams = new[] { "42", "true", "3.14" };
         var paramDefs = new List<ParameterDefinition>
         {
-            new ParameterDefinition { Name = "num", Type = "INT" },      // uppercase
-            new ParameterDefinition { Name = "flag", Type = "Bool" },    // mixed case
-            new ParameterDefinition { Name = "value", Type = "FLOAT" }   // uppercase
+            new ParameterDefinition { Name = "num", Type = "INT", Optional = false },      // uppercase
+            new ParameterDefinition { Name = "flag", Type = "Bool", Optional = false },    // mixed case
+            new ParameterDefinition { Name = "value", Type = "FLOAT", Optional = false }   // uppercase
         };
 
         // Act
@@ -314,6 +314,197 @@ public class WorkflowParameterConverterTests
         Assert.True((bool)result[1]);
         Assert.IsType<float>(result[2]);
         Assert.Equal(3.14f, (float)result[2], 2);
+    }
+
+    [Fact]
+    public void ConvertParameters_WithOptionalParameter_MissingOptional_Succeeds()
+    {
+        // Arrange
+        var stringParams = new[] { "required-value" };
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "required", Type = "string", Optional = false },
+            new ParameterDefinition { Name = "optional", Type = "string", Optional = true }
+        };
+
+        // Act
+        var result = WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("required-value", result[0]);
+    }
+
+    [Fact]
+    public void ConvertParameters_WithAllOptionalParameters_NoParams_Succeeds()
+    {
+        // Arrange
+        var stringParams = Array.Empty<string>();
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "optional1", Type = "string", Optional = true },
+            new ParameterDefinition { Name = "optional2", Type = "int", Optional = true }
+        };
+
+        // Act
+        var result = WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ConvertParameters_MissingRequiredParameter_ThrowsArgumentException()
+    {
+        // Arrange
+        var stringParams = Array.Empty<string>();
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "required", Type = "string", Optional = false }
+        };
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() =>
+            WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs));
+        
+        Assert.Contains("required", exception.Message);
+    }
+
+    [Fact]
+    public void ConvertParameters_WithMixedOptionalAndRequired_AllProvided_Succeeds()
+    {
+        // Arrange
+        var stringParams = new[] { "value1", "42", "value3" };
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "required1", Type = "string", Optional = false },
+            new ParameterDefinition { Name = "optional1", Type = "int", Optional = true },
+            new ParameterDefinition { Name = "required2", Type = "string", Optional = false }
+        };
+
+        // Act
+        var result = WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs);
+
+        // Assert
+        Assert.Equal(3, result.Length);
+        Assert.Equal("value1", result[0]);
+        Assert.Equal(42, result[1]);
+        Assert.Equal("value3", result[2]);
+    }
+
+    [Fact]
+    public void ConvertParameters_WithEmptyStringForOptionalParameter_ExcludesParameter()
+    {
+        // Arrange
+        var stringParams = new[] { "required-value", "" };
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "required", Type = "string", Optional = false },
+            new ParameterDefinition { Name = "optional", Type = "string", Optional = true }
+        };
+
+        // Act
+        var result = WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs);
+
+        // Assert
+        // Empty optional parameter should be excluded, not passed as null
+        Assert.Single(result);
+        Assert.Equal("required-value", result[0]);
+    }
+
+    [Fact]
+    public void ConvertParameters_WithEmptyStringForRequiredParameter_ThrowsArgumentException()
+    {
+        // Arrange
+        var stringParams = new[] { "" };
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "required", Type = "string", Optional = false }
+        };
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() =>
+            WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs));
+        
+        Assert.Contains("required", exception.Message);
+    }
+
+    [Fact]
+    public void ConvertParameters_NullParametersWithOnlyOptional_Succeeds()
+    {
+        // Arrange
+        string[]? stringParams = null;
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "optional1", Type = "string", Optional = true },
+            new ParameterDefinition { Name = "optional2", Type = "int", Optional = true }
+        };
+
+        // Act
+        var result = WorkflowParameterConverter.ConvertParameters(stringParams!, paramDefs);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ConvertParameters_NullParametersWithRequired_ThrowsArgumentException()
+    {
+        // Arrange
+        string[]? stringParams = null;
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "required", Type = "string", Optional = false }
+        };
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() =>
+            WorkflowParameterConverter.ConvertParameters(stringParams!, paramDefs));
+        
+        Assert.Contains("required", exception.Message);
+    }
+
+    [Fact]
+    public void ConvertParameters_MultipleEmptyOptionalParameters_ExcludesAll()
+    {
+        // Arrange
+        var stringParams = new[] { "https://example.com", "", "", "10" };
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "url", Type = "string", Optional = false },
+            new ParameterDefinition { Name = "mode", Type = "string", Optional = true },
+            new ParameterDefinition { Name = "format", Type = "string", Optional = true },
+            new ParameterDefinition { Name = "timeout", Type = "int", Optional = true }
+        };
+
+        // Act
+        var result = WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs);
+
+        // Assert
+        // Should only include url and timeout, skipping the two empty optional params
+        Assert.Equal(2, result.Length);
+        Assert.Equal("https://example.com", result[0]);
+        Assert.Equal(10, result[1]);
+    }
+
+    [Fact]
+    public void ConvertParameters_OnlyRequiredProvided_AllOptionalEmpty_ExcludesOptionals()
+    {
+        // Arrange
+        var stringParams = new[] { "value1", "" };
+        var paramDefs = new List<ParameterDefinition>
+        {
+            new ParameterDefinition { Name = "required", Type = "string", Optional = false },
+            new ParameterDefinition { Name = "optional1", Type = "string", Optional = true }
+        };
+
+        // Act
+        var result = WorkflowParameterConverter.ConvertParameters(stringParams, paramDefs);
+
+        // Assert
+        // Should only include the required parameter
+        Assert.Single(result);
+        Assert.Equal("value1", result[0]);
     }
 }
 

@@ -18,33 +18,64 @@ public static class WorkflowParameterConverter
     /// <exception cref="ArgumentException">Thrown when parameter count mismatch or conversion fails.</exception>
     public static object[] ConvertParameters(string[] stringParameters, List<ParameterDefinition> parameterDefinitions)
     {
+        if (parameterDefinitions == null || parameterDefinitions.Count == 0)
+        {
+            // If no parameter definitions exist, return strings as-is or empty array
+            return stringParameters ?? Array.Empty<object>();
+        }
+
         if (stringParameters == null || stringParameters.Length == 0)
         {
+            // Check if all parameters are optional
+            var requiredParams = parameterDefinitions.Where(p => !p.Optional).ToList();
+            if (requiredParams.Count > 0)
+            {
+                throw new ArgumentException(
+                    $"Missing required parameters: {string.Join(", ", requiredParams.Select(p => p.Name))}");
+            }
             return Array.Empty<object>();
         }
 
-        if (parameterDefinitions == null || parameterDefinitions.Count == 0)
+        // Count required parameters
+        var requiredCount = parameterDefinitions.Count(p => !p.Optional);
+        
+        // Check if we have at least the required parameters
+        if (stringParameters.Length < requiredCount)
         {
-            // If no parameter definitions exist, return strings as-is
-            return stringParameters;
+            var missingParams = parameterDefinitions
+                .Take(requiredCount)
+                .Skip(stringParameters.Length)
+                .Where(p => !p.Optional)
+                .Select(p => p.Name);
+            
+            throw new ArgumentException(
+                $"Missing required parameters: {string.Join(", ", missingParams)}. Expected at least {requiredCount} parameters but got {stringParameters.Length}");
         }
 
-        if (stringParameters.Length != parameterDefinitions.Count)
+        // Check if we have more parameters than definitions
+        if (stringParameters.Length > parameterDefinitions.Count)
         {
             throw new ArgumentException(
-                $"Parameter count mismatch. Expected {parameterDefinitions.Count} parameters but got {stringParameters.Length}");
+                $"Too many parameters provided. Expected at most {parameterDefinitions.Count} parameters but got {stringParameters.Length}");
         }
 
-        var convertedParameters = new object[stringParameters.Length];
+        var convertedList = new List<object>();
 
         for (int i = 0; i < stringParameters.Length; i++)
         {
             var stringValue = stringParameters[i];
             var parameterDefinition = parameterDefinitions[i];
             
+            // Skip optional parameters with null/empty values
+            if (parameterDefinition.Optional && string.IsNullOrWhiteSpace(stringValue))
+            {
+                continue; // Don't include this parameter
+            }
+            
             try
             {
-                convertedParameters[i] = ConvertParameter(stringValue, parameterDefinition.Type, parameterDefinition.Name);
+                var converted = ConvertParameter(stringValue, parameterDefinition.Type, parameterDefinition.Name, parameterDefinition.Optional);
+                convertedList.Add(converted);
             }
             catch (Exception ex)
             {
@@ -54,7 +85,7 @@ public static class WorkflowParameterConverter
             }
         }
 
-        return convertedParameters;
+        return convertedList.ToArray();
     }
 
     /// <summary>
@@ -63,9 +94,12 @@ public static class WorkflowParameterConverter
     /// <param name="value">The string value to convert.</param>
     /// <param name="targetType">The target type as a string.</param>
     /// <param name="parameterName">The parameter name for error messages.</param>
+    /// <param name="isOptional">Whether the parameter is optional (not currently used as empty optionals are skipped before calling this).</param>
     /// <returns>The converted value as an object.</returns>
-    private static object ConvertParameter(string value, string targetType, string parameterName)
+    private static object ConvertParameter(string value, string targetType, string parameterName, bool isOptional = false)
     {
+        // Note: Empty optional parameters are now skipped in ConvertParameters, 
+        // so this method only receives non-empty values
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new ArgumentException($"Parameter '{parameterName}' cannot be null or empty");

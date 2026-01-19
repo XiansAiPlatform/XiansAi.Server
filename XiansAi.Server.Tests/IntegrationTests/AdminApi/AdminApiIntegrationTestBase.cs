@@ -296,6 +296,41 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
 
         return await _client.SendAsync(request);
     }
+
+    /// <summary>
+    /// Creates a test agent activation.
+    /// </summary>
+    protected async Task<AgentActivation> CreateTestActivationAsync(string agentName, string tenantId, string? userId = null)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var activationRepository = scope.ServiceProvider.GetRequiredService<IActivationRepository>();
+
+        var ownerUserId = userId ?? _adminUserId ?? "test-user";
+
+        var activation = new AgentActivation
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            Name = $"test-activation-{Guid.NewGuid()}",
+            AgentName = agentName,
+            TenantId = tenantId,
+            CreatedBy = ownerUserId,
+            CreatedAt = DateTime.UtcNow,
+            WorkflowIds = new List<string>()
+        };
+
+        await activationRepository.CreateAsync(activation);
+        return activation;
+    }
+
+    /// <summary>
+    /// Deletes a test activation.
+    /// </summary>
+    protected async Task DeleteTestActivationAsync(string activationId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var activationRepository = scope.ServiceProvider.GetRequiredService<IActivationRepository>();
+        await activationRepository.DeleteAsync(activationId);
+    }
 }
 
 

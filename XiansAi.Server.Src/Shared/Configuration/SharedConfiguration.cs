@@ -195,6 +195,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
         builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
+        builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
 
         // Register Utility services
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();

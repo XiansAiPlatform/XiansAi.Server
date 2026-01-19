@@ -32,8 +32,8 @@
 ### Workflow Management (X-Tenant-Id required)
 ### ============================================
 
-### Activate Workflow (Start/Create New Workflow)
-# Activate (start) a new workflow for a specific tenant
+### Activate Workflow (Start/Create New Workflow) - All Parameters
+# Activate (start) a new workflow for a specific tenant with all parameters
 # Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
 # Optional userId query parameter to override the default user ID from authentication context
 POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/activate?userId=admin-user-123
@@ -46,14 +46,33 @@ Accept: application/json
   "workflowType": "MyWorkflowType",
   "agentName": "{{agentName}}",
   "workflowIdPostfix": "custom-id",
-  "parameters": ["param1", "param2"],
+  "parameters": ["param1", "param2", "param3"],
   "assignment": "assignment-name"
 }
 
 ###
 
-### Activate Workflow (without userId - uses authenticated user)
-# Activate (start) a new workflow without specifying userId (uses authenticated user from context)
+### Activate Workflow - Only Required Parameters
+# Example: Workflow definition has both required and optional parameters
+# This request only provides required parameters (optional ones are omitted)
+# Parameters: url (required), mode (optional), verbose (optional)
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/activate
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "MyWorkflowType",
+  "agentName": "{{agentName}}",
+  "parameters": ["https://example.com"]
+}
+
+###
+
+### Activate Workflow - Partial Optional Parameters
+# Example: Providing required + some optional parameters
+# Parameters: url (required), mode (optional) - both provided
 POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/activate
 Authorization: Bearer {{apiKey}}
 X-Tenant-Id: {{tenantId}}
@@ -64,8 +83,25 @@ Accept: application/json
   "workflowType": "MyWorkflowType",
   "agentName": "{{agentName}}",
   "workflowIdPostfix": "custom-id",
-  "parameters": ["param1", "param2"],
+  "parameters": ["https://example.com", "detailed"],
   "assignment": "assignment-name"
+}
+
+###
+
+### Activate Workflow - Empty String for Optional Parameter
+# Example: Empty string for optional parameter (will be treated as null)
+# Parameters: url (required), mode (optional - empty string), count (optional)
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/workflows/activate?userId=admin-user-123
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "MyWorkflowType",
+  "agentName": "{{agentName}}",
+  "parameters": ["https://example.com", "", "5"]
 }
 
 ###

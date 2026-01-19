@@ -55,22 +55,6 @@ public static class AdminTemplateEndpoints
             Description = "Browse all available agent templates (SystemScoped agents). No X-Tenant-Id header required."
         });
 
-        // List Agent Templates for Tenant
-        adminTemplateGroup.MapGet("/tenants/{tenantId}/agentTemplates", async (
-            string tenantId,
-            [FromQuery] bool? basicDataOnly,
-            [FromServices] ITemplateService templateService) =>
-        {
-            var result = await templateService.GetSystemScopedAgentDefinitions(basicDataOnly ?? false);
-            return result.ToHttpResult();
-        })
-        .WithName("BrowseAgentTemplatesForTenant")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Browse Agent Templates for Tenant",
-            Description = "Browse agent templates eligible for a specific tenant."
-        });
-
         // Get Agent Template Details by ObjectId
         adminTemplateGroup.MapGet("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,

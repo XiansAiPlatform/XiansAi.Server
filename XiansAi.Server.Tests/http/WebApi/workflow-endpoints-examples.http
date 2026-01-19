@@ -1,0 +1,195 @@
+### Variables
+@baseUrl = http://localhost:5005
+@tenantId = default
+
+# Authentication tokens would be obtained through your OIDC provider
+# Replace with your actual JWT token
+@authToken = eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Agent and workflow configuration
+@agentName = my-agent
+@workflowType = MyWorkflowType
+@workflowId = workflow-123
+
+### ============================================
+### WebAPI Client - Workflow Endpoints
+### ============================================
+# These endpoints use JWT authentication via Authorization: Bearer <token>
+# Tenant ID is automatically extracted from the JWT token
+
+### ============================================
+### Start Workflow - All Parameters (Required + Optional)
+### ============================================
+# Example: Workflow with both required and optional parameters all provided
+POST {{baseUrl}}/api/client/workflows
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "{{workflowType}}",
+  "agentName": "{{agentName}}",
+  "workflowIdPostfix": "custom-id-001",
+  "parameters": ["https://example.com", "detailed", "true"],
+  "assignment": "my-assignment"
+}
+
+###
+
+### Start Workflow - Only Required Parameters
+### ============================================
+# Example: Workflow definition has 3 parameters: 
+#   1. url (string, required)
+#   2. mode (string, optional)
+#   3. verbose (bool, optional)
+# This request only provides the required parameter
+POST {{baseUrl}}/api/client/workflows
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "{{workflowType}}",
+  "agentName": "{{agentName}}",
+  "parameters": ["https://example.com"]
+}
+
+###
+
+### Start Workflow - Partial Optional Parameters
+### ============================================
+# Example: Providing required + some optional parameters
+# Workflow definition has:
+#   1. url (string, required)
+#   2. mode (string, optional)
+# This request provides both
+POST {{baseUrl}}/api/client/workflows
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "{{workflowType}}",
+  "agentName": "{{agentName}}",
+  "parameters": ["https://example.com", "detailed"]
+}
+
+###
+
+### Start Workflow - Empty String for Optional Parameter
+### ============================================
+# Example: Empty string for optional parameter (will be treated as null)
+# Workflow definition has:
+#   1. url (string, required)
+#   2. mode (string, optional) - empty string provided
+#   3. count (int, optional)
+POST {{baseUrl}}/api/client/workflows
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "{{workflowType}}",
+  "agentName": "{{agentName}}",
+  "parameters": ["https://example.com", "", "5"]
+}
+
+###
+
+### Start Workflow - No Parameters (All Optional)
+### ============================================
+# Example: Workflow with all optional parameters, none provided
+POST {{baseUrl}}/api/client/workflows
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workflowType": "{{workflowType}}",
+  "agentName": "{{agentName}}",
+  "parameters": []
+}
+
+###
+
+### Get Workflow by ID
+### ============================================
+# Retrieve detailed information about a specific workflow
+GET {{baseUrl}}/api/client/workflows?workflowId={{workflowId}}
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### Get Workflow with Run ID
+### ============================================
+# Retrieve workflow information with specific run ID
+GET {{baseUrl}}/api/client/workflows?workflowId={{workflowId}}&runId=run-001
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### List Workflows
+### ============================================
+# Get all workflows with optional filtering and pagination
+GET {{baseUrl}}/api/client/workflows/list?status=RUNNING&agent={{agentName}}&pageSize=10
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### List Workflows - All Filters
+### ============================================
+# Get workflows with all available filters
+GET {{baseUrl}}/api/client/workflows/list?status=COMPLETED&agent={{agentName}}&workflowType={{workflowType}}&user=user-123&pageSize=20&pageToken=next-page-token
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### Get Workflow Events
+### ============================================
+# Get event history for a specific workflow
+GET {{baseUrl}}/api/client/workflows/events?workflowId={{workflowId}}
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### Stream Workflow Events (SSE)
+### ============================================
+# Stream workflow events in real-time using Server-Sent Events
+# Note: In REST Client, SSE streams may not display properly. Use a browser or dedicated SSE client.
+GET {{baseUrl}}/api/client/workflows/events/stream?workflowId={{workflowId}}
+Authorization: Bearer {{authToken}}
+Accept: text/event-stream
+
+###
+
+### Get Workflow Types for Agent
+### ============================================
+# Get all unique workflow types for a specific agent
+GET {{baseUrl}}/api/client/workflows/types?agent={{agentName}}
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### Cancel Workflow
+### ============================================
+# Cancel a running workflow (force=false for graceful cancel)
+POST {{baseUrl}}/api/client/workflows/cancel?workflowId={{workflowId}}&force=false
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### Cancel Workflow (Force)
+### ============================================
+# Force cancel a workflow (force=true for immediate termination)
+POST {{baseUrl}}/api/client/workflows/cancel?workflowId={{workflowId}}&force=true
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###

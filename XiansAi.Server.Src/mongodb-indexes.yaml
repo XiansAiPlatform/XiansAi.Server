@@ -311,3 +311,25 @@ usage_events:
       created_at: asc
     expire_after: 90d             
     background: true
+
+activations:
+  - name: tenant_id_1_name_1_agent_name_1_participant_id_1
+    keys:
+      tenant_id: asc
+      name: asc
+      agent_name: asc
+    unique: true
+    sparse: true
+  - name: tenant_id_1
+    keys:
+      tenant_id: asc
+    background: true
+  - name: agent_name_1_tenant_id_1
+    keys:
+      agent_name: asc
+      tenant_id: asc
+    background: true
+  - name: created_at_-1
+    keys:
+      created_at: desc
+    background: true

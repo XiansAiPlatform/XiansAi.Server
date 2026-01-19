@@ -70,6 +70,17 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
     [BsonElement("system_scoped")]
     public bool SystemScoped { get; set; } = false;
 
+    [BsonElement("activable")]
+    public bool Activable { get; set; } = false;
+
+    [BsonElement("summary")]
+    [StringLength(500, ErrorMessage = "Summary cannot exceed 500 characters")]
+    public string? Summary { get; set; }
+
+    [BsonElement("onboarding_json")]
+    [StringLength(50000, ErrorMessage = "Onboarding JSON cannot exceed 50000 characters")]
+    public string? OnboardingJson { get; set; }
+
      public override FlowDefinition SanitizeAndReturn()
     {
         // Create a new flow definition with sanitized data
@@ -85,6 +96,9 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
             CreatedBy = ValidationHelpers.SanitizeString(CreatedBy),
             Tenant = ValidationHelpers.SanitizeString(Tenant),
             SystemScoped = SystemScoped,
+            Activable = Activable,
+            Summary = ValidationHelpers.SanitizeString(Summary),
+            OnboardingJson = ValidationHelpers.SanitizeString(OnboardingJson),
             CreatedAt = CreatedAt,
             UpdatedAt = UpdatedAt,
             ActivityDefinitions = ActivityDefinitions?.Select(a =>

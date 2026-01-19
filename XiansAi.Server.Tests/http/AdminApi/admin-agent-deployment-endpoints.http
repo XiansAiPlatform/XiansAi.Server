@@ -1,0 +1,83 @@
+### Variables
+@baseUrl = http://localhost:5005
+@apiVersion = v1
+@tenantId = new-tenant-22
+
+# API Key Authentication
+# Replace with your actual API key (must start with "sk-Xnai-")
+# The API key must belong to a user with SysAdmin role
+@apiKey = sk-Xnai-aH9m_QKEr797ziDXGcHB90gZ8qEMSx-ps5OBxG12utg
+
+# Note: Replace with actual agent name from your database
+@agentName = my-agent-name
+
+### ============================================
+### API Key Authentication
+### ============================================
+# AdminApi uses API key authentication via:
+# 1. Authorization header (preferred): Authorization: Bearer <api-key>
+# 2. Query parameter (fallback): ?apikey=<api-key>
+#
+# The API key must belong to a user with SysAdmin role.
+# Tenant ID can be provided via:
+# - Query parameter: ?tenantId=<tenant-id>
+# - Route parameter: /tenants/{tenantId}/...
+# - X-Tenant-Id header: X-Tenant-Id: <tenant-id>
+
+### ============================================
+### Agent Deployment Management
+### ============================================
+
+### List Agent Deployments
+# Get all agent deployments in a tenant with optional pagination
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Optional query parameters: page, pageSize
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentDeployments?page=1&pageSize=10
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Get Agent Deployment by Name
+# Get details of a specific agent deployment by agent name
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses agent name (not MongoDB ObjectId)
+# Returns: AgentWithDefinitions { Agent, Definitions[] }
+#   - Agent: The agent deployment details
+#   - Definitions: Array of workflow definitions attached to this agent
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentDeployments/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### Update Agent Deployment
+# Update agent deployment (name, description, onboardingJson)
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses agent name (not MongoDB ObjectId) to identify the agent
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentDeployments/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "updated-agent-name",
+  "description": "Updated agent description",
+  "onboardingJson": "{\"description\":\"Updated agent description\"}"
+}
+
+###
+
+### Delete Agent Deployment
+# Delete an agent deployment by agent name
+# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+# Note: Uses agent name (not MongoDB ObjectId) to identify the agent
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentDeployments/{{agentName}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###

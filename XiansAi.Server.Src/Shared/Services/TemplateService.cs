@@ -245,7 +245,9 @@ public class TemplateService : ITemplateService
         return original.Select(param => new ParameterDefinition
         {
             Name = param.Name,
-            Type = param.Type
+            Type = param.Type,
+            Description = param.Description,
+            Optional = param.Optional
         }).ToList();
     }
 
