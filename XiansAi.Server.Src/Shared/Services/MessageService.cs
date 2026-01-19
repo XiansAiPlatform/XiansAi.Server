@@ -294,7 +294,7 @@ public class MessageService : IMessageService
             throw new Exception("WorkflowId must start with tenantId");
         }
 
-        _logger.LogInformation("Processing inbound message for agent {AgentId} from participant {ParticipantId}",
+        _logger.LogInformation("Processing inbound message for WorkflowId `{WorkflowId}` from participant {ParticipantId}",
             request.WorkflowId, request.ParticipantId);
         
         // Critical Operation: If the threadId is not provided, we need to create a new thread

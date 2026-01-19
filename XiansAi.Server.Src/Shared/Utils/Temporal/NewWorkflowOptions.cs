@@ -1,3 +1,4 @@
+using Castle.Components.DictionaryAdapter;
 using Shared.Auth;
 using Shared.Utils;
 using Temporalio.Api.Enums.V1;
@@ -6,6 +7,8 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
+
+    
     public NewWorkflowOptions(string agentName, bool systemScoped, string workflowType, string? idPostfix, ITenantContext tenantContext, string? userId = null)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId))
@@ -20,16 +23,23 @@ public class NewWorkflowOptions : WorkflowOptions
             throw new InvalidOperationException("UserId is required to create workflow options (either provided or from tenant context)");
         }
 
+        // for backward compatibility, if idPostfix starts with tenantid:workflowType, remove it
+        if (!string.IsNullOrEmpty(idPostfix) && idPostfix.StartsWith(tenantContext.TenantId + ":"))
+        {
+            //remove tenantid:workflowType from the beginning of the idPostfix
+            idPostfix = idPostfix.Replace(tenantContext.TenantId + ":" + workflowType, "");
+            //if remaining is starts with : then remove it
+            if (idPostfix.StartsWith(":"))
+            {
+                idPostfix = idPostfix.Substring(1);
+            }
+        }
+
         // WorkflowId is always the tenant id + workflow type
         var workflowId = $"{tenantContext.TenantId}:{workflowType}";
 
-
         if (!string.IsNullOrEmpty(idPostfix))
         {
-            if (idPostfix.StartsWith(tenantContext.TenantId + ":"))
-            {
-                workflowId = idPostfix;
-            }
             workflowId += ":" + idPostfix;
         }
 

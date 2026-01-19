@@ -111,12 +111,12 @@ public class WorkflowSignalService : IWorkflowSignalService
 
             options.SignalWithStart(request.SignalName, signalPayload);
 
-            _logger.LogInformation("Starting workflow {WorkflowType} with signal {SignalName}", 
-                request.TargetWorkflowType, request.SignalName);
+            _logger.LogInformation("Starting/invoking workflow `{WorkflowId}` with signal `{SignalName}`", 
+                request.TargetWorkflowId, request.SignalName);
 
             await client.StartWorkflowAsync(request.TargetWorkflowType, new List<object>().AsReadOnly(), options);
 
-            _logger.LogInformation("Successfully started workflow {WorkflowType} with signal {SignalName}", 
+            _logger.LogInformation("Successfully onvoked workflow type {WorkflowType} with signal {SignalName}", 
                 request.TargetWorkflowType, request.SignalName);
             
             return Results.Ok(new { 

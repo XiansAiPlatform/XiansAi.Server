@@ -25,6 +25,7 @@ public static class AdminApiConfiguration
         // Register AdminApi specific services
         builder.Services.AddScoped<IAdminAgentService, AdminAgentService>();
         builder.Services.AddScoped<IActivationService, ActivationService>();
+        builder.Services.AddScoped<IActivationCleanupService, ActivationCleanupService>();
         // AdminApi reuses existing services from WebApi
         return builder;
     }

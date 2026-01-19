@@ -318,7 +318,6 @@ activations:
       tenant_id: asc
       name: asc
       agent_name: asc
-      participant_id: asc
     unique: true
     sparse: true
   - name: tenant_id_1

@@ -39,6 +39,7 @@ public class ActivationService : IActivationService
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IWorkflowStarterService _workflowStarterService;
     private readonly ITemporalClientService _temporalClientService;
+    private readonly IActivationCleanupService _cleanupService;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -47,6 +48,7 @@ public class ActivationService : IActivationService
         IFlowDefinitionRepository flowDefinitionRepository,
         IWorkflowStarterService workflowStarterService,
         ITemporalClientService temporalClientService,
+        IActivationCleanupService cleanupService,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -54,6 +56,7 @@ public class ActivationService : IActivationService
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
         _workflowStarterService = workflowStarterService ?? throw new ArgumentNullException(nameof(workflowStarterService));
         _temporalClientService = temporalClientService ?? throw new ArgumentNullException(nameof(temporalClientService));
+        _cleanupService = cleanupService ?? throw new ArgumentNullException(nameof(cleanupService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -359,7 +362,12 @@ public class ActivationService : IActivationService
     }
 
     /// <summary>
-    /// Deactivates an agent by canceling/terminating the workflow in Temporal.
+    /// Deactivates an agent by canceling/terminating workflows and deleting schedules in Temporal.
+    /// This method now performs a comprehensive cleanup of all resources associated with the activation:
+    /// - Finds all workflows matching the activation (by tenantId, agent, and idPostfix)
+    /// - Cancels/stops all running workflows
+    /// - Finds all schedules matching the activation
+    /// - Deletes all schedules
     /// </summary>
     public async Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(
         string activationId, 
@@ -382,54 +390,65 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
             }
 
-            if (activation.WorkflowIds == null || activation.WorkflowIds.Count == 0)
+            // Perform comprehensive cleanup of all workflows and schedules associated with this activation
+            _logger.LogInformation(
+                "Starting comprehensive cleanup for activation {ActivationId} (Name: {Name}, Agent: {Agent})",
+                activationId, activation.Name, activation.AgentName);
+
+            var cleanupResult = await _cleanupService.CleanupActivationResourcesAsync(activation);
+
+            if (!cleanupResult.IsSuccess || cleanupResult.Data == null)
             {
-                _logger.LogWarning("Activation {ActivationId} has no workflow IDs", activationId);
-                return ServiceResult<AgentActivation>.InternalServerError("Activation has no associated workflows");
-            }
-
-            // Cancel all workflows in Temporal
-            try
-            {
-                var client = await _temporalClientService.GetClientAsync(tenantId);
-                var canceledCount = 0;
-
-                foreach (var workflowId in activation.WorkflowIds)
-                {
-                    try
-                    {
-                        var handle = client.GetWorkflowHandle(workflowId);
-                        await handle.CancelAsync();
-                        canceledCount++;
-                        
-                        _logger.LogInformation("Canceled workflow {WorkflowId} for activation {ActivationId}", 
-                            workflowId, activationId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to cancel workflow {WorkflowId} for activation {ActivationId}", 
-                            workflowId, activationId);
-                        // Continue canceling other workflows even if one fails
-                    }
-                }
-
-                // Clear workflow IDs and update timestamp
-                activation.WorkflowIds = new List<string>();
-                activation.DeactivatedAt = DateTime.UtcNow;
-
-                await _activationRepository.UpdateAsync(activationId, activation);
-
-                _logger.LogInformation("Successfully deactivated {CanceledCount}/{TotalCount} workflows for activation {ActivationId}", 
-                    canceledCount, activation.WorkflowIds.Count, activationId);
-                
-                return ServiceResult<AgentActivation>.Success(activation);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error canceling workflows for activation {ActivationId}", activationId);
+                _logger.LogError(
+                    "Failed to cleanup resources for activation {ActivationId}: {Error}",
+                    activationId, cleanupResult.ErrorMessage);
                 return ServiceResult<AgentActivation>.InternalServerError(
-                    $"Failed to cancel workflows: {ex.Message}");
+                    $"Failed to cleanup activation resources: {cleanupResult.ErrorMessage}");
             }
+
+            var cleanup = cleanupResult.Data;
+
+            // Log cleanup results
+            _logger.LogInformation(
+                "Cleanup completed for activation {ActivationId}. " +
+                "Workflows: {CancelledWorkflows}/{TotalWorkflows} cancelled ({FailedWorkflows} failed), " +
+                "Schedules: {DeletedSchedules}/{TotalSchedules} deleted ({FailedSchedules} failed)",
+                activationId,
+                cleanup.WorkflowCleanup.CancelledCount,
+                cleanup.WorkflowCleanup.TotalWorkflows,
+                cleanup.WorkflowCleanup.FailedCount,
+                cleanup.ScheduleCleanup.DeletedCount,
+                cleanup.ScheduleCleanup.TotalSchedules,
+                cleanup.ScheduleCleanup.FailedCount);
+
+            // Check if there were any failures during cleanup
+            if (!cleanup.Success)
+            {
+                _logger.LogWarning(
+                    "Activation {ActivationId} cleanup had failures. " +
+                    "Failed workflows: {FailedWorkflows}, Failed schedules: {FailedSchedules}",
+                    activationId,
+                    cleanup.WorkflowCleanup.FailedCount,
+                    cleanup.ScheduleCleanup.FailedCount);
+                
+                // Even with some failures, we'll proceed to update the activation status
+                // The user should be informed that some resources may still exist
+            }
+
+            // Clear workflow IDs and update timestamp
+            activation.WorkflowIds = new List<string>();
+            activation.DeactivatedAt = DateTime.UtcNow;
+
+            await _activationRepository.UpdateAsync(activationId, activation);
+
+            _logger.LogInformation(
+                "Successfully deactivated activation {ActivationId}. " +
+                "Total resources cleaned: {TotalWorkflows} workflows, {TotalSchedules} schedules",
+                activationId,
+                cleanup.WorkflowCleanup.TotalWorkflows,
+                cleanup.ScheduleCleanup.TotalSchedules);
+            
+            return ServiceResult<AgentActivation>.Success(activation);
         }
         catch (Exception ex)
         {
