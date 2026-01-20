@@ -56,7 +56,9 @@ public static class SharedServices
 
         // Register tenant service
         services.AddScoped<ITenantService, TenantService>();
-
+        
+        // Register admin task service (shared between AdminApi and WebApi)
+        services.AddScoped<IAdminTaskService, AdminTaskService>();
         
         // Register cache service
         services.AddScoped<ObjectCache>();
