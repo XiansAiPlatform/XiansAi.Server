@@ -8,12 +8,14 @@ namespace Features.AdminApi.Utils;
 /// Middleware that logs detailed request and response information for AdminApi endpoints.
 /// This is useful for debugging and monitoring AdminApi calls.
 /// Only active when AdminApi:EnableDebugLogging is set to true in configuration.
+/// Response bodies longer than AdminApi:MaxDebugResponseBodyLength (default: 5000) will be truncated.
 /// </summary>
 public class AdminApiDebugLoggingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<AdminApiDebugLoggingMiddleware> _logger;
     private readonly bool _isEnabled;
+    private readonly int _maxResponseBodyLength;
 
     public AdminApiDebugLoggingMiddleware(
         RequestDelegate next, 
@@ -23,6 +25,7 @@ public class AdminApiDebugLoggingMiddleware
         _next = next;
         _logger = logger;
         _isEnabled = configuration.GetValue<bool>("AdminApi:EnableDebugLogging", false);
+        _maxResponseBodyLength = configuration.GetValue<int>("AdminApi:MaxDebugResponseBodyLength", 5000);
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -34,11 +37,22 @@ public class AdminApiDebugLoggingMiddleware
             return;
         }
 
+        // Skip response body capture for SSE/streaming endpoints to avoid buffering issues
+        // SSE endpoints need direct access to the response stream for real-time streaming
+        if (IsStreamingEndpoint(context.Request.Path))
+        {
+            var requestId = Guid.NewGuid().ToString("N");
+            await LogRequest(context, requestId);
+            _logger.LogDebug("[AdminAPI Debug] [RequestId: {RequestId}] Streaming endpoint - skipping response capture", requestId);
+            await _next(context);
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
-        var requestId = Guid.NewGuid().ToString("N");
+        var normalRequestId = Guid.NewGuid().ToString("N");
 
         // Log request
-        await LogRequest(context, requestId);
+        await LogRequest(context, normalRequestId);
 
         // Capture response
         var originalBodyStream = context.Response.Body;
@@ -51,7 +65,7 @@ public class AdminApiDebugLoggingMiddleware
             stopwatch.Stop();
 
             // Log response
-            await LogResponse(context, requestId, stopwatch.ElapsedMilliseconds);
+            await LogResponse(context, normalRequestId, stopwatch.ElapsedMilliseconds);
 
             // Copy the response back to the original stream
             responseBody.Seek(0, SeekOrigin.Begin);
@@ -62,7 +76,7 @@ public class AdminApiDebugLoggingMiddleware
             stopwatch.Stop();
             _logger.LogError(ex, 
                 "[AdminAPI Debug] [RequestId: {RequestId}] Exception occurred after {ElapsedMs}ms", 
-                requestId, 
+                normalRequestId, 
                 stopwatch.ElapsedMilliseconds);
             throw;
         }
@@ -158,7 +172,19 @@ public class AdminApiDebugLoggingMiddleware
         if (!string.IsNullOrEmpty(bodyAsText))
         {
             logBuilder.AppendLine("Response Body:");
-            logBuilder.AppendLine(FormatJson(bodyAsText));
+            var formattedBody = FormatJson(bodyAsText);
+            
+            // Truncate if response is too long
+            if (formattedBody.Length > _maxResponseBodyLength)
+            {
+                var truncatedBody = formattedBody.Substring(0, _maxResponseBodyLength);
+                logBuilder.AppendLine(truncatedBody);
+                logBuilder.AppendLine($"... [TRUNCATED - Total length: {formattedBody.Length} characters, showing first {_maxResponseBodyLength}]");
+            }
+            else
+            {
+                logBuilder.AppendLine(formattedBody);
+            }
         }
         else
         {
@@ -175,6 +201,14 @@ public class AdminApiDebugLoggingMiddleware
         // Match paths like /api/v1/admin/, /api/v2/admin/, etc.
         return path.StartsWithSegments("/api") && 
                path.Value?.Contains("/admin/", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static bool IsStreamingEndpoint(PathString path)
+    {
+        // Check for SSE/streaming endpoints that should not have their response buffered
+        // These endpoints use Server-Sent Events or other streaming protocols
+        return path.Value?.Contains("/messaging/listen", StringComparison.OrdinalIgnoreCase) == true ||
+               path.Value?.Contains("/events", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static bool IsSensitiveHeader(string headerName)

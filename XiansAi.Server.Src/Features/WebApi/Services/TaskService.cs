@@ -3,10 +3,7 @@ using Shared.Utils;
 using Temporalio.Client;
 using Shared.Utils.Services;
 using Features.WebApi.Models;
-using Temporalio.Common;
 using Shared.Utils.Temporal;
-using Temporalio.Converters;
-using Temporalio.Api.Enums.V1;
 using Shared.Repositories;
 using Shared.Services;
 
@@ -31,183 +28,87 @@ public class TaskService : ITaskService
     private readonly ITenantContext _tenantContext;
     private readonly IAgentRepository _agentRepository;
     private readonly IPermissionsService _permissionsService;
+    private readonly IAdminTaskService _adminTaskService;
 
     public TaskService(
         ITemporalClientFactory clientFactory,
         ILogger<TaskService> logger,
         ITenantContext tenantContext,
         IAgentRepository agentRepository,
-        IPermissionsService permissionsService)
+        IPermissionsService permissionsService,
+        IAdminTaskService adminTaskService)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
         _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
+        _adminTaskService = adminTaskService ?? throw new ArgumentNullException(nameof(adminTaskService));
     }
 
     /// <summary>
     /// Retrieves task information by workflow ID.
+    /// Delegates to the shared AdminTaskService implementation and maps the result.
     /// </summary>
     public async Task<ServiceResult<TaskInfoResponse>> GetTaskById(string workflowId)
     {
-        if (string.IsNullOrWhiteSpace(workflowId))
+        var adminResult = await _adminTaskService.GetTaskById(workflowId);
+        
+        if (!adminResult.IsSuccess)
         {
-            _logger.LogWarning("Attempt to retrieve task with empty workflowId");
-            return ServiceResult<TaskInfoResponse>.BadRequest("WorkflowId cannot be empty");
-        }
-
-        try
-        {
-            _logger.LogInformation("Retrieving task with workflow ID: {WorkflowId}", workflowId);
-            var client = await _clientFactory.GetClientAsync();
-
-            var workflowHandle = client.GetWorkflowHandle(workflowId);
-
-            // Get workflow description for metadata
-            var workflowDescription = await workflowHandle.DescribeAsync();
-
-            // Query the task info from the workflow
-            var taskInfo = await workflowHandle.QueryAsync<object>("GetTaskInfo", Array.Empty<object>());
-            
-            // Parse the task info from the query result
-            var taskInfoJson = System.Text.Json.JsonSerializer.Serialize(taskInfo);
-            var parsedTaskInfo = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
-                taskInfoJson,
-                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            // Extract values from the parsed task info
-            string? taskId = parsedTaskInfo.TryGetProperty("TaskId", out var taskIdProp) ? taskIdProp.GetString() : null;
-            string? title = parsedTaskInfo.TryGetProperty("Title", out var titleProp) ? titleProp.GetString() : null;
-            string? description = parsedTaskInfo.TryGetProperty("Description", out var descProp) ? descProp.GetString() : null;
-            string? initialWork = parsedTaskInfo.TryGetProperty("InitialWork", out var initialWorkProp) ? initialWorkProp.GetString() : null;
-            string? finalWork = parsedTaskInfo.TryGetProperty("FinalWork", out var finalWorkProp) ? finalWorkProp.GetString() : null;
-            string? participantId = parsedTaskInfo.TryGetProperty("ParticipantId", out var partProp) ? partProp.GetString() : null;
-            bool isCompleted = parsedTaskInfo.TryGetProperty("IsCompleted", out var completedProp) && completedProp.GetBoolean();
-            
-            // Extract new action-based fields
-            string? performedAction = parsedTaskInfo.TryGetProperty("PerformedAction", out var actionProp) ? actionProp.GetString() : null;
-            string? comment = parsedTaskInfo.TryGetProperty("Comment", out var commentProp) ? commentProp.GetString() : null;
-            
-            // Extract available actions
-            string[]? availableActions = null;
-            if (parsedTaskInfo.TryGetProperty("AvailableActions", out var actionsProp) && actionsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            // Map error response to TaskInfoResponse type while preserving status code
+            return adminResult.StatusCode switch
             {
-                availableActions = actionsProp.EnumerateArray()
-                    .Where(a => a.ValueKind == System.Text.Json.JsonValueKind.String)
-                    .Select(a => a.GetString()!)
-                    .ToArray();
-            }
-
-            // Extract metadata if present
-            Dictionary<string, object>? metadata = null;
-            if (parsedTaskInfo.TryGetProperty("Metadata", out var metadataProp) && metadataProp.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                metadata = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(metadataProp.GetRawText());
-            }
-
-            // Build the response with workflow metadata
-            var response = new TaskInfoResponse
-            {
-                TaskId = taskId ?? "unknown",
-                WorkflowId = workflowId,
-                RunId = workflowDescription.RunId ?? "unknown",
-                Title = title ?? "Untitled Task",
-                Description = description ?? "",
-                InitialWork = initialWork,
-                FinalWork = finalWork,
-                ParticipantId = participantId,
-                Status = workflowDescription.Status.ToString(),
-                IsCompleted = isCompleted,
-                AvailableActions = availableActions,
-                PerformedAction = performedAction,
-                Comment = comment,
-                StartTime = workflowDescription.StartTime,
-                CloseTime = workflowDescription.CloseTime,
-                Metadata = metadata
+                StatusCode.BadRequest => ServiceResult<TaskInfoResponse>.BadRequest(adminResult.ErrorMessage ?? "Failed to retrieve task"),
+                StatusCode.NotFound => ServiceResult<TaskInfoResponse>.NotFound(adminResult.ErrorMessage ?? "Task not found"),
+                StatusCode.Forbidden => ServiceResult<TaskInfoResponse>.Forbidden(adminResult.ErrorMessage ?? "Access forbidden"),
+                StatusCode.Unauthorized => ServiceResult<TaskInfoResponse>.Unauthorized(adminResult.ErrorMessage ?? "Unauthorized"),
+                _ => ServiceResult<TaskInfoResponse>.InternalServerError(adminResult.ErrorMessage ?? "Failed to retrieve task")
             };
+        }
 
-            _logger.LogInformation("Successfully retrieved task {WorkflowId}", workflowId);
-            return ServiceResult<TaskInfoResponse>.Success(response);
-        }
-        catch (Exception ex)
+        var adminData = adminResult.Data!;
+        
+        // Map AdminTaskInfoResponse to TaskInfoResponse (exclude admin-specific fields)
+        var response = new TaskInfoResponse
         {
-            _logger.LogError(ex, "Failed to retrieve task {WorkflowId}. Error: {ErrorMessage}",
-                workflowId, ex.Message);
-            return ServiceResult<TaskInfoResponse>.BadRequest($"Failed to retrieve task: {ex.Message}");
-        }
+            TaskId = adminData.TaskId,
+            WorkflowId = adminData.WorkflowId,
+            RunId = adminData.RunId,
+            Title = adminData.Title,
+            Description = adminData.Description,
+            InitialWork = adminData.InitialWork,
+            FinalWork = adminData.FinalWork,
+            ParticipantId = adminData.ParticipantId,
+            Status = adminData.Status,
+            IsCompleted = adminData.IsCompleted,
+            AvailableActions = adminData.AvailableActions,
+            PerformedAction = adminData.PerformedAction,
+            Comment = adminData.Comment,
+            StartTime = adminData.StartTime,
+            CloseTime = adminData.CloseTime,
+            Metadata = adminData.Metadata
+        };
+
+        return ServiceResult<TaskInfoResponse>.Success(response);
     }
 
     /// <summary>
     /// Updates the draft work for a task.
+    /// Delegates to the shared AdminTaskService implementation.
     /// </summary>
     public async Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft)
     {
-        if (string.IsNullOrWhiteSpace(workflowId))
-        {
-            _logger.LogWarning("Attempt to update draft with empty workflowId");
-            return ServiceResult<object>.BadRequest("WorkflowId cannot be empty");
-        }
-
-        try
-        {
-            _logger.LogInformation("Updating draft for task {WorkflowId}", workflowId);
-            var client = await _clientFactory.GetClientAsync();
-
-            var workflowHandle = client.GetWorkflowHandle(workflowId);
-
-            // Send UpdateDraft signal
-            await workflowHandle.SignalAsync("UpdateDraft", new object[] { updatedDraft });
-
-            _logger.LogInformation("Successfully updated draft for task {WorkflowId}", workflowId);
-            return ServiceResult<object>.Success(new { message = "Draft updated successfully" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to update draft for task {WorkflowId}. Error: {ErrorMessage}",
-                workflowId, ex.Message);
-            return ServiceResult<object>.BadRequest($"Failed to update draft: {ex.Message}");
-        }
+        return await _adminTaskService.UpdateDraft(workflowId, updatedDraft);
     }
 
     /// <summary>
     /// Performs an action on a task with an optional comment.
+    /// Delegates to the shared AdminTaskService implementation.
     /// </summary>
     public async Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment)
     {
-        if (string.IsNullOrWhiteSpace(workflowId))
-        {
-            _logger.LogWarning("Attempt to perform action with empty workflowId");
-            return ServiceResult<object>.BadRequest("WorkflowId cannot be empty");
-        }
-
-        if (string.IsNullOrWhiteSpace(action))
-        {
-            _logger.LogWarning("Attempt to perform action with empty action for task {WorkflowId}", workflowId);
-            return ServiceResult<object>.BadRequest("Action cannot be empty");
-        }
-
-        try
-        {
-            _logger.LogInformation("Performing action '{Action}' on task {WorkflowId} with comment: {Comment}", 
-                action, workflowId, comment ?? "(none)");
-            var client = await _clientFactory.GetClientAsync();
-
-            var workflowHandle = client.GetWorkflowHandle(workflowId);
-
-            // Send PerformAction signal with TaskActionRequest payload
-            var actionRequest = new { Action = action, Comment = comment };
-            await workflowHandle.SignalAsync("PerformAction", new object[] { actionRequest });
-
-            _logger.LogInformation("Successfully performed action '{Action}' on task {WorkflowId}", action, workflowId);
-            return ServiceResult<object>.Success(new { message = $"Action '{action}' performed successfully" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to perform action '{Action}' on task {WorkflowId}. Error: {ErrorMessage}",
-                action, workflowId, ex.Message);
-            return ServiceResult<object>.BadRequest($"Failed to perform action: {ex.Message}");
-        }
+        return await _adminTaskService.PerformAction(workflowId, action, comment);
     }
 
     /// <summary>

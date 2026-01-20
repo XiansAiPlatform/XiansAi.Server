@@ -1,4 +1,5 @@
 using MongoDB.Bson;
+using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -126,6 +127,15 @@ public class ActivationService : IActivationService
 
             _logger.LogInformation("Successfully created activation {ActivationId}", activation.Id);
             return ServiceResult<AgentActivation>.Success(activation);
+        }
+        catch (MongoDB.Driver.MongoWriteException ex) when (ex.WriteError?.Code == 11000)
+        {
+            // Duplicate key error - activation with same name, agent, and participant already exists
+            _logger.LogWarning(ex, "Duplicate activation detected for Name={Name}, AgentName={AgentName}, ParticipantId={ParticipantId}, TenantId={TenantId}", 
+                request.Name, request.AgentName, request.ParticipantId, tenantId);
+            
+            return ServiceResult<AgentActivation>.Conflict(
+                $"An activation with the name '{request.Name}' already exists for agent '{request.AgentName}' and participant '{request.ParticipantId}'. Please use a different name or delete the existing activation first.");
         }
         catch (Exception ex)
         {
