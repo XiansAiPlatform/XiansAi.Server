@@ -17,9 +17,10 @@ public static class UsageStatisticsEndpoints
             .RequireAuthorization()
             .WithGlobalRateLimit();
 
-        // Generic endpoint - handles ALL usage types via query parameter
+        // Flexible endpoint - supports category and metric type filtering
         group.MapGet("", async (
-            [FromQuery] string? type,           // ← NEW: type parameter
+            [FromQuery] string? category,       // Metric category (tokens, activity, performance)
+            [FromQuery] string? metricType,     // Specific metric type
             [FromQuery] string? tenantId,
             [FromQuery] string? userId,
             [FromQuery] string? agentName,
@@ -32,30 +33,33 @@ public static class UsageStatisticsEndpoints
         {
             try
             {
-                // Validate type parameter
-                if (string.IsNullOrWhiteSpace(type))
+                // Validate required parameters
+                if (!startDate.HasValue || !endDate.HasValue)
                 {
-                    return Results.BadRequest(new { error = "Type parameter is required (tokens, messages, api-calls, etc.)" });
+                    return Results.BadRequest(new { error = "StartDate and EndDate are required" });
                 }
 
-                // Parse type string to enum
-                if (!Enum.TryParse<UsageType>(type, ignoreCase: true, out var usageType))
-                {
-                    var validTypes = string.Join(", ", Enum.GetNames<UsageType>().Select(t => t.ToLower()));
-                    return Results.BadRequest(new { error = $"Invalid type '{type}'. Valid types: {validTypes}" });
-                }
+                // Apply security: determine effective tenant and user
+                var effectiveTenantId = DetermineEffectiveTenantId(tenantContext, tenantId);
+                var effectiveUserId = DetermineEffectiveUserId(tenantContext, userId);
 
-                return await GetUsageStatisticsInternal(
-                    usageType, 
-                    tenantId, 
-                    userId,
-                    agentName,
-                    startDate, 
-                    endDate, 
-                    groupBy, 
-                    tenantContext, 
-                    usageStatisticsService, 
-                    cancellationToken);
+                // Validate user access
+                ValidateUserAccess(tenantContext, effectiveUserId);
+
+                var request = new UsageEventsRequest
+                {
+                    TenantId = effectiveTenantId,
+                    UserId = effectiveUserId,
+                    AgentName = string.IsNullOrWhiteSpace(agentName) || agentName == "all" ? null : agentName,
+                    Category = category,
+                    MetricType = metricType,
+                    StartDate = startDate.Value,
+                    EndDate = endDate.Value,
+                    GroupBy = groupBy ?? "day"
+                };
+
+                var response = await usageStatisticsService.GetUsageEventsAsync(request, cancellationToken);
+                return Results.Ok(response);
             }
             catch (ArgumentException ex)
             {
@@ -75,21 +79,23 @@ public static class UsageStatisticsEndpoints
         .WithName("GetUsageStatistics")
         .WithOpenApi(operation =>
         {
-            operation.Summary = "Get usage statistics (generic)";
-            operation.Description = "Retrieves aggregated usage statistics for any type (tokens, messages, api-calls, etc.) with time series data and user breakdown.\n\n" +
+            operation.Summary = "Get usage statistics (flexible)";
+            operation.Description = "Retrieves aggregated usage statistics filtered by category and/or metric type with time series data and user breakdown.\n\n" +
                                   "**Query Parameters:**\n" +
-                                  "- `type` (required): Usage type - 'tokens', 'messages', 'api-calls', etc.\n" +
+                                  "- `category` (optional): Metric category - 'tokens', 'activity', 'performance', 'llm_usage'\n" +
+                                  "- `metricType` (optional): Specific metric type (e.g., 'total_tokens', 'workflow_completed')\n" +
                                   "- `startDate` (required): Start of date range (ISO 8601)\n" +
                                   "- `endDate` (required): End of date range (ISO 8601)\n" +
                                   "- `userId` (optional): Filter by user (admins only, defaults to 'all')\n" +
+                                  "- `agentName` (optional): Filter by agent name\n" +
                                   "- `tenantId` (optional): Filter by tenant (SysAdmin only)\n" +
                                   "- `groupBy` (optional): Time grouping - 'day', 'week', 'month' (default: 'day')\n\n" +
                                   "**Authorization:**\n" +
                                   "- Admins can view all users\n" +
                                   "- Regular users can only view their own data\n\n" +
                                   "**Examples:**\n" +
-                                  "- `GET /api/client/usage/statistics?type=tokens&startDate=2025-12-01&endDate=2025-12-08`\n" +
-                                  "- `GET /api/client/usage/statistics?type=messages&startDate=2025-12-01&endDate=2025-12-08&userId=user123`";
+                                  "- `GET /api/client/usage/statistics?category=tokens&metricType=total_tokens&startDate=2025-01-01&endDate=2025-01-08`\n" +
+                                  "- `GET /api/client/usage/statistics?category=activity&startDate=2025-01-01&endDate=2025-01-08&agentName=EmailAgent`";
             return operation;
         });
 
@@ -131,6 +137,48 @@ public static class UsageStatisticsEndpoints
             operation.Summary = "Get users with usage data";
             operation.Description = "Returns list of users that have token/message usage in the tenant. " +
                                   "Admin only endpoint - used for populating user filter dropdown.";
+            return operation;
+        });
+
+        // Get available metrics (discovery endpoint for dynamic dashboard)
+        group.MapGet("/available-metrics", async (
+            [FromQuery] string? tenantId,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] IUsageEventService usageStatisticsService,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                // Apply security: determine effective tenant
+                var effectiveTenantId = DetermineEffectiveTenantId(tenantContext, tenantId);
+
+                var metrics = await usageStatisticsService.GetAvailableMetricsAsync(effectiveTenantId, cancellationToken);
+                return Results.Ok(metrics);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        })
+        .WithName("GetAvailableMetrics")
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Get available metrics for dynamic dashboard";
+            operation.Description = "Returns all available metric categories and types that have data for the tenant. " +
+                                  "Used by the UI to dynamically build the metrics selection interface.\n\n" +
+                                  "**Response:**\n" +
+                                  "- categories: Array of metric categories\n" +
+                                  "  - categoryId: Category identifier (e.g., 'tokens', 'activity')\n" +
+                                  "  - categoryName: Display name\n" +
+                                  "  - metrics: Array of metric definitions\n" +
+                                  "    - type: Metric type identifier\n" +
+                                  "    - displayName: Human-readable name\n" +
+                                  "    - unit: Measurement unit\n" +
+                                  "    - description: Optional metric description";
             return operation;
         });
     }
@@ -198,49 +246,6 @@ public static class UsageStatisticsEndpoints
     {
         return context.UserRoles.Contains(SystemRoles.SysAdmin) || 
                context.UserRoles.Contains(SystemRoles.TenantAdmin);
-    }
-
-    /// <summary>
-    /// Internal helper method to get usage statistics - shared logic for all types.
-    /// </summary>
-    private static async Task<IResult> GetUsageStatisticsInternal(
-        UsageType type,
-        string? tenantId,
-        string? userId,
-        string? agentName,
-        DateTime? startDate,
-        DateTime? endDate,
-        string? groupBy,
-        ITenantContext tenantContext,
-        IUsageEventService usageStatisticsService,
-        CancellationToken cancellationToken)
-    {
-        // Validate required parameters
-        if (!startDate.HasValue || !endDate.HasValue)
-        {
-            return Results.BadRequest(new { error = "StartDate and EndDate are required" });
-        }
-
-        // Apply security: determine effective tenant and user
-        var effectiveTenantId = DetermineEffectiveTenantId(tenantContext, tenantId);
-        var effectiveUserId = DetermineEffectiveUserId(tenantContext, userId);
-
-        // Validate user access
-        ValidateUserAccess(tenantContext, effectiveUserId);
-
-        var request = new UsageEventsRequest
-        {
-            TenantId = effectiveTenantId,
-            UserId = effectiveUserId,
-            AgentName = string.IsNullOrWhiteSpace(agentName) || agentName == "all" ? null : agentName,
-            Type = type,
-            StartDate = startDate.Value,
-            EndDate = endDate.Value,
-            GroupBy = groupBy ?? "day"
-        };
-
-        var response = await usageStatisticsService.GetUsageEventsAsync(request, cancellationToken);
-        return Results.Ok(response);
     }
 }
 
