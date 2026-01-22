@@ -72,7 +72,6 @@ public class TaskService : ITaskService
         // Map AdminTaskInfoResponse to TaskInfoResponse (exclude admin-specific fields)
         var response = new TaskInfoResponse
         {
-            TaskId = adminData.TaskId,
             WorkflowId = adminData.WorkflowId,
             RunId = adminData.RunId,
             Title = adminData.Title,
@@ -288,12 +287,8 @@ public class TaskService : ITaskService
             availableActions = taskActionsStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         }
 
-        // Extract taskId from workflow ID (format: tenantId:WorkflowType:taskId)
-        var taskId = workflow.Id.Split(':').LastOrDefault() ?? workflow.Id;
-
         return new TaskInfoResponse
         {
-            TaskId = taskId,
             WorkflowId = workflow.Id,
             RunId = workflow.RunId,
             Title = taskTitle,

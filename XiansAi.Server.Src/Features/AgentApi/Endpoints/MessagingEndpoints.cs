@@ -23,13 +23,14 @@ namespace Features.AgentApi.Endpoints
 
     public static class ConversationEndpoints
     {
+        private static readonly ILogger<ConversationHistoryQuery> _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<ConversationHistoryQuery>();
         private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
         {
             if (request.Authorization == null)
             {
                 var authHeader = context.Request.Headers["Authorization"].ToString();
                 var (success, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
-                
+
                 if (success && token != null)
                 {
                     request.Authorization = token;
@@ -212,7 +213,10 @@ namespace Features.AgentApi.Endpoints
                 return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType or WorkflowId is required").ToHttpResult();
             }
             
-            if (query.WorkflowId == null) {
+            _logger.LogInformation("************ Getting conversation history for workflowId {WorkflowId}", query.WorkflowId);
+            
+            if (query.WorkflowId == null)
+            {
                 query.WorkflowId = $"{tenantContext.TenantId}:{query.WorkflowType}";
             }
 

@@ -26,16 +26,17 @@ public static class AdminAgentActivationEndpoints
         // List all activations for a tenant
         activationGroup.MapGet("", async (
             string tenantId,
+            [FromQuery] string? agentName,
             [FromServices] IActivationService activationService) =>
         {
-            var result = await activationService.GetActivationsByTenantAsync(tenantId);
+            var result = await activationService.GetActivationsByTenantAsync(tenantId, agentName);
             return result.ToHttpResult();
         })
         .WithName("ListActivations")
         .WithOpenApi(operation => new(operation)
         {
             Summary = "List Agent Activations",
-            Description = "List all agent activations for a tenant."
+            Description = "List all agent activations for a tenant. Optionally filter by agent name using the 'agentName' query parameter."
         });
 
         // Get activation by ID

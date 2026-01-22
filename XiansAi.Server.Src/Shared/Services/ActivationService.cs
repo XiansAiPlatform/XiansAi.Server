@@ -13,7 +13,7 @@ public interface IActivationService
 {
     Task<ServiceResult<AgentActivation>> CreateActivationAsync(CreateActivationRequest request, string userId, string tenantId);
     Task<ServiceResult<AgentActivation>> GetActivationByIdAsync(string id);
-    Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId);
+    Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId, string? agentName = null);
     Task<ServiceResult<AgentActivation>> ActivateAgentAsync(string activationId, string tenantId, ActivationWorkflowConfiguration? workflowConfiguration = null);
     Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(string activationId, string tenantId);
     Task<ServiceResult<bool>> DeleteActivationAsync(string activationId);
@@ -177,18 +177,26 @@ public class ActivationService : IActivationService
     }
 
     /// <summary>
-    /// Gets all activations for a tenant.
+    /// Gets all activations for a tenant, optionally filtered by agent name.
     /// </summary>
-    public async Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId)
+    public async Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId, string? agentName = null)
     {
         try
         {
-            _logger.LogInformation("Retrieving activations for tenant {TenantId}", tenantId);
-
-            var activations = await _activationRepository.GetByTenantIdAsync(tenantId);
-
-            _logger.LogInformation("Found {Count} activations for tenant {TenantId}", activations.Count, tenantId);
-            return ServiceResult<List<AgentActivation>>.Success(activations);
+            if (string.IsNullOrWhiteSpace(agentName))
+            {
+                _logger.LogInformation("Retrieving all activations for tenant {TenantId}", tenantId);
+                var activations = await _activationRepository.GetByTenantIdAsync(tenantId);
+                _logger.LogInformation("Found {Count} activations for tenant {TenantId}", activations.Count, tenantId);
+                return ServiceResult<List<AgentActivation>>.Success(activations);
+            }
+            else
+            {
+                _logger.LogInformation("Retrieving activations for tenant {TenantId} filtered by agent name {AgentName}", tenantId, agentName);
+                var activations = await _activationRepository.GetByAgentNameAsync(agentName, tenantId);
+                _logger.LogInformation("Found {Count} activations for tenant {TenantId} with agent name {AgentName}", activations.Count, tenantId, agentName);
+                return ServiceResult<List<AgentActivation>>.Success(activations);
+            }
         }
         catch (Exception ex)
         {

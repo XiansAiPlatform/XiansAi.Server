@@ -133,7 +133,7 @@ public class ConversationThread
     public required string WorkflowId { get; set; }
 
     [BsonElement("workflow_type")]
-    public required string WorkflowType { get; set; }
+    public string? WorkflowType { get; set; }
 
     [BsonElement("agent")]
     public required string Agent { get; set; }

@@ -394,9 +394,11 @@ public class AgentRepository : IAgentRepository
         {
             Agent = agent,
             Definitions = definitionsByAgent.TryGetValue(agent.Name, out var defs) ? defs : new List<FlowDefinition>()
-        }).ToList();
+        })
+        .OrderByDescending(x => x.Agent.CreatedAt)
+        .ToList();
 
-        _logger.LogInformation("Returning {Count} system-scoped agents with their definitions", result.Count);
+        _logger.LogInformation("Returning {Count} system-scoped agents with their definitions (sorted by most recent first)", result.Count);
         return result;
     }
 
@@ -446,7 +448,8 @@ public class AgentRepository : IAgentRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}", agentName, createdBy, tenant);
+            _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}. Summary: {Summary}, Description: {Description}, Version: {Version}, Author: {Author}", 
+                agentName, createdBy, tenant, summary ?? "NULL", description ?? "NULL", version ?? "NULL", author ?? "NULL");
             
             // Create new agent object
             var newAgent = new Agent
@@ -477,7 +480,7 @@ public class AgentRepository : IAgentRepository
             }
             catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
             {
-                _logger.LogInformation("Agent {AgentName} already exists, retrieving existing agent", agentName);
+                _logger.LogInformation("Agent {AgentName} already exists, will update. Provided Summary: {Summary}", agentName, summary ?? "NULL");
                 
                 // Agent already exists, get the existing one
                 // Use the actual tenant value from the new agent (which is null for system-scoped agents)
@@ -489,35 +492,42 @@ public class AgentRepository : IAgentRepository
                     var updateBuilder = Builders<Agent>.Update;
                     var updates = new List<UpdateDefinition<Agent>>();
                     
-                    if (!string.IsNullOrEmpty(onboardingJson))
+                    if (onboardingJson != null)
                     {
                         updates.Add(updateBuilder.Set(x => x.OnboardingJson, onboardingJson));
                         existingAgent.OnboardingJson = onboardingJson;
                         hasUpdates = true;
                     }
                     
-                    if (!string.IsNullOrEmpty(description))
+                    if (description != null)
                     {
                         updates.Add(updateBuilder.Set(x => x.Description, description));
                         existingAgent.Description = description;
                         hasUpdates = true;
                     }
                     
-                    if (!string.IsNullOrEmpty(summary))
+                    if (summary != null)
                     {
+                        _logger.LogInformation("Updating summary from '{OldSummary}' to '{NewSummary}' for agent {AgentName}", 
+                            existingAgent.Summary ?? "NULL", summary, agentName);
                         updates.Add(updateBuilder.Set(x => x.Summary, summary));
                         existingAgent.Summary = summary;
                         hasUpdates = true;
                     }
+                    else
+                    {
+                        _logger.LogInformation("Summary is null, skipping update for agent {AgentName}. Current value: '{CurrentSummary}'", 
+                            agentName, existingAgent.Summary ?? "NULL");
+                    }
                     
-                    if (!string.IsNullOrEmpty(version))
+                    if (version != null)
                     {
                         updates.Add(updateBuilder.Set(x => x.Version, version));
                         existingAgent.Version = version;
                         hasUpdates = true;
                     }
                     
-                    if (!string.IsNullOrEmpty(author))
+                    if (author != null)
                     {
                         updates.Add(updateBuilder.Set(x => x.Author, author));
                         existingAgent.Author = author;
@@ -526,7 +536,7 @@ public class AgentRepository : IAgentRepository
                     
                     if (hasUpdates)
                     {
-                        _logger.LogInformation("Updating fields for existing agent {AgentName}", agentName);
+                        _logger.LogInformation("Updating {Count} fields for existing agent {AgentName}", updates.Count, agentName);
                         
                         var tenantFilter = existingAgent.Tenant == null
                             ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
@@ -538,7 +548,13 @@ public class AgentRepository : IAgentRepository
                         );
                         
                         var combinedUpdate = updateBuilder.Combine(updates);
-                        await _agents.UpdateOneAsync(filter, combinedUpdate);
+                        var updateResult = await _agents.UpdateOneAsync(filter, combinedUpdate);
+                        _logger.LogInformation("Update result for agent {AgentName}: Matched={Matched}, Modified={Modified}", 
+                            agentName, updateResult.MatchedCount, updateResult.ModifiedCount);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("No updates to apply for agent {AgentName}", agentName);
                     }
                     
                     return existingAgent;

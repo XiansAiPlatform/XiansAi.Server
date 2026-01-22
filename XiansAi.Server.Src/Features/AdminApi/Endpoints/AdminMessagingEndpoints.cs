@@ -98,15 +98,13 @@ public static class AdminMessagingEndpoints
 
             // Construct the workflow ID as per specification:
             // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
-            var workflowType = $"{agentName}:Supervisor Workflow";
+            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
 
             // Create or get the thread
             var thread = new ConversationThread
             {
                 TenantId = tenantId,
                 WorkflowId = workflowId,
-                WorkflowType = workflowType,
                 Agent = agentName,
                 ParticipantId = participantId,
                 CreatedAt = DateTime.UtcNow,
@@ -179,7 +177,7 @@ public static class AdminMessagingEndpoints
         {
             // Construct the workflow ID as per specification:
             // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = $"{tenantId}:{request.AgentName}:Supervisor Workflow:{request.ActivationName}";
+            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, request.AgentName, request.ActivationName);
             
             // Default to Chat if type not specified
             var messageType = request.Type ?? MessageType.Chat;
@@ -295,7 +293,7 @@ public static class AdminMessagingEndpoints
 
             // Construct the workflow ID as per specification:
             // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
+            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
 
             var result = await messageService.GetTopicsByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize);
             return result.ToHttpResult();
@@ -345,7 +343,7 @@ public static class AdminMessagingEndpoints
 
             // Construct the workflow ID as per specification:
             // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
+            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
 
             // When topic is not provided (null) or empty, get messages with null scope (no topic)
             // When topic has a specific value, get messages with that specific scope
