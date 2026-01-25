@@ -11,9 +11,9 @@ namespace Shared.Services;
 public interface IUsageEventService
 {
     /// <summary>
-    /// Records a usage event.
+    /// Records usage event with flexible metrics.
     /// </summary>
-    Task RecordAsync(UsageEventRecord record, CancellationToken cancellationToken = default);
+    Task RecordAsync(UsageReportRequest request, string tenantId, string userId, CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Retrieves usage events statistics for the specified request.
@@ -27,6 +27,13 @@ public interface IUsageEventService
     /// </summary>
     Task<List<UserListItem>> GetUsersWithUsageAsync(
         string tenantId, 
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets available metrics for discovery (dynamic dashboard).
+    /// </summary>
+    Task<AvailableMetricsResponse> GetAvailableMetricsAsync(
+        string tenantId,
         CancellationToken cancellationToken = default);
 }
 
@@ -46,45 +53,77 @@ public class UsageEventService : IUsageEventService
         _logger = logger;
     }
 
-    public async Task RecordAsync(UsageEventRecord record, CancellationToken cancellationToken = default)
+    public async Task RecordAsync(
+        UsageReportRequest request, 
+        string tenantId, 
+        string userId, 
+        CancellationToken cancellationToken = default)
     {
         if (!_options.RecordUsageEvents)
         {
             return;
         }
 
-        if (record.TotalTokens == 0)
+        if (request.Metrics == null || request.Metrics.Count == 0)
         {
+            _logger.LogWarning("No metrics provided in flexible usage report");
             return;
         }
 
         _logger.LogInformation(
-            "Recording token usage: tenant={TenantId}, user={UserId}, totalTokens={TotalTokens}, prompt={PromptTokens}, completion={CompletionTokens}, responseTimeMs={ResponseTimeMs}",
-            record.TenantId,
-            record.UserId,
-            record.TotalTokens,
-            record.PromptTokens,
-            record.CompletionTokens,
-            record.ResponseTimeMs);
+            "Recording flexible usage: tenant={TenantId}, user={UserId}, metricsCount={MetricsCount}",
+            tenantId,
+            userId,
+            request.Metrics.Count);
+
+        // Convert DTOs to domain models
+        var metrics = request.Metrics.Select(m => new MetricValue
+        {
+            Category = m.Category,
+            Type = m.Type,
+            Value = m.Value,
+            Unit = m.Unit ?? "count"
+        }).ToList();
+
+        // Extract agent name from workflow_id
+        var agentName = ExtractAgentName(request.WorkflowId);
 
         var usageEvent = new UsageEvent
         {
-            TenantId = record.TenantId,
-            UserId = record.UserId,
-            Model = record.Model,
-            PromptTokens = record.PromptTokens,
-            CompletionTokens = record.CompletionTokens,
-            TotalTokens = record.TotalTokens,
-            MessageCount = record.MessageCount,
-            WorkflowId = record.WorkflowId,
-            RequestId = record.RequestId,
-            Source = record.Source,
-            Metadata = record.Metadata,
-            ResponseTimeMs = record.ResponseTimeMs,
+            TenantId = tenantId,
+            UserId = userId,
+            AgentName = agentName,
+            WorkflowId = request.WorkflowId,
+            RequestId = request.RequestId,
+            Source = request.Source,
+            Model = request.Model,
+            CustomIdentifier = request.CustomIdentifier,
+            Metrics = metrics,
+            Metadata = request.Metadata,
             CreatedAt = DateTime.UtcNow
         };
 
         await _repository.InsertAsync(usageEvent, cancellationToken);
+    }
+
+    private static string? ExtractAgentName(string? workflowId)
+    {
+        if (string.IsNullOrWhiteSpace(workflowId))
+            return null;
+
+        var parts = workflowId.Split(':');
+        if (parts.Length >= 3)
+        {
+            // Format: tenant:AgentName:FlowName
+            return parts[1].Trim();
+        }
+        else if (parts.Length >= 2)
+        {
+            // Format: AgentName:FlowName (A2A context)
+            return parts[0].Trim();
+        }
+        
+        return null;
     }
 
     public async Task<UsageEventsResponse> GetUsageEventsAsync(
@@ -94,22 +133,23 @@ public class UsageEventService : IUsageEventService
         ValidateRequest(request);
 
         _logger.LogInformation(
-            "Retrieving {Type} statistics for tenant={TenantId}, user={UserId}, range={StartDate} to {EndDate}, groupBy={GroupBy}",
-            request.Type, request.TenantId, request.UserId ?? "all", request.StartDate, request.EndDate, request.GroupBy);
+            "Retrieving statistics for tenant={TenantId}, category={Category}, type={MetricType}, user={UserId}, range={StartDate} to {EndDate}, groupBy={GroupBy}",
+            request.TenantId, request.Category ?? "all", request.MetricType ?? "all", request.UserId ?? "all", request.StartDate, request.EndDate, request.GroupBy);
 
         var stats = await _repository.GetUsageEventsAsync(
             request.TenantId,
             request.UserId,
             request.AgentName,
-            request.Type,
+            request.Category,
+            request.MetricType,
             request.StartDate,
             request.EndDate,
             request.GroupBy,
             cancellationToken);
 
         _logger.LogInformation(
-            "Retrieved {Type} statistics: primaryCount={PrimaryCount}, requests={RequestCount}, users={UserCount}",
-            request.Type, stats.TotalMetrics.PrimaryCount, stats.TotalMetrics.RequestCount, stats.UserBreakdown.Count);
+            "Retrieved statistics: category={Category}, type={MetricType}, totalValue={TotalValue}, requests={RequestCount}, users={UserCount}",
+            stats.Category, stats.MetricType, stats.TotalValue, stats.TotalMetrics.RequestCount, stats.UserBreakdown.Count);
 
         return stats;
     }
@@ -130,6 +170,24 @@ public class UsageEventService : IUsageEventService
         _logger.LogInformation("Retrieved {UserCount} users with usage", users.Count);
 
         return users;
+    }
+
+    public async Task<AvailableMetricsResponse> GetAvailableMetricsAsync(
+        string tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            throw new ArgumentException("Tenant ID is required", nameof(tenantId));
+        }
+
+        _logger.LogInformation("Retrieving available metrics for tenant={TenantId}", tenantId);
+
+        var metrics = await _repository.GetAvailableMetricsAsync(tenantId, cancellationToken);
+
+        _logger.LogInformation("Retrieved {CategoryCount} categories with available metrics", metrics.Categories.Count);
+
+        return metrics;
     }
 
     private static void ValidateRequest(UsageEventsRequest request)

@@ -25,14 +25,28 @@ public static class UsageEventEndpoints
                 return Results.BadRequest("Request payload is required.");
             }
 
-            if (request.PromptTokens < 0 || request.CompletionTokens < 0 || request.TotalTokens < 0)
+            if (request.Metrics == null || request.Metrics.Count == 0)
             {
-                return Results.BadRequest("Token counts cannot be negative.");
+                return Results.BadRequest("At least one metric must be provided.");
             }
 
-            if (request.PromptTokens == 0 && request.CompletionTokens == 0 && request.TotalTokens == 0)
+            // Validate metrics
+            foreach (var metric in request.Metrics)
             {
-                return Results.BadRequest("At least one token count must be greater than zero.");
+                if (string.IsNullOrWhiteSpace(metric.Category))
+                {
+                    return Results.BadRequest("Metric category is required.");
+                }
+
+                if (string.IsNullOrWhiteSpace(metric.Type))
+                {
+                    return Results.BadRequest("Metric type is required.");
+                }
+
+                if (metric.Value < 0)
+                {
+                    return Results.BadRequest($"Metric value cannot be negative: {metric.Type}");
+                }
             }
 
             // Use TenantId from request if provided, otherwise from certificate context
@@ -44,28 +58,37 @@ public static class UsageEventEndpoints
 
             var userId = request.UserId ?? tenantContext.LoggedInUser ?? tenantContext.TenantId;
 
-            var record = new UsageEventRecord(
-                tenantId,
-                userId,
-                request.Model,
-                request.PromptTokens,
-                request.CompletionTokens,
-                request.TotalTokens,
-                request.MessageCount,
-                request.WorkflowId,
-                request.RequestId,
-                request.Source,
-                request.Metadata,
-                request.ResponseTimeMs);
-
-            await usageService.RecordAsync(record, cancellationToken);
+            await usageService.RecordAsync(request, tenantId, userId, cancellationToken);
 
             return Results.Accepted();
         })
         .WithOpenApi(operation =>
         {
-            operation.Summary = "Report token usage";
-            operation.Description = "Reports prompt/completion token usage for the current tenant/user context.";
+            operation.Summary = "Report flexible usage metrics";
+            operation.Description = "Reports usage metrics using the flexible metrics array format. " +
+                                  "Supports standard metrics (tokens, messages, response time) and custom metrics " +
+                                  "(workflow completions, emails sent, etc.).\n\n" +
+                                  "**Example Request:**\n" +
+                                  "```json\n" +
+                                  "{\n" +
+                                  "  \"workflowId\": \"tenant:EmailAgent:SendEmail\",\n" +
+                                  "  \"model\": \"gpt-4\",\n" +
+                                  "  \"metrics\": [\n" +
+                                  "    { \"category\": \"tokens\", \"type\": \"prompt_tokens\", \"value\": 100, \"unit\": \"tokens\" },\n" +
+                                  "    { \"category\": \"tokens\", \"type\": \"completion_tokens\", \"value\": 50, \"unit\": \"tokens\" },\n" +
+                                  "    { \"category\": \"tokens\", \"type\": \"total_tokens\", \"value\": 150, \"unit\": \"tokens\" },\n" +
+                                  "    { \"category\": \"activity\", \"type\": \"email_sent\", \"value\": 1, \"unit\": \"count\" },\n" +
+                                  "    { \"category\": \"activity\", \"type\": \"workflow_completed\", \"value\": 1, \"unit\": \"count\" }\n" +
+                                  "  ]\n" +
+                                  "}\n" +
+                                  "```\n\n" +
+                                  "**Standard Metric Categories:**\n" +
+                                  "- `tokens`: Token usage (prompt_tokens, completion_tokens, total_tokens)\n" +
+                                  "- `activity`: Agent activities (message_count, workflow_completed, email_sent, etc.)\n" +
+                                  "- `performance`: Performance metrics (response_time_ms, processing_time_ms)\n" +
+                                  "- `llm_usage`: LLM API usage (llm_calls, cache_hits, cache_misses)\n\n" +
+                                  "**Custom Metrics:**\n" +
+                                  "Any category/type combination can be used for tenant-specific metrics.";
             return operation;
         });
     }
