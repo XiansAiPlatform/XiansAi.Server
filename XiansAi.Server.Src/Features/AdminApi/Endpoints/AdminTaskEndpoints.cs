@@ -33,6 +33,12 @@ public static class AdminTaskEndpoints
             [FromQuery] string? status,
             [FromServices] IAdminTaskService taskService) =>
         {
+            // Validate that activationName requires agentName
+            if (!string.IsNullOrEmpty(activationName) && string.IsNullOrEmpty(agentName))
+            {
+                return Results.BadRequest(new { message = "activationName cannot be provided without agentName" });
+            }
+            
             var result = await taskService.GetTasks(
                 tenantId,
                 pageSize,

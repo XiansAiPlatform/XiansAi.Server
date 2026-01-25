@@ -19,7 +19,7 @@ public class AdminTaskInfoResponse
     public string? InitialWork { get; set; }
     public string? FinalWork { get; set; }
     public string? ParticipantId { get; set; }
-    public string? Status { get; set; }
+    public required string Status { get; set; }
     public bool IsCompleted { get; set; }
     public string[]? AvailableActions { get; set; }
     public string? PerformedAction { get; set; }
@@ -355,6 +355,7 @@ public class AdminTaskService : IAdminTaskService
             WorkflowId = workflow.Id,
             RunId = workflow.RunId,
             WorkflowStatus = workflow.Status.ToString(),
+            Status = workflow.Status.ToString(),
             Title = taskTitle,
             Description = taskDescription,
             ParticipantId = participantId,

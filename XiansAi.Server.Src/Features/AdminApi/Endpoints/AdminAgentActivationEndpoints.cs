@@ -73,6 +73,23 @@ public static class AdminAgentActivationEndpoints
             Description = "Create a new agent activation record."
         });
 
+        // Update an existing activation
+        activationGroup.MapPut("/{activationId}", async (
+            string tenantId,
+            string activationId,
+            [FromBody] UpdateActivationRequest request,
+            [FromServices] IActivationService activationService) =>
+        {
+            var result = await activationService.UpdateActivationAsync(activationId, request, tenantId);
+            return result.ToHttpResult();
+        })
+        .WithName("UpdateActivation")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Update Agent Activation",
+            Description = "Update an existing agent activation. Note: Cannot update AgentName. For activations with running workflows, only the description field can be updated. To update other fields (name, participantId, workflowConfiguration), deactivate the activation first."
+        });
+
         // Activate an agent (start workflow)
         activationGroup.MapPost("/{activationId}/activate", async (
             string tenantId,

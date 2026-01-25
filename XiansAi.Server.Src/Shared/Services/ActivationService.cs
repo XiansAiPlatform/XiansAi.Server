@@ -12,6 +12,7 @@ namespace Shared.Services;
 public interface IActivationService
 {
     Task<ServiceResult<AgentActivation>> CreateActivationAsync(CreateActivationRequest request, string userId, string tenantId);
+    Task<ServiceResult<AgentActivation>> UpdateActivationAsync(string activationId, UpdateActivationRequest request, string tenantId);
     Task<ServiceResult<AgentActivation>> GetActivationByIdAsync(string id);
     Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId, string? agentName = null);
     Task<ServiceResult<AgentActivation>> ActivateAgentAsync(string activationId, string tenantId, ActivationWorkflowConfiguration? workflowConfiguration = null);
@@ -23,6 +24,14 @@ public class CreateActivationRequest
 {
     public required string Name { get; set; }
     public required string AgentName { get; set; }
+    public string? Description { get; set; }
+    public string? ParticipantId { get; set; }
+    public ActivationWorkflowConfiguration? WorkflowConfiguration { get; set; }
+}
+
+public class UpdateActivationRequest
+{
+    public string? Name { get; set; }
     public string? Description { get; set; }
     public string? ParticipantId { get; set; }
     public ActivationWorkflowConfiguration? WorkflowConfiguration { get; set; }
@@ -142,6 +151,132 @@ public class ActivationService : IActivationService
             _logger.LogError(ex, "Error creating activation {Name}", request.Name);
             return ServiceResult<AgentActivation>.InternalServerError(
                 "An error occurred while creating the activation");
+        }
+    }
+
+    /// <summary>
+    /// Updates an existing agent activation.
+    /// Note: Cannot update AgentName. If the activation is already activated, deactivate it first.
+    /// </summary>
+    public async Task<ServiceResult<AgentActivation>> UpdateActivationAsync(
+        string activationId,
+        UpdateActivationRequest request,
+        string tenantId)
+    {
+        try
+        {
+            _logger.LogInformation("Updating activation {ActivationId}", activationId);
+
+            if (string.IsNullOrWhiteSpace(activationId))
+            {
+                return ServiceResult<AgentActivation>.BadRequest("Activation ID is required");
+            }
+
+            var activation = await _activationRepository.GetByIdAsync(activationId);
+            if (activation == null)
+            {
+                _logger.LogWarning("Activation with ID {ActivationId} not found", activationId);
+                return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
+            }
+
+            if (activation.TenantId != tenantId)
+            {
+                _logger.LogWarning("Activation {ActivationId} does not belong to tenant {TenantId}", activationId, tenantId);
+                return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
+            }
+
+            // Check if activation is currently active (has running workflows)
+            var hasRunningWorkflows = activation.WorkflowIds != null && activation.WorkflowIds.Count > 0;
+            
+            // Determine which fields are being updated
+            var isUpdatingName = !string.IsNullOrWhiteSpace(request.Name);
+            var isUpdatingDescription = request.Description != null;
+            var isUpdatingParticipantId = request.ParticipantId != null;
+            var isUpdatingWorkflowConfiguration = request.WorkflowConfiguration != null;
+
+            // Only allow description updates when workflows are running
+            if (hasRunningWorkflows)
+            {
+                var isOnlyDescriptionUpdate = isUpdatingDescription && 
+                    !isUpdatingName && 
+                    !isUpdatingParticipantId && 
+                    !isUpdatingWorkflowConfiguration;
+
+                if (!isOnlyDescriptionUpdate)
+                {
+                    _logger.LogWarning(
+                        "Attempting to update active activation {ActivationId} with {Count} workflows running. " +
+                        "Only description updates are allowed for active activations.",
+                        activationId, activation.WorkflowIds!.Count);
+                    return ServiceResult<AgentActivation>.Conflict(
+                        "Cannot update name, participantId, or workflowConfiguration on an activation with running workflows. " +
+                        "Only description can be updated. Please deactivate it first to update other fields.");
+                }
+
+                _logger.LogInformation(
+                    "Allowing description-only update for active activation {ActivationId} with {Count} running workflows",
+                    activationId, activation.WorkflowIds!.Count);
+            }
+
+            // Update only the fields that are provided
+            if (isUpdatingName)
+            {
+                activation.Name = request.Name!;
+            }
+
+            if (isUpdatingDescription)
+            {
+                activation.Description = request.Description;
+            }
+
+            if (isUpdatingParticipantId)
+            {
+                activation.ParticipantId = request.ParticipantId;
+            }
+
+            if (isUpdatingWorkflowConfiguration)
+            {
+                // Validate the workflow configuration
+                try
+                {
+                    request.WorkflowConfiguration!.Validate();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Invalid workflow configuration provided for activation {ActivationId}", activationId);
+                    return ServiceResult<AgentActivation>.BadRequest($"Invalid workflow configuration: {ex.Message}");
+                }
+
+                activation.WorkflowConfiguration = request.WorkflowConfiguration;
+            }
+
+            // Validate the updated activation
+            try
+            {
+                activation = activation.SanitizeAndValidate();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Validation failed for activation {ActivationId}", activationId);
+                return ServiceResult<AgentActivation>.BadRequest($"Validation error: {ex.Message}");
+            }
+
+            await _activationRepository.UpdateAsync(activationId, activation);
+
+            _logger.LogInformation("Successfully updated activation {ActivationId}", activationId);
+            return ServiceResult<AgentActivation>.Success(activation);
+        }
+        catch (MongoDB.Driver.MongoWriteException ex) when (ex.WriteError?.Code == 11000)
+        {
+            _logger.LogWarning(ex, "Duplicate activation detected when updating {ActivationId}", activationId);
+            return ServiceResult<AgentActivation>.Conflict(
+                "An activation with this name already exists for the same agent and participant. Please use a different name.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating activation {ActivationId}", activationId);
+            return ServiceResult<AgentActivation>.InternalServerError(
+                "An error occurred while updating the activation");
         }
     }
 
