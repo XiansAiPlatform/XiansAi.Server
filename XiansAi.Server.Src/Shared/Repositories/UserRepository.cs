@@ -126,6 +126,11 @@ public class UserRepository : IUserRepository
                     tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantUser") && tr.IsApproved));
                 break;
 
+            case UserTypeFilter.PARTICIPANT:
+                filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantParticipant") && tr.IsApproved));
+                break;
+
             case UserTypeFilter.ALL:
             default:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,

@@ -389,7 +389,6 @@ public class TemplateService : ITemplateService
                 agentName, newAgent.Id, tenantId, createdBy);
 
             // Clone all flow definitions from the template
-            var clonedDefinitionsCount = 0;
             foreach (var templateDefinition in templateAgent.Definitions)
             {
                 var newDefinition = new FlowDefinition
@@ -411,41 +410,40 @@ public class TemplateService : ITemplateService
                 };
 
                 await _flowDefinitionRepository.CreateAsync(newDefinition);
-                clonedDefinitionsCount++;
                 
                 _logger.LogDebug("Cloned flow definition {WorkflowType} for agent {AgentName}", 
                     templateDefinition.WorkflowType, agentName);
             }
 
             // Clone all system-scoped knowledge associated with the template agent
-            var systemKnowledge = await _knowledgeRepository.GetSystemScopedByAgentAsync<Knowledge>(agentName);
-            var clonedKnowledgeCount = 0;
+            // var systemKnowledge = await _knowledgeRepository.GetSystemScopedByAgentAsync<Knowledge>(agentName);
+            // var clonedKnowledgeCount = 0;
             
-            foreach (var templateKnowledge in systemKnowledge)
-            {
-                var newKnowledge = new Knowledge
-                {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    Name = templateKnowledge.Name,
-                    Content = templateKnowledge.Content,
-                    Type = templateKnowledge.Type,
-                    Version = templateKnowledge.Version,
-                    Agent = agentName, // Keep the same agent name
-                    TenantId = tenantId, // Assign to target tenant
-                    CreatedBy = createdBy,
-                    CreatedAt = DateTime.UtcNow,
-                    SystemScoped = false // User tenant knowledge is not system scoped
-                };
+            // foreach (var templateKnowledge in systemKnowledge)
+            // {
+            //     var newKnowledge = new Knowledge
+            //     {
+            //         Id = ObjectId.GenerateNewId().ToString(),
+            //         Name = templateKnowledge.Name,
+            //         Content = templateKnowledge.Content,
+            //         Type = templateKnowledge.Type,
+            //         Version = templateKnowledge.Version,
+            //         Agent = agentName, // Keep the same agent name
+            //         TenantId = tenantId, // Assign to target tenant
+            //         CreatedBy = createdBy,
+            //         CreatedAt = DateTime.UtcNow,
+            //         SystemScoped = false // User tenant knowledge is not system scoped
+            //     };
 
-                await _knowledgeRepository.CreateAsync(newKnowledge);
-                clonedKnowledgeCount++;
+            //     await _knowledgeRepository.CreateAsync(newKnowledge);
+            //     clonedKnowledgeCount++;
                 
-                _logger.LogDebug("Cloned knowledge {KnowledgeName} for agent {AgentName}", 
-                    templateKnowledge.Name, agentName);
-            }
+            //     _logger.LogDebug("Cloned knowledge {KnowledgeName} for agent {AgentName}", 
+            //         templateKnowledge.Name, agentName);
+            // }
 
-            _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items by user {CreatedBy}", 
-                agentName, tenantId, clonedDefinitionsCount, clonedKnowledgeCount, createdBy);
+            // _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items by user {CreatedBy}", 
+            //     agentName, tenantId, clonedDefinitionsCount, clonedKnowledgeCount, createdBy);
 
             return ServiceResult<Agent>.Success(newAgent);
         }

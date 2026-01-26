@@ -184,6 +184,29 @@ logs:
       tenant_id: asc
       workflow_type: asc
       level: asc
+  - name: tenant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      created_at: desc
+    background: true
+  - name: tenant_id_1_activation_1_created_at_-1
+    keys:
+      tenant_id: asc
+      activation: asc
+      created_at: desc
+    background: true
+  - name: tenant_id_1_workflow_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      created_at: desc
+    background: true
+  - name: tenant_id_1_agent_1_created_at_-1
+    keys:
+      tenant_id: asc
+      agent: asc
+      created_at: desc
+    background: true
 
 api_keys:
   - name: tenant_name_unique
@@ -236,35 +259,25 @@ knowledge:
       name: asc
       agent: asc
       tenant_id: asc
-
-activity_history:
-  - name: activity_id_1
+  - name: agent_1_tenant_id_1
     keys:
-      activity_id: asc
-  - name: workflow_id_1
+      agent: asc
+      tenant_id: asc
+    background: true
+  - name: activation_name_1
     keys:
-      workflow_id: asc
-  - name: workflow_type_1
-    keys:
-      workflow_type: asc
-  - name: started_time_1
-    keys:
-      started_time: desc
-  - name: ended_time_1
-    keys:
-      ended_time: asc
+      activation_name: asc
+    background: true
     sparse: true
-  - name: task_queue_1
+  - name: name_1_version_1_agent_1_tenant_id_1_activation_name_1
     keys:
-      task_queue: asc
-  - name: workflow_id_1_activity_id_1
-    keys:
-      workflow_id: asc
-      activity_id: asc
-  - name: activity_history_ttl
-    keys:
-      started_time: asc
-    expire_after: 90d
+      name: asc
+      version: asc
+      agent: asc
+      tenant_id: asc
+      activation_name: asc
+    unique: true
+    sparse: true
     background: true
 
 documents:

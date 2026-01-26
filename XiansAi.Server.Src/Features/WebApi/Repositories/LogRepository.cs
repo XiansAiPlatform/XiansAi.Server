@@ -31,6 +31,18 @@ public interface ILogRepository
         IEnumerable<string> workflowTypes,
         DateTime? startTime = null,
         DateTime? endTime = null);
+    Task<(IEnumerable<Log> logs, long totalCount)> GetAdminLogsAsync(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string? workflowId,
+        string? workflowType,
+        LogLevel? logLevel,
+        DateTime? startDate,
+        DateTime? endDate,
+        int page = 1,
+        int pageSize = 20);
 }
 
 public class LogRepository : ILogRepository
@@ -173,8 +185,9 @@ public class LogRepository : ILogRepository
             filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
         }
         var workflowTypes = await _logs.Distinct(x => x.WorkflowType, filter).ToListAsync();
-        workflowTypes.Sort();
-        return workflowTypes;
+        var nonNullWorkflowTypes = workflowTypes.Where(x => x != null).Select(x => x!).ToList();
+        nonNullWorkflowTypes.Sort();
+        return nonNullWorkflowTypes;
     }
     
     public async Task<IEnumerable<string>> GetDistinctWorkflowIdsForTypeAsync(
@@ -269,5 +282,77 @@ public class LogRepository : ILogRepository
             .SortByDescending(x => x.CreatedAt)
             .ToListAsync();
         return criticalLogs;
+    }
+
+    /// <summary>
+    /// Gets logs with flexible filtering for admin purposes.
+    /// Unlike GetFilteredLogsAsync, this method allows optional agent filtering for cross-agent queries.
+    /// </summary>
+    public async Task<(IEnumerable<Log> logs, long totalCount)> GetAdminLogsAsync(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string? workflowId,
+        string? workflowType,
+        LogLevel? logLevel,
+        DateTime? startDate,
+        DateTime? endDate,
+        int page = 1,
+        int pageSize = 20)
+    {
+        // Start with tenant filter
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId);
+        
+        // Add optional filters
+        if (!string.IsNullOrEmpty(agentName))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Agent, agentName);
+        }
+        
+        if (!string.IsNullOrEmpty(activationName))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Activation, activationName);
+        }
+        
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+        
+        if (!string.IsNullOrEmpty(workflowId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowId, workflowId);
+        }
+        
+        if (!string.IsNullOrEmpty(workflowType))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
+        }
+        
+        if (logLevel.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Level, logLevel.Value);
+        }
+        
+        if (startDate.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startDate.Value);
+        }
+        
+        if (endDate.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endDate.Value);
+        }
+        
+        // Get total count and logs
+        var totalCount = await _logs.CountDocumentsAsync(filter);
+        var logs = await _logs.Find(filter)
+            .SortByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+            
+        return (logs, totalCount);
     }
 }

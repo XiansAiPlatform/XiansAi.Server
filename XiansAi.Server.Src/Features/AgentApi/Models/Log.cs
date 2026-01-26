@@ -27,13 +27,16 @@ public class Log
     public required string WorkflowId { get; set; }
 
     [BsonElement("workflow_run_id")]
-    public required string WorkflowRunId { get; set; }
+    public string? WorkflowRunId { get; set; }
 
     [BsonElement("workflow_type")]
-    public required string WorkflowType { get; set; }
+    public string? WorkflowType { get; set; }
 
     [BsonElement("agent")]
     public required string Agent { get; set; }
+
+    [BsonElement("activation")]
+    public string? Activation { get; set; }
 
     [BsonElement("participant_id")]
     public string? ParticipantId { get; set; }

@@ -34,7 +34,14 @@ namespace Shared.Services
                     .SetSize(1);
                 _cache.Set(cacheKey, roles, cacheOptions);
             }
-            return roles ?? new List<string>();
+            
+            // Filter out TenantParticipant role - participants cannot authenticate/login
+            // They exist in the system for Admin API queries only
+            var filteredRoles = (roles ?? new List<string>())
+                .Where(r => r != SystemRoles.TenantParticipant)
+                .ToList();
+            
+            return filteredRoles;
         }
 
         public void InvalidateUserRoles(string userId, string tenantId)

@@ -202,6 +202,9 @@ public interface IConversationRepository
     // Hint operations
     Task<string?> GetLastHintAsync(string tenantId, string workflowId, string participantId, string? scope = null);
 
+    // Statistics operations
+    Task<(int totalMessages, int activeUsers)> GetMessagingStatsAsync(string tenantId, DateTime startDate, DateTime endDate, string? participantId = null);
+
 }
 
 /// <summary>
@@ -800,6 +803,50 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
             return message?.Hint;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastHint");
+    }
+
+    public async Task<(int totalMessages, int activeUsers)> GetMessagingStatsAsync(
+        string tenantId, 
+        DateTime startDate, 
+        DateTime endDate, 
+        string? participantId = null)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            _logger.LogDebug(
+                "Getting messaging stats for tenantId {TenantId}, dateRange {StartDate} to {EndDate}, participantId {ParticipantId}",
+                tenantId, startDate, endDate, participantId ?? "null");
+
+            // Build filter for messages in date range
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+            var filter = filterBuilder.And(
+                filterBuilder.Eq(m => m.TenantId, tenantId),
+                filterBuilder.Gte(m => m.CreatedAt, startDate),
+                filterBuilder.Lte(m => m.CreatedAt, endDate)
+            );
+
+            // Add participant filter if specified
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                filter = filterBuilder.And(filter, filterBuilder.Eq(m => m.ParticipantId, participantId));
+            }
+
+            // Count total messages
+            var totalMessages = await _messagesCollection.CountDocumentsAsync(filter);
+
+            // Count distinct active users (participants who sent messages)
+            var distinctParticipants = await _messagesCollection
+                .DistinctAsync<string>("participant_id", filter);
+            
+            var activeUsersList = await distinctParticipants.ToListAsync();
+            var activeUsers = activeUsersList.Count;
+
+            _logger.LogDebug(
+                "Messaging stats retrieved - TotalMessages: {TotalMessages}, ActiveUsers: {ActiveUsers}",
+                totalMessages, activeUsers);
+
+            return ((int)totalMessages, activeUsers);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessagingStats");
     }
 
     #endregion

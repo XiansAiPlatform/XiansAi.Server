@@ -4,7 +4,6 @@ using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
 using Shared.Utils.Temporal;
-using Temporalio.Client;
 using Features.WebApi.Services;
 
 namespace Shared.Services;
@@ -48,7 +47,6 @@ public class ActivationService : IActivationService
     private readonly IAgentRepository _agentRepository;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IWorkflowStarterService _workflowStarterService;
-    private readonly ITemporalClientService _temporalClientService;
     private readonly IActivationCleanupService _cleanupService;
     private readonly ILogger<ActivationService> _logger;
 
@@ -65,7 +63,6 @@ public class ActivationService : IActivationService
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
         _workflowStarterService = workflowStarterService ?? throw new ArgumentNullException(nameof(workflowStarterService));
-        _temporalClientService = temporalClientService ?? throw new ArgumentNullException(nameof(temporalClientService));
         _cleanupService = cleanupService ?? throw new ArgumentNullException(nameof(cleanupService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -137,7 +134,7 @@ public class ActivationService : IActivationService
             _logger.LogInformation("Successfully created activation {ActivationId}", activation.Id);
             return ServiceResult<AgentActivation>.Success(activation);
         }
-        catch (MongoDB.Driver.MongoWriteException ex) when (ex.WriteError?.Code == 11000)
+        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000)
         {
             // Duplicate key error - activation with same name, agent, and participant already exists
             _logger.LogWarning(ex, "Duplicate activation detected for Name={Name}, AgentName={AgentName}, ParticipantId={ParticipantId}, TenantId={TenantId}", 
@@ -186,7 +183,7 @@ public class ActivationService : IActivationService
             }
 
             // Check if activation is currently active (has running workflows)
-            var hasRunningWorkflows = activation.WorkflowIds != null && activation.WorkflowIds.Count > 0;
+            var hasRunningWorkflows = activation.WorkflowIds.Count > 0;
             
             // Determine which fields are being updated
             var isUpdatingName = !string.IsNullOrWhiteSpace(request.Name);

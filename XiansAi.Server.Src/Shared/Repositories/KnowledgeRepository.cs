@@ -10,8 +10,8 @@ public interface IKnowledgeRepository
 {
     Task<T?> GetLatestByNameAsync<T>(string name, string agent, string? tenantId) where T : IKnowledge;
     Task<T?> GetLatestSystemByNameAsync<T>(string name, string agent) where T : IKnowledge;
-    Task<T> GetByIdAsync<T>(string id) where T : IKnowledge;
-    Task<T> GetByVersionAsync<T>(string version) where T : IKnowledge;
+    Task<T?> GetByIdAsync<T>(string id) where T : IKnowledge;
+    Task<T?> GetByVersionAsync<T>(string version) where T : IKnowledge;
     Task<List<T>> GetByNameAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge;
     Task<List<T>> GetAllAsync<T>(string tenantId) where T : IKnowledge;
     Task CreateAsync<T>(T knowledge) where T : IKnowledge;
@@ -24,6 +24,7 @@ public interface IKnowledgeRepository
     Task<List<T>> GetUniqueLatestTenantScopedAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge;
     Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string? tenantId) where T : IKnowledge;
     Task<List<T>> GetSystemScopedByAgentAsync<T>(string agentName) where T : IKnowledge;
+    Task<List<T>> GetByAgentAndTenantAsync<T>(string agentName, string tenantId) where T : IKnowledge;
 }
 
 public class KnowledgeRepository : IKnowledgeRepository
@@ -105,7 +106,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestSystemKnowledgeByName");
     }
 
-    public async Task<T> GetByIdAsync<T>(string id) where T : IKnowledge
+    public async Task<T?> GetByIdAsync<T>(string id) where T : IKnowledge
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -114,7 +115,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetKnowledgeById");
     }
 
-    public async Task<T> GetByVersionAsync<T>(string version) where T : IKnowledge
+    public async Task<T?> GetByVersionAsync<T>(string version) where T : IKnowledge
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -272,7 +273,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         
         // Handle case where agentNames is empty or null - return empty list
         // Repository should never return global knowledge for tenant-specific queries
-        if (agentNames == null || agentNames.Count == 0)
+        if (agentNames.Count == 0)
         {
             return new List<T>();
         }
@@ -441,6 +442,25 @@ public class KnowledgeRepository : IKnowledgeRepository
                     .First())
                 .ToList();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetSystemScopedByAgent");
+    }
+
+    public async Task<List<T>> GetByAgentAndTenantAsync<T>(string agentName, string tenantId) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            
+            // Filter for knowledge associated with the specific agent and tenant
+            var agentFilter = Builders<T>.Filter.Eq(x => x.Agent, agentName);
+            var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
+            
+            var filter = Builders<T>.Filter.And(agentFilter, tenantFilter);
+            
+            // Get all knowledge for this agent and tenant
+            return await collection.Find(filter)
+                .SortByDescending(x => x.CreatedAt)
+                .ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByAgentAndTenant");
     }
 
     private IMongoCollection<T> GetTypedCollection<T>() where T : IKnowledge

@@ -10,11 +10,13 @@ public class LogRequest
 {
     public required string Message { get; set; }
     public required LogLevel Level { get; set; }
-    public required string WorkflowRunId { get; set; }
+    public string? WorkflowRunId { get; set; }
     public required string WorkflowId { get; set; }
     public Dictionary<string, object>? Properties { get; set; }
-    public required string WorkflowType { get; set; }
+    public string? WorkflowType { get; set; }
     public required string Agent { get; set; }
+    public string? Activation { get; set; }
+    public string? Exception { get; set; }
     public string? ParticipantId { get; set; }
 }
 
@@ -70,6 +72,8 @@ public class LogsService : ILogsService
                     Properties = request.Properties,
                     WorkflowType = request.WorkflowType,
                     Agent = request.Agent,
+                    Activation = request.Activation,
+                    Exception = request.Exception,
                     ParticipantId = request.ParticipantId,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -117,6 +121,8 @@ public class LogsService : ILogsService
                 Properties = request.Properties,
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
+                Activation = request.Activation,
+                Exception = request.Exception,
                 ParticipantId = request.ParticipantId,
                 CreatedAt = DateTime.UtcNow
             };

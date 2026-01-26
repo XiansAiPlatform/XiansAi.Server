@@ -25,6 +25,13 @@ public class AddUserToTenantDto
     public string Email { get; set; } = string.Empty;
 }
 
+public class CreateNewUserDto
+{
+    public required string Email { get; set; }
+    public required string Name { get; set; }
+    public List<string> TenantRoles { get; set; } = new();
+}
+
 public interface IUserTenantService
 {
     Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token);
@@ -38,6 +45,7 @@ public interface IUserTenantService
     Task<ServiceResult<PagedUserResult>> GetTenantUsers(UserFilter filter);
     Task<ServiceResult<bool>> UpdateTenantUser(EditUserDto user);
     Task<ServiceResult<bool>> AddTenantToUserIfExist(string email);
+    Task<ServiceResult<User>> CreateNewUserInTenant(CreateNewUserDto dto, string tenantId);
 }
 
 public class UserTenantService : IUserTenantService
@@ -500,6 +508,88 @@ public class UserTenantService : IUserTenantService
             user.UserId, _tenantContext.LoggedInUser, _tenantContext.TenantId);
 
         return ServiceResult<bool>.Success(true);
+    }
+
+    public async Task<ServiceResult<User>> CreateNewUserInTenant(CreateNewUserDto dto, string tenantId)
+    {
+        try
+        {
+            // Security: Validate tenant access
+            var validationResult = ValidateTenantAccess("create user in tenant", tenantId);
+            if (!validationResult.IsSuccess)
+                return ServiceResult<User>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+
+            // Validate input
+            if (string.IsNullOrWhiteSpace(dto.Email))
+                return ServiceResult<User>.BadRequest("Email is required and must be valid");
+
+            if (string.IsNullOrWhiteSpace(dto.Name))
+                return ServiceResult<User>.BadRequest("Name is required");
+
+            if (dto.TenantRoles.Count == 0)
+                return ServiceResult<User>.BadRequest("At least one tenant role is required");
+
+            // Validate roles are from allowed list
+            var allowedRoles = new[] { SystemRoles.TenantAdmin, SystemRoles.TenantUser, SystemRoles.TenantParticipant };
+            var invalidRoles = dto.TenantRoles.Where(r => !allowedRoles.Contains(r)).ToList();
+            if (invalidRoles.Any())
+                return ServiceResult<User>.BadRequest($"Invalid roles: {string.Join(", ", invalidRoles)}");
+
+            // Check if user with this email already exists
+            var existingUser = await _userRepository.GetByUserEmailAsync(dto.Email);
+            if (existingUser != null)
+                return ServiceResult<User>.Conflict("A user with this email already exists in the system.");
+
+            // Generate unique userId
+            var userId = Guid.NewGuid().ToString();
+
+            // Create new user
+            var newUser = new User
+            {
+                UserId = userId,
+                Email = dto.Email,
+                Name = dto.Name,
+                IsSysAdmin = false,
+                IsLockedOut = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                TenantRoles = new List<TenantRole>
+                {
+                    new TenantRole
+                    {
+                        Tenant = tenantId,
+                        Roles = dto.TenantRoles,
+                        IsApproved = true
+                    }
+                }
+            };
+
+            // Save to database
+            var created = await _userRepository.CreateAsync(newUser);
+            if (!created)
+            {
+                _logger.LogError("Failed to create user {Email} in database", dto.Email);
+                return ServiceResult<User>.InternalServerError("Failed to create user");
+            }
+
+            _logger.LogInformation("User {UserId} ({Email}) created by {CreatedBy} in tenant {TenantId}",
+                userId, dto.Email, _tenantContext.LoggedInUser, tenantId);
+
+            // Retrieve the created user to return complete data
+            var createdUser = await _userRepository.GetByUserIdAsync(userId);
+            if (createdUser == null)
+            {
+                _logger.LogError("Created user {UserId} but failed to retrieve it", userId);
+                return ServiceResult<User>.InternalServerError("User created but failed to retrieve");
+            }
+
+            return ServiceResult<User>.Success(createdUser);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating new user in tenant {TenantId}", tenantId);
+            return ServiceResult<User>.InternalServerError("An error occurred while creating the new user");
+        }
     }
 
     /// <summary>
