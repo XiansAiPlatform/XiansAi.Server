@@ -297,7 +297,7 @@ public class AuditingService : IAuditingService
                     .GroupBy(log => log.WorkflowType)
                     .Select(typeGroup => new WorkflowTypeCriticalGroup
                     {
-                        WorkflowTypeName = typeGroup.Key,
+                        WorkflowTypeName = typeGroup.Key ?? "unknown",
                         Workflows = typeGroup
                             .GroupBy(log => log.WorkflowId)
                             .Select(workflowGroup => new WorkflowCriticalGroup
@@ -307,7 +307,7 @@ public class AuditingService : IAuditingService
                                     .GroupBy(log => log.WorkflowRunId)
                                     .Select(runGroup => new WorkflowRunCriticalGroup
                                     {
-                                        WorkflowRunId = runGroup.Key,
+                                        WorkflowRunId = runGroup.Key ?? "unknown",
                                         CriticalLogs = runGroup.OrderByDescending(log => log.CreatedAt).ToList()
                                     })
                                     .ToList()

@@ -10,16 +10,17 @@ namespace Shared.Services;
 /// </summary>
 public class AdminTaskInfoResponse
 {
-    public required string TaskId { get; set; }
     public required string WorkflowId { get; set; }
     public required string RunId { get; set; }
     public required string Title { get; set; }
     public required string Description { get; set; }
+    public required string WorkflowStatus { get; set; }
+    public bool TimedOut { get; set; }
     public string? InitialWork { get; set; }
     public string? FinalWork { get; set; }
     public string? ParticipantId { get; set; }
     public required string Status { get; set; }
-    public required bool IsCompleted { get; set; }
+    public bool IsCompleted { get; set; }
     public string[]? AvailableActions { get; set; }
     public string? PerformedAction { get; set; }
     public string? Comment { get; set; }
@@ -45,6 +46,18 @@ public class AdminPaginatedTasksResponse
     public int? TotalCount { get; set; }
 }
 
+/// <summary>
+/// Response model for task statistics.
+/// </summary>
+public class TaskStatisticsResponse
+{
+    public required int Pending { get; set; }
+    public required int Completed { get; set; }
+    public required int TimedOut { get; set; }
+    public required int Cancelled { get; set; }
+    public required int Total { get; set; }
+}
+
 public interface IAdminTaskService
 {
     Task<ServiceResult<AdminTaskInfoResponse>> GetTaskById(string workflowId);
@@ -56,6 +69,11 @@ public interface IAdminTaskService
         string? activationName,
         string? participantId,
         string? status);
+    Task<ServiceResult<TaskStatisticsResponse>> GetTaskStatistics(
+        string tenantId,
+        DateTime? startDate,
+        DateTime? endDate,
+        string? participantId);
     Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft);
     Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment);
 }
@@ -108,13 +126,13 @@ public class AdminTaskService : IAdminTaskService
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             // Extract values from the parsed task info
-            string? taskId = parsedTaskInfo.TryGetProperty("TaskId", out var taskIdProp) ? taskIdProp.GetString() : null;
             string? title = parsedTaskInfo.TryGetProperty("Title", out var titleProp) ? titleProp.GetString() : null;
             string? description = parsedTaskInfo.TryGetProperty("Description", out var descProp) ? descProp.GetString() : null;
             string? initialWork = parsedTaskInfo.TryGetProperty("InitialWork", out var initialWorkProp) ? initialWorkProp.GetString() : null;
             string? finalWork = parsedTaskInfo.TryGetProperty("FinalWork", out var finalWorkProp) ? finalWorkProp.GetString() : null;
             string? participantId = parsedTaskInfo.TryGetProperty("ParticipantId", out var partProp) ? partProp.GetString() : null;
             bool isCompleted = parsedTaskInfo.TryGetProperty("IsCompleted", out var completedProp) && completedProp.GetBoolean();
+            bool timedOut = parsedTaskInfo.TryGetProperty("TimedOut", out var timedOutProp) && timedOutProp.GetBoolean();
             
             // Extract action-based fields
             string? performedAction = parsedTaskInfo.TryGetProperty("PerformedAction", out var actionProp) ? actionProp.GetString() : null;
@@ -145,14 +163,15 @@ public class AdminTaskService : IAdminTaskService
             // Build the response with workflow metadata
             var response = new AdminTaskInfoResponse
             {
-                TaskId = taskId ?? "unknown",
                 WorkflowId = workflowId,
                 RunId = workflowDescription.RunId ?? "unknown",
                 Title = title ?? "Untitled Task",
                 Description = description ?? "",
                 InitialWork = initialWork,
                 FinalWork = finalWork,
+                TimedOut = timedOut,
                 ParticipantId = participantId,
+                WorkflowStatus = workflowDescription.Status.ToString(),
                 Status = workflowDescription.Status.ToString(),
                 IsCompleted = isCompleted,
                 AvailableActions = availableActions,
@@ -217,8 +236,8 @@ public class AdminTaskService : IAdminTaskService
                 queryParts.Add($"{Constants.AgentKey} = '{agentName}'");
                 queryParts.Add($"WorkflowType = '{agentName}:Task Workflow'");
             }
-            // Note: When no agent is specified, we don't add workflow type filter
-            // This allows fetching all task workflows across all agents in the tenant
+            // Note: When no agent is specified, we need to filter out non-Task workflows
+            // after fetching, as Temporal doesn't support wildcard matching in WorkflowType
 
             // Add activationName filter if specified (maps to idPostfix)
             if (!string.IsNullOrEmpty(activationName))
@@ -261,6 +280,12 @@ public class AdminTaskService : IAdminTaskService
 
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
             {
+                // Filter to only include Task Workflows when agentName is not specified
+                if (string.IsNullOrEmpty(agentName) && !workflow.Id.Contains(":Task Workflow:"))
+                {
+                    continue; // Skip non-Task workflows
+                }
+
                 var taskInfo = MapWorkflowToTaskInfo(workflow);
                 allTasks.Add(taskInfo);
                 itemsProcessed++;
@@ -342,19 +367,15 @@ public class AdminTaskService : IAdminTaskService
             availableActions = taskActionsStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         }
 
-        // Extract taskId from workflow ID (format: tenantId:WorkflowType:taskId)
-        var taskId = workflow.Id.Split(':').LastOrDefault() ?? workflow.Id;
-
         return new AdminTaskInfoResponse
         {
-            TaskId = taskId,
             WorkflowId = workflow.Id,
             RunId = workflow.RunId,
+            WorkflowStatus = workflow.Status.ToString(),
+            Status = workflow.Status.ToString(),
             Title = taskTitle,
             Description = taskDescription,
             ParticipantId = participantId,
-            Status = workflow.Status.ToString(),
-            IsCompleted = workflow.Status != Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running,
             AvailableActions = availableActions,
             StartTime = workflow.StartTime,
             CloseTime = workflow.CloseTime,
@@ -362,6 +383,133 @@ public class AdminTaskService : IAdminTaskService
             ActivationName = activationName,
             TenantId = tenantId
         };
+    }
+
+    /// <summary>
+    /// Retrieves task statistics for a tenant within a date range.
+    /// </summary>
+    public async Task<ServiceResult<TaskStatisticsResponse>> GetTaskStatistics(
+        string tenantId,
+        DateTime? startDate,
+        DateTime? endDate,
+        string? participantId)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            _logger.LogWarning("Attempt to retrieve task statistics with empty tenantId");
+            return ServiceResult<TaskStatisticsResponse>.BadRequest("TenantId cannot be empty");
+        }
+
+        if (!startDate.HasValue || !endDate.HasValue)
+        {
+            _logger.LogWarning("Attempt to retrieve task statistics without date range");
+            return ServiceResult<TaskStatisticsResponse>.BadRequest("StartDate and EndDate are required");
+        }
+
+        if (startDate.Value > endDate.Value)
+        {
+            _logger.LogWarning("Invalid date range: startDate {StartDate} is after endDate {EndDate}", 
+                startDate.Value, endDate.Value);
+            return ServiceResult<TaskStatisticsResponse>.BadRequest("StartDate cannot be after EndDate");
+        }
+
+        try
+        {
+            _logger.LogInformation(
+                "Retrieving task statistics - TenantId: {TenantId}, StartDate: {StartDate}, EndDate: {EndDate}, ParticipantId: {ParticipantId}",
+                tenantId, startDate.Value, endDate.Value, participantId ?? "null");
+
+            var client = await _clientFactory.GetClientAsync();
+
+            // Build query with filters
+            var queryParts = new List<string>
+            {
+                $"{Constants.TenantIdKey} = '{tenantId}'"
+            };
+
+            // Add participantId filter if specified
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                queryParts.Add($"{Constants.UserIdKey} = '{participantId}'");
+            }
+
+            // Add date range filter using StartTime
+            queryParts.Add($"StartTime >= '{startDate.Value:yyyy-MM-ddTHH:mm:ssZ}'");
+            queryParts.Add($"StartTime <= '{endDate.Value:yyyy-MM-ddTHH:mm:ssZ}'");
+
+            var listQuery = string.Join(" and ", queryParts);
+            _logger.LogDebug("Executing task statistics query: {Query}", listQuery);
+
+            var listOptions = new WorkflowListOptions
+            {
+                Limit = 10000 // Set a reasonable limit for statistics gathering
+            };
+
+            // Initialize counters
+            int pending = 0;
+            int completed = 0;
+            int timedOut = 0;
+            int cancelled = 0;
+            int total = 0;
+
+            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            {
+                // Filter to only include Task Workflows
+                if (!workflow.Id.Contains(":Task Workflow:"))
+                {
+                    continue; // Skip non-Task workflows
+                }
+
+
+
+                total++;
+
+                // Categorize based on workflow status and timedOut flag
+                var status = workflow.Status.ToString();
+                
+                // Check if task timed out (from memo)
+                var timedOutStr = ExtractMemoValue(workflow.Memo, "timedOut");
+                bool isTimedOut = !string.IsNullOrEmpty(timedOutStr) && 
+                                  (timedOutStr.ToLower() == "true" || timedOutStr == "True");
+
+                if (isTimedOut)
+                {
+                    timedOut++;
+                }
+                else if (status == "Running")
+                {
+                    pending++;
+                }
+                else if (status == "Completed")
+                {
+                    completed++;
+                }
+                else 
+                {
+                    cancelled++;
+                }
+            }
+
+            var response = new TaskStatisticsResponse
+            {
+                Pending = pending,
+                Completed = completed,
+                TimedOut = timedOut,
+                Cancelled = cancelled,
+                Total = total
+            };
+
+            _logger.LogInformation(
+                "Task statistics retrieved - Total: {Total}, Pending: {Pending}, Completed: {Completed}, TimedOut: {TimedOut}, Cancelled: {Cancelled}",
+                total, pending, completed, timedOut, cancelled);
+
+            return ServiceResult<TaskStatisticsResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve task statistics. Error: {ErrorMessage}", ex.Message);
+            return ServiceResult<TaskStatisticsResponse>.InternalServerError("Failed to retrieve task statistics");
+        }
     }
 
     /// <summary>

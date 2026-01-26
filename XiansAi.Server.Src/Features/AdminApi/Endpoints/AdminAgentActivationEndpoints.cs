@@ -26,16 +26,17 @@ public static class AdminAgentActivationEndpoints
         // List all activations for a tenant
         activationGroup.MapGet("", async (
             string tenantId,
+            [FromQuery] string? agentName,
             [FromServices] IActivationService activationService) =>
         {
-            var result = await activationService.GetActivationsByTenantAsync(tenantId);
+            var result = await activationService.GetActivationsByTenantAsync(tenantId, agentName);
             return result.ToHttpResult();
         })
         .WithName("ListActivations")
         .WithOpenApi(operation => new(operation)
         {
             Summary = "List Agent Activations",
-            Description = "List all agent activations for a tenant."
+            Description = "List all agent activations for a tenant. Optionally filter by agent name using the 'agentName' query parameter."
         });
 
         // Get activation by ID
@@ -70,6 +71,23 @@ public static class AdminAgentActivationEndpoints
         {
             Summary = "Create Agent Activation",
             Description = "Create a new agent activation record."
+        });
+
+        // Update an existing activation
+        activationGroup.MapPut("/{activationId}", async (
+            string tenantId,
+            string activationId,
+            [FromBody] UpdateActivationRequest request,
+            [FromServices] IActivationService activationService) =>
+        {
+            var result = await activationService.UpdateActivationAsync(activationId, request, tenantId);
+            return result.ToHttpResult();
+        })
+        .WithName("UpdateActivation")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Update Agent Activation",
+            Description = "Update an existing agent activation. Note: Cannot update AgentName. For activations with running workflows, only the description field can be updated. To update other fields (name, participantId, workflowConfiguration), deactivate the activation first."
         });
 
         // Activate an agent (start workflow)

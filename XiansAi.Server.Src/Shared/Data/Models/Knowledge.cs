@@ -46,6 +46,9 @@ public class Knowledge : IKnowledge
     [BsonElement("system_scoped")]
     public bool SystemScoped { get; set; } = false;
 
+    [BsonElement("activation_name")]
+    public string? ActivationName { get; set; }
+
     [BsonIgnore]
     public string? PermissionLevel { get; set; }
 }

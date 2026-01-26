@@ -5,7 +5,6 @@ namespace Features.WebApi.Models;
 /// </summary>
 public class TaskInfoResponse
 {
-    public required string TaskId { get; set; }
     public required string WorkflowId { get; set; }
     public required string RunId { get; set; }
     public required string Title { get; set; }

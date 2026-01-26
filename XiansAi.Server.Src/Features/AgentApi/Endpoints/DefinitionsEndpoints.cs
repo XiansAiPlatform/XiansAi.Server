@@ -95,7 +95,7 @@ public static class DefinitionsEndpoints
         definitionsGroup.MapDelete("/agent", async (
             [FromQuery] string agentName,
             [FromQuery] bool systemScoped,
-            [FromServices] global::Shared.Services.IAgentDeletionService agentService) =>
+            [FromServices] IAgentDeletionService agentService) =>
         {
             var result = await agentService.DeleteAgentAsync(agentName, systemScoped);
             return result.ToHttpResult();

@@ -39,6 +39,21 @@ public class WorkflowIdentifier
         return tenantContext.TenantId + ":" + workflowType;
     }
 
+    public static string BuildWorkflowId(string tenantId, string agentName, string workflowName, string? idPostfix = null)
+    {
+        var workflowId = $"{tenantId}:{agentName}:{workflowName}";
+        if (!string.IsNullOrEmpty(idPostfix))
+        {
+            workflowId += $":{idPostfix}";
+        }
+        return workflowId;
+    }
+
+    public static string BuildSupervisorWorkflowId(string tenantId, string agentName, string? idPostfix = null)
+    {
+        return BuildWorkflowId(tenantId, agentName, "Supervisor Workflow", idPostfix);
+    }
+
     public static string GetWorkflowType(string workflow)
     {
         // if workflow has 1 ":" then we got workflowType

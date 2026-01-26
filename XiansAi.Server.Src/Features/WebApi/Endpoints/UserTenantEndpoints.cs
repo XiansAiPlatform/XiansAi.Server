@@ -235,5 +235,30 @@ public static class UserTenantEndpoints
             operation.Description = "Search users by name, email, or other supported fields";
             return operation;
         });
+
+        group.MapPost("/CreateNewUser", async (
+            [FromBody] CreateNewUserDto dto,
+            [FromServices] IUserTenantService service,
+            HttpContext httpContext) =>
+        {
+            var tenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return Results.BadRequest(new { error = "Tenant ID header is required" });
+            }
+
+            var result = await service.CreateNewUserInTenant(dto, tenantId);
+            return result.IsSuccess
+                ? Results.Created($"/api/users/{result.Data?.UserId}", result.Data)
+                : Results.Problem(result.ErrorMessage, statusCode: (int)result.StatusCode);
+        })
+        .WithName("CreateNewUser")
+        .RequiresValidTenantAdmin()
+        .WithOpenApi(operation => {
+            operation.Summary = "Create a new user";
+            operation.Description = "Creates a new user account and assigns them to the current tenant with specified roles. " +
+                                   "User email must be unique. Only tenant admins can use this endpoint.";
+            return operation;
+        });
     }
 }

@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Shared.Repositories;
 using Shared.Auth;
-using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
 using Features.AdminApi.Utils;
 
@@ -34,7 +32,6 @@ public static class AdminOwnershipEndpoints
 
         // Get Ownership Information
         adminOwnershipGroup.MapGet("", async (
-            string tenantId,
             string agentId,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext) =>
@@ -54,13 +51,6 @@ public static class AdminOwnershipEndpoints
                 if (string.IsNullOrEmpty(parsedTenant))
                 {
                     return Results.BadRequest(new { error = "Agent tenant is not set" });
-                }
-
-                // Validate tenant matches (unless SysAdmin)
-                if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
-                    !parsedTenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.Forbid();
                 }
 
                 return Results.Ok(new
@@ -92,7 +82,6 @@ public static class AdminOwnershipEndpoints
 
         // Transfer Ownership
         adminOwnershipGroup.MapPatch("", async (
-            string tenantId,
             string agentId,
             [FromBody] TransferOwnershipRequest request,
             [FromServices] IAgentRepository agentRepository,
@@ -114,13 +103,6 @@ public static class AdminOwnershipEndpoints
                 if (string.IsNullOrEmpty(parsedTenant))
                 {
                     return Results.BadRequest(new { error = "Agent tenant is not set" });
-                }
-
-                // Validate tenant matches (unless SysAdmin)
-                if (!tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) && 
-                    !parsedTenant.Equals(tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.Forbid();
                 }
 
                 // Check permissions (must be current owner, TenantAdmin, or SysAdmin)
@@ -165,7 +147,7 @@ public static class AdminOwnershipEndpoints
                 return Results.Ok(new
                 {
                     agentId = AgentIdParser.Format(parsedTenant, agentName),
-                    previousOwners = previousOwners,
+                    previousOwners,
                     newOwner = newAdminUserId,
                     ownerAccess = agent.OwnerAccess,
                     transferredAt = DateTime.UtcNow,

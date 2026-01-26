@@ -5,7 +5,6 @@ using Shared.Repositories;
 using Shared.Utils;
 using System.Security;
 using System.Text.Json.Serialization;
-using System.Text.Json;
 using Shared.Utils.Services;
 
 namespace Shared.Services;
@@ -43,6 +42,15 @@ public interface IKnowledgeService
     Task<IResult> GetLatestAll(string? scope = null);
     Task<IResult> Create(KnowledgeRequest request);
     Task<IResult> GetLatestByAgent(string agent);
+    
+    // Admin methods that accept explicit tenantId
+    Task<List<Knowledge>> GetAllForTenantAsync(string tenantId, List<string>? agentNames = null);
+    Task<Knowledge?> GetByIdForTenantAsync(string id, string tenantId);
+    Task<List<Knowledge>> GetVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
+    Task<bool> DeleteByIdForTenantAsync(string id, string tenantId);
+    Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
+    Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string tenantId, string createdBy, string? agentName = null, string? version = null);
+    Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, string? version = null);
 }
 
 public class KnowledgeService : IKnowledgeService
@@ -399,5 +407,136 @@ public class KnowledgeService : IKnowledgeService
             }
         }
         return Results.Ok(knowledge);
+    }
+
+    // Admin methods that accept explicit tenantId (no permission checks - handled by endpoints)
+    
+    public async Task<List<Knowledge>> GetAllForTenantAsync(string tenantId, List<string>? agentNames = null)
+    {
+        if (agentNames == null || agentNames.Count == 0)
+        {
+            // Get all knowledge for the tenant if no agent filter
+            return await _knowledgeRepository.GetAllAsync<Knowledge>(tenantId);
+        }
+        else
+        {
+            // Get filtered knowledge by agent names
+            return await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(tenantId, agentNames);
+        }
+    }
+
+    public async Task<Knowledge?> GetByIdForTenantAsync(string id, string tenantId)
+    {
+        var knowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(id);
+        
+        // Verify knowledge belongs to the specified tenant
+        if (knowledge != null && knowledge.TenantId != tenantId)
+        {
+            return null;
+        }
+        
+        return knowledge;
+    }
+
+    public async Task<List<Knowledge>> GetVersionsForTenantAsync(string name, string tenantId, string? agentName = null)
+    {
+        return await _knowledgeRepository.GetByNameAsync<Knowledge>(name, agentName, tenantId);
+    }
+
+    public async Task<bool> DeleteByIdForTenantAsync(string id, string tenantId)
+    {
+        var knowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(id);
+        
+        // Verify knowledge belongs to the specified tenant
+        if (knowledge == null || knowledge.TenantId != tenantId)
+        {
+            return false;
+        }
+        
+        return await _knowledgeRepository.DeleteAsync<Knowledge>(id);
+    }
+
+    public async Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null)
+    {
+        return await _knowledgeRepository.DeleteAllVersionsAsync<Knowledge>(name, agentName, tenantId);
+    }
+
+    public async Task<Knowledge> CreateForTenantAsync(
+        string name, 
+        string content, 
+        string type, 
+        string tenantId, 
+        string createdBy, 
+        string? agentName = null, 
+        string? version = null)
+    {
+        // Generate version hash if not provided
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            version = HashGenerator.GenerateContentHash(content + type);
+        }
+
+        var knowledge = new Knowledge
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            Name = name,
+            Content = content,
+            Type = type,
+            Version = version,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = createdBy,
+            TenantId = tenantId,
+            Agent = agentName,
+            SystemScoped = false
+        };
+
+        await _knowledgeRepository.CreateAsync(knowledge);
+        return knowledge;
+    }
+
+    public async Task<Knowledge> UpdateForTenantAsync(
+        string knowledgeId, 
+        string content, 
+        string type, 
+        string tenantId, 
+        string updatedBy, 
+        string? version = null)
+    {
+        // Get existing knowledge to preserve name and agent
+        var existingKnowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(knowledgeId);
+        if (existingKnowledge == null)
+        {
+            throw new InvalidOperationException("Knowledge not found");
+        }
+
+        // Verify knowledge belongs to the specified tenant
+        if (existingKnowledge.TenantId != tenantId)
+        {
+            throw new InvalidOperationException("Knowledge does not belong to this tenant");
+        }
+
+        // Generate version hash if not provided
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            version = HashGenerator.GenerateContentHash(content + type);
+        }
+
+        // Create new version (maintains version history)
+        var updatedKnowledge = new Knowledge
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            Name = existingKnowledge.Name,
+            Content = content,
+            Type = type,
+            Version = version,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = updatedBy,
+            TenantId = tenantId,
+            Agent = existingKnowledge.Agent,
+            SystemScoped = false
+        };
+
+        await _knowledgeRepository.CreateAsync(updatedKnowledge);
+        return updatedKnowledge;
     }
 }

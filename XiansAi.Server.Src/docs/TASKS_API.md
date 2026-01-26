@@ -40,7 +40,6 @@ Retrieves detailed information about a specific task.
 **Response:**
 ```json
 {
-  "taskId": "string",
   "workflowId": "string",
   "runId": "string",
   "title": "string",
@@ -163,7 +162,7 @@ Rejects a task with a reason, signaling the workflow that the task cannot be com
 
 Tasks use a specific workflow ID format:
 ```
-{tenantId}:{agent}:Task Workflow:{taskId}
+{tenantId}:{agent}:Task Workflow:{guid}
 ```
 
 ### Workflow Signals
