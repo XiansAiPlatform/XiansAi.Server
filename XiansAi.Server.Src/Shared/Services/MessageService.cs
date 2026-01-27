@@ -289,10 +289,21 @@ public class MessageService : IMessageService
                 request.ParticipantId);
         }
 
-        //check if starts with tenantId
-        if (!request.WorkflowId!.StartsWith(_tenantContext.TenantId + ":"))
+        // WorkflowId cant start or end with ':'
+        if (request.WorkflowId!.StartsWith(':') || request.WorkflowId!.EndsWith(':'))
+        {
+            throw new Exception("WorkflowId cant start or end with ':'");
+        }
+
+        //check if workflowId contains colons but doesn't start with tenantId
+        if (request.WorkflowId!.Contains(':') && !request.WorkflowId.StartsWith(_tenantContext.TenantId + ":"))
         {
             throw new Exception("WorkflowId must start with tenantId");
+        }
+        //if workflowId doesn't contain colons, add tenantId to the beginning
+        if (!string.IsNullOrEmpty(request.WorkflowId) && !request.WorkflowId!.Contains(':'))
+        {
+            request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowType}:{request.WorkflowId}";
         }
 
         _logger.LogInformation("Processing inbound message for WorkflowId `{WorkflowId}` from participant {ParticipantId}",

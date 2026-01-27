@@ -33,18 +33,18 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
         await CreateTestKnowledgeAsync("knowledge-2", agentName, "Content 2");
 
         // Act
-        var response = await GetAsync("/api/client/knowledge/latest/all");
+        var response = await GetAsync($"/api/client/knowledge/latest/all?agent={agentName}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         
-        var knowledge = await ReadAsJsonAsync<Knowledge[]>(response);
-        Assert.NotNull(knowledge);
-        Assert.True(knowledge.Length >= 2);
+        var groupedResponse = await ReadAsJsonAsync<GroupedKnowledgeResponse>(response);
+        Assert.NotNull(groupedResponse);
+        Assert.True(groupedResponse.Groups.Count >= 2);
         
-        var knowledgeNames = knowledge.Select(k => k.Name).ToList();
-        Assert.Contains("knowledge-1", knowledgeNames);
-        Assert.Contains("knowledge-2", knowledgeNames);
+        var groupNames = groupedResponse.Groups.Select(g => g.Name).ToList();
+        Assert.Contains("knowledge-1", groupNames);
+        Assert.Contains("knowledge-2", groupNames);
     }
 
     [Fact]
@@ -320,21 +320,21 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
         // Create knowledge for authorized agent
         await CreateTestKnowledgeAsync("authorized-knowledge", agentName1, "Authorized content");
         
-        // Create knowledge for unauthorized agent (should not be returned)
-        await CreateTestKnowledgeAsync("unauthorized-knowledge", "unknown-agent", "Unauthorized content");
+        // Create knowledge for agent2 (should not be returned when querying for agent1)
+        await CreateTestKnowledgeAsync("other-agent-knowledge", agentName2, "Other content");
 
-        // Act
-        var response = await GetAsync("/api/client/knowledge/latest/all");
+        // Act - query for agent1 only
+        var response = await GetAsync($"/api/client/knowledge/latest/all?agent={agentName1}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         
-        var knowledge = await ReadAsJsonAsync<Knowledge[]>(response);
-        Assert.NotNull(knowledge);
+        var groupedResponse = await ReadAsJsonAsync<GroupedKnowledgeResponse>(response);
+        Assert.NotNull(groupedResponse);
         
-        var knowledgeNames = knowledge.Select(k => k.Name).ToList();
-        Assert.Contains("authorized-knowledge", knowledgeNames);
-        Assert.DoesNotContain("unauthorized-knowledge", knowledgeNames);
+        var groupNames = groupedResponse.Groups.Select(g => g.Name).ToList();
+        Assert.Contains("authorized-knowledge", groupNames);
+        Assert.DoesNotContain("other-agent-knowledge", groupNames);
     }
 
     [Fact]

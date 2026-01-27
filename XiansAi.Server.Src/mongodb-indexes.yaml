@@ -9,6 +9,11 @@ agents:
   - name: tenant_-1
     keys:
       tenant: desc
+  - name: tenant_1_created_at_-1
+    keys:
+      tenant: asc
+      created_at: desc
+    background: true
   - name: owner_access_1
     keys:
       owner_access: asc
@@ -179,6 +184,13 @@ logs:
       tenant_id: asc
       agent: asc
       participant_id: asc
+  - name: tenant_id_1_agent_1_participant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      agent: asc
+      participant_id: asc
+      created_at: desc
+    background: true
   - name: tenant_id_1_workflow_type_1_level_1
     keys:
       tenant_id: asc
@@ -269,13 +281,14 @@ knowledge:
       activation_name: asc
     background: true
     sparse: true
-  - name: name_1_version_1_agent_1_tenant_id_1_activation_name_1
+  - name: name_1_version_1_agent_1_tenant_id_1_activation_name_1_system_scoped_1
     keys:
       name: asc
       version: asc
       agent: asc
       tenant_id: asc
       activation_name: asc
+      system_scoped: asc
     unique: true
     sparse: true
     background: true
@@ -344,5 +357,16 @@ activations:
     background: true
   - name: created_at_-1
     keys:
+      created_at: desc
+    background: true
+  - name: tenant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      created_at: desc
+    background: true
+  - name: agent_name_1_tenant_id_1_created_at_-1
+    keys:
+      agent_name: asc
+      tenant_id: asc
       created_at: desc
     background: true
