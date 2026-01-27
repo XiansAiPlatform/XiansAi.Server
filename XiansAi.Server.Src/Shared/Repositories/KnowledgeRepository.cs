@@ -8,7 +8,8 @@ namespace Shared.Repositories;
 
 public interface IKnowledgeRepository
 {
-    Task<T?> GetLatestByNameAsync<T>(string name, string agent, string? tenantId) where T : IKnowledge;
+    Task<T?> GetLatestByNameAndTenantAsync<T>(string name, string agent, string tenantId) where T : IKnowledge;
+    Task<T?> GetLatestByNameAndActivationAsync<T>(string name, string agent, string tenantId, string activationName) where T : IKnowledge;
     Task<T?> GetLatestSystemByNameAsync<T>(string name, string agent) where T : IKnowledge;
     Task<T?> GetByIdAsync<T>(string id) where T : IKnowledge;
     Task<T?> GetByVersionAsync<T>(string version) where T : IKnowledge;
@@ -22,9 +23,11 @@ public interface IKnowledgeRepository
     Task<List<T>> GetUniqueLatestAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge;
     Task<List<T>> GetUniqueLatestSystemScopedAsync<T>(List<string> agentNames) where T : IKnowledge;
     Task<List<T>> GetUniqueLatestTenantScopedAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge;
+    Task<List<T>> GetUniqueLatestTenantScopedByActivationAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge;
     Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string? tenantId) where T : IKnowledge;
     Task<List<T>> GetSystemScopedByAgentAsync<T>(string agentName) where T : IKnowledge;
     Task<List<T>> GetByAgentAndTenantAsync<T>(string agentName, string tenantId) where T : IKnowledge;
+    Task<long> DeleteAllByAgentAsync<T>(string agentName, string? tenantId) where T : IKnowledge;
 }
 
 public class KnowledgeRepository : IKnowledgeRepository
@@ -41,43 +44,43 @@ public class KnowledgeRepository : IKnowledgeRepository
         _logger = logger;
     }
 
-    public async Task<T?> GetLatestByNameAsync<T>(string name, string agent, string? tenantId) where T : IKnowledge
+    public async Task<T?> GetLatestByNameAndTenantAsync<T>(string name, string agent, string tenantId) where T : IKnowledge
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var collection = GetTypedCollection<T>();
             
             var nameFilter = Builders<T>.Filter.Eq(x => x.Name, name);
+            var agentFilter = Builders<T>.Filter.Eq(x => x.Agent, agent);
+            var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
+            // activation name should be null
+            var activationFilter = Builders<T>.Filter.Eq(x => x.ActivationName, null);
             
-            // Create an agent filter that matches either the specified agent or null agent
-            var agentFilter = !string.IsNullOrEmpty(agent) 
-                ? Builders<T>.Filter.Or(
-                    Builders<T>.Filter.Eq(x => x.Agent, agent),
-                    Builders<T>.Filter.Eq(x => x.Agent, null))
-                : Builders<T>.Filter.Eq(x => x.Agent, null);
+            var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter, activationFilter);
             
-            // Create a filter for either specific tenantId or null
-            var tenantFilter = Builders<T>.Filter.Or(
-                Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<T>.Filter.Eq(x => x.TenantId, null)
-            );
+            return await collection.Find(filter)
+                .SortByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByNameAndTenant");
+    }
+
+    public async Task<T?> GetLatestByNameAndActivationAsync<T>(string name, string agent, string tenantId, string activationName) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
             
-            // Combine the filters
-            var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter);
+            var nameFilter = Builders<T>.Filter.Eq(x => x.Name, name);
+            var agentFilter = Builders<T>.Filter.Eq(x => x.Agent, agent);
+            var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
+            var activationFilter = Builders<T>.Filter.Eq(x => x.ActivationName, activationName);
             
-            // Get all matching items
-            var results = await collection.Find(filter).ToListAsync();
+            var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter, activationFilter);
             
-            // Client-side sort prioritizing:
-            // 1. Tenant-specific items
-            // 2. Items with the specified agent
-            // 3. Most recent items
-            return results
-                .OrderByDescending(x => x.TenantId != null)
-                .ThenByDescending(x => x.Agent == agent) // Prioritize exact agent match
-                .ThenByDescending(x => x.CreatedAt)
-                .FirstOrDefault();
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByName");
+            return await collection.Find(filter)
+                .SortByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByNameAndActivation");
     }
 
     public async Task<T?> GetLatestSystemByNameAsync<T>(string name, string agent) where T : IKnowledge
@@ -391,6 +394,50 @@ public class KnowledgeRepository : IKnowledgeRepository
             .ToList();
     }
 
+    public async Task<List<T>> GetUniqueLatestTenantScopedByActivationAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge
+    {
+        var collection = GetTypedCollection<T>();
+        
+        // Handle case where agentNames is empty or null - return empty list
+        if (agentNames == null || agentNames.Count == 0)
+        {
+            return new List<T>();
+        }
+        
+        // Tenant-scoped: TenantId matches the provided tenant (not null)
+        var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
+        // Exclude system-scoped items (SystemScoped should be false or not set)
+        var notSystemScopedFilter = Builders<T>.Filter.Or(
+            Builders<T>.Filter.Eq("system_scoped", false),
+            Builders<T>.Filter.Exists("system_scoped", false)
+        );
+        
+        // Create agent filter that matches any of the specified agents 
+        var agentFilters = agentNames.Select(agent => 
+                Builders<T>.Filter.Eq(x => x.Agent, agent)).ToList();
+        var agentFilter = Builders<T>.Filter.Or(agentFilters);
+        
+        // Combine the filters
+        var filter = Builders<T>.Filter.And(tenantFilter, notSystemScopedFilter, agentFilter);
+        
+        // Define projection to exclude Content field
+        var projection = Builders<T>.Projection.Exclude("Content");
+        
+        // Get all items sorted by creation date
+        var allItems = await collection.Find(filter)
+            .Project<T>(projection)
+            .SortByDescending(x => x.CreatedAt)
+            .ToListAsync();
+            
+        // Process in memory to get the latest for each name/agent/activation combination
+        return allItems
+            .GroupBy(x => new { x.Name, x.Agent, x.ActivationName })
+            .Select(group => group
+                .OrderByDescending(x => x.CreatedAt)
+                .First())
+            .ToList();
+    }
+
     public async Task<bool> DeleteAllVersionsAsync<T>(string name, string? agent, string? tenantId) where T : IKnowledge
     {
         var collection = GetTypedCollection<T>();
@@ -462,6 +509,25 @@ public class KnowledgeRepository : IKnowledgeRepository
                 .ToListAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByAgentAndTenant");
     }
+
+    public async Task<long> DeleteAllByAgentAsync<T>(string agentName, string? tenantId) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+            
+            // Filter for knowledge associated with the specific agent and tenant
+            var agentFilter = Builders<T>.Filter.Eq(x => x.Agent, agentName);
+            var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
+            
+            var filter = Builders<T>.Filter.And(agentFilter, tenantFilter);
+            
+            // Delete all knowledge for this agent and tenant
+            var result = await collection.DeleteManyAsync(filter);
+            return result.DeletedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteAllByAgent");
+    }
+
 
     private IMongoCollection<T> GetTypedCollection<T>() where T : IKnowledge
     {

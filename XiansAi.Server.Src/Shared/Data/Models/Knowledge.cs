@@ -12,6 +12,7 @@ public interface IKnowledge
     string Version { get; set; }
     DateTime CreatedAt { get; set; }
     string CreatedBy { get; set; }
+    string? ActivationName { get; set; }
 } 
 public class Knowledge : IKnowledge
 {

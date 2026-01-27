@@ -43,6 +43,10 @@ public class NewWorkflowOptions : WorkflowOptions
             workflowId += ":" + idPostfix;
         }
 
+        // clean up the id to replace '::' with ':'
+        workflowId = workflowId.Replace("::", ":");
+        
+
         Id = workflowId;
         TaskQueue = GetTemporalQueueName(workflowType, systemScoped, tenantContext);
         Memo = GetMemo(tenantContext, agentName, systemScoped, effectiveUserId, idPostfix ?? string.Empty);
