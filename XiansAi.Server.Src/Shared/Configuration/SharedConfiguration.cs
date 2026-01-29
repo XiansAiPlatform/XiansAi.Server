@@ -8,6 +8,7 @@ using Shared.Providers.Auth.GitHub;
 using Shared.Providers.Auth.Keycloak;
 using Shared.Providers.Auth.Oidc;
 using Shared.Providers.Auth;
+using Shared.Providers.Secret;
 using Shared.Auth;
 using Shared.Utils;
 using Microsoft.AspNetCore.Authorization;
@@ -214,6 +215,21 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
+        
+        // Register secret vault repository and providers
+        builder.Services.AddScoped<ISecretRepository, SecretRepository>();
+        builder.Services.AddScoped<DatabaseSecretVaultProvider>();
+        builder.Services.AddScoped<AzureKeyVaultProvider>();
+        builder.Services.AddScoped<AwsSecretsManagerProvider>();
+        builder.Services.AddScoped<HashiCorpVaultProvider>();
+        
+        // Register secret vault service with provider factory
+        builder.Services.AddScoped<ISecretVaultProvider>(serviceProvider =>
+        {
+            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            return SecretVaultProviderFactory.CreateProvider(configuration, serviceProvider);
+        });
+        builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
 
         // Configure JSON serialization options for minimal APIs
         // This ensures enums are serialized as strings instead of numeric values

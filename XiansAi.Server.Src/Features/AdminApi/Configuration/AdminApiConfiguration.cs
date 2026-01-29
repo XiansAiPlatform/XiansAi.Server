@@ -112,6 +112,7 @@ public static class AdminApiConfiguration
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
         AdminStatsEndpoints.MapAdminStatsEndpoints(adminApiGroup);
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);
+        AdminSecretEndpoints.MapAdminSecretEndpoints(adminApiGroup);
     }
 }
 
