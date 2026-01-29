@@ -5,11 +5,11 @@ using System.ComponentModel.DataAnnotations;
 namespace Shared.Data.Models.Usage;
 
 /// <summary>
-/// Usage event model - represents a single usage event with flexible metrics stored in MongoDB.
-/// Uses embedded metrics array for extensibility without schema changes.
+/// Usage metric model - each metric stored as a separate document for optimal query performance.
+/// Replaces the nested UsageEvent design. Stored in 'usage_metrics' collection.
 /// </summary>
 [BsonIgnoreExtraElements]
-public class UsageEvent
+public class UsageMetric
 {
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
@@ -19,11 +19,14 @@ public class UsageEvent
     [Required]
     public required string TenantId { get; set; }
 
-    [BsonElement("user_id")]
-    public string? UserId { get; set; }
+    [BsonElement("participant_id")]
+    public string? ParticipantId { get; set; }
 
     [BsonElement("agent_name")]
     public string? AgentName { get; set; }
+
+    [BsonElement("activation_name")]
+    public string? ActivationName { get; set; }
 
     [BsonElement("workflow_id")]
     public string? WorkflowId { get; set; }
@@ -31,34 +34,14 @@ public class UsageEvent
     [BsonElement("request_id")]
     public string? RequestId { get; set; }
 
-    [BsonElement("source")]
-    public string? Source { get; set; }
+    [BsonElement("workflow_type")]
+    public string? WorkflowType { get; set; }
 
     [BsonElement("model")]
     [StringLength(200)]
     public string? Model { get; set; }
 
-    [BsonElement("custom_identifier")]
-    [StringLength(50)]
-    public string? CustomIdentifier { get; set; }
-
-    [BsonElement("metrics")]
-    [Required]
-    public required List<MetricValue> Metrics { get; set; }
-
-    [BsonElement("metadata")]
-    public Dictionary<string, string>? Metadata { get; set; }
-
-    [BsonElement("created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-}
-
-/// <summary>
-/// Represents a single metric value with category, type, and value.
-/// Enables flexible, schema-less metric tracking.
-/// </summary>
-public class MetricValue
-{
+    // Metric fields (flattened from array)
     [BsonElement("category")]
     [Required]
     [StringLength(100)]
@@ -75,61 +58,14 @@ public class MetricValue
     [BsonElement("unit")]
     [StringLength(50)]
     public string? Unit { get; set; }
+
+    [BsonElement("metadata")]
+    public Dictionary<string, string>? Metadata { get; set; }
+
+    [BsonElement("created_at")]
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Standard metric categories and types.
-/// </summary>
-public static class MetricCategories
-{
-    public const string Tokens = "tokens";
-    public const string Activity = "activity";
-    public const string Performance = "performance";
-    public const string LlmUsage = "llm_usage";
-}
-
-/// <summary>
-/// Standard metric types organized by category.
-/// Custom metrics can use any string not in these constants.
-/// </summary>
-public static class MetricTypes
-{
-    // Token metrics (category: tokens)
-    public const string PromptTokens = "prompt_tokens";
-    public const string CompletionTokens = "completion_tokens";
-    public const string TotalTokens = "total_tokens";
-    
-    // Activity metrics (category: activity)
-    public const string WorkflowCompleted = "workflow_completed";
-    public const string WorkflowFailed = "workflow_failed";
-    public const string EmailSent = "email_sent";
-    public const string EmailReceived = "email_received";
-    public const string TaskCreated = "task_created";
-    public const string TaskCompleted = "task_completed";
-    public const string MessageCount = "message_count";
-    
-    // Performance metrics (category: performance)
-    public const string ResponseTimeMs = "response_time_ms";
-    public const string ProcessingTimeMs = "processing_time_ms";
-    
-    // LLM metrics (category: llm_usage)
-    public const string LlmCalls = "llm_calls";
-    public const string CacheHits = "cache_hits";
-    public const string CacheMisses = "cache_misses";
-    
-    // Check if a metric type is standard (not custom)
-    public static readonly HashSet<string> StandardMetrics = new()
-    {
-        PromptTokens, CompletionTokens, TotalTokens,
-        WorkflowCompleted, WorkflowFailed,
-        EmailSent, EmailReceived,
-        TaskCreated, TaskCompleted, MessageCount,
-        ResponseTimeMs, ProcessingTimeMs,
-        LlmCalls, CacheHits, CacheMisses
-    };
-    
-    public static bool IsStandardMetric(string type) => StandardMetrics.Contains(type);
-}
 
 /// <summary>
 /// Response model for available metrics discovery API.
@@ -179,7 +115,7 @@ public enum UsageType
 public record UsageEventsResponse
 {
     public required string TenantId { get; init; }
-    public string? UserId { get; init; }  // null = all users, value = specific user
+    public string? ParticipantId { get; init; }  // null = all participants, value = specific participant
     
     // New flexible response fields
     public string? Category { get; init; }
@@ -241,7 +177,7 @@ public record AgentTimeSeriesDataPoint
 /// </summary>
 public record UserBreakdown
 {
-    public required string UserId { get; init; }
+    public required string ParticipantId { get; init; }
     public string? UserName { get; init; }
     public required UsageMetrics Metrics { get; init; }
 }
@@ -260,7 +196,7 @@ public record AgentBreakdown
 /// </summary>
 public record UserListItem
 {
-    public required string UserId { get; init; }
+    public required string ParticipantId { get; init; }
     public string? UserName { get; init; }
     public string? Email { get; init; }
 }
@@ -272,7 +208,7 @@ public record UserListItem
 public record UsageEventsRequest
 {
     public required string TenantId { get; init; }
-    public string? UserId { get; init; }  // null or "all" = all users
+    public string? ParticipantId { get; init; }  // null or "all" = all participants
     public string? AgentName { get; init; }  // null or "all" = all agents
     
     // New flexible filtering
@@ -294,11 +230,13 @@ public record UsageEventsRequest
 public class UsageReportRequest
 {
     public string? TenantId { get; set; }
-    public string? UserId { get; set; }
+    public string? ParticipantId { get; set; }
+    public string? AgentName { get; set; }
+    public string? ActivationName { get; set; }
     public string? Model { get; set; }
     public string? WorkflowId { get; set; }
     public string? RequestId { get; set; }
-    public string? Source { get; set; }
+    public string? WorkflowType { get; set; }
     
     [StringLength(50)]
     public string? CustomIdentifier { get; set; }

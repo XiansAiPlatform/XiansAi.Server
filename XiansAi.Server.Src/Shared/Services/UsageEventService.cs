@@ -13,7 +13,7 @@ public interface IUsageEventService
     /// <summary>
     /// Records usage event with flexible metrics.
     /// </summary>
-    Task RecordAsync(UsageReportRequest request, string tenantId, string userId, CancellationToken cancellationToken = default);
+    Task RecordAsync(UsageReportRequest request, string tenantId, string participantId, CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Retrieves usage events statistics for the specified request.
@@ -56,7 +56,7 @@ public class UsageEventService : IUsageEventService
     public async Task RecordAsync(
         UsageReportRequest request, 
         string tenantId, 
-        string userId, 
+        string participantId, 
         CancellationToken cancellationToken = default)
     {
         if (!_options.RecordUsageEvents)
@@ -71,39 +71,42 @@ public class UsageEventService : IUsageEventService
         }
 
         _logger.LogInformation(
-            "Recording flexible usage: tenant={TenantId}, user={UserId}, metricsCount={MetricsCount}",
+            "Recording flattened usage metrics: tenant={TenantId}, participant={ParticipantId}, agent={AgentName}, activation={ActivationName}, metricsCount={MetricsCount}",
             tenantId,
-            userId,
+            participantId,
+            request.AgentName,
+            request.ActivationName,
             request.Metrics.Count);
 
-        // Convert DTOs to domain models
-        var metrics = request.Metrics.Select(m => new MetricValue
+        // Use agent name from request if provided, otherwise extract from workflow_id
+        var agentName = request.AgentName ?? ExtractAgentName(request.WorkflowId);
+        var now = DateTime.UtcNow;
+
+        // Create multiple UsageMetric records (one per metric) - FLATTENED DESIGN
+        var usageMetrics = request.Metrics.Select(m => new UsageMetric
         {
+            TenantId = tenantId,
+            ParticipantId = participantId,
+            AgentName = agentName,
+            ActivationName = request.ActivationName,
+            WorkflowId = request.WorkflowId,
+            RequestId = request.RequestId,
+            WorkflowType = request.WorkflowType,
+            Model = request.Model,
             Category = m.Category,
             Type = m.Type,
             Value = m.Value,
-            Unit = m.Unit ?? "count"
+            Unit = m.Unit ?? "count",
+            Metadata = request.Metadata,
+            CreatedAt = now
         }).ToList();
 
-        // Extract agent name from workflow_id
-        var agentName = ExtractAgentName(request.WorkflowId);
-
-        var usageEvent = new UsageEvent
-        {
-            TenantId = tenantId,
-            UserId = userId,
-            AgentName = agentName,
-            WorkflowId = request.WorkflowId,
-            RequestId = request.RequestId,
-            Source = request.Source,
-            Model = request.Model,
-            CustomIdentifier = request.CustomIdentifier,
-            Metrics = metrics,
-            Metadata = request.Metadata,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _repository.InsertAsync(usageEvent, cancellationToken);
+        // Batch insert all metrics at once
+        await _repository.InsertBatchAsync(usageMetrics, cancellationToken);
+        
+        _logger.LogInformation(
+            "Inserted {Count} flattened usage metric records",
+            usageMetrics.Count);
     }
 
     private static string? ExtractAgentName(string? workflowId)
@@ -133,12 +136,12 @@ public class UsageEventService : IUsageEventService
         ValidateRequest(request);
 
         _logger.LogInformation(
-            "Retrieving statistics for tenant={TenantId}, category={Category}, type={MetricType}, user={UserId}, range={StartDate} to {EndDate}, groupBy={GroupBy}",
-            request.TenantId, request.Category ?? "all", request.MetricType ?? "all", request.UserId ?? "all", request.StartDate, request.EndDate, request.GroupBy);
+            "Retrieving statistics for tenant={TenantId}, category={Category}, type={MetricType}, participant={ParticipantId}, range={StartDate} to {EndDate}, groupBy={GroupBy}",
+            request.TenantId, request.Category ?? "all", request.MetricType ?? "all", request.ParticipantId ?? "all", request.StartDate, request.EndDate, request.GroupBy);
 
         var stats = await _repository.GetUsageEventsAsync(
             request.TenantId,
-            request.UserId,
+            request.ParticipantId,
             request.AgentName,
             request.Category,
             request.MetricType,
