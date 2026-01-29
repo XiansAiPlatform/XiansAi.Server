@@ -1,5 +1,8 @@
 using Temporalio.Client;
+using Temporalio.Api.OperatorService.V1;
+using Temporalio.Api.Enums.V1;
 using System.Collections.Concurrent;
+using Shared.Utils;
 
 namespace Shared.Utils.Temporal;
 
@@ -14,6 +17,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
 {
     private readonly ConcurrentDictionary<string, ITemporalClient> _clients = new();
     private readonly ConcurrentDictionary<string, CloudService> _serviceClients = new();
+    private readonly ConcurrentDictionary<string, bool> _searchAttributesRegistered = new();
     private readonly ILogger<TemporalClientService> _logger;
     private readonly IConfiguration _configuration;
     private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
@@ -73,10 +77,27 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             _logger.LogInformation("Connecting to temporal server for tenant {TenantId}: {Url}, namespace: {Namespace}", 
                 tenantId, config.FlowServerUrl, config.FlowServerNamespace);
 
-            var client = await TemporalClient.ConnectAsync(options);
-            _clients.TryAdd(tenantId, client);
-            
-            return client;
+            try
+            {
+                var client = await TemporalClient.ConnectAsync(options);
+                _clients.TryAdd(tenantId, client);
+
+                // Ensure search attributes are registered for this namespace
+                await EnsureSearchAttributesRegisteredAsync(client, config.FlowServerNamespace!);
+
+                _logger.LogInformation("Successfully connected to Temporal server for tenant {TenantId}", tenantId);
+                return client;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to connect to Temporal server for tenant {TenantId} at {Url}. Error: {ErrorMessage}", 
+                    tenantId, config.FlowServerUrl, ex.Message);
+
+                // Remove any stale cached connection for this tenant
+                _clients.TryRemove(tenantId, out _);
+
+                throw;
+            }
         }
         finally
         {
@@ -109,6 +130,67 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             throw new InvalidOperationException($"FlowServerUrl is required for tenant {tenantId}");
 
         return temporalConfig;
+    }
+
+    /// <summary>
+    /// Ensures that required search attributes are registered in Temporal.
+    /// This is called once per namespace when a client connects.
+    /// </summary>
+    private async Task EnsureSearchAttributesRegisteredAsync(ITemporalClient client, string namespaceName)
+    {
+        // Check if we've already registered for this namespace
+        if (_searchAttributesRegistered.TryGetValue(namespaceName, out var registered) && registered)
+        {
+            return;
+        }
+
+        try
+        {
+            _logger.LogInformation("Checking search attributes for namespace {Namespace}", namespaceName);
+
+            // Get existing search attributes
+            var listRequest = new ListSearchAttributesRequest { Namespace = namespaceName };
+            var existingAttributes = await client.Connection.OperatorService.ListSearchAttributesAsync(listRequest);
+            
+            var existingNames = existingAttributes.CustomAttributes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Find missing attributes
+            var missingAttributes = Constants.RequiredSearchAttributes
+                .Where(attr => !existingNames.Contains(attr.Key))
+                .ToList();
+
+            if (missingAttributes.Count == 0)
+            {
+                _logger.LogInformation("All required search attributes already exist in namespace {Namespace}", namespaceName);
+                _searchAttributesRegistered[namespaceName] = true;
+                return;
+            }
+
+            // Register missing attributes
+            _logger.LogInformation("Registering {Count} missing search attributes in namespace {Namespace}: {Attributes}", 
+                missingAttributes.Count, namespaceName, string.Join(", ", missingAttributes.Select(a => a.Key)));
+
+            var addRequest = new AddSearchAttributesRequest { Namespace = namespaceName };
+            foreach (var attr in missingAttributes)
+            {
+                addRequest.SearchAttributes.Add(attr.Key, attr.Value);
+            }
+
+            await client.Connection.OperatorService.AddSearchAttributesAsync(addRequest);
+
+            _logger.LogInformation("Successfully registered search attributes in namespace {Namespace}", namespaceName);
+            _searchAttributesRegistered[namespaceName] = true;
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail - search attributes might already exist or user might not have permission
+            _logger.LogWarning(ex, "Could not auto-register search attributes for namespace {Namespace}. " +
+                "If workflows fail to start, manually register these attributes: {Attributes}", 
+                namespaceName, string.Join(", ", Constants.RequiredSearchAttributes.Keys));
+            
+            // Mark as registered to avoid repeated attempts
+            _searchAttributesRegistered[namespaceName] = true;
+        }
     }
 
     private byte[]? GetCertificate(TemporalConfig config)
