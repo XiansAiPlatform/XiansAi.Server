@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Shared.Data;
 using Shared.Utils;
 using Shared.Auth;
@@ -542,9 +543,18 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         {
             // Single optimized query using compound index
             var filterBuilder = Builders<ConversationMessage>.Filter;
+            
+            // Use regex to match WorkflowId that starts with the provided workflowId
+            // This handles cases where workflowId is partial (e.g., "default:Agent:Workflow")
+            // but database has full workflowId (e.g., "default:Agent:Workflow:InstanceId")
+            var escapedWorkflowId = Regex.Escape(workflowId);
+            var workflowIdFilter = filterBuilder.Regex(x => x.WorkflowId, new MongoDB.Bson.BsonRegularExpression($"^{escapedWorkflowId}"));
+            
+            _logger.LogDebug("Querying messages with WorkflowId pattern: ^{WorkflowIdPattern}, ParticipantId: {ParticipantId}", escapedWorkflowId, participantId);
+            
             var filter = filterBuilder.And(
                 filterBuilder.Eq(x => x.TenantId, _tenantContext.TenantId),
-                filterBuilder.Eq(x => x.WorkflowId, workflowId),
+                workflowIdFilter,
                 filterBuilder.Eq(x => x.ParticipantId, participantId)
             );
 
