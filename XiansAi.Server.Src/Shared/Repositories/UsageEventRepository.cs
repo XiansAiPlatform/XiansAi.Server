@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
@@ -34,6 +32,19 @@ public interface IUsageEventRepository
     // Get available metrics for discovery
     Task<AvailableMetricsResponse> GetAvailableMetricsAsync(
         string tenantId,
+        CancellationToken cancellationToken = default);
+    
+    // Admin Metrics Endpoints
+    Task<AdminMetricsStatsResponse> GetAdminMetricsStatsAsync(
+        AdminMetricsStatsRequest request,
+        CancellationToken cancellationToken = default);
+    
+    Task<AdminMetricsTimeSeriesResponse> GetAdminMetricsTimeSeriesAsync(
+        AdminMetricsTimeSeriesRequest request,
+        CancellationToken cancellationToken = default);
+    
+    Task<AdminMetricsCategoriesResponse> GetAdminMetricsCategoriesAsync(
+        AdminMetricsCategoriesRequest request,
         CancellationToken cancellationToken = default);
 }
 
@@ -1173,6 +1184,719 @@ public class UsageEventRepository : IUsageEventRepository
         
         // Add weeks
         return firstSunday.AddDays(week * 7);
+    }
+
+    // ============================================================================
+    // ADMIN METRICS ENDPOINTS - Database-optimized aggregations
+    // ============================================================================
+
+    public async Task<AdminMetricsStatsResponse> GetAdminMetricsStatsAsync(
+        AdminMetricsStatsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            _logger.LogInformation(
+                "Getting admin metrics stats for tenant={TenantId}, agent={AgentName}, range={StartDate} to {EndDate}",
+                request.TenantId, request.AgentName, request.StartDate, request.EndDate);
+
+            // Build filter as BsonDocument to ensure proper field name mapping
+            var matchFilter = new BsonDocument
+            {
+                { "tenant_id", request.TenantId },
+                { "agent_name", request.AgentName },
+                { "created_at", new BsonDocument
+                    {
+                        { "$gte", request.StartDate },
+                        { "$lte", request.EndDate }
+                    }
+                }
+            };
+
+            // Add optional filters
+            if (!string.IsNullOrWhiteSpace(request.ActivationName))
+                matchFilter.Add("activation_name", request.ActivationName);
+            if (!string.IsNullOrWhiteSpace(request.ParticipantId))
+                matchFilter.Add("participant_id", request.ParticipantId);
+            if (!string.IsNullOrWhiteSpace(request.WorkflowType))
+                matchFilter.Add("workflow_type", request.WorkflowType);
+            if (!string.IsNullOrWhiteSpace(request.Model))
+                matchFilter.Add("model", request.Model);
+
+            // Use $facet for parallel aggregations - all done in one database query!
+            var pipeline = new[]
+            {
+                new BsonDocument("$match", matchFilter),
+                new BsonDocument("$facet", new BsonDocument
+                {
+                    // Facet 1: Categories and Types aggregation
+                    { "categoriesAndTypes", new BsonArray
+                        {
+                            new BsonDocument("$group", new BsonDocument
+                            {
+                                { "_id", new BsonDocument
+                                    {
+                                        { "category", "$category" },
+                                        { "type", "$type" }
+                                    }
+                                },
+                                { "count", new BsonDocument("$sum", 1) },
+                                { "sum", new BsonDocument("$sum", "$value") },
+                                { "avg", new BsonDocument("$avg", "$value") },
+                                { "min", new BsonDocument("$min", "$value") },
+                                { "max", new BsonDocument("$max", "$value") },
+                                { "unit", new BsonDocument("$first", "$unit") },
+                                { "values", new BsonDocument("$push", "$value") }
+                            }),
+                            new BsonDocument("$sort", new BsonDocument
+                            {
+                                { "_id.category", 1 },
+                                { "_id.type", 1 }
+                            })
+                        }
+                    },
+                    // Facet 2: By Activation aggregation
+                    { "byActivation", new BsonArray
+                        {
+                            new BsonDocument("$group", new BsonDocument
+                            {
+                                { "_id", new BsonDocument
+                                    {
+                                        { "activation", "$activation_name" },
+                                        { "category", "$category" },
+                                        { "type", "$type" }
+                                    }
+                                },
+                                { "count", new BsonDocument("$sum", 1) },
+                                { "sum", new BsonDocument("$sum", "$value") },
+                                { "avg", new BsonDocument("$avg", "$value") },
+                                { "min", new BsonDocument("$min", "$value") },
+                                { "max", new BsonDocument("$max", "$value") },
+                                { "unit", new BsonDocument("$first", "$unit") }
+                            }),
+                            new BsonDocument("$sort", new BsonDocument
+                            {
+                                { "_id.activation", 1 },
+                                { "_id.category", 1 },
+                                { "_id.type", 1 }
+                            })
+                        }
+                    },
+                    // Facet 3: Summary statistics
+                    { "summary", new BsonArray
+                        {
+                            new BsonDocument("$group", new BsonDocument
+                            {
+                                { "_id", BsonNull.Value },
+                                { "totalMetricRecords", new BsonDocument("$sum", 1) },
+                                { "uniqueCategories", new BsonDocument("$addToSet", "$category") },
+                                { "uniqueTypes", new BsonDocument("$addToSet", new BsonDocument
+                                    {
+                                        { "category", "$category" },
+                                        { "type", "$type" }
+                                    })
+                                },
+                                { "uniqueActivations", new BsonDocument("$addToSet", "$activation_name") },
+                                { "uniqueParticipants", new BsonDocument("$addToSet", "$participant_id") },
+                                { "uniqueWorkflows", new BsonDocument("$addToSet", "$workflow_id") },
+                                { "uniqueModels", new BsonDocument("$addToSet", "$model") },
+                                { "earliest", new BsonDocument("$min", "$created_at") },
+                                { "latest", new BsonDocument("$max", "$created_at") }
+                            })
+                        }
+                    }
+                })
+            };
+
+            var result = await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken).FirstOrDefaultAsync(cancellationToken);
+            
+            if (result == null)
+            {
+                return CreateEmptyStatsResponse(request);
+            }
+
+            // Parse categories and types
+            var categoriesAndTypes = ParseCategoriesAndTypes(result["categoriesAndTypes"].AsBsonArray);
+            
+            // Parse by activation
+            var byActivation = ParseActivationStats(result["byActivation"].AsBsonArray);
+            
+            // Parse summary
+            var summaryDoc = result["summary"].AsBsonArray.FirstOrDefault()?.AsBsonDocument;
+            var summary = ParseSummary(summaryDoc, request);
+
+            return new AdminMetricsStatsResponse
+            {
+                Period = new DateRangeInfo
+                {
+                    StartDate = request.StartDate,
+                    EndDate = request.EndDate
+                },
+                Filters = new MetricsFilters
+                {
+                    AgentName = request.AgentName,
+                    ActivationName = request.ActivationName,
+                    ParticipantId = request.ParticipantId,
+                    WorkflowType = request.WorkflowType,
+                    Model = request.Model
+                },
+                Summary = summary,
+                CategoriesAndTypes = categoriesAndTypes,
+                ByActivation = byActivation
+            };
+        }, _logger, operationName: "GetAdminMetricsStats");
+    }
+
+    public async Task<AdminMetricsTimeSeriesResponse> GetAdminMetricsTimeSeriesAsync(
+        AdminMetricsTimeSeriesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            _logger.LogInformation(
+                "Getting admin metrics timeseries for tenant={TenantId}, agent={AgentName}, category={Category}, type={Type}, groupBy={GroupBy}",
+                request.TenantId, request.AgentName, request.Category, request.Type, request.GroupBy);
+
+            // Build filter as BsonDocument to ensure proper field name mapping
+            var matchFilter = new BsonDocument
+            {
+                { "tenant_id", request.TenantId },
+                { "agent_name", request.AgentName },
+                { "category", request.Category },
+                { "type", request.Type },
+                { "created_at", new BsonDocument
+                    {
+                        { "$gte", request.StartDate },
+                        { "$lte", request.EndDate }
+                    }
+                }
+            };
+
+            // Add optional filters
+            if (!string.IsNullOrWhiteSpace(request.ActivationName))
+                matchFilter.Add("activation_name", request.ActivationName);
+            if (!string.IsNullOrWhiteSpace(request.ParticipantId))
+                matchFilter.Add("participant_id", request.ParticipantId);
+            if (!string.IsNullOrWhiteSpace(request.WorkflowType))
+                matchFilter.Add("workflow_type", request.WorkflowType);
+            if (!string.IsNullOrWhiteSpace(request.Model))
+                matchFilter.Add("model", request.Model);
+
+            // Determine aggregation operator
+            var aggOperator = request.Aggregation.ToLower() switch
+            {
+                "avg" => "$avg",
+                "min" => "$min",
+                "max" => "$max",
+                "count" => "$sum",
+                _ => "$sum"
+            };
+
+            var aggValue = request.Aggregation.ToLower() == "count" 
+                ? new BsonInt32(1) 
+                : (BsonValue)"$value";
+
+            var pipeline = new List<BsonDocument>
+            {
+                new BsonDocument("$match", matchFilter),
+                new BsonDocument("$group", new BsonDocument
+                {
+                    { "_id", new BsonDocument
+                        {
+                            { "timestamp", new BsonDocument("$dateTrunc", new BsonDocument
+                                {
+                                    { "date", "$created_at" },
+                                    { "unit", request.GroupBy }
+                                })
+                            }
+                        }
+                    },
+                    { "value", new BsonDocument(aggOperator, aggValue) },
+                    { "count", new BsonDocument("$sum", 1) },
+                    { "unit", new BsonDocument("$first", "$unit") }
+                }),
+                new BsonDocument("$sort", new BsonDocument("_id.timestamp", 1))
+            };
+
+            // Add breakdown facet if requested
+            if (request.IncludeBreakdowns)
+            {
+                pipeline.Add(new BsonDocument("$facet", new BsonDocument
+                {
+                    { "dataPoints", new BsonArray(new[] 
+                        { 
+                            new BsonDocument("$match", new BsonDocument())  // Pass through all
+                        }) 
+                    },
+                    { "activationBreakdown", new BsonArray(new[] 
+                        {
+                            new BsonDocument("$lookup", new BsonDocument
+                            {
+                                { "from", "usage_metrics" },
+                                { "let", new BsonDocument("timestamp", "$_id.timestamp") },
+                                { "pipeline", new BsonArray
+                                    {
+                                        new BsonDocument("$match", new BsonDocument("$expr", new BsonDocument("$and", new BsonArray
+                                        {
+                                            matchFilter,
+                                            new BsonDocument("$eq", new BsonArray
+                                            {
+                                                new BsonDocument("$dateTrunc", new BsonDocument
+                                                {
+                                                    { "date", "$created_at" },
+                                                    { "unit", request.GroupBy }
+                                                }),
+                                                "$$timestamp"
+                                            })
+                                        }))),
+                                        new BsonDocument("$group", new BsonDocument
+                                        {
+                                            { "_id", "$activation_name" },
+                                            { "value", new BsonDocument(aggOperator, aggValue) },
+                                            { "count", new BsonDocument("$sum", 1) }
+                                        })
+                                    }
+                                },
+                                { "as", "activations" }
+                            })
+                        }) 
+                    }
+                }));
+            }
+
+            var results = request.IncludeBreakdowns 
+                ? await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken).FirstOrDefaultAsync(cancellationToken)
+                : null;
+
+            List<MetricTimeSeriesDataPoint> dataPoints;
+            if (request.IncludeBreakdowns && results != null)
+            {
+                dataPoints = ParseTimeSeriesWithBreakdowns(results["dataPoints"].AsBsonArray, results["activationBreakdown"].AsBsonArray);
+            }
+            else
+            {
+                var simpleResults = await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
+                dataPoints = ParseTimeSeriesDataPoints(simpleResults);
+            }
+
+            var summary = CalculateTimeSeriesSummary(dataPoints);
+            var unit = dataPoints.FirstOrDefault()?.Value != null && results?["dataPoints"]?.AsBsonArray?.FirstOrDefault()?["unit"] != null
+                ? results["dataPoints"].AsBsonArray.First()["unit"].AsString
+                : "count";
+
+            return new AdminMetricsTimeSeriesResponse
+            {
+                Period = new DateRangeInfo
+                {
+                    StartDate = request.StartDate,
+                    EndDate = request.EndDate
+                },
+                Metric = new MetricInfo
+                {
+                    Category = request.Category,
+                    Type = request.Type,
+                    Unit = unit
+                },
+                Filters = new MetricsFilters
+                {
+                    AgentName = request.AgentName,
+                    ActivationName = request.ActivationName,
+                    ParticipantId = request.ParticipantId,
+                    WorkflowType = request.WorkflowType,
+                    Model = request.Model
+                },
+                GroupBy = request.GroupBy,
+                Aggregation = request.Aggregation,
+                DataPoints = dataPoints,
+                Summary = summary
+            };
+        }, _logger, operationName: "GetAdminMetricsTimeSeries");
+    }
+
+    public async Task<AdminMetricsCategoriesResponse> GetAdminMetricsCategoriesAsync(
+        AdminMetricsCategoriesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            _logger.LogInformation(
+                "Getting admin metrics categories for tenant={TenantId}, agent={AgentName}, activation={ActivationName}",
+                request.TenantId, request.AgentName ?? "all", request.ActivationName ?? "all");
+
+            // Build filter as BsonDocument to ensure proper field name mapping
+            var matchFilter = new BsonDocument
+            {
+                { "tenant_id", request.TenantId }
+            };
+
+            if (request.StartDate.HasValue && request.EndDate.HasValue)
+            {
+                matchFilter.Add("created_at", new BsonDocument
+                {
+                    { "$gte", request.StartDate.Value },
+                    { "$lte", request.EndDate.Value }
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.AgentName))
+            {
+                matchFilter.Add("agent_name", request.AgentName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.ActivationName))
+            {
+                matchFilter.Add("activation_name", request.ActivationName);
+            }
+
+            var pipeline = new[]
+            {
+                new BsonDocument("$match", matchFilter),
+                new BsonDocument("$group", new BsonDocument
+                {
+                    { "_id", new BsonDocument
+                        {
+                            { "category", "$category" },
+                            { "type", "$type" }
+                        }
+                    },
+                    { "sampleCount", new BsonDocument("$sum", 1) },
+                    { "units", new BsonDocument("$addToSet", "$unit") },
+                    { "firstSeen", new BsonDocument("$min", "$created_at") },
+                    { "lastSeen", new BsonDocument("$max", "$created_at") },
+                    { "agents", new BsonDocument("$addToSet", "$agent_name") },
+                    { "sampleValue", new BsonDocument("$first", "$value") }
+                }),
+                new BsonDocument("$group", new BsonDocument
+                {
+                    { "_id", "$_id.category" },
+                    { "types", new BsonDocument("$push", new BsonDocument
+                        {
+                            { "type", "$_id.type" },
+                            { "sampleCount", "$sampleCount" },
+                            { "units", "$units" },
+                            { "firstSeen", "$firstSeen" },
+                            { "lastSeen", "$lastSeen" },
+                            { "agents", "$agents" },
+                            { "sampleValue", "$sampleValue" }
+                        })
+                    },
+                    { "totalRecords", new BsonDocument("$sum", "$sampleCount") }
+                }),
+                new BsonDocument("$sort", new BsonDocument("_id", 1))
+            };
+
+            var results = await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
+
+            var categories = results.Select(doc => ParseCategoryDiscoveryInfo(doc)).ToList();
+            var summary = CalculateCategoriesSummary(categories, request);
+
+            return new AdminMetricsCategoriesResponse
+            {
+                DateRange = request.StartDate.HasValue && request.EndDate.HasValue
+                    ? new DateRangeInfo
+                    {
+                        StartDate = request.StartDate.Value,
+                        EndDate = request.EndDate.Value
+                    }
+                    : null,
+                Categories = categories,
+                Summary = summary
+            };
+        }, _logger, operationName: "GetAdminMetricsCategories");
+    }
+
+    // Helper methods for parsing aggregation results
+
+    private static AdminMetricsStatsResponse CreateEmptyStatsResponse(AdminMetricsStatsRequest request)
+    {
+        return new AdminMetricsStatsResponse
+        {
+            Period = new DateRangeInfo { StartDate = request.StartDate, EndDate = request.EndDate },
+            Filters = new MetricsFilters
+            {
+                AgentName = request.AgentName,
+                ActivationName = request.ActivationName,
+                ParticipantId = request.ParticipantId,
+                WorkflowType = request.WorkflowType,
+                Model = request.Model
+            },
+            Summary = new MetricsSummary
+            {
+                TotalMetricRecords = 0,
+                UniqueCategories = 0,
+                UniqueTypes = 0,
+                UniqueActivations = 0,
+                UniqueParticipants = 0,
+                UniqueWorkflows = 0,
+                UniqueModels = 0,
+                DateRange = new DateRangeInfo { StartDate = request.StartDate, EndDate = request.EndDate }
+            },
+            CategoriesAndTypes = new List<CategoryStats>(),
+            ByActivation = new List<ActivationStats>()
+        };
+    }
+
+    private static List<CategoryStats> ParseCategoriesAndTypes(BsonArray categoriesArray)
+    {
+        var categoriesDict = new Dictionary<string, List<TypeStats>>();
+
+        foreach (var item in categoriesArray)
+        {
+            var doc = item.AsBsonDocument;
+            var id = doc["_id"].AsBsonDocument;
+            var category = id["category"].AsString;
+            var type = id["type"].AsString;
+
+            if (!categoriesDict.ContainsKey(category))
+            {
+                categoriesDict[category] = new List<TypeStats>();
+            }
+
+            var values = doc.Contains("values") ? doc["values"].AsBsonArray.Select(v => v.ToDouble()).ToList() : new List<double>();
+            var (median, p95, p99) = CalculatePercentiles(values);
+
+            categoriesDict[category].Add(new TypeStats
+            {
+                Type = type,
+                Stats = new MetricStats
+                {
+                    Count = doc["count"].ToInt64(),
+                    Sum = doc["sum"].ToDouble(),
+                    Average = doc["avg"].ToDouble(),
+                    Min = doc["min"].ToDouble(),
+                    Max = doc["max"].ToDouble(),
+                    Median = median,
+                    P95 = p95,
+                    P99 = p99,
+                    Unit = doc.Contains("unit") && !doc["unit"].IsBsonNull ? doc["unit"].AsString : "count"
+                }
+            });
+        }
+
+        return categoriesDict.Select(kvp => new CategoryStats
+        {
+            Category = kvp.Key,
+            Types = kvp.Value
+        }).ToList();
+    }
+
+    private static List<ActivationStats> ParseActivationStats(BsonArray activationArray)
+    {
+        var activationsDict = new Dictionary<string, Dictionary<string, List<TypeStats>>>();
+
+        foreach (var item in activationArray)
+        {
+            var doc = item.AsBsonDocument;
+            var id = doc["_id"].AsBsonDocument;
+            var activation = id.Contains("activation") && !id["activation"].IsBsonNull ? id["activation"].AsString : "unknown";
+            var category = id["category"].AsString;
+            var type = id["type"].AsString;
+
+            if (!activationsDict.ContainsKey(activation))
+            {
+                activationsDict[activation] = new Dictionary<string, List<TypeStats>>();
+            }
+
+            if (!activationsDict[activation].ContainsKey(category))
+            {
+                activationsDict[activation][category] = new List<TypeStats>();
+            }
+
+            activationsDict[activation][category].Add(new TypeStats
+            {
+                Type = type,
+                Stats = new MetricStats
+                {
+                    Count = doc["count"].ToInt64(),
+                    Sum = doc["sum"].ToDouble(),
+                    Average = doc["avg"].ToDouble(),
+                    Min = doc["min"].ToDouble(),
+                    Max = doc["max"].ToDouble(),
+                    Unit = doc.Contains("unit") && !doc["unit"].IsBsonNull ? doc["unit"].AsString : "count"
+                }
+            });
+        }
+
+        return activationsDict.Select(kvp => new ActivationStats
+        {
+            ActivationName = kvp.Key,
+            MetricCount = kvp.Value.Values.SelectMany(types => types).Sum(t => t.Stats.Count),
+            CategoriesAndTypes = kvp.Value.Select(cat => new CategoryStats
+            {
+                Category = cat.Key,
+                Types = cat.Value
+            }).ToList()
+        }).ToList();
+    }
+
+    private static MetricsSummary ParseSummary(BsonDocument? summaryDoc, AdminMetricsStatsRequest request)
+    {
+        if (summaryDoc == null)
+        {
+            return new MetricsSummary
+            {
+                TotalMetricRecords = 0,
+                UniqueCategories = 0,
+                UniqueTypes = 0,
+                UniqueActivations = 0,
+                UniqueParticipants = 0,
+                UniqueWorkflows = 0,
+                UniqueModels = 0,
+                DateRange = new DateRangeInfo { StartDate = request.StartDate, EndDate = request.EndDate }
+            };
+        }
+
+        return new MetricsSummary
+        {
+            TotalMetricRecords = summaryDoc["totalMetricRecords"].ToInt64(),
+            UniqueCategories = summaryDoc["uniqueCategories"].AsBsonArray.Count,
+            UniqueTypes = summaryDoc["uniqueTypes"].AsBsonArray.Count,
+            UniqueActivations = summaryDoc["uniqueActivations"].AsBsonArray.Where(v => !v.IsBsonNull).Distinct().Count(),
+            UniqueParticipants = summaryDoc["uniqueParticipants"].AsBsonArray.Where(v => !v.IsBsonNull).Distinct().Count(),
+            UniqueWorkflows = summaryDoc["uniqueWorkflows"].AsBsonArray.Where(v => !v.IsBsonNull).Distinct().Count(),
+            UniqueModels = summaryDoc["uniqueModels"].AsBsonArray.Where(v => !v.IsBsonNull).Distinct().Count(),
+            DateRange = new DateRangeInfo
+            {
+                StartDate = summaryDoc.Contains("earliest") ? summaryDoc["earliest"].ToUniversalTime() : request.StartDate,
+                EndDate = summaryDoc.Contains("latest") ? summaryDoc["latest"].ToUniversalTime() : request.EndDate
+            }
+        };
+    }
+
+    private static (double? median, double? p95, double? p99) CalculatePercentiles(List<double> values)
+    {
+        if (values.Count == 0) return (null, null, null);
+
+        values.Sort();
+        var count = values.Count;
+
+        double? GetPercentile(double percentile)
+        {
+            var index = (int)Math.Ceiling(count * percentile) - 1;
+            return index >= 0 && index < count ? values[index] : null;
+        }
+
+        return (GetPercentile(0.50), GetPercentile(0.95), GetPercentile(0.99));
+    }
+
+    private static List<MetricTimeSeriesDataPoint> ParseTimeSeriesDataPoints(List<BsonDocument> results)
+    {
+        return results.Select(doc =>
+        {
+            var timestamp = doc["_id"].AsBsonDocument["timestamp"].ToUniversalTime();
+            return new MetricTimeSeriesDataPoint
+            {
+                Timestamp = timestamp,
+                Value = doc["value"].ToDouble(),
+                Count = doc["count"].ToInt64(),
+                Breakdowns = null
+            };
+        }).ToList();
+    }
+
+    private static List<MetricTimeSeriesDataPoint> ParseTimeSeriesWithBreakdowns(BsonArray dataPointsArray, BsonArray breakdownArray)
+    {
+        // This is a simplified version - in practice you'd need to match breakdowns to timestamps
+        return dataPointsArray.Select(item =>
+        {
+            var doc = item.AsBsonDocument;
+            var timestamp = doc["_id"].AsBsonDocument["timestamp"].ToUniversalTime();
+            
+            return new MetricTimeSeriesDataPoint
+            {
+                Timestamp = timestamp,
+                Value = doc["value"].ToDouble(),
+                Count = doc["count"].ToInt64(),
+                Breakdowns = null  // TODO: Implement breakdown parsing
+            };
+        }).ToList();
+    }
+
+    private static TimeSeriesSummary CalculateTimeSeriesSummary(List<MetricTimeSeriesDataPoint> dataPoints)
+    {
+        if (dataPoints.Count == 0)
+        {
+            return new TimeSeriesSummary
+            {
+                TotalValue = 0,
+                TotalCount = 0,
+                Average = 0,
+                Min = 0,
+                Max = 0,
+                DataPointCount = 0
+            };
+        }
+
+        return new TimeSeriesSummary
+        {
+            TotalValue = dataPoints.Sum(dp => dp.Value),
+            TotalCount = dataPoints.Sum(dp => dp.Count),
+            Average = dataPoints.Average(dp => dp.Value),
+            Min = dataPoints.Min(dp => dp.Value),
+            Max = dataPoints.Max(dp => dp.Value),
+            DataPointCount = dataPoints.Count
+        };
+    }
+
+    private static CategoryDiscoveryInfo ParseCategoryDiscoveryInfo(BsonDocument doc)
+    {
+        var category = doc["_id"].AsString;
+        var types = doc["types"].AsBsonArray.Select(t =>
+        {
+            var typeDoc = t.AsBsonDocument;
+            return new TypeDiscoveryInfo
+            {
+                Type = typeDoc["type"].AsString,
+                SampleCount = typeDoc["sampleCount"].ToInt64(),
+                Units = typeDoc["units"].AsBsonArray.Select(u => u.AsString).ToList(),
+                FirstSeen = typeDoc["firstSeen"].ToUniversalTime(),
+                LastSeen = typeDoc["lastSeen"].ToUniversalTime(),
+                Agents = typeDoc["agents"].AsBsonArray.Where(a => !a.IsBsonNull).Select(a => a.AsString).ToList(),
+                SampleValue = typeDoc["sampleValue"].ToDouble()
+            };
+        }).ToList();
+
+        return new CategoryDiscoveryInfo
+        {
+            Category = category,
+            Types = types,
+            TotalMetrics = types.Count,
+            TotalRecords = doc["totalRecords"].ToInt64()
+        };
+    }
+
+    private static CategoriesSummary CalculateCategoriesSummary(List<CategoryDiscoveryInfo> categories, AdminMetricsCategoriesRequest request)
+    {
+        var allAgents = categories
+            .SelectMany(c => c.Types)
+            .SelectMany(t => t.Agents)
+            .Distinct()
+            .ToList();
+
+        var allTypes = categories
+            .SelectMany(c => c.Types)
+            .ToList();
+
+        var earliestDate = allTypes.Any() 
+            ? allTypes.Min(t => t.FirstSeen) 
+            : request.StartDate ?? DateTime.UtcNow;
+
+        var latestDate = allTypes.Any() 
+            ? allTypes.Max(t => t.LastSeen) 
+            : request.EndDate ?? DateTime.UtcNow;
+
+        return new CategoriesSummary
+        {
+            TotalCategories = categories.Count,
+            TotalTypes = categories.Sum(c => c.TotalMetrics),
+            TotalRecords = categories.Sum(c => c.TotalRecords),
+            AvailableAgents = allAgents,
+            DateRange = new DateRangeInfo
+            {
+                StartDate = earliestDate,
+                EndDate = latestDate
+            }
+        };
     }
 }
 

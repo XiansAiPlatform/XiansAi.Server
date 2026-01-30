@@ -364,6 +364,37 @@ usage_metrics:
       agent_name: asc
       category: asc
       created_at: desc
+  # Admin Metrics Endpoints - Optimized indexes
+  - name: idx_admin_stats_query
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      created_at: asc
+      category: asc
+      type: asc
+      activation_name: asc
+    background: true
+  - name: idx_admin_timeseries_query
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      category: asc
+      type: asc
+      created_at: asc
+    background: true
+  - name: idx_admin_categories_discovery
+    keys:
+      tenant_id: asc
+      category: asc
+      type: asc
+    background: true
+  - name: idx_activation_metrics
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      activation_name: asc
+      created_at: asc
+    background: true
     background: true
   - name: idx_tenant_participant_category_date
     keys:

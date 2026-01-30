@@ -28,6 +28,7 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IActivationCleanupService, ActivationCleanupService>();
         builder.Services.AddScoped<IAdminStatsService, AdminStatsService>();
         builder.Services.AddScoped<IAdminLogsService, AdminLogsService>();
+        builder.Services.AddScoped<IAdminMetricsService, AdminMetricsService>();
         // Note: IAdminTaskService is registered in SharedServices as it's shared with WebApi
         // AdminApi reuses existing services from WebApi
         return builder;
@@ -112,7 +113,10 @@ public static class AdminApiConfiguration
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
         AdminStatsEndpoints.MapAdminStatsEndpoints(adminApiGroup);
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);
+        AdminMetricsEndpoints.MapAdminMetricsEndpoints(adminApiGroup);
     }
 }
+
+
 
 
