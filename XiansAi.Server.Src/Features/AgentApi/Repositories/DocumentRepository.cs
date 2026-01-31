@@ -30,6 +30,8 @@ public class DocumentQueryFilter
     public List<string>? AgentIds { get; set; }
     public string? Type { get; set; }
     public string? Key { get; set; }
+    public string? ParticipantId { get; set; }
+    public string? ActivationName { get; set; }
     public Dictionary<string, object>? MetadataFilters { get; set; }
     public int Limit { get; set; } = 100;
     public int Skip { get; set; } = 0;
@@ -126,6 +128,7 @@ public class DocumentRepository : IDocumentRepository
             {
                 "UpdatedAt" => "updated_at",
                 "CreatedAt" => "created_at",
+                null => "created_at",
                 _ => "created_at"
             };
 
@@ -186,6 +189,18 @@ public class DocumentRepository : IDocumentRepository
         if (!string.IsNullOrEmpty(queryFilter.Key))
         {
             filter &= builder.Eq(d => d.Key, queryFilter.Key);
+        }
+
+        // Add participant filter
+        if (!string.IsNullOrEmpty(queryFilter.ParticipantId))
+        {
+            filter &= builder.Eq(d => d.ParticipantId, queryFilter.ParticipantId);
+        }
+
+        // Add activation name filter
+        if (!string.IsNullOrEmpty(queryFilter.ActivationName))
+        {
+            filter &= builder.Eq(d => d.ActivationName, queryFilter.ActivationName);
         }
 
         // Add content type filter

@@ -36,6 +36,14 @@ public class Document
     [JsonPropertyName("workflowId")]
     public string? WorkflowId { get; set; }
 
+    [BsonElement("participant_id")]
+    [JsonPropertyName("participantId")]
+    public string? ParticipantId { get; set; }
+
+    [BsonElement("activation_name")]
+    [JsonPropertyName("activationName")]
+    public string? ActivationName { get; set; }
+
     [BsonElement("type")]
     [JsonPropertyName("type")]
     public string? Type { get; set; }

@@ -164,7 +164,7 @@ public class AdminTaskService : IAdminTaskService
             var response = new AdminTaskInfoResponse
             {
                 WorkflowId = workflowId,
-                RunId = workflowDescription.RunId ?? "unknown",
+                RunId = workflowDescription.RunId,
                 Title = title ?? "Untitled Task",
                 Description = description ?? "",
                 InitialWork = initialWork,
@@ -198,6 +198,7 @@ public class AdminTaskService : IAdminTaskService
 
     /// <summary>
     /// Retrieves a paginated list of tasks with optional filtering.
+    /// Uses CountWorkflow API for efficient total count and improved pagination logic.
     /// </summary>
     public async Task<ServiceResult<AdminPaginatedTasksResponse>> GetTasks(
         string tenantId,
@@ -222,22 +223,19 @@ public class AdminTaskService : IAdminTaskService
         try
         {
             var client = await _clientFactory.GetClientAsync();
-            var tasks = new List<AdminTaskInfoResponse>();
-
-            // Build query with filters
+            
+            // Build base query with filters
             var queryParts = new List<string>
             {
-                $"{Constants.TenantIdKey} = '{tenantId}'"
+                $"{Constants.TenantIdKey} = '{tenantId}'",
+                "TaskQueue STARTS_WITH 'hitl_task:'"
             };
 
             // Add agentName filter if specified
             if (!string.IsNullOrEmpty(agentName))
             {
                 queryParts.Add($"{Constants.AgentKey} = '{agentName}'");
-                queryParts.Add($"WorkflowType = '{agentName}:Task Workflow'");
             }
-            // Note: When no agent is specified, we need to filter out non-Task workflows
-            // after fetching, as Temporal doesn't support wildcard matching in WorkflowType
 
             // Add activationName filter if specified (maps to idPostfix)
             if (!string.IsNullOrEmpty(activationName))
@@ -260,6 +258,9 @@ public class AdminTaskService : IAdminTaskService
             var listQuery = string.Join(" and ", queryParts);
             _logger.LogDebug("Executing paginated tasks query: {Query}", listQuery);
 
+            // Get total count efficiently using CountWorkflow API if available
+            int? totalCount = await GetWorkflowCountAsync(client, listQuery, agentName);
+
             // Calculate pagination parameters
             int skipCount = 0;
             if (!string.IsNullOrEmpty(pageToken) && int.TryParse(pageToken, out var pageNumber))
@@ -267,31 +268,33 @@ public class AdminTaskService : IAdminTaskService
                 skipCount = (pageNumber - 1) * actualPageSize;
             }
 
-            var minRequiredItems = skipCount + actualPageSize + 1; // +1 to check for next page
-            var fetchLimit = Math.Max(minRequiredItems, 100);
-
+            // Fetch exactly what we need (no extra item needed since we have total count)
             var listOptions = new WorkflowListOptions
             {
-                Limit = fetchLimit
+                Limit = actualPageSize // No +1 needed - we use totalCount for next page detection
             };
 
             var allTasks = new List<AdminTaskInfoResponse>();
             var itemsProcessed = 0;
+            var tasksSkipped = 0;
+
+
 
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
             {
-                // Filter to only include Task Workflows when agentName is not specified
-                if (string.IsNullOrEmpty(agentName) && !workflow.Id.Contains(":Task Workflow:"))
+                // Skip items for pagination
+                if (tasksSkipped < skipCount)
                 {
-                    continue; // Skip non-Task workflows
+                    tasksSkipped++;
+                    continue;
                 }
 
                 var taskInfo = MapWorkflowToTaskInfo(workflow);
                 allTasks.Add(taskInfo);
                 itemsProcessed++;
 
-                // If we have enough items for this page and to determine next page, break early
-                if (itemsProcessed >= minRequiredItems)
+                // Stop when we have exactly what we need
+                if (itemsProcessed >= actualPageSize)
                 {
                     break;
                 }
@@ -300,49 +303,75 @@ public class AdminTaskService : IAdminTaskService
             // Order by StartTime descending to get latest tasks first
             allTasks = allTasks.OrderByDescending(t => t.StartTime).ToList();
 
-            // Apply pagination to the collected results
-            var totalResults = allTasks.Count;
-            var startIndex = skipCount;
-            var endIndex = Math.Min(startIndex + actualPageSize, totalResults);
+            // Calculate current page and determine if there's a next page using total count
+            var currentPageNum = string.IsNullOrEmpty(pageToken) ? 1 : 
+                (int.TryParse(pageToken, out var pageNum) ? pageNum : 1);
 
-            _logger.LogDebug(
-                "Pagination details: TotalResults={TotalResults}, StartIndex={StartIndex}, EndIndex={EndIndex}, PageSize={PageSize}",
-                totalResults, startIndex, endIndex, actualPageSize);
-
-            // Get the tasks for this page
-            tasks = allTasks.Skip(startIndex).Take(actualPageSize).ToList();
-
-            // Determine if there's a next page
-            string? nextPageToken = null;
-            if (startIndex + actualPageSize < totalResults)
+            bool hasNextPage;
+            if (totalCount.HasValue)
             {
-                var nextPage = string.IsNullOrEmpty(pageToken) ? 2 : 
-                    (int.TryParse(pageToken, out var currentPageNum) ? currentPageNum + 1 : 2);
-                nextPageToken = nextPage.ToString();
+                // Use total count to determine next page - much more efficient!
+                hasNextPage = (currentPageNum * actualPageSize) < totalCount.Value;
             }
-            else if (itemsProcessed >= fetchLimit && totalResults >= minRequiredItems - 1)
+            else
             {
-                var nextPage = string.IsNullOrEmpty(pageToken) ? 2 : 
-                    (int.TryParse(pageToken, out var currentPageNum) ? currentPageNum + 1 : 2);
-                nextPageToken = nextPage.ToString();
+                // Fallback: if no total count, assume there's a next page if we got a full page
+                hasNextPage = allTasks.Count == actualPageSize;
+            }
+
+            string? nextPageToken = null;
+            if (hasNextPage)
+            {
+                nextPageToken = (currentPageNum + 1).ToString();
             }
 
             var response = new AdminPaginatedTasksResponse
             {
-                Tasks = tasks,
+                Tasks = allTasks,
                 NextPageToken = nextPageToken,
                 PageSize = actualPageSize,
-                HasNextPage = nextPageToken != null,
-                TotalCount = null // Temporal doesn't provide total count efficiently
+                HasNextPage = hasNextPage,
+                TotalCount = totalCount // Now efficiently retrieved
             };
 
-            _logger.LogInformation("Retrieved {Count} tasks for page", tasks.Count);
+            _logger.LogInformation("Retrieved {Count} tasks for page (Total: {TotalCount})", 
+                allTasks.Count, totalCount?.ToString() ?? "unknown");
             return ServiceResult<AdminPaginatedTasksResponse>.Success(response);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve paginated tasks. Error: {ErrorMessage}", ex.Message);
             return ServiceResult<AdminPaginatedTasksResponse>.InternalServerError("Failed to retrieve tasks");
+        }
+    }
+
+    /// <summary>
+    /// Efficiently gets the total count of workflows matching the query using CountWorkflow API.
+    /// Falls back to null if the API is not available or fails.
+    /// </summary>
+    private async Task<int?> GetWorkflowCountAsync(ITemporalClient client, string listQuery, string? agentName)
+    {
+        try
+        {
+            // Build count query - add Task Workflow filter when agentName is not specified
+            var countQuery = listQuery;
+
+            _logger.LogDebug("Executing count query: {CountQuery}", countQuery);
+
+            // Call CountWorkflowsAsync directly - available in Temporal Server v1.20+
+            var countResponse = await client.CountWorkflowsAsync(countQuery);
+            _logger.LogDebug("CountWorkflow API returned: {Count}", countResponse.Count);
+            return (int)countResponse.Count;
+        }
+        catch (NotSupportedException ex)
+        {
+            _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", ex.Message);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get workflow count using CountWorkflow API, continuing without total count");
+            return null;
         }
     }
 
@@ -387,6 +416,7 @@ public class AdminTaskService : IAdminTaskService
 
     /// <summary>
     /// Retrieves task statistics for a tenant within a date range.
+    /// Uses CountWorkflow API for efficient counting when available.
     /// </summary>
     public async Task<ServiceResult<TaskStatisticsResponse>> GetTaskStatistics(
         string tenantId,
@@ -421,74 +451,90 @@ public class AdminTaskService : IAdminTaskService
 
             var client = await _clientFactory.GetClientAsync();
 
-            // Build query with filters
-            var queryParts = new List<string>
+            // Build base query with common filters
+            var baseQueryParts = new List<string>
             {
-                $"{Constants.TenantIdKey} = '{tenantId}'"
+                $"{Constants.TenantIdKey} = '{tenantId}'",
+                "WorkflowType STARTS_WITH 'Task Workflow'", // Filter for Task Workflows only
+                $"StartTime >= '{startDate.Value:yyyy-MM-ddTHH:mm:ssZ}'",
+                $"StartTime <= '{endDate.Value:yyyy-MM-ddTHH:mm:ssZ}'"
             };
 
             // Add participantId filter if specified
             if (!string.IsNullOrEmpty(participantId))
             {
-                queryParts.Add($"{Constants.UserIdKey} = '{participantId}'");
+                baseQueryParts.Add($"{Constants.UserIdKey} = '{participantId}'");
             }
 
-            // Add date range filter using StartTime
-            queryParts.Add($"StartTime >= '{startDate.Value:yyyy-MM-ddTHH:mm:ssZ}'");
-            queryParts.Add($"StartTime <= '{endDate.Value:yyyy-MM-ddTHH:mm:ssZ}'");
+            var baseQuery = string.Join(" and ", baseQueryParts);
+            _logger.LogDebug("Base statistics query: {Query}", baseQuery);
 
-            var listQuery = string.Join(" and ", queryParts);
-            _logger.LogDebug("Executing task statistics query: {Query}", listQuery);
-
-            var listOptions = new WorkflowListOptions
+            // Try to use CountWorkflow API for efficient statistics
+            var statistics = await GetTaskStatisticsUsingCountApi(client, baseQuery);
+            if (statistics != null)
             {
-                Limit = 10000 // Set a reasonable limit for statistics gathering
-            };
+                return ServiceResult<TaskStatisticsResponse>.Success(statistics);
+            }
 
-            // Initialize counters
+            // Fallback to the original method if CountWorkflow API is not available
+            _logger.LogDebug("CountWorkflow API not available, falling back to listing workflows");
+            return await GetTaskStatisticsUsingList(client, baseQuery);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve task statistics. Error: {ErrorMessage}", ex.Message);
+            return ServiceResult<TaskStatisticsResponse>.InternalServerError("Failed to retrieve task statistics");
+        }
+    }
+
+    /// <summary>
+    /// Attempts to get task statistics using the efficient CountWorkflow API with GROUP BY.
+    /// Returns null if the API is not available or fails.
+    /// </summary>
+    private async Task<TaskStatisticsResponse?> GetTaskStatisticsUsingCountApi(ITemporalClient client, string baseQuery)
+    {
+        try
+        {
+            _logger.LogDebug("Using CountWorkflow API with GROUP BY for statistics");
+
+            // Use GROUP BY to get all status counts in a single query - much more efficient!
+            var groupedQuery = $"{baseQuery} GROUP BY ExecutionStatus";
+            
+            var countResponse = await client.CountWorkflowsAsync(groupedQuery);
+            
+            var totalCount = (int)countResponse.Count;
+
+            // Parse groups to extract counts by status
             int pending = 0;
             int completed = 0;
-            int timedOut = 0;
             int cancelled = 0;
-            int total = 0;
 
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            foreach (var group in countResponse.Groups)
             {
-                // Filter to only include Task Workflows
-                if (!workflow.Id.Contains(":Task Workflow:"))
+                if (group.GroupValues.Count > 0)
                 {
-                    continue; // Skip non-Task workflows
-                }
+                    var statusValue = group.GroupValues.FirstOrDefault();
+                    var groupCount = (int)group.Count;
 
-
-
-                total++;
-
-                // Categorize based on workflow status and timedOut flag
-                var status = workflow.Status.ToString();
-                
-                // Check if task timed out (from memo)
-                var timedOutStr = ExtractMemoValue(workflow.Memo, "timedOut");
-                bool isTimedOut = !string.IsNullOrEmpty(timedOutStr) && 
-                                  (timedOutStr.ToLower() == "true" || timedOutStr == "True");
-
-                if (isTimedOut)
-                {
-                    timedOut++;
-                }
-                else if (status == "Running")
-                {
-                    pending++;
-                }
-                else if (status == "Completed")
-                {
-                    completed++;
-                }
-                else 
-                {
-                    cancelled++;
+                    switch (statusValue)
+                    {
+                        case "Running":
+                            pending = groupCount;
+                            break;
+                        case "Completed":
+                            completed = groupCount;
+                            break;
+                        case "Canceled":
+                        case "Terminated":
+                        case "Failed":
+                            cancelled += groupCount;
+                            break;
+                    }
                 }
             }
+
+            // For timed out tasks, we still need to query individual workflows since it's stored in memo
+            var timedOut = await GetTimedOutCountUsingList(client, baseQuery);
 
             var response = new TaskStatisticsResponse
             {
@@ -496,20 +542,120 @@ public class AdminTaskService : IAdminTaskService
                 Completed = completed,
                 TimedOut = timedOut,
                 Cancelled = cancelled,
-                Total = total
+                Total = totalCount
             };
 
             _logger.LogInformation(
-                "Task statistics retrieved - Total: {Total}, Pending: {Pending}, Completed: {Completed}, TimedOut: {TimedOut}, Cancelled: {Cancelled}",
-                total, pending, completed, timedOut, cancelled);
+                "Task statistics retrieved using CountWorkflow API with GROUP BY - Total: {Total}, Pending: {Pending}, Completed: {Completed}, TimedOut: {TimedOut}, Cancelled: {Cancelled}",
+                totalCount, pending, completed, timedOut, cancelled);
 
-            return ServiceResult<TaskStatisticsResponse>.Success(response);
+            return response;
+        }
+        catch (NotSupportedException ex)
+        {
+            _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", ex.Message);
+            return null;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve task statistics. Error: {ErrorMessage}", ex.Message);
-            return ServiceResult<TaskStatisticsResponse>.InternalServerError("Failed to retrieve task statistics");
+            _logger.LogWarning(ex, "Failed to get statistics using CountWorkflow API, will fallback to list method");
+            return null;
         }
+    }
+
+    /// <summary>
+    /// Gets timed out task count by examining workflow memos.
+    /// This requires listing workflows since timedOut is stored in memo, not as execution status.
+    /// </summary>
+    private async Task<int> GetTimedOutCountUsingList(ITemporalClient client, string baseQuery)
+    {
+        try
+        {
+            var listOptions = new WorkflowListOptions { Limit = 1000 }; // Reasonable limit for timeout check
+            int timedOut = 0;
+
+            await foreach (var workflow in client.ListWorkflowsAsync(baseQuery, listOptions))
+            {
+                var timedOutStr = ExtractMemoValue(workflow.Memo, "timedOut");
+                bool isTimedOut = !string.IsNullOrEmpty(timedOutStr) && 
+                                  (timedOutStr.ToLower() == "true" || timedOutStr == "True");
+                if (isTimedOut)
+                {
+                    timedOut++;
+                }
+            }
+
+            return timedOut;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get timed out count, returning 0");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Fallback method to get task statistics by listing all workflows.
+    /// Used when CountWorkflow API is not available.
+    /// </summary>
+    private async Task<ServiceResult<TaskStatisticsResponse>> GetTaskStatisticsUsingList(ITemporalClient client, string baseQuery)
+    {
+        var listOptions = new WorkflowListOptions
+        {
+            Limit = 10000 // Set a reasonable limit for statistics gathering
+        };
+
+        // Initialize counters
+        int pending = 0;
+        int completed = 0;
+        int timedOut = 0;
+        int cancelled = 0;
+        int total = 0;
+
+        await foreach (var workflow in client.ListWorkflowsAsync(baseQuery, listOptions))
+        {
+            total++;
+
+            // Categorize based on workflow status and timedOut flag
+            var status = workflow.Status.ToString();
+            
+            // Check if task timed out (from memo)
+            var timedOutStr = ExtractMemoValue(workflow.Memo, "timedOut");
+            bool isTimedOut = !string.IsNullOrEmpty(timedOutStr) && 
+                              (timedOutStr.ToLower() == "true" || timedOutStr == "True");
+
+            if (isTimedOut)
+            {
+                timedOut++;
+            }
+            else if (status == "Running")
+            {
+                pending++;
+            }
+            else if (status == "Completed")
+            {
+                completed++;
+            }
+            else 
+            {
+                cancelled++;
+            }
+        }
+
+        var response = new TaskStatisticsResponse
+        {
+            Pending = pending,
+            Completed = completed,
+            TimedOut = timedOut,
+            Cancelled = cancelled,
+            Total = total
+        };
+
+        _logger.LogInformation(
+            "Task statistics retrieved using list method - Total: {Total}, Pending: {Pending}, Completed: {Completed}, TimedOut: {TimedOut}, Cancelled: {Cancelled}",
+            total, pending, completed, timedOut, cancelled);
+
+        return ServiceResult<TaskStatisticsResponse>.Success(response);
     }
 
     /// <summary>
@@ -591,7 +737,7 @@ public class AdminTaskService : IAdminTaskService
     {
         if (memo.TryGetValue(key, out var memoValue))
         {
-            return memoValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+            return memoValue.Payload.Data?.ToStringUtf8()?.Replace("\"", "");
         }
         return null;
     }
