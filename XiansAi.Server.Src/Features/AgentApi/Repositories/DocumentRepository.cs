@@ -16,6 +16,7 @@ public interface IDocumentRepository
     Task<List<Document>> QueryAsync(string? tenantId, DocumentQueryFilter filter);
     Task<long> CountAsync(string? tenantId, DocumentQueryFilter filter);
     Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId);
+    Task<List<string>> GetDistinctActivationNamesAsync(string? tenantId, string? agentId);
     Task<bool> UpdateAsync(Document document);
     Task<bool> DeleteAsync(string id, string? tenantId);
     Task<int> DeleteManyAsync(IEnumerable<string> ids, string? tenantId);
@@ -288,6 +289,46 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting distinct document types for tenant {TenantId}, agent {AgentId}", 
+                tenantId, agentId);
+            throw;
+        }
+    }
+
+    public async Task<List<string>> GetDistinctActivationNamesAsync(string? tenantId, string? agentId)
+    {
+        try
+        {
+            var builder = Builders<Document>.Filter;
+            var filter = builder.Empty;
+
+            // Add tenant filter if provided
+            if (!string.IsNullOrEmpty(tenantId))
+            {
+                filter &= builder.Eq(d => d.TenantId, tenantId);
+            }
+
+            // Add agent filter if provided
+            if (!string.IsNullOrEmpty(agentId))
+            {
+                filter &= builder.Eq(d => d.AgentId, agentId);
+            }
+
+            // Use MongoDB's Distinct operation for efficiency
+            var distinctActivationNames = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.DistinctAsync<string>("activation_name", filter),
+                _logger);
+
+            var activationNames = await distinctActivationNames.ToListAsync();
+            
+            // Filter out null/empty and sort
+            return activationNames
+                .Where(a => !string.IsNullOrEmpty(a))
+                .OrderBy(a => a)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting distinct activation names for tenant {TenantId}, agent {AgentId}", 
                 tenantId, agentId);
             throw;
         }

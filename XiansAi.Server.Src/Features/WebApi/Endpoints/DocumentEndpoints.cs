@@ -20,18 +20,18 @@ public static class DocumentEndpoints
             .RequireAuthorization()
             .WithGlobalRateLimit();
 
-        // Get all document types for a specific agent
+        // Get all document types and activation names for a specific agent
         documentGroup.MapGet("/agents/{agentId}/types", async (
             string agentId,
             [FromServices] IDocumentService service) =>
         {
-            var result = await service.GetDocumentTypesByAgentAsync(agentId);
+            var result = await service.GetDocumentTypesAndActivationsByAgentAsync(agentId);
             return result.ToHttpResult();
         })
-        .WithName("Get Document Types by Agent")
+        .WithName("Get Document Types and Activations by Agent")
         .WithOpenApi(operation => {
-            operation.Summary = "Get document types for an agent";
-            operation.Description = "Retrieves all distinct document types for a specific agent";
+            operation.Summary = "Get document types and activation names for an agent";
+            operation.Description = "Retrieves all distinct document types and activation names for a specific agent";
             return operation;
         });
 
@@ -41,15 +41,16 @@ public static class DocumentEndpoints
             string type,
             [FromQuery] int skip,
             [FromQuery] int limit,
+            [FromQuery] string? activationName,
             [FromServices] IDocumentService service) =>
         {
-            var result = await service.GetDocumentsByAgentAndTypeAsync(agentId, type, skip, limit);
+            var result = await service.GetDocumentsByAgentAndTypeAsync(agentId, type, skip, limit, activationName);
             return result.ToHttpResult();
         })
         .WithName("Get Documents by Agent and Type")
         .WithOpenApi(operation => {
             operation.Summary = "Get documents by agent and type";
-            operation.Description = "Retrieves documents for a specific agent and document type with pagination support";
+            operation.Description = "Retrieves documents for a specific agent and document type with pagination support. Optionally filter by activation name.";
             return operation;
         });
 
