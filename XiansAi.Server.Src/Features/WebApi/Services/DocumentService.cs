@@ -14,7 +14,8 @@ namespace Features.WebApi.Services;
 public interface IDocumentService
 {
     Task<ServiceResult<List<string>>> GetDocumentTypesByAgentAsync(string agentId);
-    Task<ServiceResult<DocumentListResponse>> GetDocumentsByAgentAndTypeAsync(string agentId, string type, int skip = 0, int limit = 100);
+    Task<ServiceResult<DocumentTypesAndActivationsResponse>> GetDocumentTypesAndActivationsByAgentAsync(string agentId);
+    Task<ServiceResult<DocumentListResponse>> GetDocumentsByAgentAndTypeAsync(string agentId, string type, int skip = 0, int limit = 100, string? activationName = null);
     Task<ServiceResult<DocumentDto<JsonElement>>> GetDocumentByIdAsync(string id);
     Task<ServiceResult<DocumentDto<JsonElement>>> UpdateDocumentAsync(string id, DocumentUpdateRequest request);
     Task<ServiceResult<bool>> DeleteDocumentAsync(string id);
@@ -100,6 +101,66 @@ public class DocumentService : IDocumentService
     }
 
     /// <summary>
+    /// Gets all distinct document types and activation names for a specific agent.
+    /// Requires read permission on the agent.
+    /// </summary>
+    public async Task<ServiceResult<DocumentTypesAndActivationsResponse>> GetDocumentTypesAndActivationsByAgentAsync(string agentId)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(agentId))
+            {
+                return ServiceResult<DocumentTypesAndActivationsResponse>.BadRequest("Agent ID is required");
+            }
+
+            // Get agent to check permissions
+            var agent = await _agentRepository.GetByNameInternalAsync(agentId, _tenantContext.TenantId);
+            if (agent == null)
+            {
+                _logger.LogWarning("Agent {AgentId} not found", agentId);
+                return ServiceResult<DocumentTypesAndActivationsResponse>.NotFound("Agent not found");
+            }
+
+            // Check if user has read permission
+            var readPermissionResult = await _permissionsService.HasReadPermission(agent.Name);
+            if (!readPermissionResult.IsSuccess)
+            {
+                _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
+                    agent.Name, readPermissionResult.ErrorMessage);
+                return ServiceResult<DocumentTypesAndActivationsResponse>.BadRequest(
+                    readPermissionResult.ErrorMessage ?? "Failed to check permissions");
+            }
+
+            if (!readPermissionResult.Data)
+            {
+                _logger.LogWarning("User {UserId} attempted to access document types and activations for agent {AgentName} without read permission",
+                    _tenantContext.LoggedInUser, agent.Name);
+                return ServiceResult<DocumentTypesAndActivationsResponse>.Forbidden(
+                    "You do not have permission to access documents for this agent");
+            }
+
+            // Get both distinct types and activation names in parallel for efficiency
+            var typesTask = _repository.GetDistinctTypesAsync(_tenantContext.TenantId, agentId);
+            var activationNamesTask = _repository.GetDistinctActivationNamesAsync(_tenantContext.TenantId, agentId);
+
+            await Task.WhenAll(typesTask, activationNamesTask);
+
+            var response = new DocumentTypesAndActivationsResponse
+            {
+                DocumentTypes = typesTask.Result,
+                ActivationNames = activationNamesTask.Result
+            };
+
+            return ServiceResult<DocumentTypesAndActivationsResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving document types and activations for agent {AgentId}", agentId);
+            return ServiceResult<DocumentTypesAndActivationsResponse>.InternalServerError("Error retrieving document types and activations");
+        }
+    }
+
+    /// <summary>
     /// Gets documents by agent ID and type with pagination.
     /// Requires read permission on the agent.
     /// </summary>
@@ -107,7 +168,8 @@ public class DocumentService : IDocumentService
         string agentId, 
         string type, 
         int skip = 0, 
-        int limit = 100)
+        int limit = 100,
+        string? activationName = null)
     {
         try
         {
@@ -163,6 +225,7 @@ public class DocumentService : IDocumentService
             {
                 AgentId = agentId,  // Filter by agent at DB level
                 Type = type,
+                ActivationName = activationName,  // Filter by activation name if provided
                 Limit = limit,
                 Skip = skip,
                 SortBy = "CreatedAt",
@@ -173,7 +236,8 @@ public class DocumentService : IDocumentService
             var totalCount = await _repository.CountAsync(_tenantContext.TenantId, new DocumentQueryFilter
             {
                 AgentId = agentId,
-                Type = type
+                Type = type,
+                ActivationName = activationName
             });
 
             // Query documents with all filters applied at database level
@@ -195,7 +259,8 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving documents for agent {AgentId} and type {Type}", agentId, type);
+            _logger.LogError(ex, "Error retrieving documents for agent {AgentId}, type {Type}, activation {ActivationName}", 
+                agentId, type, activationName ?? "all");
             return ServiceResult<DocumentListResponse>.InternalServerError("Error retrieving documents");
         }
     }
@@ -554,6 +619,8 @@ public class DocumentService : IDocumentService
             Metadata = metadata,
             AgentId = document.AgentId,
             WorkflowId = document.WorkflowId,
+            ParticipantId = document.ParticipantId,
+            ActivationName = document.ActivationName,
             Type = document.Type,
             CreatedAt = document.CreatedAt,
             UpdatedAt = document.UpdatedAt,
@@ -582,6 +649,15 @@ public class DocumentListResponse
     public int Total { get; set; }
     public int Skip { get; set; }
     public int Limit { get; set; }
+}
+
+/// <summary>
+/// Response model for document types and activation names.
+/// </summary>
+public class DocumentTypesAndActivationsResponse
+{
+    public List<string> DocumentTypes { get; set; } = new();
+    public List<string> ActivationNames { get; set; } = new();
 }
 
 /// <summary>

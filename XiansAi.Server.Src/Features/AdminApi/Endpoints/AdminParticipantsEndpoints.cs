@@ -1,10 +1,6 @@
-using Shared.Services;
 using Shared.Repositories;
-using Shared.Auth;
 using Shared.Data.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
-using Shared.Utils.Services;
 using System.Text.Json.Serialization;
 
 namespace Features.AdminApi.Endpoints;
@@ -49,34 +45,65 @@ public static class AdminParticipantsEndpoints
         {
             try
             {
+                // Extract email domain
+                var emailDomain = email.Contains('@') ? email.Split('@')[1].ToLowerInvariant() : string.Empty;
+                logger.LogInformation("Processing request for email {Email} with domain {Domain}", email, emailDomain);
+
                 // Get user by email
                 var user = await userRepository.GetByUserEmailAsync(email);
-                if (user == null)
+                
+                // Get tenant IDs where user has TenantParticipant role (if user exists)
+                var participantTenantIds = new List<string>();
+                if (user != null)
                 {
-                    return Results.NotFound(new { message = $"Participant with email '{email}' not found" });
+                    participantTenantIds = user.TenantRoles
+                        .Where(tr => tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved)
+                        .Select(tr => tr.Tenant)
+                        .ToList();
+
+                    logger.LogInformation("User {Email} has participant roles in {Count} tenants: {TenantIds}", 
+                        email, participantTenantIds.Count, string.Join(", ", participantTenantIds));
+                }
+                else
+                {
+                    logger.LogInformation("User with email {Email} not found, will check domain matching only", email);
                 }
 
-                // Get tenant IDs where user has TenantParticipant role
-                var participantTenantIds = user.TenantRoles
-                    .Where(tr => tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved)
-                    .Select(tr => tr.Tenant)
-                    .ToList();
-
-                logger.LogInformation("User {Email} has participant roles in {Count} tenants: {TenantIds}", 
-                    email, participantTenantIds.Count, string.Join(", ", participantTenantIds));
-
-                if (!participantTenantIds.Any())
-                {
-                    return Results.NotFound(new { message = $"User with email '{email}' has no participant tenants" });
-                }
-
-                // Get all tenants
+                // Get all tenants to check both participant roles and domain matching
                 var allTenants = await tenantRepository.GetAllAsync();
                 logger.LogInformation("Found {Count} total tenants in the system", allTenants.Count);
 
-                // Filter to enabled tenants where user is a participant
+                // Find tenants where email domain matches tenant domain
+                var domainMatchedTenants = new List<string>();
+                if (!string.IsNullOrEmpty(emailDomain))
+                {
+                    domainMatchedTenants = allTenants
+                        .Where(t => !string.IsNullOrEmpty(t.Domain) && 
+                                   t.Domain.ToLowerInvariant() == emailDomain)
+                        .Select(t => t.TenantId)
+                        .ToList();
+                    
+                    logger.LogInformation("Found {Count} tenants matching email domain {Domain}: {TenantIds}", 
+                        domainMatchedTenants.Count, emailDomain, string.Join(", ", domainMatchedTenants));
+                }
+
+                // Combine both lists and remove duplicates
+                var allMatchingTenantIds = participantTenantIds
+                    .Union(domainMatchedTenants)
+                    .ToList();
+
+                logger.LogInformation("Total matching tenant IDs: {Count} ({ParticipantCount} from roles, {DomainCount} from domain): {TenantIds}",
+                    allMatchingTenantIds.Count, participantTenantIds.Count, domainMatchedTenants.Count, 
+                    string.Join(", ", allMatchingTenantIds));
+
+                if (!allMatchingTenantIds.Any())
+                {
+                    return Results.NotFound(new { message = $"User with email '{email}' has no matching tenants (neither participant roles nor domain match)" });
+                }
+
+                // Filter to matching tenants
                 var matchingTenants = allTenants
-                    .Where(t => participantTenantIds.Contains(t.TenantId))
+                    .Where(t => allMatchingTenantIds.Contains(t.TenantId))
                     .ToList();
                 
                 logger.LogInformation("Matched {Count} tenants by TenantId. Tenants: {Tenants}", 
@@ -97,10 +124,10 @@ public static class AdminParticipantsEndpoints
                 // Return 404 if no enabled tenants found
                 if (!tenantResponse.Any())
                 {
-                    logger.LogWarning("User {Email} has participant roles but no enabled tenants found. " +
-                        "Participant tenant IDs: {TenantIds}, Matched tenants: {MatchedCount}", 
-                        email, string.Join(", ", participantTenantIds), matchingTenants.Count);
-                    return Results.NotFound(new { message = $"User with email '{email}' has no enabled participant tenants" });
+                    logger.LogWarning("User {Email} has matching tenants but no enabled tenants found. " +
+                        "Matching tenant IDs: {TenantIds}, Matched tenants: {MatchedCount}", 
+                        email, string.Join(", ", allMatchingTenantIds), matchingTenants.Count);
+                    return Results.NotFound(new { message = $"User with email '{email}' has no enabled tenants" });
                 }
 
                 return Results.Ok(tenantResponse);
@@ -120,7 +147,7 @@ public static class AdminParticipantsEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Participant Tenants",
-            Description = "Retrieve the list of tenants (with ID and name) where the user with the specified email has the TenantParticipant role and the tenant is enabled."
+            Description = "Retrieve the list of tenants (with ID and name) where the user with the specified email has the TenantParticipant role or where the email domain matches the tenant domain, and the tenant is enabled."
         });
     }
 }

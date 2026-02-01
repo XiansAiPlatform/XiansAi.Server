@@ -56,9 +56,9 @@ public static class UsageEventEndpoints
                 return Results.BadRequest("Tenant context is not available.");
             }
 
-            var userId = request.UserId ?? tenantContext.LoggedInUser ?? tenantContext.TenantId;
+            var participantId = request.ParticipantId ?? tenantContext.LoggedInUser;
 
-            await usageService.RecordAsync(request, tenantId, userId, cancellationToken);
+            await usageService.RecordAsync(request, tenantId, participantId, cancellationToken);
 
             return Results.Accepted();
         })
@@ -71,6 +71,9 @@ public static class UsageEventEndpoints
                                   "**Example Request:**\n" +
                                   "```json\n" +
                                   "{\n" +
+                                  "  \"participantId\": \"user@example.com\",\n" +
+                                  "  \"agentName\": \"EmailAgent\",\n" +
+                                  "  \"activationName\": \"EmailAgent-Production\",\n" +
                                   "  \"workflowId\": \"tenant:EmailAgent:SendEmail\",\n" +
                                   "  \"model\": \"gpt-4\",\n" +
                                   "  \"metrics\": [\n" +

@@ -26,10 +26,9 @@ public class Tenant : ModelValidatorBase<Tenant>
     public required string Name { get; set; }
 
     [BsonElement("domain")]
-    [Required(ErrorMessage = "Domain is required")]
-    [StringLength(255, MinimumLength = 1, ErrorMessage = "Domain must be between 1 and 255 characters")]
+    [StringLength(100, ErrorMessage = "Domain cannot exceed 100 characters")]
     [RegularExpression(@"^[a-zA-Z0-9._\-+:|=#]+(\.[a-zA-Z]{2,})$", ErrorMessage = "Domain format is invalid")]
-    public required string Domain { get; set; }
+    public string? Domain { get; set; }
 
     [BsonElement("description")]
     [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]

@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Shared.Services;
 using Shared.Utils.Services;
-using Features.WebApi.Models;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -30,7 +28,7 @@ public static class AdminLogsEndpoints
             [FromQuery] string? participantId,
             [FromQuery] string? workflowId,
             [FromQuery] string? workflowType,
-            [FromQuery] LogLevel? logLevel,
+            [FromQuery] string? logLevel,
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
             [FromQuery] int? pageSize,
@@ -41,6 +39,25 @@ public static class AdminLogsEndpoints
             var actualPage = page ?? 1;
             var actualPageSize = pageSize ?? 20;
 
+            // Parse multiple log levels from comma-separated string
+            LogLevel[]? logLevels = null;
+            if (!string.IsNullOrWhiteSpace(logLevel))
+            {
+                var logLevelNames = logLevel.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(l => l.Trim())
+                    .ToArray();
+                    
+                var parsedLevels = new List<LogLevel>();
+                foreach (var levelName in logLevelNames)
+                {
+                    if (Enum.TryParse<LogLevel>(levelName, true, out var level))
+                    {
+                        parsedLevels.Add(level);
+                    }
+                }
+                logLevels = parsedLevels.Count > 0 ? parsedLevels.ToArray() : null;
+            }
+
             var result = await logsService.GetLogsAsync(
                 tenantId,
                 agentName,
@@ -48,7 +65,7 @@ public static class AdminLogsEndpoints
                 participantId,
                 workflowId,
                 workflowType,
-                logLevel,
+                logLevels,
                 startDate,
                 endDate,
                 actualPage,
@@ -71,7 +88,7 @@ Query Parameters:
 - participantId (optional): Filter by participant user ID
 - workflowId (optional): Filter by specific workflow ID
 - workflowType (optional): Filter by workflow type
-- logLevel (optional): Filter by log level (0=Trace, 1=Debug, 2=Information, 3=Warning, 4=Error, 5=Critical)
+- logLevel (optional): Filter by log level(s). Single level: 'Error' or multiple levels: 'Error,Warning' (0=Trace, 1=Debug, 2=Information, 3=Warning, 4=Error, 5=Critical)
 - startDate (optional): Start of date range (ISO 8601 format)
 - endDate (optional): End of date range (ISO 8601 format)
 - page (optional): Page number (default: 1)
@@ -88,7 +105,8 @@ Examples:
 - Get all logs: GET /api/v1/admin/tenants/default/logs
 - Filter by agent: GET /api/v1/admin/tenants/default/logs?agentName=Order%20Manager%20Agent
 - Filter by activation: GET /api/v1/admin/tenants/default/logs?activationName=Order%20Manager%20Agent%20-%20Remote%20Peafowl
-- Error logs only: GET /api/v1/admin/tenants/default/logs?logLevel=4
+- Error logs only: GET /api/v1/admin/tenants/default/logs?logLevel=Error
+- Error and Warning logs: GET /api/v1/admin/tenants/default/logs?logLevel=Error,Warning
 - Date range: GET /api/v1/admin/tenants/default/logs?startDate=2025-01-01T00:00:00Z&endDate=2025-01-31T23:59:59Z
 - Combined filters: GET /api/v1/admin/tenants/default/logs?agentName=Order%20Manager%20Agent&logLevel=4&pageSize=50"
         });

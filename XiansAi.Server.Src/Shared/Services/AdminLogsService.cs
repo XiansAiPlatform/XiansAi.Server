@@ -25,7 +25,7 @@ public interface IAdminLogsService
         string? participantId,
         string? workflowId,
         string? workflowType,
-        LogLevel? logLevel,
+        LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
         int page,
@@ -59,7 +59,7 @@ public class AdminLogsService : IAdminLogsService
         string? participantId,
         string? workflowId,
         string? workflowType,
-        LogLevel? logLevel,
+        LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
         int page,
@@ -98,9 +98,10 @@ public class AdminLogsService : IAdminLogsService
             _logger.LogInformation(
                 "Retrieving admin logs - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, " +
                 "ParticipantId: {ParticipantId}, WorkflowId: {WorkflowId}, WorkflowType: {WorkflowType}, " +
-                "LogLevel: {LogLevel}, StartDate: {StartDate}, EndDate: {EndDate}, Page: {Page}, PageSize: {PageSize}",
+                "LogLevels: {LogLevels}, StartDate: {StartDate}, EndDate: {EndDate}, Page: {Page}, PageSize: {PageSize}",
                 tenantId, agentName ?? "null", activationName ?? "null", participantId ?? "null",
-                workflowId ?? "null", workflowType ?? "null", logLevel?.ToString() ?? "null",
+                workflowId ?? "null", workflowType ?? "null", 
+                logLevels != null ? string.Join(",", logLevels.Select(l => l.ToString())) : "null",
                 startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", page, pageSize);
 
             // Get logs from repository using the admin-specific method
@@ -111,7 +112,7 @@ public class AdminLogsService : IAdminLogsService
                 participantId,
                 workflowId,
                 workflowType,
-                logLevel,
+                logLevels,
                 startDate,
                 endDate,
                 page,

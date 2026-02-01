@@ -320,22 +320,108 @@ documents:
     background: true
     sparse: true
 
-usage_events:
+# DEPRECATED: Old nested design - kept for reference only
+# usage_events:
+#   - name: idx_tenant_date
+#     keys:
+#       tenant_id: asc
+#       created_at: desc
+#   - name: idx_tenant_participant_date
+#     keys:
+#       tenant_id: asc
+#       participant_id: asc
+#       created_at: desc
+
+# CURRENT: Flattened metrics design - optimized for query performance
+usage_metrics:
   - name: idx_tenant_date
     keys:
       tenant_id: asc
       created_at: desc
     background: true
-  - name: idx_tenant_user_date
+  - name: idx_tenant_category_type_date
     keys:
       tenant_id: asc
-      user_id: asc
+      category: asc
+      type: asc
       created_at: desc
     background: true
-  - name: usage_events_ttl
+  - name: idx_tenant_agent_date
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      created_at: desc
+    background: true
+  - name: idx_tenant_participant_date
+    keys:
+      tenant_id: asc
+      participant_id: asc
+      created_at: desc
+    background: true
+  - name: idx_tenant_agent_category_date
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      category: asc
+      created_at: desc
+  # Admin Metrics Endpoints - Optimized indexes
+  - name: idx_admin_stats_query
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      created_at: asc
+      category: asc
+      type: asc
+      activation_name: asc
+    background: true
+  - name: idx_admin_timeseries_query
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      category: asc
+      type: asc
+      created_at: asc
+    background: true
+  - name: idx_admin_categories_discovery
+    keys:
+      tenant_id: asc
+      category: asc
+      type: asc
+    background: true
+  - name: idx_activation_metrics
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      activation_name: asc
+      created_at: asc
+    background: true
+    background: true
+  - name: idx_tenant_participant_category_date
+    keys:
+      tenant_id: asc
+      participant_id: asc
+      category: asc
+      created_at: desc
+    background: true
+  - name: idx_workflow_type_category
+    keys:
+      tenant_id: asc
+      workflow_type: asc
+      category: asc
+      created_at: desc
+    background: true
+  - name: idx_activation_category_date
+    keys:
+      tenant_id: asc
+      activation_name: asc
+      category: asc
+      created_at: desc
+    background: true
+    sparse: true
+  - name: usage_metrics_ttl
     keys:
       created_at: asc
-    expire_after: 90d             
+    expire_after: 90d
     background: true
 
 activations:

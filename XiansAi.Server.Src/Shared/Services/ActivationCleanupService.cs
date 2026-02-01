@@ -12,12 +12,12 @@ namespace Shared.Services;
 public interface IActivationCleanupService
 {
     /// <summary>
-    /// Finds all workflows associated with an activation.
+    /// Finds all running workflows associated with an activation.
     /// </summary>
     /// <param name="tenantId">The tenant ID to filter workflows</param>
     /// <param name="agentName">The agent name to filter workflows</param>
     /// <param name="idPostfix">The ID postfix (activation name) to filter workflows</param>
-    /// <returns>List of workflow IDs</returns>
+    /// <returns>List of running workflow IDs</returns>
     Task<ServiceResult<List<string>>> FindWorkflowsByActivationAsync(
         string tenantId, 
         string agentName, 
@@ -117,7 +117,7 @@ public class ActivationCleanupService : IActivationCleanupService
     }
 
     /// <summary>
-    /// Finds all workflows associated with an activation by querying Temporal with search attributes.
+    /// Finds all running workflows associated with an activation by querying Temporal with search attributes.
     /// </summary>
     public async Task<ServiceResult<List<string>>> FindWorkflowsByActivationAsync(
         string tenantId, 
@@ -133,29 +133,30 @@ public class ActivationCleanupService : IActivationCleanupService
             var client = await _temporalClientService.GetClientAsync(tenantId);
             var workflowIds = new List<string>();
 
-            // Build query using search attributes
+            // Build query using search attributes, filtering for running workflows only
             var queryParts = new List<string>
             {
                 $"tenantId = '{tenantId}'",
                 $"agent = '{agentName}'",
-                $"idPostfix = '{idPostfix}'"
+                $"idPostfix = '{idPostfix}'",
+                "ExecutionStatus = 'Running'"
             };
 
             var query = string.Join(" AND ", queryParts);
             _logger.LogDebug("Executing workflow query: {Query}", query);
 
-            // Query all workflows (including completed ones) that match the criteria
+            // Query only running workflows that match the criteria
             await foreach (var workflow in client.ListWorkflowsAsync(query))
             {
                 if (!string.IsNullOrEmpty(workflow.Id))
                 {
                     workflowIds.Add(workflow.Id);
-                    _logger.LogDebug("Found workflow: {WorkflowId} with status {Status}", 
+                    _logger.LogDebug("Found running workflow: {WorkflowId} with status {Status}", 
                         workflow.Id, workflow.Status);
                 }
             }
 
-            _logger.LogInformation("Found {Count} workflows for activation", workflowIds.Count);
+            _logger.LogInformation("Found {Count} running workflows for activation", workflowIds.Count);
             return ServiceResult<List<string>>.Success(workflowIds);
         }
         catch (Exception ex)

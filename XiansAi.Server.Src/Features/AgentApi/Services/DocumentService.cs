@@ -13,11 +13,11 @@ namespace Features.AgentApi.Services;
 
 public interface IDocumentService
 {
-    Task<ServiceResult<JsonElement>> SaveAsync(JsonElement requestElement);
+    Task<ServiceResult<JsonElement>> SaveAsync(DocumentRequest<JsonElement> request);
     Task<ServiceResult<JsonElement?>> GetAsync(string id);
     Task<ServiceResult<JsonElement?>> GetByKeyAsync(string type, string key);
     Task<ServiceResult<JsonElement>> QueryAsync(DocumentQueryRequest request);
-    Task<ServiceResult<bool>> UpdateAsync(JsonElement documentElement);
+    Task<ServiceResult<bool>> UpdateAsync(DocumentDto<JsonElement> document);
     Task<ServiceResult<bool>> DeleteAsync(string id);
     Task<ServiceResult<BulkDeleteResult>> DeleteManyAsync(IEnumerable<string> ids);
     Task<ServiceResult<ExistsResult>> ExistsAsync(string id);
@@ -42,23 +42,13 @@ public class DocumentService : IDocumentService
         _agentPermissionRepository = agentPermissionRepository;
     }
 
-    public async Task<ServiceResult<JsonElement>> SaveAsync(JsonElement requestElement)
+    public async Task<ServiceResult<JsonElement>> SaveAsync(DocumentRequest<JsonElement> request)
     {
         try
         {
-            // Parse the request
-            DocumentRequest<JsonElement>? request;
-            try
+            // Validate the request
+            if (request?.Document == null)
             {
-                request = JsonSerializer.Deserialize<DocumentRequest<JsonElement>>(requestElement);
-                if (request?.Document == null)
-                {
-                    return ServiceResult<JsonElement>.BadRequest("Invalid request format");
-                }
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "Failed to deserialize document request");
                 return ServiceResult<JsonElement>.BadRequest("Invalid request format");
             }
 
@@ -87,6 +77,8 @@ public class DocumentService : IDocumentService
                 TenantId = _tenantContext.TenantId,
                 AgentId = documentData.AgentId,
                 WorkflowId = documentData.WorkflowId,
+                ParticipantId = documentData.ParticipantId,
+                ActivationName = documentData.ActivationName,
                 Type = documentData.Type,
                 Key = documentData.Key,
                 ContentType = "JsonElement",
@@ -331,6 +323,8 @@ public class DocumentService : IDocumentService
                 AgentIds = agentIdsToQuery, // Filter by specific agent or all authorized
                 Type = request.Query.Type,
                 Key = request.Query.Key,
+                ParticipantId = request.Query.ParticipantId,
+                ActivationName = request.Query.ActivationName,
                 MetadataFilters = request.Query.MetadataFilters,
                 Limit = request.Query.Limit ?? 100,
                 Skip = request.Query.Skip ?? 0,
@@ -356,23 +350,14 @@ public class DocumentService : IDocumentService
         }
     }
 
-    public async Task<ServiceResult<bool>> UpdateAsync(JsonElement documentElement)
+    public async Task<ServiceResult<bool>> UpdateAsync(DocumentDto<JsonElement> documentData)
     {
         try
         {
-            DocumentDto<JsonElement>? documentData;
-            try
+            // Validate the document
+            if (string.IsNullOrEmpty(documentData.Id))
             {
-                documentData = JsonSerializer.Deserialize<DocumentDto<JsonElement>>(documentElement);
-                if (documentData == null || string.IsNullOrEmpty(documentData.Id))
-                {
-                    return ServiceResult<bool>.BadRequest("Invalid document format or missing ID");
-                }
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "Failed to deserialize document");
-                return ServiceResult<bool>.BadRequest("Invalid document format");
+                return ServiceResult<bool>.BadRequest("Document ID is required");
             }
 
             // Get existing document to preserve creation data
@@ -406,6 +391,8 @@ public class DocumentService : IDocumentService
 
             // Update document
             existing.Type = documentData.Type ?? existing.Type;
+            existing.ParticipantId = documentData.ParticipantId ?? existing.ParticipantId;
+            existing.ActivationName = documentData.ActivationName ?? existing.ActivationName;
             existing.UpdatedBy = _tenantContext.LoggedInUser ?? documentData.UpdatedBy;
             existing.UpdatedAt = documentData.UpdatedAt ?? DateTime.UtcNow;
 

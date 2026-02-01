@@ -64,11 +64,12 @@ public static class TenantEndpoints
 
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,
-            HttpContext httpContext,
-            [FromServices] ITenantService endpoint) =>
+            [FromServices] ITenantService endpoint,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
-            var userIdClaim = httpContext.User.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-            var createdBy = userIdClaim ?? "system";
+            logger.LogInformation("Endpoint received CreateTenantRequest - TenantId: {TenantId}, Name: {Name}, CreatedBy: {CreatedBy}", 
+                request.TenantId, request.Name, request.CreatedBy);
+            
             var result = await endpoint.CreateTenant(request);
             return result.ToHttpResult();
         })
