@@ -38,7 +38,7 @@ public interface ILogRepository
         string? participantId,
         string? workflowId,
         string? workflowType,
-        LogLevel? logLevel,
+        LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
         int page = 1,
@@ -295,7 +295,7 @@ public class LogRepository : ILogRepository
         string? participantId,
         string? workflowId,
         string? workflowType,
-        LogLevel? logLevel,
+        LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
         int page = 1,
@@ -330,9 +330,9 @@ public class LogRepository : ILogRepository
             filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
         }
         
-        if (logLevel.HasValue)
+        if (logLevels != null && logLevels.Length > 0)
         {
-            filter &= Builders<Log>.Filter.Eq(x => x.Level, logLevel.Value);
+            filter &= Builders<Log>.Filter.In(x => x.Level, logLevels);
         }
         
         if (startDate.HasValue)

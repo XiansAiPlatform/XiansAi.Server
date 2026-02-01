@@ -21,6 +21,7 @@ public interface IDocumentRepository
     Task<bool> DeleteAsync(string id, string? tenantId);
     Task<int> DeleteManyAsync(IEnumerable<string> ids, string? tenantId);
     Task<int> DeleteManyByIdsAndAgentsAsync(IEnumerable<string> ids, IEnumerable<string> agentNames, string? tenantId);
+    Task<int> DeleteByFilterAsync(string? tenantId, DocumentQueryFilter filter);
     Task<bool> ExistsAsync(string id, string? tenantId);
     Task<bool> ExistsByKeyAsync(string type, string key, string? tenantId);
 }
@@ -450,6 +451,29 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting multiple documents by IDs and agents");
+            throw;
+        }
+    }
+
+    public async Task<int> DeleteByFilterAsync(string? tenantId, DocumentQueryFilter filter)
+    {
+        try
+        {
+            var mongoFilter = BuildFilter(tenantId, filter);
+            
+            var result = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.DeleteManyAsync(mongoFilter),
+                _logger);
+
+            _logger.LogInformation("Deleted {DeletedCount} documents matching filter - AgentId: {AgentId}, Type: {Type}, ActivationName: {ActivationName}", 
+                result.DeletedCount, filter.AgentId, filter.Type, filter.ActivationName);
+
+            return (int)result.DeletedCount;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting documents by filter - AgentId: {AgentId}, Type: {Type}", 
+                filter.AgentId, filter.Type);
             throw;
         }
     }

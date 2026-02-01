@@ -455,7 +455,7 @@ public class AdminTaskService : IAdminTaskService
             var baseQueryParts = new List<string>
             {
                 $"{Constants.TenantIdKey} = '{tenantId}'",
-                "WorkflowType STARTS_WITH 'Task Workflow'", // Filter for Task Workflows only
+                "TaskQueue STARTS_WITH 'hitl_task:'", // Filter for Task Workflows only
                 $"StartTime >= '{startDate.Value:yyyy-MM-ddTHH:mm:ssZ}'",
                 $"StartTime <= '{endDate.Value:yyyy-MM-ddTHH:mm:ssZ}'"
             };
