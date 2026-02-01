@@ -29,6 +29,7 @@ public class PublicCreateTenantRequest
     public string Name { get; set; } = string.Empty;
     public string Domain { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? CreatedBy { get; set; }
 }
 
 public class PublicCreateTenantResponse
@@ -283,7 +284,8 @@ public class PublicRegistrationService : IPublicRegistrationService
                 TenantId = request.TenantId,
                 Name = request.Name,
                 Domain = request.Domain,
-                Description = request.Description
+                Description = request.Description,
+                CreatedBy = request.CreatedBy
             };
 
             var tenantResult = await _tenantService.CreateTenant(createTenantRequest, jwtResult.UserId);
