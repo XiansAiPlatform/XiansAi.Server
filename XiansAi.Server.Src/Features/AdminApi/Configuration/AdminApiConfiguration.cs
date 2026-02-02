@@ -2,12 +2,10 @@ using Features.AdminApi.Constants;
 using Features.AdminApi.Endpoints;
 using Features.AdminApi.Auth;
 using Features.AdminApi.Utils;
-using Features.WebApi.Services;
 using Features.AgentApi.Repositories;
 using Shared.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Routing;
 
 namespace Features.AdminApi.Configuration;
 
@@ -118,6 +116,7 @@ public static class AdminApiConfiguration
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);
         AdminMetricsEndpoints.MapAdminMetricsEndpoints(adminApiGroup);
         AdminDataEndpoints.MapAdminDataEndpoints(adminApiGroup);
+        AdminMigrationEndpoints.MapAdminMigrationEndpoints(adminApiGroup);
     }
 }
 

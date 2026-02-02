@@ -15,9 +15,15 @@ public class User
     [JsonPropertyName("userId")]
     public string UserId { get; set; } = string.Empty;
 
+    private string _email = string.Empty;
+    
     [BsonElement("email")]
     [JsonPropertyName("email")]
-    public string Email { get; set; } = string.Empty;
+    public string Email 
+    { 
+        get => _email;
+        set => _email = value.ToLowerInvariant();
+    }
 
     [BsonElement("name")]
     [JsonPropertyName("name")]

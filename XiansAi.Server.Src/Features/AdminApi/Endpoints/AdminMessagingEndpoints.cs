@@ -95,6 +95,9 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("participantId query parameter is required");
             }
+            
+            // Normalize participantId to lowercase (typically an email)
+            participantId = participantId.ToLowerInvariant();
 
             // Construct the workflow ID as per specification:
             // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
@@ -182,11 +185,14 @@ public static class AdminMessagingEndpoints
             // Default to Chat if type not specified
             var messageType = request.Type ?? MessageType.Chat;
             
+            // Normalize participantId to lowercase (typically an email)
+            var normalizedParticipantId = request.ParticipantId.ToLowerInvariant();
+            
             // Map to ChatOrDataRequest
             var chatOrDataRequest = new ChatOrDataRequest
             {
                 WorkflowId = workflowId,
-                ParticipantId = request.ParticipantId,
+                ParticipantId = normalizedParticipantId,
                 Text = request.Text,
                 Data = request.Data,
                 Scope = request.Topic,
@@ -290,6 +296,9 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("participantId query parameter is required");
             }
+            
+            // Normalize participantId to lowercase (typically an email)
+            participantId = participantId.ToLowerInvariant();
 
             // Construct the workflow ID as per specification:
             // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
@@ -333,6 +342,9 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("participantId query parameter is required");
             }
+            
+            // Normalize participantId to lowercase (typically an email)
+            participantId = participantId.ToLowerInvariant();
 
             // Validate sort order
             var normalizedSortOrder = sortOrder.ToLowerInvariant();

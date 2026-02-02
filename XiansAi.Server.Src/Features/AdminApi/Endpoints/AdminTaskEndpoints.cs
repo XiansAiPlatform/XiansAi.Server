@@ -33,6 +33,12 @@ public static class AdminTaskEndpoints
             [FromQuery] string? status,
             [FromServices] IAdminTaskService taskService) =>
         {
+            // Normalize participantId to lowercase (typically an email)
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                participantId = participantId.ToLowerInvariant();
+            }
+            
             // Validate that activationName requires agentName
             if (!string.IsNullOrEmpty(activationName) && string.IsNullOrEmpty(agentName))
             {
