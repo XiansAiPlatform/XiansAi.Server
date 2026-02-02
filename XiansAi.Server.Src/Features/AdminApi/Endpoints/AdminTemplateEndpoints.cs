@@ -1,10 +1,6 @@
 using Shared.Services;
-using Shared.Repositories;
-using Shared.Data.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Shared.Utils.Services;
-using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 
 namespace Features.AdminApi.Endpoints;
@@ -136,7 +132,7 @@ public static class AdminTemplateEndpoints
 
             var template = templateResult.Data!;
             var agentName = template.Name;
-            var result = await templateService.DeployTemplateToTenant(agentName, tenantId, tenantContext.LoggedInUser ?? "system", null);
+            var result = await templateService.DeployTemplateToTenant(agentName, tenantId, tenantContext.LoggedInUser);
             return result.ToHttpResult();
         })
         .WithName("DeployTemplateToTenant")

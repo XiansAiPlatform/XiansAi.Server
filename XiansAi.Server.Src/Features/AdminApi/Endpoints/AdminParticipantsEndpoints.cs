@@ -39,6 +39,18 @@ public class ParticipantTenantResponse
 }
 
 /// <summary>
+/// Wrapper response model for participant tenants with system admin status
+/// </summary>
+public class ParticipantTenantsResponse
+{
+    [JsonPropertyName("isSystemAdmin")]
+    public required bool IsSystemAdmin { get; set; }
+    
+    [JsonPropertyName("tenants")]
+    public required List<ParticipantTenantResponse> Tenants { get; set; }
+}
+
+/// <summary>
 /// AdminApi endpoints for participant management.
 /// These endpoints allow querying participant information across tenants.
 /// All endpoints are under /api/v{version}/admin/ prefix (versioned).
@@ -126,7 +138,10 @@ public static class AdminParticipantsEndpoints
                     matchingTenants.Count, 
                     string.Join(", ", matchingTenants.Select(t => $"{t.TenantId}(enabled:{t.Enabled})")));
 
-                var tenantResponse = matchingTenants
+                // Check if user is system admin
+                var isSystemAdmin = user?.IsSysAdmin ?? false;
+
+                var tenantList = matchingTenants
                     .Where(t => t.Enabled)
                     .Select(t => new ParticipantTenantResponse
                     {
@@ -138,7 +153,7 @@ public static class AdminParticipantsEndpoints
                     .ToList();
 
                 // Return 404 if no enabled tenants found
-                if (!tenantResponse.Any())
+                if (!tenantList.Any())
                 {
                     logger.LogWarning("User {Email} has matching tenants but no enabled tenants found. " +
                         "Matching tenant IDs: {TenantIds}, Matched tenants: {MatchedCount}", 
@@ -146,7 +161,13 @@ public static class AdminParticipantsEndpoints
                     return Results.NotFound(new { message = $"User with email '{email}' has no enabled tenants" });
                 }
 
-                return Results.Ok(tenantResponse);
+                var response = new ParticipantTenantsResponse
+                {
+                    IsSystemAdmin = isSystemAdmin,
+                    Tenants = tenantList
+                };
+
+                return Results.Ok(response);
             }
             catch (Exception ex)
             {
@@ -157,13 +178,13 @@ public static class AdminParticipantsEndpoints
             }
         })
         .WithName("GetParticipantTenants")
-        .Produces<List<ParticipantTenantResponse>>()
+        .Produces<ParticipantTenantsResponse>()
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Participant Tenants",
-            Description = "Retrieve the list of tenants (with ID and name) where the user with the specified email has the TenantParticipant role or where the email domain matches the tenant domain, and the tenant is enabled."
+            Description = "Retrieve the list of tenants (with ID and name) where the user with the specified email has the TenantParticipant role or where the email domain matches the tenant domain, and the tenant is enabled. Also includes whether the user is a system administrator."
         });
     }
 }
