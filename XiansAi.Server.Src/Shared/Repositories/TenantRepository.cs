@@ -11,6 +11,8 @@ public interface ITenantRepository
     Task<Tenant> GetByIdAsync(string id);
     Task<Tenant> GetByTenantIdAsync(string tenantId);
     Task<Tenant> GetByDomainAsync(string domain);
+    Task<List<Tenant>> GetByDomainListAsync(string domain);
+    Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds);
     Task<List<Tenant>> GetAllAsync();
     Task CreateAsync(Tenant tenant);
     Task<bool> UpdateAsync(string id, Tenant tenant);
@@ -58,6 +60,28 @@ public class TenantRepository : ITenantRepository
         {
             return await _collection.Find(tenant => tenant.Domain == domain).FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantByDomain");
+    }
+
+    public async Task<List<Tenant>> GetByDomainListAsync(string domain)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<Tenant>.Filter.And(
+                Builders<Tenant>.Filter.Ne(t => t.Domain, null),
+                Builders<Tenant>.Filter.Ne(t => t.Domain, string.Empty),
+                Builders<Tenant>.Filter.Eq(t => t.Domain, domain)
+            );
+            return await _collection.Find(filter).ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantsByDomain");
+    }
+
+    public async Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<Tenant>.Filter.In(t => t.TenantId, tenantIds);
+            return await _collection.Find(filter).ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantsByTenantIds");
     }
 
     public async Task<List<Tenant>> GetAllAsync()

@@ -29,6 +29,12 @@ public static class AdminStatsEndpoints
             [FromQuery] string? participantId,
             [FromServices] IAdminStatsService statsService) =>
         {
+            // Normalize participantId to lowercase (typically an email)
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                participantId = participantId.ToLowerInvariant();
+            }
+            
             var result = await statsService.GetStatsAsync(tenantId, startDate, endDate, participantId);
             return result.ToHttpResult();
         })

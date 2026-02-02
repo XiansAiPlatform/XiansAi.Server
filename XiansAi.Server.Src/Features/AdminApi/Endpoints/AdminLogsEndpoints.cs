@@ -35,6 +35,12 @@ public static class AdminLogsEndpoints
             [FromQuery] int? page,
             [FromServices] IAdminLogsService logsService) =>
         {
+            // Normalize participantId to lowercase (typically an email)
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                participantId = participantId.ToLowerInvariant();
+            }
+            
             // Set defaults for pagination
             var actualPage = page ?? 1;
             var actualPageSize = pageSize ?? 20;

@@ -35,6 +35,12 @@ public static class AdminMetricsEndpoints
             [FromServices] IAdminMetricsService metricsService,
             CancellationToken cancellationToken) =>
         {
+            // Normalize participantId to lowercase (typically an email)
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                participantId = participantId.ToLowerInvariant();
+            }
+            
             var request = new AdminMetricsStatsRequest
             {
                 TenantId = tenantId,
@@ -100,6 +106,12 @@ Note: All aggregations are performed at the database level for optimal performan
             [FromQuery] string aggregation = "sum",
             [FromQuery] bool includeBreakdowns = false) =>
         {
+            // Normalize participantId to lowercase (typically an email)
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                participantId = participantId.ToLowerInvariant();
+            }
+            
             var request = new AdminMetricsTimeSeriesRequest
             {
                 TenantId = tenantId,
