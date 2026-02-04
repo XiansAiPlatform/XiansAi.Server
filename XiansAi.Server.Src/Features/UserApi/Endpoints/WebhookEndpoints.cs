@@ -22,6 +22,7 @@ public static class WebhookEndpoints
             [FromQuery] string webhookName,
             [FromQuery] string agentName,
             [FromQuery] string apikey,
+            [FromQuery] string? activationName,
             HttpContext httpContext,
             [FromServices] IMessageService messageService,
             [FromServices] IPendingRequestService pendingRequestService,
@@ -67,42 +68,16 @@ public static class WebhookEndpoints
                     return Results.BadRequest("Timeout must be between 1 and 300 seconds");
                 }
 
-                // Validate that the flow definition exists for this agent, workflow, and tenant
-                // Build the workflow type in the format: "AgentName:WorkflowName"
-                var workflowType = $"{agentName}:{workflowName}";
-                var flowDefinition = await flowDefinitionRepository.GetLatestFlowDefinitionAsync(workflowType, tenantId);
-                
-                if (flowDefinition == null)
-                {
-                    logger.LogWarning(
-                        "Flow definition not found for webhook request. WorkflowType: {WorkflowType}, Tenant: {TenantId}, Agent: {AgentName}, Workflow: {WorkflowName}", 
-                        workflowType, tenantId, agentName, workflowName);
-                    
-                    return Results.Problem(
-                        detail: $"Flow definition not found for agent '{agentName}' and workflow '{workflowName}' in tenant '{tenantId}'. Please ensure the workflow is deployed.",
-                        statusCode: StatusCodes.Status404NotFound);
-                }
-
-                logger.LogDebug(
-                    "Flow definition validated successfully. WorkflowType: {WorkflowType}, Tenant: {TenantId}", 
-                    workflowType, tenantId);
-
                 // Read the request body
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
                 var body = await reader.ReadToEndAsync();
 
-                // Extract query parameters (excluding system parameters)
-                var excludedParams = new[] { "apikey", "timeoutSeconds", "participantId", "agentName", "scope", "authorization" };
-                var queryParams = httpContext.Request.Query
-                    .Where(q => !excludedParams.Contains(q.Key, StringComparer.OrdinalIgnoreCase))
-                    .ToDictionary(q => q.Key, q => q.Value.ToString());
-
                 // Build workflowId from workflowName (format: tenant:workflowName)
                 // Using webhookName as the scope/method identifier
-                var workflowId = $"{tenantId}:{workflowType}";
+                var workflowId = $"{tenantId}:{agentName}:{workflowName}{(activationName != null ? $":{activationName}" : string.Empty)}";
                 
                 // Use participantId from query or default to "webhook" for identification
-                var resolvedParticipantId = participantId ?? "webhook";
+                var resolvedParticipantId = participantId ?? "unknown";
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
@@ -145,68 +120,66 @@ public static class WebhookEndpoints
                 };
 
                 // Try to extract WebhookResponse from Data field
-                if (result is not null)
-                {
-                    var resultType = result.GetType();
-                    var dataProperty = resultType.GetProperty("Data");
-                    var textProperty = resultType.GetProperty("Text");
+                var resultType = result.GetType();
+                var dataProperty = resultType.GetProperty("Data");
+                var textProperty = resultType.GetProperty("Text");
 
-                    if (dataProperty != null)
+                if (dataProperty != null)
+                {
+                    var dataValue = dataProperty.GetValue(result);
+                    
+                    // If Data is already a WebhookResponse
+                    if (dataValue is WebhookResponse wr)
                     {
-                        var dataValue = dataProperty.GetValue(result);
-                        
-                        // If Data is already a WebhookResponse
-                        if (dataValue is WebhookResponse wr)
+                        webhookResponse = wr;
+                    }
+                    // If Data is a JsonElement, try to deserialize it
+                    else if (dataValue is JsonElement jsonElement)
+                    {
+                        try
                         {
-                            webhookResponse = wr;
+                            webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(jsonElement.GetRawText(), jsonOptions);
+                            logger.LogDebug("Successfully deserialized WebhookResponse from JsonElement");
                         }
-                        // If Data is a JsonElement, try to deserialize it
-                        else if (dataValue is JsonElement jsonElement)
+                        catch (Exception ex)
                         {
-                            try
-                            {
-                                webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(jsonElement.GetRawText(), jsonOptions);
-                                logger.LogDebug("Successfully deserialized WebhookResponse from JsonElement");
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.LogWarning(ex, "Failed to deserialize WebhookResponse from JsonElement. Data: {Data}", jsonElement.GetRawText());
-                            }
-                        }
-                        // If Data is a dictionary or any other object, serialize and deserialize
-                        else if (dataValue != null)
-                        {
-                            try
-                            {
-                                var json = JsonSerializer.Serialize(dataValue);
-                                webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(json, jsonOptions);
-                                logger.LogDebug("Successfully deserialized WebhookResponse from object. StatusCode: {StatusCode}", webhookResponse?.StatusCode);
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.LogWarning(ex, "Failed to deserialize WebhookResponse from object. Type: {Type}", dataValue.GetType().Name);
-                            }
+                            logger.LogWarning(ex, "Failed to deserialize WebhookResponse from JsonElement. Data: {Data}", jsonElement.GetRawText());
                         }
                     }
-
-                    // Fallback: try to parse from Text field if Data didn't work
-                    if (webhookResponse == null && textProperty != null)
+                    // If Data is a dictionary or any other object, serialize and deserialize
+                    else if (dataValue != null)
                     {
-                        var textValue = textProperty.GetValue(result) as string;
-                        if (!string.IsNullOrEmpty(textValue))
+                        try
                         {
-                            try
-                            {
-                                webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(textValue, jsonOptions);
-                                logger.LogDebug("Successfully deserialized WebhookResponse from Text field");
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.LogWarning(ex, "Failed to deserialize WebhookResponse from Text field. Text: {Text}", textValue);
-                            }
+                            var json = JsonSerializer.Serialize(dataValue);
+                            webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(json, jsonOptions);
+                            logger.LogDebug("Successfully deserialized WebhookResponse from object. StatusCode: {StatusCode}", webhookResponse?.StatusCode);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning(ex, "Failed to deserialize WebhookResponse from object. Type: {Type}", dataValue.GetType().Name);
                         }
                     }
                 }
+
+                // Fallback: try to parse from Text field if Data didn't work
+                if (webhookResponse == null && textProperty != null)
+                {
+                    var textValue = textProperty.GetValue(result) as string;
+                    if (!string.IsNullOrEmpty(textValue))
+                    {
+                        try
+                        {
+                            webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(textValue, jsonOptions);
+                            logger.LogDebug("Successfully deserialized WebhookResponse from Text field");
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning(ex, "Failed to deserialize WebhookResponse from Text field. Text: {Text}", textValue);
+                        }
+                    }
+                }
+            
 
                 // Apply the WebhookResponse to the HTTP context
                 if (webhookResponse != null)
