@@ -82,9 +82,9 @@ Returns a paginated list of tasks with metadata including available actions, sta
         });
 
         // Get task by workflow ID
-        taskGroup.MapGet("/{workflowId}", async Task<IResult> (
+        taskGroup.MapGet("/by-id", async Task<IResult> (
             string tenantId,
-            string workflowId,
+            [FromQuery] string workflowId,
             [FromServices] IAdminTaskService taskService) =>
         {
             var result = await taskService.GetTaskById(workflowId);
@@ -97,7 +97,7 @@ Returns a paginated list of tasks with metadata including available actions, sta
             
             return result.ToHttpResult();
         })
-        .Produces<AdminTaskInfoResponse>(StatusCodes.Status200OK)
+        .Produces<AdminTaskInfoResponse>()
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("GetTask")

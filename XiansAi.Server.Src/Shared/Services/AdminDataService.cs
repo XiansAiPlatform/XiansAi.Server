@@ -174,8 +174,8 @@ public class AdminDataService : IAdminDataService
                 "Getting data schema - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, Range: {StartDate} to {EndDate}",
                 request.TenantId, request.AgentName, request.ActivationName, request.StartDate, request.EndDate);
 
-            // Get all available document types for the agent
-            var documentTypes = await _documentRepository.GetDistinctTypesAsync(request.TenantId, request.AgentName);
+            // Get all available document types for the agent (filtered by activation name if provided)
+            var documentTypes = await _documentRepository.GetDistinctTypesAsync(request.TenantId, request.AgentName, request.ActivationName);
 
             var response = new AdminDataSchemaResponse
             {

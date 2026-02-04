@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Features.UserApi.Services;
 using Features.WebApi.Utils;
 using Shared.Auth;
@@ -367,6 +366,74 @@ public static class AdminMessagingEndpoints
         {
             Summary = "Get Message History for Agent Activation",
             Description = "Retrieves message history for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:Supervisor Workflow:{activationName}. Optional 'topic' parameter filters by scope (omit or leave empty to get messages with no scope/topic, or specify a topic name to get messages for that specific topic). Optional 'sortOrder' parameter controls sorting: 'desc' for newest first (default), 'asc' for oldest first. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=50). Set chatOnly=true to retrieve only chat messages."
+        });
+
+        // Delete messages by topic for a specific agent activation and participant
+        adminMessagingGroup.MapDelete("/messages", async (
+            string tenantId,
+            [FromQuery] string agentName,
+            [FromQuery] string activationName,
+            [FromQuery] string participantId,
+            [FromServices] IMessageService messageService,
+            [FromQuery] string? topic = null) =>
+        {
+            // Validate required parameters
+            if (string.IsNullOrWhiteSpace(agentName))
+            {
+                return Results.BadRequest("agentName query parameter is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(activationName))
+            {
+                return Results.BadRequest("activationName query parameter is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(participantId))
+            {
+                return Results.BadRequest("participantId query parameter is required");
+            }
+            
+            // Normalize participantId to lowercase (typically an email)
+            participantId = participantId.ToLowerInvariant();
+            
+            // Normalize topic: empty string should be treated as null
+            var normalizedTopic = string.IsNullOrWhiteSpace(topic) ? null : topic.Trim();
+
+            // Construct the workflow ID as per specification:
+            // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
+            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
+
+            // Delete messages with the specified topic/scope
+            // When topic is null or empty, delete messages with null scope (no topic)
+            // When topic has a value, delete messages with that specific scope
+            var result = await messageService.DeleteMessagesByTopicAsync(workflowId, participantId, normalizedTopic);
+            return result.ToHttpResult();
+        })
+        .WithName("DeleteMessagesByTopicForAdminApi")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Delete Messages by Topic for Agent Activation",
+            Description = """
+                Deletes all messages for a specific topic (scope) for a given tenant, agent activation, and participant.
+                
+                **Workflow ID Construction:**
+                The workflow ID is automatically constructed as: `{tenantId}:{agentName}:Supervisor Workflow:{activationName}`
+                
+                **Query Parameters:**
+                - `agentName` (required): Name of the agent
+                - `activationName` (required): Name of the activation
+                - `participantId` (required): Unique identifier for the participant
+                - `topic` (optional): Topic/scope of messages to delete
+                
+                **Behavior:**
+                - When `topic` is provided with a value: Deletes all messages with that specific topic/scope
+                - When `topic` is omitted, null, or empty string: Deletes all messages with no topic (scope=null or scope=empty)
+                
+                **Notes:**
+                - Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
+                - This operation cannot be undone
+                - Returns success even if no messages match the criteria
+                """
         });
     }
 }

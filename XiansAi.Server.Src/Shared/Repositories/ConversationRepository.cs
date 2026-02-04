@@ -103,6 +103,9 @@ public class ConversationMessage
     [BsonElement("hint")]
     public string? Hint { get; set; }
 
+    [BsonElement("task_id")]
+    public string? TaskId { get; set; }
+
     [BsonElement("workflow_id")]
     public required string WorkflowId { get; set; }
 
@@ -195,6 +198,7 @@ public interface IConversationRepository
     Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
     Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null, string sortOrder = "desc");
     Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
+    Task<bool> DeleteMessagesByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope);
 
     // Topics operations
     Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize);
@@ -517,6 +521,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .Include(x => x.Data)
                 .Include(x => x.Status)
                 .Include(x => x.Hint)
+                .Include(x => x.TaskId)
                 .Include(x => x.Scope)
                 .Include(x => x.RequestId)
                 .Include(x => x.Origin);
@@ -579,6 +584,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .Include(x => x.Data)
                 .Include(x => x.Status)
                 .Include(x => x.Hint)
+                .Include(x => x.TaskId)
                 .Include(x => x.Scope)
                 .Include(x => x.RequestId)
                 .Include(x => x.Origin);
@@ -628,6 +634,60 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting messages for thread {ThreadId}", threadId);
+            throw;
+        }
+    }
+
+    public async Task<bool> DeleteMessagesByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope)
+    {
+        try
+        {
+            // First, get the thread ID
+            string threadId;
+            try
+            {
+                threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. No messages to delete.", 
+                    workflowId, participantId, tenantId);
+                return true; // Consider success if thread doesn't exist
+            }
+
+            // Build filter for messages with specific scope (or null scope)
+            var filters = new List<FilterDefinition<ConversationMessage>>
+            {
+                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId),
+                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId)
+            };
+
+            // Add scope filter - handle null scope explicitly
+            if (scope == null)
+            {
+                filters.Add(Builders<ConversationMessage>.Filter.Eq(x => x.Scope, null));
+            }
+            else
+            {
+                filters.Add(Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope));
+            }
+
+            var filter = Builders<ConversationMessage>.Filter.And(filters);
+
+            var result = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _messagesCollection.DeleteManyAsync(filter),
+                _logger,
+                operationName: "DeleteMessagesByWorkflowParticipantAndScope");
+
+            _logger.LogInformation("Deleted {DeletedCount} messages for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
+                result.DeletedCount, workflowId, participantId, scope ?? "null");
+            
+            return result.DeletedCount >= 0; // Return true even if no messages were found
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting messages for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
+                workflowId, participantId, scope ?? "null");
             throw;
         }
     }
