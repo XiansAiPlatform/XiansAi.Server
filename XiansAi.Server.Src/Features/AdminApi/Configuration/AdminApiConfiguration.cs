@@ -3,6 +3,8 @@ using Features.AdminApi.Endpoints;
 using Features.AdminApi.Auth;
 using Features.AdminApi.Utils;
 using Features.AgentApi.Repositories;
+using Features.AppsApi.Repositories;
+using Features.AppsApi.Services;
 using Shared.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -30,6 +32,11 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IAdminMetricsService, AdminMetricsService>();
         builder.Services.AddScoped<IAdminDataService, AdminDataService>();
         builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+        
+        // Register App Integration services
+        builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
+        builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
+        
         // Note: IAdminTaskService is registered in SharedServices as it's shared with WebApi
         // AdminApi reuses existing services from WebApi
         return builder;
@@ -117,6 +124,7 @@ public static class AdminApiConfiguration
         AdminMetricsEndpoints.MapAdminMetricsEndpoints(adminApiGroup);
         AdminDataEndpoints.MapAdminDataEndpoints(adminApiGroup);
         AdminMigrationEndpoints.MapAdminMigrationEndpoints(adminApiGroup);
+        AdminAppIntegrationEndpoints.MapAdminAppIntegrationEndpoints(adminApiGroup);
     }
 }
 

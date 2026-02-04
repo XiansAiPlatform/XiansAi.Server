@@ -206,6 +206,10 @@ public interface IConversationRepository
     // Hint operations
     Task<string?> GetLastHintAsync(string tenantId, string workflowId, string participantId, string? scope = null);
 
+    // Origin operations
+    Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId);
+    Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId);
+
     // Statistics operations
     Task<(int totalMessages, int activeUsers)> GetMessagingStatsAsync(string tenantId, DateTime startDate, DateTime endDate, string? participantId = null);
 
@@ -818,6 +822,65 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 }
             };
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTopicsByThreadId");
+    }
+
+    public async Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+            var filter = filterBuilder.And(
+                filterBuilder.Eq(x => x.ThreadId, threadId),
+                filterBuilder.Eq(x => x.TenantId, tenantId),
+                filterBuilder.Eq(x => x.Direction, MessageDirection.Incoming),
+                filterBuilder.Ne(x => x.Origin, null),
+                filterBuilder.Ne(x => x.Origin, "")
+            );
+
+            // Get the most recent incoming message with an origin
+            var projection = Builders<ConversationMessage>.Projection.Include(x => x.Origin);
+            
+            var message = await _messagesCollection
+                .Find(filter)
+                .Project<ConversationMessage>(projection)
+                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                .Limit(1)
+                .FirstOrDefaultAsync();
+
+            _logger.LogDebug("Last incoming origin for thread {ThreadId}: {Origin}",
+                threadId, message?.Origin ?? "none");
+
+            return message?.Origin;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingOrigin");
+    }
+
+    public async Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+            var filter = filterBuilder.And(
+                filterBuilder.Eq(x => x.ThreadId, threadId),
+                filterBuilder.Eq(x => x.TenantId, tenantId),
+                filterBuilder.Eq(x => x.Direction, MessageDirection.Incoming),
+                filterBuilder.Ne(x => x.Data, null)
+            );
+
+            // Get the most recent incoming message with data
+            var projection = Builders<ConversationMessage>.Projection.Include(x => x.Data);
+            
+            var message = await _messagesCollection
+                .Find(filter)
+                .Project<ConversationMessage>(projection)
+                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                .Limit(1)
+                .FirstOrDefaultAsync();
+
+            _logger.LogDebug("Last incoming data for thread {ThreadId}: {HasData}",
+                threadId, message?.Data != null ? "yes" : "none");
+
+            return message?.Data;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingData");
     }
 
     public async Task<string?> GetLastHintAsync(string tenantId, string workflowId, string participantId, string? scope = null)
