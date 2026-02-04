@@ -15,7 +15,7 @@ public interface IDocumentRepository
     Task<Document?> GetByKeyAsync(string type, string key, string? tenantId);
     Task<List<Document>> QueryAsync(string? tenantId, DocumentQueryFilter filter);
     Task<long> CountAsync(string? tenantId, DocumentQueryFilter filter);
-    Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId);
+    Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId, string? activationName = null);
     Task<List<string>> GetDistinctActivationNamesAsync(string? tenantId, string? agentId);
     Task<bool> UpdateAsync(Document document);
     Task<bool> DeleteAsync(string id, string? tenantId);
@@ -255,7 +255,7 @@ public class DocumentRepository : IDocumentRepository
         }
     }
 
-    public async Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId)
+    public async Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId, string? activationName = null)
     {
         try
         {
@@ -272,6 +272,12 @@ public class DocumentRepository : IDocumentRepository
             if (!string.IsNullOrEmpty(agentId))
             {
                 filter &= builder.Eq(d => d.AgentId, agentId);
+            }
+
+            // Add activation name filter if provided
+            if (!string.IsNullOrEmpty(activationName))
+            {
+                filter &= builder.Eq(d => d.ActivationName, activationName);
             }
 
             // Use MongoDB's Distinct operation for efficiency

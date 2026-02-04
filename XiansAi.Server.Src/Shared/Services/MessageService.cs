@@ -27,6 +27,9 @@ public class ChatOrDataRequest
     // Hint for the agent to use when processing the message
     public string? Hint { get; set; }
 
+    // Task identifier for the agent to track task execution
+    public string? TaskId { get; set; }
+
     public string? WorkflowType 
     { 
         get 
@@ -91,6 +94,7 @@ public interface IMessageService
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc");
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
     Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
+    Task<ServiceResult<bool>> DeleteMessagesByTopicAsync(string workflowId, string participantId, string? topic);
     Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null);
     Task<ServiceResult<TopicsResult>> GetTopicsByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize);
 }
@@ -361,6 +365,7 @@ public class MessageService : IMessageService
                  request.RequestId,
                  request.Scope,
                  request.Hint,
+                 request.TaskId,
                  request.Data,
                  Type = messageType.ToString(),
                  request.Authorization
@@ -405,6 +410,7 @@ public class MessageService : IMessageService
             ParticipantId = request.ParticipantId,
             TenantId = _tenantContext.TenantId,
             Hint = request.Hint,
+            TaskId = request.TaskId,
             Scope = normalizedScope,  // Use normalized scope
             RequestId = request.RequestId,
             CreatedAt = DateTime.UtcNow,
@@ -477,6 +483,43 @@ public class MessageService : IMessageService
             _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}", 
                 workflowId, participantId);
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteMessagesByTopicAsync(string workflowId, string participantId, string? topic)
+    {
+        try
+        {
+            _logger.LogInformation("Attempting to delete messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                workflowId, participantId, topic ?? "null");
+
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
+            {
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
+                    workflowId, participantId);
+                return ServiceResult<bool>.BadRequest("WorkflowId and ParticipantId are required");
+            }
+
+            // Delete messages by workflow, participant, and scope (topic)
+            var result = await _conversationRepository.DeleteMessagesByWorkflowParticipantAndScopeAsync(
+                _tenantContext.TenantId, workflowId, participantId, topic);
+
+            if (!result)
+            {
+                _logger.LogWarning("Failed to delete messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                    workflowId, participantId, topic ?? "null");
+                return ServiceResult<bool>.InternalServerError("Failed to delete messages");
+            }
+
+            _logger.LogInformation("Successfully deleted messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                workflowId, participantId, topic ?? "null");
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                workflowId, participantId, topic ?? "null");
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting messages");
         }
     }
 
