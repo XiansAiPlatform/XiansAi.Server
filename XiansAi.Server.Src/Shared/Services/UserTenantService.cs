@@ -274,10 +274,10 @@ public class UserTenantService : IUserTenantService
             // Determine which tenant to query based on user role
             string? tenantIdToQuery = null;
             
-            // System admin can see all unapproved users (no tenant filter)
+            // System admin sees unapproved users for the current tenant (from X-Tenant-Id / organisation dropdown)
             if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
-                tenantIdToQuery = null; // null = all tenants
+                tenantIdToQuery = _tenantContext.TenantId;
             }
             // Tenant admin can only see unapproved users for their tenant
             else if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
