@@ -108,8 +108,8 @@ public static class UserTenantEndpoints
         .RequireAuthorization("RequireTokenAuth")
         .WithOpenApi(operation =>
         {
-            operation.Summary = "Get list of users without a tenant";
-            operation.Description = "Returns all users without tenant, excluding sysAdmin users. Tenant admins see unapproved users for their tenant, sysadmins see all.";
+            operation.Summary = "Get list of unapproved user requests for the current tenant";
+            operation.Description = "Returns users with pending approval for the current tenant (from X-Tenant-Id header). Same for tenant admins and system admins: only the selected tenant's requests are returned. The tenant is the one selected in the UI (e.g. 'Select organisation' dropdown).";
             return operation;
         })
         .RequiresValidTenantAdmin();

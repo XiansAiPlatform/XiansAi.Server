@@ -12,7 +12,7 @@ public interface IUserRepository
     Task<PagedUserResult> GetAllUsersAsync(UserFilter filter);
     Task<PagedUserResult> GetAllUsersByTenantAsync(UserFilter filter);
     Task<List<User>> GetSystemAdminAsync();
-    Task<List<User>> GetUsersWithUnapprovedTenantAsync(string? tenantId = null);
+    Task<List<User>> GetUsersWithUnapprovedTenantAsync(string tenantId);
     Task<List<User>> GetUsersByRoleAsync(string roleName, string tenantId);
     Task<User?> GetByUserIdAsync(string userId);
     Task<User?> GetByIdAsync(string id);
@@ -175,34 +175,14 @@ public class UserRepository : IUserRepository
         return await _users.Find(x => x.IsSysAdmin == true).ToListAsync();
     }
 
-    public async Task<List<User>> GetUsersWithUnapprovedTenantAsync(string? tenantId = null)
+    public async Task<List<User>> GetUsersWithUnapprovedTenantAsync(string tenantId)
     {
-        FilterDefinition<User> filter;
-
-        if (tenantId == null)
-        {
-            filter = Builders<User>.Filter.And(
-            Builders<User>.Filter.Or(
-                Builders<User>.Filter.Eq(u => u.TenantRoles, null),
-                Builders<User>.Filter.Size(u => u.TenantRoles, 0),
-                Builders<User>.Filter.ElemMatch(
-                u => u.TenantRoles,
-                tr => tr.IsApproved == false
-                )
-            ),
-            Builders<User>.Filter.Eq(u => u.IsSysAdmin, false)
-        );
-        }
-        else
-        {
-            filter = Builders<User>.Filter.And(
+        var filter = Builders<User>.Filter.And(
             Builders<User>.Filter.ElemMatch(
                 u => u.TenantRoles,
                 tr => tr.Tenant == tenantId && tr.IsApproved == false
-                )
-            );
-        }
-
+            )
+        );
         return await _users.Find(filter).ToListAsync();
     }
 

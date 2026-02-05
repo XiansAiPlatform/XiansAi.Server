@@ -274,10 +274,10 @@ public class UserTenantService : IUserTenantService
             // Determine which tenant to query based on user role
             string? tenantIdToQuery = null;
             
-            // System admin can see all unapproved users (no tenant filter)
+            // System admin sees unapproved users for the current tenant (from X-Tenant-Id / organisation dropdown)
             if (_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
-                tenantIdToQuery = null; // null = all tenants
+                tenantIdToQuery = _tenantContext.TenantId;
             }
             // Tenant admin can only see unapproved users for their tenant
             else if (_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
@@ -293,6 +293,12 @@ public class UserTenantService : IUserTenantService
                 _logger.LogWarning("User {UserId} attempted to get unapproved users without proper permissions",
                     _tenantContext.LoggedInUser);
                 return ServiceResult<List<User>>.Forbidden("Insufficient permissions to view unapproved users");
+            }
+
+            if (string.IsNullOrEmpty(tenantIdToQuery))
+            {
+                _logger.LogWarning("GetUnapprovedUsers called without a current tenant (X-Tenant-Id required)");
+                return ServiceResult<List<User>>.BadRequest("A tenant must be selected (X-Tenant-Id header is required).");
             }
             
             var users = await _userRepository.GetUsersWithUnapprovedTenantAsync(tenantIdToQuery);
