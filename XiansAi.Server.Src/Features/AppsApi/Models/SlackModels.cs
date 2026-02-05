@@ -40,6 +40,9 @@ public class SlackEvent
     [JsonPropertyName("user")]
     public string? User { get; set; }
 
+    [JsonPropertyName("parent_user_id")]
+    public string? ParentUserId { get; set; }
+
     [JsonPropertyName("bot_id")]
     public string? BotId { get; set; }
 
@@ -186,6 +189,60 @@ public class SlackText
 }
 
 /// <summary>
+/// Slack users.info API response
+/// </summary>
+public class SlackUserInfoResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; set; }
+
+    [JsonPropertyName("user")]
+    public SlackUserInfo? User { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// Detailed Slack user information from users.info API
+/// </summary>
+public class SlackUserInfo
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("real_name")]
+    public string? RealName { get; set; }
+
+    [JsonPropertyName("profile")]
+    public SlackUserProfile? Profile { get; set; }
+}
+
+/// <summary>
+/// Slack user profile containing email and other details
+/// </summary>
+public class SlackUserProfile
+{
+    [JsonPropertyName("email")]
+    public string? Email { get; set; }
+
+    [JsonPropertyName("display_name")]
+    public string? DisplayName { get; set; }
+
+    [JsonPropertyName("real_name")]
+    public string? RealName { get; set; }
+
+    [JsonPropertyName("first_name")]
+    public string? FirstName { get; set; }
+
+    [JsonPropertyName("last_name")]
+    public string? LastName { get; set; }
+}
+
+/// <summary>
 /// Constants for Slack webhook processing
 /// </summary>
 public static class SlackConstants
@@ -197,4 +254,5 @@ public static class SlackConstants
     public const string BotMessageSubtype = "bot_message";
     public const string MessageChangedSubtype = "message_changed";
     public const string MessageDeletedSubtype = "message_deleted";
+    public const string SlackApiBaseUrl = "https://slack.com/api";
 }

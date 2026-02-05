@@ -131,8 +131,8 @@ public class AppMessageRouterService : BackgroundService
                 break;
 
             case "msteams":
-                _logger.LogInformation("MS Teams outbound routing not yet implemented");
-                // TODO: Implement Teams handler
+                var teamsHandler = scope.ServiceProvider.GetRequiredService<ITeamsWebhookHandler>();
+                await teamsHandler.SendMessageToTeamsAsync(integration, message, cancellationToken);
                 break;
 
             case "outlook":

@@ -505,9 +505,14 @@ db.app_instances.createIndex({ "tenant_id": 1, "is_active": 1 });
 - [x] Add webhook URL generation
 - [x] Enable/disable integration endpoints
 
-### Phase 5: Additional Platforms - PENDING
-- [ ] Implement TeamsProxy (placeholder exists)
-- [ ] Implement OutlookProxy (placeholder exists)
+### Phase 5: Additional Platforms - IN PROGRESS
+- [x] Implement TeamsWebhookHandler
+- [x] Teams Bot Framework activity processing
+- [x] Teams authentication (basic JWT validation)
+- [x] Teams outbound message support
+- [ ] Full JWT signature verification (TODO: production hardening)
+- [ ] Adaptive Cards support (TODO: enhancement)
+- [ ] Implement OutlookProxy (pending)
 - [ ] Add platform-specific features as needed
 
 ## Related Files & Integration Points

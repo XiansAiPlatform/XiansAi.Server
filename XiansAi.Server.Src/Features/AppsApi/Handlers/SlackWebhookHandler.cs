@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -53,6 +54,10 @@ public class SlackWebhookHandler : ISlackWebhookHandler
     private readonly ITenantContext _tenantContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SlackWebhookHandler> _logger;
+    
+    // Cache for Slack user info to avoid repeated API calls
+    // Key format: "{integrationId}:{userId}"
+    private static readonly ConcurrentDictionary<string, SlackUserInfo> UserInfoCache = new();
 
     public SlackWebhookHandler(
         IMessageService messageService,
@@ -303,7 +308,7 @@ public class SlackWebhookHandler : ISlackWebhookHandler
 
         // CRITICAL: Filter out bot messages to prevent infinite loops
         // Check multiple indicators that this is a bot message
-        if (IsBotMessage(slackEvent, payload))
+        if (IsBotMessage(slackEvent))
         {
             _logger.LogDebug("Ignoring bot message to prevent loop (subtype={Subtype}, botId={BotId}, appId={AppId})",
                 slackEvent.Subtype, slackEvent.BotId, slackEvent.AppId);
@@ -333,8 +338,16 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             return;
         }
 
+        // Fetch user info from Slack if needed (based on configuration)
+        SlackUserInfo? userInfo = null;
+        if (!string.IsNullOrEmpty(slackEvent.User) && 
+            integration.MappingConfig.ParticipantIdSource == "userEmail")
+        {
+            userInfo = await GetSlackUserInfoAsync(integration, slackEvent.User, cancellationToken);
+        }
+
         // Determine participant ID based on mapping configuration
-        var participantId = DetermineParticipantId(slackEvent, integration.MappingConfig);
+        var participantId = DetermineParticipantId(slackEvent, integration.MappingConfig, userInfo);
 
         // Determine scope based on mapping configuration
         var scope = DetermineScope(slackEvent, integration.MappingConfig);
@@ -350,8 +363,11 @@ public class SlackWebhookHandler : ISlackWebhookHandler
                 slack = new
                 {
                     userId = slackEvent.User,
+                    userEmail = userInfo?.Profile?.Email,
+                    userName = userInfo?.RealName ?? userInfo?.Name,
                     channel = slackEvent.Channel,
                     threadTs = slackEvent.ThreadTs,
+                    parentUserId = slackEvent.ParentUserId,
                     ts = slackEvent.Ts,
                     teamId = payload.TeamId,
                     eventType = slackEvent.Type
@@ -421,7 +437,7 @@ public class SlackWebhookHandler : ISlackWebhookHandler
     /// Determines if a Slack event is from a bot (to prevent infinite loops)
     /// Uses only the most reliable indicators that distinguish bot messages from user messages.
     /// </summary>
-    private bool IsBotMessage(SlackEvent slackEvent, SlackWebhookPayload payload)
+    private bool IsBotMessage(SlackEvent slackEvent)
     {
         // Check 1: Subtype is explicitly "bot_message"
         // This is the most reliable indicator - Slack explicitly marks bot messages
@@ -449,14 +465,23 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         return false;
     }
 
-    private string DetermineParticipantId(SlackEvent slackEvent, AppIntegrationMappingConfig config)
+    private string DetermineParticipantId(
+        SlackEvent slackEvent, 
+        AppIntegrationMappingConfig config, 
+        SlackUserInfo? userInfo)
     {
+        if (string.IsNullOrEmpty(config.ParticipantIdSource))
+        {
+            return config.DefaultParticipantId ?? slackEvent.User ?? "unknown";
+        }
+
         return config.ParticipantIdSource switch
         {
+            "userEmail" => userInfo?.Profile?.Email ?? slackEvent.User ?? config.DefaultParticipantId ?? "unknown",
             "userId" => slackEvent.User ?? config.DefaultParticipantId ?? "unknown",
             "channelId" => slackEvent.Channel ?? config.DefaultParticipantId ?? "unknown",
             "threadId" => slackEvent.ThreadTs ?? slackEvent.Channel ?? config.DefaultParticipantId ?? "unknown",
-            _ => slackEvent.User ?? config.DefaultParticipantId ?? "unknown"
+            _ => config.DefaultParticipantId ?? slackEvent.User ?? "unknown"  // Fall back to defaultParticipantId for unknown values
         };
     }
 
@@ -471,8 +496,84 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         {
             "channelId" => slackEvent.Channel,
             "threadId" => slackEvent.ThreadTs,
-            _ => config.DefaultScope
+            _ => config.DefaultScope  // Fall back to defaultScope for unknown values
         };
+    }
+
+    /// <summary>
+    /// Fetches user information from Slack API including email address.
+    /// Results are cached to avoid repeated API calls.
+    /// Requires botToken in integration configuration and users:read, users:read.email scopes.
+    /// </summary>
+    private async Task<SlackUserInfo?> GetSlackUserInfoAsync(
+        AppIntegration integration,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(userId))
+        {
+            return null;
+        }
+
+        // Check cache first
+        var cacheKey = $"{integration.Id}:{userId}";
+        if (UserInfoCache.TryGetValue(cacheKey, out var cachedUserInfo))
+        {
+            _logger.LogDebug("Using cached user info for user {UserId}", userId);
+            return cachedUserInfo;
+        }
+
+        // Get bot token from configuration
+        if (!integration.Configuration.TryGetValue("botToken", out var botTokenObj) ||
+            botTokenObj?.ToString() is not string botToken ||
+            string.IsNullOrEmpty(botToken))
+        {
+            _logger.LogDebug("Bot token not configured for integration {IntegrationId}, cannot fetch user info", 
+                integration.Id);
+            return null;
+        }
+
+        try
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            var requestUrl = $"{SlackConstants.SlackApiBaseUrl}/users.info?user={Uri.EscapeDataString(userId)}";
+            
+            var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+            request.Headers.Add("Authorization", $"Bearer {botToken}");
+
+            var response = await httpClient.SendAsync(request, cancellationToken);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch Slack user info for user {UserId}: {StatusCode}", 
+                    userId, response.StatusCode);
+                return null;
+            }
+
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var userInfoResponse = JsonSerializer.Deserialize<SlackUserInfoResponse>(responseContent, 
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (userInfoResponse?.Ok == true && userInfoResponse.User != null)
+            {
+                // Cache the result
+                UserInfoCache.TryAdd(cacheKey, userInfoResponse.User);
+                
+                _logger.LogDebug("Successfully fetched and cached user info for user {UserId}", userId);
+                return userInfoResponse.User;
+            }
+            else
+            {
+                _logger.LogWarning("Slack API returned error for user {UserId}: {Error}", 
+                    userId, userInfoResponse?.Error ?? "unknown");
+                return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching Slack user info for user {UserId}", userId);
+            return null;
+        }
     }
 
     private SlackMessageMetadata ExtractSlackMetadata(ConversationMessage message)

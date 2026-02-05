@@ -109,7 +109,7 @@ Agent → MessageService → MongoDB → MongoChangeStreamService
 | Platform | Status | Incoming | Outgoing | Features |
 |----------|--------|----------|----------|----------|
 | Slack | ✅ Complete | Events API | Webhook/Bot API | Messages, Threads, Mentions |
-| MS Teams | 🚧 Planned | - | - | - |
+| MS Teams | ✅ Complete | Bot Framework | Bot Framework API | Messages, Adaptive Cards, Threads |
 | Outlook | 🚧 Planned | - | - | - |
 | Generic Webhook | ✅ Complete | HTTP POST | - | Basic messaging |
 

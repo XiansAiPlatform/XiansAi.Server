@@ -84,6 +84,25 @@ public static class AppWebhookEndpoints
                     Configure this URL in your Slack App's Interactivity settings.
                     """
             });
+
+        // Microsoft Teams Bot Framework endpoint
+        appsGroup.MapPost("/msteams/messaging/{integrationId}", HandleTeamsMessagingWebhook)
+            .WithName("HandleTeamsMessagingWebhook")
+            .AllowAnonymous()
+            .WithOpenApi(operation => new(operation)
+            {
+                Summary = "Handle Microsoft Teams Bot Framework Webhook",
+                Description = """
+                    Dedicated endpoint for Microsoft Teams Bot Framework activities.
+                    
+                    Handles:
+                    - Message activities
+                    - Conversation updates
+                    - Invoke activities (adaptive card actions)
+                    
+                    Configure this URL as the messaging endpoint in Azure Bot Service.
+                    """
+            });
     }
 
     /// <summary>
@@ -132,11 +151,11 @@ public static class AppWebhookEndpoints
             httpContext.Request.Body.Position = 0;
 
             // Route to platform-specific handler
-            // Note: For Slack, use the dedicated /slack/events/{integrationId} endpoint instead
+            // Note: For Slack and Teams, use the dedicated endpoints instead
             return platformId.ToLowerInvariant() switch
             {
                 "slack" => Results.BadRequest("Use /api/apps/slack/events/{integrationId} for Slack webhooks"),
-                "msteams" => await ProcessTeamsWebhookAsync(integration, rawBody, httpContext, messageService, logger, cancellationToken),
+                "msteams" => Results.BadRequest("Use /api/apps/msteams/messaging/{integrationId} for Teams webhooks"),
                 "outlook" => await ProcessOutlookWebhookAsync(integration, rawBody, httpContext, messageService, logger, cancellationToken),
                 "webhook" => await ProcessGenericWebhookAsync(integration, rawBody, httpContext, messageService, logger, cancellationToken),
                 _ => Results.BadRequest($"Unsupported platform: {platformId}")
@@ -227,17 +246,48 @@ public static class AppWebhookEndpoints
 
     #region Teams Processing
 
-    private static Task<IResult> ProcessTeamsWebhookAsync(
-        AppIntegration integration,
-        string rawBody,
+    /// <summary>
+    /// Dedicated Microsoft Teams Bot Framework handler
+    /// </summary>
+    private static async Task<IResult> HandleTeamsMessagingWebhook(
+        string integrationId,
         HttpContext httpContext,
-        IMessageService messageService,
-        ILogger logger,
+        [FromServices] IAppIntegrationService integrationService,
+        [FromServices] ITeamsWebhookHandler teamsHandler,
+        [FromServices] ILogger<AppWebhookEndpointsLogger> logger,
         CancellationToken cancellationToken)
     {
-        // TODO: Implement Teams Bot Framework webhook processing
-        logger.LogInformation("Teams webhook processing not yet implemented");
-        return Task.FromResult(Results.Ok());
+        try
+        {
+            logger.LogInformation("Received Teams messaging webhook for integration {IntegrationId}", integrationId);
+
+            var integration = await integrationService.GetIntegrationEntityByIdAsync(integrationId);
+
+            if (integration == null)
+            {
+                logger.LogWarning("Integration {IntegrationId} not found", integrationId);
+                return Results.NotFound("Integration not found");
+            }
+
+            if (!integration.IsEnabled)
+            {
+                logger.LogWarning("Integration {IntegrationId} is disabled", integrationId);
+                return Results.StatusCode(503);
+            }
+
+            // Read request body
+            httpContext.Request.EnableBuffering();
+            using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8, leaveOpen: true);
+            var rawBody = await reader.ReadToEndAsync(cancellationToken);
+            httpContext.Request.Body.Position = 0;
+
+            return await teamsHandler.ProcessActivityWebhookAsync(integration, rawBody, httpContext, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error processing Teams messaging webhook");
+            return Results.Problem("An error occurred", statusCode: 500);
+        }
     }
 
     #endregion

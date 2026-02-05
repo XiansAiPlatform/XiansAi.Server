@@ -24,6 +24,7 @@ public static class AppsApiConfiguration
         
         // Register platform-specific webhook handlers
         builder.Services.AddScoped<ISlackWebhookHandler, SlackWebhookHandler>();
+        builder.Services.AddScoped<ITeamsWebhookHandler, TeamsWebhookHandler>();
         
         // Register background service for routing outbound messages
         builder.Services.AddHostedService<AppMessageRouterService>();
