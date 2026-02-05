@@ -8,6 +8,7 @@ using Features.WebApi.Scripts;
 using Features.UserApi.Configuration;
 using Features.PublicApi.Configuration;
 using Features.AdminApi.Configuration;
+using Features.AppsApi.Configuration;
 
 /// <summary>
 /// Entry point class for the XiansAi.Server application.
@@ -171,6 +172,7 @@ public class Program
                 builder.AddWebApiAuth();
                 builder.AddAdminApiServices();
                 builder.AddAdminApiAuth();
+                builder.AddAppsApiServices();
                 break;
             
             case ServiceType.LibApi:
@@ -193,6 +195,7 @@ public class Program
                 builder.AddWebApiAuth();
                 builder.AddAdminApiServices();
                 builder.AddAdminApiAuth();
+                builder.AddAppsApiServices();
                 builder.AddUserApiServices();
                 builder.AddUserApiAuth();
                 builder.AddPublicApiServices();
@@ -246,6 +249,7 @@ public class Program
                 app.UseAdminApiMiddleware();
                 app.UseWebApiEndpoints();
                 app.UseAdminApiEndpoints();
+                app.UseAppsApiEndpoints();
                 break;
             
             case ServiceType.LibApi:
@@ -264,6 +268,7 @@ public class Program
                 app.UseUserApiEndpoints();
                 app.UseAdminApiMiddleware();
                 app.UseAdminApiEndpoints();
+                app.UseAppsApiEndpoints();
                 app.UsePublicApiEndpoints();
                 break;
         }
