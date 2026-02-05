@@ -24,15 +24,22 @@ public static class KnowledgeEndpoints
         knowledgeGroup.MapGet("/latest", async (
             [FromQuery] string name,
             [FromQuery] string agent,
+            [FromQuery] string? activationName,
             [FromServices] IKnowledgeService service) =>
         {
-            _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}", name, agent);
-            var result = await service.GetLatestByNameAsync(name, agent);
+            _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}, activationName: {activationName}", 
+                name, agent, activationName);
+            
+            var result = await service.GetLatestByNameAsync(name, agent, activationName);
             return result.ToHttpResult();
         })
         .WithOpenApi(operation => {
             operation.Summary = "Get latest knowledge";
-            operation.Description = "Retrieves the most recent knowledge for the specified name and agent";
+            operation.Description = "Retrieves the most recent knowledge for the specified name and agent. " +
+                "If activationName is provided, uses fallback logic: " +
+                "1) Try tenantId + agent + activationName, " +
+                "2) If not found, try tenantId + agent (any or no activationName), " +
+                "3) If not found, try system-scoped with agent.";
             return operation;
         });
 
@@ -55,21 +62,23 @@ public static class KnowledgeEndpoints
             [FromBody] KnowledgeCreateRequest request,
             [FromServices] IKnowledgeService endpoint) =>
         {
-            _logger.LogInformation("Creating new knowledge with name: {Name}, agent: {Agent}", request.Name, request.Agent);
+            _logger.LogInformation("Creating new knowledge with name: {Name}, agent: {Agent}, activationName: {ActivationName}", 
+                request.Name, request.Agent, request.ActivationName);
             var knowledgeRequest = new KnowledgeRequest 
             {
                 Name = request.Name,
                 Content = request.Content,
                 Agent = request.Agent,
                 Type = request.Type,
-                SystemScoped = request.SystemScoped
+                SystemScoped = request.SystemScoped,
+                ActivationName = request.ActivationName
             };
             var result = await endpoint.Create(knowledgeRequest);
             return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
         })
         .WithOpenApi(operation => {
             operation.Summary = "Create knowledge";
-            operation.Description = "Creates a new knowledge entity";
+            operation.Description = "Creates a new knowledge entity with optional activation name";
             return operation;
         });
 
@@ -116,4 +125,5 @@ public record KnowledgeCreateRequest
     public required string Agent { get; init; }
     public required string Type { get; init; }
     public bool SystemScoped { get; init; } = false;
+    public string? ActivationName { get; init; }
 } 

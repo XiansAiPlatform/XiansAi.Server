@@ -242,7 +242,9 @@ public class UserRepository : IUserRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _users.Find(x => x.Email == email).FirstOrDefaultAsync();
+            // Normalize email to lowercase (emails are stored in lowercase in DB)
+            var normalizedEmail = email.ToLowerInvariant();
+            return await _users.Find(x => x.Email == normalizedEmail).FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserEmail");
     }
 

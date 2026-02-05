@@ -218,6 +218,9 @@ public class Program
 
         // Verify critical configuration
         ValidateConfiguration(app.Configuration);
+
+        // Validate Temporal connection on startup
+        await ValidateTemporalConnection(app.Services, app.Configuration);
         
         // Synchronize MongoDB indexes & seed default data
         using var scope = app.Services.CreateScope();
@@ -394,6 +397,31 @@ public class Program
         }
         
         _logger.LogInformation("Configuration loaded successfully for {ConfigName}", configName);
+    }
+
+    /// <summary>
+    /// Validates Temporal connection on startup.
+    /// </summary>
+    private static async Task ValidateTemporalConnection(IServiceProvider services, IConfiguration configuration)
+    {
+        try
+        {
+            using var scope = services.CreateScope();
+            var temporalClientService = scope.ServiceProvider.GetRequiredService<Shared.Utils.Temporal.ITemporalClientService>();
+            
+            // Get default tenant ID from configuration
+            var defaultTenantId = configuration["Tenants:default:TenantId"] ?? "default";
+            
+            // Attempt to connect - this validates the connection
+            await temporalClientService.GetClientAsync(defaultTenantId);
+            
+            _logger.LogInformation("Temporal connection validated successfully for tenant {TenantId}", defaultTenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to validate Temporal connection during startup. Workflows may fail until Temporal is available.");
+            // Don't throw - allow server to start even if Temporal is temporarily unavailable
+        }
     }
 
     /// <summary>

@@ -25,6 +25,12 @@ public class DocumentDto<T>
     [JsonPropertyName("workflowId")]
     public string? WorkflowId { get; set; }
 
+    [JsonPropertyName("participantId")]
+    public string? ParticipantId { get; set; }
+
+    [JsonPropertyName("activationName")]
+    public string? ActivationName { get; set; }
+
     [JsonPropertyName("type")]
     public string? Type { get; set; }
 
@@ -72,6 +78,12 @@ public class DocumentQuery
 
     [JsonPropertyName("key")]
     public string? Key { get; set; }
+
+    [JsonPropertyName("participantId")]
+    public string? ParticipantId { get; set; }
+
+    [JsonPropertyName("activationName")]
+    public string? ActivationName { get; set; }
 
     [JsonPropertyName("metadataFilters")]
     public Dictionary<string, object>? MetadataFilters { get; set; }

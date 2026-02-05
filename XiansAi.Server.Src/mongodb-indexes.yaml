@@ -9,6 +9,11 @@ agents:
   - name: tenant_-1
     keys:
       tenant: desc
+  - name: tenant_1_created_at_-1
+    keys:
+      tenant: asc
+      created_at: desc
+    background: true
   - name: owner_access_1
     keys:
       owner_access: asc
@@ -179,6 +184,13 @@ logs:
       tenant_id: asc
       agent: asc
       participant_id: asc
+  - name: tenant_id_1_agent_1_participant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      agent: asc
+      participant_id: asc
+      created_at: desc
+    background: true
   - name: tenant_id_1_workflow_type_1_level_1
     keys:
       tenant_id: asc
@@ -269,13 +281,14 @@ knowledge:
       activation_name: asc
     background: true
     sparse: true
-  - name: name_1_version_1_agent_1_tenant_id_1_activation_name_1
+  - name: name_1_version_1_agent_1_tenant_id_1_activation_name_1_system_scoped_1
     keys:
       name: asc
       version: asc
       agent: asc
       tenant_id: asc
       activation_name: asc
+      system_scoped: asc
     unique: true
     sparse: true
     background: true
@@ -307,22 +320,108 @@ documents:
     background: true
     sparse: true
 
-usage_events:
+# DEPRECATED: Old nested design - kept for reference only
+# usage_events:
+#   - name: idx_tenant_date
+#     keys:
+#       tenant_id: asc
+#       created_at: desc
+#   - name: idx_tenant_participant_date
+#     keys:
+#       tenant_id: asc
+#       participant_id: asc
+#       created_at: desc
+
+# CURRENT: Flattened metrics design - optimized for query performance
+usage_metrics:
   - name: idx_tenant_date
     keys:
       tenant_id: asc
       created_at: desc
     background: true
-  - name: idx_tenant_user_date
+  - name: idx_tenant_category_type_date
     keys:
       tenant_id: asc
-      user_id: asc
+      category: asc
+      type: asc
       created_at: desc
     background: true
-  - name: usage_events_ttl
+  - name: idx_tenant_agent_date
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      created_at: desc
+    background: true
+  - name: idx_tenant_participant_date
+    keys:
+      tenant_id: asc
+      participant_id: asc
+      created_at: desc
+    background: true
+  - name: idx_tenant_agent_category_date
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      category: asc
+      created_at: desc
+  # Admin Metrics Endpoints - Optimized indexes
+  - name: idx_admin_stats_query
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      created_at: asc
+      category: asc
+      type: asc
+      activation_name: asc
+    background: true
+  - name: idx_admin_timeseries_query
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      category: asc
+      type: asc
+      created_at: asc
+    background: true
+  - name: idx_admin_categories_discovery
+    keys:
+      tenant_id: asc
+      category: asc
+      type: asc
+    background: true
+  - name: idx_activation_metrics
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      activation_name: asc
+      created_at: asc
+    background: true
+    background: true
+  - name: idx_tenant_participant_category_date
+    keys:
+      tenant_id: asc
+      participant_id: asc
+      category: asc
+      created_at: desc
+    background: true
+  - name: idx_workflow_type_category
+    keys:
+      tenant_id: asc
+      workflow_type: asc
+      category: asc
+      created_at: desc
+    background: true
+  - name: idx_activation_category_date
+    keys:
+      tenant_id: asc
+      activation_name: asc
+      category: asc
+      created_at: desc
+    background: true
+    sparse: true
+  - name: usage_metrics_ttl
     keys:
       created_at: asc
-    expire_after: 90d             
+    expire_after: 90d
     background: true
 
 activations:
@@ -344,5 +443,16 @@ activations:
     background: true
   - name: created_at_-1
     keys:
+      created_at: desc
+    background: true
+  - name: tenant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      created_at: desc
+    background: true
+  - name: agent_name_1_tenant_id_1_created_at_-1
+    keys:
+      agent_name: asc
+      tenant_id: asc
       created_at: desc
     background: true

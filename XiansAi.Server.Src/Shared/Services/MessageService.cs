@@ -27,6 +27,9 @@ public class ChatOrDataRequest
     // Hint for the agent to use when processing the message
     public string? Hint { get; set; }
 
+    // Task identifier for the agent to track task execution
+    public string? TaskId { get; set; }
+
     public string? WorkflowType 
     { 
         get 
@@ -91,6 +94,7 @@ public interface IMessageService
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc");
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
     Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
+    Task<ServiceResult<bool>> DeleteMessagesByTopicAsync(string workflowId, string participantId, string? topic);
     Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null);
     Task<ServiceResult<TopicsResult>> GetTopicsByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize);
 }
@@ -289,10 +293,21 @@ public class MessageService : IMessageService
                 request.ParticipantId);
         }
 
-        //check if starts with tenantId
-        if (!request.WorkflowId!.StartsWith(_tenantContext.TenantId + ":"))
+        // WorkflowId cant start or end with ':'
+        if (request.WorkflowId!.StartsWith(':') || request.WorkflowId!.EndsWith(':'))
+        {
+            throw new Exception("WorkflowId cant start or end with ':'");
+        }
+
+        //check if workflowId contains colons but doesn't start with tenantId
+        if (request.WorkflowId!.Contains(':') && !request.WorkflowId.StartsWith(_tenantContext.TenantId + ":"))
         {
             throw new Exception("WorkflowId must start with tenantId");
+        }
+        //if workflowId doesn't contain colons, add tenantId to the beginning
+        if (!string.IsNullOrEmpty(request.WorkflowId) && !request.WorkflowId!.Contains(':'))
+        {
+            request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowType}:{request.WorkflowId}";
         }
 
         _logger.LogInformation("Processing inbound message for WorkflowId `{WorkflowId}` from participant {ParticipantId}",
@@ -350,6 +365,7 @@ public class MessageService : IMessageService
                  request.RequestId,
                  request.Scope,
                  request.Hint,
+                 request.TaskId,
                  request.Data,
                  Type = messageType.ToString(),
                  request.Authorization
@@ -394,6 +410,7 @@ public class MessageService : IMessageService
             ParticipantId = request.ParticipantId,
             TenantId = _tenantContext.TenantId,
             Hint = request.Hint,
+            TaskId = request.TaskId,
             Scope = normalizedScope,  // Use normalized scope
             RequestId = request.RequestId,
             CreatedAt = DateTime.UtcNow,
@@ -466,6 +483,43 @@ public class MessageService : IMessageService
             _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}", 
                 workflowId, participantId);
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteMessagesByTopicAsync(string workflowId, string participantId, string? topic)
+    {
+        try
+        {
+            _logger.LogInformation("Attempting to delete messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                workflowId, participantId, topic ?? "null");
+
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
+            {
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
+                    workflowId, participantId);
+                return ServiceResult<bool>.BadRequest("WorkflowId and ParticipantId are required");
+            }
+
+            // Delete messages by workflow, participant, and scope (topic)
+            var result = await _conversationRepository.DeleteMessagesByWorkflowParticipantAndScopeAsync(
+                _tenantContext.TenantId, workflowId, participantId, topic);
+
+            if (!result)
+            {
+                _logger.LogWarning("Failed to delete messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                    workflowId, participantId, topic ?? "null");
+                return ServiceResult<bool>.InternalServerError("Failed to delete messages");
+            }
+
+            _logger.LogInformation("Successfully deleted messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                workflowId, participantId, topic ?? "null");
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
+                workflowId, participantId, topic ?? "null");
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting messages");
         }
     }
 

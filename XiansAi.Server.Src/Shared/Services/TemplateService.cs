@@ -83,144 +83,25 @@ public class TemplateService : ITemplateService
 
     /// <summary>
     /// Deploys a system-scoped agent template to the user's tenant by creating a replica of the agent and its flow definitions.
+    /// This is a wrapper method that uses the current tenant context.
     /// </summary>
     /// <param name="agentName">The name of the system-scoped agent to deploy.</param>
     /// <returns>A service result containing the newly created agent.</returns>
     public async Task<ServiceResult<Agent>> DeployTemplate(string agentName)
     {
-        try
+        // Validate tenant context
+        if (string.IsNullOrWhiteSpace(_tenantContext.TenantId))
         {
-            _logger.LogInformation("Deploying template agent {AgentName} for user {UserId} in tenant {TenantId}", 
-                agentName, _tenantContext.LoggedInUser, _tenantContext.TenantId);
-
-            // Validate input
-            if (string.IsNullOrWhiteSpace(agentName))
-            {
-                return ServiceResult<Agent>.BadRequest("Agent name is required");
-            }
-
-            if (string.IsNullOrWhiteSpace(_tenantContext.TenantId))
-            {
-                return ServiceResult<Agent>.BadRequest("Valid tenant context is required");
-            }
-
-            if (string.IsNullOrWhiteSpace(_tenantContext.LoggedInUser))
-            {
-                return ServiceResult<Agent>.BadRequest("Valid user context is required");
-            }
-
-            // Find the system-scoped agent by name
-            var systemScopedAgents = await _agentRepository.GetSystemScopedAgentsWithDefinitionsAsync(false);
-            var templateAgent = systemScopedAgents.FirstOrDefault(a => a.Agent.Name.Equals(agentName, StringComparison.OrdinalIgnoreCase));
-
-            if (templateAgent == null)
-            {
-                _logger.LogWarning("System-scoped agent {AgentName} not found", agentName);
-                return ServiceResult<Agent>.NotFound($"System-scoped agent '{agentName}' not found");
-            }
-
-            // Check if agent already exists in user's tenant
-            var existingAgent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
-            if (existingAgent != null)
-            {
-                _logger.LogWarning("Agent {AgentName} already exists in tenant {TenantId}", agentName, _tenantContext.TenantId);
-                return ServiceResult<Agent>.Conflict($"Agent '{agentName}' already exists in your tenant. Delete it first if you want to redeploy.");
-            }
-
-            // Create a replica of the agent for the user's tenant
-            var newAgent = new Agent
-            {
-                Id = ObjectId.GenerateNewId().ToString(),
-                Name = templateAgent.Agent.Name,
-                Tenant = _tenantContext.TenantId,
-                CreatedBy = _tenantContext.LoggedInUser,
-                CreatedAt = DateTime.UtcNow,
-                SystemScoped = false, // User tenant agents are not system scoped
-                OnboardingJson = templateAgent.Agent.OnboardingJson,
-                Description = templateAgent.Agent.Description,
-                Version = templateAgent.Agent.Version,
-                Author = templateAgent.Agent.Author,
-                OwnerAccess = new List<string>(),
-                ReadAccess = new List<string>(),
-                WriteAccess = new List<string>()
-            };
-
-            // Grant owner access to the current user
-            newAgent.GrantOwnerAccess(_tenantContext.LoggedInUser);
-
-            // Create the agent
-            await _agentRepository.CreateAsync(newAgent);
-            _logger.LogInformation("Created agent replica {AgentName} with ID {AgentId} for user {UserId} in tenant {TenantId}", 
-                agentName, newAgent.Id, _tenantContext.LoggedInUser, _tenantContext.TenantId);
-
-            // Clone all flow definitions from the template
-            var clonedDefinitionsCount = 0;
-            foreach (var templateDefinition in templateAgent.Definitions)
-            {
-                var newDefinition = new FlowDefinition
-                {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    WorkflowType = templateDefinition.WorkflowType,
-                    Agent = agentName, // Keep the same agent name
-                    Name = templateDefinition.Name,
-                    Hash = templateDefinition.Hash, // Keep the same hash for consistency
-                    Source = templateDefinition.Source,
-                    Markdown = templateDefinition.Markdown,
-                    ActivityDefinitions = CloneActivityDefinitions(templateDefinition.ActivityDefinitions),
-                    ParameterDefinitions = CloneParameterDefinitions(templateDefinition.ParameterDefinitions),
-                    CreatedBy = _tenantContext.LoggedInUser,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    Tenant = _tenantContext.TenantId,
-                    SystemScoped = false // User tenant definitions are not system scoped
-                };
-
-                await _flowDefinitionRepository.CreateAsync(newDefinition);
-                clonedDefinitionsCount++;
-                
-                _logger.LogDebug("Cloned flow definition {WorkflowType} for agent {AgentName}", 
-                    templateDefinition.WorkflowType, agentName);
-            }
-
-            // Clone all system-scoped knowledge associated with the template agent
-            var systemKnowledge = await _knowledgeRepository.GetSystemScopedByAgentAsync<Knowledge>(agentName);
-            var clonedKnowledgeCount = 0;
-            
-            foreach (var templateKnowledge in systemKnowledge)
-            {
-                var newKnowledge = new Knowledge
-                {
-                    Id = ObjectId.GenerateNewId().ToString(),
-                    Name = templateKnowledge.Name,
-                    Content = templateKnowledge.Content,
-                    Type = templateKnowledge.Type,
-                    Version = templateKnowledge.Version,
-                    Agent = agentName, // Keep the same agent name
-                    TenantId = _tenantContext.TenantId, // Assign to user's tenant
-                    CreatedBy = _tenantContext.LoggedInUser,
-                    CreatedAt = DateTime.UtcNow,
-                    SystemScoped = false // User tenant knowledge is not system scoped
-                };
-
-                await _knowledgeRepository.CreateAsync(newKnowledge);
-                clonedKnowledgeCount++;
-                
-                _logger.LogDebug("Cloned knowledge {KnowledgeName} for agent {AgentName}", 
-                    templateKnowledge.Name, agentName);
-            }
-
-            _logger.LogInformation("Successfully deployed template agent {AgentName} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items for user {UserId} in tenant {TenantId}", 
-                agentName, clonedDefinitionsCount, clonedKnowledgeCount, _tenantContext.LoggedInUser, _tenantContext.TenantId);
-
-            return ServiceResult<Agent>.Success(newAgent);
+            return ServiceResult<Agent>.BadRequest("Valid tenant context is required");
         }
-        catch (Exception ex)
+
+        if (string.IsNullOrWhiteSpace(_tenantContext.LoggedInUser))
         {
-            _logger.LogError(ex, "Error deploying template agent {AgentName} for user {UserId} in tenant {TenantId}", 
-                agentName, _tenantContext.LoggedInUser, _tenantContext.TenantId);
-            return ServiceResult<Agent>.InternalServerError(
-                "An error occurred while deploying the template");
+            return ServiceResult<Agent>.BadRequest("Valid user context is required");
         }
+
+        // Delegate to the core implementation
+        return await DeployTemplateToTenant(agentName, _tenantContext.TenantId, _tenantContext.LoggedInUser, null);
     }
 
     /// <summary>
@@ -291,6 +172,11 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Deleted {Count} flow definitions for system-scoped agent {AgentName}", 
                 deletedDefinitionsCount, agentName);
 
+            // Delete all system-scoped knowledge associated with this agent
+            var deletedKnowledgeCount = await _knowledgeRepository.DeleteAllByAgentAsync<Knowledge>(agentName, null);
+            _logger.LogInformation("Deleted {Count} knowledge items for system-scoped agent {AgentName}", 
+                deletedKnowledgeCount, agentName);
+
             // Delete the agent (permission checks in DeleteAsync will pass for SysAdmin)
             var success = await _agentRepository.DeleteAsync(agent.Id, _tenantContext.LoggedInUser, _tenantContext.UserRoles.ToArray());
             
@@ -300,8 +186,8 @@ public class TemplateService : ITemplateService
                 return ServiceResult<bool>.InternalServerError($"Failed to delete system-scoped agent '{agentName}'");
             }
 
-            _logger.LogInformation("Successfully deleted system-scoped agent {AgentName} with {DefinitionsCount} flow definitions", 
-                agentName, deletedDefinitionsCount);
+            _logger.LogInformation("Successfully deleted system-scoped agent {AgentName} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items", 
+                agentName, deletedDefinitionsCount, deletedKnowledgeCount);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -315,6 +201,8 @@ public class TemplateService : ITemplateService
 
     /// <summary>
     /// Deploys a system-scoped agent template to a specific tenant by creating a replica of the agent and its flow definitions.
+    /// Knowledge is NOT cloned - system-scoped knowledge remains accessible to all tenants.
+    /// This is the core implementation used by both WebAPI and AdminAPI.
     /// </summary>
     /// <param name="agentName">The name of the system-scoped agent to deploy.</param>
     /// <param name="tenantId">The tenant ID to deploy the template to.</param>
@@ -389,6 +277,7 @@ public class TemplateService : ITemplateService
                 agentName, newAgent.Id, tenantId, createdBy);
 
             // Clone all flow definitions from the template
+            var clonedDefinitionsCount = 0;
             foreach (var templateDefinition in templateAgent.Definitions)
             {
                 var newDefinition = new FlowDefinition
@@ -410,40 +299,14 @@ public class TemplateService : ITemplateService
                 };
 
                 await _flowDefinitionRepository.CreateAsync(newDefinition);
+                clonedDefinitionsCount++;
                 
                 _logger.LogDebug("Cloned flow definition {WorkflowType} for agent {AgentName}", 
                     templateDefinition.WorkflowType, agentName);
             }
 
-            // Clone all system-scoped knowledge associated with the template agent
-            // var systemKnowledge = await _knowledgeRepository.GetSystemScopedByAgentAsync<Knowledge>(agentName);
-            // var clonedKnowledgeCount = 0;
-            
-            // foreach (var templateKnowledge in systemKnowledge)
-            // {
-            //     var newKnowledge = new Knowledge
-            //     {
-            //         Id = ObjectId.GenerateNewId().ToString(),
-            //         Name = templateKnowledge.Name,
-            //         Content = templateKnowledge.Content,
-            //         Type = templateKnowledge.Type,
-            //         Version = templateKnowledge.Version,
-            //         Agent = agentName, // Keep the same agent name
-            //         TenantId = tenantId, // Assign to target tenant
-            //         CreatedBy = createdBy,
-            //         CreatedAt = DateTime.UtcNow,
-            //         SystemScoped = false // User tenant knowledge is not system scoped
-            //     };
-
-            //     await _knowledgeRepository.CreateAsync(newKnowledge);
-            //     clonedKnowledgeCount++;
-                
-            //     _logger.LogDebug("Cloned knowledge {KnowledgeName} for agent {AgentName}", 
-            //         templateKnowledge.Name, agentName);
-            // }
-
-            // _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items by user {CreatedBy}", 
-            //     agentName, tenantId, clonedDefinitionsCount, clonedKnowledgeCount, createdBy);
+            _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions by user {CreatedBy}", 
+                agentName, tenantId, clonedDefinitionsCount, createdBy);
 
             return ServiceResult<Agent>.Success(newAgent);
         }

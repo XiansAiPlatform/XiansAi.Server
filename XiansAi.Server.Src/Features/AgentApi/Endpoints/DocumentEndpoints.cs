@@ -32,11 +32,11 @@ public static class DocumentEndpoints
             .RequiresCertificate();
 
         documentGroup.MapPost("/save", async (
-            [FromBody] JsonElement requestElement,
+            [FromBody] DocumentRequest<JsonElement> request,
             [FromServices] IDocumentService service) =>
         {
             _logger.LogInformation("Saving document");
-            var result = await service.SaveAsync(requestElement);
+            var result = await service.SaveAsync(request);
             return result.ToHttpResult();
         })
         .WithOpenApi(operation => {
@@ -88,11 +88,11 @@ public static class DocumentEndpoints
         });
 
         documentGroup.MapPost("/update", async (
-            [FromBody] JsonElement documentElement,
+            [FromBody] DocumentDto<JsonElement> document,
             [FromServices] IDocumentService service) =>
         {
             _logger.LogInformation("Updating document");
-            var result = await service.UpdateAsync(documentElement);
+            var result = await service.UpdateAsync(document);
             return result.ToHttpResult();
         })
         .WithOpenApi(operation => {

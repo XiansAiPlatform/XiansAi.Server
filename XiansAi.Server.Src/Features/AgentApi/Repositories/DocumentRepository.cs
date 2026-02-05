@@ -15,11 +15,13 @@ public interface IDocumentRepository
     Task<Document?> GetByKeyAsync(string type, string key, string? tenantId);
     Task<List<Document>> QueryAsync(string? tenantId, DocumentQueryFilter filter);
     Task<long> CountAsync(string? tenantId, DocumentQueryFilter filter);
-    Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId);
+    Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId, string? activationName = null);
+    Task<List<string>> GetDistinctActivationNamesAsync(string? tenantId, string? agentId);
     Task<bool> UpdateAsync(Document document);
     Task<bool> DeleteAsync(string id, string? tenantId);
     Task<int> DeleteManyAsync(IEnumerable<string> ids, string? tenantId);
     Task<int> DeleteManyByIdsAndAgentsAsync(IEnumerable<string> ids, IEnumerable<string> agentNames, string? tenantId);
+    Task<int> DeleteByFilterAsync(string? tenantId, DocumentQueryFilter filter);
     Task<bool> ExistsAsync(string id, string? tenantId);
     Task<bool> ExistsByKeyAsync(string type, string key, string? tenantId);
 }
@@ -30,6 +32,8 @@ public class DocumentQueryFilter
     public List<string>? AgentIds { get; set; }
     public string? Type { get; set; }
     public string? Key { get; set; }
+    public string? ParticipantId { get; set; }
+    public string? ActivationName { get; set; }
     public Dictionary<string, object>? MetadataFilters { get; set; }
     public int Limit { get; set; } = 100;
     public int Skip { get; set; } = 0;
@@ -126,6 +130,7 @@ public class DocumentRepository : IDocumentRepository
             {
                 "UpdatedAt" => "updated_at",
                 "CreatedAt" => "created_at",
+                null => "created_at",
                 _ => "created_at"
             };
 
@@ -188,6 +193,18 @@ public class DocumentRepository : IDocumentRepository
             filter &= builder.Eq(d => d.Key, queryFilter.Key);
         }
 
+        // Add participant filter
+        if (!string.IsNullOrEmpty(queryFilter.ParticipantId))
+        {
+            filter &= builder.Eq(d => d.ParticipantId, queryFilter.ParticipantId);
+        }
+
+        // Add activation name filter
+        if (!string.IsNullOrEmpty(queryFilter.ActivationName))
+        {
+            filter &= builder.Eq(d => d.ActivationName, queryFilter.ActivationName);
+        }
+
         // Add content type filter
         if (!string.IsNullOrEmpty(queryFilter.ContentType))
         {
@@ -238,7 +255,53 @@ public class DocumentRepository : IDocumentRepository
         }
     }
 
-    public async Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId)
+    public async Task<List<string>> GetDistinctTypesAsync(string? tenantId, string? agentId, string? activationName = null)
+    {
+        try
+        {
+            var builder = Builders<Document>.Filter;
+            var filter = builder.Empty;
+
+            // Add tenant filter if provided
+            if (!string.IsNullOrEmpty(tenantId))
+            {
+                filter &= builder.Eq(d => d.TenantId, tenantId);
+            }
+
+            // Add agent filter if provided
+            if (!string.IsNullOrEmpty(agentId))
+            {
+                filter &= builder.Eq(d => d.AgentId, agentId);
+            }
+
+            // Add activation name filter if provided
+            if (!string.IsNullOrEmpty(activationName))
+            {
+                filter &= builder.Eq(d => d.ActivationName, activationName);
+            }
+
+            // Use MongoDB's Distinct operation for efficiency
+            var distinctTypes = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.DistinctAsync<string>("type", filter),
+                _logger);
+
+            var types = await distinctTypes.ToListAsync();
+            
+            // Filter out null/empty and sort
+            return types
+                .Where(t => !string.IsNullOrEmpty(t))
+                .OrderBy(t => t)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting distinct document types for tenant {TenantId}, agent {AgentId}", 
+                tenantId, agentId);
+            throw;
+        }
+    }
+
+    public async Task<List<string>> GetDistinctActivationNamesAsync(string? tenantId, string? agentId)
     {
         try
         {
@@ -258,21 +321,21 @@ public class DocumentRepository : IDocumentRepository
             }
 
             // Use MongoDB's Distinct operation for efficiency
-            var distinctTypes = await MongoRetryHelper.ExecuteWithRetryAsync(
-                async () => await _documents.DistinctAsync<string>("type", filter),
+            var distinctActivationNames = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.DistinctAsync<string>("activation_name", filter),
                 _logger);
 
-            var types = await distinctTypes.ToListAsync();
+            var activationNames = await distinctActivationNames.ToListAsync();
             
             // Filter out null/empty and sort
-            return types
-                .Where(t => !string.IsNullOrEmpty(t))
-                .OrderBy(t => t)
+            return activationNames
+                .Where(a => !string.IsNullOrEmpty(a))
+                .OrderBy(a => a)
                 .ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting distinct document types for tenant {TenantId}, agent {AgentId}", 
+            _logger.LogError(ex, "Error getting distinct activation names for tenant {TenantId}, agent {AgentId}", 
                 tenantId, agentId);
             throw;
         }
@@ -394,6 +457,29 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting multiple documents by IDs and agents");
+            throw;
+        }
+    }
+
+    public async Task<int> DeleteByFilterAsync(string? tenantId, DocumentQueryFilter filter)
+    {
+        try
+        {
+            var mongoFilter = BuildFilter(tenantId, filter);
+            
+            var result = await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.DeleteManyAsync(mongoFilter),
+                _logger);
+
+            _logger.LogInformation("Deleted {DeletedCount} documents matching filter - AgentId: {AgentId}, Type: {Type}, ActivationName: {ActivationName}", 
+                result.DeletedCount, filter.AgentId, filter.Type, filter.ActivationName);
+
+            return (int)result.DeletedCount;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting documents by filter - AgentId: {AgentId}, Type: {Type}", 
+                filter.AgentId, filter.Type);
             throw;
         }
     }

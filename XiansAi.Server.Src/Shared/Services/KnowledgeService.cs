@@ -1,4 +1,5 @@
 using MongoDB.Bson;
+using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -21,6 +22,8 @@ public class KnowledgeRequest
     public required string Agent { get; set; }
     [JsonPropertyName("system_scoped")]
     public bool SystemScoped { get; set; } = false;
+    [JsonPropertyName("activation_name")]
+    public string? ActivationName { get; set; }
 }
 
 public class DeleteAllVersionsRequest
@@ -31,15 +34,51 @@ public class DeleteAllVersionsRequest
     public required string Agent { get; set; }
 }
 
+/// <summary>
+/// Represents grouped knowledge items for a single knowledge name
+/// </summary>
+public class KnowledgeGroup
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+    
+    /// <summary>
+    /// Latest system-scoped knowledge (TenantId is null, SystemScoped is true)
+    /// </summary>
+    [JsonPropertyName("system_scoped")]
+    public Knowledge? SystemScoped { get; set; }
+    
+    /// <summary>
+    /// Latest tenant-scoped knowledge where ActivationName is null
+    /// </summary>
+    [JsonPropertyName("tenant_default")]
+    public Knowledge? TenantDefault { get; set; }
+    
+    /// <summary>
+    /// Latest tenant-scoped knowledge for each unique ActivationName
+    /// </summary>
+    [JsonPropertyName("activations")]
+    public List<Knowledge> Activations { get; set; } = new();
+}
+
+/// <summary>
+/// Response containing all knowledge grouped by name
+/// </summary>
+public class GroupedKnowledgeResponse
+{
+    [JsonPropertyName("groups")]
+    public List<KnowledgeGroup> Groups { get; set; } = new();
+}
+
 public interface IKnowledgeService
 {
-    Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent);
+    Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent, string? activationName = null);
     Task<ServiceResult<Knowledge>> GetLatestSystemByNameAsync(string name, string agent);
     Task<IResult> GetById(string id);
     Task<IResult> GetVersions(string name, string? agent);
     Task<IResult> DeleteById(string id);
     Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request);
-    Task<IResult> GetLatestAll(string? scope = null);
+    Task<IResult> GetLatestAll(string agent);
     Task<IResult> Create(KnowledgeRequest request);
     Task<IResult> GetLatestByAgent(string agent);
     
@@ -49,7 +88,7 @@ public interface IKnowledgeService
     Task<List<Knowledge>> GetVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
     Task<bool> DeleteByIdForTenantAsync(string id, string tenantId);
     Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
-    Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string tenantId, string createdBy, string? agentName = null, string? version = null);
+    Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false);
     Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, string? version = null);
 }
 
@@ -193,8 +232,17 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request)
     {
-        // First, get the latest knowledge to check if it's system-scoped
-        var existingKnowledge = await _knowledgeRepository.GetLatestByNameAsync<Knowledge>(request.Name, request.Agent, _tenantContext.TenantId);
+        // First, try to get tenant-scoped knowledge
+        var existingKnowledge = string.IsNullOrEmpty(_tenantContext.TenantId) 
+            ? null 
+            : await _knowledgeRepository.GetLatestByNameAndTenantAsync<Knowledge>(
+                request.Name, request.Agent, _tenantContext.TenantId);
+        
+        // If not found, try system-scoped
+        if (existingKnowledge == null)
+        {
+            existingKnowledge = await _knowledgeRepository.GetLatestSystemByNameAsync<Knowledge>(request.Name, request.Agent);
+        }
         
         if (existingKnowledge == null)
             return Results.NotFound("Knowledge not found");
@@ -240,62 +288,154 @@ public class KnowledgeService : IKnowledgeService
         return Results.Ok(new { message = "All versions deleted" });
     }
 
-    public async Task<IResult> GetLatestAll(string? scope = null)
+    public async Task<IResult> GetLatestAll(string agent)
     {
-        var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
-        var agentNames = agents.Select(a => a.Name).ToList();
-
-        List<Knowledge> knowledge;
-        
-        // Filter by scope if specified
-        if (string.Equals(scope, "System", StringComparison.OrdinalIgnoreCase))
-        {
-            // Get only system-scoped knowledge (TenantId is null and SystemScoped is true)
-            knowledge = await _knowledgeRepository.GetUniqueLatestSystemScopedAsync<Knowledge>(agentNames);
-        }
-        else if (string.Equals(scope, "Tenant", StringComparison.OrdinalIgnoreCase))
-        {
-            // Get only tenant-scoped knowledge (TenantId matches current tenant)
-            knowledge = await _knowledgeRepository.GetUniqueLatestTenantScopedAsync<Knowledge>(_tenantContext.TenantId, agentNames);
-        }
-        else
-        {
-            // Default: get all knowledge (both system and tenant scoped)
-            knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId, agentNames);
-        }
-
-        _logger.LogInformation("Found {Count} knowledge items for scope: {Scope}", knowledge.Count, scope ?? "all");
-
+        // Validate that the user has access to this agent
         var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
-
-        foreach (var item in knowledge)
+        
+        if (!isSysAdmin)
         {
-            // System-scoped knowledge can only be edited by system admins
-            if (item.SystemScoped)
+            var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+            var agentNames = agents.Select(a => a.Name).ToList();
+            
+            if (!agentNames.Contains(agent, StringComparer.OrdinalIgnoreCase))
             {
-                item.PermissionLevel = isSysAdmin ? "edit" : "read";
-            }
-            // Tenant-scoped knowledge can be edited if user has agent permission
-            else if (!string.IsNullOrWhiteSpace(item.Agent) &&
-                agentNames.Contains(item.Agent, StringComparer.OrdinalIgnoreCase))
-            {
-                item.PermissionLevel = "edit";
-            }
-            else
-            {
-                item.PermissionLevel = "read";
+                _logger.LogWarning("Unauthorized access attempt to get knowledge for agent {Agent} by user {UserId}",
+                    agent, _tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { error = "Forbidden", message = "You do not have permission to access knowledge for this agent" },
+                    statusCode: StatusCodes.Status403Forbidden);
             }
         }
-        return Results.Ok(knowledge);
+
+        // Get system-scoped knowledge (TenantId is null and SystemScoped is true) for this agent only
+        var systemScopedKnowledge = await _knowledgeRepository.GetUniqueLatestSystemScopedAsync<Knowledge>(new List<string> { agent });
+        
+        // Get tenant-scoped knowledge grouped by Name+Agent+ActivationName for this agent only
+        var tenantScopedKnowledge = await _knowledgeRepository.GetUniqueLatestTenantScopedByActivationAsync<Knowledge>(
+            _tenantContext.TenantId, new List<string> { agent });
+
+        // Build grouped response
+        // Collect all unique knowledge names from both system and tenant scoped
+        var allNames = systemScopedKnowledge.Select(k => k.Name)
+            .Union(tenantScopedKnowledge.Select(k => k.Name))
+            .Distinct()
+            .ToList();
+
+        var groups = new List<KnowledgeGroup>();
+
+        foreach (var name in allNames)
+        {
+            var group = new KnowledgeGroup { Name = name };
+
+            // 1. System-scoped: Latest where TenantId is null AND SystemScoped is true
+            var systemItem = systemScopedKnowledge
+                .Where(k => k.Name == name)
+                .OrderByDescending(k => k.CreatedAt)
+                .FirstOrDefault();
+            
+            if (systemItem != null)
+            {
+                systemItem.PermissionLevel = isSysAdmin ? "edit" : "read";
+                group.SystemScoped = systemItem;
+            }
+
+            // Get tenant-scoped items for this name
+            var tenantItems = tenantScopedKnowledge
+                .Where(k => k.Name == name)
+                .ToList();
+
+            // 2. Tenant default: Latest where ActivationName is null
+            var tenantDefault = tenantItems
+                .Where(k => string.IsNullOrEmpty(k.ActivationName))
+                .OrderByDescending(k => k.CreatedAt)
+                .FirstOrDefault();
+            
+            if (tenantDefault != null)
+            {
+                tenantDefault.PermissionLevel = GetPermissionLevel(tenantDefault, isSysAdmin, agent);
+                group.TenantDefault = tenantDefault;
+            }
+
+            // 3. Activations: All unique latest where ActivationName is not null
+            var activations = tenantItems
+                .Where(k => !string.IsNullOrEmpty(k.ActivationName))
+                .ToList();
+            
+            foreach (var activation in activations)
+            {
+                activation.PermissionLevel = GetPermissionLevel(activation, isSysAdmin, agent);
+            }
+            group.Activations = activations;
+
+            groups.Add(group);
+        }
+
+        _logger.LogInformation("Found {Count} knowledge groups for agent {Agent}", groups.Count, agent);
+
+        var response = new GroupedKnowledgeResponse { Groups = groups };
+        return Results.Ok(response);
     }
 
-    public async Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent)
+    private static string GetPermissionLevel(Knowledge item, bool isSysAdmin, string agentName)
     {
-        var knowledge = await _knowledgeRepository.GetLatestByNameAsync<Knowledge>(name, agent, _tenantContext.TenantId);
-        if (knowledge == null)
-            return ServiceResult<Knowledge>.NotFound("Knowledge not found");
+        // System-scoped knowledge can only be edited by system admins
+        if (item.SystemScoped)
+        {
+            return isSysAdmin ? "edit" : "read";
+        }
+        // Tenant-scoped knowledge can be edited if user has agent permission
+        if (!string.IsNullOrWhiteSpace(item.Agent) &&
+            string.Equals(item.Agent, agentName, StringComparison.OrdinalIgnoreCase))
+        {
+            return "edit";
+        }
+        return "read";
+    }
 
-        return ServiceResult<Knowledge>.Success(knowledge);
+    public async Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent, string? activationName = null)
+    {
+        if (string.IsNullOrWhiteSpace(agent))
+        {
+            return ServiceResult<Knowledge>.BadRequest("Agent parameter is required");
+        }
+
+        // Try 1: If activationName is provided, try with tenantId + agent + activationName
+        if (!string.IsNullOrEmpty(activationName))
+        {
+            var knowledge = await _knowledgeRepository.GetLatestByNameAndActivationAsync<Knowledge>(
+                name, agent, _tenantContext.TenantId, activationName);
+            
+            if (knowledge != null)
+            {
+                _logger.LogInformation("Found knowledge with tenantId, agent, and activationName");
+                return ServiceResult<Knowledge>.Success(knowledge);
+            }
+        }
+
+        // Try 2: Try with tenantId + agent (without activationName constraint)
+        if (!string.IsNullOrEmpty(_tenantContext.TenantId))
+        {
+            var knowledge = await _knowledgeRepository.GetLatestByNameAndTenantAsync<Knowledge>(
+                name, agent, _tenantContext.TenantId);
+            
+            if (knowledge != null)
+            {
+                _logger.LogInformation("Found knowledge with tenantId and agent");
+                return ServiceResult<Knowledge>.Success(knowledge);
+            }
+        }
+
+        // Try 3: Try system-scoped (tenantId = null)
+        var systemKnowledge = await _knowledgeRepository.GetLatestSystemByNameAsync<Knowledge>(name, agent);
+        
+        if (systemKnowledge != null)
+        {
+            _logger.LogInformation("Found knowledge with system scope");
+            return ServiceResult<Knowledge>.Success(systemKnowledge);
+        }
+
+        return ServiceResult<Knowledge>.NotFound("Knowledge not found");
     }
 
     public async Task<ServiceResult<Knowledge>> GetLatestSystemByNameAsync(string name, string agent)
@@ -309,6 +449,16 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> Create(KnowledgeRequest request)
     {
+        // Validate that non-system knowledge has a tenant ID
+        if (!request.SystemScoped && string.IsNullOrWhiteSpace(_tenantContext.TenantId))
+        {
+            _logger.LogError("Cannot create non-system knowledge without a tenant ID. User: {UserId}", 
+                _tenantContext.LoggedInUser);
+            return Results.Json(
+                new { error = "BadRequest", message = "Non-system knowledge must be associated with a tenant" },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         // Check system admin permission for system-scoped knowledge
         if (request.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
@@ -334,19 +484,25 @@ public class KnowledgeService : IKnowledgeService
             }
         }
 
-        // Check if the knowledge already exists with the same content hash and SystemScoped flag
+        // Check if the knowledge already exists with the same content hash, scope, and activation
         var newContentHash = HashGenerator.GenerateContentHash(request.Content + request.Type);
         var currentLatestKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
 
+        // If knowledge exists with the same version (content hash), scope, and activation, return it
+        // Note: System knowledge (tenant_id=null) and tenant knowledge (tenant_id set) can coexist
+        // with the same content because tenant_id differs. The system_scoped field in the unique index
+        // provides additional clarity and defense-in-depth data integrity.
         if (currentLatestKnowledge.IsSuccess && 
             currentLatestKnowledge.Data?.Version == newContentHash &&
-            currentLatestKnowledge.Data?.SystemScoped == request.SystemScoped)
+            currentLatestKnowledge.Data?.SystemScoped == request.SystemScoped &&
+            currentLatestKnowledge.Data?.ActivationName == request.ActivationName)
         {
-            _logger.LogInformation("Knowledge {Name} already exists with the same content hash and scope", request.Name);
+            _logger.LogInformation("Knowledge {Name} already exists with the same content hash, scope, and activation", request.Name);
             return Results.Ok(currentLatestKnowledge.Data);
         }
 
         // Create the knowledge
+        // Note: TenantId is null for system-scoped, and must be set for non-system (validated above)
         var knowledge = new Knowledge
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -358,11 +514,31 @@ public class KnowledgeService : IKnowledgeService
             CreatedBy = _tenantContext.LoggedInUser,
             TenantId = request.SystemScoped ? null : _tenantContext.TenantId,
             Agent = request.Agent,
-            SystemScoped = request.SystemScoped
+            SystemScoped = request.SystemScoped,
+            ActivationName = request.ActivationName
         };
 
-        await _knowledgeRepository.CreateAsync(knowledge);
-        return Results.Ok(knowledge);
+        try
+        {
+            await _knowledgeRepository.CreateAsync(knowledge);
+            return Results.Ok(knowledge);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            // Handle race condition where knowledge was created between our check and insert
+            _logger.LogWarning(ex, "Duplicate key error creating knowledge {Name}. Retrieving existing knowledge.", request.Name);
+            
+            // Try to get the existing knowledge again
+            var existingKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
+            if (existingKnowledge.IsSuccess && existingKnowledge.Data != null)
+            {
+                _logger.LogInformation("Returning existing knowledge {Name} after duplicate key error", request.Name);
+                return Results.Ok(existingKnowledge.Data);
+            }
+            
+            // If we still can't find it, throw the original exception
+            throw;
+        }
     }
 
     public async Task<IResult> GetLatestByAgent(string agent)
@@ -465,10 +641,12 @@ public class KnowledgeService : IKnowledgeService
         string name, 
         string content, 
         string type, 
-        string tenantId, 
+        string? tenantId, 
         string createdBy, 
         string? agentName = null, 
-        string? version = null)
+        string? version = null,
+        string? activationName = null,
+        bool systemScoped = false)
     {
         // Generate version hash if not provided
         if (string.IsNullOrWhiteSpace(version))
@@ -487,7 +665,8 @@ public class KnowledgeService : IKnowledgeService
             CreatedBy = createdBy,
             TenantId = tenantId,
             Agent = agentName,
-            SystemScoped = false
+            SystemScoped = systemScoped,
+            ActivationName = activationName
         };
 
         await _knowledgeRepository.CreateAsync(knowledge);
@@ -533,7 +712,8 @@ public class KnowledgeService : IKnowledgeService
             CreatedBy = updatedBy,
             TenantId = tenantId,
             Agent = existingKnowledge.Agent,
-            SystemScoped = false
+            SystemScoped = false,
+            ActivationName = existingKnowledge.ActivationName  // Preserve activation name
         };
 
         await _knowledgeRepository.CreateAsync(updatedKnowledge);

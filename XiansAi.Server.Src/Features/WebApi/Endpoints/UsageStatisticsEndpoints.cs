@@ -49,7 +49,7 @@ public static class UsageStatisticsEndpoints
                 var request = new UsageEventsRequest
                 {
                     TenantId = effectiveTenantId,
-                    UserId = effectiveUserId,
+                    ParticipantId = effectiveUserId,
                     AgentName = string.IsNullOrWhiteSpace(agentName) || agentName == "all" ? null : agentName,
                     Category = category,
                     MetricType = metricType,

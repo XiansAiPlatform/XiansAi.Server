@@ -14,8 +14,9 @@ public class CreateTenantRequest
 {
     public required string TenantId { get; set; }
     public required string Name { get; set; }
-    public required string Domain { get; set; }
+    public string? Domain { get; set; }
     public string? Description { get; set; }
+    public string? CreatedBy { get; set; }
     public Logo? Logo { get; set; }
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
@@ -293,6 +294,12 @@ public class TenantService : ITenantService
     {
         try
         {
+            _logger.LogInformation("CreateTenant request received - CreatedBy: {RequestCreatedBy}, Method param CreatedBy: {MethodCreatedBy}, LoggedInUser: {LoggedInUser}", 
+                request.CreatedBy, createdBy, _tenantContext.LoggedInUser);
+
+            var finalCreatedBy = request.CreatedBy ?? createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
+            _logger.LogInformation("Final CreatedBy value determined: {FinalCreatedBy}", finalCreatedBy);
+
             var tenant = new Tenant
             {
                 Id = ObjectId.GenerateNewId().ToString(),
@@ -304,20 +311,23 @@ public class TenantService : ITenantService
                 Theme = request.Theme,
                 Timezone = request.Timezone,
                 Enabled = false,
-                CreatedBy = createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set"),
+                CreatedBy = finalCreatedBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
+            _logger.LogInformation("Tenant object created with CreatedBy: {CreatedBy}", tenant.CreatedBy);
+            
             var validatedTenant = tenant.SanitizeAndValidate();
+            _logger.LogInformation("After sanitization, CreatedBy: {CreatedBy}", validatedTenant.CreatedBy);
 
 
             await _tenantRepository.CreateAsync(validatedTenant);
-            _logger.LogInformation("Created new tenant with ID {Id}", tenant.Id);
+            _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", validatedTenant.Id, validatedTenant.CreatedBy);
 
             var result = new TenantCreatedResult
             {
-                Tenant = tenant,
-                Location = $"/api/tenants/{tenant.Id}"
+                Tenant = validatedTenant,
+                Location = $"/api/tenants/{validatedTenant.Id}"
             };
             return ServiceResult<TenantCreatedResult>.Success(result);
         }

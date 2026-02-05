@@ -31,6 +31,12 @@ The workflow starts with the method identified with the attribute '[WorkflowRun]
     2. **IMPORTANT** : Subgraph names should be prefixed with SG_ to avoid name conflicts
     3. Do not use the same subgraph name for any other activity node
 
+- **Input parameters subgraph (SG_InputParameters)**:
+    1. Inside SG_InputParameters show **actual input parameter names** from the workflow's [WorkflowRun] method (e.g. sourceLink, prompt, customerId).
+    2. Use one node per parameter, e.g. Input1[sourceLink] and Input2[prompt].
+    3. If the workflow has **no input parameters**, use a single node with the label ""No parameters"" (e.g. Input1[No parameters]).
+    4. **Do NOT** use the literal text ""workflowName"" or the workflow name as the only label inside SG_InputParameters. The box must show parameter-related content or ""No parameters"".
+
 Example output: 
     flowchart TD
       classDef startEvent fill:#9acd32,stroke:#666,stroke-width:2px;
