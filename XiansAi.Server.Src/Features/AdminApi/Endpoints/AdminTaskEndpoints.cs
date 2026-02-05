@@ -55,7 +55,7 @@ public static class AdminTaskEndpoints
                 status);
             return result.ToHttpResult();
         })
-        .Produces<AdminPaginatedTasksResponse>(StatusCodes.Status200OK)
+        .Produces<AdminPaginatedTasksResponse>()
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("ListTasks")
@@ -84,10 +84,10 @@ Returns a paginated list of tasks with metadata including available actions, sta
         // Get task by workflow ID
         taskGroup.MapGet("/by-id", async Task<IResult> (
             string tenantId,
-            [FromQuery] string workflowId,
+            [FromQuery] string taskId,
             [FromServices] IAdminTaskService taskService) =>
         {
-            var result = await taskService.GetTaskById(workflowId);
+            var result = await taskService.GetTaskById(taskId);
             
             // Verify the task belongs to the specified tenant
             if (result.IsSuccess && result.Data?.TenantId != tenantId)
@@ -114,20 +114,20 @@ Returns complete task details including:
 - Initial and final work content
 - Custom metadata
 
-The workflowId should be the full Temporal workflow ID."
+Query Parameters:
+- taskId: The full Temporal workflow ID"
         });
 
         // Update draft for a task
-        taskGroup.MapPut("/{workflowId}/draft", async (
-            string tenantId,
-            string workflowId,
+        taskGroup.MapPut("/draft", async (
+            [FromQuery] string taskId,
             [FromBody] UpdateDraftRequest request,
             [FromServices] IAdminTaskService taskService) =>
         {
-            var result = await taskService.UpdateDraft(workflowId, request.UpdatedDraft);
+            var result = await taskService.UpdateDraft(taskId, request.UpdatedDraft);
             return result.ToHttpResult();
         })
-        .Produces<object>(StatusCodes.Status200OK)
+        .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("UpdateTaskDraft")
         .WithOpenApi(operation => new(operation)
@@ -137,6 +137,9 @@ The workflowId should be the full Temporal workflow ID."
             
 This sends an 'UpdateDraft' signal to the Temporal workflow, allowing modification of the task's work in progress.
 
+Query Parameters:
+- taskId: The full Temporal workflow ID
+
 Request Body:
 - updatedDraft: The new draft content (string)
 
@@ -144,16 +147,15 @@ Returns a success message if the draft was updated successfully."
         });
 
         // Perform action on a task
-        taskGroup.MapPost("/{workflowId}/actions", async (
-            string tenantId,
-            string workflowId,
+        taskGroup.MapPost("/actions", async (
+            [FromQuery] string taskId,
             [FromBody] PerformActionRequest request,
             [FromServices] IAdminTaskService taskService) =>
         {
-            var result = await taskService.PerformAction(workflowId, request.Action, request.Comment);
+            var result = await taskService.PerformAction(taskId, request.Action, request.Comment);
             return result.ToHttpResult();
         })
-        .Produces<object>(StatusCodes.Status200OK)
+        .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("PerformTaskAction")
         .WithOpenApi(operation => new(operation)
@@ -163,6 +165,9 @@ Returns a success message if the draft was updated successfully."
             
 This sends a 'PerformAction' signal to the Temporal workflow with the specified action and comment.
 The action should be one of the available actions for the task (e.g., 'approve', 'reject', 'hold').
+
+Query Parameters:
+- taskId: The full Temporal workflow ID
 
 Request Body:
 - action: The action to perform (required, should match one of the task's available actions)

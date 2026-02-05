@@ -44,6 +44,10 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
     private readonly ITenantContext _tenantContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<TeamsWebhookHandler> _logger;
+    
+    // Cache for Teams user info to avoid repeated API calls
+    // Key format: "{integrationId}:{aadObjectId}"
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, TeamsUserInfo> UserInfoCache = new();
 
     public TeamsWebhookHandler(
         IMessageService messageService,
@@ -65,14 +69,16 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
     {
         try
         {
-            _logger.LogInformation("Processing Teams activity webhook for integration {IntegrationId}", integration.Id);
-
             // Parse activity
             var activity = ParseActivity(rawBody);
             if (activity == null)
             {
+                _logger.LogWarning("Failed to parse Teams activity for integration {IntegrationId}", integration.Id);
                 return Results.BadRequest("Invalid activity format");
             }
+
+            _logger.LogInformation("Processing Teams activity: Type={ActivityType}, Id={ActivityId}, ConversationId={ConversationId} for integration {IntegrationId}", 
+                activity.Type, activity.Id, activity.Conversation?.Id, integration.Id);
 
             // Verify authentication (Bot Framework JWT)
             if (!await VerifyAuthenticationAsync(integration, httpContext))
@@ -153,9 +159,13 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
 
             var appId = appIdObj?.ToString();
             var appPassword = appPasswordObj?.ToString();
+            
+            // Get tenant ID (optional - for single-tenant bots)
+            integration.Configuration.TryGetValue("appTenantId", out var appTenantIdObj);
+            var appTenantId = appTenantIdObj?.ToString();
 
             // Get access token from Bot Framework
-            var accessToken = await GetBotFrameworkTokenAsync(appId!, appPassword!, cancellationToken);
+            var accessToken = await GetBotFrameworkTokenAsync(appId!, appPassword!, appTenantId, cancellationToken);
             if (string.IsNullOrEmpty(accessToken))
             {
                 _logger.LogError("Failed to get Bot Framework access token");
@@ -218,8 +228,20 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
             return Results.Ok();
         }
 
+        // Fetch user info from Graph if needed (based on configuration)
+        TeamsUserInfo? userInfo = null;
+        if (integration.MappingConfig.ParticipantIdSource == "userEmail")
+        {
+            // Try AadObjectId first, fall back to userId (which might be the AAD Object ID)
+            var userIdToLookup = activity.From?.AadObjectId ?? activity.From?.Id;
+            if (!string.IsNullOrEmpty(userIdToLookup))
+            {
+                userInfo = await GetTeamsUserInfoAsync(integration, userIdToLookup, cancellationToken);
+            }
+        }
+
         // Determine participant ID
-        var participantId = DetermineParticipantId(activity, integration.MappingConfig);
+        var participantId = DetermineParticipantId(activity, integration.MappingConfig, userInfo);
 
         // Determine scope
         var scope = DetermineScope(activity, integration.MappingConfig);
@@ -228,7 +250,7 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         _tenantContext.TenantId = integration.TenantId;
         _tenantContext.LoggedInUser = "app:msteams:" + integration.Id;
 
-        // Build chat request
+        // Build chat request with Teams metadata for response routing
         var chatRequest = new ChatOrDataRequest
         {
             WorkflowId = integration.WorkflowId,
@@ -240,9 +262,14 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
                 {
                     activityId = activity.Id,
                     conversationId = activity.Conversation?.Id,
+                    conversation = activity.Conversation,
                     serviceUrl = activity.ServiceUrl,
                     userId = activity.From?.Id,
                     userName = activity.From?.Name,
+                    userEmail = userInfo?.Mail ?? userInfo?.UserPrincipalName,
+                    userDisplayName = userInfo?.DisplayName,
+                    from = activity.From,  // User who sent the message
+                    recipient = activity.Recipient,  // Bot account
                     channelId = activity.ChannelData?.TeamsChannelId,
                     teamId = activity.ChannelData?.TeamsTeamId,
                     tenantId = activity.ChannelData?.Tenant?.Id,
@@ -315,14 +342,22 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         return false;
     }
 
-    private string DetermineParticipantId(TeamsActivity activity, AppIntegrationMappingConfig config)
+    private string DetermineParticipantId(
+        TeamsActivity activity, 
+        AppIntegrationMappingConfig config,
+        TeamsUserInfo? userInfo)
     {
+        if (string.IsNullOrEmpty(config.ParticipantIdSource))
+        {
+            return config.DefaultParticipantId ?? activity.From?.Id ?? "unknown";
+        }
+
         return config.ParticipantIdSource switch
         {
+            "userEmail" => userInfo?.Mail ?? userInfo?.UserPrincipalName ?? activity.From?.Id ?? config.DefaultParticipantId ?? "unknown",
             "userId" => activity.From?.Id ?? config.DefaultParticipantId ?? "unknown",
-            "email" => activity.From?.AadObjectId ?? activity.From?.Id ?? config.DefaultParticipantId ?? "unknown",
             "channelId" => activity.ChannelData?.TeamsChannelId ?? activity.Conversation?.Id ?? config.DefaultParticipantId ?? "unknown",
-            _ => activity.From?.Id ?? config.DefaultParticipantId ?? "unknown"
+            _ => config.DefaultParticipantId ?? activity.From?.Id ?? "unknown"
         };
     }
 
@@ -367,6 +402,24 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
                     {
                         metadata.ActivityId = activityId.GetString();
                     }
+                    
+                    // Extract user account (original sender - becomes recipient in response)
+                    if (teamsData.TryGetProperty("from", out var fromData))
+                    {
+                        metadata.UserAccount = JsonSerializer.Deserialize<TeamsChannelAccount>(fromData.GetRawText());
+                    }
+                    
+                    // Extract bot account (original recipient - becomes from in response)
+                    if (teamsData.TryGetProperty("recipient", out var recipientData))
+                    {
+                        metadata.BotAccount = JsonSerializer.Deserialize<TeamsChannelAccount>(recipientData.GetRawText());
+                    }
+                    
+                    // Extract conversation info
+                    if (teamsData.TryGetProperty("conversation", out var conversationData))
+                    {
+                        metadata.Conversation = JsonSerializer.Deserialize<TeamsConversation>(conversationData.GetRawText());
+                    }
                 }
             }
             catch (Exception ex)
@@ -378,7 +431,11 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         return metadata;
     }
 
-    private async Task<string?> GetBotFrameworkTokenAsync(string appId, string appPassword, CancellationToken cancellationToken)
+    private async Task<string?> GetBotFrameworkTokenAsync(
+        string appId, 
+        string appPassword, 
+        string? appTenantId, 
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -392,15 +449,19 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
                 new KeyValuePair<string, string>("scope", "https://api.botframework.com/.default")
             });
 
-            var response = await httpClient.PostAsync(
-                "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token",
-                tokenRequest,
-                cancellationToken);
+            // Use specific tenant ID for single-tenant bots, otherwise use botframework.com for multi-tenant
+            var tenantIdentifier = !string.IsNullOrEmpty(appTenantId) ? appTenantId : "botframework.com";
+            var tokenEndpoint = $"https://login.microsoftonline.com/{tenantIdentifier}/oauth2/v2.0/token";
+            
+            _logger.LogDebug("Requesting Bot Framework token using tenant: {TenantIdentifier}", tenantIdentifier);
+
+            var response = await httpClient.PostAsync(tokenEndpoint, tokenRequest, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
                 var error = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError("Failed to get Bot Framework token: {StatusCode} - {Error}", response.StatusCode, error);
+                _logger.LogError("Failed to get Bot Framework token from {Endpoint}: {StatusCode} - {Error}", 
+                    tokenEndpoint, response.StatusCode, error);
                 return null;
             }
 
@@ -418,10 +479,16 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
 
     private TeamsResponse BuildTeamsResponse(ConversationMessage message, TeamsMessageMetadata metadata)
     {
+        // When responding, swap From (bot) and Recipient (user)
+        // The bot becomes 'from' and the user becomes 'recipient'
         return new TeamsResponse
         {
             Type = TeamsConstants.MessageActivityType,
-            Text = message.Text ?? "No message text"
+            Text = message.Text ?? "No message text",
+            From = metadata.BotAccount,  // Bot is the sender
+            Recipient = metadata.UserAccount,  // User is the recipient
+            Conversation = metadata.Conversation,
+            ReplyToId = metadata.ActivityId  // Thread the response
         };
     }
 
@@ -465,6 +532,137 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         }
     }
 
+    /// <summary>
+    /// Fetches user information from Microsoft Graph API including email address.
+    /// Results are cached to avoid repeated API calls.
+    /// Requires User.Read.All permission in Azure AD.
+    /// </summary>
+    private async Task<TeamsUserInfo?> GetTeamsUserInfoAsync(
+        AppIntegration integration,
+        string aadObjectId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(aadObjectId))
+        {
+            return null;
+        }
+
+        // Check cache first
+        var cacheKey = $"{integration.Id}:{aadObjectId}";
+        if (UserInfoCache.TryGetValue(cacheKey, out var cachedUserInfo))
+        {
+            _logger.LogDebug("Using cached Teams user info for user {AadObjectId}", aadObjectId);
+            return cachedUserInfo;
+        }
+
+        // Get bot token (can be reused for Graph API calls)
+        if (!integration.Configuration.TryGetValue("appId", out var appIdObj) ||
+            !integration.Configuration.TryGetValue("appPassword", out var appPasswordObj))
+        {
+            _logger.LogDebug("App credentials not configured for integration {IntegrationId}, cannot fetch user info", 
+                integration.Id);
+            return null;
+        }
+
+        var appId = appIdObj?.ToString();
+        var appPassword = appPasswordObj?.ToString();
+        integration.Configuration.TryGetValue("appTenantId", out var appTenantIdObj);
+        var appTenantId = appTenantIdObj?.ToString();
+
+        try
+        {
+            // Get Graph API token
+            var accessToken = await GetGraphTokenAsync(appId!, appPassword!, appTenantId, cancellationToken);
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                _logger.LogWarning("Failed to get Graph API token for user info fetch");
+                return null;
+            }
+
+            var httpClient = _httpClientFactory.CreateClient();
+            var requestUrl = $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(aadObjectId)}";
+            
+            var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+            request.Headers.Add("Authorization", $"Bearer {accessToken}");
+
+            var response = await httpClient.SendAsync(request, cancellationToken);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Failed to fetch Teams user info for user {AadObjectId}: {StatusCode} - {Error}", 
+                    aadObjectId, response.StatusCode, error);
+                return null;
+            }
+
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var userInfo = JsonSerializer.Deserialize<TeamsUserInfo>(responseContent, 
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (userInfo != null)
+            {
+                // Cache the result
+                UserInfoCache.TryAdd(cacheKey, userInfo);
+                
+                _logger.LogDebug("Successfully fetched and cached user info for user {AadObjectId}", aadObjectId);
+                return userInfo;
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching Teams user info for user {AadObjectId}", aadObjectId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets an access token for Microsoft Graph API
+    /// </summary>
+    private async Task<string?> GetGraphTokenAsync(
+        string appId, 
+        string appPassword, 
+        string? appTenantId, 
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            
+            var tokenRequest = new System.Net.Http.FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("client_id", appId),
+                new KeyValuePair<string, string>("client_secret", appPassword),
+                new KeyValuePair<string, string>("scope", "https://graph.microsoft.com/.default")
+            });
+
+            var tenantIdentifier = !string.IsNullOrEmpty(appTenantId) ? appTenantId : "common";
+            var tokenEndpoint = $"https://login.microsoftonline.com/{tenantIdentifier}/oauth2/v2.0/token";
+
+            var response = await httpClient.PostAsync(tokenEndpoint, tokenRequest, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("Failed to get Graph API token: {StatusCode} - {Error}", 
+                    response.StatusCode, error);
+                return null;
+            }
+
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var tokenResponse = JsonSerializer.Deserialize<BotFrameworkTokenResponse>(responseBody);
+
+            return tokenResponse?.AccessToken;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting Graph API access token");
+            return null;
+        }
+    }
+
     #endregion
 }
 
@@ -476,6 +674,9 @@ internal class TeamsMessageMetadata
     public string? ServiceUrl { get; set; }
     public string? ConversationId { get; set; }
     public string? ActivityId { get; set; }
+    public TeamsChannelAccount? BotAccount { get; set; }
+    public TeamsChannelAccount? UserAccount { get; set; }
+    public TeamsConversation? Conversation { get; set; }
 }
 
 /// <summary>
@@ -491,4 +692,28 @@ internal class BotFrameworkTokenResponse
 
     [JsonPropertyName("expires_in")]
     public int ExpiresIn { get; set; }
+}
+
+/// <summary>
+/// Teams user information from Microsoft Graph API
+/// </summary>
+internal class TeamsUserInfo
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("displayName")]
+    public string? DisplayName { get; set; }
+
+    [JsonPropertyName("mail")]
+    public string? Mail { get; set; }
+
+    [JsonPropertyName("userPrincipalName")]
+    public string? UserPrincipalName { get; set; }
+
+    [JsonPropertyName("givenName")]
+    public string? GivenName { get; set; }
+
+    [JsonPropertyName("surname")]
+    public string? Surname { get; set; }
 }

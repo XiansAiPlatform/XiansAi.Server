@@ -377,7 +377,14 @@ public class AppIntegrationResponse
     {
         // Remove trailing slash if present
         baseUrl = baseUrl.TrimEnd('/');
-        return $"{baseUrl}/api/apps/{platformId}/events/{integrationId}";
+        
+        // Use platform-specific endpoints
+        return platformId.ToLowerInvariant() switch
+        {
+            "slack" => $"{baseUrl}/api/apps/slack/events/{integrationId}",
+            "msteams" => $"{baseUrl}/api/apps/msteams/messaging/{integrationId}",
+            _ => $"{baseUrl}/api/apps/{platformId}/events/{integrationId}"
+        };
     }
 
     /// <summary>

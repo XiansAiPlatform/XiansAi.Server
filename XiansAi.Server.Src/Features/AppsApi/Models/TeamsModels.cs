@@ -188,6 +188,18 @@ public class TeamsResponse
     [JsonPropertyName("text")]
     public string? Text { get; set; }
 
+    [JsonPropertyName("from")]
+    public TeamsChannelAccount? From { get; set; }
+
+    [JsonPropertyName("recipient")]
+    public TeamsChannelAccount? Recipient { get; set; }
+
+    [JsonPropertyName("conversation")]
+    public TeamsConversation? Conversation { get; set; }
+
+    [JsonPropertyName("replyToId")]
+    public string? ReplyToId { get; set; }
+
     [JsonPropertyName("attachments")]
     public List<TeamsAttachment>? Attachments { get; set; }
 }
