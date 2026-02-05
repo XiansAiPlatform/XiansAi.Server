@@ -294,12 +294,6 @@ public class UserTenantService : IUserTenantService
                     _tenantContext.LoggedInUser);
                 return ServiceResult<List<User>>.Forbidden("Insufficient permissions to view unapproved users");
             }
-
-            if (string.IsNullOrEmpty(tenantIdToQuery))
-            {
-                _logger.LogWarning("GetUnapprovedUsers called without a current tenant (X-Tenant-Id required)");
-                return ServiceResult<List<User>>.BadRequest("A tenant must be selected (X-Tenant-Id header is required).");
-            }
             
             var users = await _userRepository.GetUsersWithUnapprovedTenantAsync(tenantIdToQuery);
             return ServiceResult<List<User>>.Success(users);

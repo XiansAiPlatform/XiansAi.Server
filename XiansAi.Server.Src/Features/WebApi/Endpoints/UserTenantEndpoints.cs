@@ -109,7 +109,7 @@ public static class UserTenantEndpoints
         .WithOpenApi(operation =>
         {
             operation.Summary = "Get list of unapproved user requests for the current tenant";
-            operation.Description = "Returns users with pending approval for the current tenant (from X-Tenant-Id header). Same for tenant admins and system admins: only the selected tenant's requests are returned. The tenant is the one selected in the UI (e.g. 'Select organisation' dropdown).";
+            operation.Description = "Returns users with pending approval for the current tenant (from X-Tenant-Id header). Same for tenant admins and system admins: only the selected tenant's requests are returned. System admins can see all unapproved users for all tenants.";
             return operation;
         })
         .RequiresValidTenantAdmin();
