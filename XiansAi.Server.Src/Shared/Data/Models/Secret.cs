@@ -29,13 +29,14 @@ public class Secret
     [BsonElement("encrypted_secret_value")]
     public required string EncryptedSecretValue { get; set; }
 
-    [BsonElement("encrypted_metadata")]
-    public string? EncryptedMetadata { get; set; }
+    // Plain (non-encrypted) fields
+    [BsonElement("metadata")]
+    public string? Metadata { get; set; }
 
-    [BsonElement("encrypted_expire_at")]
-    public string? EncryptedExpireAt { get; set; }
+    [BsonElement("expire_at")]
+    public DateTime? ExpireAt { get; set; }
 
-    // Non-sensitive fields
+    // Other non-sensitive fields
     [BsonElement("description")]
     public string? Description { get; set; }
 

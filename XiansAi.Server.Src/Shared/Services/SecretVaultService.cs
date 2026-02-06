@@ -45,7 +45,7 @@ public class SecretVaultService : ISecretVaultService
                 return ServiceResult<SecretData?>.NotFound($"Secret with ID '{secretId}' not found");
             }
 
-            // If includeValue is false, remove sensitive fields
+            // If includeValue is false, remove sensitive fields (value only); metadata and expireAt are plain
             if (!includeValue)
             {
                 secret = new SecretData
@@ -56,11 +56,12 @@ public class SecretVaultService : ISecretVaultService
                     UserId = secret.UserId,
                     SecretValue = string.Empty, // Required field, but empty for non-value responses
                     Description = secret.Description,
+                    Metadata = secret.Metadata,
+                    ExpireAt = secret.ExpireAt,
                     CreatedAt = secret.CreatedAt,
                     CreatedBy = secret.CreatedBy,
                     UpdatedAt = secret.UpdatedAt,
                     UpdatedBy = secret.UpdatedBy
-                    // metadata, expireAt are excluded
                 };
             }
 

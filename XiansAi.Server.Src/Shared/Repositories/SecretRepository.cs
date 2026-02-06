@@ -33,17 +33,25 @@ public class SecretRepository : ISecretRepository
     {
         try
         {
-            var indexKeys = Builders<Secret>.IndexKeys
+            // Unique compound index for scope lookups
+            var scopeIndexKeys = Builders<Secret>.IndexKeys
                 .Ascending(s => s.SecretId)
                 .Ascending(s => s.TenantId)
                 .Ascending(s => s.AgentId)
                 .Ascending(s => s.UserId);
-
-            var indexOptions = new CreateIndexOptions { Unique = true };
-            var indexModel = new CreateIndexModel<Secret>(indexKeys, indexOptions);
-
-            _collection.Indexes.CreateOne(indexModel);
+            var scopeIndexOptions = new CreateIndexOptions { Unique = true };
+            _collection.Indexes.CreateOne(new CreateIndexModel<Secret>(scopeIndexKeys, scopeIndexOptions));
             _logger.LogDebug("Created unique index on (secretId, tenantId, agentId, userId)");
+
+            // TTL index: auto-delete documents when expire_at has passed
+            // Note: MongoDB automatically ignores documents where expire_at is null/missing
+            var ttlIndexKeys = Builders<Secret>.IndexKeys.Ascending(s => s.ExpireAt);
+            var ttlIndexOptions = new CreateIndexOptions
+            {
+                ExpireAfter = TimeSpan.Zero // Delete when expire_at < now (UTC)
+            };
+            _collection.Indexes.CreateOne(new CreateIndexModel<Secret>(ttlIndexKeys, ttlIndexOptions));
+            _logger.LogDebug("Created TTL index on expire_at (documents with null/missing expire_at are not affected)");
         }
         catch (Exception ex)
         {

@@ -57,6 +57,8 @@ public static class SecretEndpoints
     {
         public required string SecretId { get; set; }
         public string? Description { get; set; }
+        public string? Metadata { get; set; }
+        public DateTime? ExpireAt { get; set; }
         public required DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
@@ -119,6 +121,8 @@ public static class SecretEndpoints
             {
                 SecretId = s.SecretId,
                 Description = s.Description,
+                Metadata = s.Metadata,
+                ExpireAt = s.ExpireAt,
                 CreatedAt = s.CreatedAt,
                 UpdatedAt = s.UpdatedAt
             }).ToList();

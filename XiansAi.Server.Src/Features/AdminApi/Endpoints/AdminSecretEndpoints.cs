@@ -62,6 +62,8 @@ public static class AdminSecretEndpoints
         public string? AgentId { get; set; }
         public string? UserId { get; set; }
         public string? Description { get; set; }
+        public string? Metadata { get; set; }
+        public DateTime? ExpireAt { get; set; }
         public required DateTime CreatedAt { get; set; }
         public required string CreatedBy { get; set; }
         public DateTime? UpdatedAt { get; set; }
@@ -103,6 +105,8 @@ public static class AdminSecretEndpoints
                 AgentId = s.AgentId,
                 UserId = s.UserId,
                 Description = s.Description,
+                Metadata = s.Metadata,
+                ExpireAt = s.ExpireAt,
                 CreatedAt = s.CreatedAt,
                 CreatedBy = s.CreatedBy,
                 UpdatedAt = s.UpdatedAt,

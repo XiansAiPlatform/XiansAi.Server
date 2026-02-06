@@ -85,11 +85,12 @@ public class DatabaseSecretVaultProvider : ISecretVaultProvider
                             UserId = secretData.UserId,
                             SecretValue = string.Empty, // Required field, but empty for list responses
                             Description = secretData.Description,
+                            Metadata = secretData.Metadata,
+                            ExpireAt = secretData.ExpireAt,
                             CreatedAt = secretData.CreatedAt,
                             CreatedBy = secretData.CreatedBy,
                             UpdatedAt = secretData.UpdatedAt,
                             UpdatedBy = secretData.UpdatedBy
-                            // metadata, expireAt are not included in list responses
                         });
                     }
                 }
@@ -227,12 +228,6 @@ public class DatabaseSecretVaultProvider : ISecretVaultProvider
     private SecretModel EncryptSecret(SecretData secretData)
     {
         var encryptedSecretValue = _encryption.Encrypt(secretData.SecretValue, _uniqueSecret);
-        var encryptedMetadata = string.IsNullOrWhiteSpace(secretData.Metadata)
-            ? null
-            : _encryption.Encrypt(secretData.Metadata, _uniqueSecret);
-        var encryptedExpireAt = secretData.ExpireAt.HasValue
-            ? _encryption.Encrypt(secretData.ExpireAt.Value.ToString("O"), _uniqueSecret)
-            : null;
 
         return new SecretModel
         {
@@ -242,8 +237,8 @@ public class DatabaseSecretVaultProvider : ISecretVaultProvider
             AgentId = secretData.AgentId,
             UserId = secretData.UserId,
             EncryptedSecretValue = encryptedSecretValue,
-            EncryptedMetadata = encryptedMetadata,
-            EncryptedExpireAt = encryptedExpireAt,
+            Metadata = secretData.Metadata,
+            ExpireAt = secretData.ExpireAt,
             Description = secretData.Description,
             CreatedAt = secretData.CreatedAt,
             CreatedBy = secretData.CreatedBy,
@@ -255,16 +250,7 @@ public class DatabaseSecretVaultProvider : ISecretVaultProvider
     private SecretData DecryptSecret(SecretModel doc)
     {
         var secretValue = _encryption.Decrypt(doc.EncryptedSecretValue, _uniqueSecret);
-        var metadata = string.IsNullOrWhiteSpace(doc.EncryptedMetadata)
-            ? null
-            : _encryption.Decrypt(doc.EncryptedMetadata, _uniqueSecret);
-        var expireAtStr = string.IsNullOrWhiteSpace(doc.EncryptedExpireAt)
-            ? null
-            : _encryption.Decrypt(doc.EncryptedExpireAt, _uniqueSecret);
-        var expireAt = string.IsNullOrWhiteSpace(expireAtStr)
-            ? null
-            : DateTime.TryParse(expireAtStr, out var dt) ? dt : (DateTime?)null;
-
+        // Metadata and ExpireAt are stored and read as plain (non-encrypted)
         return new SecretData
         {
             SecretId = doc.SecretId,
@@ -272,9 +258,9 @@ public class DatabaseSecretVaultProvider : ISecretVaultProvider
             AgentId = doc.AgentId,
             UserId = doc.UserId,
             SecretValue = secretValue,
-            Metadata = metadata,
+            Metadata = doc.Metadata,
             Description = doc.Description,
-            ExpireAt = expireAt,
+            ExpireAt = doc.ExpireAt,
             CreatedAt = doc.CreatedAt,
             CreatedBy = doc.CreatedBy,
             UpdatedAt = doc.UpdatedAt,
