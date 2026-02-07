@@ -138,6 +138,17 @@ public class AppIntegrationService : IAppIntegrationService
         return baseUrl.TrimEnd('/');
     }
 
+    private string GenerateWebhookPath(string platformId, string integrationId)
+    {
+        // Generate relative webhook path based on platform
+        return platformId.ToLowerInvariant() switch
+        {
+            "slack" => $"/api/apps/slack/events/{integrationId}",
+            "msteams" => $"/api/apps/msteams/messaging/{integrationId}",
+            _ => $"/api/apps/{platformId}/events/{integrationId}"
+        };
+    }
+
     public async Task<ServiceResult<List<AppIntegrationResponse>>> GetIntegrationsAsync(
         string tenantId,
         string? platformId = null,
@@ -230,11 +241,11 @@ public class AppIntegrationService : IAppIntegrationService
             _logger.LogInformation("Creating integration {Name} for tenant {TenantId}, platform {Platform}",
                 request.Name, tenantId, request.PlatformId);
 
-            // Check if name already exists
-            if (await _repository.ExistsByNameAsync(tenantId, request.Name))
+            // Check if name already exists for this agent/activation combination
+            if (await _repository.ExistsByNameAsync(tenantId, request.AgentName, request.ActivationName, request.Name))
             {
                 return ServiceResult<AppIntegrationResponse>.BadRequest(
-                    $"An integration with name '{request.Name}' already exists");
+                    $"An integration with name '{request.Name}' already exists for agent '{request.AgentName}' and activation '{request.ActivationName}'");
             }
 
             // Validate platform-specific configuration
@@ -279,6 +290,11 @@ public class AppIntegrationService : IAppIntegrationService
             var id = await _repository.CreateAsync(integration);
             integration.Id = id;
 
+            // Add the outgoing webhook URL to configuration for easy reference
+            var webhookPath = GenerateWebhookPath(integration.PlatformId, id);
+            integration.Configuration["outgoingWebhookUrl"] = webhookPath;
+            await _repository.UpdateAsync(integration);
+
             var baseUrl = GetBaseUrl();
             var response = AppIntegrationResponse.FromEntity(integration, baseUrl);
 
@@ -320,10 +336,10 @@ public class AppIntegrationService : IAppIntegrationService
             // Check name uniqueness if name is being changed
             if (!string.IsNullOrEmpty(request.Name) && request.Name != existing.Name)
             {
-                if (await _repository.ExistsByNameAsync(tenantId, request.Name, id))
+                if (await _repository.ExistsByNameAsync(tenantId, existing.AgentName, existing.ActivationName, request.Name, id))
                 {
                     return ServiceResult<AppIntegrationResponse>.BadRequest(
-                        $"An integration with name '{request.Name}' already exists");
+                        $"An integration with name '{request.Name}' already exists for agent '{existing.AgentName}' and activation '{existing.ActivationName}'");
                 }
                 existing.Name = request.Name;
             }
@@ -365,6 +381,13 @@ public class AppIntegrationService : IAppIntegrationService
             }
 
             existing.UpdatedBy = updatedBy;
+
+            // Ensure outgoingWebhookUrl is set (for backward compatibility with existing integrations)
+            if (!existing.Configuration.ContainsKey("outgoingWebhookUrl"))
+            {
+                var webhookPath = GenerateWebhookPath(existing.PlatformId, existing.Id);
+                existing.Configuration["outgoingWebhookUrl"] = webhookPath;
+            }
 
             // Validate
             try

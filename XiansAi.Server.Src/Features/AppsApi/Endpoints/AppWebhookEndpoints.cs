@@ -9,7 +9,8 @@ using Shared.Repositories;
 namespace Features.AppsApi.Endpoints;
 
 /// <summary>
-/// Public webhook endpoints for receiving events from external platforms (Slack, Teams, etc.).
+/// Generic webhook endpoints for receiving events from external platforms.
+/// Platform-specific endpoints are in their respective files (SlackWebhookEndpoints, TeamsWebhookEndpoints).
 /// These endpoints are called by external platforms and do not require standard authentication.
 /// Authentication is done via platform-specific signature verification.
 /// </summary>
@@ -22,6 +23,10 @@ public static class AppWebhookEndpoints
     {
         var appsGroup = app.MapGroup("/api/apps")
             .WithTags("AppsAPI - Webhooks");
+
+        // Map platform-specific endpoints
+        appsGroup.MapSlackWebhookEndpoints();
+        appsGroup.MapTeamsWebhookEndpoints();
 
         // Generic webhook endpoint for all platforms
         appsGroup.MapPost("/{platformId}/events/{integrationId}", HandlePlatformWebhook)
@@ -37,70 +42,19 @@ public static class AppWebhookEndpoints
                     Authentication is performed via platform-specific signature verification, not 
                     standard bearer tokens. Each platform has its own method:
                     
-                    - **Slack**: X-Slack-Signature header verification
-                    - **Teams**: Bot Framework signature verification
+                    - **Slack**: X-Slack-Signature header verification (use dedicated /slack/events endpoint)
+                    - **Teams**: Bot Framework signature verification (use dedicated /msteams/messaging endpoint)
                     - **Outlook**: Microsoft Graph validation token
                     
                     **Path Parameters:**
-                    - `platformId`: Platform identifier (slack, msteams, outlook, webhook)
+                    - `platformId`: Platform identifier (outlook, webhook)
                     - `integrationId`: The integration ID (MongoDB ObjectId)
                     
                     **Notes:**
                     - This endpoint is designed to be called by external platforms
+                    - For Slack and Teams, use their dedicated endpoints instead
                     - The integration must be enabled for webhooks to be processed
                     - Invalid signatures result in 401 Unauthorized
-                    """
-            });
-
-        // Slack-specific endpoints for different event types
-        appsGroup.MapPost("/slack/events/{integrationId}", HandleSlackEventsWebhook)
-            .WithName("HandleSlackEventsWebhook")
-            .AllowAnonymous()
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Handle Slack Events API Webhook",
-                Description = """
-                    Dedicated endpoint for Slack Events API webhooks.
-                    
-                    Handles:
-                    - URL verification challenges
-                    - Message events
-                    - App mention events
-                    - Other subscribed events
-                    
-                    Configure this URL in your Slack App's Event Subscriptions settings.
-                    """
-            });
-
-        appsGroup.MapPost("/slack/interactive/{integrationId}", HandleSlackInteractiveWebhook)
-            .WithName("HandleSlackInteractiveWebhook")
-            .AllowAnonymous()
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Handle Slack Interactive Components Webhook",
-                Description = """
-                    Dedicated endpoint for Slack Interactive Components (buttons, modals, etc.).
-                    
-                    Configure this URL in your Slack App's Interactivity settings.
-                    """
-            });
-
-        // Microsoft Teams Bot Framework endpoint
-        appsGroup.MapPost("/msteams/messaging/{integrationId}", HandleTeamsMessagingWebhook)
-            .WithName("HandleTeamsMessagingWebhook")
-            .AllowAnonymous()
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Handle Microsoft Teams Bot Framework Webhook",
-                Description = """
-                    Dedicated endpoint for Microsoft Teams Bot Framework activities.
-                    
-                    Handles:
-                    - Message activities
-                    - Conversation updates
-                    - Invoke activities (adaptive card actions)
-                    
-                    Configure this URL as the messaging endpoint in Azure Bot Service.
                     """
             });
     }
@@ -167,130 +121,6 @@ public static class AppWebhookEndpoints
             return Results.Problem("An error occurred processing the webhook", statusCode: 500);
         }
     }
-
-    /// <summary>
-    /// Dedicated Slack Events API handler
-    /// </summary>
-    private static async Task<IResult> HandleSlackEventsWebhook(
-        string integrationId,
-        HttpContext httpContext,
-        [FromServices] IAppIntegrationService integrationService,
-        [FromServices] ISlackWebhookHandler slackHandler,
-        [FromServices] ILogger<AppWebhookEndpointsLogger> logger,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            logger.LogInformation("Received Slack Events webhook for integration {IntegrationId}", integrationId);
-
-            var integration = await integrationService.GetIntegrationEntityByIdAsync(integrationId);
-
-            if (integration == null)
-            {
-                logger.LogWarning("Integration {IntegrationId} not found", integrationId);
-                return Results.NotFound("Integration not found");
-            }
-
-            if (!integration.IsEnabled)
-            {
-                logger.LogWarning("Integration {IntegrationId} is disabled", integrationId);
-                return Results.StatusCode(503);
-            }
-
-            // Read request body
-            httpContext.Request.EnableBuffering();
-            using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8, leaveOpen: true);
-            var rawBody = await reader.ReadToEndAsync(cancellationToken);
-            httpContext.Request.Body.Position = 0;
-
-            return await slackHandler.ProcessEventsWebhookAsync(integration, rawBody, httpContext, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error processing Slack events webhook");
-            return Results.Problem("An error occurred", statusCode: 500);
-        }
-    }
-
-    /// <summary>
-    /// Dedicated Slack Interactive Components handler
-    /// </summary>
-    private static async Task<IResult> HandleSlackInteractiveWebhook(
-        string integrationId,
-        HttpContext httpContext,
-        [FromServices] IAppIntegrationService integrationService,
-        [FromServices] ISlackWebhookHandler slackHandler,
-        [FromServices] ILogger<AppWebhookEndpointsLogger> logger,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            logger.LogInformation("Received Slack interactive webhook for integration {IntegrationId}", integrationId);
-
-            var integration = await integrationService.GetIntegrationEntityByIdAsync(integrationId);
-
-            if (integration == null || !integration.IsEnabled)
-            {
-                return Results.NotFound("Integration not found or disabled");
-            }
-
-            return await slackHandler.ProcessInteractiveWebhookAsync(integration, httpContext, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error processing Slack interactive webhook");
-            return Results.Problem("An error occurred", statusCode: 500);
-        }
-    }
-
-
-    #region Teams Processing
-
-    /// <summary>
-    /// Dedicated Microsoft Teams Bot Framework handler
-    /// </summary>
-    private static async Task<IResult> HandleTeamsMessagingWebhook(
-        string integrationId,
-        HttpContext httpContext,
-        [FromServices] IAppIntegrationService integrationService,
-        [FromServices] ITeamsWebhookHandler teamsHandler,
-        [FromServices] ILogger<AppWebhookEndpointsLogger> logger,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            logger.LogInformation("Received Teams messaging webhook for integration {IntegrationId}", integrationId);
-
-            var integration = await integrationService.GetIntegrationEntityByIdAsync(integrationId);
-
-            if (integration == null)
-            {
-                logger.LogWarning("Integration {IntegrationId} not found", integrationId);
-                return Results.NotFound("Integration not found");
-            }
-
-            if (!integration.IsEnabled)
-            {
-                logger.LogWarning("Integration {IntegrationId} is disabled", integrationId);
-                return Results.StatusCode(503);
-            }
-
-            // Read request body
-            httpContext.Request.EnableBuffering();
-            using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8, leaveOpen: true);
-            var rawBody = await reader.ReadToEndAsync(cancellationToken);
-            httpContext.Request.Body.Position = 0;
-
-            return await teamsHandler.ProcessActivityWebhookAsync(integration, rawBody, httpContext, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error processing Teams messaging webhook");
-            return Results.Problem("An error occurred", statusCode: 500);
-        }
-    }
-
-    #endregion
 
     #region Outlook Processing
 

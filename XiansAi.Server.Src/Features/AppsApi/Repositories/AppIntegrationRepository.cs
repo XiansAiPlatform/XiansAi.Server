@@ -34,9 +34,9 @@ public interface IAppIntegrationRepository
     Task<List<AppIntegration>> GetEnabledIntegrationsAsync(string tenantId);
 
     /// <summary>
-    /// Check if an integration with the same name exists for the tenant
+    /// Check if an integration with the same name exists for the tenant, agent, and activation
     /// </summary>
-    Task<bool> ExistsByNameAsync(string tenantId, string name, string? excludeId = null);
+    Task<bool> ExistsByNameAsync(string tenantId, string agentName, string activationName, string name, string? excludeId = null);
 
     /// <summary>
     /// Create a new integration
@@ -106,12 +106,14 @@ public class AppIntegrationRepository : IAppIntegrationRepository
                     Builders<AppIntegration>.IndexKeys.Ascending(x => x.WorkflowId),
                     new CreateIndexOptions { Name = "idx_workflow_id" }),
 
-                // Unique index for tenant + name to prevent duplicates
+                // Unique index for tenant + agent + activation + name to prevent duplicates
                 new CreateIndexModel<AppIntegration>(
                     Builders<AppIntegration>.IndexKeys
                         .Ascending(x => x.TenantId)
+                        .Ascending(x => x.AgentName)
+                        .Ascending(x => x.ActivationName)
                         .Ascending(x => x.Name),
-                    new CreateIndexOptions { Name = "idx_tenant_name_unique", Unique = true })
+                    new CreateIndexOptions { Name = "idx_tenant_agent_activation_name_unique", Unique = true })
             };
 
             await _integrations.Indexes.CreateManyAsync(indexModels);
@@ -180,12 +182,14 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetEnabledAppIntegrations");
     }
 
-    public async Task<bool> ExistsByNameAsync(string tenantId, string name, string? excludeId = null)
+    public async Task<bool> ExistsByNameAsync(string tenantId, string agentName, string activationName, string name, string? excludeId = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var filter = Builders<AppIntegration>.Filter.And(
                 Builders<AppIntegration>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<AppIntegration>.Filter.Eq(x => x.AgentName, agentName),
+                Builders<AppIntegration>.Filter.Eq(x => x.ActivationName, activationName),
                 Builders<AppIntegration>.Filter.Eq(x => x.Name, name)
             );
 

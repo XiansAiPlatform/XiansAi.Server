@@ -55,8 +55,9 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
 
     /// <summary>
     /// Platform-specific configuration stored as key-value pairs.
-    /// For Slack: { "incomingWebhookUrl": "...", "signingSecret": "...", "botToken": "..." }
-    /// For Teams: { "appId": "...", "appPassword": "...", "tenantId": "..." }
+    /// For Slack: { "incomingWebhookUrl": "...", "outgoingWebhookUrl": "...", "signingSecret": "...", "botToken": "..." }
+    /// For Teams: { "appId": "...", "appPassword": "...", "outgoingWebhookUrl": "...", "tenantId": "..." }
+    /// Note: outgoingWebhookUrl is our webhook endpoint that the platform calls
     /// </summary>
     [BsonElement("configuration")]
     public Dictionary<string, object> Configuration { get; set; } = new();
@@ -161,7 +162,7 @@ public class AppIntegrationMappingConfig
 {
     /// <summary>
     /// How to determine participantId from platform message.
-    /// Options: "userId", "channelId", "threadId", "email", "custom"
+    /// Options: "userId", "userEmail", "channelId", "threadId", "custom"
     /// </summary>
     [BsonElement("participant_id_source")]
     [JsonPropertyName("participantIdSource")]
@@ -176,7 +177,7 @@ public class AppIntegrationMappingConfig
 
     /// <summary>
     /// How to determine scope/topic from platform message.
-    /// Options: "channelId", "channelName", "threadId", "subject", "custom", null (no scope)
+    /// Options: "channelId", "channelName", "teamId", "threadId", "subject", "custom", null (no scope)
     /// </summary>
     [BsonElement("scope_source")]
     [JsonPropertyName("scopeSource")]
@@ -205,7 +206,7 @@ public class AppIntegrationMappingConfig
 
     public void Validate()
     {
-        var validSources = new[] { "userId", "channelId", "threadId", "email", "custom" };
+        var validSources = new[] { "userId", "userEmail", "channelId", "threadId", "custom" };
         if (!string.IsNullOrEmpty(ParticipantIdSource) && !validSources.Contains(ParticipantIdSource))
         {
             throw new ValidationException($"Invalid participantIdSource: {ParticipantIdSource}. Valid options: {string.Join(", ", validSources)}");
@@ -216,7 +217,7 @@ public class AppIntegrationMappingConfig
             throw new ValidationException("participantIdCustomField is required when participantIdSource is 'custom'");
         }
 
-        var validScopeSources = new[] { "channelId", "channelName", "threadId", "subject", "custom" };
+        var validScopeSources = new[] { "channelId", "channelName", "teamId", "threadId", "subject", "custom" };
         if (!string.IsNullOrEmpty(ScopeSource) && !validScopeSources.Contains(ScopeSource))
         {
             throw new ValidationException($"Invalid scopeSource: {ScopeSource}. Valid options: {string.Join(", ", validScopeSources)}, or null");
@@ -314,8 +315,9 @@ public class AppIntegrationResponse
     public required string WorkflowId { get; set; }
 
     /// <summary>
-    /// The webhook URL that should be configured in the external platform.
-    /// Format: {baseUrl}/api/apps/{platformId}/events/{integrationId}
+    /// The webhook URL path (relative) that should be configured in the external platform.
+    /// Append this to your server's base URL.
+    /// Format: /api/apps/{platformId}/events/{integrationId}
     /// </summary>
     [JsonPropertyName("webhookUrl")]
     public required string WebhookUrl { get; set; }
@@ -371,19 +373,17 @@ public class AppIntegrationResponse
     }
 
     /// <summary>
-    /// Generates the webhook URL for external platforms to call
+    /// Generates the webhook URL path for external platforms to call.
+    /// Returns a relative URL path that should be appended to your server's base URL.
     /// </summary>
     private static string GenerateWebhookUrl(string baseUrl, string platformId, string integrationId)
     {
-        // Remove trailing slash if present
-        baseUrl = baseUrl.TrimEnd('/');
-        
-        // Use platform-specific endpoints
+        // Return relative URL path - client can prepend their own base URL
         return platformId.ToLowerInvariant() switch
         {
-            "slack" => $"{baseUrl}/api/apps/slack/events/{integrationId}",
-            "msteams" => $"{baseUrl}/api/apps/msteams/messaging/{integrationId}",
-            _ => $"{baseUrl}/api/apps/{platformId}/events/{integrationId}"
+            "slack" => $"/api/apps/slack/events/{integrationId}",
+            "msteams" => $"/api/apps/msteams/messaging/{integrationId}",
+            _ => $"/api/apps/{platformId}/events/{integrationId}"
         };
     }
 
@@ -393,12 +393,18 @@ public class AppIntegrationResponse
     private static Dictionary<string, object> MaskSensitiveConfiguration(Dictionary<string, object> config)
     {
         var sensitiveKeys = new[] { "token", "secret", "password", "key", "webhook" };
+        var nonSensitiveKeys = new[] { "outgoingwebhookurl" }; // Our webhook endpoint is not sensitive
         var masked = new Dictionary<string, object>();
 
         foreach (var kvp in config)
         {
-            var isSensitive = sensitiveKeys.Any(sk => 
-                kvp.Key.ToLowerInvariant().Contains(sk));
+            var keyLower = kvp.Key.ToLowerInvariant();
+            
+            // Check if explicitly non-sensitive
+            var isNonSensitive = nonSensitiveKeys.Any(nsk => keyLower.Contains(nsk));
+            
+            // Check if contains sensitive keywords
+            var isSensitive = !isNonSensitive && sensitiveKeys.Any(sk => keyLower.Contains(sk));
 
             if (isSensitive)
             {
@@ -441,10 +447,10 @@ public static class PlatformConfigurationRequirements
 
     public static readonly Dictionary<string, string[]> OptionalFields = new()
     {
-        ["slack"] = new[] { "incomingWebhookUrl", "botToken", "appId", "teamId" },
-        ["msteams"] = new[] { "serviceUrl" },
+        ["slack"] = new[] { "incomingWebhookUrl", "outgoingWebhookUrl", "botToken", "appId", "teamId" },
+        ["msteams"] = new[] { "outgoingWebhookUrl", "serviceUrl" },
         ["outlook"] = new[] { "userEmail" },
-        ["webhook"] = new[] { "secret", "headers" }
+        ["webhook"] = new[] { "secret", "headers", "outgoingWebhookUrl" }
     };
 
     public static void ValidateConfiguration(string platformId, Dictionary<string, object> configuration)

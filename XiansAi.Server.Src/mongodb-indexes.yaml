@@ -456,3 +456,27 @@ activations:
       tenant_id: asc
       created_at: desc
     background: true
+
+app_integrations:
+  - name: idx_tenant_id
+    keys:
+      tenant_id: asc
+  - name: idx_tenant_platform
+    keys:
+      tenant_id: asc
+      platform_id: asc
+  - name: idx_tenant_agent_activation
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      activation_name: asc
+  - name: idx_workflow_id
+    keys:
+      workflow_id: asc
+  - name: idx_tenant_agent_activation_name_unique
+    keys:
+      tenant_id: asc
+      agent_name: asc
+      activation_name: asc
+      name: asc
+    unique: true
