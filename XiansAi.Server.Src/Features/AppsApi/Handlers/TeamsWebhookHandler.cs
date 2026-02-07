@@ -149,16 +149,21 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
                 return;
             }
 
-            // Get app credentials
-            if (!integration.Configuration.TryGetValue("appId", out var appIdObj) ||
-                !integration.Configuration.TryGetValue("appPassword", out var appPasswordObj))
+            // Get app credentials (appId from config, appPassword from encrypted secrets)
+            if (!integration.Configuration.TryGetValue("appId", out var appIdObj))
             {
-                _logger.LogWarning("Teams appId or appPassword not configured for integration {IntegrationId}", integration.Id);
+                _logger.LogWarning("Teams appId not configured for integration {IntegrationId}", integration.Id);
                 return;
             }
 
             var appId = appIdObj?.ToString();
-            var appPassword = appPasswordObj?.ToString();
+            var appPassword = integration.Secrets?.TeamsAppPassword;
+            
+            if (string.IsNullOrEmpty(appPassword))
+            {
+                _logger.LogWarning("Teams appPassword not configured in secrets for integration {IntegrationId}", integration.Id);
+                return;
+            }
             
             // Get tenant ID (optional - for single-tenant bots)
             integration.Configuration.TryGetValue("appTenantId", out var appTenantIdObj);
@@ -556,8 +561,7 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         }
 
         // Get bot token (can be reused for Graph API calls)
-        if (!integration.Configuration.TryGetValue("appId", out var appIdObj) ||
-            !integration.Configuration.TryGetValue("appPassword", out var appPasswordObj))
+        if (!integration.Configuration.TryGetValue("appId", out var appIdObj))
         {
             _logger.LogDebug("App credentials not configured for integration {IntegrationId}, cannot fetch user info", 
                 integration.Id);
@@ -565,7 +569,14 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         }
 
         var appId = appIdObj?.ToString();
-        var appPassword = appPasswordObj?.ToString();
+        var appPassword = integration.Secrets?.TeamsAppPassword;
+        
+        if (string.IsNullOrEmpty(appPassword))
+        {
+            _logger.LogDebug("Teams appPassword not configured in secrets for integration {IntegrationId}, cannot fetch user info", 
+                integration.Id);
+            return null;
+        }
         integration.Configuration.TryGetValue("appTenantId", out var appTenantIdObj);
         var appTenantId = appTenantIdObj?.ToString();
 

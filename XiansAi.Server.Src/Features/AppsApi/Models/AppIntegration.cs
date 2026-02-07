@@ -54,13 +54,28 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
     public string WorkflowId { get; set; } = null!;
 
     /// <summary>
-    /// Platform-specific configuration stored as key-value pairs.
-    /// For Slack: { "incomingWebhookUrl": "...", "outgoingWebhookUrl": "...", "signingSecret": "...", "botToken": "..." }
-    /// For Teams: { "appId": "...", "appPassword": "...", "outgoingWebhookUrl": "...", "tenantId": "..." }
-    /// Note: outgoingWebhookUrl is our webhook endpoint that the platform calls
+    /// Platform-specific configuration stored as key-value pairs (NON-SENSITIVE values only).
+    /// For Slack: { "appId": "...", "teamId": "...", "outgoingWebhookUrl": "..." }
+    /// For Teams: { "appId": "...", "appTenantId": "...", "serviceUrl": "...", "outgoingWebhookUrl": "..." }
+    /// Note: Sensitive values (passwords, tokens, secrets) are stored encrypted in the Secrets field
     /// </summary>
     [BsonElement("configuration")]
     public Dictionary<string, object> Configuration { get; set; } = new();
+
+    /// <summary>
+    /// Encrypted secrets for this integration (stored as encrypted JSON in database).
+    /// Contains sensitive values like passwords, tokens, signing secrets, webhook URLs with embedded tokens.
+    /// Decrypted and populated at runtime by the repository layer.
+    /// </summary>
+    [BsonElement("secrets_encrypted")]
+    public string? SecretsEncrypted { get; set; }
+
+    /// <summary>
+    /// Decrypted secrets (NOT stored in database - populated at runtime).
+    /// Use this property to access/modify secrets in application code.
+    /// </summary>
+    [BsonIgnore]
+    public AppIntegrationSecrets Secrets { get; set; } = new();
 
     /// <summary>
     /// Configuration for mapping platform-specific identifiers to XiansAi concepts
@@ -107,6 +122,8 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
             ActivationName = ValidationHelpers.SanitizeString(this.ActivationName),
             WorkflowId = this.WorkflowId,
             Configuration = this.Configuration ?? new Dictionary<string, object>(),
+            Secrets = this.Secrets, // Preserve secrets during sanitization
+            SecretsEncrypted = this.SecretsEncrypted, // Preserve encrypted secrets
             MappingConfig = this.MappingConfig ?? new AppIntegrationMappingConfig(),
             IsEnabled = this.IsEnabled,
             CreatedAt = this.CreatedAt,
@@ -257,11 +274,58 @@ public class CreateAppIntegrationRequest
     [JsonPropertyName("configuration")]
     public Dictionary<string, object>? Configuration { get; set; }
 
+    /// <summary>
+    /// Secrets for this integration (will be encrypted at rest)
+    /// </summary>
+    [JsonPropertyName("secrets")]
+    public AppIntegrationSecretsRequest? Secrets { get; set; }
+
     [JsonPropertyName("mappingConfig")]
     public AppIntegrationMappingConfig? MappingConfig { get; set; }
 
     [JsonPropertyName("isEnabled")]
     public bool IsEnabled { get; set; } = true;
+}
+
+/// <summary>
+/// DTO for providing secrets when creating/updating integrations
+/// </summary>
+public class AppIntegrationSecretsRequest
+{
+    [JsonPropertyName("slackSigningSecret")]
+    public string? SlackSigningSecret { get; set; }
+
+    [JsonPropertyName("slackBotToken")]
+    public string? SlackBotToken { get; set; }
+
+    [JsonPropertyName("slackIncomingWebhookUrl")]
+    public string? SlackIncomingWebhookUrl { get; set; }
+
+    [JsonPropertyName("teamsAppPassword")]
+    public string? TeamsAppPassword { get; set; }
+
+    [JsonPropertyName("outlookClientSecret")]
+    public string? OutlookClientSecret { get; set; }
+
+    [JsonPropertyName("genericWebhookSecret")]
+    public string? GenericWebhookSecret { get; set; }
+
+    /// <summary>
+    /// Converts request DTO to domain model
+    /// </summary>
+    public AppIntegrationSecrets ToSecrets(string webhookSecret)
+    {
+        return new AppIntegrationSecrets
+        {
+            WebhookSecret = webhookSecret,
+            SlackSigningSecret = SlackSigningSecret,
+            SlackBotToken = SlackBotToken,
+            SlackIncomingWebhookUrl = SlackIncomingWebhookUrl,
+            TeamsAppPassword = TeamsAppPassword,
+            OutlookClientSecret = OutlookClientSecret,
+            GenericWebhookSecret = GenericWebhookSecret
+        };
+    }
 }
 
 /// <summary>
@@ -277,6 +341,12 @@ public class UpdateAppIntegrationRequest
 
     [JsonPropertyName("configuration")]
     public Dictionary<string, object>? Configuration { get; set; }
+
+    /// <summary>
+    /// Secrets to update (will be encrypted at rest)
+    /// </summary>
+    [JsonPropertyName("secrets")]
+    public AppIntegrationSecretsRequest? Secrets { get; set; }
 
     [JsonPropertyName("mappingConfig")]
     public AppIntegrationMappingConfig? MappingConfig { get; set; }
@@ -323,10 +393,16 @@ public class AppIntegrationResponse
     public required string WebhookUrl { get; set; }
 
     /// <summary>
-    /// Platform-specific configuration (sensitive values are masked)
+    /// Platform-specific configuration (non-sensitive values only)
     /// </summary>
     [JsonPropertyName("configuration")]
     public Dictionary<string, object> Configuration { get; set; } = new();
+
+    /// <summary>
+    /// Secrets with sensitive values masked (first 4 and last 4 characters shown)
+    /// </summary>
+    [JsonPropertyName("secrets")]
+    public AppIntegrationSecrets? Secrets { get; set; }
 
     [JsonPropertyName("mappingConfig")]
     public AppIntegrationMappingConfig MappingConfig { get; set; } = new();
@@ -349,7 +425,7 @@ public class AppIntegrationResponse
     /// <summary>
     /// Creates a response DTO from an AppIntegration entity
     /// </summary>
-    public static AppIntegrationResponse FromEntity(AppIntegration entity, string baseUrl)
+    public static AppIntegrationResponse FromEntity(AppIntegration entity)
     {
         return new AppIntegrationResponse
         {
@@ -361,8 +437,9 @@ public class AppIntegrationResponse
             AgentName = entity.AgentName,
             ActivationName = entity.ActivationName,
             WorkflowId = entity.WorkflowId,
-            WebhookUrl = GenerateWebhookUrl(baseUrl, entity.PlatformId, entity.Id),
-            Configuration = MaskSensitiveConfiguration(entity.Configuration),
+            WebhookUrl = GenerateWebhookUrl(entity.PlatformId, entity.Id, entity.Secrets?.WebhookSecret),
+            Configuration = entity.Configuration, // No longer contains sensitive data
+            Secrets = entity.Secrets?.Mask(), // Mask secrets for API response
             MappingConfig = entity.MappingConfig,
             IsEnabled = entity.IsEnabled,
             CreatedAt = entity.CreatedAt,
@@ -375,15 +452,28 @@ public class AppIntegrationResponse
     /// <summary>
     /// Generates the webhook URL path for external platforms to call.
     /// Returns a relative URL path that should be appended to your server's base URL.
+    /// Includes webhook secret in URL for defense-in-depth security.
     /// </summary>
-    private static string GenerateWebhookUrl(string baseUrl, string platformId, string integrationId)
+    private static string GenerateWebhookUrl(string platformId, string integrationId, string? webhookSecret)
     {
         // Return relative URL path - client can prepend their own base URL
+        // Include webhook secret in URL for additional security layer
+        if (string.IsNullOrEmpty(webhookSecret))
+        {
+            // Fallback for backward compatibility (shouldn't happen with new integrations)
+            return platformId.ToLowerInvariant() switch
+            {
+                "slack" => $"/api/apps/slack/events/{integrationId}",
+                "msteams" => $"/api/apps/msteams/messaging/{integrationId}",
+                _ => $"/api/apps/{platformId}/events/{integrationId}"
+            };
+        }
+
         return platformId.ToLowerInvariant() switch
         {
-            "slack" => $"/api/apps/slack/events/{integrationId}",
-            "msteams" => $"/api/apps/msteams/messaging/{integrationId}",
-            _ => $"/api/apps/{platformId}/events/{integrationId}"
+            "slack" => $"/api/apps/slack/events/{integrationId}/{webhookSecret}",
+            "msteams" => $"/api/apps/msteams/messaging/{integrationId}/{webhookSecret}",
+            _ => $"/api/apps/{platformId}/events/{integrationId}/{webhookSecret}"
         };
     }
 

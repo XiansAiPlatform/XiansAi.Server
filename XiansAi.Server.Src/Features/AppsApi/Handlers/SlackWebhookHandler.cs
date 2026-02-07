@@ -183,9 +183,8 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         string body,
         HttpContext httpContext)
     {
-        if (!integration.Configuration.TryGetValue("signingSecret", out var secretObj) ||
-            secretObj?.ToString() is not string signingSecret ||
-            string.IsNullOrEmpty(signingSecret))
+        var signingSecret = integration.Secrets?.SlackSigningSecret;
+        if (string.IsNullOrEmpty(signingSecret))
         {
             _logger.LogWarning("Slack signing secret not configured for integration {IntegrationId}", integration.Id);
             return false;
@@ -248,25 +247,21 @@ public class SlackWebhookHandler : ISlackWebhookHandler
                 return;
             }
 
-            // Get incoming webhook URL or use bot token
-            // Support both "incomingWebhookUrl" and common typo "incomingWekhookUrl"
-            var hasIncomingWebhook = (integration.Configuration.TryGetValue("incomingWebhookUrl", out var webhookUrlObj) 
-                || integration.Configuration.TryGetValue("incomingWekhookUrl", out webhookUrlObj)) 
-                && !string.IsNullOrEmpty(webhookUrlObj?.ToString());
-            var hasBotToken = integration.Configuration.TryGetValue("botToken", out var botTokenObj) 
-                && !string.IsNullOrEmpty(botTokenObj?.ToString());
+            // Get incoming webhook URL or use bot token from encrypted secrets
+            var incomingWebhookUrl = integration.Secrets?.SlackIncomingWebhookUrl;
+            var botToken = integration.Secrets?.SlackBotToken;
 
-            if (hasIncomingWebhook)
+            if (!string.IsNullOrEmpty(incomingWebhookUrl))
             {
-                await SendViaIncomingWebhookAsync(webhookUrlObj!.ToString()!, message, slackMetadata, cancellationToken);
+                await SendViaIncomingWebhookAsync(incomingWebhookUrl, message, slackMetadata, cancellationToken);
             }
-            else if (hasBotToken)
+            else if (!string.IsNullOrEmpty(botToken))
             {
-                await SendViaBotApiAsync(botTokenObj!.ToString()!, message, slackMetadata, cancellationToken);
+                await SendViaBotApiAsync(botToken, message, slackMetadata, cancellationToken);
             }
             else
             {
-                _logger.LogWarning("No outgoing method configured for Slack integration {IntegrationId} (need incomingWebhookUrl or botToken)",
+                _logger.LogWarning("No outgoing method configured for Slack integration {IntegrationId} (need SlackIncomingWebhookUrl or SlackBotToken in secrets)",
                     integration.Id);
             }
         }
@@ -523,10 +518,9 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             return cachedUserInfo;
         }
 
-        // Get bot token from configuration
-        if (!integration.Configuration.TryGetValue("botToken", out var botTokenObj) ||
-            botTokenObj?.ToString() is not string botToken ||
-            string.IsNullOrEmpty(botToken))
+        // Get bot token from encrypted secrets
+        var botToken = integration.Secrets?.SlackBotToken;
+        if (string.IsNullOrEmpty(botToken))
         {
             _logger.LogDebug("Bot token not configured for integration {IntegrationId}, cannot fetch user info", 
                 integration.Id);

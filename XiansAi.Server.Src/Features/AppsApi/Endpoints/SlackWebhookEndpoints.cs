@@ -19,7 +19,7 @@ public static class SlackWebhookEndpoints
     public static void MapSlackWebhookEndpoints(this RouteGroupBuilder appsGroup)
     {
         // Slack Events API endpoint
-        appsGroup.MapPost("/slack/events/{integrationId}", HandleSlackEventsWebhook)
+        appsGroup.MapPost("/slack/events/{integrationId}/{webhookSecret}", HandleSlackEventsWebhook)
             .WithName("HandleSlackEventsWebhook")
             .AllowAnonymous()
             .WithOpenApi(operation => new(operation)
@@ -34,12 +34,16 @@ public static class SlackWebhookEndpoints
                     - App mention events
                     - Other subscribed events
                     
+                    **Security:**
+                    - Webhook secret in URL provides first layer of defense
+                    - Slack signature verification provides second layer
+                    
                     Configure this URL in your Slack App's Event Subscriptions settings.
                     """
             });
 
         // Slack Interactive Components endpoint
-        appsGroup.MapPost("/slack/interactive/{integrationId}", HandleSlackInteractiveWebhook)
+        appsGroup.MapPost("/slack/interactive/{integrationId}/{webhookSecret}", HandleSlackInteractiveWebhook)
             .WithName("HandleSlackInteractiveWebhook")
             .AllowAnonymous()
             .WithOpenApi(operation => new(operation)
@@ -47,6 +51,10 @@ public static class SlackWebhookEndpoints
                 Summary = "Handle Slack Interactive Components Webhook",
                 Description = """
                     Dedicated endpoint for Slack Interactive Components (buttons, modals, etc.).
+                    
+                    **Security:**
+                    - Webhook secret in URL provides first layer of defense
+                    - Slack signature verification provides second layer
                     
                     Configure this URL in your Slack App's Interactivity settings.
                     """
@@ -58,6 +66,7 @@ public static class SlackWebhookEndpoints
     /// </summary>
     private static async Task<IResult> HandleSlackEventsWebhook(
         string integrationId,
+        string webhookSecret,
         HttpContext httpContext,
         [FromServices] IAppIntegrationService integrationService,
         [FromServices] ISlackWebhookHandler slackHandler,
@@ -74,6 +83,13 @@ public static class SlackWebhookEndpoints
             {
                 logger.LogWarning("Integration {IntegrationId} not found", integrationId);
                 return Results.NotFound("Integration not found");
+            }
+
+            // Validate webhook secret FIRST (before any other processing)
+            if (integration.Secrets?.WebhookSecret != webhookSecret)
+            {
+                logger.LogWarning("Invalid webhook secret for integration {IntegrationId}", integrationId);
+                return Results.NotFound(); // Don't reveal if integration exists
             }
 
             if (!integration.IsEnabled)
@@ -102,6 +118,7 @@ public static class SlackWebhookEndpoints
     /// </summary>
     private static async Task<IResult> HandleSlackInteractiveWebhook(
         string integrationId,
+        string webhookSecret,
         HttpContext httpContext,
         [FromServices] IAppIntegrationService integrationService,
         [FromServices] ISlackWebhookHandler slackHandler,
@@ -114,7 +131,19 @@ public static class SlackWebhookEndpoints
 
             var integration = await integrationService.GetIntegrationEntityByIdAsync(integrationId);
 
-            if (integration == null || !integration.IsEnabled)
+            if (integration == null)
+            {
+                return Results.NotFound("Integration not found");
+            }
+
+            // Validate webhook secret FIRST (before any other processing)
+            if (integration.Secrets?.WebhookSecret != webhookSecret)
+            {
+                logger.LogWarning("Invalid webhook secret for integration {IntegrationId}", integrationId);
+                return Results.NotFound(); // Don't reveal if integration exists
+            }
+
+            if (!integration.IsEnabled)
             {
                 return Results.NotFound("Integration not found or disabled");
             }

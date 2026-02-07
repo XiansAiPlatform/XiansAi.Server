@@ -19,7 +19,7 @@ public static class TeamsWebhookEndpoints
     public static void MapTeamsWebhookEndpoints(this RouteGroupBuilder appsGroup)
     {
         // Microsoft Teams Bot Framework endpoint
-        appsGroup.MapPost("/msteams/messaging/{integrationId}", HandleTeamsMessagingWebhook)
+        appsGroup.MapPost("/msteams/messaging/{integrationId}/{webhookSecret}", HandleTeamsMessagingWebhook)
             .WithName("HandleTeamsMessagingWebhook")
             .AllowAnonymous()
             .WithOpenApi(operation => new(operation)
@@ -33,6 +33,10 @@ public static class TeamsWebhookEndpoints
                     - Conversation updates
                     - Invoke activities (adaptive card actions)
                     
+                    **Security:**
+                    - Webhook secret in URL provides first layer of defense
+                    - Bot Framework JWT verification provides second layer
+                    
                     Configure this URL as the messaging endpoint in Azure Bot Service.
                     """
             });
@@ -43,6 +47,7 @@ public static class TeamsWebhookEndpoints
     /// </summary>
     private static async Task<IResult> HandleTeamsMessagingWebhook(
         string integrationId,
+        string webhookSecret,
         HttpContext httpContext,
         [FromServices] IAppIntegrationService integrationService,
         [FromServices] ITeamsWebhookHandler teamsHandler,
@@ -59,6 +64,13 @@ public static class TeamsWebhookEndpoints
             {
                 logger.LogWarning("Integration {IntegrationId} not found", integrationId);
                 return Results.NotFound("Integration not found");
+            }
+
+            // Validate webhook secret FIRST (before any other processing)
+            if (integration.Secrets?.WebhookSecret != webhookSecret)
+            {
+                logger.LogWarning("Invalid webhook secret for integration {IntegrationId}", integrationId);
+                return Results.NotFound(); // Don't reveal if integration exists
             }
 
             if (!integration.IsEnabled)
