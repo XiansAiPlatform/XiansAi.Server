@@ -47,6 +47,9 @@ namespace Features.AgentApi.Endpoints
 
             group.MapGet("/history", GetConversationHistory)
             .WithName("Get Conversation History")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithOpenApi(operation =>
             {
                 operation.Summary = "Get conversation history";
@@ -56,6 +59,10 @@ namespace Features.AgentApi.Endpoints
 
             group.MapGet("/last-hint", GetLastHint)
             .WithName("Get Last Hint")
+            .Produces<string>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithOpenApi(operation =>
             {
                 operation.Summary = "Get last hint from message history";
@@ -71,6 +78,9 @@ namespace Features.AgentApi.Endpoints
                 return result.ToHttpResult();
             })
             .WithName("Process Outbound Chat from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithOpenApi(operation =>
             {
                 operation.Summary = "Process outbound chat from Agent";
@@ -86,6 +96,9 @@ namespace Features.AgentApi.Endpoints
                 return result.ToHttpResult();
             })
             .WithName("Process Outbound Data from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithOpenApi(operation =>
             {
                 operation.Summary = "Process outbound data from Agent";
@@ -101,6 +114,9 @@ namespace Features.AgentApi.Endpoints
                 return result.ToHttpResult();
             })
             .WithName("Process Outbound Webhook from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithOpenApi(operation =>
             {
                 operation.Summary = "Process outbound webhook response from Agent";
@@ -118,6 +134,9 @@ namespace Features.AgentApi.Endpoints
                 return result.ToHttpResult();
             })
             .WithName("Process Handover Message from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithOpenApi(operation =>
             {
                 operation.Summary = "Process handover message from Agent";
@@ -165,7 +184,8 @@ namespace Features.AgentApi.Endpoints
                     return Results.BadRequest(errorMessage);
                 }
 
-                var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
+                // Normalize participant ID to lowercase for consistency (especially important for emails)
+                var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 if (string.IsNullOrEmpty(requestId))
@@ -196,6 +216,10 @@ namespace Features.AgentApi.Endpoints
                 return Results.Ok(result);
             })
                 .WithName("Send Data or Chat to workflow and wait for response from Agent")
+                .Produces<object>(StatusCodes.Status200OK)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status408RequestTimeout)
+                .ProducesProblem(StatusCodes.Status500InternalServerError)
                 .WithOpenApi(operation =>
                 {
                     operation.Summary = "Send Data or Chat to workflow and wait for response from Agent";

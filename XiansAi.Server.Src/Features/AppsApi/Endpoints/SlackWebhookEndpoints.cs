@@ -22,6 +22,7 @@ public static class SlackWebhookEndpoints
         appsGroup.MapPost("/slack/events/{integrationId}/{webhookSecret}", HandleSlackEventsWebhook)
             .WithName("HandleSlackEventsWebhook")
             .AllowAnonymous()
+            .WithTags("AppsAPI - Slack")
             .WithOpenApi(operation => new(operation)
             {
                 Summary = "Handle Slack Events API Webhook",
@@ -39,24 +40,8 @@ public static class SlackWebhookEndpoints
                     - Slack signature verification provides second layer
                     
                     Configure this URL in your Slack App's Event Subscriptions settings.
-                    """
-            });
-
-        // Slack Interactive Components endpoint
-        appsGroup.MapPost("/slack/interactive/{integrationId}/{webhookSecret}", HandleSlackInteractiveWebhook)
-            .WithName("HandleSlackInteractiveWebhook")
-            .AllowAnonymous()
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Handle Slack Interactive Components Webhook",
-                Description = """
-                    Dedicated endpoint for Slack Interactive Components (buttons, modals, etc.).
                     
-                    **Security:**
-                    - Webhook secret in URL provides first layer of defense
-                    - Slack signature verification provides second layer
-                    
-                    Configure this URL in your Slack App's Interactivity settings.
+                    **Note:** Interactive Components (buttons, modals) are not yet supported.
                     """
             });
     }
@@ -113,49 +98,6 @@ public static class SlackWebhookEndpoints
         }
     }
 
-    /// <summary>
-    /// Dedicated Slack Interactive Components handler
-    /// </summary>
-    private static async Task<IResult> HandleSlackInteractiveWebhook(
-        string integrationId,
-        string webhookSecret,
-        HttpContext httpContext,
-        [FromServices] IAppIntegrationService integrationService,
-        [FromServices] ISlackWebhookHandler slackHandler,
-        [FromServices] ILogger<SlackWebhookEndpointsLogger> logger,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            logger.LogInformation("Received Slack interactive webhook for integration {IntegrationId}", integrationId);
-
-            var integration = await integrationService.GetIntegrationEntityByIdAsync(integrationId);
-
-            if (integration == null)
-            {
-                return Results.NotFound("Integration not found");
-            }
-
-            // Validate webhook secret FIRST (before any other processing)
-            if (integration.Secrets?.WebhookSecret != webhookSecret)
-            {
-                logger.LogWarning("Invalid webhook secret for integration {IntegrationId}", integrationId);
-                return Results.NotFound(); // Don't reveal if integration exists
-            }
-
-            if (!integration.IsEnabled)
-            {
-                return Results.NotFound("Integration not found or disabled");
-            }
-
-            return await slackHandler.ProcessInteractiveWebhookAsync(integration, httpContext, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error processing Slack interactive webhook");
-            return Results.Problem("An error occurred", statusCode: 500);
-        }
-    }
 }
 
 /// <summary>

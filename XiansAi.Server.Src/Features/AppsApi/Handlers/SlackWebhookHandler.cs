@@ -10,7 +10,7 @@ using Shared.Auth;
 namespace Features.AppsApi.Handlers;
 
 /// <summary>
-/// Handles Slack webhook events and interactive components
+/// Handles Slack webhook events
 /// </summary>
 public interface ISlackWebhookHandler
 {
@@ -20,14 +20,6 @@ public interface ISlackWebhookHandler
     Task<IResult> ProcessEventsWebhookAsync(
         AppIntegration integration,
         string rawBody,
-        HttpContext httpContext,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Process Slack Interactive Components webhook
-    /// </summary>
-    Task<IResult> ProcessInteractiveWebhookAsync(
-        AppIntegration integration,
         HttpContext httpContext,
         CancellationToken cancellationToken = default);
 
@@ -128,53 +120,6 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         {
             _logger.LogError(ex, "Error processing Slack events webhook for integration {IntegrationId}", integration.Id);
             return Results.Problem("An error occurred processing the webhook", statusCode: 500);
-        }
-    }
-
-    public async Task<IResult> ProcessInteractiveWebhookAsync(
-        AppIntegration integration,
-        HttpContext httpContext,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            // Read the form data (Slack sends interactive payloads as form data)
-            var form = await httpContext.Request.ReadFormAsync(cancellationToken);
-            var payloadJson = form["payload"].ToString();
-
-            if (string.IsNullOrEmpty(payloadJson))
-            {
-                return Results.BadRequest("Missing payload");
-            }
-
-            // Verify signature
-            if (!await VerifySignatureAsync(integration, payloadJson, httpContext))
-            {
-                _logger.LogWarning("Slack signature verification failed for interactive webhook, integration {IntegrationId}", 
-                    integration.Id);
-                return Results.Unauthorized();
-            }
-
-            // Process interactive payload asynchronously
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await ProcessInteractivePayloadAsync(integration, payloadJson, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error processing Slack interactive payload for integration {IntegrationId}", 
-                        integration.Id);
-                }
-            }, CancellationToken.None);
-
-            return Results.Ok();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error processing Slack interactive webhook for integration {IntegrationId}", integration.Id);
-            return Results.Problem("An error occurred", statusCode: 500);
         }
     }
 
@@ -392,41 +337,6 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         }
     }
 
-    private async Task ProcessInteractivePayloadAsync(
-        AppIntegration integration,
-        string payloadJson,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var payload = JsonSerializer.Deserialize<SlackInteractivePayload>(payloadJson, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (payload == null)
-            {
-                _logger.LogWarning("Failed to parse interactive payload");
-                return;
-            }
-
-            _logger.LogInformation("Processing Slack interactive payload of type {Type} for integration {IntegrationId}",
-                payload.Type, integration.Id);
-
-            // TODO: Implement interactive payload processing
-            // This would parse the payload and send appropriate signals to the workflow
-            // For example:
-            // - Button clicks -> Send action to workflow
-            // - Modal submissions -> Send form data to workflow
-            // - Select menu selections -> Send selected values to workflow
-
-            await Task.CompletedTask;
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "Failed to parse Slack interactive payload");
-        }
-    }
 
     /// <summary>
     /// Determines if a Slack event is from a bot (to prevent infinite loops)
@@ -467,10 +377,10 @@ public class SlackWebhookHandler : ISlackWebhookHandler
     {
         if (string.IsNullOrEmpty(config.ParticipantIdSource))
         {
-            return config.DefaultParticipantId ?? slackEvent.User ?? "unknown";
+            return (config.DefaultParticipantId ?? slackEvent.User ?? "unknown").ToLowerInvariant();
         }
 
-        return config.ParticipantIdSource switch
+        var participantId = config.ParticipantIdSource switch
         {
             "userEmail" => userInfo?.Profile?.Email ?? slackEvent.User ?? config.DefaultParticipantId ?? "unknown",
             "userId" => slackEvent.User ?? config.DefaultParticipantId ?? "unknown",
@@ -478,6 +388,9 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             "threadId" => slackEvent.ThreadTs ?? slackEvent.Channel ?? config.DefaultParticipantId ?? "unknown",
             _ => config.DefaultParticipantId ?? slackEvent.User ?? "unknown"  // Fall back to defaultParticipantId for unknown values
         };
+
+        // Normalize participant ID to lowercase for consistency (especially important for emails)
+        return participantId.ToLowerInvariant();
     }
 
     private string? DetermineScope(SlackEvent slackEvent, AppIntegrationMappingConfig config)
@@ -487,12 +400,27 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             return config.DefaultScope;
         }
 
-        return config.ScopeSource switch
+        var scope = config.ScopeSource switch
         {
             "channelId" => slackEvent.Channel,
             "threadId" => slackEvent.ThreadTs,
-            _ => config.DefaultScope  // Fall back to defaultScope for unknown values
+            _ => null
         };
+
+        // If scope extraction failed (null/empty), fall back to DefaultScope
+        if (string.IsNullOrEmpty(scope))
+        {
+            scope = config.DefaultScope;
+            
+            // Log when fallback occurs to help with troubleshooting
+            if (!string.IsNullOrEmpty(config.ScopeSource) && config.ScopeSource != "default")
+            {
+                _logger.LogDebug("Scope source '{ScopeSource}' returned null/empty for Slack event, using DefaultScope: {DefaultScope}", 
+                    config.ScopeSource, config.DefaultScope);
+            }
+        }
+
+        return scope;
     }
 
     /// <summary>

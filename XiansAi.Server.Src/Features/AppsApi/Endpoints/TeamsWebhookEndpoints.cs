@@ -19,9 +19,10 @@ public static class TeamsWebhookEndpoints
     public static void MapTeamsWebhookEndpoints(this RouteGroupBuilder appsGroup)
     {
         // Microsoft Teams Bot Framework endpoint
-        appsGroup.MapPost("/msteams/messaging/{integrationId}/{webhookSecret}", HandleTeamsMessagingWebhook)
-            .WithName("HandleTeamsMessagingWebhook")
+        appsGroup.MapPost("/msteams/events/{integrationId}/{webhookSecret}", HandleTeamsEventsWebhook)
+            .WithName("HandleTeamsEventsWebhook")
             .AllowAnonymous()
+            .WithTags("AppsAPI - Teams")
             .WithOpenApi(operation => new(operation)
             {
                 Summary = "Handle Microsoft Teams Bot Framework Webhook",
@@ -45,7 +46,7 @@ public static class TeamsWebhookEndpoints
     /// <summary>
     /// Dedicated Microsoft Teams Bot Framework handler
     /// </summary>
-    private static async Task<IResult> HandleTeamsMessagingWebhook(
+    private static async Task<IResult> HandleTeamsEventsWebhook(
         string integrationId,
         string webhookSecret,
         HttpContext httpContext,
@@ -56,7 +57,7 @@ public static class TeamsWebhookEndpoints
     {
         try
         {
-            logger.LogInformation("Received Teams messaging webhook for integration {IntegrationId}", integrationId);
+            logger.LogInformation("Received Teams events webhook for integration {IntegrationId}", integrationId);
 
             var integration = await integrationService.GetIntegrationEntityByIdAsync(integrationId);
 
@@ -89,7 +90,7 @@ public static class TeamsWebhookEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error processing Teams messaging webhook");
+            logger.LogError(ex, "Error processing Teams events webhook");
             return Results.Problem("An error occurred", statusCode: 500);
         }
     }

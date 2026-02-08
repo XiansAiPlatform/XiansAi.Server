@@ -129,8 +129,10 @@ public class AppIntegrationService : IAppIntegrationService
         return platformId.ToLowerInvariant() switch
         {
             "slack" => $"/api/apps/slack/events/{integrationId}/{webhookSecret}",
-            "msteams" => $"/api/apps/msteams/messaging/{integrationId}/{webhookSecret}",
-            _ => $"/api/apps/{platformId}/events/{integrationId}/{webhookSecret}"
+            "msteams" => $"/api/apps/msteams/events/{integrationId}/{webhookSecret}",
+            "webhook" => $"/api/apps/webhook/events/{integrationId}/{webhookSecret}",
+            "outlook" => $"/api/apps/outlook/events/{integrationId}/{webhookSecret}",
+            _ => throw new InvalidOperationException($"Unsupported platform: {platformId}")
         };
     }
 
@@ -178,6 +180,12 @@ public class AppIntegrationService : IAppIntegrationService
                 integrations = integrations.Where(i => i.AgentName == agentName).ToList();
             }
 
+            // Migrate old integrations that haven't been updated yet
+            foreach (var integration in integrations)
+            {
+                await EnsureIntegrationMigrated(integration);
+            }
+
             var responses = integrations
                 .Select(i => AppIntegrationResponse.FromEntity(i))
                 .ToList();
@@ -213,6 +221,9 @@ public class AppIntegrationService : IAppIntegrationService
                     tenantId, id, integration.TenantId);
                 return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
             }
+
+            // Migrate old integrations that have secrets in Configuration
+            await EnsureIntegrationMigrated(integration);
 
             var response = AppIntegrationResponse.FromEntity(integration);
 
@@ -292,12 +303,8 @@ public class AppIntegrationService : IAppIntegrationService
             var id = await _repository.CreateAsync(integration);
             integration.Id = id;
 
-            // Add the outgoing webhook URL to configuration for easy reference
-            var webhookPath = GenerateWebhookPath(integration.PlatformId, id, webhookSecret);
-            integration.Configuration["outgoingWebhookUrl"] = webhookPath;
-            await _repository.UpdateAsync(id, integration);
-
-            var response = AppIntegrationResponse.FromEntity(integration);
+            // Don't mask webhook URL in create response - user needs it to configure platform
+            var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
 
             _logger.LogInformation("Created integration {IntegrationId} with webhook URL {WebhookUrl}",
                 id, response.WebhookUrl);
@@ -416,13 +423,6 @@ public class AppIntegrationService : IAppIntegrationService
                 if (existing.Secrets == null)
                     existing.Secrets = new AppIntegrationSecrets();
                 existing.Secrets.WebhookSecret = GenerateSecureRandomString(32);
-            }
-
-            // Ensure outgoingWebhookUrl is set (for backward compatibility with existing integrations)
-            if (!existing.Configuration.ContainsKey("outgoingWebhookUrl"))
-            {
-                var webhookPath = GenerateWebhookPath(existing.PlatformId, existing.Id, existing.Secrets.WebhookSecret!);
-                existing.Configuration["outgoingWebhookUrl"] = webhookPath;
             }
 
             existing.UpdatedBy = updatedBy;
@@ -726,6 +726,53 @@ public class AppIntegrationService : IAppIntegrationService
     }
 
     /// <summary>
+    /// Ensures an old integration is migrated to the new encrypted secrets format.
+    /// Migrates secrets from Configuration to Secrets and updates in database if needed.
+    /// </summary>
+    private async Task EnsureIntegrationMigrated(AppIntegration integration)
+    {
+        // Check if migration is needed
+        var hasSecretsInConfig = HasSecretsInConfiguration(integration);
+        var needsWebhookSecret = string.IsNullOrEmpty(integration.Secrets?.WebhookSecret);
+
+        if (!hasSecretsInConfig && !needsWebhookSecret)
+        {
+            return; // Already migrated
+        }
+
+        _logger.LogInformation("Migrating old integration {IntegrationId} to encrypted secrets format", integration.Id);
+
+        // Migrate secrets from Configuration
+        MigrateSecretsFromConfiguration(integration);
+
+        // Ensure webhook secret exists
+        if (string.IsNullOrEmpty(integration.Secrets?.WebhookSecret))
+        {
+            if (integration.Secrets == null)
+                integration.Secrets = new AppIntegrationSecrets();
+            integration.Secrets.WebhookSecret = GenerateSecureRandomString(32);
+        }
+
+        // Update in database
+        integration.UpdatedAt = DateTime.UtcNow;
+        integration.UpdatedBy = "system-migration";
+        await _repository.UpdateAsync(integration.Id, integration);
+
+        _logger.LogInformation("Successfully migrated integration {IntegrationId}", integration.Id);
+    }
+
+    /// <summary>
+    /// Checks if an integration has any secrets in the Configuration dictionary (old format)
+    /// </summary>
+    private static bool HasSecretsInConfiguration(AppIntegration integration)
+    {
+        var secretKeys = new[] { "signingSecret", "botToken", "incomingWebhookUrl", "incomingWekhookUrl", 
+                                 "appPassword", "clientSecret", "secret" };
+        return integration.Configuration.Keys.Any(k => 
+            secretKeys.Any(sk => k.Equals(sk, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
     /// Migrates secrets from Configuration to Secrets for backward compatibility.
     /// Removes them from Configuration after migration.
     /// </summary>
@@ -791,6 +838,9 @@ public class AppIntegrationService : IAppIntegrationService
         {
             integration.Configuration.Remove(key);
         }
+
+        // Remove redundant outgoingWebhookUrl from configuration (webhookUrl is in response)
+        integration.Configuration.Remove("outgoingWebhookUrl");
     }
 
     /// <summary>

@@ -9,6 +9,8 @@ namespace Shared.Services;
 public class ChatOrDataRequest
 {
     private string? _workflowType;
+    private string _participantId = string.Empty;
+    
     public string? Workflow { get; set; }
     
     [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -16,7 +18,12 @@ public class ChatOrDataRequest
     public string? RequestId { get; set; }
     
     // unique identifier for the participant, used to identify the participant in the message thread
-    public required string ParticipantId { get; set; }
+    // Automatically normalized to lowercase for consistency (especially important for emails)
+    public required string ParticipantId 
+    { 
+        get => _participantId;
+        set => _participantId = value?.ToLowerInvariant() ?? string.Empty;
+    }
 
     // unique identifier for the agent's workflow, used to identify the workflow in the message thread
     public string? WorkflowId { get; set; }
@@ -72,13 +79,21 @@ public class ChatOrDataRequest
 
 public class HandoffRequest
 {
+    private string _participantId = string.Empty;
+    
     public required string TargetWorkflowId { get; set; }
     public required string TargetWorkflowType { get; set; }
     public required string SourceAgent { get; set; }
     public required string SourceWorkflowType { get; set; }
     public required string SourceWorkflowId { get; set; }
     public required string ThreadId { get; set; }
-    public required string ParticipantId { get; set; }
+    
+    // Automatically normalized to lowercase for consistency (especially important for emails)
+    public required string ParticipantId 
+    { 
+        get => _participantId;
+        set => _participantId = value?.ToLowerInvariant() ?? string.Empty;
+    }
     public string? Scope { get; set; }
     public required string Text { get; set; }
     public object? Data { get; set; }

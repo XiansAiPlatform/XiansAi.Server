@@ -354,16 +354,19 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
     {
         if (string.IsNullOrEmpty(config.ParticipantIdSource))
         {
-            return config.DefaultParticipantId ?? activity.From?.Id ?? "unknown";
+            return (config.DefaultParticipantId ?? activity.From?.Id ?? "unknown").ToLowerInvariant();
         }
 
-        return config.ParticipantIdSource switch
+        var participantId = config.ParticipantIdSource switch
         {
             "userEmail" => userInfo?.Mail ?? userInfo?.UserPrincipalName ?? activity.From?.Id ?? config.DefaultParticipantId ?? "unknown",
             "userId" => activity.From?.Id ?? config.DefaultParticipantId ?? "unknown",
             "channelId" => activity.ChannelData?.TeamsChannelId ?? activity.Conversation?.Id ?? config.DefaultParticipantId ?? "unknown",
             _ => config.DefaultParticipantId ?? activity.From?.Id ?? "unknown"
         };
+
+        // Normalize participant ID to lowercase for consistency (especially important for emails)
+        return participantId.ToLowerInvariant();
     }
 
     private string? DetermineScope(TeamsActivity activity, AppIntegrationMappingConfig config)
@@ -373,13 +376,30 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
             return config.DefaultScope;
         }
 
-        return config.ScopeSource switch
+        var scope = config.ScopeSource switch
         {
             "channelId" => activity.ChannelData?.TeamsChannelId,
             "teamId" => activity.ChannelData?.TeamsTeamId,
             "channelName" => activity.ChannelData?.Channel?.Name,
-            _ => config.DefaultScope
+            "conversationId" => activity.Conversation?.Id,
+            "conversationType" => activity.Conversation?.ConversationType,
+            _ => null
         };
+
+        // If scope extraction failed (null/empty), fall back to DefaultScope
+        if (string.IsNullOrEmpty(scope))
+        {
+            scope = config.DefaultScope;
+            
+            // Log when fallback occurs to help with troubleshooting
+            if (!string.IsNullOrEmpty(config.ScopeSource) && config.ScopeSource != "default")
+            {
+                _logger.LogDebug("Scope source '{ScopeSource}' returned null/empty for Teams activity, using DefaultScope: {DefaultScope}", 
+                    config.ScopeSource, config.DefaultScope);
+            }
+        }
+
+        return scope;
     }
 
     private TeamsMessageMetadata ExtractTeamsMetadata(ConversationMessage message)

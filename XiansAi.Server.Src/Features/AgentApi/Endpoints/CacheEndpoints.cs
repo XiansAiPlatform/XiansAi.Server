@@ -29,6 +29,8 @@ public static class CacheEndpoints
             return await endpoint.GetValue(request.Key);
         })
         .WithName("Get Cache Value")
+        .Produces<object>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Get a value from cache";
             operation.Description = "Retrieves a value from the cache by its key. Returns the cached value if found, otherwise returns null.";
@@ -48,6 +50,8 @@ public static class CacheEndpoints
             return await endpoint.SetValue(request.Key, request.Value, options);
         })
         .WithName("Set Cache Value")
+        .Produces<bool>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Set a value in cache";
             operation.Description = "Stores a value in the cache with the specified key and optional expiration settings";
@@ -61,6 +65,8 @@ public static class CacheEndpoints
             return await endpoint.DeleteValue(request.Key);
         })
         .WithName("Delete Cache Value")
+        .Produces<bool>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Delete a value from cache";
             operation.Description = "Removes a value from the cache by its key";

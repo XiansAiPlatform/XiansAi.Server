@@ -55,8 +55,8 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
 
     /// <summary>
     /// Platform-specific configuration stored as key-value pairs (NON-SENSITIVE values only).
-    /// For Slack: { "appId": "...", "teamId": "...", "outgoingWebhookUrl": "..." }
-    /// For Teams: { "appId": "...", "appTenantId": "...", "serviceUrl": "...", "outgoingWebhookUrl": "..." }
+    /// For Slack: { "appId": "...", "teamId": "..." }
+    /// For Teams: { "appId": "...", "appTenantId": "...", "serviceUrl": "..." }
     /// Note: Sensitive values (passwords, tokens, secrets) are stored encrypted in the Secrets field
     /// </summary>
     [BsonElement("configuration")]
@@ -425,8 +425,22 @@ public class AppIntegrationResponse
     /// <summary>
     /// Creates a response DTO from an AppIntegration entity
     /// </summary>
-    public static AppIntegrationResponse FromEntity(AppIntegration entity)
+    /// <param name="entity">The integration entity</param>
+    /// <param name="maskWebhookUrl">If true, masks the webhook secret in the URL (for Get endpoints). If false, shows full URL (for Create endpoint).</param>
+    public static AppIntegrationResponse FromEntity(AppIntegration entity, bool maskWebhookUrl = true)
     {
+        // Filter out redundant outgoingWebhookUrl from configuration (it's in webhookUrl field)
+        var cleanConfig = entity.Configuration
+            .Where(kvp => kvp.Key != "outgoingWebhookUrl")
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        // Generate webhook URL with optional masking
+        var webhookUrl = GenerateWebhookUrl(entity.PlatformId, entity.Id, entity.Secrets?.WebhookSecret);
+        if (maskWebhookUrl && !string.IsNullOrEmpty(entity.Secrets?.WebhookSecret))
+        {
+            webhookUrl = MaskWebhookUrlSecret(webhookUrl, entity.Secrets.WebhookSecret);
+        }
+
         return new AppIntegrationResponse
         {
             Id = entity.Id,
@@ -437,8 +451,8 @@ public class AppIntegrationResponse
             AgentName = entity.AgentName,
             ActivationName = entity.ActivationName,
             WorkflowId = entity.WorkflowId,
-            WebhookUrl = GenerateWebhookUrl(entity.PlatformId, entity.Id, entity.Secrets?.WebhookSecret),
-            Configuration = entity.Configuration, // No longer contains sensitive data
+            WebhookUrl = webhookUrl,
+            Configuration = cleanConfig, // Filtered configuration without redundant fields
             Secrets = entity.Secrets?.Mask(), // Mask secrets for API response
             MappingConfig = entity.MappingConfig,
             IsEnabled = entity.IsEnabled,
@@ -447,6 +461,18 @@ public class AppIntegrationResponse
             CreatedBy = entity.CreatedBy,
             UpdatedBy = entity.UpdatedBy
         };
+    }
+
+    /// <summary>
+    /// Masks the webhook secret in a webhook URL
+    /// </summary>
+    private static string MaskWebhookUrlSecret(string webhookUrl, string webhookSecret)
+    {
+        if (string.IsNullOrEmpty(webhookSecret) || webhookSecret.Length <= 8)
+            return webhookUrl;
+
+        var maskedSecret = webhookSecret[..4] + "****" + webhookSecret[^4..];
+        return webhookUrl.Replace(webhookSecret, maskedSecret);
     }
 
     /// <summary>
@@ -464,16 +490,20 @@ public class AppIntegrationResponse
             return platformId.ToLowerInvariant() switch
             {
                 "slack" => $"/api/apps/slack/events/{integrationId}",
-                "msteams" => $"/api/apps/msteams/messaging/{integrationId}",
-                _ => $"/api/apps/{platformId}/events/{integrationId}"
+                "msteams" => $"/api/apps/msteams/events/{integrationId}",
+                "webhook" => $"/api/apps/webhook/events/{integrationId}",
+                "outlook" => $"/api/apps/outlook/events/{integrationId}",
+                _ => throw new InvalidOperationException($"Unsupported platform: {platformId}")
             };
         }
 
         return platformId.ToLowerInvariant() switch
         {
             "slack" => $"/api/apps/slack/events/{integrationId}/{webhookSecret}",
-            "msteams" => $"/api/apps/msteams/messaging/{integrationId}/{webhookSecret}",
-            _ => $"/api/apps/{platformId}/events/{integrationId}/{webhookSecret}"
+            "msteams" => $"/api/apps/msteams/events/{integrationId}/{webhookSecret}",
+            "webhook" => $"/api/apps/webhook/events/{integrationId}/{webhookSecret}",
+            "outlook" => $"/api/apps/outlook/events/{integrationId}/{webhookSecret}",
+            _ => throw new InvalidOperationException($"Unsupported platform: {platformId}")
         };
     }
 
@@ -537,10 +567,10 @@ public static class PlatformConfigurationRequirements
 
     public static readonly Dictionary<string, string[]> OptionalFields = new()
     {
-        ["slack"] = new[] { "incomingWebhookUrl", "outgoingWebhookUrl", "botToken", "appId", "teamId" },
-        ["msteams"] = new[] { "outgoingWebhookUrl", "serviceUrl" },
-        ["outlook"] = new[] { "userEmail" },
-        ["webhook"] = new[] { "secret", "headers", "outgoingWebhookUrl" }
+        ["slack"] = new[] { "appId", "teamId" },
+        ["msteams"] = new[] { "serviceUrl", "appTenantId" },
+        ["outlook"] = new[] { "userEmail", "tenantId" },
+        ["webhook"] = new[] { "headers" }
     };
 
     public static void ValidateConfiguration(string platformId, Dictionary<string, object> configuration)

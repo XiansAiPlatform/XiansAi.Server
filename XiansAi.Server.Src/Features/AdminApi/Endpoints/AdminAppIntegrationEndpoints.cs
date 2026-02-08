@@ -1,11 +1,84 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AppsApi.Models;
 using Features.AppsApi.Services;
+using Features.AppsApi.Endpoints;
 using Shared.Auth;
 using Shared.Utils.Services;
 
 namespace Features.AdminApi.Endpoints;
 
+
+/// <summary>
+/// Metadata about a supported integration type
+/// </summary>
+public class IntegrationTypeMetadata
+{
+    /// <summary>
+    /// Platform identifier (slack, msteams, outlook, webhook)
+    /// </summary>
+    public required string PlatformId { get; set; }
+
+    /// <summary>
+    /// User-friendly display name
+    /// </summary>
+    public required string DisplayName { get; set; }
+
+    /// <summary>
+    /// Description of the integration type
+    /// </summary>
+    public required string Description { get; set; }
+
+    /// <summary>
+    /// Icon identifier for UI
+    /// </summary>
+    public string? Icon { get; set; }
+
+    /// <summary>
+    /// List of required configuration fields
+    /// </summary>
+    public List<ConfigurationFieldMetadata> RequiredConfigurationFields { get; set; } = new();
+
+    /// <summary>
+    /// List of capabilities/features supported by this platform
+    /// </summary>
+    public List<string> Capabilities { get; set; } = new();
+
+    /// <summary>
+    /// Webhook endpoint pattern for this integration type
+    /// </summary>
+    public string? WebhookEndpoint { get; set; }
+
+    /// <summary>
+    /// URL to platform documentation
+    /// </summary>
+    public string? DocumentationUrl { get; set; }
+}
+
+/// <summary>
+/// Metadata about a configuration field
+/// </summary>
+public class ConfigurationFieldMetadata
+{
+    /// <summary>
+    /// Field name/key
+    /// </summary>
+    public required string FieldName { get; set; }
+
+    /// <summary>
+    /// User-friendly display name
+    /// </summary>
+    public required string DisplayName { get; set; }
+
+    /// <summary>
+    /// Description of the field
+    /// </summary>
+    public required string Description { get; set; }
+
+    /// <summary>
+    /// Whether this field contains sensitive data (should be encrypted)
+    /// </summary>
+    public bool IsSecret { get; set; }
+}
 /// <summary>
 /// AdminApi endpoints for managing app integrations (Slack, Teams, Outlook, etc.).
 /// These endpoints allow creating, updating, deleting, and managing integrations
@@ -19,6 +92,36 @@ public static class AdminAppIntegrationEndpoints
     /// </summary>
     public static void MapAdminAppIntegrationEndpoints(this RouteGroupBuilder adminApiGroup)
     {
+        // Metadata endpoints (no tenant context required)
+        var metadataGroup = adminApiGroup.MapGroup("/integrations/metadata")
+            .WithTags("AdminAPI - Integration Metadata")
+            .RequireAuthorization("AdminEndpointAuthPolicy");
+
+        metadataGroup.MapGet("/types", GetIntegrationTypes)
+            .WithName("GetIntegrationMetadataTypes")
+            .Produces<List<IntegrationTypeMetadata>>(StatusCodes.Status200OK)
+            .WithOpenApi(operation => new(operation)
+            {
+                Summary = "Get supported integration types",
+                Description = """
+                    Returns a list of all supported app integration types (platforms) that can be configured.
+                    
+                    Each integration type includes:
+                    - Platform ID (used in API calls)
+                    - Display name
+                    - Description
+                    - Required configuration fields
+                    - Capabilities (features supported by this platform)
+                    
+                    **Supported Platforms:**
+                    - Slack: Team collaboration and messaging
+                    - Microsoft Teams: Enterprise team collaboration
+                    - Outlook: Email integration
+                    - Generic Webhook: Custom webhook integrations
+                    """
+            });
+
+        // Tenant-specific integration endpoints
         var integrationGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/integrations")
             .WithTags("AdminAPI - App Integrations")
             .RequireAuthorization("AdminEndpointAuthPolicy");
@@ -219,8 +322,8 @@ public static class AdminAppIntegrationEndpoints
             {
                 return result.ToHttpResult();
             }
-            return Results.Ok(new 
-            { 
+            return Results.Ok(new
+            {
                 message = $"Integration '{integrationId}' enabled successfully",
                 integration = result.Data
             });
@@ -250,8 +353,8 @@ public static class AdminAppIntegrationEndpoints
             {
                 return result.ToHttpResult();
             }
-            return Results.Ok(new 
-            { 
+            return Results.Ok(new
+            {
                 message = $"Integration '{integrationId}' disabled successfully",
                 integration = result.Data
             });
@@ -313,9 +416,9 @@ public static class AdminAppIntegrationEndpoints
             {
                 return result.ToHttpResult();
             }
-            
-            return Results.Ok(new 
-            { 
+
+            return Results.Ok(new
+            {
                 integrationId = result.Data.Id,
                 platformId = result.Data.PlatformId,
                 webhookUrl = result.Data.WebhookUrl,
@@ -387,5 +490,77 @@ public static class AdminAppIntegrationEndpoints
                 documentation = "See platform-specific documentation"
             }
         };
+    }
+
+    /// <summary>
+    /// Returns the list of supported integration types with their metadata
+    /// </summary>
+    private static IResult GetIntegrationTypes()
+    {
+        var integrationTypes = new List<IntegrationTypeMetadata>
+        {
+            new IntegrationTypeMetadata
+            {
+                PlatformId = "slack",
+                DisplayName = "Slack",
+                Description = "Team collaboration and messaging platform",
+                Icon = "slack",
+                RequiredConfigurationFields = new List<ConfigurationFieldMetadata>
+                {
+                    new() { FieldName = "appId", DisplayName = "App ID", Description = "Slack App ID", IsSecret = false },
+                    new() { FieldName = "teamId", DisplayName = "Team ID", Description = "Slack Workspace Team ID", IsSecret = false }
+                },
+                Capabilities = new List<string> { "bidirectional_messaging", "rich_formatting", "interactive_components", "file_sharing" },
+                WebhookEndpoint = "/api/apps/slack/events/{integrationId}/{webhookSecret}",
+                DocumentationUrl = "https://api.slack.com/docs"
+            },
+            new IntegrationTypeMetadata
+            {
+                PlatformId = "msteams",
+                DisplayName = "Microsoft Teams",
+                Description = "Enterprise team collaboration platform",
+                Icon = "teams",
+                RequiredConfigurationFields = new List<ConfigurationFieldMetadata>
+                {
+                    new() { FieldName = "appId", DisplayName = "App ID", Description = "Microsoft App ID", IsSecret = false },
+                    new() { FieldName = "appTenantId", DisplayName = "App Tenant ID", Description = "Azure AD Tenant ID", IsSecret = false },
+                    new() { FieldName = "serviceUrl", DisplayName = "Service URL", Description = "Bot Framework Service URL", IsSecret = false }
+                },
+                Capabilities = new List<string> { "bidirectional_messaging", "rich_formatting", "adaptive_cards", "file_sharing" },
+                WebhookEndpoint = "/api/apps/msteams/messaging/{integrationId}/{webhookSecret}",
+                DocumentationUrl = "https://docs.microsoft.com/en-us/microsoftteams/platform/"
+            },
+            // new IntegrationTypeMetadata
+            // {
+            //     PlatformId = "outlook",
+            //     DisplayName = "Outlook",
+            //     Description = "Email integration for Microsoft Outlook",
+            //     Icon = "outlook",
+            //     RequiredConfigurationFields = new List<ConfigurationFieldMetadata>
+            //     {
+            //         new() { FieldName = "userEmail", DisplayName = "User Email", Description = "Email address for the integration", IsSecret = false },
+            //         new() { FieldName = "tenantId", DisplayName = "Tenant ID", Description = "Azure AD Tenant ID", IsSecret = false }
+            //     },
+            //     Capabilities = new List<string> { "email_messaging", "calendar_integration" },
+            //     WebhookEndpoint = "/api/apps/outlook/events/{integrationId}/{webhookSecret}",
+            //     DocumentationUrl = "https://docs.microsoft.com/en-us/graph/outlook-overview"
+            // },
+            // new IntegrationTypeMetadata
+            // {
+            //     PlatformId = "webhook",
+            //     DisplayName = "Custom Webhook",
+            //     Description = "Custom webhook integration for any platform",
+            //     Icon = "webhook",
+            //     RequiredConfigurationFields = new List<ConfigurationFieldMetadata>
+            //     {
+            //         new() { FieldName = "headers", DisplayName = "Custom Headers", Description = "Custom HTTP headers for outgoing requests", IsSecret = false }
+            //     },
+            //     Capabilities = new List<string> { "bidirectional_messaging", "custom_payloads" },
+            //     WebhookEndpoint = "/api/apps/webhook/events/{integrationId}/{webhookSecret}",
+            //     DocumentationUrl = null
+            // }
+        };
+
+        return Results.Ok(integrationTypes);
     }
 }
