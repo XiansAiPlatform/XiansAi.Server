@@ -3,6 +3,7 @@ using MongoDB.Driver;
 using Features.AppsApi.Models;
 using Shared.Data;
 using Shared.Utils;
+using Shared.Services;
 
 namespace Features.AppsApi.Repositories;
 
@@ -34,9 +35,9 @@ public interface IAppIntegrationRepository
     Task<List<AppIntegration>> GetEnabledIntegrationsAsync(string tenantId);
 
     /// <summary>
-    /// Check if an integration with the same name exists for the tenant
+    /// Check if an integration with the same name exists for the tenant, agent, and activation
     /// </summary>
-    Task<bool> ExistsByNameAsync(string tenantId, string name, string? excludeId = null);
+    Task<bool> ExistsByNameAsync(string tenantId, string agentName, string activationName, string name, string? excludeId = null);
 
     /// <summary>
     /// Create a new integration
@@ -63,13 +64,18 @@ public class AppIntegrationRepository : IAppIntegrationRepository
 {
     private readonly IMongoCollection<AppIntegration> _integrations;
     private readonly ILogger<AppIntegrationRepository> _logger;
+    private readonly ISecretsEncryptionService _encryptionService;
     private const string CollectionName = "app_integrations";
 
-    public AppIntegrationRepository(IDatabaseService databaseService, ILogger<AppIntegrationRepository> logger)
+    public AppIntegrationRepository(
+        IDatabaseService databaseService,
+        ISecretsEncryptionService encryptionService,
+        ILogger<AppIntegrationRepository> logger)
     {
         var database = databaseService.GetDatabaseAsync().Result;
         _integrations = database.GetCollection<AppIntegration>(CollectionName);
         _logger = logger;
+        _encryptionService = encryptionService;
 
         // Ensure indexes are created
         CreateIndexesAsync().Wait();
@@ -106,12 +112,14 @@ public class AppIntegrationRepository : IAppIntegrationRepository
                     Builders<AppIntegration>.IndexKeys.Ascending(x => x.WorkflowId),
                     new CreateIndexOptions { Name = "idx_workflow_id" }),
 
-                // Unique index for tenant + name to prevent duplicates
+                // Unique index for tenant + agent + activation + name to prevent duplicates
                 new CreateIndexModel<AppIntegration>(
                     Builders<AppIntegration>.IndexKeys
                         .Ascending(x => x.TenantId)
+                        .Ascending(x => x.AgentName)
+                        .Ascending(x => x.ActivationName)
                         .Ascending(x => x.Name),
-                    new CreateIndexOptions { Name = "idx_tenant_name_unique", Unique = true })
+                    new CreateIndexOptions { Name = "idx_tenant_agent_activation_name_unique", Unique = true })
             };
 
             await _integrations.Indexes.CreateManyAsync(indexModels);
@@ -130,7 +138,12 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             {
                 return null;
             }
-            return await _integrations.Find(x => x.Id == id).FirstOrDefaultAsync();
+            var integration = await _integrations.Find(x => x.Id == id).FirstOrDefaultAsync();
+            if (integration != null)
+            {
+                DecryptSecrets(integration);
+            }
+            return integration;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationById");
     }
 
@@ -138,10 +151,12 @@ public class AppIntegrationRepository : IAppIntegrationRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _integrations
+            var integrations = await _integrations
                 .Find(x => x.TenantId == tenantId)
                 .SortByDescending(x => x.CreatedAt)
                 .ToListAsync();
+            DecryptSecretsList(integrations);
+            return integrations;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationsByTenantId");
     }
 
@@ -149,10 +164,12 @@ public class AppIntegrationRepository : IAppIntegrationRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _integrations
+            var integrations = await _integrations
                 .Find(x => x.TenantId == tenantId && x.PlatformId == platformId.ToLowerInvariant())
                 .SortByDescending(x => x.CreatedAt)
                 .ToListAsync();
+            DecryptSecretsList(integrations);
+            return integrations;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationsByTenantAndPlatform");
     }
 
@@ -160,12 +177,14 @@ public class AppIntegrationRepository : IAppIntegrationRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _integrations
+            var integrations = await _integrations
                 .Find(x => x.TenantId == tenantId && 
                            x.AgentName == agentName && 
                            x.ActivationName == activationName)
                 .SortByDescending(x => x.CreatedAt)
                 .ToListAsync();
+            DecryptSecretsList(integrations);
+            return integrations;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationsByAgentActivation");
     }
 
@@ -173,19 +192,23 @@ public class AppIntegrationRepository : IAppIntegrationRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _integrations
+            var integrations = await _integrations
                 .Find(x => x.TenantId == tenantId && x.IsEnabled)
                 .SortByDescending(x => x.CreatedAt)
                 .ToListAsync();
+            DecryptSecretsList(integrations);
+            return integrations;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetEnabledAppIntegrations");
     }
 
-    public async Task<bool> ExistsByNameAsync(string tenantId, string name, string? excludeId = null)
+    public async Task<bool> ExistsByNameAsync(string tenantId, string agentName, string activationName, string name, string? excludeId = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var filter = Builders<AppIntegration>.Filter.And(
                 Builders<AppIntegration>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<AppIntegration>.Filter.Eq(x => x.AgentName, agentName),
+                Builders<AppIntegration>.Filter.Eq(x => x.ActivationName, activationName),
                 Builders<AppIntegration>.Filter.Eq(x => x.Name, name)
             );
 
@@ -209,6 +232,9 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             integration.Id = ObjectId.GenerateNewId().ToString();
             integration.GenerateWorkflowId();
 
+            // Encrypt secrets before saving
+            EncryptSecrets(integration);
+
             await _integrations.InsertOneAsync(integration);
             
             _logger.LogInformation("Created app integration {IntegrationId} for tenant {TenantId}", 
@@ -224,6 +250,9 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         {
             integration.UpdatedAt = DateTime.UtcNow;
             integration.GenerateWorkflowId();
+
+            // Encrypt secrets before saving
+            EncryptSecrets(integration);
 
             var result = await _integrations.ReplaceOneAsync(
                 x => x.Id == id && x.TenantId == integration.TenantId,
@@ -291,5 +320,52 @@ public class AppIntegrationRepository : IAppIntegrationRepository
 
             return success;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "SetAppIntegrationEnabled");
+    }
+
+    /// <summary>
+    /// Encrypts the secrets before saving to database
+    /// </summary>
+    private void EncryptSecrets(AppIntegration integration)
+    {
+        if (integration.Secrets?.HasAnySecrets() == true)
+        {
+            integration.SecretsEncrypted = _encryptionService.EncryptObject(integration.Secrets);
+            _logger.LogDebug("Encrypted secrets for integration {IntegrationId}", integration.Id ?? "new");
+        }
+        else
+        {
+            integration.SecretsEncrypted = null;
+            _logger.LogWarning("No secrets to encrypt for integration {IntegrationId}. WebhookSecret: {HasWebhook}, Secrets null: {SecretsNull}", 
+                integration.Id ?? "new",
+                integration.Secrets?.WebhookSecret != null,
+                integration.Secrets == null);
+        }
+    }
+
+    /// <summary>
+    /// Decrypts the secrets after loading from database
+    /// </summary>
+    private void DecryptSecrets(AppIntegration integration)
+    {
+        if (!string.IsNullOrEmpty(integration.SecretsEncrypted))
+        {
+            integration.Secrets = _encryptionService.DecryptObject<AppIntegrationSecrets>(integration.SecretsEncrypted)
+                ?? new AppIntegrationSecrets();
+        }
+        else
+        {
+            integration.Secrets = new AppIntegrationSecrets();
+        }
+    }
+
+    /// <summary>
+    /// Decrypts secrets for a list of integrations
+    /// </summary>
+    private void DecryptSecretsList(List<AppIntegration> integrations)
+    {
+        foreach (var integration in integrations)
+        {
+            DecryptSecrets(integration);
+        }
     }
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Features.AppsApi.Models;
 using Features.AppsApi.Repositories;
@@ -79,16 +80,13 @@ public class AppIntegrationService : IAppIntegrationService
 {
     private readonly IAppIntegrationRepository _repository;
     private readonly ILogger<AppIntegrationService> _logger;
-    private readonly IConfiguration _configuration;
 
     public AppIntegrationService(
         IAppIntegrationRepository repository,
-        ILogger<AppIntegrationService> logger,
-        IConfiguration configuration)
+        ILogger<AppIntegrationService> logger)
     {
         _repository = repository;
         _logger = logger;
-        _configuration = configuration;
     }
 
     /// <summary>
@@ -124,18 +122,30 @@ public class AppIntegrationService : IAppIntegrationService
         return converted;
     }
 
-    /// <summary>
-    /// Gets the base URL for generating webhook URLs
-    /// </summary>
-    private string GetBaseUrl()
-    {
-        // Try to get from configuration
-        var baseUrl = _configuration["AppsApi:BaseUrl"] 
-            ?? _configuration["Application:BaseUrl"]
-            ?? _configuration["ASPNETCORE_URLS"]?.Split(';').FirstOrDefault()
-            ?? "http://localhost:5001";
 
-        return baseUrl.TrimEnd('/');
+    private string GenerateWebhookPath(string platformId, string integrationId, string webhookSecret)
+    {
+        // Generate relative webhook path based on platform (includes webhook secret for security)
+        return platformId.ToLowerInvariant() switch
+        {
+            "slack" => $"/api/apps/slack/events/{integrationId}/{webhookSecret}",
+            "msteams" => $"/api/apps/msteams/events/{integrationId}/{webhookSecret}",
+            "webhook" => $"/api/apps/webhook/events/{integrationId}/{webhookSecret}",
+            "outlook" => $"/api/apps/outlook/events/{integrationId}/{webhookSecret}",
+            _ => throw new InvalidOperationException($"Unsupported platform: {platformId}")
+        };
+    }
+
+    private static string GenerateSecureRandomString(int length)
+    {
+        // Generate cryptographically secure random string for webhook secrets
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        var randomBytes = new byte[length];
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(randomBytes);
+        }
+        return new string(randomBytes.Select(b => chars[b % chars.Length]).ToArray());
     }
 
     public async Task<ServiceResult<List<AppIntegrationResponse>>> GetIntegrationsAsync(
@@ -170,9 +180,14 @@ public class AppIntegrationService : IAppIntegrationService
                 integrations = integrations.Where(i => i.AgentName == agentName).ToList();
             }
 
-            var baseUrl = GetBaseUrl();
+            // Migrate old integrations that haven't been updated yet
+            foreach (var integration in integrations)
+            {
+                await EnsureIntegrationMigrated(integration);
+            }
+
             var responses = integrations
-                .Select(i => AppIntegrationResponse.FromEntity(i, baseUrl))
+                .Select(i => AppIntegrationResponse.FromEntity(i))
                 .ToList();
 
             _logger.LogInformation("Found {Count} integrations for tenant {TenantId}", responses.Count, tenantId);
@@ -207,8 +222,10 @@ public class AppIntegrationService : IAppIntegrationService
                 return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
             }
 
-            var baseUrl = GetBaseUrl();
-            var response = AppIntegrationResponse.FromEntity(integration, baseUrl);
+            // Migrate old integrations that have secrets in Configuration
+            await EnsureIntegrationMigrated(integration);
+
+            var response = AppIntegrationResponse.FromEntity(integration);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -230,11 +247,11 @@ public class AppIntegrationService : IAppIntegrationService
             _logger.LogInformation("Creating integration {Name} for tenant {TenantId}, platform {Platform}",
                 request.Name, tenantId, request.PlatformId);
 
-            // Check if name already exists
-            if (await _repository.ExistsByNameAsync(tenantId, request.Name))
+            // Check if name already exists for this agent/activation combination
+            if (await _repository.ExistsByNameAsync(tenantId, request.AgentName, request.ActivationName, request.Name))
             {
                 return ServiceResult<AppIntegrationResponse>.BadRequest(
-                    $"An integration with name '{request.Name}' already exists");
+                    $"An integration with name '{request.Name}' already exists for agent '{request.AgentName}' and activation '{request.ActivationName}'");
             }
 
             // Validate platform-specific configuration
@@ -248,6 +265,9 @@ public class AppIntegrationService : IAppIntegrationService
                 return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
             }
 
+            // Generate webhook secret for URL security
+            var webhookSecret = GenerateSecureRandomString(32);
+
             // Create the integration entity
             var integration = new AppIntegration
             {
@@ -258,12 +278,16 @@ public class AppIntegrationService : IAppIntegrationService
                 AgentName = request.AgentName,
                 ActivationName = request.ActivationName,
                 Configuration = configuration,
+                Secrets = request.Secrets?.ToSecrets(webhookSecret) ?? new AppIntegrationSecrets { WebhookSecret = webhookSecret },
                 MappingConfig = request.MappingConfig ?? new AppIntegrationMappingConfig(),
                 IsEnabled = request.IsEnabled,
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
+
+            // Migrate secrets from Configuration to Secrets for backward compatibility
+            MigrateSecretsFromConfiguration(integration);
 
             // Validate and sanitize
             try
@@ -279,8 +303,8 @@ public class AppIntegrationService : IAppIntegrationService
             var id = await _repository.CreateAsync(integration);
             integration.Id = id;
 
-            var baseUrl = GetBaseUrl();
-            var response = AppIntegrationResponse.FromEntity(integration, baseUrl);
+            // Don't mask webhook URL in create response - user needs it to configure platform
+            var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
 
             _logger.LogInformation("Created integration {IntegrationId} with webhook URL {WebhookUrl}",
                 id, response.WebhookUrl);
@@ -320,10 +344,10 @@ public class AppIntegrationService : IAppIntegrationService
             // Check name uniqueness if name is being changed
             if (!string.IsNullOrEmpty(request.Name) && request.Name != existing.Name)
             {
-                if (await _repository.ExistsByNameAsync(tenantId, request.Name, id))
+                if (await _repository.ExistsByNameAsync(tenantId, existing.AgentName, existing.ActivationName, request.Name, id))
                 {
                     return ServiceResult<AppIntegrationResponse>.BadRequest(
-                        $"An integration with name '{request.Name}' already exists");
+                        $"An integration with name '{request.Name}' already exists for agent '{existing.AgentName}' and activation '{existing.ActivationName}'");
                 }
                 existing.Name = request.Name;
             }
@@ -364,6 +388,43 @@ public class AppIntegrationService : IAppIntegrationService
                 existing.IsEnabled = request.IsEnabled.Value;
             }
 
+            // Update secrets if provided
+            if (request.Secrets != null)
+            {
+                // Preserve existing webhook secret if not being updated
+                var webhookSecret = existing.Secrets?.WebhookSecret ?? GenerateSecureRandomString(32);
+                
+                // Merge secrets - update only provided values
+                if (existing.Secrets == null)
+                {
+                    existing.Secrets = new AppIntegrationSecrets { WebhookSecret = webhookSecret };
+                }
+
+                if (request.Secrets.SlackSigningSecret != null)
+                    existing.Secrets.SlackSigningSecret = request.Secrets.SlackSigningSecret;
+                if (request.Secrets.SlackBotToken != null)
+                    existing.Secrets.SlackBotToken = request.Secrets.SlackBotToken;
+                if (request.Secrets.SlackIncomingWebhookUrl != null)
+                    existing.Secrets.SlackIncomingWebhookUrl = request.Secrets.SlackIncomingWebhookUrl;
+                if (request.Secrets.TeamsAppPassword != null)
+                    existing.Secrets.TeamsAppPassword = request.Secrets.TeamsAppPassword;
+                if (request.Secrets.OutlookClientSecret != null)
+                    existing.Secrets.OutlookClientSecret = request.Secrets.OutlookClientSecret;
+                if (request.Secrets.GenericWebhookSecret != null)
+                    existing.Secrets.GenericWebhookSecret = request.Secrets.GenericWebhookSecret;
+            }
+
+            // Migrate secrets from Configuration to Secrets for backward compatibility
+            MigrateSecretsFromConfiguration(existing);
+
+            // Ensure webhook secret exists (for backward compatibility)
+            if (existing.Secrets == null || string.IsNullOrEmpty(existing.Secrets.WebhookSecret))
+            {
+                if (existing.Secrets == null)
+                    existing.Secrets = new AppIntegrationSecrets();
+                existing.Secrets.WebhookSecret = GenerateSecureRandomString(32);
+            }
+
             existing.UpdatedBy = updatedBy;
 
             // Validate
@@ -385,8 +446,7 @@ public class AppIntegrationService : IAppIntegrationService
                     "Failed to update integration");
             }
 
-            var baseUrl = GetBaseUrl();
-            var response = AppIntegrationResponse.FromEntity(existing, baseUrl);
+            var response = AppIntegrationResponse.FromEntity(existing);
 
             _logger.LogInformation("Updated integration {IntegrationId}", id);
 
@@ -455,9 +515,8 @@ public class AppIntegrationService : IAppIntegrationService
 
             if (existing.IsEnabled)
             {
-                var baseUrl = GetBaseUrl();
                 return ServiceResult<AppIntegrationResponse>.Success(
-                    AppIntegrationResponse.FromEntity(existing, baseUrl));
+                    AppIntegrationResponse.FromEntity(existing));
             }
 
             existing.IsEnabled = true;
@@ -471,7 +530,7 @@ public class AppIntegrationService : IAppIntegrationService
                     "Failed to enable integration");
             }
 
-            var response = AppIntegrationResponse.FromEntity(existing, GetBaseUrl());
+            var response = AppIntegrationResponse.FromEntity(existing);
 
             _logger.LogInformation("Enabled integration {IntegrationId}", id);
 
@@ -503,9 +562,8 @@ public class AppIntegrationService : IAppIntegrationService
 
             if (!existing.IsEnabled)
             {
-                var baseUrl = GetBaseUrl();
                 return ServiceResult<AppIntegrationResponse>.Success(
-                    AppIntegrationResponse.FromEntity(existing, baseUrl));
+                    AppIntegrationResponse.FromEntity(existing));
             }
 
             existing.IsEnabled = false;
@@ -519,7 +577,7 @@ public class AppIntegrationService : IAppIntegrationService
                     "Failed to disable integration");
             }
 
-            var response = AppIntegrationResponse.FromEntity(existing, GetBaseUrl());
+            var response = AppIntegrationResponse.FromEntity(existing);
 
             _logger.LogInformation("Disabled integration {IntegrationId}", id);
 
@@ -665,5 +723,137 @@ public class AppIntegrationService : IAppIntegrationService
             Message = "Outlook configuration is valid",
             Details = details
         });
+    }
+
+    /// <summary>
+    /// Ensures an old integration is migrated to the new encrypted secrets format.
+    /// Migrates secrets from Configuration to Secrets and updates in database if needed.
+    /// </summary>
+    private async Task EnsureIntegrationMigrated(AppIntegration integration)
+    {
+        // Check if migration is needed
+        var hasSecretsInConfig = HasSecretsInConfiguration(integration);
+        var needsWebhookSecret = string.IsNullOrEmpty(integration.Secrets?.WebhookSecret);
+
+        if (!hasSecretsInConfig && !needsWebhookSecret)
+        {
+            return; // Already migrated
+        }
+
+        _logger.LogInformation("Migrating old integration {IntegrationId} to encrypted secrets format", integration.Id);
+
+        // Migrate secrets from Configuration
+        MigrateSecretsFromConfiguration(integration);
+
+        // Ensure webhook secret exists
+        if (string.IsNullOrEmpty(integration.Secrets?.WebhookSecret))
+        {
+            if (integration.Secrets == null)
+                integration.Secrets = new AppIntegrationSecrets();
+            integration.Secrets.WebhookSecret = GenerateSecureRandomString(32);
+        }
+
+        // Update in database
+        integration.UpdatedAt = DateTime.UtcNow;
+        integration.UpdatedBy = "system-migration";
+        await _repository.UpdateAsync(integration.Id, integration);
+
+        _logger.LogInformation("Successfully migrated integration {IntegrationId}", integration.Id);
+    }
+
+    /// <summary>
+    /// Checks if an integration has any secrets in the Configuration dictionary (old format)
+    /// </summary>
+    private static bool HasSecretsInConfiguration(AppIntegration integration)
+    {
+        var secretKeys = new[] { "signingSecret", "botToken", "incomingWebhookUrl", "incomingWekhookUrl", 
+                                 "appPassword", "clientSecret", "secret" };
+        return integration.Configuration.Keys.Any(k => 
+            secretKeys.Any(sk => k.Equals(sk, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
+    /// Migrates secrets from Configuration to Secrets for backward compatibility.
+    /// Removes them from Configuration after migration.
+    /// </summary>
+    private static void MigrateSecretsFromConfiguration(AppIntegration integration)
+    {
+        var configToRemove = new List<string>();
+
+        // Migrate platform-specific secrets based on platformId
+        switch (integration.PlatformId.ToLowerInvariant())
+        {
+            case "slack":
+                // Migrate Slack secrets
+                if (TryGetAndRemove(integration.Configuration, "signingSecret", out var slackSigningSecret))
+                {
+                    integration.Secrets.SlackSigningSecret = slackSigningSecret;
+                    configToRemove.Add("signingSecret");
+                }
+                if (TryGetAndRemove(integration.Configuration, "botToken", out var slackBotToken))
+                {
+                    integration.Secrets.SlackBotToken = slackBotToken;
+                    configToRemove.Add("botToken");
+                }
+                // Support both spellings
+                if (TryGetAndRemove(integration.Configuration, "incomingWebhookUrl", out var slackWebhook) ||
+                    TryGetAndRemove(integration.Configuration, "incomingWekhookUrl", out slackWebhook))
+                {
+                    integration.Secrets.SlackIncomingWebhookUrl = slackWebhook;
+                    configToRemove.Add("incomingWebhookUrl");
+                    configToRemove.Add("incomingWekhookUrl");
+                }
+                break;
+
+            case "msteams":
+                // Migrate Teams secrets
+                if (TryGetAndRemove(integration.Configuration, "appPassword", out var teamsPassword))
+                {
+                    integration.Secrets.TeamsAppPassword = teamsPassword;
+                    configToRemove.Add("appPassword");
+                }
+                break;
+
+            case "outlook":
+                // Migrate Outlook secrets
+                if (TryGetAndRemove(integration.Configuration, "clientSecret", out var outlookSecret))
+                {
+                    integration.Secrets.OutlookClientSecret = outlookSecret;
+                    configToRemove.Add("clientSecret");
+                }
+                break;
+
+            case "webhook":
+                // Migrate generic webhook secrets
+                if (TryGetAndRemove(integration.Configuration, "secret", out var webhookSecret))
+                {
+                    integration.Secrets.GenericWebhookSecret = webhookSecret;
+                    configToRemove.Add("secret");
+                }
+                break;
+        }
+
+        // Remove migrated secrets from Configuration
+        foreach (var key in configToRemove.Distinct())
+        {
+            integration.Configuration.Remove(key);
+        }
+
+        // Remove redundant outgoingWebhookUrl from configuration (webhookUrl is in response)
+        integration.Configuration.Remove("outgoingWebhookUrl");
+    }
+
+    /// <summary>
+    /// Tries to get a string value from configuration dictionary
+    /// </summary>
+    private static bool TryGetAndRemove(Dictionary<string, object> config, string key, out string? value)
+    {
+        if (config.TryGetValue(key, out var obj) && obj?.ToString() is string strValue && !string.IsNullOrEmpty(strValue))
+        {
+            value = strValue;
+            return true;
+        }
+        value = null;
+        return false;
     }
 }

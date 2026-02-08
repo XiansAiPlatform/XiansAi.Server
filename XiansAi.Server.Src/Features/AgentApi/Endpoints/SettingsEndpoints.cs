@@ -29,6 +29,8 @@ public static class SettingsEndpoints
             return Results.Ok(settings);
         })
         .WithName("Get Flow Server Information")
+        .Produces<object>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Get Flow Server Information";
             operation.Description = "Returns Flow Server settings and certificate information in a single response";

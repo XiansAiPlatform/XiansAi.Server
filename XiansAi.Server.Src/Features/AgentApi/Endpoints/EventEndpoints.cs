@@ -35,6 +35,9 @@ public static class EventsEndpoints
             request.SignalName = Constants.SIGNAL_INBOUND_EVENT;
             return await endpoint.SignalWithStartWorkflow(request);
         })
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Signal workflow with start";
             operation.Description = "Sends a signal to a running workflow instance and starts a new one if it doesn't exist";

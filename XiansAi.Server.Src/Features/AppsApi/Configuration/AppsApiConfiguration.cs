@@ -48,6 +48,7 @@ public static class AppsApiConfiguration
     /// Maps AppsApi public webhook endpoints to the application.
     /// These endpoints are called by external platforms (Slack, Teams, etc.)
     /// and use platform-specific authentication (signature verification).
+    /// Note: Metadata endpoints have been moved to AdminApi for admin-only access.
     /// </summary>
     public static WebApplication UseAppsApiEndpoints(this WebApplication app)
     {

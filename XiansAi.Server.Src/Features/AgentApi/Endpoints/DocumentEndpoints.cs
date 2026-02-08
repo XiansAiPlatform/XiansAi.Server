@@ -39,6 +39,9 @@ public static class DocumentEndpoints
             var result = await service.SaveAsync(request);
             return result.ToHttpResult();
         })
+        .Produces<string>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Save document";
             operation.Description = "Creates or updates a document with optional TTL and overwrite settings";
@@ -53,6 +56,9 @@ public static class DocumentEndpoints
             var result = await service.GetAsync(request.Id);
             return result.ToHttpResult();
         })
+        .Produces<JsonElement>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Get document by ID";
             operation.Description = "Retrieves a document by its unique identifier";
@@ -67,6 +73,9 @@ public static class DocumentEndpoints
             var result = await service.GetByKeyAsync(request.Type, request.Key);
             return result.ToHttpResult();
         })
+        .Produces<JsonElement>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Get document by type and key";
             operation.Description = "Retrieves a document by its type and custom key combination";
@@ -81,6 +90,9 @@ public static class DocumentEndpoints
             var result = await service.QueryAsync(request);
             return result.ToHttpResult();
         })
+        .Produces<object>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Query documents";
             operation.Description = "Searches for documents based on provided criteria with pagination support";
@@ -95,6 +107,10 @@ public static class DocumentEndpoints
             var result = await service.UpdateAsync(document);
             return result.ToHttpResult();
         })
+        .Produces<bool>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Update document";
             operation.Description = "Updates an existing document";
@@ -109,6 +125,9 @@ public static class DocumentEndpoints
             var result = await service.DeleteAsync(request.Id);
             return result.ToHttpResult();
         })
+        .Produces<bool>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Delete document";
             operation.Description = "Deletes a document by its unique identifier";
@@ -123,6 +142,9 @@ public static class DocumentEndpoints
             var result = await service.DeleteManyAsync(request.Ids);
             return result.ToHttpResult();
         })
+        .Produces<int>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Delete multiple documents";
             operation.Description = "Deletes multiple documents by their unique identifiers";
@@ -137,6 +159,8 @@ public static class DocumentEndpoints
             var result = await service.ExistsAsync(request.Id);
             return result.ToHttpResult();
         })
+        .Produces<bool>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Check document existence";
             operation.Description = "Checks if a document exists by its unique identifier";

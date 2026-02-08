@@ -43,6 +43,9 @@ public static class DefinitionsEndpoints
         {
             return await endpoint.CreateAsync(request);
         })
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Create flow definition";
             operation.Description = "Creates a new flow definition in the system";
@@ -57,6 +60,8 @@ public static class DefinitionsEndpoints
         {
             return await endpoint.CheckHash(workflowType, systemScoped, hash);
         })
+        .Produces<bool>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation =>
         {
             operation.Summary = "Check if flow definition hash already exists";
@@ -70,6 +75,9 @@ public static class DefinitionsEndpoints
         {
             return await endpoint.CreateAgentAsync(request);
         })
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation =>
         {
             operation.Summary = "Create agent";
@@ -85,6 +93,10 @@ public static class DefinitionsEndpoints
             return result.ToHttpResult();
         })
         .RequiresValidTenantAdmin()
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation =>
         {
             operation.Summary = "Deploy a template agent to agent's tenant";
@@ -101,6 +113,11 @@ public static class DefinitionsEndpoints
             return result.ToHttpResult();
         })
         .RequiresValidTenantAdmin()
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation =>
         {
             operation.Summary = "Delete an agent and associated resources";

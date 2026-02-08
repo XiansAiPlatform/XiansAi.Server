@@ -149,16 +149,21 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
                 return;
             }
 
-            // Get app credentials
-            if (!integration.Configuration.TryGetValue("appId", out var appIdObj) ||
-                !integration.Configuration.TryGetValue("appPassword", out var appPasswordObj))
+            // Get app credentials (appId from config, appPassword from encrypted secrets)
+            if (!integration.Configuration.TryGetValue("appId", out var appIdObj))
             {
-                _logger.LogWarning("Teams appId or appPassword not configured for integration {IntegrationId}", integration.Id);
+                _logger.LogWarning("Teams appId not configured for integration {IntegrationId}", integration.Id);
                 return;
             }
 
             var appId = appIdObj?.ToString();
-            var appPassword = appPasswordObj?.ToString();
+            var appPassword = integration.Secrets?.TeamsAppPassword;
+            
+            if (string.IsNullOrEmpty(appPassword))
+            {
+                _logger.LogWarning("Teams appPassword not configured in secrets for integration {IntegrationId}", integration.Id);
+                return;
+            }
             
             // Get tenant ID (optional - for single-tenant bots)
             integration.Configuration.TryGetValue("appTenantId", out var appTenantIdObj);
@@ -349,16 +354,19 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
     {
         if (string.IsNullOrEmpty(config.ParticipantIdSource))
         {
-            return config.DefaultParticipantId ?? activity.From?.Id ?? "unknown";
+            return (config.DefaultParticipantId ?? activity.From?.Id ?? "unknown").ToLowerInvariant();
         }
 
-        return config.ParticipantIdSource switch
+        var participantId = config.ParticipantIdSource switch
         {
             "userEmail" => userInfo?.Mail ?? userInfo?.UserPrincipalName ?? activity.From?.Id ?? config.DefaultParticipantId ?? "unknown",
             "userId" => activity.From?.Id ?? config.DefaultParticipantId ?? "unknown",
             "channelId" => activity.ChannelData?.TeamsChannelId ?? activity.Conversation?.Id ?? config.DefaultParticipantId ?? "unknown",
             _ => config.DefaultParticipantId ?? activity.From?.Id ?? "unknown"
         };
+
+        // Normalize participant ID to lowercase for consistency (especially important for emails)
+        return participantId.ToLowerInvariant();
     }
 
     private string? DetermineScope(TeamsActivity activity, AppIntegrationMappingConfig config)
@@ -368,13 +376,30 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
             return config.DefaultScope;
         }
 
-        return config.ScopeSource switch
+        var scope = config.ScopeSource switch
         {
             "channelId" => activity.ChannelData?.TeamsChannelId,
             "teamId" => activity.ChannelData?.TeamsTeamId,
             "channelName" => activity.ChannelData?.Channel?.Name,
-            _ => config.DefaultScope
+            "conversationId" => activity.Conversation?.Id,
+            "conversationType" => activity.Conversation?.ConversationType,
+            _ => null
         };
+
+        // If scope extraction failed (null/empty), fall back to DefaultScope
+        if (string.IsNullOrEmpty(scope))
+        {
+            scope = config.DefaultScope;
+            
+            // Log when fallback occurs to help with troubleshooting
+            if (!string.IsNullOrEmpty(config.ScopeSource) && config.ScopeSource != "default")
+            {
+                _logger.LogDebug("Scope source '{ScopeSource}' returned null/empty for Teams activity, using DefaultScope: {DefaultScope}", 
+                    config.ScopeSource, config.DefaultScope);
+            }
+        }
+
+        return scope;
     }
 
     private TeamsMessageMetadata ExtractTeamsMetadata(ConversationMessage message)
@@ -556,8 +581,7 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         }
 
         // Get bot token (can be reused for Graph API calls)
-        if (!integration.Configuration.TryGetValue("appId", out var appIdObj) ||
-            !integration.Configuration.TryGetValue("appPassword", out var appPasswordObj))
+        if (!integration.Configuration.TryGetValue("appId", out var appIdObj))
         {
             _logger.LogDebug("App credentials not configured for integration {IntegrationId}, cannot fetch user info", 
                 integration.Id);
@@ -565,7 +589,14 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         }
 
         var appId = appIdObj?.ToString();
-        var appPassword = appPasswordObj?.ToString();
+        var appPassword = integration.Secrets?.TeamsAppPassword;
+        
+        if (string.IsNullOrEmpty(appPassword))
+        {
+            _logger.LogDebug("Teams appPassword not configured in secrets for integration {IntegrationId}, cannot fetch user info", 
+                integration.Id);
+            return null;
+        }
         integration.Configuration.TryGetValue("appTenantId", out var appTenantIdObj);
         var appTenantId = appTenantIdObj?.ToString();
 

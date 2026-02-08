@@ -21,6 +21,9 @@ public static class LogsEndpoints
         {
             return await service.CreateLogs(requests);
         })
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Create multiple logs";
             operation.Description = "Creates multiple log entries for workflow monitoring";
@@ -33,6 +36,9 @@ public static class LogsEndpoints
         {
             return await service.CreateLog(request);
         })
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Create single log";
             operation.Description = "Creates a single log entry for workflow monitoring";

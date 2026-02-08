@@ -54,12 +54,28 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
     public string WorkflowId { get; set; } = null!;
 
     /// <summary>
-    /// Platform-specific configuration stored as key-value pairs.
-    /// For Slack: { "incomingWebhookUrl": "...", "signingSecret": "...", "botToken": "..." }
-    /// For Teams: { "appId": "...", "appPassword": "...", "tenantId": "..." }
+    /// Platform-specific configuration stored as key-value pairs (NON-SENSITIVE values only).
+    /// For Slack: { "appId": "...", "teamId": "..." }
+    /// For Teams: { "appId": "...", "appTenantId": "...", "serviceUrl": "..." }
+    /// Note: Sensitive values (passwords, tokens, secrets) are stored encrypted in the Secrets field
     /// </summary>
     [BsonElement("configuration")]
     public Dictionary<string, object> Configuration { get; set; } = new();
+
+    /// <summary>
+    /// Encrypted secrets for this integration (stored as encrypted JSON in database).
+    /// Contains sensitive values like passwords, tokens, signing secrets, webhook URLs with embedded tokens.
+    /// Decrypted and populated at runtime by the repository layer.
+    /// </summary>
+    [BsonElement("secrets_encrypted")]
+    public string? SecretsEncrypted { get; set; }
+
+    /// <summary>
+    /// Decrypted secrets (NOT stored in database - populated at runtime).
+    /// Use this property to access/modify secrets in application code.
+    /// </summary>
+    [BsonIgnore]
+    public AppIntegrationSecrets Secrets { get; set; } = new();
 
     /// <summary>
     /// Configuration for mapping platform-specific identifiers to XiansAi concepts
@@ -106,6 +122,8 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
             ActivationName = ValidationHelpers.SanitizeString(this.ActivationName),
             WorkflowId = this.WorkflowId,
             Configuration = this.Configuration ?? new Dictionary<string, object>(),
+            Secrets = this.Secrets, // Preserve secrets during sanitization
+            SecretsEncrypted = this.SecretsEncrypted, // Preserve encrypted secrets
             MappingConfig = this.MappingConfig ?? new AppIntegrationMappingConfig(),
             IsEnabled = this.IsEnabled,
             CreatedAt = this.CreatedAt,
@@ -161,7 +179,7 @@ public class AppIntegrationMappingConfig
 {
     /// <summary>
     /// How to determine participantId from platform message.
-    /// Options: "userId", "channelId", "threadId", "email", "custom"
+    /// Options: "userId", "userEmail", "channelId", "threadId", "custom"
     /// </summary>
     [BsonElement("participant_id_source")]
     [JsonPropertyName("participantIdSource")]
@@ -176,7 +194,7 @@ public class AppIntegrationMappingConfig
 
     /// <summary>
     /// How to determine scope/topic from platform message.
-    /// Options: "channelId", "channelName", "threadId", "subject", "custom", null (no scope)
+    /// Options: "channelId", "channelName", "teamId", "threadId", "subject", "custom", null (no scope)
     /// </summary>
     [BsonElement("scope_source")]
     [JsonPropertyName("scopeSource")]
@@ -205,7 +223,7 @@ public class AppIntegrationMappingConfig
 
     public void Validate()
     {
-        var validSources = new[] { "userId", "channelId", "threadId", "email", "custom" };
+        var validSources = new[] { "userId", "userEmail", "channelId", "threadId", "custom" };
         if (!string.IsNullOrEmpty(ParticipantIdSource) && !validSources.Contains(ParticipantIdSource))
         {
             throw new ValidationException($"Invalid participantIdSource: {ParticipantIdSource}. Valid options: {string.Join(", ", validSources)}");
@@ -216,7 +234,7 @@ public class AppIntegrationMappingConfig
             throw new ValidationException("participantIdCustomField is required when participantIdSource is 'custom'");
         }
 
-        var validScopeSources = new[] { "channelId", "channelName", "threadId", "subject", "custom" };
+        var validScopeSources = new[] { "channelId", "channelName", "teamId", "threadId", "subject", "custom" };
         if (!string.IsNullOrEmpty(ScopeSource) && !validScopeSources.Contains(ScopeSource))
         {
             throw new ValidationException($"Invalid scopeSource: {ScopeSource}. Valid options: {string.Join(", ", validScopeSources)}, or null");
@@ -256,11 +274,58 @@ public class CreateAppIntegrationRequest
     [JsonPropertyName("configuration")]
     public Dictionary<string, object>? Configuration { get; set; }
 
+    /// <summary>
+    /// Secrets for this integration (will be encrypted at rest)
+    /// </summary>
+    [JsonPropertyName("secrets")]
+    public AppIntegrationSecretsRequest? Secrets { get; set; }
+
     [JsonPropertyName("mappingConfig")]
     public AppIntegrationMappingConfig? MappingConfig { get; set; }
 
     [JsonPropertyName("isEnabled")]
     public bool IsEnabled { get; set; } = true;
+}
+
+/// <summary>
+/// DTO for providing secrets when creating/updating integrations
+/// </summary>
+public class AppIntegrationSecretsRequest
+{
+    [JsonPropertyName("slackSigningSecret")]
+    public string? SlackSigningSecret { get; set; }
+
+    [JsonPropertyName("slackBotToken")]
+    public string? SlackBotToken { get; set; }
+
+    [JsonPropertyName("slackIncomingWebhookUrl")]
+    public string? SlackIncomingWebhookUrl { get; set; }
+
+    [JsonPropertyName("teamsAppPassword")]
+    public string? TeamsAppPassword { get; set; }
+
+    [JsonPropertyName("outlookClientSecret")]
+    public string? OutlookClientSecret { get; set; }
+
+    [JsonPropertyName("genericWebhookSecret")]
+    public string? GenericWebhookSecret { get; set; }
+
+    /// <summary>
+    /// Converts request DTO to domain model
+    /// </summary>
+    public AppIntegrationSecrets ToSecrets(string webhookSecret)
+    {
+        return new AppIntegrationSecrets
+        {
+            WebhookSecret = webhookSecret,
+            SlackSigningSecret = SlackSigningSecret,
+            SlackBotToken = SlackBotToken,
+            SlackIncomingWebhookUrl = SlackIncomingWebhookUrl,
+            TeamsAppPassword = TeamsAppPassword,
+            OutlookClientSecret = OutlookClientSecret,
+            GenericWebhookSecret = GenericWebhookSecret
+        };
+    }
 }
 
 /// <summary>
@@ -276,6 +341,12 @@ public class UpdateAppIntegrationRequest
 
     [JsonPropertyName("configuration")]
     public Dictionary<string, object>? Configuration { get; set; }
+
+    /// <summary>
+    /// Secrets to update (will be encrypted at rest)
+    /// </summary>
+    [JsonPropertyName("secrets")]
+    public AppIntegrationSecretsRequest? Secrets { get; set; }
 
     [JsonPropertyName("mappingConfig")]
     public AppIntegrationMappingConfig? MappingConfig { get; set; }
@@ -314,17 +385,24 @@ public class AppIntegrationResponse
     public required string WorkflowId { get; set; }
 
     /// <summary>
-    /// The webhook URL that should be configured in the external platform.
-    /// Format: {baseUrl}/api/apps/{platformId}/events/{integrationId}
+    /// The webhook URL path (relative) that should be configured in the external platform.
+    /// Append this to your server's base URL.
+    /// Format: /api/apps/{platformId}/events/{integrationId}
     /// </summary>
     [JsonPropertyName("webhookUrl")]
     public required string WebhookUrl { get; set; }
 
     /// <summary>
-    /// Platform-specific configuration (sensitive values are masked)
+    /// Platform-specific configuration (non-sensitive values only)
     /// </summary>
     [JsonPropertyName("configuration")]
     public Dictionary<string, object> Configuration { get; set; } = new();
+
+    /// <summary>
+    /// Secrets with sensitive values masked (first 4 and last 4 characters shown)
+    /// </summary>
+    [JsonPropertyName("secrets")]
+    public AppIntegrationSecrets? Secrets { get; set; }
 
     [JsonPropertyName("mappingConfig")]
     public AppIntegrationMappingConfig MappingConfig { get; set; } = new();
@@ -347,8 +425,22 @@ public class AppIntegrationResponse
     /// <summary>
     /// Creates a response DTO from an AppIntegration entity
     /// </summary>
-    public static AppIntegrationResponse FromEntity(AppIntegration entity, string baseUrl)
+    /// <param name="entity">The integration entity</param>
+    /// <param name="maskWebhookUrl">If true, masks the webhook secret in the URL (for Get endpoints). If false, shows full URL (for Create endpoint).</param>
+    public static AppIntegrationResponse FromEntity(AppIntegration entity, bool maskWebhookUrl = true)
     {
+        // Filter out redundant outgoingWebhookUrl from configuration (it's in webhookUrl field)
+        var cleanConfig = entity.Configuration
+            .Where(kvp => kvp.Key != "outgoingWebhookUrl")
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        // Generate webhook URL with optional masking
+        var webhookUrl = GenerateWebhookUrl(entity.PlatformId, entity.Id, entity.Secrets?.WebhookSecret);
+        if (maskWebhookUrl && !string.IsNullOrEmpty(entity.Secrets?.WebhookSecret))
+        {
+            webhookUrl = MaskWebhookUrlSecret(webhookUrl, entity.Secrets.WebhookSecret);
+        }
+
         return new AppIntegrationResponse
         {
             Id = entity.Id,
@@ -359,8 +451,9 @@ public class AppIntegrationResponse
             AgentName = entity.AgentName,
             ActivationName = entity.ActivationName,
             WorkflowId = entity.WorkflowId,
-            WebhookUrl = GenerateWebhookUrl(baseUrl, entity.PlatformId, entity.Id),
-            Configuration = MaskSensitiveConfiguration(entity.Configuration),
+            WebhookUrl = webhookUrl,
+            Configuration = cleanConfig, // Filtered configuration without redundant fields
+            Secrets = entity.Secrets?.Mask(), // Mask secrets for API response
             MappingConfig = entity.MappingConfig,
             IsEnabled = entity.IsEnabled,
             CreatedAt = entity.CreatedAt,
@@ -371,19 +464,46 @@ public class AppIntegrationResponse
     }
 
     /// <summary>
-    /// Generates the webhook URL for external platforms to call
+    /// Masks the webhook secret in a webhook URL
     /// </summary>
-    private static string GenerateWebhookUrl(string baseUrl, string platformId, string integrationId)
+    private static string MaskWebhookUrlSecret(string webhookUrl, string webhookSecret)
     {
-        // Remove trailing slash if present
-        baseUrl = baseUrl.TrimEnd('/');
-        
-        // Use platform-specific endpoints
+        if (string.IsNullOrEmpty(webhookSecret) || webhookSecret.Length <= 8)
+            return webhookUrl;
+
+        var maskedSecret = webhookSecret[..4] + "****" + webhookSecret[^4..];
+        return webhookUrl.Replace(webhookSecret, maskedSecret);
+    }
+
+    /// <summary>
+    /// Generates the webhook URL path for external platforms to call.
+    /// Returns a relative URL path that should be appended to your server's base URL.
+    /// Includes webhook secret in URL for defense-in-depth security.
+    /// </summary>
+    private static string GenerateWebhookUrl(string platformId, string integrationId, string? webhookSecret)
+    {
+        // Return relative URL path - client can prepend their own base URL
+        // Include webhook secret in URL for additional security layer
+        if (string.IsNullOrEmpty(webhookSecret))
+        {
+            // Fallback for backward compatibility (shouldn't happen with new integrations)
+            return platformId.ToLowerInvariant() switch
+            {
+                "slack" => $"/api/apps/slack/events/{integrationId}",
+                "msteams" => $"/api/apps/msteams/events/{integrationId}",
+                "webhook" => $"/api/apps/webhook/events/{integrationId}",
+                "outlook" => $"/api/apps/outlook/events/{integrationId}",
+                _ => throw new InvalidOperationException($"Unsupported platform: {platformId}")
+            };
+        }
+
         return platformId.ToLowerInvariant() switch
         {
-            "slack" => $"{baseUrl}/api/apps/slack/events/{integrationId}",
-            "msteams" => $"{baseUrl}/api/apps/msteams/messaging/{integrationId}",
-            _ => $"{baseUrl}/api/apps/{platformId}/events/{integrationId}"
+            "slack" => $"/api/apps/slack/events/{integrationId}/{webhookSecret}",
+            "msteams" => $"/api/apps/msteams/events/{integrationId}/{webhookSecret}",
+            "webhook" => $"/api/apps/webhook/events/{integrationId}/{webhookSecret}",
+            "outlook" => $"/api/apps/outlook/events/{integrationId}/{webhookSecret}",
+            _ => throw new InvalidOperationException($"Unsupported platform: {platformId}")
         };
     }
 
@@ -393,12 +513,18 @@ public class AppIntegrationResponse
     private static Dictionary<string, object> MaskSensitiveConfiguration(Dictionary<string, object> config)
     {
         var sensitiveKeys = new[] { "token", "secret", "password", "key", "webhook" };
+        var nonSensitiveKeys = new[] { "outgoingwebhookurl" }; // Our webhook endpoint is not sensitive
         var masked = new Dictionary<string, object>();
 
         foreach (var kvp in config)
         {
-            var isSensitive = sensitiveKeys.Any(sk => 
-                kvp.Key.ToLowerInvariant().Contains(sk));
+            var keyLower = kvp.Key.ToLowerInvariant();
+            
+            // Check if explicitly non-sensitive
+            var isNonSensitive = nonSensitiveKeys.Any(nsk => keyLower.Contains(nsk));
+            
+            // Check if contains sensitive keywords
+            var isSensitive = !isNonSensitive && sensitiveKeys.Any(sk => keyLower.Contains(sk));
 
             if (isSensitive)
             {
@@ -441,10 +567,10 @@ public static class PlatformConfigurationRequirements
 
     public static readonly Dictionary<string, string[]> OptionalFields = new()
     {
-        ["slack"] = new[] { "incomingWebhookUrl", "botToken", "appId", "teamId" },
-        ["msteams"] = new[] { "serviceUrl" },
-        ["outlook"] = new[] { "userEmail" },
-        ["webhook"] = new[] { "secret", "headers" }
+        ["slack"] = new[] { "appId", "teamId" },
+        ["msteams"] = new[] { "serviceUrl", "appTenantId" },
+        ["outlook"] = new[] { "userEmail", "tenantId" },
+        ["webhook"] = new[] { "headers" }
     };
 
     public static void ValidateConfiguration(string platformId, Dictionary<string, object> configuration)
