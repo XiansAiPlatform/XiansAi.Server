@@ -93,6 +93,7 @@ public static class AgentApiConfiguration
         SettingsEndpoints.MapSettingsEndpoints(app);
         DocumentEndpoints.MapDocumentEndpoints(app, loggerFactory);
         UsageEventEndpoints.MapUsageEventEndpoints(app);
+        SecretEndpoints.MapSecretEndpoints(app);
         
         return app;
     }

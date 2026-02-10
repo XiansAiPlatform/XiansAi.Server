@@ -125,6 +125,7 @@ public static class AdminApiConfiguration
         AdminDataEndpoints.MapAdminDataEndpoints(adminApiGroup);
         AdminMigrationEndpoints.MapAdminMigrationEndpoints(adminApiGroup);
         AdminAppIntegrationEndpoints.MapAdminAppIntegrationEndpoints(adminApiGroup);
+        AdminSecretEndpoints.MapAdminSecretEndpoints(adminApiGroup);
     }
 }
 
