@@ -50,6 +50,16 @@ public static class AdminKnowledgeEndpoints
         /// Optional version identifier. If not provided, a hash will be generated.
         /// </summary>
         public string? Version { get; set; }
+
+        /// <summary>
+        /// Optional description of the knowledge item.
+        /// </summary>
+        public string? Description { get; set; }
+
+        /// <summary>
+        /// Whether the knowledge item is visible. Defaults to true.
+        /// </summary>
+        public bool Visible { get; set; } = true;
     }
 
     /// <summary>
@@ -68,6 +78,16 @@ public static class AdminKnowledgeEndpoints
         /// Optional version identifier. If not provided, a hash will be generated.
         /// </summary>
         public string? Version { get; set; }
+
+        /// <summary>
+        /// Optional description of the knowledge item.
+        /// </summary>
+        public string? Description { get; set; }
+
+        /// <summary>
+        /// Whether the knowledge item is visible.
+        /// </summary>
+        public bool? Visible { get; set; }
     }
 
     /// <summary>
@@ -358,7 +378,10 @@ public static class AdminKnowledgeEndpoints
                     tenantContext.LoggedInUser,
                     originalKnowledge.Agent,
                     originalKnowledge.Version,
-                    newActivationName
+                    newActivationName,
+                    systemScoped: false,
+                    description: originalKnowledge.Description,
+                    visible: originalKnowledge.Visible
                 );
 
                 return Results.Created(
@@ -558,7 +581,9 @@ Same as the original knowledge item. User must have permission to modify the age
                     agentName,
                     request.Version,
                     activationName,
-                    systemScoped
+                    systemScoped,
+                    request.Description,
+                    request.Visible
                 );
 
                 return Results.Created(
@@ -768,7 +793,9 @@ Returns the created knowledge object with all properties including auto-generate
                     request.Type,
                     tenantId,
                     tenantContext.LoggedInUser,
-                    null  // Always let service calculate version from content
+                    version: null,  // Always let service calculate version from content
+                    description: request.Description,
+                    visible: request.Visible
                 );
                 
                 return Results.Ok(updatedKnowledge);
