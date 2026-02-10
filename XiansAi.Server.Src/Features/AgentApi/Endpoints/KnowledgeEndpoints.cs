@@ -77,7 +77,9 @@ public static class KnowledgeEndpoints
                 Agent = request.Agent,
                 Type = request.Type,
                 SystemScoped = request.SystemScoped,
-                ActivationName = request.ActivationName
+                ActivationName = request.ActivationName,
+                Description = request.Description,
+                Visible = request.Visible
             };
             var result = await endpoint.Create(knowledgeRequest);
             return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
@@ -140,4 +142,6 @@ public record KnowledgeCreateRequest
     public required string Type { get; init; }
     public bool SystemScoped { get; init; } = false;
     public string? ActivationName { get; init; }
+    public string? Description { get; init; }
+    public bool Visible { get; init; } = true;
 } 

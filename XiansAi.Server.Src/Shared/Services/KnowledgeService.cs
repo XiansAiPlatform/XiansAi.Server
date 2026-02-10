@@ -24,6 +24,10 @@ public class KnowledgeRequest
     public bool SystemScoped { get; set; } = false;
     [JsonPropertyName("activation_name")]
     public string? ActivationName { get; set; }
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+    [JsonPropertyName("visible")]
+    public bool Visible { get; set; } = true;
 }
 
 public class DeleteAllVersionsRequest
@@ -88,8 +92,8 @@ public interface IKnowledgeService
     Task<List<Knowledge>> GetVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
     Task<bool> DeleteByIdForTenantAsync(string id, string tenantId);
     Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
-    Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false);
-    Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, string? version = null);
+    Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false, string? description = null, bool visible = true);
+    Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, string? version = null, string? description = null, bool? visible = null);
 }
 
 public class KnowledgeService : IKnowledgeService
@@ -515,7 +519,9 @@ public class KnowledgeService : IKnowledgeService
             TenantId = request.SystemScoped ? null : _tenantContext.TenantId,
             Agent = request.Agent,
             SystemScoped = request.SystemScoped,
-            ActivationName = request.ActivationName
+            ActivationName = request.ActivationName,
+            Description = request.Description,
+            Visible = request.Visible
         };
 
         try
@@ -646,7 +652,9 @@ public class KnowledgeService : IKnowledgeService
         string? agentName = null, 
         string? version = null,
         string? activationName = null,
-        bool systemScoped = false)
+        bool systemScoped = false,
+        string? description = null,
+        bool visible = true)
     {
         // Generate version hash if not provided
         if (string.IsNullOrWhiteSpace(version))
@@ -666,7 +674,9 @@ public class KnowledgeService : IKnowledgeService
             TenantId = tenantId,
             Agent = agentName,
             SystemScoped = systemScoped,
-            ActivationName = activationName
+            ActivationName = activationName,
+            Description = description,
+            Visible = visible
         };
 
         await _knowledgeRepository.CreateAsync(knowledge);
@@ -679,7 +689,9 @@ public class KnowledgeService : IKnowledgeService
         string type, 
         string tenantId, 
         string updatedBy, 
-        string? version = null)
+        string? version = null,
+        string? description = null,
+        bool? visible = null)
     {
         // Get existing knowledge to preserve name and agent
         var existingKnowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(knowledgeId);
@@ -713,7 +725,9 @@ public class KnowledgeService : IKnowledgeService
             TenantId = tenantId,
             Agent = existingKnowledge.Agent,
             SystemScoped = false,
-            ActivationName = existingKnowledge.ActivationName  // Preserve activation name
+            ActivationName = existingKnowledge.ActivationName,
+            Description = description ?? existingKnowledge.Description,
+            Visible = visible ?? existingKnowledge.Visible
         };
 
         await _knowledgeRepository.CreateAsync(updatedKnowledge);

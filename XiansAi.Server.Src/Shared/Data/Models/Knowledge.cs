@@ -50,6 +50,12 @@ public class Knowledge : IKnowledge
     [BsonElement("activation_name")]
     public string? ActivationName { get; set; }
 
+    [BsonElement("description")]
+    public string? Description { get; set; }
+
+    [BsonElement("visible")]
+    public bool Visible { get; set; } = true;
+
     [BsonIgnore]
     public string? PermissionLevel { get; set; }
 }
