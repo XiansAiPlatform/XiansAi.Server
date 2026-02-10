@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
 using Shared.Services;
 using Shared.Auth;
@@ -38,7 +38,8 @@ public static class RestEndpoints
                 return Results.BadRequest(errorMessage);
             }
 
-            var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
+            // Normalize participant ID to lowercase for consistency (especially important for emails)
+            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
             var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
 
             // Create the request using the processor utility
@@ -88,7 +89,8 @@ public static class RestEndpoints
                 return Results.BadRequest(errorMessage);
             }
 
-            var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
+            // Normalize participant ID to lowercase for consistency (especially important for emails)
+            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
 
             // Generate unique request ID for correlation
             if (string.IsNullOrEmpty(requestId))
@@ -153,7 +155,8 @@ public static class RestEndpoints
                 return Results.BadRequest("Workflow is required parameter");
             }
 
-            var resolvedParticipantId = string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId;
+            // Normalize participant ID to lowercase for consistency (especially important for emails)
+            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
             var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
 
             var result = await messageService.DeleteThreadAsync(workflowId, resolvedParticipantId);

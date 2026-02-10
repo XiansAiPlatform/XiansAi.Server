@@ -62,6 +62,9 @@ public static class UsageEventEndpoints
 
             return Results.Accepted();
         })
+        .Produces(StatusCodes.Status202Accepted)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation =>
         {
             operation.Summary = "Report flexible usage metrics";

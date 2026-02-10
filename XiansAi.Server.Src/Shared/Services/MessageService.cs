@@ -9,6 +9,8 @@ namespace Shared.Services;
 public class ChatOrDataRequest
 {
     private string? _workflowType;
+    private string _participantId = string.Empty;
+    
     public string? Workflow { get; set; }
     
     [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -16,7 +18,12 @@ public class ChatOrDataRequest
     public string? RequestId { get; set; }
     
     // unique identifier for the participant, used to identify the participant in the message thread
-    public required string ParticipantId { get; set; }
+    // Automatically normalized to lowercase for consistency (especially important for emails)
+    public required string ParticipantId 
+    { 
+        get => _participantId;
+        set => _participantId = value?.ToLowerInvariant() ?? string.Empty;
+    }
 
     // unique identifier for the agent's workflow, used to identify the workflow in the message thread
     public string? WorkflowId { get; set; }
@@ -72,13 +79,21 @@ public class ChatOrDataRequest
 
 public class HandoffRequest
 {
+    private string _participantId = string.Empty;
+    
     public required string TargetWorkflowId { get; set; }
     public required string TargetWorkflowType { get; set; }
     public required string SourceAgent { get; set; }
     public required string SourceWorkflowType { get; set; }
     public required string SourceWorkflowId { get; set; }
     public required string ThreadId { get; set; }
-    public required string ParticipantId { get; set; }
+    
+    // Automatically normalized to lowercase for consistency (especially important for emails)
+    public required string ParticipantId 
+    { 
+        get => _participantId;
+        set => _participantId = value?.ToLowerInvariant() ?? string.Empty;
+    }
     public string? Scope { get; set; }
     public required string Text { get; set; }
     public object? Data { get; set; }
@@ -257,6 +272,29 @@ public class MessageService : IMessageService
 
             var threadId = await CreateOrGetThread(request);
 
+            // Auto-populate origin and platform metadata from last incoming message if not provided
+            // This enables automatic routing back to external platforms (Slack, Teams, etc.)
+            if (string.IsNullOrEmpty(request.Origin))
+            {
+                var lastOrigin = await _conversationRepository.GetLastIncomingOriginAsync(threadId, _tenantContext.TenantId);
+                if (!string.IsNullOrEmpty(lastOrigin))
+                {
+                    request.Origin = lastOrigin;
+                    _logger.LogInformation("Auto-populated origin from last incoming message: {Origin}", lastOrigin);
+                }
+            }
+
+            // Auto-populate platform-specific metadata (e.g., Slack channel, Teams conversation) if not provided
+            if (request.Data == null && !string.IsNullOrEmpty(request.Origin) && request.Origin.StartsWith("app:"))
+            {
+                var lastData = await _conversationRepository.GetLastIncomingDataAsync(threadId, _tenantContext.TenantId);
+                if (lastData != null)
+                {
+                    request.Data = lastData;
+                    _logger.LogInformation("Auto-populated platform metadata from last incoming message");
+                }
+            }
+
             var message = await SaveMessage(threadId, request, MessageDirection.Outgoing, messageType);
 
             return ServiceResult<string>.Success(message.ThreadId);
@@ -302,7 +340,7 @@ public class MessageService : IMessageService
         //check if workflowId contains colons but doesn't start with tenantId
         if (request.WorkflowId!.Contains(':') && !request.WorkflowId.StartsWith(_tenantContext.TenantId + ":"))
         {
-            throw new Exception("WorkflowId must start with tenantId");
+            throw new Exception("WorkflowId must start with tenantId. WorkflowId: " + request.WorkflowId);
         }
         //if workflowId doesn't contain colons, add tenantId to the beginning
         if (!string.IsNullOrEmpty(request.WorkflowId) && !request.WorkflowId!.Contains(':'))

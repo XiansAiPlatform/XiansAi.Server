@@ -29,6 +29,9 @@ public static class SharedServices
         // Register core services
         services.AddSingleton<CertificateGenerator>();
         
+        // Register secrets encryption service (singleton for performance)
+        services.AddSingleton<ISecretsEncryptionService, SecretsEncryptionService>();
+        
         // Register business services
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<IEmailService, EmailService>();

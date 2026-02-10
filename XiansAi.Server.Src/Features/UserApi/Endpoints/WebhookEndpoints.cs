@@ -77,7 +77,8 @@ public static class WebhookEndpoints
                 var workflowId = $"{tenantId}:{agentName}:{workflowName}{(activationName != null ? $":{activationName}" : string.Empty)}";
                 
                 // Use participantId from query or default to "webhook" for identification
-                var resolvedParticipantId = participantId ?? "unknown";
+                // Normalize to lowercase for consistency (especially important for emails)
+                var resolvedParticipantId = (participantId ?? "unknown").ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);

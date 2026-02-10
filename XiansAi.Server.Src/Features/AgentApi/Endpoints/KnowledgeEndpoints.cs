@@ -33,6 +33,9 @@ public static class KnowledgeEndpoints
             var result = await service.GetLatestByNameAsync(name, agent, activationName);
             return result.ToHttpResult();
         })
+        .Produces<object>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Get latest knowledge";
             operation.Description = "Retrieves the most recent knowledge for the specified name and agent. " +
@@ -52,6 +55,9 @@ public static class KnowledgeEndpoints
             var result = await service.GetLatestSystemByNameAsync(name, agent);
             return result.ToHttpResult();
         })
+        .Produces<object>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Get latest system knowledge";
             operation.Description = "Retrieves the most recent system-scoped knowledge (no tenant) for the specified name and agent";
@@ -76,6 +82,9 @@ public static class KnowledgeEndpoints
             var result = await endpoint.Create(knowledgeRequest);
             return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
         })
+        .Produces<object>(StatusCodes.Status201Created)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Create knowledge";
             operation.Description = "Creates a new knowledge entity with optional activation name";
@@ -96,6 +105,9 @@ public static class KnowledgeEndpoints
             var result = await service.DeleteAllVersions(deleteRequest);
             return result;
         })
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "Delete knowledge";
             operation.Description = "Deletes all versions of knowledge for the specified name and agent";
@@ -110,6 +122,8 @@ public static class KnowledgeEndpoints
             var result = await service.GetLatestByAgent(agent);
             return result;
         })
+        .Produces<object[]>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
             operation.Summary = "List knowledge";
             operation.Description = "Lists all knowledge items for the specified agent";
