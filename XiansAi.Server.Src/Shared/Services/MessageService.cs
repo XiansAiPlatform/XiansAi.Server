@@ -110,7 +110,7 @@ public interface IMessageService
     Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
     Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
     Task<ServiceResult<bool>> DeleteMessagesByTopicAsync(string workflowId, string participantId, string? topic);
-    Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null);
+    Task<ServiceResult<string?>> GetLastTaskIdAsync(string workflowId, string participantId, string? scope = null);
     Task<ServiceResult<TopicsResult>> GetTopicsByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize);
 }
 
@@ -561,40 +561,40 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<string?>> GetLastHintAsync(string workflowId, string participantId, string? scope = null)
+    public async Task<ServiceResult<string?>> GetLastTaskIdAsync(string workflowId, string participantId, string? scope = null)
     {
         try
         {
-            _logger.LogInformation("Getting last hint for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
+            _logger.LogInformation("Getting last task id for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
                 workflowId, participantId, scope ?? "null");
 
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
-                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}",
                     workflowId, participantId);
                 return ServiceResult<string?>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
-            var hint = await _conversationRepository.GetLastHintAsync(_tenantContext.TenantId, workflowId, participantId, scope);
+            var taskId = await _conversationRepository.GetLastTaskIdAsync(_tenantContext.TenantId, workflowId, participantId, scope);
 
-            if (hint == null)
+            if (taskId == null)
             {
-                _logger.LogInformation("No hint found for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
+                _logger.LogInformation("No task id found for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
                     workflowId, participantId, scope ?? "null");
             }
             else
             {
-                _logger.LogInformation("Found hint for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
+                _logger.LogInformation("Found task id for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
                     workflowId, participantId, scope ?? "null");
             }
 
-            return ServiceResult<string?>.Success(hint);
+            return ServiceResult<string?>.Success(taskId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting last hint for workflowId {WorkflowId}, participant {ParticipantId}", 
+            _logger.LogError(ex, "Error getting last task id for workflowId {WorkflowId}, participant {ParticipantId}",
                 workflowId, participantId);
-            return ServiceResult<string?>.InternalServerError("An error occurred while retrieving the last hint");
+            return ServiceResult<string?>.InternalServerError("An error occurred while getting the last task id");
         }
     }
 

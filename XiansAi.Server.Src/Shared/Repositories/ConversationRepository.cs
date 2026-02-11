@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Shared.Data;
 using Shared.Utils;
 using Shared.Auth;
@@ -203,8 +204,9 @@ public interface IConversationRepository
     // Topics operations
     Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize);
 
-    // Hint operations
-    Task<string?> GetLastHintAsync(string tenantId, string workflowId, string participantId, string? scope = null);
+
+    // Task ID operations
+    Task<string?> GetLastTaskIdAsync(string tenantId, string workflowId, string participantId, string? scope = null);
 
     // Origin operations
     Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId);
@@ -883,37 +885,41 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingData");
     }
 
-    public async Task<string?> GetLastHintAsync(string tenantId, string workflowId, string participantId, string? scope = null)
+
+    public async Task<string?> GetLastTaskIdAsync(string tenantId, string workflowId, string participantId, string? scope = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var filterBuilder = Builders<ConversationMessage>.Filter;
+            // Match exact workflow_id or full Temporal run id (workflow_id starting with workflowId + ":")
+            var workflowFilter = filterBuilder.Or(
+                filterBuilder.Eq(x => x.WorkflowId, workflowId),
+                filterBuilder.Regex(x => x.WorkflowId, new BsonRegularExpression("^" + Regex.Escape(workflowId) + ":"))
+            );
             var filter = filterBuilder.And(
                 filterBuilder.Eq(x => x.TenantId, tenantId),
-                filterBuilder.Eq(x => x.WorkflowId, workflowId),
+                workflowFilter,
                 filterBuilder.Eq(x => x.ParticipantId, participantId),
-                filterBuilder.Ne(x => x.Hint, null),
-                filterBuilder.Ne(x => x.Hint, "")
+                filterBuilder.Ne(x => x.TaskId, null),
+                filterBuilder.Ne(x => x.TaskId, "")
             );
 
-            // Apply scope filter if provided
             if (scope != null)
             {
                 if (string.IsNullOrEmpty(scope))
                 {
-                    _logger.LogDebug("Filtering messages with no scope (null) for last hint");
+                    _logger.LogDebug("Filtering messages with no scope (null) for last task id");
                     filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, null));
                 }
                 else
                 {
-                    _logger.LogDebug("Filtering messages by scope `{Scope}` for last hint", scope);
+                    _logger.LogDebug("Filtering messages by scope `{Scope}` for last task id", scope);
                     filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, scope));
                 }
             }
 
-            // Get the most recent message with a hint
-            var projection = Builders<ConversationMessage>.Projection.Include(x => x.Hint);
-            
+            var projection = Builders<ConversationMessage>.Projection.Include(x => x.TaskId);
+
             var message = await _messagesCollection
                 .Find(filter)
                 .Project<ConversationMessage>(projection)
@@ -921,11 +927,11 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .Limit(1)
                 .FirstOrDefaultAsync();
 
-            _logger.LogDebug("Last hint for workflow {WorkflowId}, participant {ParticipantId}, scope {Scope}: {Hint}", 
-                workflowId, participantId, scope ?? "null", message?.Hint ?? "none");
+            _logger.LogDebug("Last task id for workflow {WorkflowId}, participant {ParticipantId}, scope {Scope}: {TaskId}",
+                workflowId, participantId, scope ?? "null", message?.TaskId ?? "none");
 
-            return message?.Hint;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastHint");
+            return message?.TaskId;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastTaskId");
     }
 
     public async Task<(int totalMessages, int activeUsers)> GetMessagingStatsAsync(

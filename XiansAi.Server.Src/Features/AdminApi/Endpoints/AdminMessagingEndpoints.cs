@@ -22,6 +22,8 @@ public class AdminSendMessageRequest
 {
     public required string AgentName { get; set; }
     public required string ActivationName { get; set; }
+    /// <summary>Optional. Defaults to "Supervisor Workflow"</summary>
+    public string? WorkflowType { get; set; }
     public required string ParticipantId { get; set; }
     public required string Text { get; set; }
     public object? Data { get; set; }
@@ -77,6 +79,7 @@ public static class AdminMessagingEndpoints
             [FromServices] ILoggerFactory loggerFactory,
             HttpContext context,
             CancellationToken cancellationToken,
+            [FromQuery] string? workflowType = null,
             [FromQuery] int heartbeatSeconds = 60) =>
         {
             // Validate required parameters
@@ -98,9 +101,9 @@ public static class AdminMessagingEndpoints
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
 
-            // Construct the workflow ID as per specification:
-            // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // Create or get the thread
             var thread = new ConversationThread
@@ -140,12 +143,13 @@ public static class AdminMessagingEndpoints
                 Subscribe to real-time message events for a specific agent activation using Server-Sent Events (SSE).
                 
                 **Workflow ID Construction:**
-                The workflow ID is automatically constructed as: `{tenantId}:{agentName}:Supervisor Workflow:{activationName}`
+                The workflow ID is constructed as: `{tenantId}:{agentName}:{workflowType}:{activationName}`. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for agents like Company Research Agent.
                 
                 **Query Parameters:**
                 - `agentName` (required): Name of the agent
                 - `activationName` (required): Name of the activation
                 - `participantId` (required): Unique identifier for the participant
+                - `workflowType` (optional): Workflow type (default: Supervisor Workflow). Use Conversational for Company Research Agent.
                 - `heartbeatSeconds` (optional): Heartbeat interval in seconds (1-300, default: 60)
                 
                 **Behavior:**
@@ -177,9 +181,9 @@ public static class AdminMessagingEndpoints
             [FromServices] IMessageService messageService,
             HttpContext context) =>
         {
-            // Construct the workflow ID as per specification:
-            // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, request.AgentName, request.ActivationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
+            var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, request.AgentName, effectiveWorkflowType, request.ActivationName);
             
             // Default to Chat if type not specified
             var messageType = request.Type ?? MessageType.Chat;
@@ -277,6 +281,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string activationName,
             [FromQuery] string participantId,
             [FromServices] IMessageService messageService,
+            [FromQuery] string? workflowType = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
@@ -299,9 +304,10 @@ public static class AdminMessagingEndpoints
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
 
-            // Construct the workflow ID as per specification:
-            // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            // Use workflowType param for agents that use different workflow types (e.g. Conversational).
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             var result = await messageService.GetTopicsByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize);
             return result.ToHttpResult();
@@ -310,7 +316,7 @@ public static class AdminMessagingEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Topics (Scopes) for Agent Activation",
-            Description = "Retrieves distinct scopes (topics) from message threads for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:Supervisor Workflow:{activationName}. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=20)."
+            Description = "Retrieves distinct scopes (topics) from message threads for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:{workflowType}:{activationName}. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for agents like Company Research Agent that use Conversational workflow. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=20)."
         });
 
         // Get message history for a specific agent activation and participant
@@ -320,6 +326,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string activationName,
             [FromQuery] string participantId,
             [FromServices] IMessageService messageService,
+            [FromQuery] string? workflowType = null,
             [FromQuery] string? topic = null,
             [FromQuery] string sortOrder = "desc",
             [FromQuery] int page = 1,
@@ -352,9 +359,9 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("sortOrder must be either 'asc' or 'desc'");
             }
 
-            // Construct the workflow ID as per specification:
-            // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // When topic is not provided (null) or empty, get messages with null scope (no topic)
             // When topic has a specific value, get messages with that specific scope
@@ -365,7 +372,7 @@ public static class AdminMessagingEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Message History for Agent Activation",
-            Description = "Retrieves message history for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:Supervisor Workflow:{activationName}. Optional 'topic' parameter filters by scope (omit or leave empty to get messages with no scope/topic, or specify a topic name to get messages for that specific topic). Optional 'sortOrder' parameter controls sorting: 'desc' for newest first (default), 'asc' for oldest first. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=50). Set chatOnly=true to retrieve only chat messages."
+            Description = "Retrieves message history for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:{workflowType}:{activationName}. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for Company Research Agent. Optional 'topic' parameter filters by scope (omit or leave empty to get messages with no scope/topic, or specify a topic name to get messages for that specific topic). Optional 'sortOrder' parameter controls sorting: 'desc' for newest first (default), 'asc' for oldest first. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=50). Set chatOnly=true to retrieve only chat messages."
         });
 
         // Delete messages by topic for a specific agent activation and participant
@@ -375,6 +382,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string activationName,
             [FromQuery] string participantId,
             [FromServices] IMessageService messageService,
+            [FromQuery] string? workflowType = null,
             [FromQuery] string? topic = null) =>
         {
             // Validate required parameters
@@ -399,9 +407,9 @@ public static class AdminMessagingEndpoints
             // Normalize topic: empty string should be treated as null
             var normalizedTopic = string.IsNullOrWhiteSpace(topic) ? null : topic.Trim();
 
-            // Construct the workflow ID as per specification:
-            // {tenantId}:{agentName}:Supervisor Workflow:{activationName}
-            var workflowId = WorkflowIdentifier.BuildSupervisorWorkflowId(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // Delete messages with the specified topic/scope
             // When topic is null or empty, delete messages with null scope (no topic)
@@ -417,12 +425,13 @@ public static class AdminMessagingEndpoints
                 Deletes all messages for a specific topic (scope) for a given tenant, agent activation, and participant.
                 
                 **Workflow ID Construction:**
-                The workflow ID is automatically constructed as: `{tenantId}:{agentName}:Supervisor Workflow:{activationName}`
+                The workflow ID is constructed as: `{tenantId}:{agentName}:{workflowType}:{activationName}`. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for Company Research Agent.
                 
                 **Query Parameters:**
                 - `agentName` (required): Name of the agent
                 - `activationName` (required): Name of the activation
                 - `participantId` (required): Unique identifier for the participant
+                - `workflowType` (optional): Workflow type (default: Supervisor Workflow). Use Conversational for Company Research Agent.
                 - `topic` (optional): Topic/scope of messages to delete
                 
                 **Behavior:**

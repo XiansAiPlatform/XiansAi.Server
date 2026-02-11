@@ -9,11 +9,12 @@ Query Params:
 - agentName
 - activationName
 - participantId
+- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
 
 When this is called we need to take distinct scopes in message threads for
 
 tenantId= {tenantId}
-workflowId= {tenantId}:{agentName}:Supervisor Workflow:{activationName}
+workflowId= {tenantId}:{agentName}:{workflowType}:{activationName}
 participantId= {participantId}
 
 ## history
@@ -25,6 +26,7 @@ Query Params:
 - agentName
 - activationName
 - participantId
+- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
 - topic (optional - return messages with null in scope)
 
 ## send
@@ -39,6 +41,7 @@ Body:
 - activationName (required)
 - participantId (required)
 - text (required)
+- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
 - data (optional)
 - topic (optional - stored as scope in message thread)
 - type (optional - 'Chat' or 'Data', defaults to 'Chat')
@@ -49,7 +52,7 @@ Body:
 
 The endpoint constructs the workflowId as follows:
 
-workflowId={tenantId}:{agentName}:Supervisor Workflow:{activationName}
+workflowId={tenantId}:{agentName}:{workflowType}:{activationName}
 
 ## listen
 
@@ -62,11 +65,12 @@ Query Parameters:
 - agentName (required)
 - activationName (required)
 - participantId (required)
+- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
 - heartbeatSeconds (optional - default: 60, range: 1-300)
 
 The endpoint constructs the workflowId as follows:
 
-workflowId={tenantId}:{agentName}:Supervisor Workflow:{activationName}
+workflowId={tenantId}:{agentName}:{workflowType}:{activationName}
 
 Behavior:
 
