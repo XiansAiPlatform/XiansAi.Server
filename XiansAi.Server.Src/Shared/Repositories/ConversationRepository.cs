@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Shared.Data;
 using Shared.Utils;
 using Shared.Auth;
@@ -890,9 +891,14 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var filterBuilder = Builders<ConversationMessage>.Filter;
+            // Match exact workflow_id or full Temporal run id (workflow_id starting with workflowId + ":")
+            var workflowFilter = filterBuilder.Or(
+                filterBuilder.Eq(x => x.WorkflowId, workflowId),
+                filterBuilder.Regex(x => x.WorkflowId, new BsonRegularExpression("^" + Regex.Escape(workflowId) + ":"))
+            );
             var filter = filterBuilder.And(
                 filterBuilder.Eq(x => x.TenantId, tenantId),
-                filterBuilder.Eq(x => x.WorkflowId, workflowId),
+                workflowFilter,
                 filterBuilder.Eq(x => x.ParticipantId, participantId),
                 filterBuilder.Ne(x => x.TaskId, null),
                 filterBuilder.Ne(x => x.TaskId, "")

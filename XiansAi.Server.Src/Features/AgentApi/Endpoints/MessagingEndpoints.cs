@@ -253,16 +253,15 @@ namespace Features.AgentApi.Endpoints
         }
 
         private static async Task<IResult> GetLastTaskId(
-            [FromQuery] string? workflowType,
             [FromQuery] string? workflowId,
             [FromQuery] string participantId,
             [FromQuery] string? scope,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IMessageService messageService)
         {
-            if (string.IsNullOrEmpty(workflowType) && string.IsNullOrEmpty(workflowId))
+            if (string.IsNullOrEmpty(workflowId))
             {
-                return ServiceResult<string?>.BadRequest("WorkflowType or WorkflowId is required").ToHttpResult();
+                return ServiceResult<string?>.BadRequest("WorkflowId is required").ToHttpResult();
             }
 
             if (string.IsNullOrEmpty(participantId))
@@ -270,10 +269,10 @@ namespace Features.AgentApi.Endpoints
                 return ServiceResult<string?>.BadRequest("ParticipantId is required").ToHttpResult();
             }
 
-            // Construct full workflowId if only workflowType is provided
-            if (workflowId == null)
+            // workflowId should start with tenantId
+            if (!workflowId.StartsWith(tenantContext.TenantId))
             {
-                workflowId = $"{tenantContext.TenantId}:{workflowType}";
+                return ServiceResult<string?>.BadRequest("WorkflowId must start with tenantId").ToHttpResult();
             }
 
             var result = await messageService.GetLastTaskIdAsync(workflowId, participantId, scope);
