@@ -57,16 +57,16 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
-            group.MapGet("/last-hint", GetLastHint)
-            .WithName("Get Last Hint")
+            group.MapGet("/last-task-id", GetLastTaskId)
+            .WithName("Get Last Task Id")
             .Produces<string>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithOpenApi(operation =>
             {
-                operation.Summary = "Get last hint from message history";
-                operation.Description = "Gets the most recent hint from message history for a given workflow, participant, and optional scope";
+                operation.Summary = "Get last task id from message history";
+                operation.Description = "Gets the most recent task id from message history for a given workflow, participant, and optional scope";
                 return operation;
             });
 
@@ -236,9 +236,7 @@ namespace Features.AgentApi.Endpoints
             if (string.IsNullOrEmpty(query.WorkflowType) && string.IsNullOrEmpty(query.WorkflowId)) {
                 return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType or WorkflowId is required").ToHttpResult();
             }
-            
-            _logger.LogInformation("************ Getting conversation history for workflowId {WorkflowId}", query.WorkflowId);
-            
+                        
             if (query.WorkflowId == null)
             {
                 query.WorkflowId = $"{tenantContext.TenantId}:{query.WorkflowType}";
@@ -254,7 +252,7 @@ namespace Features.AgentApi.Endpoints
             
         }
 
-        private static async Task<IResult> GetLastHint(
+        private static async Task<IResult> GetLastTaskId(
             [FromQuery] string? workflowType,
             [FromQuery] string? workflowId,
             [FromQuery] string participantId,
@@ -278,7 +276,7 @@ namespace Features.AgentApi.Endpoints
                 workflowId = $"{tenantContext.TenantId}:{workflowType}";
             }
 
-            var result = await messageService.GetLastHintAsync(workflowId, participantId, scope);
+            var result = await messageService.GetLastTaskIdAsync(workflowId, participantId, scope);
             return result.ToHttpResult();
         }
     }
