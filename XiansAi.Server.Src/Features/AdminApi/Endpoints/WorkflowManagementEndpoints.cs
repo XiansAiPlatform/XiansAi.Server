@@ -62,18 +62,19 @@ public static class WorkflowManagementEndpoints
             [FromQuery] string? agent,
             [FromQuery] string? workflowType,
             [FromQuery] string? user,
+            [FromQuery] string? idPostfix,
             [FromQuery] int? pageSize,
             [FromQuery] string? pageToken,
             [FromServices] IWorkflowFinderService workflowFinderService) =>
         {
-            var result = await workflowFinderService.GetWorkflows(status, agent, workflowType, user, pageSize, pageToken);
+            var result = await workflowFinderService.GetWorkflows(status, agent, workflowType, user, idPostfix, pageSize, pageToken);
             return result.ToHttpResult();
         })
         .WithName("ListWorkflows")
         .WithOpenApi(operation => new(operation)
         {
             Summary = "List Workflows",
-            Description = "Retrieves workflows with optional filtering by status, agent, workflow type, and user, with pagination support. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
+            Description = "Retrieves workflows with optional filtering by status, agent, workflow type, user, and activation (idPostfix), with pagination support. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
         });
 
         // Get Workflow Events
