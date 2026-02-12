@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using Shared.Auth;
 using Shared.Utils;
 using Temporalio.Client;
@@ -26,7 +27,6 @@ public interface IWorkflowFinderService
     Task<ServiceResult<List<string>>> GetWorkflowTypes(string agent);
     /// <summary>
     /// Gets distinct idPostfix values from workflow runs in Temporal (for the current tenant and agents the user can read).
-    /// Used so the activations dropdown shows postfixes that have runs (e.g. from Start Workflow) even when there is no activation document.
     /// </summary>
     Task<ServiceResult<List<string>>> GetDistinctIdPostfixValuesAsync();
 }
@@ -42,6 +42,9 @@ public class WorkflowFinderService : IWorkflowFinderService
     private readonly IDatabaseService _databaseService;
     private readonly IAgentRepository _agentRepository;
     private readonly IPermissionsService _permissionsService;
+    private readonly IMemoryCache _cache;
+    private static readonly TimeSpan DistinctIdPostfixCacheDuration = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderService"/> class.
     /// </summary>
@@ -51,6 +54,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="databaseService">The database service for accessing workflow logs.</param>
     /// <param name="agentRepository">The agent repository for accessing agent information.</param>
     /// <param name="permissionsService">The permissions service for checking permissions.</param>
+    /// <param name="cache">In-memory cache for distinct idPostfix list (reduces Temporal queries when loading activations dropdown).</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
         ITemporalClientFactory clientFactory,
@@ -58,7 +62,8 @@ public class WorkflowFinderService : IWorkflowFinderService
         ITenantContext tenantContext,
         IDatabaseService databaseService,
         IAgentRepository agentRepository,
-        IPermissionsService permissionsService)
+        IPermissionsService permissionsService,
+        IMemoryCache cache)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -66,6 +71,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         _databaseService = databaseService;
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
         _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     }
 
     /// <summary>
@@ -456,9 +462,19 @@ public class WorkflowFinderService : IWorkflowFinderService
 
     /// <summary>
     /// Gets distinct idPostfix values from workflow runs in Temporal for the current tenant and agents the user can read.
+    /// Result is cached per tenant+user for 5 minutes to reduce Temporal queries when loading the activations dropdown.
     /// </summary>
     public async Task<ServiceResult<List<string>>> GetDistinctIdPostfixValuesAsync()
     {
+        var tenantId = _tenantContext.TenantId ?? string.Empty;
+        var userId = _tenantContext.LoggedInUser ?? string.Empty;
+        var cacheKey = $"activations:distinctidpostfix:{tenantId}:{userId}";
+
+        if (_cache.TryGetValue(cacheKey, out List<string>? cached))
+        {
+            return ServiceResult<List<string>>.Success(cached ?? new List<string>());
+        }
+
         try
         {
             var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
@@ -494,6 +510,12 @@ public class WorkflowFinderService : IWorkflowFinderService
 
             var result = postfixSet.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
             _logger.LogDebug("Found {Count} distinct idPostfix values from Temporal (scanned up to {Max} workflows)", result.Count, maxWorkflowsToScan);
+
+            var cacheOptions = new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(DistinctIdPostfixCacheDuration)
+                .SetSize(1);
+            _cache.Set(cacheKey, result, cacheOptions);
+
             return ServiceResult<List<string>>.Success(result);
         }
         catch (Exception ex)
