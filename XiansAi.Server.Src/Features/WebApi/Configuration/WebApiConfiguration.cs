@@ -129,6 +129,7 @@ public static class WebApiConfiguration
     {
         // Map Web API endpoints
         WorkflowEndpoints.MapWorkflowEndpoints(app);
+        ActivationsEndpoints.MapActivationsEndpoints(app);
         KnowledgeEndpoints.MapKnowledgeEndpoints(app);
         LogsEndpoints.MapLogsEndpoints(app);
         SettingsEndpoints.MapSettingsEndpoints(app);
