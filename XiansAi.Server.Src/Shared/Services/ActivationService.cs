@@ -419,6 +419,12 @@ public class ActivationService : IActivationService
                 {
                     try
                     {
+                        if (!flowDefinition.Activable)
+                        {
+                            _logger.LogWarning("Workflow {WorkflowType} is not activable", flowDefinition.WorkflowType);
+                            continue;
+                        }
+
                         // Find matching workflow configuration for this workflow type
                         var workflowConfig = activation.WorkflowConfiguration?.Workflows
                             .FirstOrDefault(w => w.WorkflowType == flowDefinition.WorkflowType);
