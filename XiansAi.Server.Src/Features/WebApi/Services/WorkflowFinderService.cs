@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using Shared.Auth;
 using Shared.Utils;
 using Temporalio.Client;
@@ -21,9 +22,13 @@ public interface IWorkflowFinderService
 {
     Task<ServiceResult<WorkflowResponse>> GetWorkflow(string workflowId, string? runId = null);
     Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(string? status);
-    Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, string? user, int? pageSize, string? pageToken);
+    Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, string? user, string? idPostfix, int? pageSize, string? pageToken);
     Task<ServiceResult<List<WorkflowResponse>>> GetRunningWorkflowsByAgentAndType(string? agentName, string? typeName);
     Task<ServiceResult<List<string>>> GetWorkflowTypes(string agent);
+    /// <summary>
+    /// Gets distinct idPostfix values from workflow runs in Temporal (for the current tenant and agents the user can read).
+    /// </summary>
+    Task<ServiceResult<List<string>>> GetDistinctIdPostfixValuesAsync();
 }
 
 /// <summary>
@@ -37,6 +42,9 @@ public class WorkflowFinderService : IWorkflowFinderService
     private readonly IDatabaseService _databaseService;
     private readonly IAgentRepository _agentRepository;
     private readonly IPermissionsService _permissionsService;
+    private readonly IMemoryCache _cache;
+    private static readonly TimeSpan DistinctIdPostfixCacheDuration = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderService"/> class.
     /// </summary>
@@ -46,6 +54,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="databaseService">The database service for accessing workflow logs.</param>
     /// <param name="agentRepository">The agent repository for accessing agent information.</param>
     /// <param name="permissionsService">The permissions service for checking permissions.</param>
+    /// <param name="cache">In-memory cache for distinct idPostfix list (reduces Temporal queries when loading activations dropdown).</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
         ITemporalClientFactory clientFactory,
@@ -53,7 +62,8 @@ public class WorkflowFinderService : IWorkflowFinderService
         ITenantContext tenantContext,
         IDatabaseService databaseService,
         IAgentRepository agentRepository,
-        IPermissionsService permissionsService)
+        IPermissionsService permissionsService,
+        IMemoryCache cache)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -61,6 +71,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         _databaseService = databaseService;
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
         _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     }
 
     /// <summary>
@@ -118,13 +129,14 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="agent">Optional agent filter for workflows.</param>
     /// <param name="workflowType">Optional workflow type filter for workflows.</param>
     /// <param name="user">Optional user filter for workflows.</param>
+    /// <param name="idPostfix">Optional activation name filter (Temporal search attribute idPostfix).</param>
     /// <param name="pageSize">Number of items per page (default: 20, max: 100).</param>
     /// <param name="pageToken">Token for pagination continuation.</param>
     /// <returns>A result containing the paginated list of workflows.</returns>
-    public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, string? user, int? pageSize, string? pageToken)
+    public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, string? user, string? idPostfix, int? pageSize, string? pageToken)
     {
-        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, WorkflowType: {WorkflowType}, User: {User}, PageSize: {PageSize}, PageToken: {PageToken}", 
-            status ?? "null", agent ?? "null", workflowType ?? "null", user ?? "null", pageSize ?? 20, pageToken ?? "null");
+        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, WorkflowType: {WorkflowType}, User: {User}, IdPostfix: {IdPostfix}, PageSize: {PageSize}, PageToken: {PageToken}", 
+            status ?? "null", agent ?? "null", workflowType ?? "null", user ?? "null", idPostfix ?? "null", pageSize ?? 20, pageToken ?? "null");
 
         // Validate page size
         var actualPageSize = pageSize ?? 20;
@@ -202,6 +214,12 @@ public class WorkflowFinderService : IWorkflowFinderService
             if (!string.IsNullOrEmpty(user))
             {
                 queryParts.Add($"{Constants.UserIdKey} = '{user}'");
+            }
+
+            // Add idPostfix (activation name) filter if specified - Temporal search attribute
+            if (!string.IsNullOrEmpty(idPostfix))
+            {
+                queryParts.Add($"{Constants.IdPostfixKey} = '{idPostfix}'");
             }
 
             var listQuery = string.Join(" and ", queryParts);
@@ -439,6 +457,71 @@ public class WorkflowFinderService : IWorkflowFinderService
         {
             _logger.LogError(ex, "Failed to retrieve workflow types for agent {Agent}. Error: {ErrorMessage}", agent, ex.Message);
             return ServiceResult<List<string>>.InternalServerError("Failed to retrieve workflow types");
+        }
+    }
+
+    /// <summary>
+    /// Gets distinct idPostfix values from workflow runs in Temporal for the current tenant and agents the user can read.
+    /// Result is cached per tenant+user for 5 minutes to reduce Temporal queries when loading the activations dropdown.
+    /// </summary>
+    public async Task<ServiceResult<List<string>>> GetDistinctIdPostfixValuesAsync()
+    {
+        var tenantId = _tenantContext.TenantId ?? string.Empty;
+        var userId = _tenantContext.LoggedInUser ?? string.Empty;
+        var cacheKey = $"activations:distinctidpostfix:{tenantId}:{userId}";
+
+        if (_cache.TryGetValue(cacheKey, out List<string>? cached))
+        {
+            return ServiceResult<List<string>>.Success(cached ?? new List<string>());
+        }
+
+        try
+        {
+            var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+            if (agents == null || agents.Count == 0)
+            {
+                return ServiceResult<List<string>>.Success(new List<string>());
+            }
+
+            var agentNames = agents.Select(a => a.Name).ToArray();
+            var queryParts = new List<string>
+            {
+                $"{Constants.TenantIdKey} = '{_tenantContext.TenantId}'",
+                $"{Constants.AgentKey} in ({string.Join(",", agentNames.Select(a => "'" + a + "'"))})"
+            };
+            var listQuery = string.Join(" and ", queryParts);
+
+            var client = await _clientFactory.GetClientAsync();
+            var postfixSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            const int maxWorkflowsToScan = 500;
+            var listOptions = new WorkflowListOptions { Limit = maxWorkflowsToScan };
+            var count = 0;
+
+            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            {
+                var idPostfix = ExtractMemoValue(workflow.Memo, Constants.IdPostfixKey);
+                if (!string.IsNullOrWhiteSpace(idPostfix))
+                {
+                    postfixSet.Add(idPostfix.Trim());
+                }
+                count++;
+                if (count >= maxWorkflowsToScan) break;
+            }
+
+            var result = postfixSet.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+            _logger.LogDebug("Found {Count} distinct idPostfix values from Temporal (scanned up to {Max} workflows)", result.Count, maxWorkflowsToScan);
+
+            var cacheOptions = new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(DistinctIdPostfixCacheDuration)
+                .SetSize(1);
+            _cache.Set(cacheKey, result, cacheOptions);
+
+            return ServiceResult<List<string>>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get distinct idPostfix values from Temporal. Error: {ErrorMessage}", ex.Message);
+            return ServiceResult<List<string>>.InternalServerError("Failed to get distinct idPostfix values");
         }
     }
 
