@@ -400,38 +400,44 @@ public class KnowledgeService : IKnowledgeService
             return ServiceResult<Knowledge>.BadRequest("Agent parameter is required");
         }
 
-        // Try 1: If activationName is provided, try with tenantId + agent + activationName
-        if (!string.IsNullOrEmpty(activationName))
+        var tenantId = _tenantContext.TenantId;
+        _logger.LogDebug("GetLatestByNameAsync: name={Name}, agent={Agent}, activationName={ActivationName}, tenantId={TenantId}",
+            name, agent, activationName ?? "(null)", tenantId ?? "(null)");
+
+        // Priority 1: If activationName is provided, try knowledge with matching tenant + agent + activationName
+        if (!string.IsNullOrEmpty(activationName) && !string.IsNullOrEmpty(tenantId))
         {
             var knowledge = await _knowledgeRepository.GetLatestByNameAndActivationAsync<Knowledge>(
-                name, agent, _tenantContext.TenantId, activationName);
-            
+                name, agent, tenantId, activationName);
+
             if (knowledge != null)
             {
-                _logger.LogInformation("Found knowledge with tenantId, agent, and activationName");
+                _logger.LogInformation("Found knowledge (priority 1: matching activation_name) - tenantId={TenantId}, activationName={ActivationName}",
+                    knowledge.TenantId, knowledge.ActivationName);
                 return ServiceResult<Knowledge>.Success(knowledge);
             }
         }
 
-        // Try 2: Try with tenantId + agent (without activationName constraint)
-        if (!string.IsNullOrEmpty(_tenantContext.TenantId))
+        // Priority 2: Try knowledge with requesting tenant_id (any activation)
+        if (!string.IsNullOrEmpty(tenantId))
         {
-            var knowledge = await _knowledgeRepository.GetLatestByNameAndTenantAsync<Knowledge>(
-                name, agent, _tenantContext.TenantId);
-            
+            var knowledge = await _knowledgeRepository.GetLatestByNameAndTenantAnyActivationAsync<Knowledge>(
+                name, agent, tenantId);
+
             if (knowledge != null)
             {
-                _logger.LogInformation("Found knowledge with tenantId and agent");
+                _logger.LogInformation("Found knowledge (priority 2: tenant match) - tenantId={TenantId}, activationName={ActivationName}",
+                    knowledge.TenantId, knowledge.ActivationName ?? "(null)");
                 return ServiceResult<Knowledge>.Success(knowledge);
             }
         }
 
-        // Try 3: Try system-scoped (tenantId = null)
+        // Priority 3: Fallback to system-scoped (tenant_id = null)
         var systemKnowledge = await _knowledgeRepository.GetLatestSystemByNameAsync<Knowledge>(name, agent);
-        
+
         if (systemKnowledge != null)
         {
-            _logger.LogInformation("Found knowledge with system scope");
+            _logger.LogInformation("Found knowledge (priority 3: tenant_id=null system scope)");
             return ServiceResult<Knowledge>.Success(systemKnowledge);
         }
 

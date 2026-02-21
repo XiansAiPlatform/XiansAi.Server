@@ -61,7 +61,19 @@ public class ActivationRepository : IActivationRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _activations.Find(x => x.TenantId == tenantId && x.IsActive).ToListAsync();
+            // Active == true for new documents, or infer from ActivatedAt/DeactivatedAt for legacy documents
+            var filter = Builders<AgentActivation>.Filter.And(
+                Builders<AgentActivation>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<AgentActivation>.Filter.Or(
+                    Builders<AgentActivation>.Filter.Eq(x => x.Active, true),
+                    Builders<AgentActivation>.Filter.And(
+                        Builders<AgentActivation>.Filter.Ne(x => x.ActivatedAt, null),
+                        Builders<AgentActivation>.Filter.Eq(x => x.DeactivatedAt, null),
+                        Builders<AgentActivation>.Filter.Or(
+                            Builders<AgentActivation>.Filter.Eq(x => x.Active, (bool?)null),
+                            Builders<AgentActivation>.Filter.Exists("active", false)))
+                ));
+            return await _activations.Find(filter).ToListAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetActiveActivations");
     }
 
