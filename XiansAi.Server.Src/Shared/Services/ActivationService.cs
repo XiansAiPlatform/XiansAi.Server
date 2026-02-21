@@ -486,14 +486,14 @@ public class ActivationService : IActivationService
 
                 if (workflowIds.Count == 0)
                 {
-                    _logger.LogError("Failed to start any workflows for activation {ActivationId}", activationId);
-                    return ServiceResult<AgentActivation>.InternalServerError(
-                        "Failed to start any workflows. Check logs for details.");
+                    _logger.LogWarning("No workflows were started for activation {ActivationId} (none activable or all failed). Activating with empty workflow list.", activationId);
                 }
 
                 // Update activation with workflow IDs and timestamp
                 activation.WorkflowIds = workflowIds;
+                activation.Active = true;
                 activation.ActivatedAt = DateTime.UtcNow;
+                activation.DeactivatedAt = null; // Clear on re-activation
 
                 await _activationRepository.UpdateAsync(activationId, activation);
 
@@ -593,6 +593,7 @@ public class ActivationService : IActivationService
 
             // Clear workflow IDs and update timestamp
             activation.WorkflowIds = new List<string>();
+            activation.Active = false;
             activation.DeactivatedAt = DateTime.UtcNow;
 
             await _activationRepository.UpdateAsync(activationId, activation);
