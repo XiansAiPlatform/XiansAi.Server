@@ -161,8 +161,17 @@ public static class AdminMessagingEndpoints
                 **Response Format:**
                 Server-Sent Events (SSE) stream with events in the following format:
                 ```
-                event: message
-                data: {"type":"chat","text":"Hello","timestamp":"2024-01-01T00:00:00Z",...}
+                event: Chat
+                data: {"messageType":"Chat","text":"Hello","timestamp":"2024-01-01T00:00:00Z",...}
+                
+                event: Data
+                data: {"messageType":"Data","text":"","data":{...},...}
+                
+                event: Reasoning
+                data: {"messageType":"Reasoning","text":"","data":{...},...}
+                
+                event: Tool
+                data: {"messageType":"Tool","text":"","data":{...},...}
                 
                 event: heartbeat
                 data: {"timestamp":"2024-01-01T00:00:05Z"}

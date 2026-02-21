@@ -124,6 +124,42 @@ namespace Features.AgentApi.Endpoints
                 return operation;
             });
 
+            group.MapPost("/outbound/reasoning", async (
+                [FromBody] ChatOrDataRequest request,
+                [FromServices] IMessageService messageService) =>
+            {
+                var result = await messageService.ProcessOutgoingMessage(request, MessageType.Reasoning);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Outbound Reasoning from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Process outbound reasoning from Agent";
+                operation.Description = "Processes an outbound reasoning message for streaming agent thinking steps. Delivered via SSE for frontend display of intermediate actions.";
+                return operation;
+            });
+
+            group.MapPost("/outbound/tool", async (
+                [FromBody] ChatOrDataRequest request,
+                [FromServices] IMessageService messageService) =>
+            {
+                var result = await messageService.ProcessOutgoingMessage(request, MessageType.Tool);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Outbound Tool Execution from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithOpenApi(operation =>
+            {
+                operation.Summary = "Process outbound tool execution from Agent";
+                operation.Description = "Processes an outbound tool execution message for streaming tool call steps. Delivered via SSE for frontend display of intermediate actions.";
+                return operation;
+            });
+
             group.MapPost("/outbound/handoff", async (
                 [FromBody] HandoffRequest request,
                 [FromServices] IMessageService messageService,

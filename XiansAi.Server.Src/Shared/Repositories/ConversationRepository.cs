@@ -32,7 +32,15 @@ public enum MessageType
     Data,
     File,
     Handoff,
-    Webhook
+    Webhook,
+    /// <summary>
+    /// Reasoning message type for streaming agent thinking/reasoning steps.
+    /// </summary>
+    Reasoning,
+    /// <summary>
+    /// Tool execution message type for streaming tool call steps.
+    /// </summary>
+    Tool
 }
 
 public enum ConversationThreadStatus
