@@ -229,7 +229,7 @@ public static class AdminMessagingEndpoints
                 - `text` (required): The message text content
                 - `data` (optional): Additional structured data (JSON object)
                 - `topic` (optional): Topic for the message (stored as 'scope' in the message thread for organizing conversations)
-                - `type` (optional): Message type - either 'Chat' or 'Data' (defaults to 'Chat')
+                - `type` (optional): Message type - 'Chat', 'Data', or 'File' (defaults to 'Chat')
                 - `requestId` (optional): Unique request identifier (auto-generated GUID if not provided)
                 - `hint` (optional): Hint for the agent to use when processing the message
                 - `authorization` (optional): Authorization token (can also be provided via Authorization header)
@@ -238,6 +238,7 @@ public static class AdminMessagingEndpoints
                 **Message Types:**
                 - `Chat`: Use for conversational messages (default). Set `text` field with the message content.
                 - `Data`: Use for sending structured data to the workflow. Set `data` field with a JSON object and optionally include `text` for context.
+                - `File`: Use for file uploads. Set `data` field with base64 encoded file content (string or object with `content` and optional `fileName`, `contentType`). Routes to OnFileUpload handler.
                 
                 **Examples:**
                 

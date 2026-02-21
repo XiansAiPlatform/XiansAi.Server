@@ -30,6 +30,7 @@ public enum MessageType
 {
     Chat,
     Data,
+    File,
     Handoff,
     Webhook
 }
