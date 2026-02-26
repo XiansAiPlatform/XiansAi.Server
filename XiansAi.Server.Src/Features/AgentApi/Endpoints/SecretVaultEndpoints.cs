@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
+using Shared.Auth;
 using Shared.Services;
 using Shared.Utils.Services;
 
@@ -15,9 +16,10 @@ public static class SecretVaultEndpoints
 
         group.MapPost("", async (
             [FromBody] AgentSecretVaultCreateRequest request,
-            [FromServices] ISecretVaultService service) =>
+            [FromServices] ISecretVaultService service,
+            [FromServices] ITenantContext tenantContext) =>
         {
-            var actor = "agent-api";
+            var actor = tenantContext.LoggedInUser ?? "system";
             var input = new SecretVaultCreateInput(
                 request.Key,
                 request.Value,
@@ -68,9 +70,10 @@ public static class SecretVaultEndpoints
         group.MapPut("/{id}", async (
             string id,
             [FromBody] AgentSecretVaultUpdateRequest request,
-            [FromServices] ISecretVaultService service) =>
+            [FromServices] ISecretVaultService service,
+            [FromServices] ITenantContext tenantContext) =>
         {
-            var actor = "agent-api";
+            var actor = tenantContext.LoggedInUser ?? "system";
             var input = new SecretVaultUpdateInput(
                 request.Value,
                 request.TenantId,
