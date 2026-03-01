@@ -1,4 +1,4 @@
-﻿using MongoDB.Driver;
+using MongoDB.Driver;
 using Shared.Utils.Services;
 using Shared.Repositories;
 using Shared.Data.Models;
@@ -9,11 +9,13 @@ namespace Shared.Services
 {
     public interface IApiKeyService
     {
-        Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy);
+        Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null);
         Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId);
         Task<ServiceResult<List<ApiKey>>> GetApiKeysAsync(string tenantId);
         Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId);
         Task<ServiceResult<ApiKey?>> GetApiKeyByIdAsync(string id, string tenantId);
+        Task<ApiKey?> GetApiKeyByIdAsync(string id);
+        Task<List<ApiKey>> GetWebhookApiKeysAsync(string tenantId, string? activationName = null, string? agentName = null);
         Task<ApiKey?> GetApiKeyByRawKeyAsync(string rawKey, string tenantId);
         Task<ApiKey?> GetApiKeyByRawKeyAsync(string rawKey); // Overload without tenantId for authentication
     }
@@ -38,12 +40,12 @@ namespace Shared.Services
             _cache = cache;
         }
 
-        public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy)
+        public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
         {
             _logger.LogInformation("Creating API key for tenant {TenantId} by {CreatedBy}", tenantId, createdBy);
             try
             {
-                var result = await _apiKeyRepository.CreateAsync(tenantId, name, createdBy);
+                var result = await _apiKeyRepository.CreateAsync(tenantId, name, createdBy, agentName, activationName, type, workflowName, participantId, timeoutInSeconds, webhookName);
                 return ServiceResult<(string, ApiKey)>.Success(result);
             }
             catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
@@ -146,6 +148,32 @@ namespace Shared.Services
             {
                 _logger.LogError(ex, "Error getting API key by id {ApiKeyId} for tenant {TenantId}", id, tenantId);
                 return ServiceResult<ApiKey?>.InternalServerError("An error occurred while retrieving the API key");
+            }
+        }
+
+        public async Task<ApiKey?> GetApiKeyByIdAsync(string id)
+        {
+            try
+            {
+                return await _apiKeyRepository.GetByIdAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting API key by id {ApiKeyId}", id);
+                return null;
+            }
+        }
+
+        public async Task<List<ApiKey>> GetWebhookApiKeysAsync(string tenantId, string? activationName = null, string? agentName = null)
+        {
+            try
+            {
+                return await _apiKeyRepository.GetByTenantAndTypeAsync(tenantId, "webhook", agentName, activationName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting webhook API keys for tenant {TenantId}", tenantId);
+                return new List<ApiKey>();
             }
         }
 

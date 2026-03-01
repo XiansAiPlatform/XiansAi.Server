@@ -21,12 +21,14 @@ public static class WebhookEndpoints
             [FromQuery] string workflowName,
             [FromQuery] string webhookName,
             [FromQuery] string agentName,
-            [FromQuery] string apikey,
+            [FromQuery] string? apikey,
+            [FromQuery] string? apikeyId,
             [FromQuery] string? activationName,
             HttpContext httpContext,
             [FromServices] IMessageService messageService,
             [FromServices] IPendingRequestService pendingRequestService,
             [FromServices] ITenantContext tenantContext,
+            [FromServices] IApiKeyService apiKeyService,
             [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
             [FromServices] ILogger<SyncMessageHandler> logger,
@@ -53,9 +55,25 @@ public static class WebhookEndpoints
                     return Results.BadRequest("agentName is required");
                 }
 
-                // Get tenantId from authenticated context (derived from API key)
+                if (string.IsNullOrWhiteSpace(apikey) && string.IsNullOrWhiteSpace(apikeyId))
+                {
+                    return Results.BadRequest("apikey or apikeyId is required");
+                }
+
+                // Get tenantId from authenticated context, or manually extract from apikeyId when auth context does not support it
                 var tenantId = tenantContext.TenantId;
-                
+                if (string.IsNullOrEmpty(tenantId) && !string.IsNullOrWhiteSpace(apikeyId))
+                {
+                    var apiKeyById = await apiKeyService.GetApiKeyByIdAsync(apikeyId);
+                    if (apiKeyById == null)
+                    {
+                        return Results.Problem(
+                            detail: "Invalid apikeyId.",
+                            statusCode: StatusCodes.Status401Unauthorized);
+                    }
+                    tenantId = apiKeyById.TenantId;
+                }
+
                 if (string.IsNullOrEmpty(tenantId))
                 {
                     return Results.Problem(
@@ -73,7 +91,7 @@ public static class WebhookEndpoints
                 if (!string.IsNullOrWhiteSpace(activationName))
                 {
                     var validationResult = await activationValidationService.ValidateActivationAsync(
-                        tenantId, agentName, activationName);
+                        tenantId, agentName, activationName, workflowName);
                     if (!validationResult.IsSuccess)
                     {
                         return validationResult.ToHttpResult();
@@ -90,7 +108,7 @@ public static class WebhookEndpoints
                 
                 // Use participantId from query or default to "webhook" for identification
                 // Normalize to lowercase for consistency (especially important for emails)
-                var resolvedParticipantId = (participantId ?? "unknown").ToLowerInvariant();
+                var resolvedParticipantId = (participantId ?? "webhook").ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
@@ -247,7 +265,7 @@ Query Parameters (Required):
 - workflowName: The name of the builtin workflow to send the message to (e.g., 'IntegrationAgent' or 'My Integration Agent')
 - webhookName: The name of the webhook, used as scope for the message (can contain spaces and special characters)
 - agentName: The agent name (e.g., 'Integration Agent' or 'My Custom Agent')
-- apikey: A valid API key for authentication
+- apikey or apikeyId: API key or API key ID for authentication
 
 Query Parameters (Optional):
 - activationName: When provided, targets a specific activation instance. The activation must exist and be active (returns 404 if not found, 409 if deactivated).
