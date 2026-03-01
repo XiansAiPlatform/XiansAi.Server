@@ -121,6 +121,96 @@ public static class AdminAppIntegrationEndpoints
                     """
             });
 
+        // Builtin webhook endpoints (stored as app integrations with platformId=builtin_webhook)
+        var webhookGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/webhooks")
+            .WithTags("AdminAPI - Webhooks")
+            .RequireAuthorization("AdminEndpointAuthPolicy");
+
+        webhookGroup.MapPost("", async (
+            string tenantId,
+            [FromBody] CreateBuiltinWebhookRequest request,
+            [FromServices] IAppIntegrationService integrationService,
+            [FromServices] ITenantContext tenantContext) =>
+        {
+            var createdBy = tenantContext.LoggedInUser ?? "system";
+            var result = await integrationService.CreateBuiltinWebhookAsync(request, tenantId, createdBy);
+            return result.ToHttpResult();
+        })
+        .WithName("CreateWebhook")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Create Builtin Webhook",
+            Description = """
+                Create a builtin webhook as an app integration. Creates both an API key and an app integration.
+                Returns a ready-to-use webhook URL for POST /api/user/webhooks/builtin.
+                
+                **Required:**
+                - `activationName`: Activation instance name
+                - `agentName`: Agent name
+                
+                **Optional (with defaults):**
+                - `name`: Display name for the webhook
+                - `workflowName`: Default "Integrator Workflow"
+                - `participantId`: Default "webhook"
+                - `timeoutInSeconds`: Default 30
+                - `webhookName`: Default "Default"
+                - `apiKey`: Existing API key. If omitted, a new one is created.
+                """
+        })
+        .Produces<AppIntegrationResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status409Conflict);
+
+        webhookGroup.MapGet("", async (
+            string tenantId,
+            [FromQuery] string? activationName,
+            [FromQuery] string? agentName,
+            [FromServices] IAppIntegrationService integrationService) =>
+        {
+            var result = await integrationService.GetBuiltinWebhooksAsync(tenantId, activationName, agentName);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { webhooks = result.Data });
+        })
+        .WithName("ListWebhooks")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "List Webhooks",
+            Description = """
+                List builtin webhook integrations for the tenant.
+                Filter by activationName and agentName (optional).
+                Returns webhook metadata and ready-to-use URLs.
+                """
+        })
+        .Produces(StatusCodes.Status200OK);
+
+        webhookGroup.MapDelete("{integrationId}", async (
+            string tenantId,
+            string integrationId,
+            [FromServices] IAppIntegrationService integrationService) =>
+        {
+            var result = await integrationService.DeleteBuiltinWebhookAsync(integrationId, tenantId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = "Webhook deleted successfully" });
+        })
+        .WithName("DeleteWebhook")
+        .WithOpenApi(operation => new(operation)
+        {
+            Summary = "Delete Webhook",
+            Description = """
+                Delete a builtin webhook integration.
+                Revokes the associated API key and removes the integration.
+                """
+        })
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
+
         // Tenant-specific integration endpoints
         var integrationGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/integrations")
             .WithTags("AdminAPI - App Integrations")

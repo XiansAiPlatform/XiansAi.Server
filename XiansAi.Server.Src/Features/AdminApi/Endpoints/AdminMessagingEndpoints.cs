@@ -99,8 +99,11 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Validate activation exists and is active (uses shared cache with webhooks)
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and optionally that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
             if (!validationResult.IsSuccess)
             {
                 return validationResult.ToHttpResult();
@@ -109,8 +112,6 @@ public static class AdminMessagingEndpoints
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
 
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // Create or get the thread
@@ -199,16 +200,16 @@ public static class AdminMessagingEndpoints
             [FromServices] IMessageService messageService,
             HttpContext context) =>
         {
-            // Validate activation exists and is active (uses shared cache with webhooks)
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
             var validationResult = await activationValidationService.ValidateActivationAsync(
-                tenantId, request.AgentName, request.ActivationName);
+                tenantId, request.AgentName, request.ActivationName, effectiveWorkflowType);
             if (!validationResult.IsSuccess)
             {
                 return validationResult.ToHttpResult();
             }
-
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, request.AgentName, effectiveWorkflowType, request.ActivationName);
             
             // Default to Chat if type not specified
@@ -329,8 +330,11 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Validate activation exists and is active (uses shared cache with webhooks)
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
             if (!validationResult.IsSuccess)
             {
                 return validationResult.ToHttpResult();
@@ -338,10 +342,6 @@ public static class AdminMessagingEndpoints
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
-
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            // Use workflowType param for agents that use different workflow types (e.g. Conversational).
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             var result = await messageService.GetTopicsByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize);
@@ -385,8 +385,11 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Validate activation exists and is active (uses shared cache with webhooks)
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
             if (!validationResult.IsSuccess)
             {
                 return validationResult.ToHttpResult();
@@ -401,9 +404,6 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("sortOrder must be either 'asc' or 'desc'");
             }
-
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // When topic is not provided (null) or empty, get messages with null scope (no topic)
@@ -445,8 +445,11 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Validate activation exists and is active (uses shared cache with webhooks)
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
             if (!validationResult.IsSuccess)
             {
                 return validationResult.ToHttpResult();
@@ -457,9 +460,6 @@ public static class AdminMessagingEndpoints
             
             // Normalize topic: empty string should be treated as null
             var normalizedTopic = string.IsNullOrWhiteSpace(topic) ? null : topic.Trim();
-
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // Delete messages with the specified topic/scope

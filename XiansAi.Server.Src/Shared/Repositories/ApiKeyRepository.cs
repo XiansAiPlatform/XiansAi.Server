@@ -1,4 +1,4 @@
-﻿using MongoDB.Driver;
+using MongoDB.Driver;
 using MongoDB.Bson;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,13 +10,15 @@ namespace Shared.Repositories
 {
     public interface IApiKeyRepository
     {
-        Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy);
+        Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null);
         Task<bool> RevokeAsync(string id, string tenantId);
         Task<List<ApiKey>> GetByTenantAsync(string tenantId, bool hasRevoked=false);
         Task<(string apiKey, ApiKey meta)?> RotateAsync(string id, string tenantId);
         Task<ApiKey?> GetByIdAsync(string id, string tenantId);
+        Task<ApiKey?> GetByIdAsync(string id);
         Task<ApiKey?> GetByRawKeyAsync(string rawKey, string tenantId);
         Task<ApiKey?> GetByRawKeyAsync(string rawKey); // Overload without tenantId for authentication
+        Task<List<ApiKey>> GetByTenantAndTypeAsync(string tenantId, string type, string? agentName = null, string? activationName = null);
     }
 
     public class ApiKeyRepository : IApiKeyRepository
@@ -33,7 +35,7 @@ namespace Shared.Repositories
 
 
 
-        public async Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy)
+        public async Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
         {
             return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             {
@@ -51,7 +53,14 @@ namespace Shared.Repositories
                         CreatedAt = now,
                         CreatedBy = createdBy,
                         RevokedAt = null,
-                        LastRotatedAt = null
+                        LastRotatedAt = null,
+                        AgentName = agentName,
+                        ActivationName = activationName,
+                        Type = type,
+                        WorkflowName = workflowName,
+                        ParticipantId = participantId,
+                        TimeoutInSeconds = timeoutInSeconds,
+                        WebhookName = webhookName
                     };
                     await _collection.InsertOneAsync(doc);
                     return (apiKey, doc);
@@ -103,6 +112,27 @@ namespace Shared.Repositories
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeysByTenant");
         }
 
+        public async Task<List<ApiKey>> GetByTenantAndTypeAsync(string tenantId, string type, string? agentName = null, string? activationName = null)
+        {
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                try
+                {
+                    return await _collection.Find(x =>
+                        x.TenantId == tenantId &&
+                        x.Type == type &&
+                        x.RevokedAt == null &&
+                        (string.IsNullOrWhiteSpace(agentName) || x.AgentName == agentName) &&
+                        (string.IsNullOrWhiteSpace(activationName) || x.ActivationName == activationName)).ToListAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting API keys for tenant {TenantId} with type {Type}", tenantId, type);
+                    return new List<ApiKey>();
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeysByTenantAndType");
+        }
+
         public async Task<(string apiKey, ApiKey meta)?> RotateAsync(string id, string tenantId)
         {
             return await MongoRetryHelper.ExecuteWithRetryAsync<(string apiKey, ApiKey meta)?>(async () =>
@@ -145,6 +175,22 @@ namespace Shared.Repositories
                     return null;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyById");
+        }
+
+        public async Task<ApiKey?> GetByIdAsync(string id)
+        {
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                try
+                {
+                    return await _collection.Find(x => x.Id == id && x.RevokedAt == null).FirstOrDefaultAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting API key {ApiKeyId}", id);
+                    return null;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyByIdNoTenant");
         }
 
         public async Task<ApiKey?> GetByRawKeyAsync(string rawKey, string tenantId)
