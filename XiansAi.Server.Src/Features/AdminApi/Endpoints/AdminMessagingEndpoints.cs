@@ -73,6 +73,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageEventPublisher messageEventPublisher,
             [FromServices] IConversationRepository conversationRepository,
             [FromServices] ITenantContext tenantContext,
@@ -96,6 +97,13 @@ public static class AdminMessagingEndpoints
             if (string.IsNullOrWhiteSpace(participantId))
             {
                 return Results.BadRequest("participantId query parameter is required");
+            }
+
+            // Validate activation exists and is active (uses shared cache with webhooks)
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
             }
             
             // Normalize participantId to lowercase (typically an email)
@@ -187,9 +195,18 @@ public static class AdminMessagingEndpoints
         adminMessagingGroup.MapPost("/send", async (
             string tenantId,
             [FromBody] AdminSendMessageRequest request,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             HttpContext context) =>
         {
+            // Validate activation exists and is active (uses shared cache with webhooks)
+            var validationResult = await activationValidationService.ValidateActivationAsync(
+                tenantId, request.AgentName, request.ActivationName);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
+            }
+
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
             var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, request.AgentName, effectiveWorkflowType, request.ActivationName);
@@ -290,6 +307,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             [FromQuery] string? workflowType = null,
             [FromQuery] int page = 1,
@@ -309,6 +327,13 @@ public static class AdminMessagingEndpoints
             if (string.IsNullOrWhiteSpace(participantId))
             {
                 return Results.BadRequest("participantId query parameter is required");
+            }
+
+            // Validate activation exists and is active (uses shared cache with webhooks)
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
             }
             
             // Normalize participantId to lowercase (typically an email)
@@ -335,6 +360,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             [FromQuery] string? workflowType = null,
             [FromQuery] string? topic = null,
@@ -357,6 +383,13 @@ public static class AdminMessagingEndpoints
             if (string.IsNullOrWhiteSpace(participantId))
             {
                 return Results.BadRequest("participantId query parameter is required");
+            }
+
+            // Validate activation exists and is active (uses shared cache with webhooks)
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
             }
             
             // Normalize participantId to lowercase (typically an email)
@@ -391,6 +424,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             [FromQuery] string? workflowType = null,
             [FromQuery] string? topic = null) =>
@@ -409,6 +443,13 @@ public static class AdminMessagingEndpoints
             if (string.IsNullOrWhiteSpace(participantId))
             {
                 return Results.BadRequest("participantId query parameter is required");
+            }
+
+            // Validate activation exists and is active (uses shared cache with webhooks)
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
             }
             
             // Normalize participantId to lowercase (typically an email)

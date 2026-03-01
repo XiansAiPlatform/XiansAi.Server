@@ -9,6 +9,7 @@ namespace Shared.Repositories;
 public interface IActivationRepository
 {
     Task<AgentActivation?> GetByIdAsync(string id);
+    Task<AgentActivation?> GetByNameAndAgentAsync(string tenantId, string agentName, string activationName);
     Task<List<AgentActivation>> GetByTenantIdAsync(string tenantId);
     Task<List<AgentActivation>> GetByAgentNameAsync(string agentName, string tenantId);
     Task<List<AgentActivation>> GetActiveActivationsAsync(string tenantId);
@@ -39,6 +40,18 @@ public class ActivationRepository : IActivationRepository
             }
             return await _activations.Find(x => x.Id == id).FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetActivationById");
+    }
+
+    public async Task<AgentActivation?> GetByNameAndAgentAsync(string tenantId, string agentName, string activationName)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<AgentActivation>.Filter.And(
+                Builders<AgentActivation>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<AgentActivation>.Filter.Eq(x => x.AgentName, agentName),
+                Builders<AgentActivation>.Filter.Eq(x => x.Name, activationName));
+            return await _activations.Find(filter).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetActivationByNameAndAgent");
     }
 
     public async Task<List<AgentActivation>> GetByTenantIdAsync(string tenantId)

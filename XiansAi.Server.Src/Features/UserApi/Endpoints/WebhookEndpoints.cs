@@ -27,6 +27,7 @@ public static class WebhookEndpoints
             [FromServices] IMessageService messageService,
             [FromServices] IPendingRequestService pendingRequestService,
             [FromServices] ITenantContext tenantContext,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
             [FromServices] ILogger<SyncMessageHandler> logger,
             [FromQuery] int timeoutSeconds = 60,
@@ -66,6 +67,17 @@ public static class WebhookEndpoints
                 if (timeoutSeconds <= 0 || timeoutSeconds > 300)
                 {
                     return Results.BadRequest("Timeout must be between 1 and 300 seconds");
+                }
+
+                // Validate activation exists and is active when activationName is provided
+                if (!string.IsNullOrWhiteSpace(activationName))
+                {
+                    var validationResult = await activationValidationService.ValidateActivationAsync(
+                        tenantId, agentName, activationName);
+                    if (!validationResult.IsSuccess)
+                    {
+                        return validationResult.ToHttpResult();
+                    }
                 }
 
                 // Read the request body
@@ -238,6 +250,7 @@ Query Parameters (Required):
 - apikey: A valid API key for authentication
 
 Query Parameters (Optional):
+- activationName: When provided, targets a specific activation instance. The activation must exist and be active (returns 404 if not found, 409 if deactivated).
 - timeoutSeconds: Timeout for waiting for response in seconds (default: 60, max: 300)
 - participantId: ID for the system or user invoking the webhook (default: 'webhook')
 - scope: An optional scope or category identifier for the webhook
@@ -262,6 +275,7 @@ This allows the workflow to control the HTTP response returned to the webhook ca
         .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
         .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
         .Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+        .Produces<ProblemDetails>(StatusCodes.Status409Conflict)
         .Produces<ProblemDetails>(StatusCodes.Status408RequestTimeout)
         .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
