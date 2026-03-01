@@ -48,6 +48,7 @@ public class ActivationService : IActivationService
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IWorkflowStarterService _workflowStarterService;
     private readonly IActivationCleanupService _cleanupService;
+    private readonly IActivationValidationService _activationValidationService;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -57,6 +58,7 @@ public class ActivationService : IActivationService
         IWorkflowStarterService workflowStarterService,
         ITemporalClientService temporalClientService,
         IActivationCleanupService cleanupService,
+        IActivationValidationService activationValidationService,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -64,6 +66,7 @@ public class ActivationService : IActivationService
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
         _workflowStarterService = workflowStarterService ?? throw new ArgumentNullException(nameof(workflowStarterService));
         _cleanupService = cleanupService ?? throw new ArgumentNullException(nameof(cleanupService));
+        _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -597,6 +600,8 @@ public class ActivationService : IActivationService
             activation.DeactivatedAt = DateTime.UtcNow;
 
             await _activationRepository.UpdateAsync(activationId, activation);
+
+            _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
             _logger.LogInformation(
                 "Successfully deactivated activation {ActivationId}. " +
