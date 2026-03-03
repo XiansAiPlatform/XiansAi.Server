@@ -9,6 +9,11 @@ namespace Shared.Repositories;
 public interface IKnowledgeRepository
 {
     Task<T?> GetLatestByNameAndTenantAsync<T>(string name, string agent, string tenantId) where T : IKnowledge;
+    /// <summary>
+    /// Gets the latest knowledge for name+agent+tenant, regardless of ActivationName.
+    /// Used as fallback when no matching activation-specific knowledge is found.
+    /// </summary>
+    Task<T?> GetLatestByNameAndTenantAnyActivationAsync<T>(string name, string agent, string tenantId) where T : IKnowledge;
     Task<T?> GetLatestByNameAndActivationAsync<T>(string name, string agent, string tenantId, string activationName) where T : IKnowledge;
     Task<T?> GetLatestSystemByNameAsync<T>(string name, string agent) where T : IKnowledge;
     Task<T?> GetByIdAsync<T>(string id) where T : IKnowledge;
@@ -62,6 +67,24 @@ public class KnowledgeRepository : IKnowledgeRepository
                 .SortByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByNameAndTenant");
+    }
+
+    public async Task<T?> GetLatestByNameAndTenantAnyActivationAsync<T>(string name, string agent, string tenantId) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+
+            var nameFilter = Builders<T>.Filter.Eq(x => x.Name, name);
+            var agentFilter = Builders<T>.Filter.Eq(x => x.Agent, agent);
+            var tenantFilter = Builders<T>.Filter.Eq(x => x.TenantId, tenantId);
+
+            var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter);
+
+            return await collection.Find(filter)
+                .SortByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByNameAndTenantAnyActivation");
     }
 
     public async Task<T?> GetLatestByNameAndActivationAsync<T>(string name, string agent, string tenantId, string activationName) where T : IKnowledge

@@ -197,6 +197,8 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ISecretVaultRepository, SecretVaultRepository>();
         builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
         builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
+        builder.Services.AddSingleton<IAsyncResultCache, AsyncResultCache>();
+        builder.Services.AddScoped<IActivationValidationService, ActivationValidationService>();
 
         // Register Utility services
         builder.Services.AddScoped<IMarkdownService, MarkdownService>();

@@ -44,13 +44,13 @@ public class ActivationWorkflowConfiguration
     public List<WorkflowConfiguration> Workflows { get; set; } = new();
 
     /// <summary>
-    /// Validates that at least one workflow is configured
+    /// Validates workflow configurations. Empty workflows are allowed (agent may have no workflow configs).
     /// </summary>
     public void Validate()
     {
-        if (Workflows == null || Workflows.Count == 0)
+        if (Workflows == null)
         {
-            throw new ValidationException("At least one workflow configuration is required");
+            Workflows = new List<WorkflowConfiguration>();
         }
 
         foreach (var workflow in Workflows)

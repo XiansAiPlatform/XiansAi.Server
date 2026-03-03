@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson.Serialization.Attributes;
+using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Bson;
 
 namespace Shared.Data.Models
@@ -29,5 +29,26 @@ namespace Shared.Data.Models
 
         [BsonElement("last_rotated_at")]
         public DateTime? LastRotatedAt { get; set; }
+
+        [BsonElement("agent_name")]
+        public string? AgentName { get; set; }
+
+        [BsonElement("activation_name")]
+        public string? ActivationName { get; set; }
+
+        [BsonElement("type")]
+        public string? Type { get; set; }
+
+        [BsonElement("workflow_name")]
+        public string? WorkflowName { get; set; }
+
+        [BsonElement("participant_id")]
+        public string? ParticipantId { get; set; }
+
+        [BsonElement("timeout_in_seconds")]
+        public int? TimeoutInSeconds { get; set; }
+
+        [BsonElement("webhook_name")]
+        public string? WebhookName { get; set; }
     }
 }

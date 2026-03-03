@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
 using Shared.Providers.Auth;
@@ -56,8 +56,9 @@ namespace Features.UserApi.Auth
             // Note: Rate limiting is handled by the rate limiting middleware (which runs before authentication)
             // All UserApi endpoints should use .WithAgentUserApiRateLimit() to prevent enumeration attacks
 
-            // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
+            // Check for access token in multiple locations: apikey/apikeyId query param, access_token query param, or Authorization header
             var accessToken = Request.Query["apikey"].ToString();
+            var apikeyId = Request.Query["apikeyId"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
             
             // Note: tenantId is now optional. If not provided, it will be derived from the API key.
@@ -83,6 +84,41 @@ namespace Features.UserApi.Auth
                     {
                         accessToken = token;
                         _tenantContext.Authorization = accessToken;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(apikeyId))
+                {
+                    try
+                    {
+                        var apiKeyById = await _apiKeyService.GetApiKeyByIdAsync(apikeyId);
+                        if (apiKeyById != null)
+                        {
+                            _tenantContext.LoggedInUser = apiKeyById.CreatedBy;
+                            _tenantContext.UserType = UserType.UserApiKey;
+                            _tenantContext.TenantId = apiKeyById.TenantId;
+                            _tenantContext.AuthorizedTenantIds = new[] { apiKeyById.TenantId };
+
+                            var claims = new List<Claim>
+                            {
+                                new Claim(ClaimTypes.NameIdentifier, apiKeyById.CreatedBy),
+                                new Claim("TenantId", apiKeyById.TenantId)
+                            };
+
+                            var identity = new ClaimsIdentity(claims, Scheme.Name);
+                            var principal = new ClaimsPrincipal(identity);
+                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+                            _logger.LogInformation("Successfully authenticated Web connection via apikeyId: User={UserId}, Tenant={TenantId}", apiKeyById.CreatedBy, apiKeyById.TenantId);
+
+                            return AuthenticateResult.Success(ticket);
+                        }
+                        _logger.LogWarning("Invalid apikeyId submitted");
+                        return AuthenticateResult.Fail("Invalid apikeyId");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing apikeyId for Endpoint connection");
+                        return AuthenticateResult.Fail("Error processing apikeyId");
                     }
                 }
 

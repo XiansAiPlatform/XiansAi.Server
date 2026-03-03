@@ -21,12 +21,15 @@ public static class WebhookEndpoints
             [FromQuery] string workflowName,
             [FromQuery] string webhookName,
             [FromQuery] string agentName,
-            [FromQuery] string apikey,
+            [FromQuery] string? apikey,
+            [FromQuery] string? apikeyId,
             [FromQuery] string? activationName,
             HttpContext httpContext,
             [FromServices] IMessageService messageService,
             [FromServices] IPendingRequestService pendingRequestService,
             [FromServices] ITenantContext tenantContext,
+            [FromServices] IApiKeyService apiKeyService,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
             [FromServices] ILogger<SyncMessageHandler> logger,
             [FromQuery] int timeoutSeconds = 60,
@@ -52,9 +55,25 @@ public static class WebhookEndpoints
                     return Results.BadRequest("agentName is required");
                 }
 
-                // Get tenantId from authenticated context (derived from API key)
+                if (string.IsNullOrWhiteSpace(apikey) && string.IsNullOrWhiteSpace(apikeyId))
+                {
+                    return Results.BadRequest("apikey or apikeyId is required");
+                }
+
+                // Get tenantId from authenticated context, or manually extract from apikeyId when auth context does not support it
                 var tenantId = tenantContext.TenantId;
-                
+                if (string.IsNullOrEmpty(tenantId) && !string.IsNullOrWhiteSpace(apikeyId))
+                {
+                    var apiKeyById = await apiKeyService.GetApiKeyByIdAsync(apikeyId);
+                    if (apiKeyById == null)
+                    {
+                        return Results.Problem(
+                            detail: "Invalid apikeyId.",
+                            statusCode: StatusCodes.Status401Unauthorized);
+                    }
+                    tenantId = apiKeyById.TenantId;
+                }
+
                 if (string.IsNullOrEmpty(tenantId))
                 {
                     return Results.Problem(
@@ -68,6 +87,17 @@ public static class WebhookEndpoints
                     return Results.BadRequest("Timeout must be between 1 and 300 seconds");
                 }
 
+                // Validate activation exists and is active when activationName is provided
+                if (!string.IsNullOrWhiteSpace(activationName))
+                {
+                    var validationResult = await activationValidationService.ValidateActivationAsync(
+                        tenantId, agentName, activationName, workflowName);
+                    if (!validationResult.IsSuccess)
+                    {
+                        return validationResult.ToHttpResult();
+                    }
+                }
+
                 // Read the request body
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
                 var body = await reader.ReadToEndAsync();
@@ -78,7 +108,7 @@ public static class WebhookEndpoints
                 
                 // Use participantId from query or default to "webhook" for identification
                 // Normalize to lowercase for consistency (especially important for emails)
-                var resolvedParticipantId = (participantId ?? "unknown").ToLowerInvariant();
+                var resolvedParticipantId = (participantId ?? "webhook").ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
@@ -235,9 +265,10 @@ Query Parameters (Required):
 - workflowName: The name of the builtin workflow to send the message to (e.g., 'IntegrationAgent' or 'My Integration Agent')
 - webhookName: The name of the webhook, used as scope for the message (can contain spaces and special characters)
 - agentName: The agent name (e.g., 'Integration Agent' or 'My Custom Agent')
-- apikey: A valid API key for authentication
+- apikey or apikeyId: API key or API key ID for authentication
 
 Query Parameters (Optional):
+- activationName: When provided, targets a specific activation instance. The activation must exist and be active (returns 404 if not found, 409 if deactivated).
 - timeoutSeconds: Timeout for waiting for response in seconds (default: 60, max: 300)
 - participantId: ID for the system or user invoking the webhook (default: 'webhook')
 - scope: An optional scope or category identifier for the webhook
@@ -262,6 +293,7 @@ This allows the workflow to control the HTTP response returned to the webhook ca
         .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
         .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
         .Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+        .Produces<ProblemDetails>(StatusCodes.Status409Conflict)
         .Produces<ProblemDetails>(StatusCodes.Status408RequestTimeout)
         .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 

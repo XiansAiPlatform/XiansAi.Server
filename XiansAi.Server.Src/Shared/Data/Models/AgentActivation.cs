@@ -54,10 +54,19 @@ public class AgentActivation : ModelValidatorBase<AgentActivation>
     public List<string> WorkflowIds { get; set; } = new();
 
     /// <summary>
-    /// Computed property to determine if activation is active based on workflow IDs
+    /// Stored field indicating whether the activation is currently active.
+    /// Supports multiple activate/deactivate cycles. When null (legacy documents),
+    /// IsActive falls back to inferring from ActivatedAt and DeactivatedAt.
+    /// </summary>
+    [BsonElement("active")]
+    public bool? Active { get; set; }
+
+    /// <summary>
+    /// Computed property indicating if activation is currently active.
+    /// Uses the Active field when set; falls back to ActivatedAt/DeactivatedAt for legacy documents.
     /// </summary>
     [BsonIgnore]
-    public bool IsActive => WorkflowIds != null && WorkflowIds.Count > 0;
+    public bool IsActive => Active ?? (ActivatedAt.HasValue && !DeactivatedAt.HasValue);
 
     [BsonElement("activated_at")]
     public DateTime? ActivatedAt { get; set; }
@@ -79,6 +88,7 @@ public class AgentActivation : ModelValidatorBase<AgentActivation>
             TenantId = ValidationHelpers.SanitizeString(this.TenantId),
             WorkflowConfiguration = this.WorkflowConfiguration,
             WorkflowIds = this.WorkflowIds ?? new List<string>(),
+            Active = this.Active,
             ActivatedAt = this.ActivatedAt,
             DeactivatedAt = this.DeactivatedAt
         };

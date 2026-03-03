@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Features.AppsApi.Models;
 using Features.AppsApi.Repositories;
+using Shared.Services;
 using Shared.Utils.Services;
 
 namespace Features.AppsApi.Services;
@@ -64,6 +65,21 @@ public interface IAppIntegrationService
     /// Test the integration configuration (validate credentials)
     /// </summary>
     Task<ServiceResult<IntegrationTestResult>> TestIntegrationAsync(string id, string tenantId);
+
+    /// <summary>
+    /// Create a builtin webhook integration (creates API key + app integration).
+    /// </summary>
+    Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy);
+
+    /// <summary>
+    /// Get builtin webhook integrations for a tenant.
+    /// </summary>
+    Task<ServiceResult<List<AppIntegrationResponse>>> GetBuiltinWebhooksAsync(string tenantId, string? activationName = null, string? agentName = null);
+
+    /// <summary>
+    /// Delete a builtin webhook integration (revokes API key + deletes integration).
+    /// </summary>
+    Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId);
 }
 
 /// <summary>
@@ -79,13 +95,19 @@ public class IntegrationTestResult
 public class AppIntegrationService : IAppIntegrationService
 {
     private readonly IAppIntegrationRepository _repository;
+    private readonly IApiKeyService _apiKeyService;
+    private readonly IActivationValidationService _activationValidationService;
     private readonly ILogger<AppIntegrationService> _logger;
 
     public AppIntegrationService(
         IAppIntegrationRepository repository,
+        IApiKeyService apiKeyService,
+        IActivationValidationService activationValidationService,
         ILogger<AppIntegrationService> logger)
     {
         _repository = repository;
+        _apiKeyService = apiKeyService;
+        _activationValidationService = activationValidationService;
         _logger = logger;
     }
 
@@ -495,6 +517,172 @@ public class AppIntegrationService : IAppIntegrationService
             return ServiceResult<bool>.InternalServerError(
                 "An error occurred while deleting the integration");
         }
+    }
+
+    public async Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy)
+    {
+        try
+        {
+            var workflowName = string.IsNullOrWhiteSpace(request.WorkflowName) ? "Integrator Workflow" : request.WorkflowName.Trim();
+            var participantId = string.IsNullOrWhiteSpace(request.ParticipantId) ? "webhook" : request.ParticipantId.Trim().ToLowerInvariant();
+            var timeoutInSeconds = request.TimeoutInSeconds ?? 30;
+            var webhookName = string.IsNullOrWhiteSpace(request.WebhookName) ? "Default" : request.WebhookName.Trim();
+            var integrationName = string.IsNullOrWhiteSpace(request.Name) ? $"Webhook-{webhookName}-{request.ActivationName}" : request.Name.Trim();
+
+            if (timeoutInSeconds <= 0 || timeoutInSeconds > 300)
+                return ServiceResult<AppIntegrationResponse>.BadRequest("timeoutInSeconds must be between 1 and 300");
+
+            var validationResult = await _activationValidationService.ValidateActivationAsync(tenantId, request.AgentName, request.ActivationName, workflowName);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.StatusCode switch
+                {
+                    StatusCode.NotFound => ServiceResult<AppIntegrationResponse>.NotFound(validationResult.ErrorMessage ?? "Activation not found"),
+                    StatusCode.Conflict => ServiceResult<AppIntegrationResponse>.Conflict(validationResult.ErrorMessage ?? "Conflict"),
+                    _ => ServiceResult<AppIntegrationResponse>.BadRequest(validationResult.ErrorMessage ?? "Validation failed")
+                };
+            }
+
+            if (await _repository.ExistsByNameAsync(tenantId, request.AgentName, request.ActivationName, integrationName))
+                return ServiceResult<AppIntegrationResponse>.BadRequest($"An integration with name '{integrationName}' already exists for this agent and activation");
+
+            string apiKeyId;
+            if (!string.IsNullOrWhiteSpace(request.ApiKey))
+            {
+                var existingKey = await _apiKeyService.GetApiKeyByRawKeyAsync(request.ApiKey, tenantId);
+                if (existingKey == null)
+                    return ServiceResult<AppIntegrationResponse>.BadRequest("The provided apiKey is invalid or does not belong to this tenant");
+                apiKeyId = existingKey.Id;
+            }
+            else
+            {
+                var existingKeys = await _apiKeyService.GetWebhookApiKeysAsync(tenantId, request.ActivationName, request.AgentName);
+                var matchingKey = existingKeys
+                    .Where(k => k.RevokedAt == null
+                        && (k.WorkflowName ?? "Integrator Workflow") == workflowName
+                        && (k.ParticipantId ?? "webhook") == participantId
+                        && (k.WebhookName ?? "Default") == webhookName
+                        && (k.TimeoutInSeconds ?? 30) == timeoutInSeconds)
+                    .FirstOrDefault();
+
+                if (matchingKey != null)
+                {
+                    apiKeyId = matchingKey.Id;
+                }
+                else
+                {
+                    var shortId = Guid.NewGuid().ToString("N")[..8];
+                    var prefix = $"Webhook-{webhookName}-";
+                    var suffix = $"-{shortId}";
+                    var maxActivationLen = Math.Max(0, 60 - prefix.Length - suffix.Length);
+                    var activationPart = request.ActivationName.Length <= maxActivationLen
+                        ? request.ActivationName
+                        : request.ActivationName[..maxActivationLen];
+                    var keyName = $"{prefix}{activationPart}{suffix}";
+                    var createKeyResult = await _apiKeyService.CreateApiKeyAsync(tenantId, keyName, createdBy,
+                        agentName: request.AgentName,
+                        activationName: request.ActivationName,
+                        type: "webhook",
+                        workflowName: workflowName,
+                        participantId: participantId,
+                        timeoutInSeconds: timeoutInSeconds,
+                        webhookName: webhookName);
+                    if (!createKeyResult.IsSuccess)
+                    {
+                        return createKeyResult.StatusCode switch
+                        {
+                            StatusCode.Conflict => ServiceResult<AppIntegrationResponse>.Conflict(createKeyResult.ErrorMessage ?? "API key conflict"),
+                            _ => ServiceResult<AppIntegrationResponse>.InternalServerError(createKeyResult.ErrorMessage ?? "Failed to create API key")
+                        };
+                    }
+                    apiKeyId = createKeyResult.Data!.meta.Id;
+                }
+            }
+
+            var queryParams = new List<string>
+            {
+                $"apikeyId={Uri.EscapeDataString(apiKeyId)}",
+                $"timeoutSeconds={timeoutInSeconds}",
+                $"agentName={Uri.EscapeDataString(request.AgentName)}",
+                $"workflowName={Uri.EscapeDataString(workflowName)}",
+                $"webhookName={Uri.EscapeDataString(webhookName)}",
+                $"activationName={Uri.EscapeDataString(request.ActivationName)}"
+            };
+            if (participantId != "webhook")
+                queryParams.Add($"participantId={Uri.EscapeDataString(participantId)}");
+            var webhookUrl = $"/api/user/webhooks/builtin?{string.Join("&", queryParams)}";
+
+            var configuration = new Dictionary<string, object>
+            {
+                ["webhookUrl"] = webhookUrl,
+                ["apiKeyId"] = apiKeyId,
+                ["workflowName"] = workflowName,
+                ["participantId"] = participantId,
+                ["timeoutInSeconds"] = timeoutInSeconds,
+                ["webhookName"] = webhookName
+            };
+
+            var workflowId = $"{tenantId}:{request.AgentName}:{workflowName}:{request.ActivationName}";
+            var integration = new AppIntegration
+            {
+                TenantId = tenantId,
+                PlatformId = "builtin_webhook",
+                Name = integrationName,
+                AgentName = request.AgentName,
+                ActivationName = request.ActivationName,
+                WorkflowId = workflowId,
+                Configuration = configuration,
+                Secrets = new AppIntegrationSecrets(),
+                MappingConfig = new AppIntegrationMappingConfig(),
+                IsEnabled = true,
+                CreatedBy = createdBy,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            integration.GenerateWorkflowId();
+            integration.WorkflowId = workflowId;
+
+            var id = await _repository.CreateAsync(integration);
+            integration.Id = id;
+
+            var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
+            _logger.LogInformation("Created builtin webhook integration {IntegrationId} with webhook URL", id);
+            return ServiceResult<AppIntegrationResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating builtin webhook for tenant {TenantId}", tenantId);
+            return ServiceResult<AppIntegrationResponse>.InternalServerError("An error occurred while creating the builtin webhook");
+        }
+    }
+
+    public async Task<ServiceResult<List<AppIntegrationResponse>>> GetBuiltinWebhooksAsync(string tenantId, string? activationName = null, string? agentName = null)
+    {
+        var result = await GetIntegrationsAsync(tenantId, "builtin_webhook", agentName, activationName);
+        return result;
+    }
+
+    public async Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId)
+    {
+        var existing = await _repository.GetByIdAsync(integrationId);
+        if (existing == null || existing.TenantId != tenantId)
+            return ServiceResult<bool>.NotFound("Integration not found");
+
+        if (!existing.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
+            return ServiceResult<bool>.BadRequest("Not a builtin webhook integration");
+
+        if (existing.Configuration.TryGetValue("apiKeyId", out var apiKeyIdVal) && apiKeyIdVal != null)
+        {
+            var apiKeyId = apiKeyIdVal.ToString();
+            if (!string.IsNullOrEmpty(apiKeyId))
+            {
+                var revokeResult = await _apiKeyService.RevokeApiKeyAsync(apiKeyId, tenantId);
+                if (!revokeResult.IsSuccess)
+                    _logger.LogWarning("Failed to revoke API key {ApiKeyId} when deleting builtin webhook: {Error}", apiKeyId, revokeResult.ErrorMessage);
+            }
+        }
+
+        return await DeleteIntegrationAsync(integrationId, tenantId);
     }
 
     public async Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(

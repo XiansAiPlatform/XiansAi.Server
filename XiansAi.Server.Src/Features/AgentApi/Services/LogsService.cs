@@ -18,6 +18,7 @@ public class LogRequest
     public string? Activation { get; set; }
     public string? Exception { get; set; }
     public string? ParticipantId { get; set; }
+    public string? TenantId { get; set; }
 }
 
 public interface ILogsService
@@ -61,10 +62,16 @@ public class LogsService : ILogsService
                     return Results.BadRequest("WorkflowId is required");
                 }
 
+                var (tenantId, tenantError) = ResolveTenantId(request.TenantId);
+                if (tenantError != null)
+                {
+                    return tenantError;
+                }
+
                 var log = new Log
                 {
                     Id = ObjectId.GenerateNewId().ToString(),
-                    TenantId = _tenantContext.TenantId,
+                    TenantId = tenantId!,
                     Message = request.Message,
                     Level = request.Level,
                     WorkflowId = request.WorkflowId,
@@ -110,10 +117,16 @@ public class LogsService : ILogsService
                 return Results.BadRequest("WorkflowId is required");
             }
 
+            var (tenantId, tenantError) = ResolveTenantId(request.TenantId);
+            if (tenantError != null)
+            {
+                return tenantError;
+            }
+
             var log = new Log
             {
                 Id = ObjectId.GenerateNewId().ToString(),
-                TenantId = _tenantContext.TenantId,
+                TenantId = tenantId!,
                 Message = request.Message,
                 Level = request.Level,
                 WorkflowId = request.WorkflowId,
@@ -136,5 +149,32 @@ public class LogsService : ILogsService
             _logger.LogError(ex, "Error creating log: {Request}", request);
             return Results.BadRequest("An error occurred while creating the log");
         }
+    }
+
+    /// <summary>
+    /// Resolves the tenant ID for log storage. System admins can specify any tenant;
+    /// non-admins must use the current tenant or omit TenantId.
+    /// </summary>
+    private (string? TenantId, IResult? Error) ResolveTenantId(string? requestTenantId)
+    {
+        if (string.IsNullOrWhiteSpace(requestTenantId))
+        {
+            return (_tenantContext.TenantId, null);
+        }
+
+        var isSysAdmin = _tenantContext.UserRoles.Contains(SystemRoles.SysAdmin);
+        if (isSysAdmin)
+        {
+            return (requestTenantId.Trim(), null);
+        }
+
+        if (!requestTenantId.Trim().Equals(_tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Non-admin user {UserId} attempted to log for tenant {RequestedTenantId} but current tenant is {CurrentTenantId}",
+                _tenantContext.LoggedInUser, requestTenantId, _tenantContext.TenantId);
+            return (null, Results.BadRequest("TenantId does not match the current tenant. Only system administrators can log for other tenants."));
+        }
+
+        return (requestTenantId.Trim(), null);
     }
 } 

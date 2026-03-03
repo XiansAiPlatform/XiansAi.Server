@@ -148,7 +148,7 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
         base.Validate();
 
         // Validate platform ID is supported
-        var supportedPlatforms = new[] { "slack", "msteams", "outlook", "webhook" };
+        var supportedPlatforms = new[] { "slack", "msteams", "outlook", "webhook", "builtin_webhook" };
         if (!supportedPlatforms.Contains(PlatformId.ToLowerInvariant()))
         {
             throw new ValidationException($"Unsupported platform: {PlatformId}. Supported platforms: {string.Join(", ", supportedPlatforms)}");
@@ -329,6 +329,37 @@ public class AppIntegrationSecretsRequest
 }
 
 /// <summary>
+/// DTO for creating a builtin webhook integration (targets /api/user/webhooks/builtin).
+/// Creates both an API key and an app integration.
+/// </summary>
+public class CreateBuiltinWebhookRequest
+{
+    [JsonPropertyName("activationName")]
+    public required string ActivationName { get; set; }
+
+    [JsonPropertyName("agentName")]
+    public required string AgentName { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("workflowName")]
+    public string? WorkflowName { get; set; }
+
+    [JsonPropertyName("participantId")]
+    public string? ParticipantId { get; set; }
+
+    [JsonPropertyName("timeoutInSeconds")]
+    public int? TimeoutInSeconds { get; set; }
+
+    [JsonPropertyName("webhookName")]
+    public string? WebhookName { get; set; }
+
+    [JsonPropertyName("apiKey")]
+    public string? ApiKey { get; set; }
+}
+
+/// <summary>
 /// DTO for updating an existing app integration
 /// </summary>
 public class UpdateAppIntegrationRequest
@@ -434,11 +465,20 @@ public class AppIntegrationResponse
             .Where(kvp => kvp.Key != "outgoingWebhookUrl")
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-        // Generate webhook URL with optional masking
-        var webhookUrl = GenerateWebhookUrl(entity.PlatformId, entity.Id, entity.Secrets?.WebhookSecret);
-        if (maskWebhookUrl && !string.IsNullOrEmpty(entity.Secrets?.WebhookSecret))
+        // Generate webhook URL - builtin_webhook stores it in configuration
+        string webhookUrl;
+        if (entity.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase)
+            && entity.Configuration.TryGetValue("webhookUrl", out var urlVal) && urlVal != null)
         {
-            webhookUrl = MaskWebhookUrlSecret(webhookUrl, entity.Secrets.WebhookSecret);
+            webhookUrl = urlVal.ToString() ?? string.Empty;
+        }
+        else
+        {
+            webhookUrl = GenerateWebhookUrl(entity.PlatformId, entity.Id, entity.Secrets?.WebhookSecret);
+            if (maskWebhookUrl && !string.IsNullOrEmpty(entity.Secrets?.WebhookSecret))
+            {
+                webhookUrl = MaskWebhookUrlSecret(webhookUrl, entity.Secrets.WebhookSecret);
+            }
         }
 
         return new AppIntegrationResponse
@@ -562,7 +602,8 @@ public static class PlatformConfigurationRequirements
         ["slack"] = new[] { "signingSecret" },  // incomingWebhookUrl is optional, used for sending
         ["msteams"] = new[] { "appId", "appPassword" },
         ["outlook"] = new[] { "clientId", "clientSecret", "tenantId" },
-        ["webhook"] = Array.Empty<string>()  // Generic webhook has no required fields
+        ["webhook"] = Array.Empty<string>(),  // Generic webhook has no required fields
+        ["builtin_webhook"] = Array.Empty<string>()  // Config populated by create endpoint
     };
 
     public static readonly Dictionary<string, string[]> OptionalFields = new()
@@ -570,7 +611,8 @@ public static class PlatformConfigurationRequirements
         ["slack"] = new[] { "appId", "teamId" },
         ["msteams"] = new[] { "serviceUrl", "appTenantId" },
         ["outlook"] = new[] { "userEmail", "tenantId" },
-        ["webhook"] = new[] { "headers" }
+        ["webhook"] = new[] { "headers" },
+        ["builtin_webhook"] = new[] { "webhookUrl", "apiKeyId", "workflowName", "participantId", "timeoutInSeconds", "webhookName" }
     };
 
     public static void ValidateConfiguration(string platformId, Dictionary<string, object> configuration)

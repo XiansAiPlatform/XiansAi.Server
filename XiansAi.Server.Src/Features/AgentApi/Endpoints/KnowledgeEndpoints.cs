@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
+using Shared.Auth;
 using Shared.Services;
-using Shared.Utils.Services; 
+using Shared.Utils.Services;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -25,11 +26,15 @@ public static class KnowledgeEndpoints
             [FromQuery] string name,
             [FromQuery] string agent,
             [FromQuery] string? activationName,
-            [FromServices] IKnowledgeService service) =>
+            [FromServices] IKnowledgeService service,
+            [FromServices] ITenantContext tenantContext) =>
         {
-            _logger.LogInformation("Getting latest knowledge for name: {name}, agent: {agent}, activationName: {activationName}", 
-                name, agent, activationName);
-            
+            var tenantId = tenantContext.TenantId ?? "(null)";
+            _logger.LogInformation(
+                "Agent knowledge/latest request: name={Name}, agent={Agent}, activationName={ActivationName}, tenantId={TenantId}",
+                name, agent, activationName ?? "(null)", tenantId);
+            Console.WriteLine($"[Agent API] knowledge/latest: name={name}, agent={agent}, activationName={activationName ?? "(null)"}, tenantId={tenantId}");
+
             var result = await service.GetLatestByNameAsync(name, agent, activationName);
             return result.ToHttpResult();
         })

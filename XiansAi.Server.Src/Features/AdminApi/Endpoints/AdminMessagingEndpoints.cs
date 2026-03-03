@@ -73,6 +73,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageEventPublisher messageEventPublisher,
             [FromServices] IConversationRepository conversationRepository,
             [FromServices] ITenantContext tenantContext,
@@ -97,12 +98,20 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("participantId query parameter is required");
             }
+
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and optionally that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
+            }
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
 
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // Create or get the thread
@@ -161,8 +170,17 @@ public static class AdminMessagingEndpoints
                 **Response Format:**
                 Server-Sent Events (SSE) stream with events in the following format:
                 ```
-                event: message
-                data: {"type":"chat","text":"Hello","timestamp":"2024-01-01T00:00:00Z",...}
+                event: Chat
+                data: {"messageType":"Chat","text":"Hello","timestamp":"2024-01-01T00:00:00Z",...}
+                
+                event: Data
+                data: {"messageType":"Data","text":"","data":{...},...}
+                
+                event: Reasoning
+                data: {"messageType":"Reasoning","text":"","data":{...},...}
+                
+                event: Tool
+                data: {"messageType":"Tool","text":"","data":{...},...}
                 
                 event: heartbeat
                 data: {"timestamp":"2024-01-01T00:00:05Z"}
@@ -178,11 +196,20 @@ public static class AdminMessagingEndpoints
         adminMessagingGroup.MapPost("/send", async (
             string tenantId,
             [FromBody] AdminSendMessageRequest request,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             HttpContext context) =>
         {
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
             var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(
+                tenantId, request.AgentName, request.ActivationName, effectiveWorkflowType);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
+            }
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, request.AgentName, effectiveWorkflowType, request.ActivationName);
             
             // Default to Chat if type not specified
@@ -229,7 +256,7 @@ public static class AdminMessagingEndpoints
                 - `text` (required): The message text content
                 - `data` (optional): Additional structured data (JSON object)
                 - `topic` (optional): Topic for the message (stored as 'scope' in the message thread for organizing conversations)
-                - `type` (optional): Message type - either 'Chat' or 'Data' (defaults to 'Chat')
+                - `type` (optional): Message type - 'Chat', 'Data', or 'File' (defaults to 'Chat')
                 - `requestId` (optional): Unique request identifier (auto-generated GUID if not provided)
                 - `hint` (optional): Hint for the agent to use when processing the message
                 - `authorization` (optional): Authorization token (can also be provided via Authorization header)
@@ -238,6 +265,7 @@ public static class AdminMessagingEndpoints
                 **Message Types:**
                 - `Chat`: Use for conversational messages (default). Set `text` field with the message content.
                 - `Data`: Use for sending structured data to the workflow. Set `data` field with a JSON object and optionally include `text` for context.
+                - `File`: Use for file uploads. Set `data` field with base64 encoded file content (string or object with `content` and optional `fileName`, `contentType`). Routes to OnFileUpload handler.
                 
                 **Examples:**
                 
@@ -280,6 +308,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             [FromQuery] string? workflowType = null,
             [FromQuery] int page = 1,
@@ -300,13 +329,19 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("participantId query parameter is required");
             }
+
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
+            }
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
-
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            // Use workflowType param for agents that use different workflow types (e.g. Conversational).
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             var result = await messageService.GetTopicsByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize);
@@ -325,6 +360,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             [FromQuery] string? workflowType = null,
             [FromQuery] string? topic = null,
@@ -348,6 +384,16 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("participantId query parameter is required");
             }
+
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
+            }
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
@@ -358,9 +404,6 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("sortOrder must be either 'asc' or 'desc'");
             }
-
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // When topic is not provided (null) or empty, get messages with null scope (no topic)
@@ -381,6 +424,7 @@ public static class AdminMessagingEndpoints
             [FromQuery] string agentName,
             [FromQuery] string activationName,
             [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IMessageService messageService,
             [FromQuery] string? workflowType = null,
             [FromQuery] string? topic = null) =>
@@ -400,15 +444,22 @@ public static class AdminMessagingEndpoints
             {
                 return Results.BadRequest("participantId query parameter is required");
             }
+
+            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
+            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+
+            // Validate activation exists and is active, and that the agent has this workflow type registered
+            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.ToHttpResult();
+            }
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
             
             // Normalize topic: empty string should be treated as null
             var normalizedTopic = string.IsNullOrWhiteSpace(topic) ? null : topic.Trim();
-
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
 
             // Delete messages with the specified topic/scope
