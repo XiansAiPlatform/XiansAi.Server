@@ -6,6 +6,7 @@ namespace Shared.Data.Models;
 /// <summary>
 /// Secret vault document. Key (secret name) is unique in the collection.
 /// TenantId/AgentId null = scope across tenants/agents; UserId null = any user can access.
+/// ActivationName null = any activation of the agent can access; when set, only that activation can access.
 /// </summary>
 public class SecretVault
 {
@@ -31,6 +32,10 @@ public class SecretVault
     /// <summary>When set, only this user can access the secret; null = any user.</summary>
     [BsonElement("user_id")]
     public string? UserId { get; set; }
+
+    /// <summary>When set, only this agent activation (by name) can access the secret; null = any activation of the agent can access.</summary>
+    [BsonElement("activation_name")]
+    public string? ActivationName { get; set; }
 
     /// <summary>Optional JSON for additional metadata.</summary>
     [BsonElement("additional_data")]

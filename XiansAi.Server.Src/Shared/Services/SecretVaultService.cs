@@ -13,6 +13,7 @@ public record SecretVaultCreateInput(
     string? TenantId,
     string? AgentId,
     string? UserId,
+    string? ActivationName,
     string? AdditionalData);
 
 public record SecretVaultUpdateInput(
@@ -20,6 +21,7 @@ public record SecretVaultUpdateInput(
     string? TenantId,
     string? AgentId,
     string? UserId,
+    string? ActivationName,
     string? AdditionalData);
 
 /// <summary>AdditionalData is returned as JSON object for API consumers.</summary>
@@ -29,6 +31,7 @@ public record SecretVaultListItem(
     string? TenantId,
     string? AgentId,
     string? UserId,
+    string? ActivationName,
     object? AdditionalData,
     DateTime CreatedAt,
     string CreatedBy);
@@ -41,6 +44,7 @@ public record SecretVaultGetResponse(
     string? TenantId,
     string? AgentId,
     string? UserId,
+    string? ActivationName,
     object? AdditionalData,
     DateTime CreatedAt,
     string CreatedBy,
@@ -54,10 +58,10 @@ public interface ISecretVaultService
 {
     Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId);
     Task<ServiceResult<SecretVaultGetResponse?>> GetByIdAsync(string id);
-    Task<ServiceResult<List<SecretVaultListItem>>> ListAsync(string? tenantId, string? agentId);
+    Task<ServiceResult<List<SecretVaultListItem>>> ListAsync(string? tenantId, string? agentId, string? activationName);
     Task<ServiceResult<SecretVaultGetResponse>> UpdateAsync(string id, SecretVaultUpdateInput input, string actorUserId);
     Task<ServiceResult<bool>> DeleteAsync(string id);
-    Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId);
+    Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
 }
 
 public class SecretVaultService : ISecretVaultService
@@ -120,6 +124,7 @@ public class SecretVaultService : ISecretVaultService
                 TenantId = string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId,
                 AgentId = string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId,
                 UserId = string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId,
+                ActivationName = string.IsNullOrWhiteSpace(input.ActivationName) ? null : input.ActivationName,
                 AdditionalData = sanitizedAdditionalData,
                 CreatedAt = now,
                 CreatedBy = actorUserId
@@ -166,13 +171,13 @@ public class SecretVaultService : ISecretVaultService
         }
     }
 
-    public async Task<ServiceResult<List<SecretVaultListItem>>> ListAsync(string? tenantId, string? agentId)
+    public async Task<ServiceResult<List<SecretVaultListItem>>> ListAsync(string? tenantId, string? agentId, string? activationName)
     {
         try
         {
-            var list = await _repository.ListAsync(tenantId, agentId);
+            var list = await _repository.ListAsync(tenantId, agentId, activationName);
             var items = list.Select(x => new SecretVaultListItem(
-                x.Id, x.Key, x.TenantId, x.AgentId, x.UserId, ParseAdditionalDataToObject(x.AdditionalData), x.CreatedAt, x.CreatedBy)).ToList();
+                x.Id, x.Key, x.TenantId, x.AgentId, x.UserId, x.ActivationName, ParseAdditionalDataToObject(x.AdditionalData), x.CreatedAt, x.CreatedBy)).ToList();
             return ServiceResult<List<SecretVaultListItem>>.Success(items);
         }
         catch (Exception ex)
@@ -201,6 +206,8 @@ public class SecretVaultService : ISecretVaultService
                 entity.AgentId = string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId;
             if (input.UserId != null)
                 entity.UserId = string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId;
+            if (input.ActivationName != null)
+                entity.ActivationName = string.IsNullOrWhiteSpace(input.ActivationName) ? null : input.ActivationName;
             if (input.AdditionalData != null)
             {
                 var (sanitizedAdditionalData, additionalDataError) = ValidateAndSanitizeAdditionalData(input.AdditionalData);
@@ -245,12 +252,12 @@ public class SecretVaultService : ISecretVaultService
         }
     }
 
-    public async Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId)
+    public async Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName)
     {
         if (string.IsNullOrWhiteSpace(key))
             return ServiceResult<SecretVaultFetchResponse?>.BadRequest("Key is required");
 
-        var entity = await _repository.FindForAccessAsync(key, tenantId, agentId, userId);
+        var entity = await _repository.FindForAccessAsync(key, tenantId, agentId, userId, activationName);
         if (entity == null)
             return ServiceResult<SecretVaultFetchResponse?>.NotFound("Secret not found or access denied");
 
@@ -281,6 +288,7 @@ public class SecretVaultService : ISecretVaultService
             entity.TenantId,
             entity.AgentId,
             entity.UserId,
+            entity.ActivationName,
             ParseAdditionalDataToObject(entity.AdditionalData),
             entity.CreatedAt,
             entity.CreatedBy,

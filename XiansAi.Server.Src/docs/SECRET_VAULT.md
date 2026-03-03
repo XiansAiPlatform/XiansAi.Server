@@ -10,7 +10,7 @@ The Secret Vault is a simple, secure store for key-value secrets with optional s
 
 | Component | Location | Role |
 |-----------|----------|------|
-| **SecretVault** (model) | `Shared/Data/Models/SecretVault.cs` | MongoDB document: key, encrypted value, scope (tenantId, agentId, userId), additionalData, audit fields |
+| **SecretVault** (model) | `Shared/Data/Models/SecretVault.cs` | MongoDB document: key, encrypted value, scope (tenantId, agentId, userId, activationName), additionalData, audit fields |
 | **ISecretVaultRepository** | `Shared/Repositories/SecretVaultRepository.cs` | Persistence: CRUD, find by key+scope, list with optional filters |
 | **ISecretVaultService** | `Shared/Services/SecretVaultService.cs` | Business logic: encrypt/decrypt, validation/sanitization of additionalData, scope rules |
 | **Admin API endpoints** | `Features/AdminApi/Endpoints/AdminSecretVaultEndpoints.cs` | REST under `/api/v1/admin/secrets` (API key auth) |
@@ -27,8 +27,8 @@ Create/Update:
   → Repository persists to MongoDB (collection: secret_vault)
 
 Fetch by key:
-  Request (key, tenantId?, agentId?, userId?)
-  → Repository FindForAccessAsync (strict scope match)
+  Request (key, tenantId?, agentId?, userId?, activationName?)
+  → Repository FindForAccessAsync (strict scope match for all scopes)
   → Service decrypts value
   → Response { value, additionalData } (additionalData as JSON object)
 
@@ -43,13 +43,14 @@ Get by id / List:
 - **tenantId** (null = secret is available across all tenants)
 - **agentId** (null = available across all agents)
 - **userId** (null = any user may access; when set, only that user may access)
+- **activationName** (null = any activation of the agent may access; when set, only that agent activation by name may access). An *activation* is a named instance of an agent (e.g. workflow ID postfix).
 
-**Fetch-by-key** uses **strict** scope matching:
+**Fetch-by-key** uses **strict** scope matching for all scopes (tenantId, agentId, userId, activationName):
 
 - If the **request** omits a scope (e.g. no `tenantId`), only secrets with that scope **null** in the document are returned (e.g. cross-tenant secrets).
 - If the **request** sends a scope (e.g. `tenantId=99xio`), the **document** must have that exact value. A document with `tenant_id: null` will not match a request that sends `tenantId=99xio`.
 
-So: to fetch a secret scoped to a tenant, the request must include that tenantId (and similarly for agentId/userId when the secret is scoped).
+So: to fetch a secret scoped to a tenant, the request must include that tenantId (and similarly for agentId, userId, activationName when the secret is scoped).
 
 ## Configuration
 
@@ -91,9 +92,9 @@ Authentication: **API key** (Bearer token). Policy: `AdminEndpointAuthPolicy` (e
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/` | Create secret. Key must be unique. Body: key, value, tenantId?, agentId?, userId?, additionalData? |
-| GET | `/` | List secrets. Query: tenantId?, agentId? (optional filters) |
-| GET | `/fetch?key=&tenantId=&agentId=&userId=` | Fetch secret by key with strict scope; returns `{ value, additionalData }` only |
+| POST | `/` | Create secret. Key must be unique. Body: key, value, tenantId?, agentId?, userId?, activationName?, additionalData? |
+| GET | `/` | List secrets. Query: tenantId?, agentId?, activationName? (optional filters) |
+| GET | `/fetch?key=&tenantId=&agentId=&userId=&activationName=` | Fetch secret by key with strict scope; returns `{ value, additionalData }` only |
 | GET | `/{id}` | Get secret by id (full record including decrypted value) |
 | PUT | `/{id}` | Update secret (value, scope, additionalData) |
 | DELETE | `/{id}` | Delete secret |
@@ -117,6 +118,7 @@ Same operations as Admin API, under base path `/api/agent/secrets`. Actor for Cr
   "tenantId": null,
   "agentId": null,
   "userId": null,
+  "activationName": null,
   "additionalData": { "env": "prod", "service": "payment", "count": 42, "enabled": true }
 }
 ```
@@ -134,7 +136,7 @@ Same operations as Admin API, under base path `/api/agent/secrets`. Actor for Cr
 
 **Get by id / Create response** (full secret record)
 
-- Same as above, plus: `id`, `key`, `tenantId`, `agentId`, `userId`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. The `value` is decrypted; `additionalData` is returned as a JSON object.
+- Same as above, plus: `id`, `key`, `tenantId`, `agentId`, `userId`, `activationName`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. The `value` is decrypted; `additionalData` is returned as a JSON object.
 
 ## AdditionalData: Structure and Security
 
@@ -170,13 +172,13 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 ## Database
 
 - **Collection:** `secret_vault`
-- **Document fields:** `_id`, `key`, `encrypted_value`, `tenant_id`, `agent_id`, `user_id`, `additional_data`, `created_at`, `created_by`, `updated_at`, `updated_by`
+- **Document fields:** `_id`, `key`, `encrypted_value`, `tenant_id`, `agent_id`, `user_id`, `activation_name`, `additional_data`, `created_at`, `created_by`, `updated_at`, `updated_by`
 - **Uniqueness:** The secret **key** is unique in the collection (one document per key).
 
 ## Security Considerations
 
 - **Encryption:** The secret value is encrypted with `ISecureEncryptionService` using the vault-specific key. Do not reuse the same key for other features.
-- **Scope:** Use tenantId/agentId/userId to limit who can fetch a secret (strict match on fetch).
+- **Scope:** Use tenantId/agentId/userId/activationName to limit who can fetch a secret (strict match on fetch for all scopes).
 - **AdditionalData:** Not for sensitive secrets; it is stored in plain JSON (sanitized). Use it for metadata (e.g. env, service name) only.
 - **Key management:** Store `SecretVaultKey` in a secret manager in production; rotate according to policy (rotation will require re-encrypting values if you need to support old keys).
 
@@ -191,6 +193,6 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 |--------|--------|
 | **Storage** | MongoDB collection `secret_vault`; value encrypted, additionalData as sanitized JSON string |
 | **APIs** | Admin API (API key) and Agent API (client cert); same service, different auth |
-| **Scope** | tenantId, agentId, userId; null = “any”; fetch uses strict scope match |
+| **Scope** | tenantId, agentId, userId, activationName; null = “any”; fetch uses strict scope match for all |
 | **AdditionalData** | Flat key-value; values: string, number, or boolean only; validated and sanitized on create/update; returned as JSON object |
 | **Encryption** | `EncryptionKeys:UniqueSecrets:SecretVaultKey` (fallback: BaseSecret) via `ISecureEncryptionService` |

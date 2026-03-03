@@ -9,8 +9,8 @@ public interface ISecretVaultRepository
     Task<SecretVault?> GetByIdAsync(string id);
     Task<SecretVault?> GetByKeyAsync(string key);
     Task<bool> ExistsByKeyAsync(string key);
-    Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId);
-    Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId);
+    Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
+    Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName);
     Task CreateAsync(SecretVault entity);
     Task<bool> UpdateAsync(SecretVault entity);
     Task<bool> DeleteAsync(string id);
@@ -69,12 +69,10 @@ public class SecretVaultRepository : ISecretVaultRepository
     }
 
     /// <summary>
-    /// Find a secret that matches key and scope. Strict match in both directions:
-    /// - When request provides tenantId/agentId/userId, document must have that exact value.
-    /// - When request does NOT provide a scope (null/empty), document must have that scope null (cross-tenant/agent/user).
-    /// So a document with tenant_id=99xio is only returned when request sends tenantId=99xio; fetch with no tenantId returns nothing for it.
+    /// Find a secret that matches key and scope. Strict match in both directions for tenantId, agentId, userId, and activationName:
+    /// when request provides a scope value, document must have that exact value; when request omits (null/empty), document must have that scope null.
     /// </summary>
-    public async Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId)
+    public async Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName)
     {
         try
         {
@@ -97,6 +95,12 @@ public class SecretVaultRepository : ISecretVaultRepository
             else
                 filters.Add(Builders<SecretVault>.Filter.Eq(x => x.UserId, (string?)null));
 
+            // Request scope must match document scope: if request omits scope, document must have that scope null.
+            if (!string.IsNullOrWhiteSpace(activationName))
+                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.ActivationName, activationName));
+            else
+                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.ActivationName, (string?)null));
+
             var filter = Builders<SecretVault>.Filter.And(filters);
             return await _collection.Find(filter).FirstOrDefaultAsync();
         }
@@ -107,7 +111,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
     }
 
-    public async Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId)
+    public async Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName)
     {
         try
         {
@@ -117,6 +121,8 @@ public class SecretVaultRepository : ISecretVaultRepository
                 filter = builder.And(filter, builder.Eq(x => x.TenantId, tenantId));
             if (!string.IsNullOrWhiteSpace(agentId))
                 filter = builder.And(filter, builder.Eq(x => x.AgentId, agentId));
+            if (!string.IsNullOrWhiteSpace(activationName))
+                filter = builder.And(filter, builder.Eq(x => x.ActivationName, activationName));
             return await _collection.Find(filter).ToListAsync();
         }
         catch (Exception ex)
