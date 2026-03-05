@@ -19,14 +19,29 @@ public static class SecretVaultEndpoints
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
-            var actor = tenantContext.LoggedInUser ?? "system";
-            var input = new SecretVaultCreateInput(
-                request.Key,
-                request.Value,
+            if (!SecretVaultScopeEnforcement.TryResolveScope(
+                tenantContext,
                 request.TenantId,
                 request.AgentId,
                 request.UserId,
                 request.ActivationName,
+                out var effectiveTenantId,
+                out var effectiveAgentId,
+                out var effectiveUserId,
+                out var effectiveActivationName,
+                out var forbiddenResult))
+            {
+                return forbiddenResult!.ToHttpResult();
+            }
+
+            var actor = tenantContext.LoggedInUser ?? "system";
+            var input = new SecretVaultCreateInput(
+                request.Key,
+                request.Value,
+                effectiveTenantId,
+                effectiveAgentId,
+                effectiveUserId,
+                effectiveActivationName,
                 SecretVaultService.NormalizeAdditionalDataFromRequest(request.AdditionalData));
             var result = await service.CreateAsync(input, actor);
             return result.ToHttpResult();
@@ -38,9 +53,25 @@ public static class SecretVaultEndpoints
             [FromQuery] string? tenantId,
             [FromQuery] string? agentId,
             [FromQuery] string? activationName,
-            [FromServices] ISecretVaultService service) =>
+            [FromServices] ISecretVaultService service,
+            [FromServices] ITenantContext tenantContext) =>
         {
-            var result = await service.ListAsync(tenantId, agentId, activationName);
+            if (!SecretVaultScopeEnforcement.TryResolveScope(
+                tenantContext,
+                tenantId,
+                agentId,
+                null,
+                activationName,
+                out var effectiveTenantId,
+                out var effectiveAgentId,
+                out _,
+                out var effectiveActivationName,
+                out var forbiddenResult))
+            {
+                return forbiddenResult!.ToHttpResult();
+            }
+
+            var result = await service.ListAsync(effectiveTenantId, effectiveAgentId, effectiveActivationName);
             return result.ToHttpResult();
         })
         .WithName("Agent_ListSecrets")
@@ -52,9 +83,25 @@ public static class SecretVaultEndpoints
             [FromQuery] string? agentId,
             [FromQuery] string? userId,
             [FromQuery] string? activationName,
-            [FromServices] ISecretVaultService service) =>
+            [FromServices] ISecretVaultService service,
+            [FromServices] ITenantContext tenantContext) =>
         {
-            var result = await service.FetchByKeyAsync(key, tenantId, agentId, userId, activationName);
+            if (!SecretVaultScopeEnforcement.TryResolveScope(
+                tenantContext,
+                tenantId,
+                agentId,
+                userId,
+                activationName,
+                out var effectiveTenantId,
+                out var effectiveAgentId,
+                out var effectiveUserId,
+                out var effectiveActivationName,
+                out var forbiddenResult))
+            {
+                return forbiddenResult!.ToHttpResult();
+            }
+
+            var result = await service.FetchByKeyAsync(key, effectiveTenantId, effectiveAgentId, effectiveUserId, effectiveActivationName);
             return result.ToHttpResult();
         })
         .WithName("Agent_FetchSecretByKey")
@@ -62,9 +109,14 @@ public static class SecretVaultEndpoints
 
         group.MapGet("/{id}", async (
             string id,
-            [FromServices] ISecretVaultService service) =>
+            [FromServices] ISecretVaultService service,
+            [FromServices] ITenantContext tenantContext) =>
         {
             var result = await service.GetByIdAsync(id);
+            if (!result.IsSuccess || result.Data == null)
+                return result.ToHttpResult();
+            if (!SecretVaultScopeEnforcement.CanAccessSecretTenant(tenantContext, result.Data.TenantId))
+                return ServiceResult<SecretVaultGetResponse?>.Forbidden("Access denied. Secret is not in your tenant.").ToHttpResult();
             return result.ToHttpResult();
         })
         .WithName("Agent_GetSecretById")
@@ -76,13 +128,34 @@ public static class SecretVaultEndpoints
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
-            var actor = tenantContext.LoggedInUser ?? "system";
-            var input = new SecretVaultUpdateInput(
-                request.Value,
+            var getResult = await service.GetByIdAsync(id);
+            if (!getResult.IsSuccess || getResult.Data == null)
+                return getResult.ToHttpResult();
+            if (!SecretVaultScopeEnforcement.CanAccessSecretTenant(tenantContext, getResult.Data.TenantId))
+                return ServiceResult<SecretVaultGetResponse>.Forbidden("Access denied. Secret is not in your tenant.").ToHttpResult();
+
+            if (!SecretVaultScopeEnforcement.TryResolveScope(
+                tenantContext,
                 request.TenantId,
                 request.AgentId,
                 request.UserId,
                 request.ActivationName,
+                out var effectiveTenantId,
+                out var effectiveAgentId,
+                out var effectiveUserId,
+                out var effectiveActivationName,
+                out var forbiddenResult))
+            {
+                return forbiddenResult!.ToHttpResult();
+            }
+
+            var actor = tenantContext.LoggedInUser ?? "system";
+            var input = new SecretVaultUpdateInput(
+                request.Value,
+                effectiveTenantId,
+                effectiveAgentId,
+                effectiveUserId,
+                effectiveActivationName,
                 SecretVaultService.NormalizeAdditionalDataFromRequest(request.AdditionalData));
             var result = await service.UpdateAsync(id, input, actor);
             return result.ToHttpResult();
@@ -92,8 +165,14 @@ public static class SecretVaultEndpoints
 
         group.MapDelete("/{id}", async (
             string id,
-            [FromServices] ISecretVaultService service) =>
+            [FromServices] ISecretVaultService service,
+            [FromServices] ITenantContext tenantContext) =>
         {
+            var getResult = await service.GetByIdAsync(id);
+            if (!getResult.IsSuccess)
+                return getResult.ToHttpResult();
+            if (getResult.Data != null && !SecretVaultScopeEnforcement.CanAccessSecretTenant(tenantContext, getResult.Data.TenantId))
+                return ServiceResult<bool>.Forbidden("Access denied. Secret is not in your tenant.").ToHttpResult();
             var result = await service.DeleteAsync(id);
             return result.ToHttpResult();
         })
