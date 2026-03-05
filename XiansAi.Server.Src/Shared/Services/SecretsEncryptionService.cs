@@ -1,8 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 
 namespace Shared.Services;
 
@@ -28,19 +26,52 @@ public class SecretsEncryptionService : ISecretsEncryptionService
                 "EncryptionKeys:UniqueSecrets:AppIntegrationSecretKey not found in configuration. " +
                 "Generate a key using: openssl rand -base64 32");
 
+        var rawLength = keyBase64.Length;
+        var hadLeadingWhitespace = keyBase64.Length > 0 && char.IsWhiteSpace(keyBase64[0]);
+        var hadTrailingWhitespace = keyBase64.Length > 0 && char.IsWhiteSpace(keyBase64[^1]);
+        var hadNewlines = keyBase64.Contains('\n') || keyBase64.Contains('\r');
+
+        // Trim whitespace/newlines that often get introduced when storing in env vars (e.g. Azure)
+        keyBase64 = keyBase64.Trim().Replace("\r", "").Replace("\n", "");
+        var trimmedLength = keyBase64.Length;
+
+        if (rawLength != trimmedLength || hadLeadingWhitespace || hadTrailingWhitespace || hadNewlines)
+        {
+            _logger.LogWarning(
+                "Encryption key had extra whitespace: rawLength={RawLength}, trimmedLength={TrimmedLength}, " +
+                "hadLeadingWhitespace={HadLeading}, hadTrailingWhitespace={HadTrailing}, hadNewlines={HadNewlines}. " +
+                "Consider fixing the configuration to avoid trim-related issues.",
+                rawLength, trimmedLength, hadLeadingWhitespace, hadTrailingWhitespace, hadNewlines);
+        }
+
         _keyId = configuration["Encryption:KeyId"] ?? "default";
 
         try
         {
             _encryptionKey = Convert.FromBase64String(keyBase64);
-            
+
             if (_encryptionKey.Length != 32)
             {
                 throw new InvalidOperationException(
-                    $"Encryption key must be 32 bytes (256 bits). Current length: {_encryptionKey.Length}");
+                    $"Encryption key must be 32 bytes (256 bits). Current length: {_encryptionKey.Length}. " +
+                    "Generate a valid key using: openssl rand -base64 32");
             }
 
             _logger.LogInformation("Secrets encryption service initialized with key ID: {KeyId}", _keyId);
+        }
+        catch (FormatException ex)
+        {
+            var invalid = GetInvalidBase64CharInfo(keyBase64);
+            _logger.LogError(ex,
+                "Invalid Base-64 format for EncryptionKeys:UniqueSecrets:AppIntegrationSecretKey. " +
+                "Length={Length}, ExpectedLength=44, InvalidChars={InvalidInfo}. " +
+                "Ensure the value contains only valid Base-64 characters (A-Z, a-z, 0-9, +, /, =) with no spaces, newlines, or quotes. " +
+                "Generate a key using: openssl rand -base64 32",
+                keyBase64.Length,
+                invalid);
+            throw new InvalidOperationException(
+                "Encryption key must be valid Base-64 (44 characters from: openssl rand -base64 32). " +
+                "Check for hidden whitespace or invalid characters in your configuration.", ex);
         }
         catch (Exception ex)
         {
@@ -153,5 +184,27 @@ public class SecretsEncryptionService : ISecretsEncryptionService
             return null;
 
         return JsonSerializer.Deserialize<T>(json);
+    }
+
+    /// <summary>
+    /// Returns diagnostic info for characters that are not valid Base-64 (position and char code).
+    /// Used for logging only; does not expose secret content. Char codes help identify BOM (65279), smart quotes, etc.
+    /// </summary>
+    private static string GetInvalidBase64CharInfo(string s)
+    {
+        var parts = new List<string>();
+        var count = 0;
+        for (var i = 0; i < s.Length && count < 10; i++)
+        {
+            var c = s[i];
+            var isBase64 = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                || c == '+' || c == '/' || c == '=';
+            if (!isBase64)
+            {
+                parts.Add($"pos{i}:code{(int)c}");
+                count++;
+            }
+        }
+        return parts.Count > 0 ? string.Join(";", parts) : "none";
     }
 }
