@@ -194,6 +194,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
+        builder.Services.AddScoped<ISecretVaultRepository, SecretVaultRepository>();
         builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
         builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
         builder.Services.AddSingleton<IAsyncResultCache, AsyncResultCache>();
@@ -215,6 +216,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUserTenantService, UserTenantService>();
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
+        builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
 
         // Configure JSON serialization options for minimal APIs
