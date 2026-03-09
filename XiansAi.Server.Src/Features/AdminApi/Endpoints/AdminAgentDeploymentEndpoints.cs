@@ -1,11 +1,6 @@
 using Shared.Services;
-using Shared.Repositories;
-using Shared.Auth;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
-using Shared.Data.Models;
 using Shared.Utils.Services;
-using System.ComponentModel.DataAnnotations;
 
 namespace Features.AdminApi.Endpoints;
 

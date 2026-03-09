@@ -53,6 +53,9 @@ public class FlowDefinitionRequest
 
     [JsonPropertyName("author")]
     public string? Author { get; set; }
+
+    [JsonPropertyName("category")]
+    public string? Category { get; set; }
 }
 
 public class ActivityDefinitionRequest
@@ -111,6 +114,9 @@ public class CreateAgentRequest
 
     [JsonPropertyName("author")]
     public string? Author { get; set; }
+
+    [JsonPropertyName("category")]
+    public string? Category { get; set; }
 }
 
 public interface IDefinitionsService
@@ -186,7 +192,8 @@ public class DefinitionsService : IDefinitionsService
             request.Description,
             request.Summary,
             request.Version,
-            request.Author);
+            request.Author,
+            request.Category);
 
         // Check if the user has permissions for this agent
         var hasPermission = await CheckPermissions(request.Agent, PermissionLevel.Write);
@@ -286,7 +293,8 @@ public class DefinitionsService : IDefinitionsService
             request.Description,
             request.Summary,
             request.Version,
-            request.Author);
+            request.Author,
+            request.Category);
         
         _logger.LogInformation("Agent {AgentName} created/updated successfully by user {UserId}", request.AgentName, currentUser);
         
@@ -299,7 +307,8 @@ public class DefinitionsService : IDefinitionsService
             description = agent.Description,
             summary = agent.Summary,
             version = agent.Version,
-            author = agent.Author
+            author = agent.Author,
+            category = agent.Category
         });
     }
 

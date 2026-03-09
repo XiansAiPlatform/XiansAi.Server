@@ -64,6 +64,10 @@ public class Agent : ModelValidatorBase<Agent>
     [StringLength(200, ErrorMessage = "Author must not exceed 200 characters")]
     public string? Author { get; set; }
 
+    [BsonElement("category")]
+    [StringLength(100, ErrorMessage = "Category must not exceed 100 characters")]
+    public string? Category { get; set; }
+
     public bool HasPermission(string userId, string[] userRoles, PermissionLevel requiredLevel)
     {
         if (requiredLevel == PermissionLevel.None)
@@ -136,7 +140,8 @@ public class Agent : ModelValidatorBase<Agent>
             Description = ValidationHelpers.SanitizeString(this.Description),
             Summary = ValidationHelpers.SanitizeString(this.Summary),
             Version = ValidationHelpers.SanitizeString(this.Version),
-            Author = ValidationHelpers.SanitizeString(this.Author)
+            Author = ValidationHelpers.SanitizeString(this.Author),
+            Category = ValidationHelpers.SanitizeString(this.Category)
         };
 
         return sanitizedAgent;
