@@ -41,14 +41,18 @@ public class UpdateService
         var client = await temporalClientFactory.GetClientAsync();
 
         var systemScoped = agentService.IsSystemAgent(workflowInfo.AgentName).Result.Data;
-        
+
+        // Use participantId from query params when available, regardless of system scoping
+        queryParams.TryGetValue("participantId", out var participantId);
+
         // Create workflow options for update-with-start
         var workflowOptions = new NewWorkflowOptions(
             workflowInfo.AgentName,
             systemScoped,
             workflowInfo.WorkflowType,
             workflowInfo.WorkflowId,
-            tenantContext);
+            tenantContext,
+            string.IsNullOrWhiteSpace(participantId) ? null : participantId);
         
         // Create the start operation
         var startOperation = WithStartWorkflowOperation.Create(

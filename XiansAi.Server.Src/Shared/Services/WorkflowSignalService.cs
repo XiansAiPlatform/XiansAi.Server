@@ -51,8 +51,8 @@ public class WorkflowSignalWithStartRequest
     [JsonPropertyName("SourceWorkflowType")]
     public string? SourceWorkflowType { get; set; }
 
-
-
+    [JsonPropertyName("ParticipantId")]
+    public string? ParticipantId { get; set; }
 }
 
 /// <summary>
@@ -103,7 +103,8 @@ public class WorkflowSignalService : IWorkflowSignalService
                 systemScoped,
                 request.TargetWorkflowType, 
                 request.TargetWorkflowId, 
-                _tenantContext);
+                _tenantContext,
+                string.IsNullOrWhiteSpace(request.ParticipantId) ? null : request.ParticipantId);
        
             var signalPayload = new object[] { request };
 

@@ -395,6 +395,7 @@ public class MessageService : IMessageService
             TargetWorkflowId = request.WorkflowId,
             TargetWorkflowType = request.WorkflowType,            
             SourceAgent = agent,
+            ParticipantId = request.ParticipantId,
             Payload = new {
                  Agent = agent,
                  ThreadId = threadId,

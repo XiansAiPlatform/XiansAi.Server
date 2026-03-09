@@ -31,7 +31,7 @@ public interface IAgentRepository
     Task<Agent?> GetByIdInternalAsync(string id);
     Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
-    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null);
+    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null, string? category = null);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
     Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
@@ -444,12 +444,12 @@ public class AgentRepository : IAgentRepository
         }
     }
 
-    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null)
+    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null, string? category = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}. Summary: {Summary}, Description: {Description}, Version: {Version}, Author: {Author}", 
-                agentName, createdBy, tenant, summary ?? "NULL", description ?? "NULL", version ?? "NULL", author ?? "NULL");
+            _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}. Summary: {Summary}, Description: {Description}, Version: {Version}, Author: {Author}, Category: {Category}", 
+                agentName, createdBy, tenant, summary ?? "NULL", description ?? "NULL", version ?? "NULL", author ?? "NULL", category ?? "NULL");
             
             // Create new agent object
             var newAgent = new Agent
@@ -467,7 +467,8 @@ public class AgentRepository : IAgentRepository
                 Description = description,
                 Summary = summary,
                 Version = version,
-                Author = author
+                Author = author,
+                Category = category
             };
             newAgent.GrantOwnerAccess(createdBy);
 
@@ -531,6 +532,13 @@ public class AgentRepository : IAgentRepository
                     {
                         updates.Add(updateBuilder.Set(x => x.Author, author));
                         existingAgent.Author = author;
+                        hasUpdates = true;
+                    }
+                    
+                    if (category != null)
+                    {
+                        updates.Add(updateBuilder.Set(x => x.Category, category));
+                        existingAgent.Category = category;
                         hasUpdates = true;
                     }
                     
