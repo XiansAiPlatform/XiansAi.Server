@@ -439,26 +439,19 @@ public class ConversationRepository : IConversationRepository
         // Use MongoDB's atomic operations for optimal performance
         await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var session = await _database.Client.StartSessionAsync();
-            try
+            using var session = await _database.Client.StartSessionAsync();
+            await session.WithTransactionAsync(async (session, cancellationToken) =>
             {
-                await session.WithTransactionAsync(async (session, cancellationToken) =>
-                {
-                    // Insert message
-                    await _messagesCollection.InsertOneAsync(session, message, cancellationToken: cancellationToken);
-                    
-                    // Update thread timestamp atomically
-                    var threadFilter = Builders<ConversationThread>.Filter.Eq(t => t.Id, message.ThreadId);
-                    var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, now);
-                    await _threadsCollection.UpdateOneAsync(session, threadFilter, threadUpdate, cancellationToken: cancellationToken);
-                    
-                    return "completed";
-                });
-            }
-            finally
-            {
-                session.Dispose();
-            }
+                // Insert message
+                await _messagesCollection.InsertOneAsync(session, message, cancellationToken: cancellationToken);
+                
+                // Update thread timestamp atomically
+                var threadFilter = Builders<ConversationThread>.Filter.Eq(t => t.Id, message.ThreadId);
+                var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, now);
+                await _threadsCollection.UpdateOneAsync(session, threadFilter, threadUpdate, cancellationToken: cancellationToken);
+                
+                return "completed";
+            });
         }, _logger, operationName: "SaveMessageWithThreadUpdate");
 
         return message.Id;

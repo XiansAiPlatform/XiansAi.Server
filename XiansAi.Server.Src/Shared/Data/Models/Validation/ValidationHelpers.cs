@@ -21,6 +21,7 @@ public static class ValidationHelpers
         public static readonly Regex WorkflowIdPattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", RegexOptions.Compiled);
         public static readonly Regex ActivityIdPattern=  new(@"^[0-9]+$", RegexOptions.Compiled);
         public static readonly Regex CertificateThumbprintPattern=  new(@"^[a-fA-F0-9]{40}$", RegexOptions.Compiled);
+        public static readonly Regex TimezonePattern = new(@"^[A-Za-z_]+/[A-Za-z_]+$", RegexOptions.Compiled);
         public static readonly Regex WorkflowTypePattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#='’]+$", RegexOptions.Compiled);
     }
 
@@ -177,8 +178,7 @@ public static class ValidationHelpers
             return false;
 
         // Basic timezone validation - can be enhanced with actual timezone database
-        var timezonePattern = new Regex(@"^[A-Za-z_]+/[A-Za-z_]+$", RegexOptions.Compiled);
-        return timezonePattern.IsMatch(input);
+        return Patterns.TimezonePattern.IsMatch(input);
     }
 
     /// <summary>

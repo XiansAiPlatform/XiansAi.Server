@@ -9,6 +9,7 @@ namespace Features.AdminApi.Utils;
 /// This is useful for debugging and monitoring AdminApi calls.
 /// Only active when AdminApi:EnableDebugLogging is set to true in configuration.
 /// Response bodies longer than AdminApi:MaxDebugResponseBodyLength (default: 5000) will be truncated.
+/// DISABLED in Production and Staging environments to prevent PII exposure in logs.
 /// </summary>
 public class AdminApiDebugLoggingMiddleware
 {
@@ -20,13 +21,29 @@ public class AdminApiDebugLoggingMiddleware
     private readonly int _maxResponseBodyLength;
 
     public AdminApiDebugLoggingMiddleware(
-        RequestDelegate next, 
+        RequestDelegate next,
         ILogger<AdminApiDebugLoggingMiddleware> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHostEnvironment hostEnvironment)
     {
         _next = next;
         _logger = logger;
-        _isEnabled = configuration.GetValue<bool>("AdminApi:EnableDebugLogging", false);
+
+        var configEnabled = configuration.GetValue<bool>("AdminApi:EnableDebugLogging", false);
+
+        if (configEnabled && (hostEnvironment.IsProduction() || string.Equals(hostEnvironment.EnvironmentName, "Staging", StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogWarning(
+                "AdminApi:EnableDebugLogging is enabled but forced OFF in {Environment} environment. " +
+                "Full request/response body logging exposes PII and must not run in production or staging.",
+                hostEnvironment.EnvironmentName);
+            _isEnabled = false;
+        }
+        else
+        {
+            _isEnabled = configEnabled;
+        }
+
         _maxResponseBodyLength = configuration.GetValue<int>("AdminApi:MaxDebugResponseBodyLength", 5000);
     }
 

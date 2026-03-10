@@ -5,6 +5,11 @@ namespace Shared.Services
 {
     public interface IRoleCacheService
     {
+        /// <summary>
+        /// Returns roles for the user in the given tenant, excluding TenantParticipant and TenantParticipantAdmin.
+        /// Participants are filtered out because they cannot authenticate/login via OIDC; they exist for Admin API queries only.
+        /// For unfiltered roles including participants, use IUserRepository.GetUserRolesAsync directly.
+        /// </summary>
         Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
         void InvalidateUserRoles(string userId, string tenantId);
     }

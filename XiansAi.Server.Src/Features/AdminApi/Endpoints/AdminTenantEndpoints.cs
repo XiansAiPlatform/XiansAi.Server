@@ -100,12 +100,22 @@ public static class AdminTenantEndpoints
             Description = "Create a new tenant. SysAdmin only. X-Tenant-Id header is NOT required."
         });
 
-        // Update Tenant - No X-Tenant-Id header required (tenant ID is in path)
+        // Update Tenant - SysAdmin only
         adminTenantGroup.MapPatch("/{tenantId}", async (
             string tenantId,
             [FromBody] UpdateTenantRequest request,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Update tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can update tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // First get tenant by tenantId to get the ObjectId
             var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
@@ -118,17 +128,28 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateTenant")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Update Tenant",
-            Description = "Update an existing tenant by tenantId (e.g., 'spacex01'). X-Tenant-Id header is NOT required."
+            Description = "Update an existing tenant by tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
         });
 
-        // Delete Tenant - No X-Tenant-Id header required (tenant ID is in path)
+        // Delete Tenant - SysAdmin only
         adminTenantGroup.MapDelete("/{tenantId}", async (
             string tenantId,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Delete tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can delete tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // First get tenant by tenantId to get the ObjectId
             var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
@@ -141,10 +162,11 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteTenant")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Delete Tenant",
-            Description = "Delete a tenant by tenantId (e.g., 'spacex01'). X-Tenant-Id header is NOT required."
+            Description = "Delete a tenant by tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
         });
     }
 }

@@ -184,7 +184,7 @@ public class MessageService : IMessageService
             await SaveMessage(targetThreadId, messageRequest, MessageDirection.Outgoing, MessageType.Handoff);
 
             messageRequest.Text = request.Text;
-            //await SignalWorkflowAsync(messageRequest);
+
             await ProcessIncomingMessage(new ChatOrDataRequest
             {
                 ParticipantId = request.ParticipantId,
@@ -227,12 +227,6 @@ public class MessageService : IMessageService
             {
                 _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
                 return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowId and ParticipantId are required");
-            }
-
-            if (string.IsNullOrEmpty(workflowId))
-            {
-                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}", workflowId);
-                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowId is required");
             }
 
             if (page < 1 || pageSize < 1)

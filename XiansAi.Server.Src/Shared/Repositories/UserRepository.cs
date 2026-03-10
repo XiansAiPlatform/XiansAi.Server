@@ -266,25 +266,20 @@ public class UserRepository : IUserRepository
             return new List<string>();
         }
 
-        // Validate that each tenant exists and is enabled
-        var validTenantIds = new List<string>();
-        foreach (var tenantId in approvedTenantIds)
+        // Validate that each tenant exists and is enabled (single batch query instead of N+1)
+        try
         {
-            try
-            {
-                var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
-                if (tenant != null && tenant.Enabled)
-                {
-                    validTenantIds.Add(tenantId);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error checking tenant {TenantId} for user {UserId}", tenantId, userId);
-            }
+            var tenants = await _tenantRepository.GetByTenantIdsAsync(approvedTenantIds);
+            return tenants
+                .Where(t => t != null && t.Enabled)
+                .Select(t => t.TenantId)
+                .ToList();
         }
-
-        return validTenantIds;
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error fetching tenants for user {UserId}", userId);
+            return new List<string>();
+        }
     }
 
     public async Task<User?> GetAnyUserAsync()
