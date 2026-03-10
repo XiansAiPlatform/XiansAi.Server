@@ -272,26 +272,29 @@ public class MessageService : IMessageService
 
             var threadId = await CreateOrGetThread(request);
 
-            // Auto-populate origin and platform metadata from last incoming message if not provided
-            // This enables automatic routing back to external platforms (Slack, Teams, etc.)
+            // Normalize scope for topic-scoped lookups (prevents replies from being routed to wrong channel)
+            var replyScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
+
+            // Auto-populate origin and platform metadata from last incoming message in the SAME topic if not provided.
+            // Scope filtering ensures web replies don't get routed to Slack/Teams when the last message in thread was from another topic.
             if (string.IsNullOrEmpty(request.Origin))
             {
-                var lastOrigin = await _conversationRepository.GetLastIncomingOriginAsync(threadId, _tenantContext.TenantId);
+                var lastOrigin = await _conversationRepository.GetLastIncomingOriginAsync(threadId, _tenantContext.TenantId, replyScope);
                 if (!string.IsNullOrEmpty(lastOrigin))
                 {
                     request.Origin = lastOrigin;
-                    _logger.LogInformation("Auto-populated origin from last incoming message: {Origin}", lastOrigin);
+                    _logger.LogInformation("Auto-populated origin from last incoming message in scope {Scope}: {Origin}", replyScope ?? "default", lastOrigin);
                 }
             }
 
             // Auto-populate platform-specific metadata (e.g., Slack channel, Teams conversation) if not provided
             if (request.Data == null && !string.IsNullOrEmpty(request.Origin) && request.Origin.StartsWith("app:"))
             {
-                var lastData = await _conversationRepository.GetLastIncomingDataAsync(threadId, _tenantContext.TenantId);
+                var lastData = await _conversationRepository.GetLastIncomingDataAsync(threadId, _tenantContext.TenantId, replyScope);
                 if (lastData != null)
                 {
                     request.Data = lastData;
-                    _logger.LogInformation("Auto-populated platform metadata from last incoming message");
+                    _logger.LogInformation("Auto-populated platform metadata from last incoming message in scope {Scope}", replyScope ?? "default");
                 }
             }
 

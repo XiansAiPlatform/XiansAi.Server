@@ -436,6 +436,11 @@ namespace Features.WebApi.Services
                 return SystemRoles.TenantParticipant;
             }
 
+            if (role == SystemRoles.TenantParticipantAdmin)
+            {
+                return SystemRoles.TenantParticipantAdmin;
+            }
+
             if (role == SystemRoles.TenantUser)
             {
                 return SystemRoles.TenantUser;

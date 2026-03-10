@@ -36,6 +36,12 @@ public class ParticipantTenantResponse
     
     [JsonPropertyName("logo")]
     public Logo? Logo { get; set; }
+    
+    /// <summary>
+    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin. Null when tenant matched by domain only.
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string? Role { get; set; }
 }
 
 /// <summary>
@@ -66,8 +72,8 @@ public static class AdminParticipantsEndpoints
             .WithTags("AdminAPI - Participants")
             .RequireAuthorization("AdminEndpointAuthPolicy");
 
-        // Get participant tenants by email
-        participantGroup.MapGet("/{email}/tenants", async (
+        // Get participant by email (tenants + role per tenant)
+        participantGroup.MapGet("/{email}", async (
             string email,
             [FromServices] IUserRepository userRepository,
             [FromServices] ITenantRepository tenantRepository,
@@ -85,14 +91,21 @@ public static class AdminParticipantsEndpoints
                 // Get user by email
                 var user = await userRepository.GetByUserEmailAsync(email);
                 
-                // Get tenant IDs where user has TenantParticipant role (if user exists)
+                // Get tenant IDs and role per tenant where user has TenantParticipant or TenantParticipantAdmin (if user exists)
                 var participantTenantIds = new List<string>();
+                var tenantRoleMap = new Dictionary<string, string>(); // tenantId -> TenantParticipant or TenantParticipantAdmin
                 if (user != null)
                 {
-                    participantTenantIds = user.TenantRoles
-                        .Where(tr => tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved)
-                        .Select(tr => tr.Tenant)
-                        .ToList();
+                    var participantTenantRoles = user.TenantRoles
+                        .Where(tr => (tr.Roles.Contains(SystemRoles.TenantParticipant) || tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)) && tr.IsApproved);
+                    foreach (var tr in participantTenantRoles)
+                    {
+                        participantTenantIds.Add(tr.Tenant);
+                        // Prefer TenantParticipantAdmin if user has both roles
+                        tenantRoleMap[tr.Tenant] = tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)
+                            ? SystemRoles.TenantParticipantAdmin
+                            : SystemRoles.TenantParticipant;
+                    }
 
                     logger.LogInformation("User {Email} has participant roles in {Count} tenants: {TenantIds}", 
                         email, participantTenantIds.Count, string.Join(", ", participantTenantIds));
@@ -147,7 +160,8 @@ public static class AdminParticipantsEndpoints
                     {
                         TenantId = t.TenantId,
                         TenantName = t.Name,
-                        Logo = t.Logo
+                        Logo = t.Logo,
+                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : null
                     })
                     .OrderBy(t => t.TenantName)
                     .ToList();
@@ -183,8 +197,8 @@ public static class AdminParticipantsEndpoints
         .Produces(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => new(operation)
         {
-            Summary = "Get Participant Tenants",
-            Description = "Retrieve the list of tenants (with ID and name) where the user with the specified email has the TenantParticipant role or where the email domain matches the tenant domain, and the tenant is enabled. Also includes whether the user is a system administrator."
+            Summary = "Get Participant",
+            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants."
         });
     }
 }

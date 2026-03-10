@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Memory;
 using Shared.Repositories;
 
 namespace Shared.Services
@@ -35,10 +35,10 @@ namespace Shared.Services
                 _cache.Set(cacheKey, roles, cacheOptions);
             }
             
-            // Filter out TenantParticipant role - participants cannot authenticate/login
+            // Filter out TenantParticipant and TenantParticipantAdmin roles - participants cannot authenticate/login
             // They exist in the system for Admin API queries only
             var filteredRoles = (roles ?? new List<string>())
-                .Where(r => r != SystemRoles.TenantParticipant)
+                .Where(r => r != SystemRoles.TenantParticipant && r != SystemRoles.TenantParticipantAdmin)
                 .ToList();
             
             return filteredRoles;

@@ -217,9 +217,9 @@ public interface IConversationRepository
     // Task ID operations
     Task<string?> GetLastTaskIdAsync(string tenantId, string workflowId, string participantId, string? scope = null);
 
-    // Origin operations
-    Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId);
-    Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId);
+    // Origin operations (scope filters by topic - only consider messages in same topic when auto-routing replies)
+    Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId, string? scope = null);
+    Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId, string? scope = null);
 
     // Statistics operations
     Task<(int totalMessages, int activeUsers)> GetMessagingStatsAsync(string tenantId, DateTime startDate, DateTime endDate, string? participantId = null);
@@ -835,18 +835,24 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTopicsByThreadId");
     }
 
-    public async Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId)
+    public async Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId, string? scope = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var filterBuilder = Builders<ConversationMessage>.Filter;
-            var filter = filterBuilder.And(
+            var filterConditions = new List<FilterDefinition<ConversationMessage>>
+            {
                 filterBuilder.Eq(x => x.ThreadId, threadId),
                 filterBuilder.Eq(x => x.TenantId, tenantId),
                 filterBuilder.Eq(x => x.Direction, MessageDirection.Incoming),
                 filterBuilder.Ne(x => x.Origin, null),
                 filterBuilder.Ne(x => x.Origin, "")
-            );
+            };
+
+            // Filter by scope so we only use origin from the same topic (prevents web replies going to Slack/Teams)
+            AddScopeFilter(filterBuilder, filterConditions, scope);
+
+            var filter = filterBuilder.And(filterConditions);
 
             // Get the most recent incoming message with an origin
             var projection = Builders<ConversationMessage>.Projection.Include(x => x.Origin);
@@ -858,24 +864,30 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .Limit(1)
                 .FirstOrDefaultAsync();
 
-            _logger.LogDebug("Last incoming origin for thread {ThreadId}: {Origin}",
-                threadId, message?.Origin ?? "none");
+            _logger.LogDebug("Last incoming origin for thread {ThreadId} scope {Scope}: {Origin}",
+                threadId, scope ?? "null", message?.Origin ?? "none");
 
             return message?.Origin;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingOrigin");
     }
 
-    public async Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId)
+    public async Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId, string? scope = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var filterBuilder = Builders<ConversationMessage>.Filter;
-            var filter = filterBuilder.And(
+            var filterConditions = new List<FilterDefinition<ConversationMessage>>
+            {
                 filterBuilder.Eq(x => x.ThreadId, threadId),
                 filterBuilder.Eq(x => x.TenantId, tenantId),
                 filterBuilder.Eq(x => x.Direction, MessageDirection.Incoming),
                 filterBuilder.Ne(x => x.Data, null)
-            );
+            };
+
+            // Filter by scope so we only use data from the same topic (prevents web replies going to Slack/Teams)
+            AddScopeFilter(filterBuilder, filterConditions, scope);
+
+            var filter = filterBuilder.And(filterConditions);
 
             // Get the most recent incoming message with data
             var projection = Builders<ConversationMessage>.Projection.Include(x => x.Data);
@@ -887,11 +899,31 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .Limit(1)
                 .FirstOrDefaultAsync();
 
-            _logger.LogDebug("Last incoming data for thread {ThreadId}: {HasData}",
-                threadId, message?.Data != null ? "yes" : "none");
+            _logger.LogDebug("Last incoming data for thread {ThreadId} scope {Scope}: {HasData}",
+                threadId, scope ?? "null", message?.Data != null ? "yes" : "none");
 
             return message?.Data;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingData");
+    }
+
+    /// <summary>
+    /// Adds scope filter to match messages in the same topic. Null scope matches messages with null/empty scope.
+    /// </summary>
+    private static void AddScopeFilter(
+        FilterDefinitionBuilder<ConversationMessage> filterBuilder,
+        List<FilterDefinition<ConversationMessage>> filterConditions,
+        string? scope)
+    {
+        if (string.IsNullOrWhiteSpace(scope))
+        {
+            filterConditions.Add(filterBuilder.Or(
+                filterBuilder.Eq(x => x.Scope, null),
+                filterBuilder.Eq(x => x.Scope, "")));
+        }
+        else
+        {
+            filterConditions.Add(filterBuilder.Eq(x => x.Scope, scope.Trim()));
+        }
     }
 
 

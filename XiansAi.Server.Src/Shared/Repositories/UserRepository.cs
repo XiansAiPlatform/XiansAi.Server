@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
+using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
 using Shared.Services;
@@ -118,17 +119,21 @@ public class UserRepository : IUserRepository
         {
             case UserTypeFilter.ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantAdmin") && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantAdmin) && tr.IsApproved));
                 break;
 
             case UserTypeFilter.NON_ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantUser") && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantUser) && tr.IsApproved));
                 break;
 
             case UserTypeFilter.PARTICIPANT:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantParticipant") && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved));
+                break;
+            case UserTypeFilter.PARTICIPANT_ADMIN:
+                filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipantAdmin) && tr.IsApproved));
                 break;
 
             case UserTypeFilter.ALL:

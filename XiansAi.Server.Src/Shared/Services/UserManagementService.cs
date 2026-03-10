@@ -100,7 +100,8 @@ public enum UserTypeFilter
     ALL,
     ADMIN,
     NON_ADMIN,
-    PARTICIPANT
+    PARTICIPANT,
+    PARTICIPANT_ADMIN
 }
 
 public interface IUserManagementService
