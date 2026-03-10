@@ -1,6 +1,5 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
-using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
 using Shared.Services;
@@ -61,6 +60,14 @@ public class UserRepository : IUserRepository
                     break;
                 case UserTypeFilter.NON_ADMIN:
                     filters.Add(builder.Eq(u => u.IsSysAdmin, false));
+                    break;
+                case UserTypeFilter.PARTICIPANT:
+                    filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                        tr => tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved));
+                    break;
+                case UserTypeFilter.PARTICIPANT_ADMIN:
+                    filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                        tr => tr.Roles.Contains(SystemRoles.TenantParticipantAdmin) && tr.IsApproved));
                     break;
                 case UserTypeFilter.ALL:
                 default:

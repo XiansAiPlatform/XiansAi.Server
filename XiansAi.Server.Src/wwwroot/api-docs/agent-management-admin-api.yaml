@@ -427,7 +427,7 @@ paths:
         Only the agent admin can create tokens.
         
         **Note**: The token value is only returned once upon creation. Store it securely as it cannot be retrieved later. 
-        Use the token in the `Authorization` header as `Bearer {token}` or as a query parameter `?apikey={token}` when calling agent endpoints.
+        Use the token in the `Authorization` header as `Bearer {token}` when calling agent endpoints. Query parameter is not supported.
       operationId: issueToken
       parameters:
         - $ref: '#/components/parameters/TenantId'

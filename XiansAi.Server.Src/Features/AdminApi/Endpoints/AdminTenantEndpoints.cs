@@ -24,33 +24,53 @@ public static class AdminTenantEndpoints
             .WithTags("AdminAPI - Tenant Management")
             .RequireAuthorization("AdminEndpointAuthPolicy");
 
-        // List All Tenants - No X-Tenant-Id header required
+        // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants)
         adminTenantGroup.MapGet("", async (
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: List tenants requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can list all tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
             var result = await tenantService.GetAllTenants();
             return result.ToHttpResult();
         })
         .WithName("ListTenants")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "List All Tenants",
-            Description = "Retrieve all tenants in the system. X-Tenant-Id header is NOT required for this endpoint."
+            Description = "Retrieve all tenants in the system. SysAdmin only. X-Tenant-Id header is NOT required for this endpoint."
         });
 
-        // Get Tenant by TenantId - No X-Tenant-Id header required (tenant ID is in path)
+        // Get Tenant by TenantId - SysAdmin only (TenantAdmin should use tenant-scoped endpoints)
         adminTenantGroup.MapGet("/{tenantId}", async (
             string tenantId,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Get tenant by ID requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can retrieve tenant details by ID" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
             var result = await tenantService.GetTenantByTenantId(tenantId);
             return result.ToHttpResult();
         })
         .WithName("GetTenantByTenantId")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Tenant by TenantId",
-            Description = "Retrieve a specific tenant by its tenantId (e.g., 'spacex01'). X-Tenant-Id header is NOT required."
+            Description = "Retrieve a specific tenant by its tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
         });
 
         // Create Tenant - No X-Tenant-Id header required (creating new tenant)

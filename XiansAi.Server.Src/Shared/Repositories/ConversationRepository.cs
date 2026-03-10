@@ -907,7 +907,11 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     }
 
     /// <summary>
-    /// Adds scope filter to match messages in the same topic. Null scope matches messages with null/empty scope.
+    /// Adds scope filter to match messages in the same topic.
+    /// - When scope is null or whitespace: restricts to messages where Scope is null or "" (default topic).
+    /// - When scope has a value: restricts to messages with that exact scope.
+    /// All callers (GetLastIncomingOriginAsync, GetLastIncomingDataAsync, GetLastTaskIdAsync) use this for topic-scoped lookups.
+    /// MessageService passes null for default chat, so null correctly filters to default scope.
     /// </summary>
     private static void AddScopeFilter(
         FilterDefinitionBuilder<ConversationMessage> filterBuilder,

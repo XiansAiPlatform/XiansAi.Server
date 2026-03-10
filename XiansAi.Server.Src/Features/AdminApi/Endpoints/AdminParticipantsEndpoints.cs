@@ -67,6 +67,16 @@ public class ParticipantTenantsResponse
 public static class AdminParticipantsEndpoints
 {
     /// <summary>
+    /// Redacts email for logging to reduce PII retention. Returns "***@domain" format.
+    /// </summary>
+    private static string RedactEmailForLogging(string? email)
+    {
+        if (string.IsNullOrEmpty(email)) return "[empty]";
+        var atIndex = email.IndexOf('@');
+        if (atIndex < 0) return "***@[no-domain]";
+        return "***@" + email[(atIndex + 1)..];
+    }
+    /// <summary>
     /// Maps all AdminApi participant endpoints.
     /// </summary>
     public static void MapAdminParticipantsEndpoints(this RouteGroupBuilder adminApiGroup)
@@ -89,8 +99,8 @@ public static class AdminParticipantsEndpoints
                 if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
                 {
                     logger.LogWarning("Access denied: Participants endpoint requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                    return Results.Json(
-                        new { message = "Access denied: Only system administrators can retrieve participant information across tenants" },
+                    return Results.Problem(
+                        detail: "Access denied: Only system administrators can retrieve participant information across tenants",
                         statusCode: StatusCodes.Status403Forbidden);
                 }
 
@@ -98,16 +108,16 @@ public static class AdminParticipantsEndpoints
                 var validatedEmail = ValidationHelpers.SanitizeAndValidateEmail(email);
                 if (validatedEmail == null)
                 {
-                    logger.LogWarning("Invalid email format or length for participant lookup: {Email}", email?.Length > 100 ? "[truncated]" : email);
-                    return Results.Json(
-                        new { message = "Invalid email address. Email must be well-formed and not exceed 254 characters." },
+                    logger.LogWarning("Invalid email format or length for participant lookup: {EmailRedacted}", RedactEmailForLogging(email));
+                    return Results.Problem(
+                        detail: "Invalid email address. Email must be well-formed and not exceed 254 characters.",
                         statusCode: StatusCodes.Status400BadRequest);
                 }
                 email = validatedEmail;
                 
                 // Extract email domain
                 var emailDomain = email.Contains('@') ? email.Split('@')[1] : string.Empty;
-                logger.LogInformation("Processing request for email {Email} with domain {Domain}", email, emailDomain);
+                logger.LogInformation("Processing participant lookup for domain {Domain}", emailDomain);
 
                 // Get user by email
                 var user = await userRepository.GetByUserEmailAsync(email);
@@ -128,12 +138,12 @@ public static class AdminParticipantsEndpoints
                             : SystemRoles.TenantParticipant;
                     }
 
-                    logger.LogInformation("User {Email} has participant roles in {Count} tenants: {TenantIds}", 
-                        email, participantTenantIds.Count, string.Join(", ", participantTenantIds));
+                    logger.LogInformation("User {EmailRedacted} has participant roles in {Count} tenants: {TenantIds}", 
+                        RedactEmailForLogging(email), participantTenantIds.Count, string.Join(", ", participantTenantIds));
                 }
                 else
                 {
-                    logger.LogInformation("User with email {Email} not found, will check domain matching only", email);
+                    logger.LogInformation("User {EmailRedacted} not found, will check domain matching only", RedactEmailForLogging(email));
                 }
 
                 // Query tenants by domain matching (if email has domain)
@@ -190,9 +200,9 @@ public static class AdminParticipantsEndpoints
                 // Return 404 if no enabled tenants found
                 if (!tenantList.Any())
                 {
-                    logger.LogWarning("User {Email} has matching tenants but no enabled tenants found. " +
+                    logger.LogWarning("User {EmailRedacted} has matching tenants but no enabled tenants found. " +
                         "Matching tenant IDs: {TenantIds}, Matched tenants: {MatchedCount}", 
-                        email, string.Join(", ", matchingTenants.Select(t => t.TenantId)), matchingTenants.Count);
+                        RedactEmailForLogging(email), string.Join(", ", matchingTenants.Select(t => t.TenantId)), matchingTenants.Count);
                     return Results.NotFound(new { message = $"User with email '{email}' has no enabled tenants" });
                 }
 
@@ -206,7 +216,7 @@ public static class AdminParticipantsEndpoints
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error retrieving participant tenants for email {Email}", email);
+                logger.LogError(ex, "Error retrieving participant tenants for {EmailRedacted}", RedactEmailForLogging(email));
                 return Results.Problem(
                     detail: "An error occurred while retrieving participant tenants",
                     statusCode: StatusCodes.Status500InternalServerError);
@@ -221,7 +231,7 @@ public static class AdminParticipantsEndpoints
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Participant",
-            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants. **SysAdmin only** - TenantAdmins are not permitted to prevent cross-tenant information disclosure."
+            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants. **SysAdmin only** - TenantAdmins are not permitted to prevent cross-tenant information disclosure. **Route**: GET /participants/{email}. If migrating from a deprecated /participants/{email}/tenants route, use this endpoint instead."
         });
     }
 }

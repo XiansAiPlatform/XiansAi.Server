@@ -12,6 +12,8 @@ namespace Features.AdminApi.Utils;
 /// </summary>
 public class AdminApiDebugLoggingMiddleware
 {
+    private const int MaxRequestBodyLogSize = 256 * 1024; // 256KB cap for request body logging
+
     private readonly RequestDelegate _next;
     private readonly ILogger<AdminApiDebugLoggingMiddleware> _logger;
     private readonly bool _isEnabled;
@@ -117,14 +119,11 @@ public class AdminApiDebugLoggingMiddleware
         if (request.Method != "GET" && request.Method != "DELETE")
         {
             request.EnableBuffering();
-            var buffer = new byte[Convert.ToInt32(request.ContentLength ?? 0)];
-            
-            if (buffer.Length > 0)
+            var bodyAsText = await ReadRequestBodyWithCapAsync(request.Body);
+            request.Body.Position = 0; // Reset position for next middleware
+
+            if (!string.IsNullOrEmpty(bodyAsText))
             {
-                await request.Body.ReadExactlyAsync(buffer.AsMemory(0, buffer.Length));
-                var bodyAsText = Encoding.UTF8.GetString(buffer);
-                request.Body.Position = 0; // Reset position for next middleware
-                
                 logBuilder.AppendLine("Request Body:");
                 logBuilder.AppendLine(FormatJson(bodyAsText));
             }
@@ -270,6 +269,52 @@ public class AdminApiDebugLoggingMiddleware
         }
 
         return "?" + string.Join("&", pairs);
+    }
+
+    /// <summary>
+    /// Reads request body using ReadToEnd semantics with a size cap for logging.
+    /// Works when Content-Length is absent or mis-stated (chunked, gzip, etc.).
+    /// Consumes the full body so Position can be reset for downstream middleware.
+    /// </summary>
+    private static async Task<string> ReadRequestBodyWithCapAsync(Stream bodyStream)
+    {
+        if (bodyStream == null || !bodyStream.CanRead)
+            return string.Empty;
+
+        try
+        {
+            using var reader = new StreamReader(bodyStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var sb = new StringBuilder();
+            var buffer = new char[4096];
+            int totalCharsRead = 0;
+            bool hitCap = false;
+
+            int read;
+            while ((read = await reader.ReadAsync(buffer)) > 0)
+            {
+                if (totalCharsRead < MaxRequestBodyLogSize)
+                {
+                    var charsToAppend = Math.Min(read, MaxRequestBodyLogSize - totalCharsRead);
+                    sb.Append(buffer, 0, charsToAppend);
+                    totalCharsRead += charsToAppend;
+                    if (charsToAppend < read)
+                        hitCap = true;
+                }
+                else
+                {
+                    hitCap = true;
+                }
+            }
+
+            var result = sb.ToString();
+            if (hitCap)
+                result += $"\n... [TRUNCATED - body exceeds {MaxRequestBodyLogSize} bytes]";
+            return result;
+        }
+        catch
+        {
+            return "[Error reading request body]";
+        }
     }
 
     private static string FormatJson(string json)

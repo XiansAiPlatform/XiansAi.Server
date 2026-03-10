@@ -63,18 +63,13 @@ namespace Features.AdminApi.Auth
 
             _logger.LogDebug("Processing AdminApi endpoint request: {Path}", Request.Path);
 
-            // Extract API key from Authorization header first, then fallback to query parameter
+            // Extract API key from Authorization header only.
+            // Query parameter (?apikey=) is not supported: it can leak into reverse-proxy logs, CDN logs, and browser history.
             var accessToken = string.Empty;
             var authHeader = Request.Headers["Authorization"].FirstOrDefault();
             if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
                 accessToken = authHeader.Substring("Bearer ".Length).Trim();
-            }
-            
-            // Fallback to query parameter if not found in Authorization header
-            if (string.IsNullOrEmpty(accessToken))
-            {
-                accessToken = Request.Query["apikey"].ToString();
             }
             
             // Extract tenantId from multiple sources in priority order:
@@ -226,6 +221,11 @@ namespace Features.AdminApi.Auth
                             apiKey.CreatedBy, finalTenantId, string.Join(", ", userRoles));
 
                         return AuthenticateResult.Success(ticket);
+                    }
+                    catch (TenantNotFoundException)
+                    {
+                        // Re-throw so global exception handler can return 404 (not 401)
+                        throw;
                     }
                     catch (Exception ex)
                     {

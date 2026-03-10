@@ -234,7 +234,10 @@ public static class ValidationHelpers
             return null;
 
         var sanitized = SanitizeString(input).ToLowerInvariant();
-        if (sanitized.Length > MaxEmailLength || !System.Net.Mail.MailAddress.TryCreate(sanitized, out _))
+        // Reject if sanitised value still contains whitespace (collapsed multi-space edge case)
+        if (sanitized.Contains(' ') || sanitized.Length > MaxEmailLength)
+            return null;
+        if (!System.Net.Mail.MailAddress.TryCreate(sanitized, out _))
             return null;
 
         return sanitized;

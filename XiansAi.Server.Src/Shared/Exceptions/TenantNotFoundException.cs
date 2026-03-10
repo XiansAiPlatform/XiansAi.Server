@@ -13,10 +13,4 @@ public class TenantNotFoundException : Exception
     {
         TenantId = tenantId;
     }
-
-    public TenantNotFoundException(string tenantId, string message)
-        : base(message)
-    {
-        TenantId = tenantId;
-    }
 }

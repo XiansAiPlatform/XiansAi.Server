@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
@@ -54,21 +53,15 @@ namespace Features.AdminApi.Auth
             {
                 var httpContext = _httpContextAccessor.HttpContext;
                 
-                // Extract access token from HTTP context if not already set in tenant context
+                // Extract access token from HTTP context if not already set in tenant context.
+                // Authorization header only; query parameter is not supported (leaks into logs, browser history).
                 var accessToken = _tenantContext.Authorization;
                 if (string.IsNullOrEmpty(accessToken) && httpContext != null)
                 {
-                    // Try Authorization header first
                     var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
                     if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                     {
                         accessToken = authHeader.Substring("Bearer ".Length).Trim();
-                    }
-                    
-                    // Fallback to query parameter
-                    if (string.IsNullOrEmpty(accessToken))
-                    {
-                        accessToken = httpContext.Request.Query["apikey"].ToString();
                     }
                 }
 

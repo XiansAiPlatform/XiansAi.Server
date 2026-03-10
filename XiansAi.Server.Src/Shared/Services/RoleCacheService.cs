@@ -28,20 +28,18 @@ namespace Shared.Services
             var cacheKey = $"{tenantId}:{userId}:roles";
             if (!_cache.TryGetValue(cacheKey, out List<string>? roles))
             {
-                roles = await _userRepository.GetUserRolesAsync(userId, tenantId);
+                var rawRoles = await _userRepository.GetUserRolesAsync(userId, tenantId);
+                // Filter before caching - participants cannot authenticate/login (exist for Admin API queries only)
+                roles = (rawRoles ?? new List<string>())
+                    .Where(r => r != SystemRoles.TenantParticipant && r != SystemRoles.TenantParticipantAdmin)
+                    .ToList();
                 var cacheOptions = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(_cacheDuration)
                     .SetSize(1);
                 _cache.Set(cacheKey, roles, cacheOptions);
             }
-            
-            // Filter out TenantParticipant and TenantParticipantAdmin roles - participants cannot authenticate/login
-            // They exist in the system for Admin API queries only
-            var filteredRoles = (roles ?? new List<string>())
-                .Where(r => r != SystemRoles.TenantParticipant && r != SystemRoles.TenantParticipantAdmin)
-                .ToList();
-            
-            return filteredRoles;
+
+            return roles ?? new List<string>();
         }
 
         public void InvalidateUserRoles(string userId, string tenantId)
