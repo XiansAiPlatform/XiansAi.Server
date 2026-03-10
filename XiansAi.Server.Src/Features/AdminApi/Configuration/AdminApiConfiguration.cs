@@ -123,7 +123,6 @@ public static class AdminApiConfiguration
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);
         AdminMetricsEndpoints.MapAdminMetricsEndpoints(adminApiGroup);
         AdminDataEndpoints.MapAdminDataEndpoints(adminApiGroup);
-        AdminMigrationEndpoints.MapAdminMigrationEndpoints(adminApiGroup);
         AdminAppIntegrationEndpoints.MapAdminAppIntegrationEndpoints(adminApiGroup);
     }
 }

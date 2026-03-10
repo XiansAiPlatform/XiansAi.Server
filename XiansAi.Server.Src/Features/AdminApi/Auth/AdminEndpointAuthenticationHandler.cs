@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
+using Shared.Exceptions;
 using Shared.Services;
 using Shared.Repositories;
 using System.Security.Claims;
@@ -159,6 +160,14 @@ namespace Features.AdminApi.Auth
                             // SysAdmin: use provided tenantId if available, otherwise use API key's tenantId
                             if (!string.IsNullOrEmpty(originalTenantIdFromRequest))
                             {
+                                // Validate tenant exists when SysAdmin specifies one - return 404 if not found
+                                var tenant = await _tenantRepository.GetByTenantIdAsync(originalTenantIdFromRequest);
+                                if (tenant == null)
+                                {
+                                    _logger.LogWarning("SysAdmin user {UserId} requested non-existent tenant: {TenantId}", 
+                                        apiKey.CreatedBy, originalTenantIdFromRequest);
+                                    throw new TenantNotFoundException(originalTenantIdFromRequest);
+                                }
                                 finalTenantId = originalTenantIdFromRequest;
                                 _logger.LogDebug("SysAdmin user {UserId} using provided tenantId: {TenantId}", 
                                     apiKey.CreatedBy, finalTenantId);

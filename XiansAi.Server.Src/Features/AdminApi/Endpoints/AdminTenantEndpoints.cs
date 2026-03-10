@@ -1,3 +1,4 @@
+using Shared.Auth;
 using Shared.Services;
 using Shared.Data.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -55,17 +56,28 @@ public static class AdminTenantEndpoints
         // Create Tenant - No X-Tenant-Id header required (creating new tenant)
         adminTenantGroup.MapPost("", async (
             [FromBody] CreateTenantRequest request,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
-            var createdBy = "system";
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Create tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can create tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var createdBy = tenantContext.LoggedInUser ?? "system";
             var result = await tenantService.CreateTenant(request, createdBy);
             return result.ToHttpResult();
         })
         .WithName("CreateTenant")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Create Tenant",
-            Description = "Create a new tenant. X-Tenant-Id header is NOT required."
+            Description = "Create a new tenant. SysAdmin only. X-Tenant-Id header is NOT required."
         });
 
         // Update Tenant - No X-Tenant-Id header required (tenant ID is in path)

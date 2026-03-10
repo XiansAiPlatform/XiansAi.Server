@@ -202,4 +202,41 @@ public static class ValidationHelpers
 
         return Patterns.SafeBase64.IsMatch(input);
     }
+
+    /// <summary>
+    /// Maximum allowed email length per RFC 5321 (254 characters total).
+    /// </summary>
+    public const int MaxEmailLength = 254;
+
+    /// <summary>
+    /// Validates that a string is a well-formed email address.
+    /// Checks format and length (max 254 chars per RFC 5321).
+    /// </summary>
+    public static bool IsValidEmail(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return false;
+
+        var trimmed = input.Trim();
+        if (trimmed.Length > MaxEmailLength)
+            return false;
+
+        return System.Net.Mail.MailAddress.TryCreate(trimmed, out _);
+    }
+
+    /// <summary>
+    /// Sanitizes and validates an email address.
+    /// Returns the trimmed, lowercase email if valid; otherwise null.
+    /// </summary>
+    public static string? SanitizeAndValidateEmail(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return null;
+
+        var sanitized = SanitizeString(input).ToLowerInvariant();
+        if (sanitized.Length > MaxEmailLength || !System.Net.Mail.MailAddress.TryCreate(sanitized, out _))
+            return null;
+
+        return sanitized;
+    }
 }

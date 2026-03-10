@@ -1,5 +1,7 @@
+using Shared.Auth;
 using Shared.Repositories;
 using Shared.Data.Models;
+using Shared.Data.Models.Validation;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 
@@ -59,6 +61,7 @@ public class ParticipantTenantsResponse
 /// <summary>
 /// AdminApi endpoints for participant management.
 /// These endpoints allow querying participant information across tenants.
+/// Restricted to SysAdmin only to prevent cross-tenant information disclosure.
 /// All endpoints are under /api/v{version}/admin/ prefix (versioned).
 /// </summary>
 public static class AdminParticipantsEndpoints
@@ -75,14 +78,32 @@ public static class AdminParticipantsEndpoints
         // Get participant by email (tenants + role per tenant)
         participantGroup.MapGet("/{email}", async (
             string email,
+            [FromServices] ITenantContext tenantContext,
             [FromServices] IUserRepository userRepository,
             [FromServices] ITenantRepository tenantRepository,
             [FromServices] ILogger<IUserRepository> logger) =>
         {
             try
             {
-                // Normalize email to lowercase for case-insensitive comparison
-                email = email.ToLowerInvariant();
+                // Restrict to SysAdmin only - prevents cross-tenant information disclosure
+                if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+                {
+                    logger.LogWarning("Access denied: Participants endpoint requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                    return Results.Json(
+                        new { message = "Access denied: Only system administrators can retrieve participant information across tenants" },
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                // Validate and sanitize email input (format, length) before use
+                var validatedEmail = ValidationHelpers.SanitizeAndValidateEmail(email);
+                if (validatedEmail == null)
+                {
+                    logger.LogWarning("Invalid email format or length for participant lookup: {Email}", email?.Length > 100 ? "[truncated]" : email);
+                    return Results.Json(
+                        new { message = "Invalid email address. Email must be well-formed and not exceed 254 characters." },
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+                email = validatedEmail;
                 
                 // Extract email domain
                 var emailDomain = email.Contains('@') ? email.Split('@')[1] : string.Empty;
@@ -193,12 +214,14 @@ public static class AdminParticipantsEndpoints
         })
         .WithName("GetParticipantTenants")
         .Produces<ParticipantTenantsResponse>()
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Participant",
-            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants."
+            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants. **SysAdmin only** - TenantAdmins are not permitted to prevent cross-tenant information disclosure."
         });
     }
 }

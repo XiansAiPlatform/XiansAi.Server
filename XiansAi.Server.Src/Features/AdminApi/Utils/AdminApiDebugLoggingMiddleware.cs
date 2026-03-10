@@ -95,7 +95,7 @@ public class AdminApiDebugLoggingMiddleware
         logBuilder.AppendLine($"[AdminAPI Debug] ===== REQUEST START [RequestId: {requestId}] =====");
         logBuilder.AppendLine($"Method: {request.Method}");
         logBuilder.AppendLine($"Path: {request.Path}");
-        logBuilder.AppendLine($"QueryString: {request.QueryString}");
+        logBuilder.AppendLine($"QueryString: {RedactSensitiveQueryString(request.QueryString)}");
         logBuilder.AppendLine($"Scheme: {request.Scheme}");
         logBuilder.AppendLine($"Host: {request.Host}");
         
@@ -211,6 +211,13 @@ public class AdminApiDebugLoggingMiddleware
                path.Value?.Contains("/events", StringComparison.OrdinalIgnoreCase) == true;
     }
 
+    private static readonly string[] SensitiveQueryParamNames =
+    {
+        "apikey", "api_key", "api-key",
+        "token", "access_token", "access-token",
+        "key", "secret", "password"
+    };
+
     private static bool IsSensitiveHeader(string headerName)
     {
         var sensitiveHeaders = new[]
@@ -223,6 +230,46 @@ public class AdminApiDebugLoggingMiddleware
         };
         
         return sensitiveHeaders.Contains(headerName.ToLowerInvariant());
+    }
+
+    private static bool IsSensitiveQueryParam(string paramName)
+    {
+        var lower = paramName.ToLowerInvariant();
+        return SensitiveQueryParamNames.Contains(lower);
+    }
+
+    /// <summary>
+    /// Redacts sensitive query parameters (apikey, token, key, etc.) to prevent credentials from appearing in logs.
+    /// </summary>
+    private static string RedactSensitiveQueryString(QueryString queryString)
+    {
+        if (!queryString.HasValue)
+        {
+            return string.Empty;
+        }
+
+        var pairs = new List<string>();
+        var segment = queryString.Value!.TrimStart('?');
+        if (string.IsNullOrEmpty(segment))
+        {
+            return string.Empty;
+        }
+
+        foreach (var part in segment.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eqIndex = part.IndexOf('=');
+            if (eqIndex < 0)
+            {
+                pairs.Add(IsSensitiveQueryParam(part) ? $"{part}=[REDACTED]" : part);
+            }
+            else
+            {
+                var key = part[..eqIndex];
+                pairs.Add(IsSensitiveQueryParam(key) ? $"{key}=[REDACTED]" : part);
+            }
+        }
+
+        return "?" + string.Join("&", pairs);
     }
 
     private static string FormatJson(string json)

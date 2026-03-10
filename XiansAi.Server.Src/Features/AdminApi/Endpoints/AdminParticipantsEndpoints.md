@@ -4,6 +4,8 @@
 
 /api/v1/admin/participants/{email}
 
+**SysAdmin only.** TenantAdmins receive 403 Forbidden to prevent cross-tenant information disclosure.
+
 When this is called we need to return the participant information in the following format
 
 {
