@@ -48,6 +48,9 @@ public static class AdminApiConfiguration
     /// </summary>
     public static WebApplicationBuilder AddAdminApiAuth(this WebApplicationBuilder builder)
     {
+        // Register shared admin role/tenant resolver (used by both auth and authorization handlers)
+        builder.Services.AddScoped<IAdminRoleTenantResolver, AdminRoleTenantResolver>();
+
         // Configure authentication scheme for AdminApi endpoints
         builder.Services.AddAuthentication(options =>
         {

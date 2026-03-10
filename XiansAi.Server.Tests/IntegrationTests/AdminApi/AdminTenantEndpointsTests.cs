@@ -73,7 +73,8 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
-        
+        await CreateTestTenantAsync(tenantId); // Required: X-Tenant-Id header must reference an existing tenant for auth validation
+
         var request = new
         {
             tenantId = $"new-tenant-{Guid.NewGuid()}",

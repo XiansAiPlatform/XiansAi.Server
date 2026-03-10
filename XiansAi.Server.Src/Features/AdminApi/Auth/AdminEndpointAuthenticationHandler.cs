@@ -3,11 +3,9 @@ using Microsoft.Extensions.Options;
 using Shared.Auth;
 using Shared.Exceptions;
 using Shared.Services;
-using Shared.Repositories;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Shared.Data.Models;
-using Features.AdminApi.Constants;
 
 namespace Features.AdminApi.Auth
 {
@@ -16,8 +14,7 @@ namespace Features.AdminApi.Auth
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<AdminEndpointAuthenticationHandler> _logger;
         private readonly IApiKeyService _apiKeyService;
-        private readonly IUserRepository _userRepository;
-        private readonly ITenantRepository _tenantRepository;
+        private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
 
         public AdminEndpointAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -25,15 +22,13 @@ namespace Features.AdminApi.Auth
             UrlEncoder encoder,
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
-            IUserRepository userRepository,
-            ITenantRepository tenantRepository)
+            IAdminRoleTenantResolver adminRoleTenantResolver)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<AdminEndpointAuthenticationHandler>();
             _tenantContext = tenantContext;
             _apiKeyService = apiKeyService;
-            _userRepository = userRepository;
-            _tenantRepository = tenantRepository;
+            _adminRoleTenantResolver = adminRoleTenantResolver;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -125,80 +120,17 @@ namespace Features.AdminApi.Auth
                             return AuthenticateResult.Fail("Invalid API key");
                         }
 
-                        if (string.IsNullOrEmpty(tenantId))
-                        {
-                            // No tenantId provided - use API key's tenantId
-                            // This prevents IDOR by deriving tenant from the authenticated credential
-                            tenantId = apiKey.TenantId;
-                        }
-                        // If tenantId was provided, we validate it against roles later in this method
+                        var resolutionResult = await _adminRoleTenantResolver.ResolveAsync(
+                            apiKey.CreatedBy, apiKey, originalTenantIdFromRequest);
 
-                        // Get user roles for the tenant context
-                        var userRoles = await _userRepository.GetUserRolesAsync(apiKey.CreatedBy, apiKey.TenantId);
-                        
-                        // Check if user has SysAdmin or TenantAdmin role
-                        var hasSysAdmin = userRoles.Contains(SystemRoles.SysAdmin);
-                        var hasTenantAdmin = userRoles.Contains(SystemRoles.TenantAdmin);
-                        
-                        // Validate role requirements
-                        if (!hasSysAdmin && !hasTenantAdmin)
+                        if (!resolutionResult.Success)
                         {
-                            _logger.LogWarning("User {UserId} does not have SysAdmin or TenantAdmin role. Roles: {Roles}", 
-                                apiKey.CreatedBy, string.Join(", ", userRoles));
-                            return AuthenticateResult.Fail("User does not have required admin role");
+                            return AuthenticateResult.Fail(resolutionResult.ErrorMessage ?? "Authorization failed");
                         }
-                        
-                        // Determine tenantId based on role
-                        string finalTenantId;
-                        if (hasSysAdmin)
-                        {
-                            // SysAdmin: use provided tenantId if available, otherwise use API key's tenantId
-                            if (!string.IsNullOrEmpty(originalTenantIdFromRequest))
-                            {
-                                // Validate tenant exists when SysAdmin specifies one - return 404 if not found
-                                var tenant = await _tenantRepository.GetByTenantIdAsync(originalTenantIdFromRequest);
-                                if (tenant == null)
-                                {
-                                    _logger.LogWarning("SysAdmin user {UserId} requested non-existent tenant: {TenantId}", 
-                                        apiKey.CreatedBy, originalTenantIdFromRequest);
-                                    throw new TenantNotFoundException(originalTenantIdFromRequest);
-                                }
-                                finalTenantId = originalTenantIdFromRequest;
-                                _logger.LogDebug("SysAdmin user {UserId} using provided tenantId: {TenantId}", 
-                                    apiKey.CreatedBy, finalTenantId);
-                            }
-                            else
-                            {
-                                finalTenantId = apiKey.TenantId;
-                                _logger.LogDebug("SysAdmin user {UserId} using API key tenantId: {TenantId}", 
-                                    apiKey.CreatedBy, finalTenantId);
-                            }
-                        }
-                        else
-                        {
-                            // TenantAdmin only - validate tenantId if provided
-                            if (!string.IsNullOrEmpty(originalTenantIdFromRequest))
-                            {
-                                // If tenantId was provided, it must match the API key's tenantId
-                                if (originalTenantIdFromRequest != apiKey.TenantId)
-                                {
-                                    _logger.LogWarning("TenantAdmin user {UserId} provided tenantId {ProvidedTenantId} that does not match API key tenantId {ApiKeyTenantId}", 
-                                        apiKey.CreatedBy, originalTenantIdFromRequest, apiKey.TenantId);
-                                    return AuthenticateResult.Fail("Tenant ID does not match API key tenant");
-                                }
-                                finalTenantId = originalTenantIdFromRequest;
-                                _logger.LogDebug("TenantAdmin user {UserId} validated tenantId: {TenantId}", 
-                                    apiKey.CreatedBy, finalTenantId);
-                            }
-                            else
-                            {
-                                // No tenantId provided - use API key's tenantId
-                                finalTenantId = apiKey.TenantId;
-                                _logger.LogDebug("TenantAdmin user {UserId} using API key tenantId: {TenantId}", 
-                                    apiKey.CreatedBy, finalTenantId);
-                            }
-                        }
-                        
+
+                        var finalTenantId = resolutionResult.FinalTenantId!;
+                        var userRoles = resolutionResult.UserRoles!;
+
                         _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}", 
                             apiKey.CreatedBy, UserType.UserApiKey, string.Join(", ", userRoles));
                         _tenantContext.LoggedInUser = apiKey.CreatedBy;
