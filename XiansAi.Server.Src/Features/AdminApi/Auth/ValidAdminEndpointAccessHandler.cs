@@ -28,6 +28,21 @@ namespace Features.AdminApi.Auth
             _logger = logger;
         }
 
+        /// <summary>
+        /// Returns true if TenantContext was already fully populated by AdminEndpointAuthenticationHandler.
+        /// When true, we can skip the redundant API key lookup and role resolution.
+        /// </summary>
+        private static bool IsContextAlreadyPopulatedByAuth(ITenantContext tenantContext)
+        {
+            if (string.IsNullOrEmpty(tenantContext.LoggedInUser) ||
+                string.IsNullOrEmpty(tenantContext.TenantId) ||
+                tenantContext.UserRoles == null)
+                return false;
+
+            return tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) ||
+                   tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin);
+        }
+
         protected override async Task HandleRequirementAsync(
             AuthorizationHandlerContext context,
             ValidAdminEndpointAccessRequirement requirement)
@@ -45,6 +60,15 @@ namespace Features.AdminApi.Auth
             {
                 _logger.LogWarning("No Logged In User");
                 context.Fail();
+                return;
+            }
+
+            // Short-circuit: Authentication handler already did full resolution and populated TenantContext.
+            // Skip redundant API key lookup and role resolution to avoid duplicate DB/validation work.
+            if (IsContextAlreadyPopulatedByAuth(_tenantContext))
+            {
+                _logger.LogDebug("AdminApi authorization: TenantContext already populated by authentication - skipping redundant resolution");
+                context.Succeed(requirement);
                 return;
             }
 
