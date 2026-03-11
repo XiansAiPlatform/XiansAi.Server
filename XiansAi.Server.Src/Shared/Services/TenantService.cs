@@ -134,7 +134,7 @@ public class TenantService : ITenantService
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with ID {Id} not found", id);
-                return ServiceResult<Tenant>.Forbidden("Tenant not found");
+                return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
             return ServiceResult<Tenant>.Success(tenant);
@@ -201,7 +201,7 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving tenant by tenant ID: {Message}", ex.Message);
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
@@ -241,7 +241,7 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving current tenant info: {Message}", ex.Message);
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
@@ -283,8 +283,8 @@ public class TenantService : ITenantService
                 return ServiceResult<List<string>>.Forbidden("Access denied: Only system administrators can retrieve tenant list");
             }
 
-            var tenants = await _tenantRepository.GetAllAsync();
-            return ServiceResult<List<string>>.Success(tenants.Select(t => t.TenantId).ToList());
+            var tenantIds = await _tenantRepository.GetAllTenantIdsAsync();
+            return ServiceResult<List<string>>.Success(tenantIds);
         }
         catch (Exception ex)
         {

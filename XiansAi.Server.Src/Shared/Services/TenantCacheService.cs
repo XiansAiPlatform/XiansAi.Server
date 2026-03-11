@@ -17,7 +17,7 @@ public interface ITenantCacheService
     /// <summary>
     /// Gets a tenant by ID from cache or database.
     /// Null results are cached with a shorter TTL to mitigate brute-force enumeration.
-    /// Callers must treat returned Tenant instances as read-only; mutating them would corrupt the shared cache.
+    /// Returns a shallow copy so callers cannot mutate the cached original.
     /// </summary>
     Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
 
@@ -61,6 +61,8 @@ public class TenantCacheService : ITenantCacheService
 
     public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
 
         var holder = await _cache.GetOrCreateAsync(cacheKey, async entry =>
@@ -75,7 +77,7 @@ public class TenantCacheService : ITenantCacheService
             return new TenantCacheHolder(tenant);
         });
 
-        return holder?.Tenant;
+        return holder?.Tenant?.ShallowCopy();
     }
 
     public void InvalidateTenant(string tenantId)

@@ -2,6 +2,7 @@ using System.Text.Json;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data;
+using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using System.ComponentModel.DataAnnotations;
 
@@ -67,6 +68,9 @@ public class Agent : ModelValidatorBase<Agent>
     [BsonElement("category")]
     [StringLength(100, ErrorMessage = "Category must not exceed 100 characters")]
     public string? Category { get; set; }
+
+    [BsonElement("flows")]
+    public List<Flow>? Flows { get; set; }
 
     public bool HasPermission(string userId, string[] userRoles, PermissionLevel requiredLevel)
     {

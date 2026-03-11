@@ -115,7 +115,31 @@ public class Tenant : ModelValidatorBase<Tenant>
             }
         }
     }
-        public override Tenant SanitizeAndReturn()
+        /// <summary>
+    /// Returns a shallow copy of this tenant. Use when returning from cache so callers cannot mutate the cached original.
+    /// </summary>
+    public Tenant ShallowCopy()
+    {
+        return new Tenant
+        {
+            Id = Id,
+            TenantId = TenantId,
+            Name = Name,
+            Domain = Domain,
+            Description = Description,
+            Logo = Logo,
+            Theme = Theme,
+            Timezone = Timezone,
+            Agents = Agents,
+            Permissions = Permissions,
+            CreatedAt = CreatedAt,
+            CreatedBy = CreatedBy,
+            UpdatedAt = UpdatedAt,
+            Enabled = Enabled
+        };
+    }
+
+    public override Tenant SanitizeAndReturn()
     {
         // Create a new tenant with sanitized data
         var sanitizedTenant = new Tenant

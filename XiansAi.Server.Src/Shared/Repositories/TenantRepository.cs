@@ -8,12 +8,13 @@ namespace Shared.Repositories;
 
 public interface ITenantRepository
 {
-    Task<Tenant> GetByIdAsync(string id);
+    Task<Tenant> GetByIdAsync(string id, CancellationToken cancellationToken = default);
     Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
-    Task<Tenant> GetByDomainAsync(string domain);
-    Task<List<Tenant>> GetByDomainListAsync(string domain);
-    Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds);
-    Task<List<Tenant>> GetAllAsync();
+    Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default);
+    Task<List<Tenant>> GetByDomainListAsync(string domain, CancellationToken cancellationToken = default);
+    Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds, CancellationToken cancellationToken = default);
+    Task<List<Tenant>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<List<string>> GetAllTenantIdsAsync(CancellationToken cancellationToken = default);
     Task CreateAsync(Tenant tenant);
     Task<bool> UpdateAsync(string id, Tenant tenant);
     Task<bool> DeleteAsync(string id);
@@ -38,11 +39,11 @@ public class TenantRepository : ITenantRepository
     }
 
     // Standard CRUD Operations
-    public async Task<Tenant> GetByIdAsync(string id)
+    public async Task<Tenant> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _collection.Find(tenant => tenant.Id == id).FirstOrDefaultAsync();
+            return await _collection.Find(tenant => tenant.Id == id).FirstOrDefaultAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantById");
     }
 
@@ -54,15 +55,15 @@ public class TenantRepository : ITenantRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantId");
     }
 
-    public async Task<Tenant> GetByDomainAsync(string domain)
+    public async Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _collection.Find(tenant => tenant.Domain == domain).FirstOrDefaultAsync();
+            return await _collection.Find(tenant => tenant.Domain == domain).FirstOrDefaultAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantByDomain");
     }
 
-    public async Task<List<Tenant>> GetByDomainListAsync(string domain)
+    public async Task<List<Tenant>> GetByDomainListAsync(string domain, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -71,27 +72,35 @@ public class TenantRepository : ITenantRepository
                 Builders<Tenant>.Filter.Ne(t => t.Domain, string.Empty),
                 Builders<Tenant>.Filter.Eq(t => t.Domain, domain)
             );
-            return await _collection.Find(filter).ToListAsync();
+            return await _collection.Find(filter).ToListAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantsByDomain");
     }
 
-    public async Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds)
+    public async Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var filter = Builders<Tenant>.Filter.In(t => t.TenantId, tenantIds);
-            return await _collection.Find(filter).ToListAsync();
+            return await _collection.Find(filter).ToListAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantsByTenantIds");
     }
 
-    public async Task<List<Tenant>> GetAllAsync()
+    public async Task<List<Tenant>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _collection.Find(_ => true).ToListAsync();
+            return await _collection.Find(_ => true).ToListAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAllTenants");
     }
 
+    public async Task<List<string>> GetAllTenantIdsAsync(CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var projection = Builders<Tenant>.Projection.Expression(t => t.TenantId);
+            return await _collection.Find(_ => true).Project(projection).ToListAsync(cancellationToken);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAllTenantIds");
+    }
 
     public async Task CreateAsync(Tenant tenant)
     {
@@ -198,6 +207,8 @@ public class TenantRepository : ITenantRepository
             var agent = tenant.Agents?.FirstOrDefault(a => a.Name == agentName);
             if (agent == null) return false;
 
+            agent.Flows ??= new List<Flow>();
+            agent.Flows.Add(flow);
 
             return await UpdateAsync(tenantId, tenant);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddFlowToAgent");
