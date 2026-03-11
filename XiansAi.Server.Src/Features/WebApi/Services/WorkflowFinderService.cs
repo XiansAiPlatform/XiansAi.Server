@@ -466,9 +466,12 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// </summary>
     public async Task<ServiceResult<List<string>>> GetDistinctIdPostfixValuesAsync()
     {
+        var loggedInUser = _tenantContext.LoggedInUser;
+        if (string.IsNullOrEmpty(loggedInUser))
+            return ServiceResult<List<string>>.Success(new List<string>());
+
         var tenantId = _tenantContext.TenantId ?? string.Empty;
-        var userId = _tenantContext.LoggedInUser ?? string.Empty;
-        var cacheKey = $"activations:distinctidpostfix:{tenantId}:{userId}";
+        var cacheKey = $"activations:distinctidpostfix:{tenantId}:{loggedInUser}";
 
         if (_cache.TryGetValue(cacheKey, out List<string>? cached))
         {
@@ -477,10 +480,6 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            var loggedInUser = _tenantContext.LoggedInUser;
-            if (string.IsNullOrEmpty(loggedInUser))
-                return ServiceResult<List<string>>.Success(new List<string>());
-
             var agents = await _agentRepository.GetAgentsWithPermissionAsync(loggedInUser, _tenantContext.TenantId);
             if (agents == null || agents.Count == 0)
             {
