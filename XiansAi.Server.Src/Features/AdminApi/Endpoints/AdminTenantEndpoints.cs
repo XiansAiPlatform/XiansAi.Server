@@ -51,6 +51,7 @@ public static class AdminTenantEndpoints
         // Get Tenant by TenantId - SysAdmin only (TenantAdmin should use tenant-scoped endpoints)
         adminTenantGroup.MapGet("/{tenantId}", async (
             string tenantId,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -62,7 +63,7 @@ public static class AdminTenantEndpoints
                     new { message = "Access denied: Only system administrators can retrieve tenant details by ID" },
                     statusCode: StatusCodes.Status403Forbidden);
             }
-            var result = await tenantService.GetTenantByTenantId(tenantId);
+            var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
             return result.ToHttpResult();
         })
         .WithName("GetTenantByTenantId")
@@ -104,6 +105,7 @@ public static class AdminTenantEndpoints
         adminTenantGroup.MapPatch("/{tenantId}", async (
             string tenantId,
             [FromBody] UpdateTenantRequest request,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -117,7 +119,7 @@ public static class AdminTenantEndpoints
             }
 
             // First get tenant by tenantId to get the ObjectId
-            var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
             {
                 return tenantResult.ToHttpResult();
@@ -138,6 +140,7 @@ public static class AdminTenantEndpoints
         // Delete Tenant - SysAdmin only
         adminTenantGroup.MapDelete("/{tenantId}", async (
             string tenantId,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -151,7 +154,7 @@ public static class AdminTenantEndpoints
             }
 
             // First get tenant by tenantId to get the ObjectId
-            var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
             {
                 return tenantResult.ToHttpResult();

@@ -43,8 +43,8 @@ public interface ITenantService
 {
     Task<ServiceResult<Tenant>> GetTenantById(string id);
     Task<ServiceResult<Tenant>> GetTenantByDomain(string domain);
-    Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId);
-    Task<ServiceResult<Tenant>> GetCurrentTenantInfo();
+    Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default);
+    Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default);
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
     Task<ServiceResult<List<string>>> GetTenantIdList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null);
@@ -178,7 +178,7 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId)
+    public async Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -190,7 +190,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId);
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
@@ -211,7 +211,7 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<Tenant>> GetCurrentTenantInfo()
+    public async Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -230,7 +230,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId);
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
@@ -424,14 +424,13 @@ public class TenantService : ITenantService
         try
         {
             id = SanitizeAndValidateId(id);
-            EnsureTenantAccessOrThrow(id);
-
             var existingTenant = await _tenantRepository.GetByIdAsync(id);
             if (existingTenant == null)
             {
                 _logger.LogWarning("Tenant with ID {Id} not found for deletion", id);
                 return ServiceResult<bool>.NotFound("Tenant not found");
             }
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
 
             var success = await _tenantRepository.DeleteAsync(id);
             if (success)

@@ -145,7 +145,8 @@ public class Agent : ModelValidatorBase<Agent>
             Summary = ValidationHelpers.SanitizeString(this.Summary),
             Version = ValidationHelpers.SanitizeString(this.Version),
             Author = ValidationHelpers.SanitizeString(this.Author),
-            Category = ValidationHelpers.SanitizeString(this.Category)
+            Category = ValidationHelpers.SanitizeString(this.Category),
+            Flows = this.Flows
         };
 
         return sanitizedAgent;

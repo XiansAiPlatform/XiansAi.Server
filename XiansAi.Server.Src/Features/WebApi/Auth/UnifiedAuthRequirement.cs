@@ -197,7 +197,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         {
             // if (currentTenantId != Constants.DefaultTenantId)
             // { 
-                var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
+                var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId, httpContext.RequestAborted);
                 if (!tenantResult.IsSuccess || tenantResult.Data == null)
                 {
                     _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);

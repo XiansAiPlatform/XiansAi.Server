@@ -71,7 +71,7 @@ public class TenantCacheService : ITenantCacheService
             _logger.LogDebug("Cache miss for tenant {TenantId}, fetching from database", tenantId);
             using var scope = _scopeFactory.CreateScope();
             var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
-            var tenant = await repo.GetByTenantIdAsync(tenantId, cancellationToken);
+            var tenant = await repo.GetByTenantIdAsync(tenantId, CancellationToken.None);
             entry.SetAbsoluteExpiration(tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration);
             _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);
             return new TenantCacheHolder(tenant);

@@ -201,16 +201,15 @@ public class TenantRepository : ITenantRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var tenant = await GetByIdAsync(tenantId);
-            if (tenant == null) return false;
-
-            var agent = tenant.Agents?.FirstOrDefault(a => a.Name == agentName);
-            if (agent == null) return false;
-
-            agent.Flows ??= new List<Flow>();
-            agent.Flows.Add(flow);
-
-            return await UpdateAsync(tenantId, tenant);
+            var filter = Builders<Tenant>.Filter.And(
+                Builders<Tenant>.Filter.Eq(t => t.Id, tenantId),
+                Builders<Tenant>.Filter.ElemMatch(t => t.Agents, a => a.Name == agentName)
+            );
+            var update = Builders<Tenant>.Update
+                .Push("agents.$.flows", flow)
+                .Set(t => t.UpdatedAt, DateTime.UtcNow);
+            var result = await _collection.UpdateOneAsync(filter, update);
+            return result.ModifiedCount > 0;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddFlowToAgent");
     }
 }
