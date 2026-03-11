@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Shared.Data.Models;
 using Shared.Repositories;
 
