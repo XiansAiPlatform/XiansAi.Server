@@ -291,7 +291,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             var tokenTenantIds = userTenants?.Data ?? new List<string>();
 
             // Cache the result (always cache fresh validation results)
-            await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
+            await _tokenCache.CacheValidation(token, tokenSuccess, tokenUserId, tokenTenantIds);
             
             // Set the user name to the logged in user
             httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, tokenUserId)]));

@@ -127,11 +127,11 @@ public class Tenant : ModelValidatorBase<Tenant>
             Name = Name,
             Domain = Domain,
             Description = Description,
-            Logo = Logo,
+            Logo = Logo == null ? null : new Logo { Url = Logo.Url, ImgBase64 = Logo.ImgBase64, Width = Logo.Width, Height = Logo.Height },
             Theme = Theme,
             Timezone = Timezone,
-            Agents = Agents?.ToList(),
-            Permissions = Permissions?.ToList(),
+            Agents = Agents?.Select(a => a.ShallowCopy()).ToList(),
+            Permissions = Permissions?.Select(p => p.ShallowCopy()).ToList(),
             CreatedAt = CreatedAt,
             CreatedBy = CreatedBy,
             UpdatedAt = UpdatedAt,
@@ -339,6 +339,21 @@ public class Flow : ModelValidatorBase<Flow>
             throw new ValidationException("Updated date cannot be before created date");
         }
     }
+    /// <summary>
+    /// Returns a shallow copy so callers cannot mutate the original.
+    /// </summary>
+    public Flow ShallowCopy()
+    {
+        return new Flow
+        {
+            Name = Name,
+            IsActive = IsActive,
+            CreatedAt = CreatedAt,
+            UpdatedAt = UpdatedAt,
+            CreatedBy = CreatedBy
+        };
+    }
+
     public override Flow SanitizeAndReturn()
     {
         // Create a new flow with sanitized data

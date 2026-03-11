@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +38,7 @@ public class TenantCacheService : ITenantCacheService
 
     private const string CacheKeyPrefix = "tenant:byid:";
 
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new();
     private readonly IMemoryCache _cache;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TenantCacheService> _logger;
@@ -65,19 +67,34 @@ public class TenantCacheService : ITenantCacheService
 
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
 
-        var holder = await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        var semaphore = _keyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+
+        await semaphore.WaitAsync(cancellationToken);
+        try
         {
-            entry.SetSize(1);
+            if (_cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
+                return cachedHolder?.Tenant?.ShallowCopy();
+
             _logger.LogDebug("Cache miss for tenant {TenantId}, fetching from database", tenantId);
             using var scope = _scopeFactory.CreateScope();
             var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
-            var tenant = await repo.GetByTenantIdAsync(tenantId, CancellationToken.None);
-            entry.SetAbsoluteExpiration(tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration);
-            _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);
-            return new TenantCacheHolder(tenant);
-        });
+            var tenant = await repo.GetByTenantIdAsync(tenantId, cancellationToken);
 
-        return holder?.Tenant?.ShallowCopy();
+            var expiration = tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration;
+            var holder = new TenantCacheHolder(tenant);
+
+            var entryOptions = new MemoryCacheEntryOptions()
+                .SetSize(1)
+                .SetAbsoluteExpiration(expiration);
+            _cache.Set(cacheKey, holder, entryOptions);
+
+            _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);
+            return holder.Tenant?.ShallowCopy();
+        }
+        finally
+        {
+            semaphore.Release();
+        }
     }
 
     public void InvalidateTenant(string tenantId)

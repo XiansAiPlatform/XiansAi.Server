@@ -64,6 +64,19 @@ public class Permission  : ModelValidatorBase<Permission>
         OwnerAccess.Remove(userId);
     }
 
+    /// <summary>
+    /// Returns a shallow copy so callers cannot mutate the original.
+    /// </summary>
+    public Permission ShallowCopy()
+    {
+        return new Permission
+        {
+            OwnerAccess = OwnerAccess?.ToList() ?? new List<string>(),
+            ReadAccess = ReadAccess?.ToList() ?? new List<string>(),
+            WriteAccess = WriteAccess?.ToList() ?? new List<string>()
+        };
+    }
+
     public override string ToString()
     {
         return JsonSerializer.Serialize(this);

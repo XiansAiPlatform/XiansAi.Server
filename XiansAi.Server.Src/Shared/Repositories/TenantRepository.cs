@@ -18,7 +18,7 @@ public interface ITenantRepository
     Task CreateAsync(Tenant tenant);
     Task<bool> UpdateAsync(string id, Tenant tenant);
     Task<bool> DeleteAsync(string id);
-    Task<List<Tenant>> SearchAsync(string searchTerm);
+    Task<List<Tenant>> SearchAsync(string searchTerm, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetTenantsByCreatorAsync(string createdBy);
     Task<bool> AddAgentAsync(string tenantId, Agent agent);
     Task<bool> UpdateAgentAsync(string tenantId, string agentName, Agent updatedAgent);
@@ -130,16 +130,17 @@ public class TenantRepository : ITenantRepository
     }
 
     // Advanced Query Methods
-    public async Task<List<Tenant>> SearchAsync(string searchTerm)
+    public async Task<List<Tenant>> SearchAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
+            var escapedTerm = System.Text.RegularExpressions.Regex.Escape(searchTerm);
             var filter = Builders<Tenant>.Filter.Or(
-                Builders<Tenant>.Filter.Regex(x => x.Name, new BsonRegularExpression(searchTerm, "i")),
-                Builders<Tenant>.Filter.Regex(x => x.Domain, new BsonRegularExpression(searchTerm, "i")),
-                Builders<Tenant>.Filter.Regex(x => x.Description, new BsonRegularExpression(searchTerm, "i"))
+                Builders<Tenant>.Filter.Regex(x => x.Name, new BsonRegularExpression(escapedTerm, "i")),
+                Builders<Tenant>.Filter.Regex(x => x.Domain, new BsonRegularExpression(escapedTerm, "i")),
+                Builders<Tenant>.Filter.Regex(x => x.Description, new BsonRegularExpression(escapedTerm, "i"))
             );
-            return await _collection.Find(filter).ToListAsync();
+            return await _collection.Find(filter).ToListAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "SearchTenants");
     }
 

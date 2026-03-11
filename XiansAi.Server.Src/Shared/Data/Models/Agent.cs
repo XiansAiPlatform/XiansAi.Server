@@ -122,6 +122,32 @@ public class Agent : ModelValidatorBase<Agent>
         OwnerAccess.Remove(userId);
     }
 
+    /// <summary>
+    /// Returns a shallow copy so callers cannot mutate the original.
+    /// </summary>
+    public Agent ShallowCopy()
+    {
+        return new Agent
+        {
+            Id = Id,
+            Name = Name,
+            Tenant = Tenant,
+            CreatedBy = CreatedBy,
+            CreatedAt = CreatedAt,
+            OwnerAccess = OwnerAccess?.ToList() ?? new List<string>(),
+            ReadAccess = ReadAccess?.ToList() ?? new List<string>(),
+            WriteAccess = WriteAccess?.ToList() ?? new List<string>(),
+            SystemScoped = SystemScoped,
+            OnboardingJson = OnboardingJson,
+            Description = Description,
+            Summary = Summary,
+            Version = Version,
+            Author = Author,
+            Category = Category,
+            Flows = Flows?.Select(f => f.ShallowCopy()).ToList()
+        };
+    }
+
     public override string ToString()
     {
         return JsonSerializer.Serialize(this);

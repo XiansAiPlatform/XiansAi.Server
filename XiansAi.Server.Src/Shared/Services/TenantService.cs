@@ -84,7 +84,7 @@ public class TenantService : ITenantService
         catch (ValidationException ex)
         {
             _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
-            throw new Exception($"Validation failed: {ex.Message}");
+            throw;
         }
 
         // If system admin, return null (indicating unrestricted access)
@@ -113,8 +113,8 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
-            throw new Exception($"Validation failed: {ex.Message}");
+            _logger.LogWarning("Validation failed while sanitizing and validating ID: {Message}", ex.Message);
+            throw;
         }
     }
 
@@ -123,8 +123,8 @@ public class TenantService : ITenantService
         try
         {
             id = SanitizeAndValidateId(id);
-            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
-            if (accessableTenantId == null)
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
+            if (accessibleTenantId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt to tenant with ID {Id}", id);
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
@@ -183,8 +183,8 @@ public class TenantService : ITenantService
         try
         {
             tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
-            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
-            if (accessableTenantId == null)
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessibleTenantId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
