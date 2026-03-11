@@ -147,6 +147,19 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
+            var loggedInUser = _tenantContext.LoggedInUser;
+            if (string.IsNullOrEmpty(loggedInUser))
+            {
+                return ServiceResult<PaginatedWorkflowsResponse>.Success(new PaginatedWorkflowsResponse
+                {
+                    Workflows = new List<WorkflowResponse>(),
+                    NextPageToken = null,
+                    PageSize = actualPageSize,
+                    HasNextPage = false,
+                    TotalCount = 0
+                });
+            }
+
             var client = await _clientFactory.GetClientAsync();
             var workflows = new List<WorkflowResponse>();
 
@@ -170,7 +183,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             else
             {
                 // If no specific agent, get all agents user has permission to
-                var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+                var agents = await _agentRepository.GetAgentsWithPermissionAsync(loggedInUser, _tenantContext.TenantId);
                 if (agents == null || agents.Count == 0)
                 {
                     return ServiceResult<PaginatedWorkflowsResponse>.Success(new PaginatedWorkflowsResponse
@@ -327,7 +340,11 @@ public class WorkflowFinderService : IWorkflowFinderService
     {
         _logger.LogInformation("Retrieving workflows with filters - Status: {Status}", status ?? "null");
 
-        var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+        var loggedInUser = _tenantContext.LoggedInUser;
+        if (string.IsNullOrEmpty(loggedInUser))
+            return ServiceResult<List<WorkflowsWithAgent>>.Success(new List<WorkflowsWithAgent>());
+
+        var agents = await _agentRepository.GetAgentsWithPermissionAsync(loggedInUser, _tenantContext.TenantId);
 
         if (agents == null || agents.Count == 0)
         {
