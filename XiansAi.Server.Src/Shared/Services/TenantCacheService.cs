@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Shared.Data.Models;
 using Shared.Repositories;
 
@@ -65,13 +63,19 @@ public class TenantCacheService : ITenantCacheService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Validate format to prevent _keyLocks growth from arbitrary user-supplied IDs (enumeration attacks).
+        tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
 
         var semaphore = _keyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
 
-        await semaphore.WaitAsync(cancellationToken);
+        var acquired = false;
         try
         {
+            await semaphore.WaitAsync(cancellationToken);
+            acquired = true;
+
             if (_cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
                 return cachedHolder?.Tenant?.ShallowCopy();
 
@@ -83,14 +87,12 @@ public class TenantCacheService : ITenantCacheService
             var expiration = tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration;
             var holder = new TenantCacheHolder(tenant);
 
+            // Do not remove semaphores in post-eviction callback: any check-then-remove is racy
+            // and can break per-key mutual exclusion. Bounded growth (one entry per distinct
+            // tenant ID) is acceptable since the number of tenants is typically small.
             var entryOptions = new MemoryCacheEntryOptions()
                 .SetSize(1)
-                .SetAbsoluteExpiration(expiration)
-                .RegisterPostEvictionCallback((key, _, _, _) =>
-                {
-                    // Only remove from dictionary; do not Dispose—a concurrent request may still hold the semaphore.
-                    _keyLocks.TryRemove(key.ToString()!, out _);
-                });
+                .SetAbsoluteExpiration(expiration);
             _cache.Set(cacheKey, holder, entryOptions);
 
             _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);
@@ -98,12 +100,13 @@ public class TenantCacheService : ITenantCacheService
         }
         finally
         {
-            semaphore.Release();
+            if (acquired) semaphore.Release();
         }
     }
 
     public void InvalidateTenant(string tenantId)
     {
+        tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
         _cache.Remove(cacheKey);
         _logger.LogDebug("Invalidated tenant cache for {TenantId}", tenantId);
