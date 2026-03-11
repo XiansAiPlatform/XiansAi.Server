@@ -84,15 +84,12 @@ public class TenantCacheService : ITenantCacheService
             var expiration = tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration;
             var holder = new TenantCacheHolder(tenant);
 
+            // Do not remove semaphores in post-eviction callback: any check-then-remove is racy
+            // and can break per-key mutual exclusion. Bounded growth (one entry per distinct
+            // tenant ID) is acceptable since the number of tenants is typically small.
             var entryOptions = new MemoryCacheEntryOptions()
                 .SetSize(1)
-                .SetAbsoluteExpiration(expiration)
-                .RegisterPostEvictionCallback((key, _, _, _) =>
-                {
-                    if (key is not string stringKey) return;
-                    if (_keyLocks.TryGetValue(stringKey, out var sem) && sem.CurrentCount == 1)
-                        _keyLocks.TryRemove(stringKey, out _);
-                });
+                .SetAbsoluteExpiration(expiration);
             _cache.Set(cacheKey, holder, entryOptions);
 
             _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);
