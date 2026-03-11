@@ -28,14 +28,17 @@ public interface ITenantRepository
 
 public class TenantRepository : ITenantRepository
 {
+    private const string CollectionName = "tenants";
+
     private readonly IMongoCollection<Tenant> _collection;
     private readonly ILogger<TenantRepository> _logger;
 
     public TenantRepository(IMongoDbClientService mongoDbClientService, ILogger<TenantRepository> logger)
     {
         ArgumentNullException.ThrowIfNull(mongoDbClientService);
-        _collection = mongoDbClientService.GetCollection<Tenant>("tenants");
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(logger);
+        _collection = mongoDbClientService.GetCollection<Tenant>(CollectionName);
+        _logger = logger;
     }
 
     // Standard CRUD Operations

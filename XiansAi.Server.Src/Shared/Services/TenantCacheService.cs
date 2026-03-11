@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Shared.Data.Models;
 using Shared.Repositories;
 
@@ -69,9 +67,12 @@ public class TenantCacheService : ITenantCacheService
 
         var semaphore = _keyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
 
-        await semaphore.WaitAsync(cancellationToken);
+        var acquired = false;
         try
         {
+            await semaphore.WaitAsync(cancellationToken);
+            acquired = true;
+
             if (_cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
                 return cachedHolder?.Tenant?.ShallowCopy();
 
@@ -88,8 +89,9 @@ public class TenantCacheService : ITenantCacheService
                 .SetAbsoluteExpiration(expiration)
                 .RegisterPostEvictionCallback((key, _, _, _) =>
                 {
-                    // Only remove from dictionary; do not Dispose—a concurrent request may still hold the semaphore.
-                    _keyLocks.TryRemove(key.ToString()!, out _);
+                    if (key is not string stringKey) return;
+                    if (_keyLocks.TryGetValue(stringKey, out var sem) && sem.CurrentCount == 1)
+                        _keyLocks.TryRemove(stringKey, out _);
                 });
             _cache.Set(cacheKey, holder, entryOptions);
 
@@ -98,7 +100,7 @@ public class TenantCacheService : ITenantCacheService
         }
         finally
         {
-            semaphore.Release();
+            if (acquired) semaphore.Release();
         }
     }
 
