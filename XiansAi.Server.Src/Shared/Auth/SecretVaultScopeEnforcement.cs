@@ -22,6 +22,7 @@ public static class SecretVaultScopeEnforcement
     /// <param name="effectiveAgentId">Resolved agent ID (unchanged from request).</param>
     /// <param name="effectiveUserId">Resolved user ID (unchanged from request).</param>
     /// <param name="effectiveActivationName">Resolved activation name (unchanged from request).</param>
+    /// <param name="forbiddenResult">When false is returned, contains the Forbidden ServiceResult to return to the client.</param>
     /// <returns>True if scope is allowed; false with a Forbidden ServiceResult to return.</returns>
     public static bool TryResolveScope(
         ITenantContext tenantContext,

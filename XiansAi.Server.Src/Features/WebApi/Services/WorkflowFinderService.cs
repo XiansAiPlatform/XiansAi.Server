@@ -477,7 +477,11 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId);
+            var loggedInUser = _tenantContext.LoggedInUser;
+            if (string.IsNullOrEmpty(loggedInUser))
+                return ServiceResult<List<string>>.Success(new List<string>());
+
+            var agents = await _agentRepository.GetAgentsWithPermissionAsync(loggedInUser, _tenantContext.TenantId);
             if (agents == null || agents.Count == 0)
             {
                 return ServiceResult<List<string>>.Success(new List<string>());

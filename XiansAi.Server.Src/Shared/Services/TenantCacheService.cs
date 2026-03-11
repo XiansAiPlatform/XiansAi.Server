@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
+using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Shared.Data.Models;
 using Shared.Repositories;
 
@@ -106,7 +109,20 @@ public class TenantCacheService : ITenantCacheService
 
     public void InvalidateTenant(string tenantId)
     {
-        tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            _logger.LogWarning("InvalidateTenant called with null/empty tenantId; skipping.");
+            return;
+        }
+        try
+        {
+            tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning(ex, "InvalidateTenant: invalid tenantId '{TenantId}'; skipping.", tenantId);
+            return;
+        }
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
         _cache.Remove(cacheKey);
         _logger.LogDebug("Invalidated tenant cache for {TenantId}", tenantId);
