@@ -85,7 +85,12 @@ public class TenantCacheService : ITenantCacheService
 
             var entryOptions = new MemoryCacheEntryOptions()
                 .SetSize(1)
-                .SetAbsoluteExpiration(expiration);
+                .SetAbsoluteExpiration(expiration)
+                .RegisterPostEvictionCallback((key, _, _, _) =>
+                {
+                    // Only remove from dictionary; do not Dispose—a concurrent request may still hold the semaphore.
+                    _keyLocks.TryRemove(key.ToString()!, out _);
+                });
             _cache.Set(cacheKey, holder, entryOptions);
 
             _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);

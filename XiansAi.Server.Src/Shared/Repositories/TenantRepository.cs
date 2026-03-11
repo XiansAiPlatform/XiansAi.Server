@@ -31,11 +31,11 @@ public class TenantRepository : ITenantRepository
     private readonly IMongoCollection<Tenant> _collection;
     private readonly ILogger<TenantRepository> _logger;
 
-    public TenantRepository(IDatabaseService databaseService, ILogger<TenantRepository> logger)
+    public TenantRepository(IMongoDbClientService mongoDbClientService, ILogger<TenantRepository> logger)
     {
-        var database = databaseService.GetDatabaseAsync().Result;
-        _collection = database.GetCollection<Tenant>("tenants");
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(mongoDbClientService);
+        _collection = mongoDbClientService.GetCollection<Tenant>("tenants");
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     // Standard CRUD Operations
