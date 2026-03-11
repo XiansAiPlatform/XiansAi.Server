@@ -328,6 +328,35 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.Equal("\"task-id-participant-2\"", taskId2);
     }
 
+    /*
+    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastIncomingOrigin_WithScopeFilter_ReturnsCorrectOrigin"
+    */
+    [Fact]
+    public async Task GetLastIncomingOrigin_WithScopeFilter_ReturnsCorrectOrigin()
+    {
+        // Verifies AddScopeFilter branching: null/empty scope -> filter to default (null/empty) messages; non-null scope -> filter to that scope
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var workflowType = $"test-workflow-{Guid.NewGuid()}";
+        var workflowId = $"{TestTenantId}:{workflowType}";
+        var participantId = $"test-participant-{Guid.NewGuid()}";
+
+        // Message 1: default scope (null), oldest
+        await CreateTestMessageAsync(workflowId, workflowType, participantId, scope: null, origin: "origin-default-old", createdAt: DateTime.UtcNow.AddHours(-2), threadId: threadId);
+        // Message 2: topic1 scope
+        await CreateTestMessageAsync(workflowId, workflowType, participantId, scope: "topic1", origin: "origin-topic1", createdAt: DateTime.UtcNow.AddHours(-1), threadId: threadId);
+        // Message 3: default scope (null), newest - should be returned when scope is null
+        await CreateTestMessageAsync(workflowId, workflowType, participantId, scope: null, origin: "origin-default-new", createdAt: DateTime.UtcNow, threadId: threadId);
+
+        using var scope2 = _factory.Services.CreateScope();
+        var repo = scope2.ServiceProvider.GetRequiredService<IConversationRepository>();
+
+        var resultNullScope = await repo.GetLastIncomingOriginAsync(threadId, TestTenantId, null);
+        Assert.Equal("origin-default-new", resultNullScope);
+
+        var resultTopic1 = await repo.GetLastIncomingOriginAsync(threadId, TestTenantId, "topic1");
+        Assert.Equal("origin-topic1", resultTopic1);
+    }
+
     // Helper methods
     private async Task<ConversationMessage> CreateTestMessageAsync(
         string workflowId,
@@ -337,7 +366,9 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         string? taskId = null,
         string? scope = null,
         DateTime? createdAt = null,
-        string content = "Test message")
+        string content = "Test message",
+        string? origin = null,
+        string? threadId = null)
     {
         using var scope2 = _factory.Services.CreateScope();
         var databaseService = scope2.ServiceProvider.GetRequiredService<IDatabaseService>();
@@ -345,7 +376,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         var message = new ConversationMessage
         {
             Id = ObjectId.GenerateNewId().ToString(),
-            ThreadId = ObjectId.GenerateNewId().ToString(),
+            ThreadId = threadId ?? ObjectId.GenerateNewId().ToString(),
             TenantId = TestTenantId,
             ParticipantId = participantId,
             WorkflowId = workflowId,
@@ -359,6 +390,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
             Hint = hint,
             TaskId = taskId,
             Scope = scope,
+            Origin = origin,
             MessageType = MessageType.Chat
         };
 

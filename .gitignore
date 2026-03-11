@@ -21,6 +21,7 @@ publish.zip
 appsettings.*
 !appsettings.Tests.json
 .secrets/
+.claude/
 
 # User-specific files
 *.rsuser

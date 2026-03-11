@@ -1,5 +1,7 @@
+using Shared.Auth;
 using Shared.Repositories;
 using Shared.Data.Models;
+using Shared.Data.Models.Validation;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 
@@ -36,6 +38,12 @@ public class ParticipantTenantResponse
     
     [JsonPropertyName("logo")]
     public Logo? Logo { get; set; }
+    
+    /// <summary>
+    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin. Null when tenant matched by domain only.
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string? Role { get; set; }
 }
 
 /// <summary>
@@ -53,10 +61,21 @@ public class ParticipantTenantsResponse
 /// <summary>
 /// AdminApi endpoints for participant management.
 /// These endpoints allow querying participant information across tenants.
+/// Restricted to SysAdmin only to prevent cross-tenant information disclosure.
 /// All endpoints are under /api/v{version}/admin/ prefix (versioned).
 /// </summary>
 public static class AdminParticipantsEndpoints
 {
+    /// <summary>
+    /// Redacts email for logging to reduce PII retention. Returns "***@domain" format.
+    /// </summary>
+    private static string RedactEmailForLogging(string? email)
+    {
+        if (string.IsNullOrEmpty(email)) return "[empty]";
+        var atIndex = email.IndexOf('@');
+        if (atIndex < 0) return "***@[no-domain]";
+        return "***@" + email[(atIndex + 1)..];
+    }
     /// <summary>
     /// Maps all AdminApi participant endpoints.
     /// </summary>
@@ -66,40 +85,65 @@ public static class AdminParticipantsEndpoints
             .WithTags("AdminAPI - Participants")
             .RequireAuthorization("AdminEndpointAuthPolicy");
 
-        // Get participant tenants by email
-        participantGroup.MapGet("/{email}/tenants", async (
+        // Get participant by email (tenants + role per tenant)
+        participantGroup.MapGet("/{email}", async (
             string email,
+            [FromServices] ITenantContext tenantContext,
             [FromServices] IUserRepository userRepository,
             [FromServices] ITenantRepository tenantRepository,
             [FromServices] ILogger<IUserRepository> logger) =>
         {
             try
             {
-                // Normalize email to lowercase for case-insensitive comparison
-                email = email.ToLowerInvariant();
+                // Restrict to SysAdmin only - prevents cross-tenant information disclosure
+                if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+                {
+                    logger.LogWarning("Access denied: Participants endpoint requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                    return Results.Problem(
+                        detail: "Access denied: Only system administrators can retrieve participant information across tenants",
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                // Validate and sanitize email input (format, length) before use
+                var validatedEmail = ValidationHelpers.SanitizeAndValidateEmail(email);
+                if (validatedEmail == null)
+                {
+                    logger.LogWarning("Invalid email format or length for participant lookup: {EmailRedacted}", RedactEmailForLogging(email));
+                    return Results.Problem(
+                        detail: "Invalid email address. Email must be well-formed and not exceed 254 characters.",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+                email = validatedEmail;
                 
                 // Extract email domain
                 var emailDomain = email.Contains('@') ? email.Split('@')[1] : string.Empty;
-                logger.LogInformation("Processing request for email {Email} with domain {Domain}", email, emailDomain);
+                logger.LogInformation("Processing participant lookup for domain {Domain}", emailDomain);
 
                 // Get user by email
                 var user = await userRepository.GetByUserEmailAsync(email);
                 
-                // Get tenant IDs where user has TenantParticipant role (if user exists)
+                // Get tenant IDs and role per tenant where user has TenantParticipant or TenantParticipantAdmin (if user exists)
                 var participantTenantIds = new List<string>();
+                var tenantRoleMap = new Dictionary<string, string>(); // tenantId -> TenantParticipant or TenantParticipantAdmin
                 if (user != null)
                 {
-                    participantTenantIds = user.TenantRoles
-                        .Where(tr => tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved)
-                        .Select(tr => tr.Tenant)
-                        .ToList();
+                    var participantTenantRoles = user.TenantRoles
+                        .Where(tr => (tr.Roles.Contains(SystemRoles.TenantParticipant) || tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)) && tr.IsApproved);
+                    foreach (var tr in participantTenantRoles)
+                    {
+                        participantTenantIds.Add(tr.Tenant);
+                        // Prefer TenantParticipantAdmin if user has both roles
+                        tenantRoleMap[tr.Tenant] = tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)
+                            ? SystemRoles.TenantParticipantAdmin
+                            : SystemRoles.TenantParticipant;
+                    }
 
-                    logger.LogInformation("User {Email} has participant roles in {Count} tenants: {TenantIds}", 
-                        email, participantTenantIds.Count, string.Join(", ", participantTenantIds));
+                    logger.LogInformation("User {EmailRedacted} has participant roles in {Count} tenants: {TenantIds}", 
+                        RedactEmailForLogging(email), participantTenantIds.Count, string.Join(", ", participantTenantIds));
                 }
                 else
                 {
-                    logger.LogInformation("User with email {Email} not found, will check domain matching only", email);
+                    logger.LogInformation("User {EmailRedacted} not found, will check domain matching only", RedactEmailForLogging(email));
                 }
 
                 // Query tenants by domain matching (if email has domain)
@@ -147,7 +191,8 @@ public static class AdminParticipantsEndpoints
                     {
                         TenantId = t.TenantId,
                         TenantName = t.Name,
-                        Logo = t.Logo
+                        Logo = t.Logo,
+                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : null
                     })
                     .OrderBy(t => t.TenantName)
                     .ToList();
@@ -155,9 +200,9 @@ public static class AdminParticipantsEndpoints
                 // Return 404 if no enabled tenants found
                 if (!tenantList.Any())
                 {
-                    logger.LogWarning("User {Email} has matching tenants but no enabled tenants found. " +
+                    logger.LogWarning("User {EmailRedacted} has matching tenants but no enabled tenants found. " +
                         "Matching tenant IDs: {TenantIds}, Matched tenants: {MatchedCount}", 
-                        email, string.Join(", ", matchingTenants.Select(t => t.TenantId)), matchingTenants.Count);
+                        RedactEmailForLogging(email), string.Join(", ", matchingTenants.Select(t => t.TenantId)), matchingTenants.Count);
                     return Results.NotFound(new { message = $"User with email '{email}' has no enabled tenants" });
                 }
 
@@ -171,7 +216,7 @@ public static class AdminParticipantsEndpoints
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error retrieving participant tenants for email {Email}", email);
+                logger.LogError(ex, "Error retrieving participant tenants for {EmailRedacted}", RedactEmailForLogging(email));
                 return Results.Problem(
                     detail: "An error occurred while retrieving participant tenants",
                     statusCode: StatusCodes.Status500InternalServerError);
@@ -179,12 +224,14 @@ public static class AdminParticipantsEndpoints
         })
         .WithName("GetParticipantTenants")
         .Produces<ParticipantTenantsResponse>()
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => new(operation)
         {
-            Summary = "Get Participant Tenants",
-            Description = "Retrieve the list of tenants (with ID and name) where the user with the specified email has the TenantParticipant role or where the email domain matches the tenant domain, and the tenant is enabled. Also includes whether the user is a system administrator."
+            Summary = "Get Participant",
+            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants. **SysAdmin only** - TenantAdmins are not permitted to prevent cross-tenant information disclosure. **Route**: GET /participants/{email}. If migrating from a deprecated /participants/{email}/tenants route, use this endpoint instead."
         });
     }
 }

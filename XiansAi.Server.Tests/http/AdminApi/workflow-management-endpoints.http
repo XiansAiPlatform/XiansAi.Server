@@ -20,7 +20,7 @@
 ### ============================================
 # AdminApi uses API key authentication via:
 # 1. Authorization header (preferred): Authorization: Bearer <api-key>
-# 2. Query parameter (fallback): ?apikey=<api-key>
+# (Query parameter ?apikey= is not supported - use Authorization header only)
 #
 # The API key must belong to a user with SysAdmin role.
 # Tenant ID can be provided via:

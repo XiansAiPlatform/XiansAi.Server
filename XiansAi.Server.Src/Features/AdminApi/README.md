@@ -33,11 +33,13 @@ See [API_VERSIONING_GUIDE.md](./API_VERSIONING_GUIDE.md) for details on adding n
 
 ## Authentication
 
-AdminAPI uses API key authentication via the `X-Admin-Api-Key` header:
+AdminAPI uses API key authentication via the `Authorization: Bearer` header:
 
 ```http
-X-Admin-Api-Key: your-admin-api-key-here
+Authorization: Bearer your-admin-api-key-here
 ```
+
+**Authorization header only.** The API key must be passed in the `Authorization: Bearer` header. Query parameters (e.g. `?apikey=`) are **not supported** because they can leak into reverse-proxy access logs, CDN logs, and browser history.
 
 ### Authentication Implementation
 
@@ -200,7 +202,7 @@ See [ADMIN_API_EXAMPLE.http](./ADMIN_API_EXAMPLE.http) for complete examples.
 
 ```http
 POST /api/v1/admin/tenants
-X-Admin-Api-Key: your-admin-api-key
+Authorization: Bearer your-admin-api-key
 Content-Type: application/json
 
 {
@@ -215,14 +217,14 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/admin/tenants
-X-Admin-Api-Key: your-admin-api-key
+Authorization: Bearer your-admin-api-key
 ```
 
 ### Update a Tenant
 
 ```http
 PATCH /api/v1/admin/tenants/acme01
-X-Admin-Api-Key: your-admin-api-key
+Authorization: Bearer your-admin-api-key
 Content-Type: application/json
 
 {
@@ -272,10 +274,11 @@ Enable debug logging during development to see detailed request/response informa
 ## Security Considerations
 
 1. **API Key Management**: Store admin API keys securely (environment variables, Azure Key Vault, etc.)
-2. **Rate Limiting**: AdminAPI is subject to global rate limiting policies
-3. **HTTPS**: Always use HTTPS in production
-4. **Tenant Isolation**: Some endpoints require `X-Tenant-Id` header for tenant-scoped operations
-5. **Debug Logging**: Only enable debug logging when actively troubleshooting; disable in production
+2. **Authorization Header Only**: API keys must be passed in the `Authorization: Bearer` header. Query parameters are not supported—they can appear in server logs, proxy logs, CDN logs, and browser history.
+3. **Rate Limiting**: AdminAPI is subject to global rate limiting policies
+4. **HTTPS**: Always use HTTPS in production
+5. **Tenant Isolation**: Some endpoints require `X-Tenant-Id` header for tenant-scoped operations
+6. **Debug Logging**: Only enable debug logging when actively troubleshooting; disable in production
 
 ## Related Documentation
 

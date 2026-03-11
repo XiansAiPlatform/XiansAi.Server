@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Shared.Exceptions;
 using System.Text;
 using System.Text.Json;
 
@@ -40,6 +41,16 @@ public static class ExceptionHandlingConfiguration
                         { 
                             error = "Bad request",
                             message = "The request is invalid"
+                        });
+                        break;
+
+                    case TenantNotFoundException tenantEx:
+                        logger.LogInformation("Tenant not found: {TenantId}", tenantEx.TenantId);
+                        context.Response.StatusCode = StatusCodes.Status404NotFound;
+                        await context.Response.WriteAsJsonAsync(new 
+                        { 
+                            error = "Not found",
+                            message = tenantEx.Message
                         });
                         break;
                         

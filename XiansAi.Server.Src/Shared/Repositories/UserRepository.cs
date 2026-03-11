@@ -61,6 +61,14 @@ public class UserRepository : IUserRepository
                 case UserTypeFilter.NON_ADMIN:
                     filters.Add(builder.Eq(u => u.IsSysAdmin, false));
                     break;
+                case UserTypeFilter.PARTICIPANT:
+                    filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                        tr => tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved));
+                    break;
+                case UserTypeFilter.PARTICIPANT_ADMIN:
+                    filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                        tr => tr.Roles.Contains(SystemRoles.TenantParticipantAdmin) && tr.IsApproved));
+                    break;
                 case UserTypeFilter.ALL:
                 default:
                     // No additional filter
@@ -118,17 +126,21 @@ public class UserRepository : IUserRepository
         {
             case UserTypeFilter.ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantAdmin") && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantAdmin) && tr.IsApproved));
                 break;
 
             case UserTypeFilter.NON_ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantUser") && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantUser) && tr.IsApproved));
                 break;
 
             case UserTypeFilter.PARTICIPANT:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains("TenantParticipant") && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved));
+                break;
+            case UserTypeFilter.PARTICIPANT_ADMIN:
+                filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipantAdmin) && tr.IsApproved));
                 break;
 
             case UserTypeFilter.ALL:
@@ -254,25 +266,20 @@ public class UserRepository : IUserRepository
             return new List<string>();
         }
 
-        // Validate that each tenant exists and is enabled
-        var validTenantIds = new List<string>();
-        foreach (var tenantId in approvedTenantIds)
+        // Validate that each tenant exists and is enabled (single batch query instead of N+1)
+        try
         {
-            try
-            {
-                var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
-                if (tenant != null && tenant.Enabled)
-                {
-                    validTenantIds.Add(tenantId);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error checking tenant {TenantId} for user {UserId}", tenantId, userId);
-            }
+            var tenants = await _tenantRepository.GetByTenantIdsAsync(approvedTenantIds);
+            return tenants
+                .Where(t => t != null && t.Enabled)
+                .Select(t => t.TenantId)
+                .ToList();
         }
-
-        return validTenantIds;
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error fetching tenants for user {UserId}", userId);
+            return new List<string>();
+        }
     }
 
     public async Task<User?> GetAnyUserAsync()

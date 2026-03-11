@@ -1,3 +1,4 @@
+using Shared.Auth;
 using Shared.Services;
 using Shared.Data.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -23,57 +24,98 @@ public static class AdminTenantEndpoints
             .WithTags("AdminAPI - Tenant Management")
             .RequireAuthorization("AdminEndpointAuthPolicy");
 
-        // List All Tenants - No X-Tenant-Id header required
+        // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants)
         adminTenantGroup.MapGet("", async (
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: List tenants requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can list all tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
             var result = await tenantService.GetAllTenants();
             return result.ToHttpResult();
         })
         .WithName("ListTenants")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "List All Tenants",
-            Description = "Retrieve all tenants in the system. X-Tenant-Id header is NOT required for this endpoint."
+            Description = "Retrieve all tenants in the system. SysAdmin only. X-Tenant-Id header is NOT required for this endpoint."
         });
 
-        // Get Tenant by TenantId - No X-Tenant-Id header required (tenant ID is in path)
+        // Get Tenant by TenantId - SysAdmin only (TenantAdmin should use tenant-scoped endpoints)
         adminTenantGroup.MapGet("/{tenantId}", async (
             string tenantId,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Get tenant by ID requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can retrieve tenant details by ID" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
             var result = await tenantService.GetTenantByTenantId(tenantId);
             return result.ToHttpResult();
         })
         .WithName("GetTenantByTenantId")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Get Tenant by TenantId",
-            Description = "Retrieve a specific tenant by its tenantId (e.g., 'spacex01'). X-Tenant-Id header is NOT required."
+            Description = "Retrieve a specific tenant by its tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
         });
 
         // Create Tenant - No X-Tenant-Id header required (creating new tenant)
         adminTenantGroup.MapPost("", async (
             [FromBody] CreateTenantRequest request,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
-            var createdBy = "system";
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Create tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can create tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var createdBy = tenantContext.LoggedInUser ?? "system";
             var result = await tenantService.CreateTenant(request, createdBy);
             return result.ToHttpResult();
         })
         .WithName("CreateTenant")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Create Tenant",
-            Description = "Create a new tenant. X-Tenant-Id header is NOT required."
+            Description = "Create a new tenant. SysAdmin only. X-Tenant-Id header is NOT required."
         });
 
-        // Update Tenant - No X-Tenant-Id header required (tenant ID is in path)
+        // Update Tenant - SysAdmin only
         adminTenantGroup.MapPatch("/{tenantId}", async (
             string tenantId,
             [FromBody] UpdateTenantRequest request,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Update tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can update tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // First get tenant by tenantId to get the ObjectId
             var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
@@ -86,17 +128,28 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateTenant")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Update Tenant",
-            Description = "Update an existing tenant by tenantId (e.g., 'spacex01'). X-Tenant-Id header is NOT required."
+            Description = "Update an existing tenant by tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
         });
 
-        // Delete Tenant - No X-Tenant-Id header required (tenant ID is in path)
+        // Delete Tenant - SysAdmin only
         adminTenantGroup.MapDelete("/{tenantId}", async (
             string tenantId,
-            [FromServices] ITenantService tenantService) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
         {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Delete tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can delete tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // First get tenant by tenantId to get the ObjectId
             var tenantResult = await tenantService.GetTenantByTenantId(tenantId);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
@@ -109,10 +162,11 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteTenant")
+        .Produces(StatusCodes.Status403Forbidden)
         .WithOpenApi(operation => new(operation)
         {
             Summary = "Delete Tenant",
-            Description = "Delete a tenant by tenantId (e.g., 'spacex01'). X-Tenant-Id header is NOT required."
+            Description = "Delete a tenant by tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
         });
     }
 }

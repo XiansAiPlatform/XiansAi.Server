@@ -21,6 +21,7 @@ public static class ValidationHelpers
         public static readonly Regex WorkflowIdPattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", RegexOptions.Compiled);
         public static readonly Regex ActivityIdPattern=  new(@"^[0-9]+$", RegexOptions.Compiled);
         public static readonly Regex CertificateThumbprintPattern=  new(@"^[a-fA-F0-9]{40}$", RegexOptions.Compiled);
+        public static readonly Regex TimezonePattern = new(@"^[A-Za-z_]+/[A-Za-z_]+$", RegexOptions.Compiled);
         public static readonly Regex WorkflowTypePattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#='’]+$", RegexOptions.Compiled);
     }
 
@@ -177,8 +178,7 @@ public static class ValidationHelpers
             return false;
 
         // Basic timezone validation - can be enhanced with actual timezone database
-        var timezonePattern = new Regex(@"^[A-Za-z_]+/[A-Za-z_]+$", RegexOptions.Compiled);
-        return timezonePattern.IsMatch(input);
+        return Patterns.TimezonePattern.IsMatch(input);
     }
 
     /// <summary>
@@ -201,5 +201,45 @@ public static class ValidationHelpers
             return false;
 
         return Patterns.SafeBase64.IsMatch(input);
+    }
+
+    /// <summary>
+    /// Maximum allowed email length per RFC 5321 (254 characters total).
+    /// </summary>
+    public const int MaxEmailLength = 254;
+
+    /// <summary>
+    /// Validates that a string is a well-formed email address.
+    /// Checks format and length (max 254 chars per RFC 5321).
+    /// </summary>
+    public static bool IsValidEmail(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return false;
+
+        var trimmed = input.Trim();
+        if (trimmed.Length > MaxEmailLength)
+            return false;
+
+        return System.Net.Mail.MailAddress.TryCreate(trimmed, out _);
+    }
+
+    /// <summary>
+    /// Sanitizes and validates an email address.
+    /// Returns the trimmed, lowercase email if valid; otherwise null.
+    /// </summary>
+    public static string? SanitizeAndValidateEmail(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return null;
+
+        var sanitized = SanitizeString(input).ToLowerInvariant();
+        // Reject if sanitised value still contains whitespace (collapsed multi-space edge case)
+        if (sanitized.Contains(' ') || sanitized.Length > MaxEmailLength)
+            return null;
+        if (!System.Net.Mail.MailAddress.TryCreate(sanitized, out _))
+            return null;
+
+        return sanitized;
     }
 }

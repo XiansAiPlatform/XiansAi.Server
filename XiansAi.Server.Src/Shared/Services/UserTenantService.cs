@@ -530,7 +530,7 @@ public class UserTenantService : IUserTenantService
                 return ServiceResult<User>.BadRequest("At least one tenant role is required");
 
             // Validate roles are from allowed list
-            var allowedRoles = new[] { SystemRoles.TenantAdmin, SystemRoles.TenantUser, SystemRoles.TenantParticipant };
+            var allowedRoles = new[] { SystemRoles.TenantAdmin, SystemRoles.TenantUser, SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin };
             var invalidRoles = dto.TenantRoles.Where(r => !allowedRoles.Contains(r)).ToList();
             if (invalidRoles.Any())
                 return ServiceResult<User>.BadRequest($"Invalid roles: {string.Join(", ", invalidRoles)}");

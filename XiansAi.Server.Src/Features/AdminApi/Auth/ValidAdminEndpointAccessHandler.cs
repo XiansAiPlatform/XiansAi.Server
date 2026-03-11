@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Shared.Auth;
-using Shared.Repositories;
+using Shared.Exceptions;
 using Shared.Services;
 using System.Security.Claims;
 
@@ -11,22 +10,37 @@ namespace Features.AdminApi.Auth
     {
         private readonly ILogger<ValidAdminEndpointAccessHandler> _logger;
         private readonly ITenantContext _tenantContext;
-        private readonly IUserRepository _userRepository;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IApiKeyService _apiKeyService;
-        
+        private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
+
         public ValidAdminEndpointAccessHandler(
             ITenantContext tenantContext,
-            IUserRepository userRepository,
             IHttpContextAccessor httpContextAccessor,
             IApiKeyService apiKeyService,
+            IAdminRoleTenantResolver adminRoleTenantResolver,
             ILogger<ValidAdminEndpointAccessHandler> logger)
         {
             _tenantContext = tenantContext;
-            _userRepository = userRepository;
             _httpContextAccessor = httpContextAccessor;
             _apiKeyService = apiKeyService;
+            _adminRoleTenantResolver = adminRoleTenantResolver;
             _logger = logger;
+        }
+
+        /// <summary>
+        /// Returns true if TenantContext was already fully populated by AdminEndpointAuthenticationHandler.
+        /// When true, we can skip the redundant API key lookup and role resolution.
+        /// </summary>
+        private static bool IsContextAlreadyPopulatedByAuth(ITenantContext tenantContext)
+        {
+            if (string.IsNullOrEmpty(tenantContext.LoggedInUser) ||
+                string.IsNullOrEmpty(tenantContext.TenantId) ||
+                tenantContext.UserRoles == null)
+                return false;
+
+            return tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) ||
+                   tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin);
         }
 
         protected override async Task HandleRequirementAsync(
@@ -34,7 +48,6 @@ namespace Features.AdminApi.Auth
             ValidAdminEndpointAccessRequirement requirement)
         {
             var loggedInUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var tenantIdFromClaim = context.User.FindFirst("TenantId")?.Value;
 
             if (_tenantContext == null)
             {
@@ -50,25 +63,28 @@ namespace Features.AdminApi.Auth
                 return;
             }
 
+            // Short-circuit: Authentication handler already did full resolution and populated TenantContext.
+            // Skip redundant API key lookup and role resolution to avoid duplicate DB/validation work.
+            if (IsContextAlreadyPopulatedByAuth(_tenantContext))
+            {
+                _logger.LogDebug("AdminApi authorization: TenantContext already populated by authentication - skipping redundant resolution");
+                context.Succeed(requirement);
+                return;
+            }
+
             try
             {
                 var httpContext = _httpContextAccessor.HttpContext;
                 
-                // Extract access token from HTTP context if not already set in tenant context
+                // Extract access token from HTTP context if not already set in tenant context.
+                // Authorization header only; query parameter is not supported (leaks into logs, browser history).
                 var accessToken = _tenantContext.Authorization;
                 if (string.IsNullOrEmpty(accessToken) && httpContext != null)
                 {
-                    // Try Authorization header first
                     var authHeader = httpContext.Request.Headers["Authorization"].FirstOrDefault();
                     if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                     {
                         accessToken = authHeader.Substring("Bearer ".Length).Trim();
-                    }
-                    
-                    // Fallback to query parameter
-                    if (string.IsNullOrEmpty(accessToken))
-                    {
-                        accessToken = httpContext.Request.Query["apikey"].ToString();
                     }
                 }
 
@@ -109,67 +125,19 @@ namespace Features.AdminApi.Auth
                     }
                 }
 
-                // Get user roles - use tenantId from claim if available, otherwise use API key's tenantId
-                var tenantIdForRoleCheck = !string.IsNullOrEmpty(tenantIdFromClaim) ? tenantIdFromClaim : apiKey.TenantId;
-                var userRoles = await _userRepository.GetUserRolesAsync(loggedInUser, tenantIdForRoleCheck);
-                
-                // Check if user has SysAdmin or TenantAdmin role
-                var hasSysAdmin = userRoles.Contains(SystemRoles.SysAdmin);
-                var hasTenantAdmin = userRoles.Contains(SystemRoles.TenantAdmin);
-                
-                // Validate role requirements
-                if (!hasSysAdmin && !hasTenantAdmin)
+                var resolutionResult = await _adminRoleTenantResolver.ResolveAsync(
+                    loggedInUser, apiKey, tenantIdFromRequest);
+
+                if (!resolutionResult.Success)
                 {
-                    _logger.LogWarning("User {UserId} does not have SysAdmin or TenantAdmin role. Roles: {Roles}", 
-                        loggedInUser, string.Join(", ", userRoles));
+                    _logger.LogWarning("Admin role resolution failed: {Error}", resolutionResult.ErrorMessage);
                     context.Fail();
                     return;
                 }
-                
-                // Determine final tenantId based on role
-                string finalTenantId;
-                if (hasSysAdmin)
-                {
-                    // SysAdmin: use provided tenantId if available, otherwise use API key's tenantId
-                    if (!string.IsNullOrEmpty(tenantIdFromRequest))
-                    {
-                        finalTenantId = tenantIdFromRequest;
-                        _logger.LogDebug("SysAdmin user {UserId} using provided tenantId: {TenantId}", 
-                            loggedInUser, finalTenantId);
-                    }
-                    else
-                    {
-                        finalTenantId = apiKey.TenantId;
-                        _logger.LogDebug("SysAdmin user {UserId} using API key tenantId: {TenantId}", 
-                            loggedInUser, finalTenantId);
-                    }
-                }
-                else
-                {
-                    // TenantAdmin only - validate tenantId if provided
-                    if (!string.IsNullOrEmpty(tenantIdFromRequest))
-                    {
-                        // If tenantId was provided, it must match the API key's tenantId
-                        if (tenantIdFromRequest != apiKey.TenantId)
-                        {
-                            _logger.LogWarning("TenantAdmin user {UserId} provided tenantId {ProvidedTenantId} that does not match API key tenantId {ApiKeyTenantId}", 
-                                loggedInUser, tenantIdFromRequest, apiKey.TenantId);
-                            context.Fail();
-                            return;
-                        }
-                        finalTenantId = tenantIdFromRequest;
-                        _logger.LogDebug("TenantAdmin user {UserId} validated tenantId: {TenantId}", 
-                            loggedInUser, finalTenantId);
-                    }
-                    else
-                    {
-                        // No tenantId provided - use API key's tenantId
-                        finalTenantId = apiKey.TenantId;
-                        _logger.LogDebug("TenantAdmin user {UserId} using API key tenantId: {TenantId}", 
-                            loggedInUser, finalTenantId);
-                    }
-                }
-                
+
+                var finalTenantId = resolutionResult.FinalTenantId!;
+                var userRoles = resolutionResult.UserRoles!;
+
                 _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}", 
                     loggedInUser, UserType.UserApiKey, string.Join(", ", userRoles));
                 _tenantContext.LoggedInUser = loggedInUser;
@@ -182,6 +150,10 @@ namespace Features.AdminApi.Auth
                 _logger.LogInformation("Successfully authorized AdminApi Endpoint Connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 
                     loggedInUser, finalTenantId, string.Join(", ", userRoles));
                 context.Succeed(requirement);
+            }
+            catch (TenantNotFoundException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

@@ -1,10 +1,15 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Memory;
 using Shared.Repositories;
 
 namespace Shared.Services
 {
     public interface IRoleCacheService
     {
+        /// <summary>
+        /// Returns roles for the user in the given tenant, excluding TenantParticipant and TenantParticipantAdmin.
+        /// Participants are filtered out because they cannot authenticate/login via OIDC; they exist for Admin API queries only.
+        /// For unfiltered roles including participants, use IUserRepository.GetUserRolesAsync directly.
+        /// </summary>
         Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
         void InvalidateUserRoles(string userId, string tenantId);
     }
@@ -28,20 +33,18 @@ namespace Shared.Services
             var cacheKey = $"{tenantId}:{userId}:roles";
             if (!_cache.TryGetValue(cacheKey, out List<string>? roles))
             {
-                roles = await _userRepository.GetUserRolesAsync(userId, tenantId);
+                var rawRoles = await _userRepository.GetUserRolesAsync(userId, tenantId);
+                // Filter before caching - participants cannot authenticate/login (exist for Admin API queries only)
+                roles = (rawRoles ?? new List<string>())
+                    .Where(r => r != SystemRoles.TenantParticipant && r != SystemRoles.TenantParticipantAdmin)
+                    .ToList();
                 var cacheOptions = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(_cacheDuration)
                     .SetSize(1);
                 _cache.Set(cacheKey, roles, cacheOptions);
             }
-            
-            // Filter out TenantParticipant role - participants cannot authenticate/login
-            // They exist in the system for Admin API queries only
-            var filteredRoles = (roles ?? new List<string>())
-                .Where(r => r != SystemRoles.TenantParticipant)
-                .ToList();
-            
-            return filteredRoles;
+
+            return roles ?? new List<string>();
         }
 
         public void InvalidateUserRoles(string userId, string tenantId)
