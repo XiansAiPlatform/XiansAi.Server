@@ -63,6 +63,9 @@ public class TenantCacheService : ITenantCacheService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Validate format to prevent _keyLocks growth from arbitrary user-supplied IDs (enumeration attacks).
+        tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
 
         var semaphore = _keyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
