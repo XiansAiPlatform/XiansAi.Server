@@ -190,7 +190,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
@@ -230,7 +230,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
@@ -394,7 +394,10 @@ public class TenantService : ITenantService
             var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
             if (success)
             {
-                _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+                if (!string.IsNullOrEmpty(existingTenant.TenantId))
+                    _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+                else
+                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", id);
                 _logger.LogInformation("Updated tenant with ID {Id}", id);
                 return ServiceResult<Tenant>.Success(validatedTenant);
             }
@@ -420,8 +423,8 @@ public class TenantService : ITenantService
     {
         try
         {
-            EnsureTenantAccessOrThrow(id);
             id = SanitizeAndValidateId(id);
+            EnsureTenantAccessOrThrow(id);
 
             var existingTenant = await _tenantRepository.GetByIdAsync(id);
             if (existingTenant == null)
@@ -433,7 +436,10 @@ public class TenantService : ITenantService
             var success = await _tenantRepository.DeleteAsync(id);
             if (success)
             {
-                _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+                if (!string.IsNullOrEmpty(existingTenant.TenantId))
+                    _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+                else
+                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", id);
                 _logger.LogInformation("Deleted tenant with ID {Id}", id);
                 return ServiceResult<bool>.Success(true);
             }

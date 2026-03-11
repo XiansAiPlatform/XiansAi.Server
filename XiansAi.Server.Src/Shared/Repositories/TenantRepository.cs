@@ -9,7 +9,7 @@ namespace Shared.Repositories;
 public interface ITenantRepository
 {
     Task<Tenant> GetByIdAsync(string id);
-    Task<Tenant> GetByTenantIdAsync(string tenantId);
+    Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
     Task<Tenant> GetByDomainAsync(string domain);
     Task<List<Tenant>> GetByDomainListAsync(string domain);
     Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds);
@@ -46,11 +46,11 @@ public class TenantRepository : ITenantRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantById");
     }
 
-    public async Task<Tenant> GetByTenantIdAsync(string tenantId)
+    public async Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await _collection.Find(tenant => tenant.TenantId == tenantId).FirstOrDefaultAsync();
+            return await _collection.Find(tenant => tenant.TenantId == tenantId).FirstOrDefaultAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantId");
     }
 

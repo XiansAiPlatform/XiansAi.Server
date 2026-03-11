@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -28,56 +29,53 @@ public interface ITenantCacheService
 
 public class TenantCacheService : ITenantCacheService
 {
+    /// <summary>
+    /// Non-null wrapper so we can distinguish "cached null" from "key not present".
+    /// IMemoryCache.TryGetValue returns false for stored null because the out parameter cannot distinguish the two cases.
+    /// </summary>
+    private sealed record TenantCacheHolder(Tenant? Tenant);
+
     private const string CacheKeyPrefix = "tenant:byid:";
-    private static readonly TimeSpan TenantCacheExpiration = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan NullResultCacheExpiration = TimeSpan.FromMinutes(2);
 
     private readonly IMemoryCache _cache;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TenantCacheService> _logger;
+    private readonly TimeSpan _tenantCacheExpiration;
+    private readonly TimeSpan _nullResultCacheExpiration;
 
     public TenantCacheService(
         IMemoryCache cache,
         IServiceScopeFactory scopeFactory,
+        IConfiguration configuration,
         ILogger<TenantCacheService> logger)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        var expirationMinutes = configuration.GetValue<int>("TenantCache:ExpirationMinutes", 5);
+        var nullResultExpirationMinutes = configuration.GetValue<int>("TenantCache:NullResultExpirationMinutes", 2);
+        _tenantCacheExpiration = TimeSpan.FromMinutes(Math.Max(1, expirationMinutes));
+        _nullResultCacheExpiration = TimeSpan.FromMinutes(Math.Max(1, nullResultExpirationMinutes));
     }
 
     public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
 
-        if (_cache.TryGetValue(cacheKey, out Tenant? cachedTenant))
+        var holder = await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
-            _logger.LogDebug("Retrieved tenant {TenantId} from cache", tenantId);
-            return cachedTenant;
-        }
+            entry.SetSize(1);
+            _logger.LogDebug("Cache miss for tenant {TenantId}, fetching from database", tenantId);
+            using var scope = _scopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
+            var tenant = await repo.GetByTenantIdAsync(tenantId, cancellationToken);
+            entry.SetAbsoluteExpiration(tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration);
+            _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);
+            return new TenantCacheHolder(tenant);
+        });
 
-        _logger.LogDebug("Cache miss for tenant {TenantId}, fetching from database", tenantId);
-        using var scope = _scopeFactory.CreateScope();
-        var tenantRepository = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
-        var tenant = await tenantRepository.GetByTenantIdAsync(tenantId);
-
-        var cacheOptions = new MemoryCacheEntryOptions()
-            .SetSize(1);
-
-        if (tenant != null)
-        {
-            cacheOptions.SetAbsoluteExpiration(TenantCacheExpiration);
-            _cache.Set(cacheKey, tenant, cacheOptions);
-            _logger.LogDebug("Cached tenant {TenantId} with {CacheExpiration} expiration", tenantId, TenantCacheExpiration);
-        }
-        else
-        {
-            cacheOptions.SetAbsoluteExpiration(NullResultCacheExpiration);
-            _cache.Set(cacheKey, (Tenant?)null, cacheOptions);
-            _logger.LogDebug("Cached null tenant result for {TenantId}", tenantId);
-        }
-
-        return tenant;
+        return holder?.Tenant;
     }
 
     public void InvalidateTenant(string tenantId)
