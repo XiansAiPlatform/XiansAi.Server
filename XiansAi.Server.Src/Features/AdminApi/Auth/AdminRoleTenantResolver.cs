@@ -1,7 +1,7 @@
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Exceptions;
-using Shared.Repositories;
+using Shared.Services;
 
 namespace Features.AdminApi.Auth;
 
@@ -17,6 +17,7 @@ public sealed record AdminRoleTenantResolutionResult(
 /// <summary>
 /// Resolves user roles and target tenant for Admin API requests.
 /// Centralizes logic shared between AdminEndpointAuthenticationHandler and ValidAdminEndpointAccessHandler.
+/// Uses IRoleCacheService and ITenantCacheService to reduce database load.
 /// </summary>
 public interface IAdminRoleTenantResolver
 {
@@ -36,17 +37,17 @@ public interface IAdminRoleTenantResolver
 /// </summary>
 public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
 {
-    private readonly IUserRepository _userRepository;
-    private readonly ITenantRepository _tenantRepository;
+    private readonly IRoleCacheService _roleCacheService;
+    private readonly ITenantCacheService _tenantCacheService;
     private readonly ILogger<AdminRoleTenantResolver> _logger;
 
     public AdminRoleTenantResolver(
-        IUserRepository userRepository,
-        ITenantRepository tenantRepository,
+        IRoleCacheService roleCacheService,
+        ITenantCacheService tenantCacheService,
         ILogger<AdminRoleTenantResolver> logger)
     {
-        _userRepository = userRepository;
-        _tenantRepository = tenantRepository;
+        _roleCacheService = roleCacheService;
+        _tenantCacheService = tenantCacheService;
         _logger = logger;
     }
 
@@ -56,7 +57,7 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
         string tenantIdFromRequest,
         CancellationToken cancellationToken = default)
     {
-        var userRoles = await _userRepository.GetUserRolesAsync(userId, apiKey.TenantId);
+        var userRoles = await _roleCacheService.GetUserRolesAsync(userId, apiKey.TenantId);
 
         var hasSysAdmin = userRoles.Contains(SystemRoles.SysAdmin);
         var hasTenantAdmin = userRoles.Contains(SystemRoles.TenantAdmin);
@@ -77,7 +78,7 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
         {
             if (!string.IsNullOrEmpty(tenantIdFromRequest))
             {
-                var tenant = await _tenantRepository.GetByTenantIdAsync(tenantIdFromRequest);
+                var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantIdFromRequest, cancellationToken);
                 if (tenant == null)
                 {
                     _logger.LogWarning(

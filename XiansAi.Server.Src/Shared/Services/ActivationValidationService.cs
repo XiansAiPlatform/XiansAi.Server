@@ -100,7 +100,7 @@ public class ActivationValidationService : IActivationValidationService
             {
                 _logger.LogWarning("No workflow definitions found for agent '{AgentName}' in tenant {TenantId}", agentName, tenantId);
                 return ServiceResult.Failure(
-                    $" No workflow type registered for agent '{agentName}'. No workflow definitions found for this agent.",
+                    $" No agent process registered for agent '{agentName}'. Unable to use this agent for this purpose.",
                     StatusCode.BadRequest);
             }
 
