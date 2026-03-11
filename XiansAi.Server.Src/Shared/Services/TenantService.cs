@@ -55,6 +55,7 @@ public interface ITenantService
 public class TenantService : ITenantService
 {
     private readonly ITenantRepository _tenantRepository;
+    private readonly ITenantCacheService _tenantCacheService;
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IRoleManagementService _roleManagementService;
@@ -62,11 +63,13 @@ public class TenantService : ITenantService
 
     public TenantService(
         ITenantRepository tenantRepository,
+        ITenantCacheService tenantCacheService,
         ILogger<TenantService> logger,
         ITenantContext tenantContext,
         IRoleManagementService roleManagementService)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
+        _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
@@ -391,6 +394,7 @@ public class TenantService : ITenantService
             var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
             if (success)
             {
+                _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
                 _logger.LogInformation("Updated tenant with ID {Id}", id);
                 return ServiceResult<Tenant>.Success(validatedTenant);
             }
@@ -419,9 +423,17 @@ public class TenantService : ITenantService
             EnsureTenantAccessOrThrow(id);
             id = SanitizeAndValidateId(id);
 
+            var existingTenant = await _tenantRepository.GetByIdAsync(id);
+            if (existingTenant == null)
+            {
+                _logger.LogWarning("Tenant with ID {Id} not found for deletion", id);
+                return ServiceResult<bool>.NotFound("Tenant not found");
+            }
+
             var success = await _tenantRepository.DeleteAsync(id);
             if (success)
             {
+                _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
                 _logger.LogInformation("Deleted tenant with ID {Id}", id);
                 return ServiceResult<bool>.Success(true);
             }
