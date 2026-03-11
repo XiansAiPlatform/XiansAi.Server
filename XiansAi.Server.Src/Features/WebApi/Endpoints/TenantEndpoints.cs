@@ -50,7 +50,7 @@ public static class TenantEndpoints
             HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.GetCurrentTenantInfo();
+            var result = await endpoint.GetCurrentTenantInfo(httpContext.RequestAborted);
             return result.ToHttpResult();
         })
         .WithName("Get current Tenant info")

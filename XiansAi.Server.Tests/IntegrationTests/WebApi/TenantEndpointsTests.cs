@@ -39,8 +39,7 @@ public class TenantEndpointsTests : WebApiIntegrationTestBase
         // Act
         var response = await PostAsJsonAsync("/api/client/tenants/", request);
 
-        // Assert
-        // Note: The service might return OK if it doesn't validate at the API level
-        Assert.True(response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.BadRequest);
+        // Assert - invalid data (empty TenantId) must be rejected
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 } 

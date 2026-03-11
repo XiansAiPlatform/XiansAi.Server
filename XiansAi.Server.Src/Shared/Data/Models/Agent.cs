@@ -2,6 +2,7 @@ using System.Text.Json;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data;
+using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using System.ComponentModel.DataAnnotations;
 
@@ -68,6 +69,9 @@ public class Agent : ModelValidatorBase<Agent>
     [StringLength(100, ErrorMessage = "Category must not exceed 100 characters")]
     public string? Category { get; set; }
 
+    [BsonElement("flows")]
+    public List<Flow>? Flows { get; set; }
+
     public bool HasPermission(string userId, string[] userRoles, PermissionLevel requiredLevel)
     {
         if (requiredLevel == PermissionLevel.None)
@@ -118,6 +122,32 @@ public class Agent : ModelValidatorBase<Agent>
         OwnerAccess.Remove(userId);
     }
 
+    /// <summary>
+    /// Returns a shallow copy so callers cannot mutate the original.
+    /// </summary>
+    public Agent ShallowCopy()
+    {
+        return new Agent
+        {
+            Id = Id,
+            Name = Name,
+            Tenant = Tenant,
+            CreatedBy = CreatedBy,
+            CreatedAt = CreatedAt,
+            OwnerAccess = OwnerAccess?.ToList() ?? new List<string>(),
+            ReadAccess = ReadAccess?.ToList() ?? new List<string>(),
+            WriteAccess = WriteAccess?.ToList() ?? new List<string>(),
+            SystemScoped = SystemScoped,
+            OnboardingJson = OnboardingJson,
+            Description = Description,
+            Summary = Summary,
+            Version = Version,
+            Author = Author,
+            Category = Category,
+            Flows = Flows?.Select(f => f.ShallowCopy()).ToList()
+        };
+    }
+
     public override string ToString()
     {
         return JsonSerializer.Serialize(this);
@@ -141,7 +171,8 @@ public class Agent : ModelValidatorBase<Agent>
             Summary = ValidationHelpers.SanitizeString(this.Summary),
             Version = ValidationHelpers.SanitizeString(this.Version),
             Author = ValidationHelpers.SanitizeString(this.Author),
-            Category = ValidationHelpers.SanitizeString(this.Category)
+            Category = ValidationHelpers.SanitizeString(this.Category),
+            Flows = this.Flows
         };
 
         return sanitizedAgent;

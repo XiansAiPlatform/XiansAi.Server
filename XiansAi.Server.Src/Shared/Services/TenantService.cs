@@ -43,8 +43,8 @@ public interface ITenantService
 {
     Task<ServiceResult<Tenant>> GetTenantById(string id);
     Task<ServiceResult<Tenant>> GetTenantByDomain(string domain);
-    Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId);
-    Task<ServiceResult<Tenant>> GetCurrentTenantInfo();
+    Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default);
+    Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default);
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
     Task<ServiceResult<List<string>>> GetTenantIdList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null);
@@ -55,6 +55,7 @@ public interface ITenantService
 public class TenantService : ITenantService
 {
     private readonly ITenantRepository _tenantRepository;
+    private readonly ITenantCacheService _tenantCacheService;
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IRoleManagementService _roleManagementService;
@@ -62,11 +63,13 @@ public class TenantService : ITenantService
 
     public TenantService(
         ITenantRepository tenantRepository,
+        ITenantCacheService tenantCacheService,
         ILogger<TenantService> logger,
         ITenantContext tenantContext,
         IRoleManagementService roleManagementService)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
+        _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
@@ -81,7 +84,7 @@ public class TenantService : ITenantService
         catch (ValidationException ex)
         {
             _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
-            throw new Exception($"Validation failed: {ex.Message}");
+            throw;
         }
 
         // If system admin, return null (indicating unrestricted access)
@@ -110,8 +113,8 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
-            throw new Exception($"Validation failed: {ex.Message}");
+            _logger.LogWarning("Validation failed while sanitizing and validating ID: {Message}", ex.Message);
+            throw;
         }
     }
 
@@ -120,8 +123,8 @@ public class TenantService : ITenantService
         try
         {
             id = SanitizeAndValidateId(id);
-            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
-            if (accessableTenantId == null)
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
+            if (accessibleTenantId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt to tenant with ID {Id}", id);
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
@@ -131,7 +134,7 @@ public class TenantService : ITenantService
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with ID {Id} not found", id);
-                return ServiceResult<Tenant>.Forbidden("Tenant not found");
+                return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
             return ServiceResult<Tenant>.Success(tenant);
@@ -175,19 +178,19 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId)
+    public async Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default)
     {
         try
         {
             tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
-            var accessableTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
-            if (accessableTenantId == null)
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessibleTenantId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
@@ -198,7 +201,7 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving tenant by tenant ID: {Message}", ex.Message);
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
@@ -208,7 +211,7 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<Tenant>> GetCurrentTenantInfo()
+    public async Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -227,7 +230,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
@@ -238,7 +241,7 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving current tenant info: {Message}", ex.Message);
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
@@ -280,8 +283,8 @@ public class TenantService : ITenantService
                 return ServiceResult<List<string>>.Forbidden("Access denied: Only system administrators can retrieve tenant list");
             }
 
-            var tenants = await _tenantRepository.GetAllAsync();
-            return ServiceResult<List<string>>.Success(tenants.Select(t => t.TenantId).ToList());
+            var tenantIds = await _tenantRepository.GetAllTenantIdsAsync();
+            return ServiceResult<List<string>>.Success(tenantIds);
         }
         catch (Exception ex)
         {
@@ -391,6 +394,10 @@ public class TenantService : ITenantService
             var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
             if (success)
             {
+                if (!string.IsNullOrEmpty(existingTenant.TenantId))
+                    _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+                else
+                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", id);
                 _logger.LogInformation("Updated tenant with ID {Id}", id);
                 return ServiceResult<Tenant>.Success(validatedTenant);
             }
@@ -416,12 +423,22 @@ public class TenantService : ITenantService
     {
         try
         {
-            EnsureTenantAccessOrThrow(id);
             id = SanitizeAndValidateId(id);
+            var existingTenant = await _tenantRepository.GetByIdAsync(id);
+            if (existingTenant == null)
+            {
+                _logger.LogWarning("Tenant with ID {Id} not found for deletion", id);
+                return ServiceResult<bool>.NotFound("Tenant not found");
+            }
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
 
             var success = await _tenantRepository.DeleteAsync(id);
             if (success)
             {
+                if (!string.IsNullOrEmpty(existingTenant.TenantId))
+                    _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+                else
+                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", id);
                 _logger.LogInformation("Deleted tenant with ID {Id}", id);
                 return ServiceResult<bool>.Success(true);
             }

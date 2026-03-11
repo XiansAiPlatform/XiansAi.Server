@@ -197,7 +197,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         {
             // if (currentTenantId != Constants.DefaultTenantId)
             // { 
-                var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId);
+                var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId, httpContext.RequestAborted);
                 if (!tenantResult.IsSuccess || tenantResult.Data == null)
                 {
                     _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
@@ -291,7 +291,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             var tokenTenantIds = userTenants?.Data ?? new List<string>();
 
             // Cache the result (always cache fresh validation results)
-            await _tokenCache.CacheValidation(token, success, tokenUserId, tokenTenantIds);
+            await _tokenCache.CacheValidation(token, tokenSuccess, tokenUserId, tokenTenantIds);
             
             // Set the user name to the logged in user
             httpContext.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, tokenUserId)]));
