@@ -106,6 +106,7 @@ public class TenantCacheService : ITenantCacheService
 
     public void InvalidateTenant(string tenantId)
     {
+        tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
         _cache.Remove(cacheKey);
         _logger.LogDebug("Invalidated tenant cache for {TenantId}", tenantId);
