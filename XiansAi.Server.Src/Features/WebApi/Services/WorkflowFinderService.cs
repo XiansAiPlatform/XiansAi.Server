@@ -150,14 +150,8 @@ public class WorkflowFinderService : IWorkflowFinderService
             var loggedInUser = _tenantContext.LoggedInUser;
             if (string.IsNullOrEmpty(loggedInUser))
             {
-                return ServiceResult<PaginatedWorkflowsResponse>.Success(new PaginatedWorkflowsResponse
-                {
-                    Workflows = new List<WorkflowResponse>(),
-                    NextPageToken = null,
-                    PageSize = actualPageSize,
-                    HasNextPage = false,
-                    TotalCount = 0
-                });
+                _logger.LogWarning("GetWorkflows called with no authenticated user (LoggedInUser is empty).");
+                return ServiceResult<PaginatedWorkflowsResponse>.Unauthorized("User is not authenticated.");
             }
 
             var client = await _clientFactory.GetClientAsync();
@@ -342,7 +336,10 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         var loggedInUser = _tenantContext.LoggedInUser;
         if (string.IsNullOrEmpty(loggedInUser))
-            return ServiceResult<List<WorkflowsWithAgent>>.Success(new List<WorkflowsWithAgent>());
+        {
+            _logger.LogWarning("GetWorkflows (legacy) called with no authenticated user (LoggedInUser is empty).");
+            return ServiceResult<List<WorkflowsWithAgent>>.Unauthorized("User is not authenticated.");
+        }
 
         var agents = await _agentRepository.GetAgentsWithPermissionAsync(loggedInUser, _tenantContext.TenantId);
 
@@ -485,7 +482,10 @@ public class WorkflowFinderService : IWorkflowFinderService
     {
         var loggedInUser = _tenantContext.LoggedInUser;
         if (string.IsNullOrEmpty(loggedInUser))
-            return ServiceResult<List<string>>.Success(new List<string>());
+        {
+            _logger.LogWarning("GetDistinctIdPostfixValuesAsync called with no authenticated user (LoggedInUser is empty).");
+            return ServiceResult<List<string>>.Unauthorized("User is not authenticated.");
+        }
 
         var tenantId = _tenantContext.TenantId ?? string.Empty;
         var cacheKey = $"activations:distinctidpostfix:{tenantId}:{loggedInUser}";
