@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using Shared.Auth;
 using Shared.Utils;
@@ -43,6 +44,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     private readonly IAgentRepository _agentRepository;
     private readonly IPermissionsService _permissionsService;
     private readonly IMemoryCache _cache;
+    private readonly ILogRepository _logRepository;
     private static readonly TimeSpan DistinctIdPostfixCacheDuration = TimeSpan.FromMinutes(5);
 
     /// <summary>
@@ -55,6 +57,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="agentRepository">The agent repository for accessing agent information.</param>
     /// <param name="permissionsService">The permissions service for checking permissions.</param>
     /// <param name="cache">In-memory cache for distinct idPostfix list (reduces Temporal queries when loading activations dropdown).</param>
+    /// <param name="logRepository">The log repository for retrieving workflow logs.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
         ITemporalClientFactory clientFactory,
@@ -63,7 +66,8 @@ public class WorkflowFinderService : IWorkflowFinderService
         IDatabaseService databaseService,
         IAgentRepository agentRepository,
         IPermissionsService permissionsService,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        ILogRepository logRepository)
     {
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -72,6 +76,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
         _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _logRepository = logRepository ?? throw new ArgumentNullException(nameof(logRepository));
     }
 
     /// <summary>
@@ -107,7 +112,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             var hasReadPermission = await _permissionsService.HasReadPermission(agent);
             if (!hasReadPermission.Data)
             {
-                return ServiceResult<WorkflowResponse>.BadRequest("You do not have read permission to this agent");
+                return ServiceResult<WorkflowResponse>.Forbidden("You do not have read permission to this agent");
             }
 
             //log the workflow description object
@@ -178,7 +183,7 @@ public class WorkflowFinderService : IWorkflowFinderService
                 var hasReadPermission = await _permissionsService.HasReadPermission(agent);
                 if (!hasReadPermission.Data)
                 {
-                    return ServiceResult<PaginatedWorkflowsResponse>.BadRequest("You do not have read permission to this agent");
+                    return ServiceResult<PaginatedWorkflowsResponse>.Forbidden("You do not have read permission to this agent");
                 }
                 queryParts.Add($"{Constants.AgentKey} = '{agent}'");
             }
@@ -219,7 +224,7 @@ public class WorkflowFinderService : IWorkflowFinderService
                 };
                 if (normalizedStatus == null)
                 {
-                    return ServiceResult<PaginatedWorkflowsResponse>.BadRequest($"Unknown status value: {status}");
+                    return ServiceResult<PaginatedWorkflowsResponse>.BadRequest("Unknown status value provided.");
                 }
                 queryParts.Add($"ExecutionStatus = '{normalizedStatus}'");
             }
@@ -311,8 +316,7 @@ public class WorkflowFinderService : IWorkflowFinderService
                 workflows.Count, totalResults, pageToken ?? "1", nextPageToken != null);
 
             // Retrieve last logs for workflows in this page
-            var logRepository = new LogRepository(_databaseService);
-            var logs = await logRepository.GetLastLogAsync(null, null);
+            var logs = await _logRepository.GetLastLogAsync(null, null);
             foreach (var workflow in workflows)
             {
                 var lastLog = logs.FirstOrDefault(x => x.WorkflowRunId == workflow.RunId);
@@ -337,7 +341,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid filter value in GetWorkflows");
-            return ServiceResult<PaginatedWorkflowsResponse>.BadRequest(ex.Message);
+            return ServiceResult<PaginatedWorkflowsResponse>.BadRequest("Invalid filter value.");
         }
         catch (Exception ex)
         {
@@ -387,8 +391,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", allWorkflowResponses.Count);
 
             // retrieve last logs for each workflow run
-            var logRepository = new LogRepository(_databaseService);
-            var logs = await logRepository.GetLastLogAsync(null, null);
+            var logs = await _logRepository.GetLastLogAsync(null, null);
             foreach (var workflow in allWorkflowResponses)
             {
                 var workflowId = workflow.WorkflowId;
@@ -436,7 +439,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid filter value in GetWorkflows (legacy)");
-            return ServiceResult<List<WorkflowsWithAgent>>.BadRequest(ex.Message);
+            return ServiceResult<List<WorkflowsWithAgent>>.BadRequest("Invalid filter value.");
         }
         catch (Exception ex)
         {
@@ -468,7 +471,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             var hasReadPermission = await _permissionsService.HasReadPermission(agent);
             if (!hasReadPermission.Data)
             {
-                return ServiceResult<List<string>>.BadRequest("You do not have read permission to this agent");
+                return ServiceResult<List<string>>.Forbidden("You do not have read permission to this agent");
             }
 
             var client = await _clientFactory.GetClientAsync();
@@ -498,7 +501,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid agent value in GetWorkflowTypes");
-            return ServiceResult<List<string>>.BadRequest(ex.Message);
+            return ServiceResult<List<string>>.BadRequest("Invalid filter value.");
         }
         catch (Exception ex)
         {
@@ -578,7 +581,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid agent value in GetDistinctIdPostfixValuesAsync");
-            return ServiceResult<List<string>>.BadRequest(ex.Message);
+            return ServiceResult<List<string>>.BadRequest("Invalid filter value.");
         }
         catch (Exception ex)
         {
@@ -621,6 +624,12 @@ public class WorkflowFinderService : IWorkflowFinderService
             if (!string.IsNullOrEmpty(agentName))
             {
                 SanitizeTqlValue(agentName);
+                var hasReadPermission = await _permissionsService.HasReadPermission(agentName);
+                if (!hasReadPermission.Data)
+                {
+                    return ServiceResult<List<WorkflowResponse>>.Forbidden(
+                        "You do not have read permission to this agent");
+                }
                 queryParts.Add($"{Constants.AgentKey} = '{agentName}'");
             }
 
@@ -646,7 +655,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid filter value in GetRunningWorkflowsByAgentAndType");
-            return ServiceResult<List<WorkflowResponse>>.BadRequest(ex.Message);
+            return ServiceResult<List<WorkflowResponse>>.BadRequest("Invalid filter value.");
         }
         catch (Exception ex)
         {
@@ -656,12 +665,16 @@ public class WorkflowFinderService : IWorkflowFinderService
     }
 
     /// <summary>
-    /// Sanitizes a value for safe use in Temporal Query Language (TQL) string interpolation.
-    /// Throws ArgumentException if the value contains characters that could enable TQL injection.
+    /// Validates a value for safe use in Temporal Query Language (TQL) string interpolation.
+    /// Uses an allowlist to prevent keyword-based injection (e.g. "x AND TenantId = y").
+    /// Throws ArgumentException if the value contains invalid characters.
     /// </summary>
+    private static readonly Regex SafeTqlValuePattern =
+        new(@"^[a-zA-Z0-9\-_.@ ]{1,256}$", RegexOptions.Compiled);
+
     private static void SanitizeTqlValue(string value)
     {
-        if (value.Any(c => c == '\'' || c == '"' || c == '\\'))
+        if (!SafeTqlValuePattern.IsMatch(value))
             throw new ArgumentException("Filter value contains invalid characters.");
     }
 
@@ -703,7 +716,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             };
             if (normalizedStatus == null)
             {
-                throw new ArgumentException($"Unknown status value: {status}");
+                throw new ArgumentException("Unknown status value provided.");
             }
             queryParts.Add($"ExecutionStatus = '{normalizedStatus}'");
         }
@@ -788,11 +801,12 @@ public class WorkflowFinderService : IWorkflowFinderService
 
             if (currentActivity != null)
             {
-                Console.WriteLine($"Current activity: Type = {currentActivity.ActivityType?.Name}, ActivityId = {currentActivity.ActivityId}");
+                _logger.LogDebug("Current activity: Type = {ActivityType}, ActivityId = {ActivityId}",
+                    currentActivity.ActivityType?.Name, currentActivity.ActivityId);
             }
             else
             {
-                Console.WriteLine("No current (pending or running) activity found.");
+                _logger.LogDebug("No current (pending or running) activity found.");
             }
         }
 
