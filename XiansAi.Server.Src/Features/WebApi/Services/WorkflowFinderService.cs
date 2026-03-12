@@ -299,17 +299,11 @@ public class WorkflowFinderService : IWorkflowFinderService
             
             // Determine if there's a next page
             string? nextPageToken = null;
-            if (startIndex + actualPageSize < totalResults)
+            var hasNextPage = startIndex + actualPageSize < totalResults
+                || (itemsProcessed >= fetchLimit && totalResults >= minRequiredItems - 1);
+            if (hasNextPage)
             {
-                // We have more results available
-                var nextPage = string.IsNullOrEmpty(pageToken) ? 2 : (int.TryParse(pageToken, out var currentPageNum) ? currentPageNum + 1 : 2);
-                nextPageToken = nextPage.ToString();
-            }
-            else if (itemsProcessed >= fetchLimit && totalResults >= minRequiredItems - 1)
-            {
-                // We may have more results but hit our fetch limit
-                var nextPage = string.IsNullOrEmpty(pageToken) ? 2 : (int.TryParse(pageToken, out var currentPageNum) ? currentPageNum + 1 : 2);
-                nextPageToken = nextPage.ToString();
+                nextPageToken = GetNextPageNumber(pageToken).ToString();
             }
             
             _logger.LogInformation("Pagination result: Retrieved {ActualCount} workflows out of {TotalResults} for page {CurrentPage}, HasNextPage={HasNextPage}", 
@@ -660,7 +654,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve workflows by agent and type. Error: {ErrorMessage}", ex.Message);
-            return ServiceResult<List<WorkflowResponse>>.BadRequest("Failed to retrieve workflows by agent and type");
+            return ServiceResult<List<WorkflowResponse>>.InternalServerError("Failed to retrieve workflows by agent and type");
         }
     }
 
@@ -676,6 +670,11 @@ public class WorkflowFinderService : IWorkflowFinderService
     {
         if (!SafeTqlValuePattern.IsMatch(value))
             throw new ArgumentException("Filter value contains invalid characters.");
+    }
+
+    private static int GetNextPageNumber(string? pageToken)
+    {
+        return string.IsNullOrEmpty(pageToken) ? 2 : (int.TryParse(pageToken, out var currentPageNum) ? currentPageNum + 1 : 2);
     }
 
     /// <summary>
