@@ -102,7 +102,7 @@ public class TenantService : ITenantService
 
         // Otherwise, forbidden
         _logger.LogWarning("Attempted to access tenant `{Id}` but is restricted to SysAdmins and of tenant `{TenantId}`", tenantId, _tenantContext.TenantId);
-        throw new Exception("Access denied: insufficient permissions");
+        throw new UnauthorizedAccessException("Access denied: insufficient permissions");
     }
 
     private string SanitizeAndValidateId(string id)
@@ -412,6 +412,11 @@ public class TenantService : ITenantService
             _logger.LogWarning("Validation failed while updating tenant: {Message}", ex.Message);
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Access denied: {Message}", ex.Message);
+            return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating tenant with ID {Id}", id);
@@ -452,6 +457,11 @@ public class TenantService : ITenantService
         {
             _logger.LogWarning("Validation failed while deleting tenant: {Message}", ex.Message);
             return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Access denied: {Message}", ex.Message);
+            return ServiceResult<bool>.Forbidden("Access denied: insufficient permissions");
         }
         catch (Exception ex)
         {

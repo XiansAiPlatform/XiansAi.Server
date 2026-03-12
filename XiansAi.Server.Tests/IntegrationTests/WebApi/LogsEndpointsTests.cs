@@ -162,7 +162,6 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
     {
         using var scope = _factory.Services.CreateScope();
         var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-        var logRepository = new LogRepository(databaseService);
 
         var log = new Log
         {
