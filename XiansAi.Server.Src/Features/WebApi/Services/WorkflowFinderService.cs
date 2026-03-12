@@ -253,7 +253,9 @@ public class WorkflowFinderService : IWorkflowFinderService
             var listQuery = string.Join(" and ", queryParts);
             _logger.LogDebug("Executing paginated workflow query: {Query}", listQuery);
 
-            // Calculate pagination parameters
+            // Pagination uses a page-number token; for page N we fetch and discard (N-1)*pageSize records.
+            // This becomes expensive for deep pages. Temporal exposes ListWorkflowsPaginatedAsync with
+            // byte[] continuation tokens for efficient cursor-based pagination—consider migrating if scale requires it.
             int skipCount = 0;
             if (!string.IsNullOrEmpty(pageToken) && int.TryParse(pageToken, out var pageNumber))
             {
