@@ -9,6 +9,7 @@ public interface ILogRepository
     Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit, int? logLevel = null);
     Task<List<Log>> GetByLogLevelAsync(LogLevel level);
     Task<List<Log>> GetLastLogAsync(DateTime? startTime, DateTime? endTime);
+    Task<List<Log>> GetLastLogsByRunIdsAsync(IEnumerable<string> runIds);
     Task<List<Log>> GetByDateRangeAsync(DateTime startDate, DateTime endDate);
     
     // New optimized methods
@@ -100,6 +101,26 @@ public class LogRepository : ILogRepository
             .Match(matchStage)
             .Group(x => x.WorkflowRunId, g => g.Last())
             .SortByDescending(x => x.CreatedAt)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Gets the most recent log per workflow run, scoped to the given run IDs.
+    /// Efficient for paginated workflow lists—avoids full-collection scan.
+    /// </summary>
+    public async Task<List<Log>> GetLastLogsByRunIdsAsync(IEnumerable<string> runIds)
+    {
+        var runIdList = runIds.Where(x => !string.IsNullOrEmpty(x)).Distinct().ToList();
+        if (runIdList.Count == 0)
+        {
+            return new List<Log>();
+        }
+
+        var filter = Builders<Log>.Filter.In(x => x.WorkflowRunId, runIdList);
+        return await _logs.Aggregate()
+            .Match(filter)
+            .SortByDescending(x => x.CreatedAt)
+            .Group(x => x.WorkflowRunId, g => g.First())
             .ToListAsync();
     }
 
