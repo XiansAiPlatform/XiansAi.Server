@@ -48,12 +48,13 @@ public interface ILogRepository
 
 public class LogRepository : ILogRepository
 {
+    private const string CollectionName = "logs";
     private readonly IMongoCollection<Log> _logs;
 
-    public LogRepository(IDatabaseService databaseService)
+    public LogRepository(IMongoDbClientService mongoDbClientService)
     {
-        var database = databaseService.GetDatabaseAsync().Result;
-        _logs = database.GetCollection<Log>("logs");
+        ArgumentNullException.ThrowIfNull(mongoDbClientService);
+        _logs = mongoDbClientService.GetCollection<Log>(CollectionName);
     }
 
     public async Task<List<Log>> GetByWorkflowRunIdAsync(string workflowRunId, int skip, int limit, int? logLevel = null)
@@ -156,14 +157,8 @@ public class LogRepository : ILogRepository
         int limit = 20,
         SortDefinition<Log>? sort = null)
     {
-        var findOptions = new FindOptions<Log>
-        {
-            Skip = skip,
-            Limit = limit,
-            Sort = sort ?? Builders<Log>.Sort.Descending(l => l.CreatedAt)
-        };
-
-        return await _logs.Find(filter).Skip(skip).Limit(limit).Sort(sort).ToListAsync();
+        var sortDefinition = sort ?? Builders<Log>.Sort.Descending(l => l.CreatedAt);
+        return await _logs.Find(filter).Skip(skip).Limit(limit).Sort(sortDefinition).ToListAsync();
     }
 
     public async Task<long> CountAsync(FilterDefinition<Log> filter)

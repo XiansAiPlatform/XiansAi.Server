@@ -466,6 +466,13 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <returns>A result containing the list of unique workflow types.</returns>
     public async Task<ServiceResult<List<string>>> GetWorkflowTypes(string agent)
     {
+        var loggedInUser = _tenantContext.LoggedInUser;
+        if (string.IsNullOrEmpty(loggedInUser))
+        {
+            _logger.LogWarning("GetWorkflowTypes called with no authenticated user.");
+            return ServiceResult<List<string>>.Unauthorized("User is not authenticated.");
+        }
+
         if (string.IsNullOrWhiteSpace(agent))
         {
             _logger.LogWarning("Attempt to retrieve workflow types with empty agent");

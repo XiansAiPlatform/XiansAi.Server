@@ -1,5 +1,4 @@
 using Features.WebApi.Repositories;
-using Shared.Data;
 using Shared.Utils.Services;
 using Features.WebApi.Models;
 
@@ -26,16 +25,15 @@ public interface ILogsService
 
 public class LogsService : ILogsService
 {
-    private readonly LogRepository _logRepository;
+    private readonly ILogRepository _logRepository;
     private readonly ILogger<LogsService> _logger;
 
     public LogsService(
-        IDatabaseService databaseService,
-        ILogger<LogsService> logger
-    )
+        ILogRepository logRepository,
+        ILogger<LogsService> logger)
     {
-        _logRepository = new LogRepository(databaseService);
-        _logger = logger;
+        _logRepository = logRepository ?? throw new ArgumentNullException(nameof(logRepository));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<ServiceResult<List<Log>>> GetLogsByWorkflowRunId(LogsByWorkflowRequest request)
