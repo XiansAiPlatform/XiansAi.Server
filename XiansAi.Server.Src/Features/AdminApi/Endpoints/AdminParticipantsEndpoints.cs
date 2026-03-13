@@ -44,6 +44,13 @@ public class ParticipantTenantResponse
     /// </summary>
     [JsonPropertyName("role")]
     public string? Role { get; set; }
+
+    /// <summary>
+    /// Optional UI color theme for this tenant (e.g. "lingon", "fjord", "skog", "zenith").
+    /// When set, the studio applies this as the default theme for the tenant.
+    /// </summary>
+    [JsonPropertyName("theme")]
+    public string? Theme { get; set; }
 }
 
 /// <summary>
@@ -192,7 +199,8 @@ public static class AdminParticipantsEndpoints
                         TenantId = t.TenantId,
                         TenantName = t.Name,
                         Logo = t.Logo,
-                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : null
+                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : null,
+                        Theme = t.Theme
                     })
                     .OrderBy(t => t.TenantName)
                     .ToList();
