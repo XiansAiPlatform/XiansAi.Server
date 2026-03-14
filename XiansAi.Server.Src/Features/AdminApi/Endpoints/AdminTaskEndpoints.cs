@@ -1,7 +1,6 @@
 using Shared.Services;
 using Shared.Utils.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Features.WebApi.Models;
 
 namespace Features.AdminApi.Endpoints;
