@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Features.WebApi.Services;
 using Shared.Utils.Services;
 
