@@ -190,7 +190,6 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             }
             _logger.LogInformation("Getting tenant by tenant ID {TenantId}", tenantId);
             var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
-            //`var tenantResult = await _tenantService.GetTenantByTenantId(tenantId);
             _logger.LogInformation("Tenant result: {TenantResult}", tenant);
             if (tenant == null)
             {
@@ -204,7 +203,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error validatingcertificate");
+            _logger.LogError(ex, "Error validating certificate");
             result.Errors.Add($"Certificate validation error: {ex.Message}");
             return result;
         }
