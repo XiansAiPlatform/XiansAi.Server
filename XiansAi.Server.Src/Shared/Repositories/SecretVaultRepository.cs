@@ -9,6 +9,7 @@ public interface ISecretVaultRepository
     Task<SecretVault?> GetByIdAsync(string id);
     Task<SecretVault?> GetByKeyAsync(string key);
     Task<bool> ExistsByKeyAsync(string key);
+    Task<bool> ExistsByKeyAndScopeAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName, string? excludeId = null);
     Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
     Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName);
     Task CreateAsync(SecretVault entity);
@@ -76,32 +77,7 @@ public class SecretVaultRepository : ISecretVaultRepository
     {
         try
         {
-            var keyFilter = Builders<SecretVault>.Filter.Eq(x => x.Key, key);
-            var filters = new List<MongoDB.Driver.FilterDefinition<SecretVault>> { keyFilter };
-
-            // Request scope must match document scope: if request omits scope, document must have that scope null.
-            if (!string.IsNullOrWhiteSpace(tenantId))
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.TenantId, tenantId));
-            else
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.TenantId, (string?)null));
-
-            if (!string.IsNullOrWhiteSpace(agentId))
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.AgentId, agentId));
-            else
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.AgentId, (string?)null));
-
-            if (!string.IsNullOrWhiteSpace(userId))
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.UserId, userId));
-            else
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.UserId, (string?)null));
-
-            // Request scope must match document scope: if request omits scope, document must have that scope null.
-            if (!string.IsNullOrWhiteSpace(activationName))
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.ActivationName, activationName));
-            else
-                filters.Add(Builders<SecretVault>.Filter.Eq(x => x.ActivationName, (string?)null));
-
-            var filter = Builders<SecretVault>.Filter.And(filters);
+            var filter = BuildKeyAndScopeFilter(key, tenantId, agentId, userId, activationName);
             return await _collection.Find(filter).FirstOrDefaultAsync();
         }
         catch (Exception ex)
@@ -109,6 +85,55 @@ public class SecretVaultRepository : ISecretVaultRepository
             _logger.LogError(ex, "Error finding secret for access key {Key}", key);
             return null;
         }
+    }
+
+    public async Task<bool> ExistsByKeyAndScopeAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName, string? excludeId = null)
+    {
+        try
+        {
+            var filter = BuildKeyAndScopeFilter(key, tenantId, agentId, userId, activationName);
+            if (!string.IsNullOrEmpty(excludeId))
+            {
+                var builder = Builders<SecretVault>.Filter;
+                filter = builder.And(filter, builder.Ne(x => x.Id, excludeId));
+            }
+
+            var count = await _collection.CountDocumentsAsync(filter);
+            return count > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking existence for key {Key} and scope", key);
+            return false;
+        }
+    }
+
+    private static FilterDefinition<SecretVault> BuildKeyAndScopeFilter(string key, string? tenantId, string? agentId, string? userId, string? activationName)
+    {
+        var builder = Builders<SecretVault>.Filter;
+        var filters = new List<FilterDefinition<SecretVault>>
+        {
+            builder.Eq(x => x.Key, key)
+        };
+
+        // Request scope must match document scope: if request omits scope, document must have that scope null.
+        filters.Add(!string.IsNullOrWhiteSpace(tenantId)
+            ? builder.Eq(x => x.TenantId, tenantId)
+            : builder.Eq(x => x.TenantId, (string?)null));
+
+        filters.Add(!string.IsNullOrWhiteSpace(agentId)
+            ? builder.Eq(x => x.AgentId, agentId)
+            : builder.Eq(x => x.AgentId, (string?)null));
+
+        filters.Add(!string.IsNullOrWhiteSpace(userId)
+            ? builder.Eq(x => x.UserId, userId)
+            : builder.Eq(x => x.UserId, (string?)null));
+
+        filters.Add(!string.IsNullOrWhiteSpace(activationName)
+            ? builder.Eq(x => x.ActivationName, activationName)
+            : builder.Eq(x => x.ActivationName, (string?)null));
+
+        return builder.And(filters);
     }
 
     public async Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName)

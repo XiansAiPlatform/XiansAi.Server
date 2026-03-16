@@ -1,8 +1,8 @@
-# Secret Vault
+## Secret Vault
 
 ## Overview
 
-The Secret Vault is a simple, secure store for key-value secrets with optional scoping by tenant, agent, and user. The secret **value** is encrypted at rest using AES-256-GCM (via `ISecureEncryptionService`). The vault supports CRUD and a dedicated **fetch-by-key** operation with strict scope matching. Optional **additionalData** allows flat key-value metadata (string keys and string values only), validated and sanitized on create/update.
+The Secret Vault is a simple, secure store for key-value secrets with optional scoping by tenant, agent, user, and activation. The secret **value** is encrypted at rest using AES-256-GCM (via `ISecureEncryptionService`). The vault supports CRUD and a dedicated **fetch-by-key** operation with strict scope matching. Optional **additionalData** allows flat key-value metadata (string, number, or boolean values only), validated and sanitized on create/update.
 
 ## Architecture
 
@@ -51,6 +51,41 @@ Get by id / List:
 - If the **request** sends a scope (e.g. `tenantId=99xio`), the **document** must have that exact value. A document with `tenant_id: null` will not match a request that sends `tenantId=99xio`.
 
 So: to fetch a secret scoped to a tenant, the request must include that tenantId (and similarly for agentId, userId, activationName when the secret is scoped).
+
+### Tenant Existence Validation
+
+- **Agent API**:
+  - For **create**, **update**, and **fetch** operations, when a tenant scope is resolved (non-empty `tenantId`), the endpoint first verifies that the tenant exists using `ITenantCacheService.GetByTenantIdAsync`.
+  - If the tenant does not exist, the request fails with **404** `"Tenant not found"` and the secret operation is not performed.
+
+- **Admin API**:
+  - When creating or updating a secret **and** a `tenantId` scope is explicitly provided in the request, the resolved tenant ID is validated via `ITenantCacheService.GetByTenantIdAsync`.
+  - If the tenant does not exist, the request fails with **404** `"Tenant not found"` and the secret is not created/updated.
+
+This ensures that all tenant-scoped secrets always reference a real tenant in the Xians tenant collection, for both Agent and Admin flows.
+
+### Key and Scope Uniqueness
+
+Secret uniqueness is enforced on the **combination** of key and full scope tuple:
+
+- `Key`
+- `TenantId`
+- `AgentId`
+- `UserId`
+- `ActivationName`
+
+This means:
+
+- You **can** create multiple secrets with the same key as long as their **scope combination is different** (e.g. different tenant, agent, user, or activation).
+- You **cannot** create or update a secret such that there are two documents with the **same key and identical scope tuple** (`tenantId`, `agentId`, `userId`, `activationName`).
+
+Implementation details:
+
+- `SecretVaultRepository.ExistsByKeyAndScopeAsync` checks whether a document already exists for a given key and scope (with an optional `excludeId` for updates).
+- `SecretVaultService.CreateAsync` normalizes scope values (whitespace → `null`) and uses `ExistsByKeyAndScopeAsync` to prevent duplicates at create time.
+- `SecretVaultService.UpdateAsync` re-checks `ExistsByKeyAndScopeAsync` after applying scope changes, excluding the current document via `excludeId`, to avoid collisions when changing scope.
+
+This guarantees that **within a single scope combination, the key is unique**, while still allowing reuse of the same key across different scopes.
 
 ## Configuration
 
@@ -173,7 +208,7 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 
 - **Collection:** `secret_vault`
 - **Document fields:** `_id`, `key`, `encrypted_value`, `tenant_id`, `agent_id`, `user_id`, `activation_name`, `additional_data`, `created_at`, `created_by`, `updated_at`, `updated_by`
-- **Uniqueness:** The secret **key** is unique in the collection (one document per key).
+- **Uniqueness:** The combination of **key + scope tuple** (`tenantId`, `agentId`, `userId`, `activationName`) is unique. The same key can exist in multiple rows as long as their scope differs.
 
 ## Security Considerations
 
@@ -193,6 +228,6 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 |--------|--------|
 | **Storage** | MongoDB collection `secret_vault`; value encrypted, additionalData as sanitized JSON string |
 | **APIs** | Admin API (API key) and Agent API (client cert); same service, different auth |
-| **Scope** | tenantId, agentId, userId, activationName; null = “any”; fetch uses strict scope match for all |
+| **Scope** | tenantId, agentId, userId, activationName; null = “any”; fetch uses strict scope match for all; uniqueness is enforced on key + full scope tuple |
 | **AdditionalData** | Flat key-value; values: string, number, or boolean only; validated and sanitized on create/update; returned as JSON object |
 | **Encryption** | `EncryptionKeys:UniqueSecrets:SecretVaultKey` (fallback: BaseSecret) via `ISecureEncryptionService` |

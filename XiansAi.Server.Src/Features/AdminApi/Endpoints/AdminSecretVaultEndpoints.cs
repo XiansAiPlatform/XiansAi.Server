@@ -16,7 +16,9 @@ public static class AdminSecretVaultEndpoints
         group.MapPost("", async (
             [FromBody] SecretVaultCreateRequest request,
             [FromServices] ISecretVaultService service,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantCacheService tenantCacheService,
+            CancellationToken cancellationToken) =>
         {
             if (!SecretVaultScopeEnforcement.TryResolveScope(
                 tenantContext,
@@ -31,6 +33,16 @@ public static class AdminSecretVaultEndpoints
                 out var forbiddenResult))
             {
                 return forbiddenResult!.ToHttpResult();
+            }
+
+            // If a tenant scope is provided/resolved, ensure the tenant exists when tenantId scope is explicitly set.
+            if (!string.IsNullOrWhiteSpace(request.TenantId) && !string.IsNullOrWhiteSpace(effectiveTenantId))
+            {
+                var tenant = await tenantCacheService.GetByTenantIdAsync(effectiveTenantId, cancellationToken);
+                if (tenant == null)
+                {
+                    return ServiceResult<SecretVaultGetResponse>.NotFound("Tenant not found").ToHttpResult();
+                }
             }
 
             var actor = tenantContext.LoggedInUser ?? "system";
@@ -125,7 +137,9 @@ public static class AdminSecretVaultEndpoints
             string id,
             [FromBody] SecretVaultUpdateRequest request,
             [FromServices] ISecretVaultService service,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantCacheService tenantCacheService,
+            CancellationToken cancellationToken) =>
         {
             var getResult = await service.GetByIdAsync(id);
             if (!getResult.IsSuccess || getResult.Data == null)
@@ -146,6 +160,16 @@ public static class AdminSecretVaultEndpoints
                 out var forbiddenResult))
             {
                 return forbiddenResult!.ToHttpResult();
+            }
+
+            // If a tenant scope is provided/resolved, ensure the tenant exists when tenantId scope is explicitly set.
+            if (!string.IsNullOrWhiteSpace(request.TenantId) && !string.IsNullOrWhiteSpace(effectiveTenantId))
+            {
+                var tenant = await tenantCacheService.GetByTenantIdAsync(effectiveTenantId, cancellationToken);
+                if (tenant == null)
+                {
+                    return ServiceResult<SecretVaultGetResponse>.NotFound("Tenant not found").ToHttpResult();
+                }
             }
 
             var actor = tenantContext.LoggedInUser ?? "system";

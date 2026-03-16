@@ -104,9 +104,20 @@ public class SecretVaultService : ISecretVaultService
         if (string.IsNullOrWhiteSpace(input.Value))
             return ServiceResult<SecretVaultGetResponse>.BadRequest("Value is required");
 
-        var exists = await _repository.ExistsByKeyAsync(input.Key);
+        // Normalize scope values so that uniqueness is enforced on the composite (Key + scope) with consistent null handling.
+        var normalizedTenantId = string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId;
+        var normalizedAgentId = string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId;
+        var normalizedUserId = string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId;
+        var normalizedActivationName = string.IsNullOrWhiteSpace(input.ActivationName) ? null : input.ActivationName;
+
+        var exists = await _repository.ExistsByKeyAndScopeAsync(
+            input.Key,
+            normalizedTenantId,
+            normalizedAgentId,
+            normalizedUserId,
+            normalizedActivationName);
         if (exists)
-            return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists");
+            return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists for the same scope");
 
         var (sanitizedAdditionalData, additionalDataError) = ValidateAndSanitizeAdditionalData(input.AdditionalData);
         if (additionalDataError != null)
@@ -121,10 +132,10 @@ public class SecretVaultService : ISecretVaultService
                 Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
                 Key = input.Key,
                 EncryptedValue = encrypted,
-                TenantId = string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId,
-                AgentId = string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId,
-                UserId = string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId,
-                ActivationName = string.IsNullOrWhiteSpace(input.ActivationName) ? null : input.ActivationName,
+                TenantId = normalizedTenantId,
+                AgentId = normalizedAgentId,
+                UserId = normalizedUserId,
+                ActivationName = normalizedActivationName,
                 AdditionalData = sanitizedAdditionalData,
                 CreatedAt = now,
                 CreatedBy = actorUserId
@@ -215,6 +226,17 @@ public class SecretVaultService : ISecretVaultService
                     return ServiceResult<SecretVaultGetResponse>.BadRequest(additionalDataError);
                 entity.AdditionalData = sanitizedAdditionalData;
             }
+
+            // Enforce uniqueness on (Key + scope) combination, excluding the current document.
+            var existsForScope = await _repository.ExistsByKeyAndScopeAsync(
+                entity.Key,
+                entity.TenantId,
+                entity.AgentId,
+                entity.UserId,
+                entity.ActivationName,
+                entity.Id);
+            if (existsForScope)
+                return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists for the same scope");
 
             entity.UpdatedAt = DateTime.UtcNow;
             entity.UpdatedBy = actorUserId;
