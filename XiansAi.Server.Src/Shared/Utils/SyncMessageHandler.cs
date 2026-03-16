@@ -25,12 +25,17 @@ namespace Shared.Utils
             ChatOrDataRequest chatRequest,
             MessageType messageType,
             int timeoutSeconds,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            MessageType? expectedResponseType = null)
         {
             if (string.IsNullOrEmpty(chatRequest.RequestId))
             {
                 throw new ArgumentException("RequestId is required for sync messages", nameof(chatRequest));
             }
+
+            // Heartbeat requests elicit Data response from agent ({ available: true }), not Heartbeat
+            var responseMessageType = expectedResponseType
+                ?? (messageType == MessageType.Heartbeat ? MessageType.Data : messageType);
 
             try
             {
@@ -38,7 +43,7 @@ namespace Shared.Utils
                 var responseTask = _pendingRequestService.WaitForResponseAsync<ConversationMessage>(
                     chatRequest.RequestId,
                     TimeSpan.FromSeconds(timeoutSeconds),
-                    messageType,
+                    responseMessageType,
                     cancellationToken);
 
                 // Process the incoming message asynchronously (using existing flow)

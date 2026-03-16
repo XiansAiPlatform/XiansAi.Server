@@ -5,9 +5,10 @@ using Features.AdminApi.Utils;
 using Features.AgentApi.Repositories;
 using Features.AppsApi.Repositories;
 using Features.AppsApi.Services;
-using Shared.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Shared.Services;
 
 namespace Features.AdminApi.Configuration;
 
@@ -36,6 +37,9 @@ public static class AdminApiConfiguration
         // Register App Integration services
         builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
         builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
+        
+        // PendingRequestService for heartbeat sync flow (TryAdd: UserApi may already register it)
+        builder.Services.TryAddSingleton<IPendingRequestService, PendingRequestService>();
         
         // Note: IAdminTaskService is registered in SharedServices as it's shared with WebApi
         // AdminApi reuses existing services from WebApi
@@ -112,6 +116,7 @@ public static class AdminApiConfiguration
     {
         var adminApiGroup = app.MapGroup(AdminApiConstants.GetVersionedBasePath(version));
         
+        AdminHeartbeatEndpoints.MapAdminHeartbeatEndpoints(adminApiGroup);
         AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
         AdminAgentDeploymentEndpoints.MapAdminAgentDeploymentsEndpoints(adminApiGroup);
         AdminAgentActivationEndpoints.MapAdminAgentActivationEndpoints(adminApiGroup);

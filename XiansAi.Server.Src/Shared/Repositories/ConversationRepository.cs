@@ -40,7 +40,13 @@ public enum MessageType
     /// <summary>
     /// Tool execution message type for streaming tool call steps.
     /// </summary>
-    Tool
+    Tool,
+    /// <summary>
+    /// Heartbeat message type for frontend liveness checks.
+    /// The frontend sends a heartbeat to verify an agent worker is available.
+    /// No handler is invoked; the workflow responds immediately with available=true.
+    /// </summary>
+    Heartbeat
 }
 
 public enum ConversationThreadStatus

@@ -69,6 +69,20 @@ namespace Shared.Utils
                     Origin = origin ?? "webhook"
                 };
             }
+            else if (messageType == MessageType.Heartbeat)
+            {
+                // Heartbeat: minimal request for worker liveness check; agent responds with Data { available: true }
+                return new ChatOrDataRequest
+                {
+                    RequestId = requestId,
+                    ParticipantId = participantId,
+                    WorkflowId = workflowId,
+                    Text = null,
+                    Data = null,
+                    Authorization = authorization,
+                    Origin = origin ?? "heartbeat"
+                };
+            }
             else
             {
                 throw new ArgumentException($"Unsupported message type: {messageType}", nameof(messageType));
