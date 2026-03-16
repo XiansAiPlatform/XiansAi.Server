@@ -62,6 +62,8 @@ public interface ISecretVaultService
     Task<ServiceResult<SecretVaultGetResponse>> UpdateAsync(string id, SecretVaultUpdateInput input, string actorUserId);
     Task<ServiceResult<bool>> DeleteAsync(string id);
     Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
+    Task<ServiceResult<SecretVaultGetResponse>> UpdateByKeyAsync(string key, SecretVaultUpdateInput input, string actorUserId);
+    Task<ServiceResult<bool>> DeleteByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
 }
 
 public class SecretVaultService : ISecretVaultService
@@ -299,6 +301,37 @@ public class SecretVaultService : ISecretVaultService
             _logger.LogError(ex, "Error fetching secret vault key {Key}", key);
             return ServiceResult<SecretVaultFetchResponse?>.InternalServerError("Failed to fetch secret");
         }
+    }
+
+    public async Task<ServiceResult<SecretVaultGetResponse>> UpdateByKeyAsync(string key, SecretVaultUpdateInput input, string actorUserId)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return ServiceResult<SecretVaultGetResponse>.BadRequest("Key is required");
+
+        // Normalize scope for lookup to match repository semantics
+        var lookupTenantId = input.TenantId == null ? null : (string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId);
+        var lookupAgentId = input.AgentId == null ? null : (string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId);
+        var lookupUserId = input.UserId == null ? null : (string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId);
+        var lookupActivationName = input.ActivationName == null ? null : (string.IsNullOrWhiteSpace(input.ActivationName) ? null : input.ActivationName);
+
+        var entity = await _repository.FindForAccessAsync(key, lookupTenantId, lookupAgentId, lookupUserId, lookupActivationName);
+        if (entity == null)
+            return ServiceResult<SecretVaultGetResponse>.NotFound("Secret not found");
+
+        // Reuse existing update logic by delegating to UpdateAsync
+        return await UpdateAsync(entity.Id, input, actorUserId);
+    }
+
+    public async Task<ServiceResult<bool>> DeleteByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return ServiceResult<bool>.BadRequest("Key is required");
+
+        var entity = await _repository.FindForAccessAsync(key, tenantId, agentId, userId, activationName);
+        if (entity == null)
+            return ServiceResult<bool>.NotFound("Secret not found");
+
+        return await DeleteAsync(entity.Id);
     }
 
     private static SecretVaultGetResponse ToGetResponse(SecretVault entity, string decryptedValue)

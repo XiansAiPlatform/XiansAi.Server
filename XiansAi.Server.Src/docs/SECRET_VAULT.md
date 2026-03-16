@@ -32,10 +32,10 @@ Fetch by key:
   → Service decrypts value
   → Response { value, additionalData } (additionalData as JSON object)
 
-Get by id / List:
+List:
   → Repository load
-  → Service decrypts value (for get), parses additionalData to object for response
-  → Response with decrypted value and additionalData as JSON object
+  → Service parses additionalData to object for response
+  → Response with metadata and additionalData as JSON object (no value)
 ```
 
 ### Scope Semantics
@@ -130,9 +130,8 @@ Authentication: **API key** (Bearer token). Policy: `AdminEndpointAuthPolicy` (e
 | POST | `/` | Create secret. Key must be unique. Body: key, value, tenantId?, agentId?, userId?, activationName?, additionalData? |
 | GET | `/` | List secrets. Query: tenantId?, agentId?, activationName? (optional filters) |
 | GET | `/fetch?key=&tenantId=&agentId=&userId=&activationName=` | Fetch secret by key with strict scope; returns `{ value, additionalData }` only |
-| GET | `/{id}` | Get secret by id (full record including decrypted value) |
-| PUT | `/{id}` | Update secret (value, scope, additionalData) |
-| DELETE | `/{id}` | Delete secret |
+| PUT | `/` | Update secret (value, scope, additionalData) by key+scope |
+| DELETE | `/` | Delete secret by key+scope (query: key, tenantId?, agentId?, userId?, activationName?) |
 
 **CreatedBy / UpdatedBy** are set from `ITenantContext.LoggedInUser` (fallback `"system"`).
 
@@ -140,7 +139,7 @@ Authentication: **API key** (Bearer token). Policy: `AdminEndpointAuthPolicy` (e
 
 Authentication: **Client certificate** (Bearer token = Base64-encoded client certificate). Policy: `RequiresCertificate`.
 
-Same operations as Admin API, under base path `/api/agent/secrets`. Actor for CreatedBy/UpdatedBy is `"agent-api"` (no user context in certificate flow).
+Same operations as Admin API (create by body, list, fetch by key, update by key+scope, delete by key+scope) under base path `/api/agent/secrets`. Actor for CreatedBy/UpdatedBy is `"agent-api"` (no user context in certificate flow).
 
 ### Request / Response Shapes
 
@@ -169,9 +168,9 @@ Same operations as Admin API, under base path `/api/agent/secrets`. Actor for Cr
 }
 ```
 
-**Get by id / Create response** (full secret record)
+**Create response** (full secret record)
 
-- Same as above, plus: `id`, `key`, `tenantId`, `agentId`, `userId`, `activationName`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. The `value` is decrypted; `additionalData` is returned as a JSON object.
+- Same as above, plus: `id`, `key`, `tenantId`, `agentId`, `userId`, `activationName`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. The `value` is decrypted; `additionalData` is returned as a JSON object. Subsequent fetch/update/delete operations address the secret by **key + scope**, not by id.
 
 ## AdditionalData: Structure and Security
 
