@@ -41,9 +41,9 @@ Returns:
 - `true` and the effective scope (effectiveTenantId, effectiveAgentId, effectiveUserId, effectiveActivationName) when the request is allowed.
 - `false` and a `ServiceResult<object>.Forbidden` when the request must be rejected with 403.
 
-#### 2. `CanAccessSecretTenant` (get by id, update, delete)
+#### 2. `CanAccessSecretTenant` (internal id-based checks)
 
-Used for operations that identify a secret by **id** (get by id, update, delete). The server loads the secret first, then checks whether the caller may access that secret’s tenant.
+Used internally for operations that identify a secret by **id** (e.g. service-level operations). For external APIs, callers address secrets by **key + scope**, not by id. The server loads the secret first, then checks whether the caller may access that secret’s tenant.
 
 | Input | Description |
 |-------|-------------|
@@ -67,16 +67,15 @@ Returns `true` if the caller may access the secret, `false` otherwise. The endpo
 | **POST** (create) | `TryResolveScope` with body scope → use effective scope; if forbidden, return 403. |
 | **GET** (list) | `TryResolveScope` with query tenantId, agentId, activationName → list with effective scope. |
 | **GET** /fetch | `TryResolveScope` with query scope → fetch with effective scope. |
-| **GET** /{id} | Load secret; `CanAccessSecretTenant(tenantContext, secret.TenantId)` → if false, return 403. |
-| **PUT** /{id} | Load secret; `CanAccessSecretTenant` → if false, return 403. Then `TryResolveScope` on update body → update with effective scope. |
-| **DELETE** /{id} | Load secret; `CanAccessSecretTenant` → if false, return 403; then delete. |
+| **PUT** `/` (update by key+scope) | `TryResolveScope` on update body → update with effective scope. |
+| **DELETE** `/` (delete by key+scope) | `TryResolveScope` with query scope → delete with effective scope. |
 
 ### Admin API (`Features/AdminApi/Endpoints/AdminSecretVaultEndpoints.cs`)
 
 Same rules as Agent API:
 
 - Create, list, fetch: `TryResolveScope` and use effective scope; return 403 when forbidden.
-- Get by id, update, delete: load secret, then `CanAccessSecretTenant`; if false, return 403. For update, also resolve scope from the body with `TryResolveScope`.
+- Update/delete: accept key + scope, resolve scope with `TryResolveScope`, and apply changes only within the effective tenant.
 
 ## Roles and context
 
