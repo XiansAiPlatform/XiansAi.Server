@@ -104,7 +104,7 @@ public class SecretVaultService : ISecretVaultService
         if (string.IsNullOrWhiteSpace(input.Value))
             return ServiceResult<SecretVaultGetResponse>.BadRequest("Value is required");
 
-        var exists = await _repository.ExistsByKeyAsync(input.Key);
+        var exists = await _repository.ExistsByKeyAsync(input.Key, input.TenantId);
         if (exists)
             return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists");
 
