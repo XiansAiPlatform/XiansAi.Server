@@ -7,8 +7,8 @@ namespace Shared.Repositories;
 public interface ISecretVaultRepository
 {
     Task<SecretVault?> GetByIdAsync(string id);
-    Task<SecretVault?> GetByKeyAsync(string key);
-    Task<bool> ExistsByKeyAsync(string key);
+    Task<SecretVault?> GetByKeyAsync(string key, string? tenantId);
+    Task<bool> ExistsByKeyAsync(string key, string? tenantId);
     Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
     Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName);
     Task CreateAsync(SecretVault entity);
@@ -41,11 +41,24 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
     }
 
-    public async Task<SecretVault?> GetByKeyAsync(string key)
+    public async Task<SecretVault?> GetByKeyAsync(string key, string? tenantId)
     {
         try
         {
-            return await _collection.Find(x => x.Key == key).FirstOrDefaultAsync();
+            var builder = Builders<SecretVault>.Filter;
+            var filter = builder.Eq(x => x.Key, key);
+
+            // Match on tenant when provided; otherwise restrict to TenantId == null
+            if (!string.IsNullOrWhiteSpace(tenantId))
+            {
+                filter = builder.And(filter, builder.Eq(x => x.TenantId, tenantId));
+            }
+            else
+            {
+                filter = builder.And(filter, builder.Eq(x => x.TenantId, (string?)null));
+            }
+
+            return await _collection.Find(filter).FirstOrDefaultAsync();
         }
         catch (Exception ex)
         {
@@ -54,11 +67,26 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
     }
 
-    public async Task<bool> ExistsByKeyAsync(string key)
+    public async Task<bool> ExistsByKeyAsync(string key, string? tenantId)
     {
         try
         {
-            var count = await _collection.CountDocumentsAsync(Builders<SecretVault>.Filter.Eq(x => x.Key, key));
+            var builder = Builders<SecretVault>.Filter;
+            var filter = builder.Eq(x => x.Key, key);
+
+            // Enforce key uniqueness per tenant:
+            // - When tenantId is provided, match that exact tenantId.
+            // - When tenantId is null/empty, only consider records with TenantId == null.
+            if (!string.IsNullOrWhiteSpace(tenantId))
+            {
+                filter = builder.And(filter, builder.Eq(x => x.TenantId, tenantId));
+            }
+            else
+            {
+                filter = builder.And(filter, builder.Eq(x => x.TenantId, (string?)null));
+            }
+
+            var count = await _collection.CountDocumentsAsync(filter);
             return count > 0;
         }
         catch (Exception ex)
