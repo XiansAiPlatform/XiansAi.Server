@@ -230,6 +230,7 @@ public class AgentSecretVaultCreateRequest
 
 public class AgentSecretVaultUpdateRequest
 {
+    public string Key { get; set; } = null!;
     public string? Value { get; set; }
     public string? TenantId { get; set; }
     public string? AgentId { get; set; }
