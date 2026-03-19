@@ -25,6 +25,8 @@ public static class AdminTemplateEndpoints
         public List<string>? ReadAccess { get; set; }
         
         public List<string>? WriteAccess { get; set; }
+        
+        public List<string>? SamplePrompts { get; set; }
     }
 
     /// <summary>
@@ -78,7 +80,8 @@ public static class AdminTemplateEndpoints
                 request.OnboardingJson,
                 request.OwnerAccess,
                 request.ReadAccess,
-                request.WriteAccess);
+                request.WriteAccess,
+                request.SamplePrompts);
             return result.ToHttpResult();
         })
         .WithName("UpdateAgentTemplate")

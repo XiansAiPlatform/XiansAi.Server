@@ -3,6 +3,7 @@ using Shared.Repositories;
 using Shared.Services;
 using Shared.Auth;
 using Shared.Data.Models;
+using Shared.Utils.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
 
@@ -185,6 +186,79 @@ public static class AdminKnowledgeEndpoints
               - `system_scoped`: Latest system-scoped knowledge (null if none)
               - `tenant_default`: Latest tenant-scoped knowledge without activation (null if none)
               - `activations`: Array of latest knowledge for each unique activation name (filtered by activationName if provided)";
+            return operation;
+        });
+
+        // Get applicable knowledge content by tenantId, agentName, activationName (reuses same service logic as Agent API /latest)
+        adminKnowledgeGroup.MapGet("/latest", async (
+            string tenantId,
+            [FromQuery] string name,
+            [FromQuery] string agentName,
+            [FromQuery] string? activationName,
+            [FromServices] IKnowledgeService knowledgeService,
+            [FromServices] IAgentRepository agentRepository,
+            [FromServices] ITenantContext tenantContext) =>
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(name))
+                {
+                    return Results.Json(
+                        new { error = "BadRequest", message = "name query parameter is required" },
+                        statusCode: 400);
+                }
+                if (string.IsNullOrEmpty(agentName))
+                {
+                    return Results.Json(
+                        new { error = "BadRequest", message = "agentName query parameter is required" },
+                        statusCode: 400);
+                }
+
+                // Verify agent exists and belongs to tenant
+                var agent = await agentRepository.GetByNameInternalAsync(agentName, tenantId);
+                if (agent == null)
+                {
+                    return Results.Json(
+                        new { error = "NotFound", message = $"Agent '{agentName}' not found in tenant '{tenantId}'" },
+                        statusCode: 404);
+                }
+
+                // Check permissions
+                if (!CanModifyAgentResource(tenantContext, agent))
+                {
+                    return Results.Json(
+                        new { error = "Forbidden", message = "Access denied: insufficient permissions to view this agent's knowledge" },
+                        statusCode: 403);
+                }
+
+                var result = await knowledgeService.GetLatestByNameForTenantAsync(name, agentName, tenantId, activationName);
+                return result.ToHttpResult();
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(
+                    new { error = "Internal server error", message = ex.Message },
+                    statusCode: 500);
+            }
+        })
+        .WithName("Get Applicable Knowledge Content")
+        .Produces<Knowledge>()
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithOpenApi(operation => {
+            operation.Summary = "Get applicable knowledge content";
+            operation.Description = @"Retrieves the applicable knowledge for the specified tenant, agent, and optional activation. Uses the same fallback logic as the Agent API /latest endpoint:
+
+1. If activationName is provided: try tenantId + agent + activationName
+2. If not found: try tenantId + agent (any or no activationName)
+3. If not found: try system-scoped knowledge (tenantId=null)
+
+**Query Parameters:**
+- `name` (required): The knowledge item name
+- `agentName` (required): The agent name
+- `activationName` (optional): The activation name for activation-scoped knowledge";
             return operation;
         });
 

@@ -117,6 +117,9 @@ public class CreateAgentRequest
 
     [JsonPropertyName("category")]
     public string? Category { get; set; }
+
+    [JsonPropertyName("samplePrompts")]
+    public List<string> SamplePrompts { get; set; } = new();
 }
 
 public interface IDefinitionsService
@@ -294,7 +297,8 @@ public class DefinitionsService : IDefinitionsService
             request.Summary,
             request.Version,
             request.Author,
-            request.Category);
+            request.Category,
+            request.SamplePrompts);
         
         _logger.LogInformation("Agent {AgentName} created/updated successfully by user {UserId}", request.AgentName, currentUser);
         
@@ -308,7 +312,8 @@ public class DefinitionsService : IDefinitionsService
             summary = agent.Summary,
             version = agent.Version,
             author = agent.Author,
-            category = agent.Category
+            category = agent.Category,
+            samplePrompts = agent.SamplePrompts ?? new List<string>()
         });
     }
 

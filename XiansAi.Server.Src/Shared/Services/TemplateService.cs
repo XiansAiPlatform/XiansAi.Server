@@ -13,7 +13,7 @@ public interface ITemplateService
     Task<ServiceResult<bool>> DeleteSystemScopedAgent(string agentName);
     Task<ServiceResult<Agent>> DeployTemplateToTenant(string agentName, string tenantId, string createdBy, string? onboardingJson = null);
     Task<ServiceResult<Agent>> GetSystemScopedAgentByIdAsync(string templateObjectId);
-    Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess);
+    Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null);
 }
 
 /// <summary>
@@ -261,8 +261,11 @@ public class TemplateService : ITemplateService
                 SystemScoped = false, // User tenant agents are not system scoped
                 OnboardingJson = onboardingJson ?? templateAgent.Agent.OnboardingJson,
                 Description = templateAgent.Agent.Description,
+                Summary = templateAgent.Agent.Summary,
+                Category = templateAgent.Agent.Category,
                 Version = templateAgent.Agent.Version,
                 Author = templateAgent.Agent.Author,
+                SamplePrompts = templateAgent.Agent.SamplePrompts?.ToList() ?? new List<string>(),
                 OwnerAccess = new List<string>(),
                 ReadAccess = new List<string>(),
                 WriteAccess = new List<string>()
@@ -367,8 +370,9 @@ public class TemplateService : ITemplateService
     /// <param name="ownerAccess">Optional owner access list to update.</param>
     /// <param name="readAccess">Optional read access list to update.</param>
     /// <param name="writeAccess">Optional write access list to update.</param>
+    /// <param name="samplePrompts">Optional sample prompts list to update.</param>
     /// <returns>A service result containing the updated template agent.</returns>
-    public async Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess)
+    public async Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null)
     {
         try
         {
@@ -416,6 +420,11 @@ public class TemplateService : ITemplateService
             if (writeAccess != null)
             {
                 template.WriteAccess = writeAccess;
+            }
+
+            if (samplePrompts != null)
+            {
+                template.SamplePrompts = samplePrompts;
             }
 
             var updated = await _agentRepository.UpdateInternalAsync(template.Id, template);
