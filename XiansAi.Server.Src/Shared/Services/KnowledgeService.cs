@@ -77,6 +77,12 @@ public class GroupedKnowledgeResponse
 public interface IKnowledgeService
 {
     Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent, string? activationName = null);
+    /// <summary>
+    /// Gets the applicable knowledge for a tenant, agent, and optional activation.
+    /// Uses same fallback logic as GetLatestByNameAsync but with explicit tenantId.
+    /// When tenantId is null/empty, only system-scoped knowledge is returned.
+    /// </summary>
+    Task<ServiceResult<Knowledge>> GetLatestByNameForTenantAsync(string name, string agent, string? tenantId, string? activationName = null);
     Task<ServiceResult<Knowledge>> GetLatestSystemByNameAsync(string name, string agent);
     Task<IResult> GetById(string id);
     Task<IResult> GetVersions(string name, string? agent);
@@ -399,13 +405,17 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<ServiceResult<Knowledge>> GetLatestByNameAsync(string name, string agent, string? activationName = null)
     {
+        return await GetLatestByNameForTenantAsync(name, agent, _tenantContext.TenantId, activationName);
+    }
+
+    public async Task<ServiceResult<Knowledge>> GetLatestByNameForTenantAsync(string name, string agent, string? tenantId, string? activationName = null)
+    {
         if (string.IsNullOrWhiteSpace(agent))
         {
             return ServiceResult<Knowledge>.BadRequest("Agent parameter is required");
         }
 
-        var tenantId = _tenantContext.TenantId;
-        _logger.LogDebug("GetLatestByNameAsync: name={Name}, agent={Agent}, activationName={ActivationName}, tenantId={TenantId}",
+        _logger.LogDebug("GetLatestByNameForTenantAsync: name={Name}, agent={Agent}, activationName={ActivationName}, tenantId={TenantId}",
             name, agent, activationName ?? "(null)", tenantId ?? "(null)");
 
         // Priority 1: If activationName is provided, try knowledge with matching tenant + agent + activationName

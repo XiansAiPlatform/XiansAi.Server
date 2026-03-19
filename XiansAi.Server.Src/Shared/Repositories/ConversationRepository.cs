@@ -135,6 +135,13 @@ public class ConversationMessage
     
     [BsonElement("origin")]
     public string? Origin { get; set; }
+
+    /// <summary>
+    /// Optional expiry for TTL. When set, MongoDB automatically deletes the document after this time.
+    /// Used for heartbeat messages (short TTL) to prevent database bloat.
+    /// </summary>
+    [BsonElement("expires_at")]
+    public DateTime? ExpiresAt { get; set; }
 }
 
 // ConversationThread model

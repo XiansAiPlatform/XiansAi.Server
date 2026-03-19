@@ -110,10 +110,11 @@ conversation_message:
   - name: message_type_1
     keys:
       message_type: asc
+  # TTL on expires_at: heartbeat messages use 1h, other messages use 180d
   - name: conversation_message_ttl
     keys:
-      created_at: asc
-    expire_after: 180d
+      expires_at: asc
+    expire_after: 0s
     background: true
 
 

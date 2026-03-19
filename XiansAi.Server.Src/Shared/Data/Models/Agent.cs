@@ -69,6 +69,9 @@ public class Agent : ModelValidatorBase<Agent>
     [StringLength(100, ErrorMessage = "Category must not exceed 100 characters")]
     public string? Category { get; set; }
 
+    [BsonElement("sample_prompts")]
+    public List<string> SamplePrompts { get; set; } = new();
+
     [BsonElement("flows")]
     public List<Flow>? Flows { get; set; }
 
@@ -144,6 +147,7 @@ public class Agent : ModelValidatorBase<Agent>
             Version = Version,
             Author = Author,
             Category = Category,
+            SamplePrompts = SamplePrompts?.ToList() ?? new List<string>(),
             Flows = Flows?.Select(f => f.ShallowCopy()).ToList()
         };
     }
@@ -172,6 +176,7 @@ public class Agent : ModelValidatorBase<Agent>
             Version = ValidationHelpers.SanitizeString(this.Version),
             Author = ValidationHelpers.SanitizeString(this.Author),
             Category = ValidationHelpers.SanitizeString(this.Category),
+            SamplePrompts = ValidationHelpers.SanitizeStringList(this.SamplePrompts),
             Flows = this.Flows
         };
 

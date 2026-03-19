@@ -77,20 +77,22 @@ activity_history:
 **Field**: `started_time` - when the activity started
 **Retention**: 90 days
 
-### Conversation Messages Collection (180 days)
+### Conversation Messages Collection (expires_at)
 
 ```yaml
 conversation_message:
   - name: conversation_message_ttl
     keys:
-      created_at: asc
-    expire_after: 180d
+      expires_at: asc
+    expire_after: 0s
     background: true
 ```
 
-**Purpose**: Cleanup of old conversation messages while retaining recent chat history
-**Field**: `created_at` - when the message was created
-**Retention**: 180 days (6 months)
+**Purpose**: Cleanup of conversation messages via per-message TTL
+**Field**: `expires_at` - when the document should be deleted
+**Retention**:
+- **Heartbeat messages** (incoming/outgoing): 1 hour
+- **Other messages**: 180 days (6 months)
 
 ## TTL Time Format
 

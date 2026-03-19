@@ -440,6 +440,12 @@ public class MessageService : IMessageService
         // Normalize empty scope to null (empty string and null both represent the default topic)
         var normalizedScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
 
+        var now = DateTime.UtcNow;
+        // Heartbeat messages (incoming or outgoing) get short TTL (1h) to avoid database bloat
+        var isHeartbeat = messageType == MessageType.Heartbeat ||
+            string.Equals(request.Origin, "heartbeat", StringComparison.OrdinalIgnoreCase);
+        var expiresAt = isHeartbeat ? now.AddHours(1) : now.AddDays(180);
+
         var message = new ConversationMessage
         {
             ThreadId = threadId,
@@ -449,8 +455,8 @@ public class MessageService : IMessageService
             TaskId = request.TaskId,
             Scope = normalizedScope,  // Use normalized scope
             RequestId = request.RequestId,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
+            CreatedAt = now,
+            UpdatedAt = now,
             CreatedBy = _tenantContext.LoggedInUser,
             Direction = direction,
             Text = request.Text,
@@ -458,8 +464,8 @@ public class MessageService : IMessageService
             WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType ?? throw new Exception("WorkflowType is required"),
             MessageType = messageType,
-            Origin = request.Origin
-
+            Origin = request.Origin,
+            ExpiresAt = expiresAt
         };
 
         // Save the message with transaction support

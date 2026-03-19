@@ -31,7 +31,7 @@ public interface IAgentRepository
     Task<Agent?> GetByIdInternalAsync(string id);
     Task<bool> IsSystemAgent(string name);
     Task<bool> UpdateInternalAsync(string id, Agent agent);
-    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null, string? category = null);
+    Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null, string? category = null, List<string>? samplePrompts = null);
 
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
     Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
@@ -444,7 +444,7 @@ public class AgentRepository : IAgentRepository
         }
     }
 
-    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null, string? category = null)
+    public async Task<Agent> UpsertAgentAsync(string agentName, bool systemScoped, string tenant, string createdBy, string? onboardingJson = null, string? description = null, string? summary = null, string? version = null, string? author = null, string? category = null, List<string>? samplePrompts = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -468,7 +468,8 @@ public class AgentRepository : IAgentRepository
                 Summary = summary,
                 Version = version,
                 Author = author,
-                Category = category
+                Category = category,
+                SamplePrompts = samplePrompts ?? new List<string>()
             };
             newAgent.GrantOwnerAccess(createdBy);
 
@@ -539,6 +540,13 @@ public class AgentRepository : IAgentRepository
                     {
                         updates.Add(updateBuilder.Set(x => x.Category, category));
                         existingAgent.Category = category;
+                        hasUpdates = true;
+                    }
+                    
+                    if (samplePrompts != null)
+                    {
+                        updates.Add(updateBuilder.Set(x => x.SamplePrompts, samplePrompts));
+                        existingAgent.SamplePrompts = samplePrompts;
                         hasUpdates = true;
                     }
                     

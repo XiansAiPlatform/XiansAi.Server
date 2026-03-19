@@ -35,6 +35,7 @@ public class UpdateAgentRequest
     public string? Name { get; set; }
     public string? Description { get; set; }
     public string? OnboardingJson { get; set; }
+    public List<string>? SamplePrompts { get; set; }
 }
 
 /// <summary>
@@ -206,6 +207,11 @@ public class AdminAgentService : IAdminAgentService
             if (request.OnboardingJson != null)
             {
                 agent.OnboardingJson = request.OnboardingJson;
+            }
+
+            if (request.SamplePrompts != null)
+            {
+                agent.SamplePrompts = request.SamplePrompts;
             }
 
             var updated = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
