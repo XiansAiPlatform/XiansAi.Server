@@ -7,10 +7,6 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
-    // Kept as a typed backing field so AddToMemo can always mutate it directly,
-    // without needing to defensive-cast the base Memo property.
-    private readonly Dictionary<string, object> _memo;
-
     public NewWorkflowOptions(string agentName, bool systemScoped, string workflowType, string? idPostfix, ITenantContext tenantContext, string? userId = null)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId))
@@ -51,8 +47,7 @@ public class NewWorkflowOptions : WorkflowOptions
 
         Id = workflowId;
         TaskQueue = GetTemporalQueueName(workflowType, systemScoped, tenantContext);
-        _memo = GetMemo(tenantContext, agentName, systemScoped, effectiveUserId, idPostfix ?? string.Empty);
-        Memo = _memo;
+        Memo = GetMemo(tenantContext, agentName, systemScoped, effectiveUserId, idPostfix ?? string.Empty);
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName, effectiveUserId, idPostfix ?? string.Empty);
         IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting;
     }

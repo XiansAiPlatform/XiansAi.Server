@@ -98,12 +98,16 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
             ?? _configuration.GetValue<bool?>("OPENTELEMETRY_MONGODB_CAPTURE_COMMAND_TEXT")
             ?? false;
 
-        settings.ClusterConfigurator = cb =>
-            cb.Subscribe(new DiagnosticsActivityEventSubscriber(new InstrumentationOptions
-            {
-                CaptureCommandText = captureCommandText,
-                ShouldStartActivity = @event => excludedCommands == null || !excludedCommands.Contains(@event.CommandName)
-            }));
+        var otelEnabled = _configuration.GetValue<bool>("OpenTelemetry:Enabled", false);
+        if (otelEnabled)
+        {
+            settings.ClusterConfigurator = cb =>
+                cb.Subscribe(new DiagnosticsActivityEventSubscriber(new InstrumentationOptions
+                {
+                    CaptureCommandText = captureCommandText,
+                    ShouldStartActivity = @event => excludedCommands == null || !excludedCommands.Contains(@event.CommandName)
+                }));
+        }
         
         _logger.LogDebug("Creating MongoDB client with connection pool: Max={MaxPool}, Min={MinPool}, IdleTimeout={IdleTimeout}, RetryWrites={RetryWrites}, RetryReads={RetryReads}", 
             settings.MaxConnectionPoolSize, settings.MinConnectionPoolSize, settings.MaxConnectionIdleTime, settings.RetryWrites, settings.RetryReads);

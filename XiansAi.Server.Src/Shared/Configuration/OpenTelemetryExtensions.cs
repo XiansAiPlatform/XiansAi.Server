@@ -97,7 +97,6 @@ public static class OpenTelemetryExtensions
                         // Enrich with authenticated tenant context after auth middleware runs
                         options.EnrichWithHttpResponse = (activity, httpResponse) =>
                         {
-                            activity.SetTag("http.status_code", httpResponse.StatusCode);
 
                             var tenantContext = httpResponse.HttpContext.RequestServices.GetService<ITenantContext>();
                             if (tenantContext != null && !string.IsNullOrEmpty(tenantContext.TenantId))
@@ -125,7 +124,6 @@ public static class OpenTelemetryExtensions
 
                         options.EnrichWithHttpRequestMessage = (activity, request) =>
                         {
-                            activity.SetTag("http.request.method", request.Method.ToString());
 
                             var tenantId = request.Headers.TryGetValues("X-Tenant-Id", out var values)
                                 ? values.FirstOrDefault()

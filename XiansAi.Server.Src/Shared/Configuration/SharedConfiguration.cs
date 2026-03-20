@@ -278,36 +278,39 @@ public static class SharedConfiguration
         app.UseAuthentication();
         app.UseAuthorization();
 
-        // After auth resolves the tenant, push the tenant tag into the logging scope so every
-        // log record emitted within a request carries it as a structured attribute.
-        var tenantTagName = OpenTelemetryExtensions.ResolveTenantTagName(app.Configuration);
-        var scopeLogger = app.Services.GetRequiredService<ILoggerFactory>()
-            .CreateLogger("XiansAi.TenantScope");
-
-        app.Use(async (context, next) =>
+        if (app.Configuration.GetValue<bool>("OpenTelemetry:Enabled", false))
         {
-            // Activity.Current has tenant.id set early by EnrichWithHttpRequest (from X-Tenant-Id
-            // header) before auth even runs. Fall back to ITenantContext for API-key paths that
-            // authenticate without a header (e.g. mTLS / agent certificate auth).
-            var tenantId = Activity.Current?.GetTagItem(tenantTagName) as string;
-            if (string.IsNullOrWhiteSpace(tenantId))
-            {
-                tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
-            }
+            // After auth resolves the tenant, push the tenant tag into both Activity and logging
+            // scope so spans and OTel-exported log records carry the tenant attribute consistently.
+            var tenantTagName = OpenTelemetryExtensions.ResolveTenantTagName(app.Configuration);
+            var scopeLogger = app.Services.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("XiansAi.TenantScope");
 
-            if (!string.IsNullOrWhiteSpace(tenantId))
+            app.Use(async (context, next) =>
             {
-                Activity.Current?.SetTag(tenantTagName, tenantId);
-                using (scopeLogger.BeginScope(new Dictionary<string, object> { [tenantTagName] = tenantId }))
+                // Activity.Current has tenant.id set early by EnrichWithHttpRequest (from X-Tenant-Id
+                // header) before auth even runs. Fall back to ITenantContext for API-key paths that
+                // authenticate without a header (e.g. mTLS / agent certificate auth).
+                var tenantId = Activity.Current?.GetTagItem(tenantTagName) as string;
+                if (string.IsNullOrWhiteSpace(tenantId))
+                {
+                    tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+                }
+
+                if (!string.IsNullOrWhiteSpace(tenantId))
+                {
+                    Activity.Current?.SetTag(tenantTagName, tenantId);
+                    using (scopeLogger.BeginScope(new Dictionary<string, object> { [tenantTagName] = tenantId }))
+                    {
+                        await next(context);
+                    }
+                }
+                else
                 {
                     await next(context);
                 }
-            }
-            else
-            {
-                await next(context);
-            }
-        });
+            });
+        }
 
         // Map health checks
         app.MapHealthChecks("/health");
