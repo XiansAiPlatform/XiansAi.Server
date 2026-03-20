@@ -75,6 +75,7 @@ public class WorkflowSignalService : IWorkflowSignalService
     private readonly ILogger<WorkflowSignalService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly string _tenantTagName;
+    private readonly bool _includeUserIdentity;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowSignalService"/> class.
@@ -98,6 +99,7 @@ public class WorkflowSignalService : IWorkflowSignalService
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _tenantTagName = OpenTelemetryExtensions.ResolveTenantTagName(
             configuration ?? throw new ArgumentNullException(nameof(configuration)));
+        _includeUserIdentity = configuration.GetValue<bool>("OpenTelemetry:IncludeUserIdentity", false);
     }
 
     public async Task<IResult> SignalWithStartWorkflow(WorkflowSignalWithStartRequest request)
@@ -117,7 +119,7 @@ public class WorkflowSignalService : IWorkflowSignalService
                 activity?.SetTag(_tenantTagName, _tenantContext.TenantId);
             }
 
-            if (!string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+            if (_includeUserIdentity && !string.IsNullOrEmpty(_tenantContext.LoggedInUser))
             {
                 activity?.SetTag("user.id", _tenantContext.LoggedInUser);
             }
@@ -149,7 +151,7 @@ public class WorkflowSignalService : IWorkflowSignalService
 
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            _logger.LogInformation("Successfully onvoked workflow type {WorkflowType} with signal {SignalName}", 
+            _logger.LogInformation("Successfully invoked workflow type {WorkflowType} with signal {SignalName}", 
                 request.TargetWorkflowType, request.SignalName);
             
             return Results.Ok(new { 

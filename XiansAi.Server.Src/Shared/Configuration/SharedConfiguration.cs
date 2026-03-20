@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Shared.Repositories;
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -285,10 +286,18 @@ public static class SharedConfiguration
 
         app.Use(async (context, next) =>
         {
-            var tenantContext = context.RequestServices.GetService<ITenantContext>();
-            var tenantId = tenantContext?.TenantId;
+            // Activity.Current has tenant.id set early by EnrichWithHttpRequest (from X-Tenant-Id
+            // header) before auth even runs. Fall back to ITenantContext for API-key paths that
+            // authenticate without a header (e.g. mTLS / agent certificate auth).
+            var tenantId = Activity.Current?.GetTagItem(tenantTagName) as string;
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+            }
+
             if (!string.IsNullOrWhiteSpace(tenantId))
             {
+                Activity.Current?.SetTag(tenantTagName, tenantId);
                 using (scopeLogger.BeginScope(new Dictionary<string, object> { [tenantTagName] = tenantId }))
                 {
                     await next(context);

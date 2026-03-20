@@ -108,10 +108,4 @@ public class NewWorkflowOptions : WorkflowOptions
             { Constants.IdPostfixKey, idPostfix },
         };
     }
-
-    /// <summary>
-    /// Adds or updates a single entry in the workflow memo after construction.
-    /// Used by the TracingInterceptor to inject trace context.
-    /// </summary>
-    public void AddToMemo(string key, object value) => _memo[key] = value;
 }

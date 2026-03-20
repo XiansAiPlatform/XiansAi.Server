@@ -45,7 +45,7 @@ public static class OpenTelemetryExtensions
         // Bootstrap logger — uses ILogger so messages are structured records (not raw Console output),
         // appear correctly in containerised log collectors, and respect the JSON console formatter.
         using var startupLoggerFactory = LoggerFactory.Create(lb =>
-            lb.SetMinimumLevel(LogLevel.Debug).AddSimpleConsole());
+            lb.SetMinimumLevel(LogLevel.Information).AddSimpleConsole());
         var logger = startupLoggerFactory.CreateLogger(nameof(OpenTelemetryExtensions));
 
         if (string.IsNullOrWhiteSpace(otlpEndpoint))
@@ -86,9 +86,6 @@ public static class OpenTelemetryExtensions
                         // Tag incoming requests with tenant context from HTTP headers
                         options.EnrichWithHttpRequest = (activity, httpRequest) =>
                         {
-                            activity.SetTag("http.method", httpRequest.Method);
-                            activity.SetTag("http.scheme", httpRequest.Scheme);
-                            activity.SetTag("http.host", httpRequest.Host.Value);
 
                             var tenantId = httpRequest.Headers["X-Tenant-Id"].FirstOrDefault();
                             if (!string.IsNullOrEmpty(tenantId))

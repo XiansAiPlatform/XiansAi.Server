@@ -16,12 +16,17 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
     public IMongoDBConfig Config { get; init; }
     private readonly IMongoClient _mongoClient;
     private readonly ILogger<MongoDbClientService> _logger;
+    private readonly IConfiguration _configuration;
     private bool _disposed = false;
 
-    public MongoDbClientService(IMongoDbContext context, ILogger<MongoDbClientService> logger)
+    public MongoDbClientService(
+        IMongoDbContext context,
+        ILogger<MongoDbClientService> logger,
+        IConfiguration configuration)
     {
         Config = context.GetMongoDBConfig();
         _logger = logger;
+        _configuration = configuration;
         _mongoClient = CreateMongoClient();
         
         _logger.LogInformation("MongoDB client initialized with connection to {DatabaseName}", Config.DatabaseName);
@@ -72,20 +77,26 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
 
         // Register the DiagnosticsActivityEventSubscriber so the driver emits Activity spans
         // under the "MongoDB.Driver.Core.Extensions.DiagnosticSources" ActivitySource.
-        // OPENTELEMETRY_MONGODB_EXCLUDED_COMMANDS (comma-separated) controls which commands are silenced.
-        // When not set, all commands are monitored. Example: OPENTELEMETRY_MONGODB_EXCLUDED_COMMANDS=getMore,ping
-        var excludedCommandsEnv = Environment.GetEnvironmentVariable("OPENTELEMETRY_MONGODB_EXCLUDED_COMMANDS");
-        var excludedCommands = string.IsNullOrWhiteSpace(excludedCommandsEnv)
+        // Primary configuration keys:
+        // - OpenTelemetry:MongoDB:ExcludedCommands (CSV)
+        // - OpenTelemetry:MongoDB:CaptureCommandText (bool)
+        // Fallback keys preserve compatibility with existing deployments.
+        var excludedCommandsValue =
+            _configuration.GetValue<string>("OpenTelemetry:MongoDB:ExcludedCommands")
+            ?? _configuration.GetValue<string>("OPENTELEMETRY_MONGODB_EXCLUDED_COMMANDS");
+
+        var excludedCommands = string.IsNullOrWhiteSpace(excludedCommandsValue)
             ? null
-            : excludedCommandsEnv
+            : excludedCommandsValue
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // CaptureCommandText is opt-in — raw MongoDB query documents can contain tenant data or
         // PII (e.g. filter values, $match fields). Enable only in trusted dev/internal environments.
         var captureCommandText =
-            Environment.GetEnvironmentVariable("OPENTELEMETRY_MONGODB_CAPTURE_COMMAND_TEXT")
-                ?.Equals("true", StringComparison.OrdinalIgnoreCase) ?? false;
+            _configuration.GetValue<bool?>("OpenTelemetry:MongoDB:CaptureCommandText")
+            ?? _configuration.GetValue<bool?>("OPENTELEMETRY_MONGODB_CAPTURE_COMMAND_TEXT")
+            ?? false;
 
         settings.ClusterConfigurator = cb =>
             cb.Subscribe(new DiagnosticsActivityEventSubscriber(new InstrumentationOptions
