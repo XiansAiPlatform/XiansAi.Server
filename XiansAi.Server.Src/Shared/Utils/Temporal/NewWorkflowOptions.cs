@@ -97,14 +97,29 @@ public class NewWorkflowOptions : WorkflowOptions
             throw new InvalidOperationException("UserId is required to create workflow memo");
         }
 
-        var memo = new Dictionary<string, object> {
+        return new Dictionary<string, object> {
             { Constants.TenantIdKey, tenantContext.TenantId },
             { Constants.AgentKey, agentName },
             { Constants.UserIdKey, userId },
             { Constants.SystemScopedKey, systemScoped },
             { Constants.IdPostfixKey, idPostfix },
         };
+    }
 
-        return memo;
+    /// <summary>
+    /// Adds or updates a single entry in the workflow memo after construction.
+    /// Used by the TracingInterceptor to inject trace context.
+    /// </summary>
+    public void AddToMemo(string key, object value)
+    {
+        if (Memo is Dictionary<string, object> mutableMemo)
+        {
+            mutableMemo[key] = value;
+        }
+        else
+        {
+            var newMemo = new Dictionary<string, object>(Memo) { [key] = value };
+            Memo = newMemo;
+        }
     }
 }

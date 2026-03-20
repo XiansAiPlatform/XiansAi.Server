@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using OpenTelemetry.Trace;
 using Shared.Auth;
 using Shared.Utils;
 using System.Text.Json.Serialization;
@@ -65,6 +67,8 @@ public interface IWorkflowSignalService
 
 public class WorkflowSignalService : IWorkflowSignalService
 {
+    private static readonly ActivitySource ActivitySource = new("XiansAi.Server.Temporal");
+
     private readonly IAgentService _agentService;
     private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowSignalService> _logger;
@@ -92,9 +96,29 @@ public class WorkflowSignalService : IWorkflowSignalService
 
     public async Task<IResult> SignalWithStartWorkflow(WorkflowSignalWithStartRequest request)
     {
+        using var activity = ActivitySource.StartActivity("Temporal.SignalWithStart", ActivityKind.Client);
+
         try
         {
+            activity?.SetTag("temporal.operation", "signal_with_start");
+            activity?.SetTag("temporal.workflow_type", request.TargetWorkflowType);
+            activity?.SetTag("temporal.signal_name", request.SignalName ?? "unknown");
+            activity?.SetTag("temporal.source_agent", request.SourceAgent);
+            activity?.SetTag("temporal.workflow_id", request.TargetWorkflowId ?? "auto-generated");
+
+            if (!string.IsNullOrEmpty(_tenantContext.TenantId))
+            {
+                activity?.SetTag("tenant.id", _tenantContext.TenantId);
+            }
+
+            if (!string.IsNullOrEmpty(_tenantContext.LoggedInUser))
+            {
+                activity?.SetTag("user.id", _tenantContext.LoggedInUser);
+            }
+
             var client = await _clientFactory.GetClientAsync() ?? throw new Exception("Failed to get Temporal client");
+
+            activity?.SetTag("temporal.namespace", client.Options.Namespace);
 
             var systemScoped = _agentService.IsSystemAgent(request.SourceAgent).Result.Data;
 
@@ -117,6 +141,8 @@ public class WorkflowSignalService : IWorkflowSignalService
 
             await client.StartWorkflowAsync(request.TargetWorkflowType, new List<object>().AsReadOnly(), options);
 
+            activity?.SetStatus(ActivityStatusCode.Ok);
+
             _logger.LogInformation("Successfully onvoked workflow type {WorkflowType} with signal {SignalName}", 
                 request.TargetWorkflowType, request.SignalName);
             
@@ -128,6 +154,8 @@ public class WorkflowSignalService : IWorkflowSignalService
         }
         catch (Temporalio.Exceptions.RpcException ex) when (ex.Message.Contains("workflow not found"))
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.RecordException(ex);
             _logger.LogWarning(ex, "Workflow reference not found for type: {WorkflowType}", request.TargetWorkflowType);
             return Results.NotFound(new {
                 message = $"Workflow type '{request.TargetWorkflowType}' could not be started or referenced",
@@ -136,6 +164,8 @@ public class WorkflowSignalService : IWorkflowSignalService
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.RecordException(ex);
             _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowType}", 
                 request.SignalName, request.TargetWorkflowType);
                 

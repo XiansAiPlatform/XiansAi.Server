@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using MongoDB.Driver.Core.Extensions.DiagnosticSources;
 using Microsoft.Extensions.Logging;
 
 namespace Shared.Data;
@@ -68,6 +69,24 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
         // Configure retry settings from configuration
         settings.RetryWrites = Config.RetryWrites;
         settings.RetryReads = Config.RetryReads;
+
+        // Register the DiagnosticsActivityEventSubscriber so the driver emits Activity spans
+        // under the "MongoDB.Driver.Core.Extensions.DiagnosticSources" ActivitySource.
+        // OPENTELEMETRY_MONGODB_EXCLUDED_COMMANDS (comma-separated) controls which commands are silenced.
+        // When not set, all commands are monitored. Example: OPENTELEMETRY_MONGODB_EXCLUDED_COMMANDS=getMore,ping
+        var excludedCommandsEnv = Environment.GetEnvironmentVariable("OPENTELEMETRY_MONGODB_EXCLUDED_COMMANDS");
+        var excludedCommands = string.IsNullOrWhiteSpace(excludedCommandsEnv)
+            ? null
+            : excludedCommandsEnv
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        settings.ClusterConfigurator = cb =>
+            cb.Subscribe(new DiagnosticsActivityEventSubscriber(new InstrumentationOptions
+            {
+                CaptureCommandText = true,
+                ShouldStartActivity = @event => excludedCommands == null || !excludedCommands.Contains(@event.CommandName)
+            }));
         
         _logger.LogDebug("Creating MongoDB client with connection pool: Max={MaxPool}, Min={MinPool}, IdleTimeout={IdleTimeout}, RetryWrites={RetryWrites}, RetryReads={RetryReads}", 
             settings.MaxConnectionPoolSize, settings.MinConnectionPoolSize, settings.MaxConnectionIdleTime, settings.RetryWrites, settings.RetryReads);
