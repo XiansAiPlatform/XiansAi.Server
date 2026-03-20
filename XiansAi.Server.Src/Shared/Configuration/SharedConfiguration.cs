@@ -277,6 +277,33 @@ public static class SharedConfiguration
         app.UseAuthentication();
         app.UseAuthorization();
 
+        // After auth resolves the tenant, push the tenant tag into the logging scope so every
+        // log record emitted within a request carries it as a structured attribute.
+        // Tag name is configurable via OPENTELEMETRY_TENANT_TAG_NAME (default: tenant.id).
+        var tenantTagName =
+            (app.Configuration.GetValue<string>("OpenTelemetry:TenantTagName")
+             ?? Environment.GetEnvironmentVariable("OPENTELEMETRY_TENANT_TAG_NAME"))?.Trim()
+            is { Length: > 0 } t ? t : "tenant.id";
+
+        app.Use(async (context, next) =>
+        {
+            var tenantContext = context.RequestServices.GetService<ITenantContext>();
+            var tenantId = tenantContext?.TenantId;
+            if (!string.IsNullOrWhiteSpace(tenantId))
+            {
+                var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+                var logger = loggerFactory.CreateLogger("XiansAi.TenantScope");
+                using (logger.BeginScope(new Dictionary<string, object> { [tenantTagName] = tenantId }))
+                {
+                    await next(context);
+                }
+            }
+            else
+            {
+                await next(context);
+            }
+        });
+
         // Map health checks
         app.MapHealthChecks("/health");
 

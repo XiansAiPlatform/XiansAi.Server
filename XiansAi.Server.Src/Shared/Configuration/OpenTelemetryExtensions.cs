@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -23,6 +25,12 @@ public static class OpenTelemetryExtensions
         var serviceName = builder.Configuration.GetValue<string>("OpenTelemetry:ServiceName") ?? "XiansAi.Server";
         var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "1.0.0";
         var otlpEndpoint = builder.Configuration.GetValue<string>("OpenTelemetry:OtlpEndpoint");
+
+        // Configurable tenant tag name — OPENTELEMETRY_TENANT_TAG_NAME env var, default: tenant.id
+        var tenantTagName =
+            (builder.Configuration.GetValue<string>("OpenTelemetry:TenantTagName")
+             ?? Environment.GetEnvironmentVariable("OPENTELEMETRY_TENANT_TAG_NAME"))?.Trim()
+            is { Length: > 0 } t ? t : "tenant.id";
 
         if (string.IsNullOrWhiteSpace(otlpEndpoint))
         {
@@ -65,7 +73,7 @@ public static class OpenTelemetryExtensions
                             var tenantId = httpRequest.Headers["X-Tenant-Id"].FirstOrDefault();
                             if (!string.IsNullOrEmpty(tenantId))
                             {
-                                activity.SetTag("tenant.id", tenantId);
+                                activity.SetTag(tenantTagName, tenantId);
                             }
                         };
 
@@ -77,7 +85,7 @@ public static class OpenTelemetryExtensions
                             var tenantContext = httpResponse.HttpContext.RequestServices.GetService<ITenantContext>();
                             if (tenantContext != null && !string.IsNullOrEmpty(tenantContext.TenantId))
                             {
-                                activity.SetTag("tenant.id", tenantContext.TenantId);
+                                activity.SetTag(tenantTagName, tenantContext.TenantId);
                                 activity.SetTag("tenant.user", tenantContext.LoggedInUser);
                                 activity.SetTag("tenant.user_type", tenantContext.UserType.ToString());
 
@@ -101,7 +109,7 @@ public static class OpenTelemetryExtensions
                                 : null;
                             if (!string.IsNullOrEmpty(tenantId))
                             {
-                                activity.SetTag("tenant.id", tenantId);
+                                activity.SetTag(tenantTagName, tenantId);
                             }
                         };
 
@@ -110,6 +118,7 @@ public static class OpenTelemetryExtensions
                     })
                     .AddSource("XiansAi.*")
                     .AddSource("MongoDB.Driver.Core.Extensions.DiagnosticSources")
+                    .AddProcessor(new MongoDbTenantPropagationProcessor(tenantTagName))
                     .AddOtlpExporter(options =>
                     {
                         options.Endpoint = new Uri(otlpEndpoint);
@@ -151,5 +160,44 @@ public static class OpenTelemetryExtensions
         }
 
         return builder;
+    }
+
+    /// <summary>
+    /// Copies <c>tenant.id</c> from the nearest ancestor span onto MongoDB spans.
+    /// MongoDB operations run inside an HTTP request that already has <c>tenant.id</c>
+    /// set by <see cref="AddOpenTelemetry"/> enrichment, but the MongoDB driver creates
+    /// child activities without inheriting custom tags.
+    /// </summary>
+    private sealed class MongoDbTenantPropagationProcessor : BaseProcessor<Activity>
+    {
+        private const string MongoDbSourceName = "MongoDB.Driver.Core.Extensions.DiagnosticSources";
+        private readonly string _tagName;
+
+        public MongoDbTenantPropagationProcessor(string tagName)
+        {
+            _tagName = tagName;
+        }
+
+        public override void OnStart(Activity activity)
+        {
+            if (activity.Source.Name != MongoDbSourceName)
+            {
+                return;
+            }
+
+            // Walk up the parent chain to find a span that already has the tenant tag.
+            var parent = activity.Parent;
+            while (parent != null)
+            {
+                var tenantId = parent.GetTagItem(_tagName) as string;
+                if (!string.IsNullOrWhiteSpace(tenantId))
+                {
+                    activity.SetTag(_tagName, tenantId);
+                    return;
+                }
+
+                parent = parent.Parent;
+            }
+        }
     }
 }
