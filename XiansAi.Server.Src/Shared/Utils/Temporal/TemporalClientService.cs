@@ -1,5 +1,6 @@
 using Temporalio.Client;
 using Temporalio.Api.OperatorService.V1;
+using Temporalio.Extensions.OpenTelemetry;
 using System.Collections.Concurrent;
 using Shared.Utils;
 
@@ -62,6 +63,9 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             var options = new TemporalClientConnectOptions(new(config.FlowServerUrl))
             {
                 Namespace = config.FlowServerNamespace!,
+                // Propagates OpenTelemetry trace context into Temporal workflows automatically.
+                // No-op when no TracerProvider is configured (safe to keep always enabled).
+                Interceptors = [new TracingInterceptor()]
             };
             
             if (config.CertificateBase64 != null && config.PrivateKeyBase64 != null) 

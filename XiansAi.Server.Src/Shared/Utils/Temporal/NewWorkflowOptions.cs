@@ -7,8 +7,6 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
-
-    
     public NewWorkflowOptions(string agentName, bool systemScoped, string workflowType, string? idPostfix, ITenantContext tenantContext, string? userId = null)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId))
@@ -97,14 +95,12 @@ public class NewWorkflowOptions : WorkflowOptions
             throw new InvalidOperationException("UserId is required to create workflow memo");
         }
 
-        var memo = new Dictionary<string, object> {
+        return new Dictionary<string, object> {
             { Constants.TenantIdKey, tenantContext.TenantId },
             { Constants.AgentKey, agentName },
             { Constants.UserIdKey, userId },
             { Constants.SystemScopedKey, systemScoped },
             { Constants.IdPostfixKey, idPostfix },
         };
-
-        return memo;
     }
 }
