@@ -7,8 +7,10 @@ using Temporalio.Common;
 
 public class NewWorkflowOptions : WorkflowOptions
 {
+    // Kept as a typed backing field so AddToMemo can always mutate it directly,
+    // without needing to defensive-cast the base Memo property.
+    private readonly Dictionary<string, object> _memo;
 
-    
     public NewWorkflowOptions(string agentName, bool systemScoped, string workflowType, string? idPostfix, ITenantContext tenantContext, string? userId = null)
     {
         if (string.IsNullOrEmpty(tenantContext.TenantId))
@@ -49,7 +51,8 @@ public class NewWorkflowOptions : WorkflowOptions
 
         Id = workflowId;
         TaskQueue = GetTemporalQueueName(workflowType, systemScoped, tenantContext);
-        Memo = GetMemo(tenantContext, agentName, systemScoped, effectiveUserId, idPostfix ?? string.Empty);
+        _memo = GetMemo(tenantContext, agentName, systemScoped, effectiveUserId, idPostfix ?? string.Empty);
+        Memo = _memo;
         TypedSearchAttributes = GetSearchAttributes(tenantContext, agentName, effectiveUserId, idPostfix ?? string.Empty);
         IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting;
     }
@@ -110,16 +113,5 @@ public class NewWorkflowOptions : WorkflowOptions
     /// Adds or updates a single entry in the workflow memo after construction.
     /// Used by the TracingInterceptor to inject trace context.
     /// </summary>
-    public void AddToMemo(string key, object value)
-    {
-        if (Memo is Dictionary<string, object> mutableMemo)
-        {
-            mutableMemo[key] = value;
-        }
-        else
-        {
-            var newMemo = new Dictionary<string, object>(Memo) { [key] = value };
-            Memo = newMemo;
-        }
-    }
+    public void AddToMemo(string key, object value) => _memo[key] = value;
 }

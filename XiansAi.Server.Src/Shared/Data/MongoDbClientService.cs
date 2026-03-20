@@ -81,10 +81,16 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // CaptureCommandText is opt-in — raw MongoDB query documents can contain tenant data or
+        // PII (e.g. filter values, $match fields). Enable only in trusted dev/internal environments.
+        var captureCommandText =
+            Environment.GetEnvironmentVariable("OPENTELEMETRY_MONGODB_CAPTURE_COMMAND_TEXT")
+                ?.Equals("true", StringComparison.OrdinalIgnoreCase) ?? false;
+
         settings.ClusterConfigurator = cb =>
             cb.Subscribe(new DiagnosticsActivityEventSubscriber(new InstrumentationOptions
             {
-                CaptureCommandText = true,
+                CaptureCommandText = captureCommandText,
                 ShouldStartActivity = @event => excludedCommands == null || !excludedCommands.Contains(@event.CommandName)
             }));
         

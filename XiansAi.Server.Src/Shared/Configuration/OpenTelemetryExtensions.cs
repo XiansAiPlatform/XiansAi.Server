@@ -14,6 +14,16 @@ namespace Features.Shared.Configuration;
 /// </summary>
 public static class OpenTelemetryExtensions
 {
+    /// <summary>
+    /// Resolves the span/log attribute name used for tenant identity.
+    /// Checks <c>OpenTelemetry:TenantTagName</c> in configuration first, then the
+    /// <c>OPENTELEMETRY_TENANT_TAG_NAME</c> environment variable; falls back to <c>tenant.id</c>.
+    /// </summary>
+    public static string ResolveTenantTagName(IConfiguration configuration) =>
+        (configuration.GetValue<string>("OpenTelemetry:TenantTagName")
+         ?? Environment.GetEnvironmentVariable("OPENTELEMETRY_TENANT_TAG_NAME"))?.Trim()
+        is { Length: > 0 } t ? t : "tenant.id";
+
     public static WebApplicationBuilder AddOpenTelemetry(this WebApplicationBuilder builder)
     {
         var enabled = builder.Configuration.GetValue<bool>("OpenTelemetry:Enabled", false);
@@ -25,21 +35,31 @@ public static class OpenTelemetryExtensions
         var serviceName = builder.Configuration.GetValue<string>("OpenTelemetry:ServiceName") ?? "XiansAi.Server";
         var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "1.0.0";
         var otlpEndpoint = builder.Configuration.GetValue<string>("OpenTelemetry:OtlpEndpoint");
+        var tenantTagName = ResolveTenantTagName(builder.Configuration);
 
-        // Configurable tenant tag name — OPENTELEMETRY_TENANT_TAG_NAME env var, default: tenant.id
-        var tenantTagName =
-            (builder.Configuration.GetValue<string>("OpenTelemetry:TenantTagName")
-             ?? Environment.GetEnvironmentVariable("OPENTELEMETRY_TENANT_TAG_NAME"))?.Trim()
-            is { Length: > 0 } t ? t : "tenant.id";
+        // Off by default — user identity fields (user, type, roles) are PII and must be
+        // explicitly opted in. Set OpenTelemetry:IncludeUserIdentity=true only in trusted,
+        // internal-only observability environments.
+        var includeUserIdentity = builder.Configuration.GetValue<bool>("OpenTelemetry:IncludeUserIdentity", false);
+
+        // Bootstrap logger — uses ILogger so messages are structured records (not raw Console output),
+        // appear correctly in containerised log collectors, and respect the JSON console formatter.
+        using var startupLoggerFactory = LoggerFactory.Create(lb =>
+            lb.SetMinimumLevel(LogLevel.Debug).AddSimpleConsole());
+        var logger = startupLoggerFactory.CreateLogger(nameof(OpenTelemetryExtensions));
 
         if (string.IsNullOrWhiteSpace(otlpEndpoint))
         {
-            Console.WriteLine("[OpenTelemetry] WARNING: OpenTelemetry:OtlpEndpoint is not set — telemetry export disabled.");
+            logger.LogWarning("OpenTelemetry:OtlpEndpoint is not set — telemetry export disabled.");
             return builder;
         }
 
-        Console.WriteLine($"[OpenTelemetry] Initializing for service: {serviceName}");
-        Console.WriteLine($"[OpenTelemetry] OTLP Endpoint: {otlpEndpoint}");
+        logger.LogInformation("Initializing OpenTelemetry for service: {ServiceName}", serviceName);
+        logger.LogInformation("OTLP Endpoint: {OtlpEndpoint}", otlpEndpoint);
+        if (includeUserIdentity)
+        {
+            logger.LogWarning("OpenTelemetry:IncludeUserIdentity is enabled — user identity PII (user, type, roles) will be emitted as span attributes.");
+        }
 
         try
         {
@@ -86,12 +106,18 @@ public static class OpenTelemetryExtensions
                             if (tenantContext != null && !string.IsNullOrEmpty(tenantContext.TenantId))
                             {
                                 activity.SetTag(tenantTagName, tenantContext.TenantId);
-                                activity.SetTag("tenant.user", tenantContext.LoggedInUser);
-                                activity.SetTag("tenant.user_type", tenantContext.UserType.ToString());
 
-                                if (tenantContext.UserRoles?.Length > 0)
+                                // PII guard — user identity fields are opt-in only.
+                                // Enable via OpenTelemetry:IncludeUserIdentity=true in trusted environments.
+                                if (includeUserIdentity)
                                 {
-                                    activity.SetTag("tenant.user_roles", string.Join(",", tenantContext.UserRoles));
+                                    activity.SetTag("tenant.user", tenantContext.LoggedInUser);
+                                    activity.SetTag("tenant.user_type", tenantContext.UserType.ToString());
+
+                                    if (tenantContext.UserRoles?.Length > 0)
+                                    {
+                                        activity.SetTag("tenant.user_roles", string.Join(",", tenantContext.UserRoles));
+                                    }
                                 }
                             }
                         };
@@ -149,14 +175,15 @@ public static class OpenTelemetryExtensions
                 });
             });
 
-            Console.WriteLine($"[OpenTelemetry] ✓ Enabled for {serviceName} v{serviceVersion} → {otlpEndpoint}");
-            Console.WriteLine("[OpenTelemetry]   Note: If collector is unreachable, traces/metrics are buffered or dropped (non-blocking)");
+            logger.LogInformation(
+                "OpenTelemetry enabled for {ServiceName} v{ServiceVersion} → {OtlpEndpoint}. " +
+                "If the collector is unreachable, traces/metrics are buffered or dropped (non-blocking).",
+                serviceName, serviceVersion, otlpEndpoint);
         }
         catch (Exception ex)
         {
             // OTel init failures must never crash the server
-            Console.WriteLine($"[OpenTelemetry] ⚠ Failed to initialize: {ex.Message}");
-            Console.WriteLine("[OpenTelemetry] ⚠ Server will continue without telemetry export");
+            logger.LogError(ex, "Failed to initialize OpenTelemetry — server will continue without telemetry export.");
         }
 
         return builder;

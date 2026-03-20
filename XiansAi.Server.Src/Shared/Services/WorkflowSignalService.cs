@@ -4,6 +4,7 @@ using Shared.Auth;
 using Shared.Utils;
 using System.Text.Json.Serialization;
 using Shared.Utils.Temporal;
+using Features.Shared.Configuration;
 using Features.WebApi.Services;
 
 namespace Shared.Services;
@@ -73,6 +74,7 @@ public class WorkflowSignalService : IWorkflowSignalService
     private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowSignalService> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly string _tenantTagName;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowSignalService"/> class.
@@ -81,17 +83,21 @@ public class WorkflowSignalService : IWorkflowSignalService
     /// <param name="logger">The logger for recording operational information.</param>
     /// <param name="tenantContext">The tenant context for the current request.</param>
     /// <param name="agentService">The agent service for checking if an agent is system scoped.</param>
+    /// <param name="configuration">The application configuration.</param>
     /// <exception cref="ArgumentNullException">Thrown when any of the required services is null.</exception>
     public WorkflowSignalService(
         IAgentService agentService,
         ITemporalClientFactory clientFactory,
         ILogger<WorkflowSignalService> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IConfiguration configuration)
     {
         _agentService = agentService ?? throw new ArgumentNullException(nameof(agentService));
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _tenantTagName = OpenTelemetryExtensions.ResolveTenantTagName(
+            configuration ?? throw new ArgumentNullException(nameof(configuration)));
     }
 
     public async Task<IResult> SignalWithStartWorkflow(WorkflowSignalWithStartRequest request)
@@ -108,7 +114,7 @@ public class WorkflowSignalService : IWorkflowSignalService
 
             if (!string.IsNullOrEmpty(_tenantContext.TenantId))
             {
-                activity?.SetTag("tenant.id", _tenantContext.TenantId);
+                activity?.SetTag(_tenantTagName, _tenantContext.TenantId);
             }
 
             if (!string.IsNullOrEmpty(_tenantContext.LoggedInUser))
@@ -120,7 +126,7 @@ public class WorkflowSignalService : IWorkflowSignalService
 
             activity?.SetTag("temporal.namespace", client.Options.Namespace);
 
-            var systemScoped = _agentService.IsSystemAgent(request.SourceAgent).Result.Data;
+            var systemScoped = (await _agentService.IsSystemAgent(request.SourceAgent)).Data;
 
             var options = new NewWorkflowOptions(
                 request.SourceAgent, 
