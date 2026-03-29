@@ -44,7 +44,7 @@ public class TenantRoleDto
     public string Tenant { get; set; } = string.Empty;
     [JsonPropertyName("roles")]
     public List<string> Roles { get; set; } = new();
-    [BsonElement("isApproved")]
+    [JsonPropertyName("isApproved")]
     public required bool IsApproved { get; set; }
 }
 
@@ -101,7 +101,12 @@ public enum UserTypeFilter
     ADMIN,
     NON_ADMIN,
     PARTICIPANT,
-    PARTICIPANT_ADMIN
+    PARTICIPANT_ADMIN,
+    /// <summary>
+    /// Users whose approved tenant role includes <see cref="SystemRoles.TenantParticipant"/> or
+    /// <see cref="SystemRoles.TenantParticipantAdmin"/> (may also include other roles such as TenantAdmin or TenantUser).
+    /// </summary>
+    PARTICIPANT_SCOPE
 }
 
 public interface IUserManagementService

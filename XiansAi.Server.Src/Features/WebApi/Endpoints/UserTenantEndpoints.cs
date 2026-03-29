@@ -93,8 +93,8 @@ public static class UserTenantEndpoints
         .RequiresValidTenantAdmin()
         .WithOpenApi(operation => {
             operation.Summary = "Update tenant user";
-            operation.Description = "Update tenant user details (name, email, active status) and tenant-specific roles for the current tenant only. " +
-                                   "Cannot modify system admin status or roles in other tenants. Only tenant admins can use this endpoint.";
+            operation.Description = "Update tenant user details (name, email) and tenant-specific roles and approval (TenantRoles[].isApproved) for the current tenant only. " +
+                                   "Does not change global account lockout. Cannot modify system admin status or roles in other tenants. Only tenant admins can use this endpoint.";
             return operation;
         });
 

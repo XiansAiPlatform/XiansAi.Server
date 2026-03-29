@@ -128,7 +128,16 @@ public static class AdminParticipantsEndpoints
 
                 // Get user by email
                 var user = await userRepository.GetByUserEmailAsync(email);
-                
+
+                // Reject locked-out users
+                if (user?.IsLockedOut == true)
+                {
+                    logger.LogWarning("Participant lookup denied: user {EmailRedacted} is locked out", RedactEmailForLogging(email));
+                    return Results.Problem(
+                        detail: "Access denied: the user account is locked out",
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
                 // Get tenant IDs and role per tenant where user has TenantParticipant or TenantParticipantAdmin (if user exists)
                 var participantTenantIds = new List<string>();
                 var tenantRoleMap = new Dictionary<string, string>(); // tenantId -> TenantParticipant or TenantParticipantAdmin

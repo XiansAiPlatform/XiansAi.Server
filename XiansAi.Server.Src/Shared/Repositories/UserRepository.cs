@@ -122,31 +122,44 @@ public class UserRepository : IUserRepository
         if (string.IsNullOrWhiteSpace(filter.Tenant))
             throw new ArgumentException("Tenant is required for role-based user filtering.");
 
+        // Include users whether or not their tenant membership is approved (IsApproved).
+        // The UI shows approval status; pending users must still appear for tenant admins to act on.
         switch (filter.Type)
         {
             case UserTypeFilter.ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantAdmin) && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantAdmin)));
                 break;
 
             case UserTypeFilter.NON_ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantUser) && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantUser)));
                 break;
 
             case UserTypeFilter.PARTICIPANT:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipant) && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipant)));
                 break;
             case UserTypeFilter.PARTICIPANT_ADMIN:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipantAdmin) && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)));
                 break;
+
+            case UserTypeFilter.PARTICIPANT_SCOPE:
+            {
+                var trFilter = Builders<TenantRole>.Filter.And(
+                    Builders<TenantRole>.Filter.Eq(tr => tr.Tenant, filter.Tenant),
+                    Builders<TenantRole>.Filter.AnyIn(
+                        tr => tr.Roles,
+                        new[] { SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin }));
+                filters.Add(builder.ElemMatch(u => u.TenantRoles, trFilter));
+                break;
+            }
 
             case UserTypeFilter.ALL:
             default:
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
-                    tr => tr.Tenant == filter.Tenant && tr.IsApproved));
+                    tr => tr.Tenant == filter.Tenant));
                 break;
         }
 

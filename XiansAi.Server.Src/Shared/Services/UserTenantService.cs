@@ -455,51 +455,43 @@ public class UserTenantService : IUserTenantService
             return ServiceResult<bool>.Forbidden("Can only modify roles for the current tenant");
         }
 
-        // Update allowed user properties: Name, Email, Active status
+        // Update allowed user properties: Name, Email (do not change global lockout from this endpoint)
         existingUser.Email = user.Email;
         existingUser.Name = user.Name;
-        existingUser.IsLockedOut = !user.Active;
 
-        if (existingUser.IsLockedOut)
-        {
-            existingUser.LockedOutBy = _tenantContext.LoggedInUser;
-            existingUser.LockedOutReason = "Locked by admin";
-        }
-        else
-        {
-            // Clear lockout information when re-activating
-            existingUser.LockedOutBy = null;
-            existingUser.LockedOutReason = null;
-        }
-
-        // Update tenant roles for current tenant only
+        // Tenant approval and roles for the current tenant only (from TenantRoles[].IsApproved)
         var currentTenantRoles = existingUser.TenantRoles.Where(x => x.Tenant == _tenantContext.TenantId).ToList();
-        var updatedRoles = user.TenantRoles
-            .Where(x => x.Tenant == _tenantContext.TenantId)
-            .Select(x => x.Roles).FirstOrDefault() ?? new List<string>();
+        var currentTenantRoleDto = user.TenantRoles.FirstOrDefault(x => x.Tenant == _tenantContext.TenantId);
 
-        // Security: Prevent tenant admin from assigning system-wide roles
-        var systemWideRoles = new[] { SystemRoles.SysAdmin };
-        var hasSystemRoles = updatedRoles.Any(r => systemWideRoles.Contains(r));
-        if (hasSystemRoles && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+        if (currentTenantRoleDto != null)
         {
-            _logger.LogWarning("Attempt to assign system-wide roles by non-sysadmin user {LoggedInUser} in tenant {TenantId}", 
-                _tenantContext.LoggedInUser, _tenantContext.TenantId);
-            return ServiceResult<bool>.Forbidden("Cannot assign system-wide roles");
-        }
+            var updatedRoles = currentTenantRoleDto.Roles ?? new List<string>();
+            var isApprovedForTenant = currentTenantRoleDto.IsApproved;
 
-        if (currentTenantRoles.Count > 0)
-        {
-            currentTenantRoles[0].Roles = updatedRoles;
-        }
-        else
-        {
-            existingUser.TenantRoles.Add(new TenantRole
+            // Security: Prevent tenant admin from assigning system-wide roles
+            var systemWideRoles = new[] { SystemRoles.SysAdmin };
+            var hasSystemRoles = updatedRoles.Any(r => systemWideRoles.Contains(r));
+            if (hasSystemRoles && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
-                Tenant = _tenantContext.TenantId,
-                Roles = updatedRoles,
-                IsApproved = true 
-            });
+                _logger.LogWarning("Attempt to assign system-wide roles by non-sysadmin user {LoggedInUser} in tenant {TenantId}",
+                    _tenantContext.LoggedInUser, _tenantContext.TenantId);
+                return ServiceResult<bool>.Forbidden("Cannot assign system-wide roles");
+            }
+
+            if (currentTenantRoles.Count > 0)
+            {
+                currentTenantRoles[0].Roles = updatedRoles;
+                currentTenantRoles[0].IsApproved = isApprovedForTenant;
+            }
+            else
+            {
+                existingUser.TenantRoles.Add(new TenantRole
+                {
+                    Tenant = _tenantContext.TenantId,
+                    Roles = updatedRoles,
+                    IsApproved = isApprovedForTenant
+                });
+            }
         }
 
         await _userRepository.UpdateAsync(existingUser.UserId, existingUser);

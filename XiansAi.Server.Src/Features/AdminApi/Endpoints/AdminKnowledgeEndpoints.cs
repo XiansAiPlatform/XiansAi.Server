@@ -197,7 +197,8 @@ public static class AdminKnowledgeEndpoints
             [FromQuery] string? activationName,
             [FromServices] IKnowledgeService knowledgeService,
             [FromServices] IAgentRepository agentRepository,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ILogger<IKnowledgeService> logger) =>
         {
             try
             {
@@ -236,8 +237,9 @@ public static class AdminKnowledgeEndpoints
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Unhandled exception in Admin GET /latest knowledge endpoint");
                 return Results.Json(
-                    new { error = "Internal server error", message = ex.Message },
+                    new { error = "InternalServerError", message = "An unexpected error occurred." },
                     statusCode: 500);
             }
         })
