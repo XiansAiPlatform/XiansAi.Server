@@ -44,6 +44,18 @@ public static class ScheduleEndpoints
         .WithDescription("Retrieves all schedules with optional filtering by agent name, workflow type, status, and search term")
         .WithOpenApi();
 
+        // Delete all schedules for the current tenant
+        schedulesGroup.MapDelete("/all", async (
+            [FromServices] IScheduleService scheduleService) =>
+        {
+            var result = await scheduleService.DeleteAllSchedulesAsync();
+            return result.ToHttpResult();
+        })
+        .WithName("DeleteAllSchedules")
+        .WithSummary("Delete all schedules for the tenant")
+        .WithDescription("Deletes all schedules belonging to the current tenant. This operation cannot be undone.")
+        .WithOpenApi();
+
         // Delete all schedules for an agent (more specific route - must come before /{scheduleId})
         schedulesGroup.MapDelete("/agent/{agentName}", async (
             string agentName,

@@ -43,6 +43,11 @@ public interface IScheduleService
     /// Deletes all schedules for a specific agent
     /// </summary>
     Task<ServiceResult<ScheduleDeleteResult>> DeleteAllSchedulesByAgentAsync(string agentName);
+    
+    /// <summary>
+    /// Deletes all schedules for the current tenant
+    /// </summary>
+    Task<ServiceResult<ScheduleDeleteResult>> DeleteAllSchedulesAsync();
 }
 
 /// <summary>
@@ -944,6 +949,67 @@ public class ScheduleService : IScheduleService
         {
             _logger.LogError(ex, "Failed to delete schedules for agent {AgentName}", agentName);
             return ServiceResult<ScheduleDeleteResult>.InternalServerError($"Failed to delete schedules: {ex.Message}");
+        }
+    }
+    
+    public async Task<ServiceResult<ScheduleDeleteResult>> DeleteAllSchedulesAsync()
+    {
+        try
+        {
+            var client = await _clientFactory.GetClientAsync();
+            var result = new ScheduleDeleteResult();
+
+            var queryParts = new List<string>();
+
+            if (!string.IsNullOrEmpty(_tenantContext.TenantId))
+            {
+                queryParts.Add($"tenantId = '{_tenantContext.TenantId}'");
+            }
+
+            var query = queryParts.Count > 0 ? string.Join(" AND ", queryParts) : string.Empty;
+
+            _logger.LogInformation("Deleting all schedules for tenant {TenantId}", _tenantContext.TenantId);
+
+            var listOptions = !string.IsNullOrEmpty(query)
+                ? new Temporalio.Client.Schedules.ScheduleListOptions { Query = query }
+                : null;
+
+            var scheduleIds = new List<string>();
+            await foreach (var schedule in client.ListSchedulesAsync(listOptions))
+            {
+                scheduleIds.Add(schedule.Id);
+            }
+
+            _logger.LogInformation("Found {Count} schedules to delete for tenant {TenantId}", scheduleIds.Count, _tenantContext.TenantId);
+
+            foreach (var scheduleId in scheduleIds)
+            {
+                try
+                {
+                    var scheduleHandle = client.GetScheduleHandle(scheduleId);
+                    await scheduleHandle.DeleteAsync();
+
+                    result.DeletedScheduleIds.Add(scheduleId);
+                    result.DeletedCount++;
+
+                    _logger.LogInformation("Successfully deleted schedule {ScheduleId}", scheduleId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", scheduleId);
+                    result.FailedScheduleIds.Add(scheduleId);
+                }
+            }
+
+            _logger.LogInformation("Deleted {DeletedCount} schedules for tenant {TenantId}. Failed: {FailedCount}",
+                result.DeletedCount, _tenantContext.TenantId, result.FailedScheduleIds.Count);
+
+            return ServiceResult<ScheduleDeleteResult>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete all schedules for tenant {TenantId}", _tenantContext.TenantId);
+            return ServiceResult<ScheduleDeleteResult>.InternalServerError($"Failed to delete all schedules: {ex.Message}");
         }
     }
     
