@@ -103,6 +103,20 @@ public static class WorkflowEndpoints
             return operation;
         });
 
+        workflowsGroup.MapPost("/cancel-all", async (
+            [FromQuery] bool force,
+            [FromServices] IWorkflowCancelService endpoint) =>
+        {
+            var result = await endpoint.CancelAllWorkflows(force);
+            return result.ToHttpResult();
+        })
+        .WithName("Cancel All Workflows")
+        .WithOpenApi(operation => {
+            operation.Summary = "Cancel all running workflows for the tenant";
+            operation.Description = "Cancels all running workflows belonging to the current tenant. Pass force=true to terminate immediately instead of a graceful cancel.";
+            return operation;
+        });
+
         workflowsGroup.MapGet("/events/stream", (
             [FromServices] IWorkflowEventsService endpoint,
             [FromQuery] string workflowId) =>

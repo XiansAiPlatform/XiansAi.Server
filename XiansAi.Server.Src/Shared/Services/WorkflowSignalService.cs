@@ -163,7 +163,7 @@ public class WorkflowSignalService : IWorkflowSignalService
         catch (Temporalio.Exceptions.RpcException ex) when (ex.Message.Contains("workflow not found"))
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogWarning(ex, "Workflow reference not found for type: {WorkflowType}", request.TargetWorkflowType);
             return Results.NotFound(new {
                 message = $"Workflow type '{request.TargetWorkflowType}' could not be started or referenced",
@@ -173,7 +173,7 @@ public class WorkflowSignalService : IWorkflowSignalService
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.RecordException(ex);
+            activity?.AddException(ex);
             _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowType}", 
                 request.SignalName, request.TargetWorkflowType);
                 
