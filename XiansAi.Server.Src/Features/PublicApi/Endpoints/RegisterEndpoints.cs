@@ -3,6 +3,8 @@ using Features.PublicApi.Services;
 using Shared.Utils.Services;
 using Features.Shared.Configuration;
 using Shared.Utils;
+using Microsoft.OpenApi;
+using System.Text.Json.Nodes;
 
 namespace Features.PublicApi.Endpoints;
 
@@ -41,17 +43,17 @@ public static class RegisterEndpoints
             operation.RequestBody.Description = "Join tenant request containing tenant ID";
             
             // Add Authorization header parameter
-            operation.Parameters ??= new List<Microsoft.OpenApi.Models.OpenApiParameter>();
-            operation.Parameters.Add(new Microsoft.OpenApi.Models.OpenApiParameter
+            operation.Parameters ??= new List<IOpenApiParameter>();
+            operation.Parameters.Add(new OpenApiParameter
             {
                 Name = "Authorization",
-                In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                In = ParameterLocation.Header,
                 Required = true,
                 Description = "Bearer token for user authentication",
-                Schema = new Microsoft.OpenApi.Models.OpenApiSchema
+                Schema = new OpenApiSchema
                 {
-                    Type = "string",
-                    Example = new Microsoft.OpenApi.Any.OpenApiString("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
+                    Type = JsonSchemaType.String,
+                    Example = JsonValue.Create("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
                 }
             });
             
@@ -119,17 +121,17 @@ public static class RegisterEndpoints
             operation.RequestBody.Description = "New tenant request containing tenant ID, name, domain, and optional description";
             
             // Add Authorization header parameter
-            operation.Parameters ??= new List<Microsoft.OpenApi.Models.OpenApiParameter>();
-            operation.Parameters.Add(new Microsoft.OpenApi.Models.OpenApiParameter
+            operation.Parameters ??= new List<IOpenApiParameter>();
+            operation.Parameters.Add(new OpenApiParameter
             {
                 Name = "Authorization",
-                In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                In = ParameterLocation.Header,
                 Required = true,
                 Description = "Bearer token for user authentication",
-                Schema = new Microsoft.OpenApi.Models.OpenApiSchema
+                Schema = new OpenApiSchema
                 {
-                    Type = "string",
-                    Example = new Microsoft.OpenApi.Any.OpenApiString("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
+                    Type = JsonSchemaType.String,
+                    Example = JsonValue.Create("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
                 }
             });
             
