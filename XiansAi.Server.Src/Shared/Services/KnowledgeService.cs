@@ -508,17 +508,20 @@ public class KnowledgeService : IKnowledgeService
         var newContentHash = HashGenerator.GenerateContentHash(request.Content + request.Type);
         var currentLatestKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
 
-        // If knowledge exists with the same version (content hash), scope, and activation, return it
+        // If knowledge exists with the same content hash (compare from stored content+type, not Version
+        // string — PATCH revisions may use "contentHash:objectId" for unique index compliance)
         // Note: System knowledge (tenant_id=null) and tenant knowledge (tenant_id set) can coexist
         // with the same content because tenant_id differs. The system_scoped field in the unique index
         // provides additional clarity and defense-in-depth data integrity.
-        if (currentLatestKnowledge.IsSuccess && 
-            currentLatestKnowledge.Data?.Version == newContentHash &&
-            currentLatestKnowledge.Data?.SystemScoped == request.SystemScoped &&
-            currentLatestKnowledge.Data?.ActivationName == request.ActivationName)
+        var latest = currentLatestKnowledge.Data;
+        if (currentLatestKnowledge.IsSuccess &&
+            latest != null &&
+            HashGenerator.GenerateContentHash(latest.Content + latest.Type) == newContentHash &&
+            latest.SystemScoped == request.SystemScoped &&
+            latest.ActivationName == request.ActivationName)
         {
             _logger.LogInformation("Knowledge {Name} already exists with the same content hash, scope, and activation", request.Name);
-            return Results.Ok(currentLatestKnowledge.Data);
+            return Results.Ok(latest);
         }
 
         // Create the knowledge
@@ -722,11 +725,14 @@ public class KnowledgeService : IKnowledgeService
             throw new InvalidOperationException("Knowledge does not belong to this tenant");
         }
 
-        // Generate version hash if not provided
-        if (string.IsNullOrWhiteSpace(version))
-        {
-            version = HashGenerator.GenerateContentHash(content + type);
-        }
+        // Content hash (same for identical content+type)
+        var contentHash = string.IsNullOrWhiteSpace(version)
+            ? HashGenerator.GenerateContentHash(content + type)
+            : version;
+
+        // Compound unique index on (name, version, agent, tenant_id, ...) requires a distinct
+        // `version` per document; append ObjectId so re-saving identical content still inserts.
+        var storedVersion = $"{contentHash}:{ObjectId.GenerateNewId()}";
 
         // Create new version (maintains version history)
         var updatedKnowledge = new Knowledge
@@ -735,7 +741,7 @@ public class KnowledgeService : IKnowledgeService
             Name = existingKnowledge.Name,
             Content = content,
             Type = type,
-            Version = version,
+            Version = storedVersion,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = updatedBy,
             TenantId = tenantId,

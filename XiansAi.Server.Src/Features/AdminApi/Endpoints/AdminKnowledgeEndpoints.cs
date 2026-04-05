@@ -777,7 +777,6 @@ Returns the created knowledge object with all properties including auto-generate
 
 ## Version Handling
 - If `version` is not provided in the request body, it will be auto-generated as a hash of `content + type`
-- If knowledge with the same version hash already exists for the same name/agent/tenant/activation combination, the existing knowledge may be returned instead of creating a duplicate
 
 ## Permissions Summary
 | Knowledge Type | Required Role |
@@ -839,30 +838,8 @@ Returns the created knowledge object with all properties including auto-generate
                     }
                 }
 
-                // Always calculate the version hash from the actual content to ensure integrity
-                var calculatedVersion = global::Shared.Utils.HashGenerator.GenerateContentHash(request.Content + request.Type);
-                
-                // Use the calculated version, ignoring any provided version that doesn't match
-                var newVersion = calculatedVersion;
-
-                // Check if this exact version already exists for this knowledge name
-                var versions = await knowledgeService.GetVersionsForTenantAsync(
-                    existingKnowledge.Name, 
-                    tenantId, 
-                    existingKnowledge.Agent);
-                
-                var existingVersion = versions.FirstOrDefault(v => 
-                    v.Version == newVersion && 
-                    v.ActivationName == existingKnowledge.ActivationName);
-
-                // If the exact same version already exists, return it instead of creating a duplicate
-                if (existingVersion != null)
-                {
-                    return Results.Ok(existingVersion);
-                }
-
-                // Update knowledge using service layer (creates new version)
-                // Pass null for version to let the service calculate it from content
+                // Always creates a new document with a new id and CreatedAt so "latest" resolution
+                // (by timestamp) stays correct even when content matches an older revision.
                 var updatedKnowledge = await knowledgeService.UpdateForTenantAsync(
                     knowledgeId,
                     request.Content,
@@ -896,14 +873,12 @@ Returns the created knowledge object with all properties including auto-generate
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithOpenApi(operation => {
-            operation.Summary = "Update knowledge (creates new version if needed)";
-            operation.Description = @"Updates knowledge by creating a new version if the content has changed. This maintains version history and the old version remains in the database.
-            
+            operation.Summary = "Update knowledge (always creates a new version)";
+            operation.Description = @"Patches knowledge by **always** inserting a new row: new id, new `CreatedAt`, and a `version` value of the form `contentHash:objectId` (hash of content + type, plus a unique suffix for the DB unique index). Prior revisions remain for history.
+
             **Behavior:**
-            - Version hash is **always auto-generated** from content + type (any provided version field is ignored)
-            - If a knowledge version with the same content hash already exists, returns the existing version instead of creating a duplicate
-            - If the content is different, creates a new version with the new content hash
-            - This ensures content integrity and prevents version mismatches";
+            - Content hash is derived from content + type (request `version` is ignored)
+            - Same content as an older revision still inserts a new row; latest is by `CreatedAt`";
             return operation;
         });
 

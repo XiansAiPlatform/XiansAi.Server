@@ -29,6 +29,12 @@ If requesting for a tenant level override, we will create a copy of the knowledg
 
 If activation level override is requested, the new knowledge copy should have both tenantId and activationName.
 
+## PATCH (update by id)
+
+PATCH `/api/v1/admin/tenants/{tenantId}/knowledge/{knowledgeId}`
+
+Always creates a **new** knowledge document (new id, new `CreatedAt`). The stored `version` field is `contentHash:objectId` (content hash from `content` + `type`, plus a unique suffix) so MongoDB’s unique index on name/version/scope is satisfied even when content is unchanged. **Latest** is still determined by `CreatedAt`.
+
 ## Delete all versions
 
 DELETE

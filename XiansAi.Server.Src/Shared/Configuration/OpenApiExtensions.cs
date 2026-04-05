@@ -1,6 +1,7 @@
 
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using System.Reflection;
+using System.Text.Json.Nodes;
 
 namespace Features.Shared.Configuration;
 
@@ -38,18 +39,11 @@ public static class OpenApiExtensions
                 Scheme = "Bearer"
             });
 
-            options.AddSecurityRequirement(new OpenApiSecurityRequirement
+            options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
             {
                 {
-                    new OpenApiSecurityScheme
-                    {
-                        Reference = new OpenApiReference
-                        {
-                            Type = ReferenceType.SecurityScheme,
-                            Id = "Bearer"
-                        }
-                    },
-                    Array.Empty<string>()
+                    new OpenApiSecuritySchemeReference("Bearer"),
+                    new List<string>()
                 }
             });
 

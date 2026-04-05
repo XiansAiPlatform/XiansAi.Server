@@ -500,6 +500,8 @@ public class ActivationService : IActivationService
 
                 await _activationRepository.UpdateAsync(activationId, activation);
 
+                _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
+
                 _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}", 
                     startedCount, flowDefinitions.Count, activationId);
                 
