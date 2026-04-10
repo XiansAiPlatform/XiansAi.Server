@@ -24,11 +24,9 @@ public static class AgentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Agent Names")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get agent names";
-            operation.Description = "Retrieves all agent names";
-            return operation;
-        });
+        
+        .WithSummary("Get agent names")
+        .WithDescription("Retrieves all agent names");
 
         agentGroup.MapGet("/all", async (
             [FromServices] IAgentService service) =>
@@ -37,11 +35,9 @@ public static class AgentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Grouped Definitions by Agent")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get grouped definitions by agent";
-            operation.Description = "Retrieves grouped definitions by agent";
-            return operation;
-        });
+        
+        .WithSummary("Get grouped definitions by agent")
+        .WithDescription("Retrieves grouped definitions by agent");
     
         agentGroup.MapGet("/{agentName}/definitions/basic", async (
             string agentName,
@@ -51,11 +47,9 @@ public static class AgentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Grouped Definitions Basic Info by Agent")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get grouped definitions basic info by agent";
-            operation.Description = "Retrieves grouped definitions basic info by agent";
-            return operation;
-        });
+        
+        .WithSummary("Get grouped definitions basic info by agent")
+        .WithDescription("Retrieves grouped definitions basic info by agent");
 
         agentGroup.MapGet("/{agentName}/{typeName}/runs", async (
             string agentName,
@@ -66,11 +60,9 @@ public static class AgentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Run Instances by Agent and Type")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get run instances by agent and type";
-            operation.Description = "Retrieves run instances by agent and type";
-            return operation;
-        });
+        
+        .WithSummary("Get run instances by agent and type")
+        .WithDescription("Retrieves run instances by agent and type");
 
         agentGroup.MapDelete("/{agentName}", async (
             string agentName,
@@ -80,10 +72,8 @@ public static class AgentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Delete Agent")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete agent";
-            operation.Description = "Deletes an agent and all its associated flow definitions. Requires owner permission.";
-            return operation;
-        });
+        
+        .WithSummary("Delete agent")
+        .WithDescription("Deletes an agent and all its associated flow definitions. Requires owner permission.");
     }
 } 

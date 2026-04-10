@@ -3,8 +3,6 @@ using Features.PublicApi.Services;
 using Shared.Utils.Services;
 using Features.Shared.Configuration;
 using Shared.Utils;
-using Microsoft.OpenApi;
-using System.Text.Json.Nodes;
 
 namespace Features.PublicApi.Endpoints;
 
@@ -37,28 +35,9 @@ public static class RegisterEndpoints
             return result.ToHttpResult<PublicJoinTenantResponse>();
         })
         .WithName("Request to Join Tenant")
-        .WithOpenApi(operation => {
-            operation.Summary = "Request to join a tenant";
-            operation.Description = "Submit a request to join a specific tenant. Requires a valid JWT token in the Authorization header (Bearer <token>). The request will be pending approval from tenant administrators. Rate limited to 5 requests per minute per IP.";
-            operation.RequestBody.Description = "Join tenant request containing tenant ID";
-            
-            // Add Authorization header parameter
-            operation.Parameters ??= new List<IOpenApiParameter>();
-            operation.Parameters.Add(new OpenApiParameter
-            {
-                Name = "Authorization",
-                In = ParameterLocation.Header,
-                Required = true,
-                Description = "Bearer token for user authentication",
-                Schema = new OpenApiSchema
-                {
-                    Type = JsonSchemaType.String,
-                    Example = JsonValue.Create("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
-                }
-            });
-            
-            return operation;
-        })
+        
+        .WithSummary("Request to join a tenant")
+        .WithDescription("Submit a request to join a specific tenant. Requires a valid JWT token in the Authorization header (Bearer <token>). The request will be pending approval from tenant administrators. Rate limited to 5 requests per minute per IP.")
         .WithAuthenticationRateLimit(); // Strict rate limiting for registration endpoints
 
         registerGroup.MapGet("/tenant/{tenantId}/info", (
@@ -87,11 +66,9 @@ public static class RegisterEndpoints
             });
         })
         .WithName("Get Tenant Registration Info")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get tenant registration information";
-            operation.Description = "Get information about how to join a specific tenant. No authentication required. Rate limited to 200 requests per minute per IP.";
-            return operation;
-        })
+        
+        .WithSummary("Get tenant registration information")
+        .WithDescription("Get information about how to join a specific tenant. No authentication required. Rate limited to 200 requests per minute per IP.")
         .WithPublicApiRateLimit(); // Standard rate limiting for public GET endpoints
 
         registerGroup.MapPost("/new-tenant", async (
@@ -115,28 +92,9 @@ public static class RegisterEndpoints
             return result.ToHttpResult<PublicCreateTenantResponse>();
         })
         .WithName("Create New Tenant")
-        .WithOpenApi(operation => {
-            operation.Summary = "Create a new tenant";
-            operation.Description = "Create a new tenant with the current user as the tenant administrator. Requires a valid JWT token in the Authorization header (Bearer <token>). The tenant ID and domain must be unique. Rate limited to 5 requests per minute per IP.";
-            operation.RequestBody.Description = "New tenant request containing tenant ID, name, domain, and optional description";
-            
-            // Add Authorization header parameter
-            operation.Parameters ??= new List<IOpenApiParameter>();
-            operation.Parameters.Add(new OpenApiParameter
-            {
-                Name = "Authorization",
-                In = ParameterLocation.Header,
-                Required = true,
-                Description = "Bearer token for user authentication",
-                Schema = new OpenApiSchema
-                {
-                    Type = JsonSchemaType.String,
-                    Example = JsonValue.Create("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
-                }
-            });
-            
-            return operation;
-        })
+        
+        .WithSummary("Create a new tenant")
+        .WithDescription("Create a new tenant with the current user as the tenant administrator. Requires a valid JWT token in the Authorization header (Bearer <token>). The tenant ID and domain must be unique. Rate limited to 5 requests per minute per IP.")
         .WithAuthenticationRateLimit(); // Strict rate limiting for registration endpoints
     }
 }

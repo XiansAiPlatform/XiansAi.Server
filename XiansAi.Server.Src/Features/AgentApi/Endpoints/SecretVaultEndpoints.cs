@@ -47,7 +47,7 @@ public static class SecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("Agent_CreateSecret")
-        .WithOpenApi(o => { o.Summary = "Create secret"; o.Description = "Create a new secret. Key must be unique."; return o; });
+        ;
 
         group.MapGet("", async (
             [FromQuery] string? tenantId,
@@ -75,7 +75,7 @@ public static class SecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("Agent_ListSecrets")
-        .WithOpenApi(o => { o.Summary = "List secrets"; o.Description = "List secrets with optional tenantId/agentId/activationName filter."; return o; });
+        ;
 
         group.MapGet("/fetch", async (
             [FromQuery] string key,
@@ -105,7 +105,7 @@ public static class SecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("Agent_FetchSecretByKey")
-        .WithOpenApi(o => { o.Summary = "Fetch secret by key"; o.Description = "Returns decrypted value and optional AdditionalData. Scope by tenantId, agentId, userId, activationName."; return o; });
+        ;
 
         group.MapGet("/{id}", async (
             string id,
@@ -120,7 +120,7 @@ public static class SecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("Agent_GetSecretById")
-        .WithOpenApi(o => { o.Summary = "Get secret by id"; return o; });
+        ;
 
         group.MapPut("/{id}", async (
             string id,
@@ -161,7 +161,7 @@ public static class SecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("Agent_UpdateSecret")
-        .WithOpenApi(o => { o.Summary = "Update secret"; return o; });
+        ;
 
         group.MapDelete("/{id}", async (
             string id,
@@ -177,7 +177,7 @@ public static class SecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("Agent_DeleteSecret")
-        .WithOpenApi(o => { o.Summary = "Delete secret"; return o; });
+        ;
     }
 }
 

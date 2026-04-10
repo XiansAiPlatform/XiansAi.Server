@@ -23,27 +23,7 @@ public static class SlackWebhookEndpoints
             .WithName("HandleSlackEventsWebhook")
             .AllowAnonymous()
             .WithTags("AppsAPI - Slack")
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Handle Slack Events API Webhook",
-                Description = """
-                    Dedicated endpoint for Slack Events API webhooks.
-                    
-                    Handles:
-                    - URL verification challenges
-                    - Message events
-                    - App mention events
-                    - Other subscribed events
-                    
-                    **Security:**
-                    - Webhook secret in URL provides first layer of defense
-                    - Slack signature verification provides second layer
-                    
-                    Configure this URL in your Slack App's Event Subscriptions settings.
-                    
-                    **Note:** Interactive Components (buttons, modals) are not yet supported.
-                    """
-            });
+            ;
     }
 
     /// <summary>

@@ -24,11 +24,9 @@ public static class LogsEndpoints
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Create multiple logs";
-            operation.Description = "Creates multiple log entries for workflow monitoring";
-            return operation;
-        });
+        
+        .WithSummary("Create multiple logs")
+        .WithDescription("Creates multiple log entries for workflow monitoring");
 
         logsGroup.MapPost("/single", async (
             [FromBody] LogRequest request,
@@ -39,10 +37,8 @@ public static class LogsEndpoints
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Create single log";
-            operation.Description = "Creates a single log entry for workflow monitoring";
-            return operation;
-        });
+        
+        .WithSummary("Create single log")
+        .WithDescription("Creates a single log entry for workflow monitoring");
     }
 } 

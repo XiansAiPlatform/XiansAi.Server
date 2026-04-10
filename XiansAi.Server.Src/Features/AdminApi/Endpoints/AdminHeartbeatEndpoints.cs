@@ -102,24 +102,7 @@ public static class AdminHeartbeatEndpoints
         .WithName("AdminHeartbeat")
         .Produces<HeartbeatResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Heartbeat (Agent Worker Liveness)",
-            Description = """
-                Synchronous liveness check for a specific agent activation. Sends a Heartbeat message via 
-                Temporal signals to the workflow and waits for a response to verify workers are available.
-                
-                **Query Parameters:**
-                - `agentName` (required): Name of the agent
-                - `activationName` (required): Name of the activation
-                - `workflowType` (optional): Workflow type (default: Supervisor Workflow)
-                - `timeoutSeconds` (optional): Wait timeout 1-30s (default: 10)
-                
-                **Response:**
-                Always returns 200 with `{ available: true }` when workers respond, or `{ available: false }` 
-                when no workers, timeout, or validation failure. Aligns with agent MessageType.Heartbeat.
-                """
-        });
+        ;
     }
 
     private sealed record HeartbeatResponse(bool Available);

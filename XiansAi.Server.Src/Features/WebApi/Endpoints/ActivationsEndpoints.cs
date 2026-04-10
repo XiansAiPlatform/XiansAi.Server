@@ -60,11 +60,8 @@ public static class ActivationsEndpoints
             return Results.Ok(new { names });
         })
         .WithName("Get Activation Names")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get activation names";
-            operation.Description = "Returns activation names for the Runs page dropdown: from the activations collection plus distinct idPostfix values from workflow runs, so all filterable activations appear in Choose activations.";
-            return operation;
-        });
+        
+        .WithSummary("Get activation names")
+        .WithDescription("Returns activation names for the Runs page dropdown: from the activations collection plus distinct idPostfix values from workflow runs, so all filterable activations appear in Choose activations.");
     }
 }

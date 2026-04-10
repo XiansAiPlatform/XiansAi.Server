@@ -43,11 +43,9 @@ public static class AuditingEndpoints
             return Results.Ok(result);
         })
         .WithName("GetAuditingParticipantsForAgent")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all participants for a specific agent";
-            operation.Description = "Returns a paginated list of all participants associated with the specified agent";
-            return operation;
-        });
+        
+        .WithSummary("Get all participants for a specific agent")
+        .WithDescription("Returns a paginated list of all participants associated with the specified agent");
 
         // Get all workflow types for a specific agent and optional participant
         auditingGroup.MapGet("/agents/{agent}/workflow-types", async (
@@ -59,11 +57,9 @@ public static class AuditingEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAuditingWorkflowTypes")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all workflow types for a specific agent";
-            operation.Description = "Returns all workflow types for a specific agent and optional participant";
-            return operation;
-        });
+        
+        .WithSummary("Get all workflow types for a specific agent")
+        .WithDescription("Returns all workflow types for a specific agent and optional participant");
 
         // Get workflow IDs for a specific workflow type
         auditingGroup.MapGet("/agents/{agent}/workflow-types/{workflowType}/workflow-ids", async (
@@ -76,11 +72,9 @@ public static class AuditingEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetWorkflowIdsForWorkflowType")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all workflow IDs for a specific workflow type";
-            operation.Description = "Returns all workflow IDs for a specific agent, workflow type, and optional participant";
-            return operation;
-        });
+        
+        .WithSummary("Get all workflow IDs for a specific workflow type")
+        .WithDescription("Returns all workflow IDs for a specific agent, workflow type, and optional participant");
 
         // Get logs filtered by agent, participant, workflow type, workflow ID, and log level with pagination
         auditingGroup.MapGet("/logs", async (
@@ -125,11 +119,9 @@ public static class AuditingEndpoints
             return Results.Ok(result);
         })
         .WithName("GetAuditingLogs")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get logs filtered by criteria";
-            operation.Description = "Get logs filtered by agent, participant, workflow type, workflow ID, log level, and time range with pagination";
-            return operation;
-        });
+        
+        .WithSummary("Get logs filtered by criteria")
+        .WithDescription("Get logs filtered by agent, participant, workflow type, workflow ID, log level, and time range with pagination");
 
         // Get critical log of each workflow run across all agents the user has access to
         // Grouped by agent > workflow type > workflow > workflow run > error log
@@ -155,10 +147,8 @@ public static class AuditingEndpoints
             return groupedCriticalLogsResult.ToHttpResult();
         })
         .WithName("GetLastCriticalLogsByWorkflowRunAcrossAgents")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get the critical log of each workflow run across all agents";
-            operation.Description = "Returns the critical log of each workflow run grouped by agent, workflow type, workflow, and workflow run";
-            return operation;
-        });
+        
+        .WithSummary("Get the critical log of each workflow run across all agents")
+        .WithDescription("Returns the critical log of each workflow run grouped by agent, workflow type, workflow, and workflow run");
     }
 } 

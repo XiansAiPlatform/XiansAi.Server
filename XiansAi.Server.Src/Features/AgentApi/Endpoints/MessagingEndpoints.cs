@@ -50,12 +50,9 @@ namespace Features.AgentApi.Endpoints
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Get conversation history";
-                operation.Description = "Gets the conversation history for a given conversation thread with pagination support";
-                return operation;
-            });
+            
+        .WithSummary("Get conversation history")
+        .WithDescription("Gets the conversation history for a given conversation thread with pagination support");
 
             group.MapGet("/last-task-id", GetLastTaskId)
             .WithName("Get Last Task Id")
@@ -63,12 +60,9 @@ namespace Features.AgentApi.Endpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Get last task id from message history";
-                operation.Description = "Gets the most recent task id from message history for a given workflow, participant, and optional scope";
-                return operation;
-            });
+            
+        .WithSummary("Get last task id from message history")
+        .WithDescription("Gets the most recent task id from message history for a given workflow, participant, and optional scope");
 
             group.MapPost("/outbound/chat", async (
                 [FromBody] ChatOrDataRequest request,
@@ -81,12 +75,9 @@ namespace Features.AgentApi.Endpoints
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Process outbound chat from Agent";
-                operation.Description = "Processes an outbound chat for agent conversations and returns the result";
-                return operation;
-            });
+            
+        .WithSummary("Process outbound chat from Agent")
+        .WithDescription("Processes an outbound chat for agent conversations and returns the result");
 
             group.MapPost("/outbound/data", async (
                 [FromBody] ChatOrDataRequest request,
@@ -99,12 +90,9 @@ namespace Features.AgentApi.Endpoints
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Process outbound data from Agent";
-                operation.Description = "Processes an outbound data for agent conversations and returns the result";
-                return operation;
-            });
+            
+        .WithSummary("Process outbound data from Agent")
+        .WithDescription("Processes an outbound data for agent conversations and returns the result");
 
             group.MapPost("/outbound/webhook", async (
                 [FromBody] ChatOrDataRequest request,
@@ -117,12 +105,9 @@ namespace Features.AgentApi.Endpoints
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Process outbound webhook response from Agent";
-                operation.Description = "Processes an outbound webhook response for agent webhook handlers and returns the result";
-                return operation;
-            });
+            
+        .WithSummary("Process outbound webhook response from Agent")
+        .WithDescription("Processes an outbound webhook response for agent webhook handlers and returns the result");
 
             group.MapPost("/outbound/reasoning", async (
                 [FromBody] ChatOrDataRequest request,
@@ -135,12 +120,9 @@ namespace Features.AgentApi.Endpoints
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Process outbound reasoning from Agent";
-                operation.Description = "Processes an outbound reasoning message for streaming agent thinking steps. Delivered via SSE for frontend display of intermediate actions.";
-                return operation;
-            });
+            
+        .WithSummary("Process outbound reasoning from Agent")
+        .WithDescription("Processes an outbound reasoning message for streaming agent thinking steps. Delivered via SSE for frontend display of intermediate actions.");
 
             group.MapPost("/outbound/tool", async (
                 [FromBody] ChatOrDataRequest request,
@@ -153,12 +135,9 @@ namespace Features.AgentApi.Endpoints
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Process outbound tool execution from Agent";
-                operation.Description = "Processes an outbound tool execution message for streaming tool call steps. Delivered via SSE for frontend display of intermediate actions.";
-                return operation;
-            });
+            
+        .WithSummary("Process outbound tool execution from Agent")
+        .WithDescription("Processes an outbound tool execution message for streaming tool call steps. Delivered via SSE for frontend display of intermediate actions.");
 
             group.MapPost("/outbound/handoff", async (
                 [FromBody] HandoffRequest request,
@@ -173,12 +152,9 @@ namespace Features.AgentApi.Endpoints
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Process handover message from Agent";
-                operation.Description = "Processes a handover message for agent conversations and returns the result";
-                return operation;
-            });
+            
+        .WithSummary("Process handover message from Agent")
+        .WithDescription("Processes a handover message for agent conversations and returns the result");
 
             // New synchronous endpoint that waits for responses
             group.MapPost("/converse", async (
@@ -256,12 +232,9 @@ namespace Features.AgentApi.Endpoints
                 .ProducesProblem(StatusCodes.Status400BadRequest)
                 .ProducesProblem(StatusCodes.Status408RequestTimeout)
                 .ProducesProblem(StatusCodes.Status500InternalServerError)
-                .WithOpenApi(operation =>
-                {
-                    operation.Summary = "Send Data or Chat to workflow and wait for response from Agent";
-                    operation.Description = "Send data to a workflow and wait synchronously for the response. Requires timeoutSeconds and type as query parameters. Messages can be pass as ChatOrDataRequest in request body. Optional timeoutSeconds (default: 60, max: 300).";
-                    return operation;
-                });
+                
+        .WithSummary("Send Data or Chat to workflow and wait for response from Agent")
+        .WithDescription("Send data to a workflow and wait synchronously for the response. Requires timeoutSeconds and type as query parameters. Messages can be pass as ChatOrDataRequest in request body. Optional timeoutSeconds (default: 60, max: 300).");
         }
 
         private static async Task<IResult> GetConversationHistory(

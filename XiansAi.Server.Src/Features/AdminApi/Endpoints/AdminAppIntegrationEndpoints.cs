@@ -100,26 +100,7 @@ public static class AdminAppIntegrationEndpoints
         metadataGroup.MapGet("/types", GetIntegrationTypes)
             .WithName("GetIntegrationMetadataTypes")
             .Produces<List<IntegrationTypeMetadata>>(StatusCodes.Status200OK)
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Get supported integration types",
-                Description = """
-                    Returns a list of all supported app integration types (platforms) that can be configured.
-                    
-                    Each integration type includes:
-                    - Platform ID (used in API calls)
-                    - Display name
-                    - Description
-                    - Required configuration fields
-                    - Capabilities (features supported by this platform)
-                    
-                    **Supported Platforms:**
-                    - Slack: Team collaboration and messaging
-                    - Microsoft Teams: Enterprise team collaboration
-                    - Outlook: Email integration
-                    - Generic Webhook: Custom webhook integrations
-                    """
-            });
+            ;
 
         // Builtin webhook endpoints (stored as app integrations with platformId=builtin_webhook)
         var webhookGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/webhooks")
@@ -137,26 +118,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("CreateWebhook")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Create Builtin Webhook",
-            Description = """
-                Create a builtin webhook as an app integration. Creates both an API key and an app integration.
-                Returns a ready-to-use webhook URL for POST /api/user/webhooks/builtin.
-                
-                **Required:**
-                - `activationName`: Activation instance name
-                - `agentName`: Agent name
-                
-                **Optional (with defaults):**
-                - `name`: Display name for the webhook
-                - `workflowName`: Default "Integrator Workflow"
-                - `participantId`: Default "webhook"
-                - `timeoutInSeconds`: Default 30
-                - `webhookName`: Default "Default"
-                - `apiKey`: Existing API key. If omitted, a new one is created.
-                """
-        })
+        
         .Produces<AppIntegrationResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
@@ -176,15 +138,7 @@ public static class AdminAppIntegrationEndpoints
             return Results.Ok(new { webhooks = result.Data });
         })
         .WithName("ListWebhooks")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List Webhooks",
-            Description = """
-                List builtin webhook integrations for the tenant.
-                Filter by activationName and agentName (optional).
-                Returns webhook metadata and ready-to-use URLs.
-                """
-        })
+        
         .Produces(StatusCodes.Status200OK);
 
         webhookGroup.MapDelete("{integrationId}", async (
@@ -200,14 +154,7 @@ public static class AdminAppIntegrationEndpoints
             return Results.Ok(new { message = "Webhook deleted successfully" });
         })
         .WithName("DeleteWebhook")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Delete Webhook",
-            Description = """
-                Delete a builtin webhook integration.
-                Revokes the associated API key and removes the integration.
-                """
-        })
+        
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound);
 
@@ -229,22 +176,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListAppIntegrations")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List App Integrations",
-            Description = """
-                List all app integrations for a tenant.
-                
-                **Query Parameters (all optional):**
-                - `platformId`: Filter by platform (slack, msteams, outlook, webhook)
-                - `agentName`: Filter by agent name
-                - `activationName`: Filter by activation name
-                
-                **Response:**
-                Returns a list of integrations with their configurations and generated webhook URLs.
-                Sensitive configuration values (tokens, secrets) are masked in the response.
-                """
-        });
+        ;
 
         // Get integration by ID
         integrationGroup.MapGet("/{integrationId}", async (
@@ -256,17 +188,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAppIntegration")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get App Integration",
-            Description = """
-                Get a specific app integration by ID.
-                
-                **Response:**
-                Returns the integration with its configuration and generated webhook URL.
-                The `webhookUrl` field contains the URL to configure in the external platform.
-                """
-        });
+        ;
 
         // Create a new integration
         integrationGroup.MapPost("", async (
@@ -280,65 +202,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("CreateAppIntegration")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Create App Integration",
-            Description = """
-                Create a new app integration for connecting an external platform to an agent activation.
-                
-                **Request Body:**
-                - `platformId` (required): Platform identifier - one of: slack, msteams, outlook, webhook
-                - `name` (required): Unique name for this integration
-                - `description` (optional): Description of the integration
-                - `agentName` (required): Name of the agent to connect
-                - `activationName` (required): Name of the activation to connect
-                - `configuration` (required): Platform-specific configuration (see below)
-                - `mappingConfig` (optional): Configuration for mapping platform IDs
-                - `isEnabled` (optional): Whether the integration is enabled (default: true)
-                
-                **Slack Configuration:**
-                ```json
-                {
-                  "signingSecret": "your-slack-signing-secret",
-                  "incomingWebhookUrl": "https://hooks.slack.com/services/...",
-                  "botToken": "xoxb-your-bot-token"
-                }
-                ```
-                - `signingSecret` (required): Used to verify incoming webhooks from Slack
-                - `incomingWebhookUrl` (optional): For sending messages TO Slack
-                - `botToken` (optional): For advanced Slack API features
-                
-                **MS Teams Configuration:**
-                ```json
-                {
-                  "appId": "your-app-id",
-                  "appPassword": "your-app-password"
-                }
-                ```
-                
-                **Outlook Configuration:**
-                ```json
-                {
-                  "clientId": "your-client-id",
-                  "clientSecret": "your-client-secret",
-                  "tenantId": "your-azure-tenant-id"
-                }
-                ```
-                
-                **Mapping Configuration:**
-                ```json
-                {
-                  "participantIdSource": "userId",
-                  "scopeSource": "channelId",
-                  "defaultParticipantId": "unknown"
-                }
-                ```
-                
-                **Response:**
-                Returns the created integration including the `webhookUrl` that should be 
-                configured in the external platform's settings.
-                """
-        });
+        ;
 
         // Update an existing integration
         integrationGroup.MapPut("/{integrationId}", async (
@@ -354,25 +218,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateAppIntegration")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Update App Integration",
-            Description = """
-                Update an existing app integration.
-                
-                **Request Body (all fields optional):**
-                - `name`: Update the integration name
-                - `description`: Update the description
-                - `configuration`: Update configuration (merged with existing)
-                - `mappingConfig`: Update mapping configuration
-                - `isEnabled`: Enable or disable the integration
-                
-                **Notes:**
-                - Configuration updates are merged with existing configuration
-                - To remove a configuration value, set it to null
-                - platformId, agentName, and activationName cannot be changed
-                """
-        });
+        ;
 
         // Delete an integration
         integrationGroup.MapDelete("/{integrationId}", async (
@@ -388,16 +234,7 @@ public static class AdminAppIntegrationEndpoints
             return Results.Ok(new { message = $"Integration '{integrationId}' deleted successfully" });
         })
         .WithName("DeleteAppIntegration")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Delete App Integration",
-            Description = """
-                Delete an app integration.
-                
-                **Warning:** This action cannot be undone. The external platform will no longer
-                be able to communicate with the agent activation.
-                """
-        });
+        ;
 
         // Enable an integration
         integrationGroup.MapPost("/{integrationId}/enable", async (
@@ -419,16 +256,7 @@ public static class AdminAppIntegrationEndpoints
             });
         })
         .WithName("EnableAppIntegration")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Enable App Integration",
-            Description = """
-                Enable an app integration that was previously disabled.
-                
-                When enabled, the integration will process incoming webhooks from the 
-                external platform and send outgoing messages.
-                """
-        });
+        ;
 
         // Disable an integration
         integrationGroup.MapPost("/{integrationId}/disable", async (
@@ -450,16 +278,7 @@ public static class AdminAppIntegrationEndpoints
             });
         })
         .WithName("DisableAppIntegration")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Disable App Integration",
-            Description = """
-                Disable an app integration.
-                
-                When disabled, the integration will not process incoming webhooks from the 
-                external platform. The webhook URL remains valid but returns an error response.
-                """
-        });
+        ;
 
         // Test an integration
         integrationGroup.MapPost("/{integrationId}/test", async (
@@ -471,29 +290,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("TestAppIntegration")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Test App Integration",
-            Description = """
-                Test an app integration configuration.
-                
-                This endpoint validates the integration configuration and, where possible,
-                tests connectivity to the external platform.
-                
-                **Response:**
-                ```json
-                {
-                  "isSuccessful": true,
-                  "message": "Configuration is valid",
-                  "details": {
-                    "hasIncomingWebhookUrl": true,
-                    "hasSigningSecret": true,
-                    "hasBotToken": false
-                  }
-                }
-                ```
-                """
-        });
+        ;
 
         // Get webhook URL for an integration (convenience endpoint)
         integrationGroup.MapGet("/{integrationId}/webhook-url", async (
@@ -516,16 +313,7 @@ public static class AdminAppIntegrationEndpoints
             });
         })
         .WithName("GetAppIntegrationWebhookUrl")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Webhook URL for Integration",
-            Description = """
-                Get the webhook URL for an integration along with platform-specific setup instructions.
-                
-                This is a convenience endpoint that returns only the webhook URL and setup instructions,
-                useful for configuring the external platform.
-                """
-        });
+        ;
     }
 
     /// <summary>

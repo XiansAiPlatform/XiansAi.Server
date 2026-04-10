@@ -24,12 +24,9 @@ public static class TaskEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Task by ID")
-        .WithOpenApi(operation => 
-        {
-            operation.Summary = "Get task by workflow ID";
-            operation.Description = "Retrieves detailed information about a specific task by its workflow ID (pass as query parameter). Returns available actions for the task.";
-            return operation;
-        });
+        
+        .WithSummary("Get task by workflow ID")
+        .WithDescription("Retrieves detailed information about a specific task by its workflow ID (pass as query parameter). Returns available actions for the task.");
 
         taskGroup.MapGet("/list", async (
             [FromServices] ITaskService taskService,
@@ -43,15 +40,12 @@ public static class TaskEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Tasks")
-        .WithOpenApi(operation => 
-        {
-            operation.Summary = "Get paginated list of tasks";
-            operation.Description = @"Retrieves a paginated list of tasks filtered by tenant. 
+        
+        .WithSummary("Get paginated list of tasks")
+        .WithDescription(@"Retrieves a paginated list of tasks filtered by tenant. 
                 Optional filters: agent (agent name), participantId (user ID), status (workflow execution status: Running, Completed, Failed, Terminated, Canceled, etc.). 
                 Pagination: pageSize (default: 20, max: 100), pageToken (continuation token from previous response).
-                Each task includes available actions from the workflow memo.";
-            return operation;
-        });
+                Each task includes available actions from the workflow memo.");
 
         taskGroup.MapPut("/draft", async (
             [FromQuery] string workflowId,
@@ -63,12 +57,9 @@ public static class TaskEndpoints
             return result.ToHttpResult();
         })
         .WithName("Update Task Draft")
-        .WithOpenApi(operation => 
-        {
-            operation.Summary = "Update task draft";
-            operation.Description = "Updates the draft work content for a task (pass workflowId as query parameter). This is typically used when a human is working on a task and wants to save their progress.";
-            return operation;
-        });
+        
+        .WithSummary("Update task draft")
+        .WithDescription("Updates the draft work content for a task (pass workflowId as query parameter). This is typically used when a human is working on a task and wants to save their progress.");
 
         taskGroup.MapPost("/action", async (
             [FromQuery] string workflowId,
@@ -79,11 +70,8 @@ public static class TaskEndpoints
             return result.ToHttpResult();
         })
         .WithName("Perform Task Action")
-        .WithOpenApi(operation => 
-        {
-            operation.Summary = "Perform an action on a task";
-            operation.Description = "Performs an action on a task (e.g., approve, reject, hold). The action should be one of the task's available actions. An optional comment can be provided.";
-            return operation;
-        });
+        
+        .WithSummary("Perform an action on a task")
+        .WithDescription("Performs an action on a task (e.g., approve, reject, hold). The action should be one of the task's available actions. An optional comment can be provided.");
     }
 }

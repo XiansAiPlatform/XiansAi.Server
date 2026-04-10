@@ -97,14 +97,8 @@ public static class ActivationEndpoints
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get workflow input parameters for an activation";
-            operation.Description = "Returns the ordered list of input values configured for a specific workflow type " +
-                "within the given activation. The tenantId is resolved automatically from the agent certificate. " +
-                "Returns 404 if the activation does not exist, 400 if the activation is not active or the " +
-                "workflowId is not registered in the activation, and an empty array if the workflowType has no inputs configured.";
-            return operation;
-        });
+        
+        .WithSummary("Get workflow input parameters for an activation")
+        .WithDescription("Returns the ordered list of input values configured for a specific workflow type ");
     }
 }

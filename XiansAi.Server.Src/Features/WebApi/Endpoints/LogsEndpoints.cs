@@ -33,6 +33,6 @@ public static class LogsEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Logs by Workflow")
-        .WithOpenApi();
+        ;
     }
 }

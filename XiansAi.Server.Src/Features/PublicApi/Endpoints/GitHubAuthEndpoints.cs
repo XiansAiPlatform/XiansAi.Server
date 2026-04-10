@@ -105,10 +105,9 @@ public static class GitHubAuthEndpoints
             }
         })
         .WithName("Exchange GitHub Code for JWT")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Exchange GitHub authorization code for JWT";
-            operation.Description = @"Exchange a GitHub OAuth authorization code for a JWT access token. 
+        
+        .WithSummary("Exchange GitHub authorization code for JWT")
+        .WithDescription(@"Exchange a GitHub OAuth authorization code for a JWT access token. 
 
 **Flow:**
 1. User authenticates with GitHub and is redirected to your app with a `code` parameter
@@ -116,11 +115,7 @@ public static class GitHubAuthEndpoints
 3. Server exchanges the code with GitHub, fetches user info, and returns a JWT
 4. Frontend uses the JWT for all subsequent API calls with `Authorization: Bearer <jwt>` header
 
-**Rate limiting:** This endpoint is rate-limited to prevent abuse. Maximum 10 requests per minute per IP.";
-
-            operation.RequestBody.Description = "GitHub authorization code and redirect URI";
-            return operation;
-        })
+**Rate limiting:** This endpoint is rate-limited to prevent abuse. Maximum 10 requests per minute per IP.")
         .WithAuthenticationRateLimit(); // Apply strict rate limiting for authentication endpoints
 
         // Health check / configuration info endpoint
@@ -149,12 +144,9 @@ public static class GitHubAuthEndpoints
             });
         })
         .WithName("Get GitHub OAuth Configuration")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get GitHub OAuth configuration";
-            operation.Description = "Returns public GitHub OAuth configuration needed by the frontend to initiate the OAuth flow. No authentication required.";
-            return operation;
-        })
+        
+        .WithSummary("Get GitHub OAuth configuration")
+        .WithDescription("Returns public GitHub OAuth configuration needed by the frontend to initiate the OAuth flow. No authentication required.")
         .WithPublicApiRateLimit(); // Apply public API rate limiting for GET requests
     }
 }

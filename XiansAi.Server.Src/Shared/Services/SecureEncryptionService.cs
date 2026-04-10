@@ -80,8 +80,7 @@ public class SecureEncryptionService : ISecureEncryptionService
     private static byte[] DeriveKey(string baseSecret, string uniqueSecret)
     {
         var salt = SHA256.HashData(Encoding.UTF8.GetBytes(uniqueSecret));
-        using var kdf = new Rfc2898DeriveBytes(baseSecret, salt, KdfIterations, HashAlgorithmName.SHA256);
-        return kdf.GetBytes(32);
+        return Rfc2898DeriveBytes.Pbkdf2(baseSecret, salt, KdfIterations, HashAlgorithmName.SHA256, 32);
     }
 }
 

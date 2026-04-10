@@ -74,11 +74,7 @@ public static class AdminOwnershipEndpoints
             }
         })
         .WithName("GetOwnership")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Ownership Information",
-            Description = "Get ownership information for an agent instance, including access lists."
-        });
+        ;
 
         // Transfer Ownership
         adminOwnershipGroup.MapPatch("", async (
@@ -164,11 +160,7 @@ public static class AdminOwnershipEndpoints
             }
         })
         .WithName("TransferOwnership")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Transfer Ownership",
-            Description = "Transfer agent instance ownership by adding a new user to the OwnerAccess list."
-        });
+        ;
     }
 }
 

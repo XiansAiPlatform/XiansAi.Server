@@ -245,10 +245,6 @@ public static class AdminParticipantsEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Participant",
-            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants. **SysAdmin only** - TenantAdmins are not permitted to prevent cross-tenant information disclosure. **Route**: GET /participants/{email}. If migrating from a deprecated /participants/{email}/tenants route, use this endpoint instead."
-        });
+        ;
     }
 }

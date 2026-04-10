@@ -44,10 +44,8 @@ public static class ActivityHistoryEndpoints
         .Produces<string>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Create activity history";
-            operation.Description = "Creates a new activity history record in the system";
-            return operation;
-        });
+        
+        .WithSummary("Create activity history")
+        .WithDescription("Creates a new activity history record in the system");
     }
 } 

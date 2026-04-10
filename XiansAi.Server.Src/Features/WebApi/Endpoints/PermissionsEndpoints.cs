@@ -23,11 +23,9 @@ public static class PermissionsEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Permissions")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get permissions for a specific agent";
-            operation.Description = "Retrieves all permissions associated with the specified agent";
-            return operation;
-        });
+        
+        .WithSummary("Get permissions for a specific agent")
+        .WithDescription("Retrieves all permissions associated with the specified agent");
 
         permissionsGroup.MapPut("/agent/{agentName}", async (
             string agentName,
@@ -38,11 +36,9 @@ public static class PermissionsEndpoints
             return result.ToHttpResult();
         })
         .WithName("Update Permissions")
-        .WithOpenApi(operation => {
-            operation.Summary = "Update permissions for a specific agent";
-            operation.Description = "Updates all permissions associated with the specified agent";
-            return operation;
-        });
+        
+        .WithSummary("Update permissions for a specific agent")
+        .WithDescription("Updates all permissions associated with the specified agent");
 
         permissionsGroup.MapPost("/agent/{agentName}/users", async (
             string agentName,
@@ -53,11 +49,9 @@ public static class PermissionsEndpoints
             return result.ToHttpResult();
         })
         .WithName("Add User")
-        .WithOpenApi(operation => {
-            operation.Summary = "Add a user to an agent's permissions";
-            operation.Description = "Adds a new user with specified permission level to an agent's permissions";
-            return operation;
-        });
+        
+        .WithSummary("Add a user to an agent's permissions")
+        .WithDescription("Adds a new user with specified permission level to an agent's permissions");
 
         permissionsGroup.MapDelete("/agent/{agentName}/users/{userId}", async (
             string agentName,
@@ -68,11 +62,9 @@ public static class PermissionsEndpoints
             return result.ToHttpResult();
         })
         .WithName("Remove User")
-        .WithOpenApi(operation => {
-            operation.Summary = "Remove a user from an agent's permissions";
-            operation.Description = "Removes a user from an agent's permissions";
-            return operation;
-        });
+        
+        .WithSummary("Remove a user from an agent's permissions")
+        .WithDescription("Removes a user from an agent's permissions");
 
         permissionsGroup.MapPatch("/agent/{agentName}/users/{userId}/{newPermissionLevel}", async (
             string agentName,
@@ -84,11 +76,9 @@ public static class PermissionsEndpoints
             return result.ToHttpResult();
         })
         .WithName("Update User Permission")
-        .WithOpenApi(operation => {
-            operation.Summary = "Update a user's permission level";
-            operation.Description = "Updates the permission level of a user for a specific agent";
-            return operation;
-        });
+        
+        .WithSummary("Update a user's permission level")
+        .WithDescription("Updates the permission level of a user for a specific agent");
 
     }
 }

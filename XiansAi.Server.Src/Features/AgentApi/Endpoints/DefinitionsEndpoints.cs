@@ -46,11 +46,9 @@ public static class DefinitionsEndpoints
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Create flow definition";
-            operation.Description = "Creates a new flow definition in the system";
-            return operation;
-        });
+        
+        .WithSummary("Create flow definition")
+        .WithDescription("Creates a new flow definition in the system");
 
         definitionsGroup.MapGet("/check", async (
             [FromQuery] string workflowType,
@@ -62,12 +60,9 @@ public static class DefinitionsEndpoints
         })
         .Produces<bool>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Check if flow definition hash already exists";
-            operation.Description = "Checks if a flow definition with the same workflow type and hash already exists to prevent unnecessary uploads.";
-            return operation;
-        });
+        
+        .WithSummary("Check if flow definition hash already exists")
+        .WithDescription("Checks if a flow definition with the same workflow type and hash already exists to prevent unnecessary uploads.");
 
         definitionsGroup.MapPost("/agent", async (
             [FromBody] CreateAgentRequest request,
@@ -78,12 +73,9 @@ public static class DefinitionsEndpoints
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Create agent";
-            operation.Description = "Creates a new agent prior to publishing flow definitions. This is optional - agents can also be created automatically when publishing definitions.";
-            return operation;
-        });
+        
+        .WithSummary("Create agent")
+        .WithDescription("Creates a new agent prior to publishing flow definitions. This is optional - agents can also be created automatically when publishing definitions.");
 
         definitionsGroup.MapPost("/deploy-template", async (
             [FromBody] DeployTemplateAgentRequest request,
@@ -97,12 +89,9 @@ public static class DefinitionsEndpoints
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Deploy a template agent to agent's tenant";
-            operation.Description = "Creates a replica of a system-scoped agent, its flow definitions, and associated knowledge in the agent's tenant. Requires tenant admin or system admin role.";
-            return operation;
-        });
+        
+        .WithSummary("Deploy a template agent to agent's tenant")
+        .WithDescription("Creates a replica of a system-scoped agent, its flow definitions, and associated knowledge in the agent's tenant. Requires tenant admin or system admin role.");
 
         definitionsGroup.MapDelete("/agent", async (
             [FromQuery] string agentName,
@@ -118,11 +107,8 @@ public static class DefinitionsEndpoints
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Delete an agent and associated resources";
-            operation.Description = "Deletes the specified agent (template/system or deployed) and cascades removal of definitions, knowledge, schedules, documents, logs, usage events, and related API keys.";
-            return operation;
-        });
+        
+        .WithSummary("Delete an agent and associated resources")
+        .WithDescription("Deletes the specified agent (template/system or deployed) and cascades removal of definitions, knowledge, schedules, documents, logs, usage events, and related API keys.");
     }
 } 

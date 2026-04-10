@@ -28,11 +28,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpsertOidcConfigCreate")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Create OIDC config for a tenant",
-            Description = "Creates the OIDC configuration for the current tenant (from tenant context). Accessible to TenantAdmin and SysAdmin."
-        })
+        
         .RequiresValidTenantAdmin();
 
         group.MapPut("/", async (
@@ -49,11 +45,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpsertOidcConfigUpdate")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Update OIDC config for a tenant",
-            Description = "Updates the OIDC configuration for the current tenant (from tenant context). Accessible to TenantAdmin and SysAdmin."
-        })
+        
         .RequiresValidTenantAdmin();
 
         group.MapDelete("/", async (
@@ -66,11 +58,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteOidcConfig")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Delete OIDC config for a tenant",
-            Description = "Deletes the OIDC configuration for the current tenant (from tenant context). Accessible to TenantAdmin and SysAdmin."
-        })
+        
         .RequiresValidTenantAdmin();
 
         // SysAdmin list all tenant configs
@@ -81,11 +69,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("AdminListAllOidcConfigs")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List all OIDC configs (SysAdmin)",
-            Description = "Retrieves all tenants' OIDC configuration entries (decrypted)."
-        })
+        
         .RequiresValidSysAdmin();
         
         group.MapGet("/", async (
@@ -98,11 +82,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetOidcConfig")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get OIDC config for a tenant",
-            Description = "Returns the decrypted OIDC configuration JSON for the current tenant (from tenant context). Accessible to TenantAdmin and SysAdmin."
-        })
+        
         .RequiresValidTenantAdmin();
     }
 }

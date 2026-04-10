@@ -42,7 +42,7 @@ public static class ScheduleEndpoints
         .WithName("GetSchedules")
         .WithSummary("Get all schedules")
         .WithDescription("Retrieves all schedules with optional filtering by agent name, workflow type, status, and search term")
-        .WithOpenApi();
+        ;
 
         // Delete all schedules for the current tenant
         schedulesGroup.MapDelete("/all", async (
@@ -54,7 +54,7 @@ public static class ScheduleEndpoints
         .WithName("DeleteAllSchedules")
         .WithSummary("Delete all schedules for the tenant")
         .WithDescription("Deletes all schedules belonging to the current tenant. This operation cannot be undone.")
-        .WithOpenApi();
+        ;
 
         // Delete all schedules for an agent (more specific route - must come before /{scheduleId})
         schedulesGroup.MapDelete("/agent/{agentName}", async (
@@ -67,7 +67,7 @@ public static class ScheduleEndpoints
         .WithName("DeleteAllSchedulesByAgent")
         .WithSummary("Delete all schedules for an agent")
         .WithDescription("Deletes all schedules associated with a specific agent. Requires write permission for the agent.")
-        .WithOpenApi();
+        ;
 
         // Get upcoming runs for a schedule
         schedulesGroup.MapGet("/upcoming-runs", async (
@@ -86,7 +86,7 @@ public static class ScheduleEndpoints
         .WithName("GetUpcomingRuns")
         .WithSummary("Get upcoming runs for a schedule")
         .WithDescription("Retrieves the next scheduled executions for a specific schedule. Provide scheduleId as a query parameter.")
-        .WithOpenApi();
+        ;
 
         // Get execution history for a schedule
         schedulesGroup.MapGet("/history", async (
@@ -105,7 +105,7 @@ public static class ScheduleEndpoints
         .WithName("GetScheduleHistory")
         .WithSummary("Get schedule execution history")
         .WithDescription("Retrieves the execution history for a specific schedule. Provide scheduleId as a query parameter.")
-        .WithOpenApi();
+        ;
 
         // Get schedule by ID
         schedulesGroup.MapGet("/by-id", async (
@@ -123,7 +123,7 @@ public static class ScheduleEndpoints
         .WithName("GetScheduleById")
         .WithSummary("Get schedule by ID")
         .WithDescription("Retrieves detailed information about a specific schedule. Provide scheduleId as a query parameter.")
-        .WithOpenApi();
+        ;
 
         // Delete a specific schedule by ID
         schedulesGroup.MapDelete("/by-id", async (
@@ -141,6 +141,6 @@ public static class ScheduleEndpoints
         .WithName("DeleteScheduleById")
         .WithSummary("Delete a schedule by ID")
         .WithDescription("Deletes a specific schedule. Requires write permission for the associated agent. Provide scheduleId as a query parameter.")
-        .WithOpenApi();
+        ;
     }
 }

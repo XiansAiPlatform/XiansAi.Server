@@ -39,11 +39,7 @@ public static class AdminTenantEndpoints
         })
         .WithName("ListTenants")
         .Produces(StatusCodes.Status403Forbidden)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List All Tenants",
-            Description = "Retrieve all tenants in the system. SysAdmin only. X-Tenant-Id header is NOT required for this endpoint."
-        });
+        ;
 
         // Get Tenant by TenantId - SysAdmin only (TenantAdmin should use tenant-scoped endpoints)
         adminTenantGroup.MapGet("/{tenantId}", async (
@@ -65,11 +61,7 @@ public static class AdminTenantEndpoints
         })
         .WithName("GetTenantByTenantId")
         .Produces(StatusCodes.Status403Forbidden)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Tenant by TenantId",
-            Description = "Retrieve a specific tenant by its tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
-        });
+        ;
 
         // Create Tenant - No X-Tenant-Id header required (creating new tenant)
         adminTenantGroup.MapPost("", async (
@@ -92,11 +84,7 @@ public static class AdminTenantEndpoints
         })
         .WithName("CreateTenant")
         .Produces(StatusCodes.Status403Forbidden)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Create Tenant",
-            Description = "Create a new tenant. SysAdmin only. X-Tenant-Id header is NOT required."
-        });
+        ;
 
         // Update Tenant - SysAdmin only
         adminTenantGroup.MapPatch("/{tenantId}", async (
@@ -128,11 +116,7 @@ public static class AdminTenantEndpoints
         })
         .WithName("UpdateTenant")
         .Produces(StatusCodes.Status403Forbidden)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Update Tenant",
-            Description = "Update an existing tenant by tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
-        });
+        ;
 
         // Delete Tenant - SysAdmin only
         adminTenantGroup.MapDelete("/{tenantId}", async (
@@ -163,11 +147,7 @@ public static class AdminTenantEndpoints
         })
         .WithName("DeleteTenant")
         .Produces(StatusCodes.Status403Forbidden)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Delete Tenant",
-            Description = "Delete a tenant by tenantId (e.g., 'spacex01'). SysAdmin only. X-Tenant-Id header is NOT required."
-        });
+        ;
     }
 }
 

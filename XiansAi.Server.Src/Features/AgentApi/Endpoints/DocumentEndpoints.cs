@@ -42,11 +42,9 @@ public static class DocumentEndpoints
         .Produces<string>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Save document";
-            operation.Description = "Creates or updates a document with optional TTL and overwrite settings";
-            return operation;
-        });
+        
+        .WithSummary("Save document")
+        .WithDescription("Creates or updates a document with optional TTL and overwrite settings");
 
         documentGroup.MapPost("/get", async (
             [FromBody] DocumentIdRequest request,
@@ -59,11 +57,9 @@ public static class DocumentEndpoints
         .Produces<JsonElement>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Get document by ID";
-            operation.Description = "Retrieves a document by its unique identifier";
-            return operation;
-        });
+        
+        .WithSummary("Get document by ID")
+        .WithDescription("Retrieves a document by its unique identifier");
 
         documentGroup.MapPost("/get-by-key", async (
             [FromBody] DocumentKeyRequest request,
@@ -76,11 +72,9 @@ public static class DocumentEndpoints
         .Produces<JsonElement>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Get document by type and key";
-            operation.Description = "Retrieves a document by its type and custom key combination";
-            return operation;
-        });
+        
+        .WithSummary("Get document by type and key")
+        .WithDescription("Retrieves a document by its type and custom key combination");
 
         documentGroup.MapPost("/query", async (
             [FromBody] DocumentQueryRequest request,
@@ -93,11 +87,9 @@ public static class DocumentEndpoints
         .Produces<object>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Query documents";
-            operation.Description = "Searches for documents based on provided criteria with pagination support";
-            return operation;
-        });
+        
+        .WithSummary("Query documents")
+        .WithDescription("Searches for documents based on provided criteria with pagination support");
 
         documentGroup.MapPost("/update", async (
             [FromBody] DocumentDto<JsonElement> document,
@@ -111,11 +103,9 @@ public static class DocumentEndpoints
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Update document";
-            operation.Description = "Updates an existing document";
-            return operation;
-        });
+        
+        .WithSummary("Update document")
+        .WithDescription("Updates an existing document");
 
         documentGroup.MapPost("/delete", async (
             [FromBody] DocumentIdRequest request,
@@ -128,11 +118,9 @@ public static class DocumentEndpoints
         .Produces<bool>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete document";
-            operation.Description = "Deletes a document by its unique identifier";
-            return operation;
-        });
+        
+        .WithSummary("Delete document")
+        .WithDescription("Deletes a document by its unique identifier");
 
         documentGroup.MapPost("/delete-many", async (
             [FromBody] DocumentIdsRequest request,
@@ -145,11 +133,9 @@ public static class DocumentEndpoints
         .Produces<int>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete multiple documents";
-            operation.Description = "Deletes multiple documents by their unique identifiers";
-            return operation;
-        });
+        
+        .WithSummary("Delete multiple documents")
+        .WithDescription("Deletes multiple documents by their unique identifiers");
 
         documentGroup.MapPost("/exists", async (
             [FromBody] DocumentIdRequest request,
@@ -161,10 +147,8 @@ public static class DocumentEndpoints
         })
         .Produces<bool>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Check document existence";
-            operation.Description = "Checks if a document exists by its unique identifier";
-            return operation;
-        });
+        
+        .WithSummary("Check document existence")
+        .WithDescription("Checks if a document exists by its unique identifier");
     }
 }

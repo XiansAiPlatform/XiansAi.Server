@@ -252,10 +252,9 @@ public static class WebhookEndpoints
         .WithTags("User API - Webhooks")
         .RequireAuthorization("EndpointAuthPolicy")
         .WithAgentUserApiRateLimit()
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Process a builtin webhook using message passing infrastructure";
-            operation.Description = @"Receives webhook calls and delivers them as messages to the specified workflow,
+        
+        .WithSummary("Process a builtin webhook using message passing infrastructure")
+        .WithDescription(@"Receives webhook calls and delivers them as messages to the specified workflow,
 waiting synchronously for a response using the message passing infrastructure.
             
 The webhook URL format is:
@@ -286,9 +285,7 @@ The workflow will receive a message with MessageType.Webhook containing:
 
 The workflow should respond with an outgoing message of MessageType.Webhook containing a WebhookResponse object in the Data field.
 The WebhookResponse should have: StatusCode, Headers, Content, and ContentType properties.
-This allows the workflow to control the HTTP response returned to the webhook caller.";
-            return operation;
-        })
+This allows the workflow to control the HTTP response returned to the webhook caller.")
         .Produces<object>(StatusCodes.Status200OK)
         .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
         .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
@@ -360,10 +357,9 @@ This allows the workflow to control the HTTP response returned to the webhook ca
         .WithTags("User API - Webhooks")
         .RequireAuthorization("EndpointAuthPolicy")
         .WithAgentUserApiRateLimit() // Apply rate limiting to prevent enumeration attacks
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Process a webhook for a temporal workflow";
-            operation.Description = @"Receives webhook calls and delivers them as Temporal Updates to the specified workflow.
+        
+        .WithSummary("Process a webhook for a temporal workflow")
+        .WithDescription(@"Receives webhook calls and delivers them as Temporal Updates to the specified workflow.
             
 The webhook URL format is:
 POST /api/user/webhooks/{workflow}/{methodName}?apikey={apikey}
@@ -381,9 +377,7 @@ public async Task<string> WebhookUpdateMethod(IDictionary<string, string> queryP
 
 Query parameters (except apikey) are passed to the Update method.
 The request body is passed as a string to the Update method.
-The Update method should return a string response.";
-            return operation;
-        })
+The Update method should return a string response.")
         .Produces<string>(StatusCodes.Status200OK)
         .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
         .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)

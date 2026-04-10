@@ -1,7 +1,5 @@
 using Shared.Utils.Services;
 using Shared.Utils.Temporal;
-using Temporalio.Client;
-using Features.WebApi.Services;
 using Shared.Data.Models;
 
 namespace Shared.Services;

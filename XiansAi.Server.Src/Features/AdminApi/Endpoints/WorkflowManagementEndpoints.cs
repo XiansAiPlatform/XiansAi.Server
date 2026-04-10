@@ -31,11 +31,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("ActivateWorkflow")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Activate Workflow",
-            Description = "Activate (start) a new workflow for a specific tenant. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header. Optional userId query parameter to override the default user ID from authentication context."
-        });
+        ;
 
         // Get Workflow by ID
         adminWorkflowGroup.MapGet("", async (
@@ -48,11 +44,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetWorkflow")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Workflow by ID",
-            Description = "Retrieves detailed information about a specific workflow by its workflow ID and optional run ID (passed as query parameters). Supports complex workflow IDs with special characters and embedded URLs. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
-        });
+        ;
 
         // List Workflows
         adminWorkflowGroup.MapGet("/list", async (
@@ -70,11 +62,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListWorkflows")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List Workflows",
-            Description = "Retrieves workflows with optional filtering by status, agent, workflow type, user, and activation (idPostfix), with pagination support. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
-        });
+        ;
 
         // Get Workflow Events
         adminWorkflowGroup.MapGet("/events", async (
@@ -86,11 +74,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetWorkflowEvents")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Workflow Events",
-            Description = "Retrieves the event history for a specific workflow (pass workflowId as query parameter). Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
-        });
+        ;
 
         // Stream Workflow Events
         adminWorkflowGroup.MapGet("/events/stream", (
@@ -101,11 +85,7 @@ public static class WorkflowManagementEndpoints
             return workflowEventsService.StreamWorkflowEvents(workflowId);
         })
         .WithName("StreamWorkflowEvents")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Stream Workflow Events",
-            Description = "Provides a server-sent events (SSE) stream of workflow activity events (pass workflowId as query parameter). Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
-        });
+        ;
 
         // Get Workflow Types
         adminWorkflowGroup.MapGet("/types", async (
@@ -117,11 +97,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetWorkflowTypes")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Workflow Types",
-            Description = "Retrieves all unique workflow types for a specific agent. Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
-        });
+        ;
 
         // Cancel Workflow
         adminWorkflowGroup.MapPost("/cancel", async (
@@ -134,11 +110,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("CancelWorkflow")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Cancel Workflow",
-            Description = "Cancels a running workflow (pass workflowId and force as query parameters). Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header."
-        });
+        ;
     }
 }
 

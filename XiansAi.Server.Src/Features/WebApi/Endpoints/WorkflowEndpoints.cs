@@ -24,11 +24,9 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Workflow")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get workflow by ID";
-            operation.Description = "Retrieves detailed information about a specific workflow by its workflow ID and optional run ID (passed as query parameters). Supports complex workflow IDs with special characters and embedded URLs.";
-            return operation;
-        });
+        
+        .WithSummary("Get workflow by ID")
+        .WithDescription("Retrieves detailed information about a specific workflow by its workflow ID and optional run ID (passed as query parameters). Supports complex workflow IDs with special characters and embedded URLs.");
 
         workflowsGroup.MapPost("/", async (
             [FromBody] WorkflowRequest request,
@@ -38,7 +36,7 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Create New Workflow")
-        .WithOpenApi();
+        ;
 
         workflowsGroup.MapGet("/events", async (
             [FromQuery] string workflowId,
@@ -48,11 +46,9 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Workflow Events")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get workflow events";
-            operation.Description = "Retrieves the event history for a specific workflow (pass workflowId as query parameter)";
-            return operation;
-        });
+        
+        .WithSummary("Get workflow events")
+        .WithDescription("Retrieves the event history for a specific workflow (pass workflowId as query parameter)");
 
         workflowsGroup.MapGet("/list", async (
             [FromQuery] string? status,
@@ -68,11 +64,9 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Workflows")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get workflows with optional filters and pagination";
-            operation.Description = "Retrieves workflows with optional filtering by status, agent, workflow type, user, and activation (idPostfix), with pagination support";
-            return operation;
-        });
+        
+        .WithSummary("Get workflows with optional filters and pagination")
+        .WithDescription("Retrieves workflows with optional filtering by status, agent, workflow type, user, and activation (idPostfix), with pagination support");
 
         workflowsGroup.MapGet("/types", async (
             [FromQuery] string agent,
@@ -82,11 +76,9 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Workflow Types")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get workflow types for an agent";
-            operation.Description = "Retrieves all unique workflow types for a specific agent";
-            return operation;
-        });
+        
+        .WithSummary("Get workflow types for an agent")
+        .WithDescription("Retrieves all unique workflow types for a specific agent");
 
         workflowsGroup.MapPost("/cancel", async (
             [FromQuery] string workflowId,
@@ -97,11 +89,9 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Cancel Workflow")
-        .WithOpenApi(operation => {
-            operation.Summary = "Cancel a workflow";
-            operation.Description = "Cancels a running workflow (pass workflowId and force as query parameters)";
-            return operation;
-        });
+        
+        .WithSummary("Cancel a workflow")
+        .WithDescription("Cancels a running workflow (pass workflowId and force as query parameters)");
 
         workflowsGroup.MapPost("/cancel-all", async (
             [FromQuery] bool force,
@@ -111,11 +101,9 @@ public static class WorkflowEndpoints
             return result.ToHttpResult();
         })
         .WithName("Cancel All Workflows")
-        .WithOpenApi(operation => {
-            operation.Summary = "Cancel all running workflows for the tenant";
-            operation.Description = "Cancels all running workflows belonging to the current tenant. Pass force=true to terminate immediately instead of a graceful cancel.";
-            return operation;
-        });
+        
+        .WithSummary("Cancel all running workflows for the tenant")
+        .WithDescription("Cancels all running workflows belonging to the current tenant. Pass force=true to terminate immediately instead of a graceful cancel.");
 
         workflowsGroup.MapGet("/events/stream", (
             [FromServices] IWorkflowEventsService endpoint,
@@ -124,10 +112,8 @@ public static class WorkflowEndpoints
             return endpoint.StreamWorkflowEvents(workflowId);
         })
         .WithName("Stream Workflow Events")
-        .WithOpenApi(operation => {
-            operation.Summary = "Stream workflow events in real-time";
-            operation.Description = "Provides a server-sent events (SSE) stream of workflow activity events (pass workflowId as query parameter)";
-            return operation;
-        });
+        
+        .WithSummary("Stream workflow events in real-time")
+        .WithDescription("Provides a server-sent events (SSE) stream of workflow activity events (pass workflowId as query parameter)");
     }
 } 

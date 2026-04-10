@@ -157,12 +157,16 @@ public class DefinitionsService : IDefinitionsService
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
     {
-        if (string.IsNullOrEmpty(request.Agent))
+        try
         {
-            _logger.LogWarning("Agent name is empty or null");
+            request.Agent = Agent.SanitizeAndValidateName(request.Agent!);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Invalid agent name: {AgentName}. Error: {Error}", request.Agent, ex.Message);
             return Results.Problem(
                 title: "Bad Request",
-                detail: "Agent name is required.",
+                detail: ex.Message,
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -255,12 +259,16 @@ public class DefinitionsService : IDefinitionsService
 
     public async Task<IResult> CreateAgentAsync(CreateAgentRequest request)
     {
-        if (string.IsNullOrEmpty(request.AgentName))
+        try
         {
-            _logger.LogWarning("Agent name is empty or null");
+            request.AgentName = Agent.SanitizeAndValidateName(request.AgentName);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Invalid agent name: {AgentName}. Error: {Error}", request.AgentName, ex.Message);
             return Results.Problem(
                 title: "Bad Request",
-                detail: "Agent name is required.",
+                detail: ex.Message,
                 statusCode: StatusCodes.Status400BadRequest);
         }
 

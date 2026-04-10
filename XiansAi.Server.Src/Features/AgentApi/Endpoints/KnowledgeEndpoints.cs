@@ -41,15 +41,9 @@ public static class KnowledgeEndpoints
         .Produces<object>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Get latest knowledge";
-            operation.Description = "Retrieves the most recent knowledge for the specified name and agent. " +
-                "If activationName is provided, uses fallback logic: " +
-                "1) Try tenantId + agent + activationName, " +
-                "2) If not found, try tenantId + agent (any or no activationName), " +
-                "3) If not found, try system-scoped with agent.";
-            return operation;
-        });
+        
+        .WithSummary("Get latest knowledge")
+        .WithDescription("Retrieves the most recent knowledge for the specified name and agent. ");
 
         knowledgeGroup.MapGet("/latest/system", async (
             [FromQuery] string name,
@@ -63,11 +57,9 @@ public static class KnowledgeEndpoints
         .Produces<object>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Get latest system knowledge";
-            operation.Description = "Retrieves the most recent system-scoped knowledge (no tenant) for the specified name and agent";
-            return operation;
-        });
+        
+        .WithSummary("Get latest system knowledge")
+        .WithDescription("Retrieves the most recent system-scoped knowledge (no tenant) for the specified name and agent");
 
         knowledgeGroup.MapPost("/", async (
             [FromBody] KnowledgeCreateRequest request,
@@ -92,11 +84,9 @@ public static class KnowledgeEndpoints
         .Produces<object>(StatusCodes.Status201Created)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Create knowledge";
-            operation.Description = "Creates a new knowledge entity with optional activation name";
-            return operation;
-        });
+        
+        .WithSummary("Create knowledge")
+        .WithDescription("Creates a new knowledge entity with optional activation name");
 
         knowledgeGroup.MapDelete("/", async (
             [FromQuery] string name,
@@ -115,11 +105,9 @@ public static class KnowledgeEndpoints
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete knowledge";
-            operation.Description = "Deletes all versions of knowledge for the specified name and agent";
-            return operation;
-        });
+        
+        .WithSummary("Delete knowledge")
+        .WithDescription("Deletes all versions of knowledge for the specified name and agent");
 
         knowledgeGroup.MapGet("/list", async (
             [FromQuery] string agent,
@@ -131,11 +119,9 @@ public static class KnowledgeEndpoints
         })
         .Produces<object[]>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "List knowledge";
-            operation.Description = "Lists all knowledge items for the specified agent";
-            return operation;
-        });
+        
+        .WithSummary("List knowledge")
+        .WithDescription("Lists all knowledge items for the specified agent");
     }
 } 
 

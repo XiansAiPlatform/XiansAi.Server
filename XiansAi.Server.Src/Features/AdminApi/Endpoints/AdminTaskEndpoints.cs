@@ -58,27 +58,7 @@ public static class AdminTaskEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("ListTasks")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List Tasks",
-            Description = @"List all tasks for a tenant with optional filtering.
-            
-Query Parameters:
-- pageSize: Number of items per page (default: 20, max: 100)
-- pageToken: Token for pagination (page number)
-- agentName: Filter by agent name (exact match)
-- activationName: Filter by activation name (maps to idPostfix search attribute)
-- participantId: Filter by participant user ID
-- status: Filter by execution status (e.g., Running, Completed, Failed)
-
-Tasks are fetched from Temporal workflows with search attributes:
-- tenantId: Tenant identifier
-- agent: Agent name
-- idPostfix: Activation identifier
-- userId: Participant user ID
-
-Returns a paginated list of tasks with metadata including available actions, status, and timestamps."
-        });
+        ;
 
         // Get task by workflow ID
         taskGroup.MapGet("/by-id", async Task<IResult> (
@@ -100,22 +80,7 @@ Returns a paginated list of tasks with metadata including available actions, sta
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("GetTask")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Task by ID",
-            Description = @"Get detailed task information by workflow ID.
-            
-Returns complete task details including:
-- Task metadata (title, description, participant)
-- Workflow information (status, start/close times)
-- Available actions and performed action (if completed)
-- Admin-specific fields (agent name, activation name, tenant ID)
-- Initial and final work content
-- Custom metadata
-
-Query Parameters:
-- taskId: The full Temporal workflow ID"
-        });
+        ;
 
         // Update draft for a task
         taskGroup.MapPut("/draft", async (
@@ -129,21 +94,7 @@ Query Parameters:
         .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("UpdateTaskDraft")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Update Task Draft",
-            Description = @"Update the draft work for a task.
-            
-This sends an 'UpdateDraft' signal to the Temporal workflow, allowing modification of the task's work in progress.
-
-Query Parameters:
-- taskId: The full Temporal workflow ID
-
-Request Body:
-- updatedDraft: The new draft content (string)
-
-Returns a success message if the draft was updated successfully."
-        });
+        ;
 
         // Perform action on a task
         taskGroup.MapPost("/actions", async (
@@ -157,22 +108,6 @@ Returns a success message if the draft was updated successfully."
         .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("PerformTaskAction")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Perform Action on Task",
-            Description = @"Perform an action on a task with an optional comment.
-            
-This sends a 'PerformAction' signal to the Temporal workflow with the specified action and comment.
-The action should be one of the available actions for the task (e.g., 'approve', 'reject', 'hold').
-
-Query Parameters:
-- taskId: The full Temporal workflow ID
-
-Request Body:
-- action: The action to perform (required, should match one of the task's available actions)
-- comment: Optional comment explaining the action
-
-Returns a success message if the action was performed successfully."
-        });
+        ;
     }
 }

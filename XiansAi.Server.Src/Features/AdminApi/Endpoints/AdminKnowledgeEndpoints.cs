@@ -172,9 +172,9 @@ public static class AdminKnowledgeEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "List knowledge tree for an agent";
-            operation.Description = @"Retrieves all knowledge for a specific agent, grouped by name with system-scoped, tenant-default, and activation-specific versions. 
+        
+        .WithSummary("List knowledge tree for an agent")
+        .WithDescription(@"Retrieves all knowledge for a specific agent, grouped by name with system-scoped, tenant-default, and activation-specific versions. 
             
             **Query Parameters:**
             - `agentName` (required): The name of the agent to retrieve knowledge for
@@ -185,9 +185,7 @@ public static class AdminKnowledgeEndpoints
               - `name`: Knowledge item name
               - `system_scoped`: Latest system-scoped knowledge (null if none)
               - `tenant_default`: Latest tenant-scoped knowledge without activation (null if none)
-              - `activations`: Array of latest knowledge for each unique activation name (filtered by activationName if provided)";
-            return operation;
-        });
+              - `activations`: Array of latest knowledge for each unique activation name (filtered by activationName if provided)");
 
         // Get applicable knowledge content by tenantId, agentName, activationName (reuses same service logic as Agent API /latest)
         adminKnowledgeGroup.MapGet("/latest", async (
@@ -249,9 +247,9 @@ public static class AdminKnowledgeEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Get applicable knowledge content";
-            operation.Description = @"Retrieves the applicable knowledge for the specified tenant, agent, and optional activation. Uses the same fallback logic as the Agent API /latest endpoint:
+        
+        .WithSummary("Get applicable knowledge content")
+        .WithDescription(@"Retrieves the applicable knowledge for the specified tenant, agent, and optional activation. Uses the same fallback logic as the Agent API /latest endpoint:
 
 1. If activationName is provided: try tenantId + agent + activationName
 2. If not found: try tenantId + agent (any or no activationName)
@@ -260,9 +258,7 @@ public static class AdminKnowledgeEndpoints
 **Query Parameters:**
 - `name` (required): The knowledge item name
 - `agentName` (required): The agent name
-- `activationName` (optional): The activation name for activation-scoped knowledge";
-            return operation;
-        });
+- `activationName` (optional): The activation name for activation-scoped knowledge");
 
         // Get specific knowledge by ID
         adminKnowledgeGroup.MapGet("/{knowledgeId}", async (
@@ -327,11 +323,9 @@ public static class AdminKnowledgeEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Get specific knowledge by ID";
-            operation.Description = "Retrieves a specific knowledge item by its ID. Returns both tenant-scoped and system-scoped (tenantId is null) knowledge.";
-            return operation;
-        });
+        
+        .WithSummary("Get specific knowledge by ID")
+        .WithDescription("Retrieves a specific knowledge item by its ID. Returns both tenant-scoped and system-scoped (tenantId is null) knowledge.");
 
         // Override knowledge at different scope levels
         adminKnowledgeGroup.MapPost("/{knowledgeId}/override/{level}", async (
@@ -477,9 +471,9 @@ public static class AdminKnowledgeEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Create a scoped override of existing knowledge";
-            operation.Description = @"Creates a copy of existing knowledge at a more specific scope level. This allows you to customize system-wide knowledge for a specific tenant or activation without modifying the original.
+        
+        .WithSummary("Create a scoped override of existing knowledge")
+        .WithDescription(@"Creates a copy of existing knowledge at a more specific scope level. This allows you to customize system-wide knowledge for a specific tenant or activation without modifying the original.
 
 ## Parameters
 
@@ -588,9 +582,7 @@ Same as the original knowledge item. User must have permission to modify the age
 - ✅ More specific overrides take precedence in knowledge resolution
 - ✅ Override preserves the `version` hash from the original
 - ✅ Can override multiple times at different levels
-- ❌ Cannot override ""upward"" (e.g., activation → tenant)";
-            return operation;
-        });
+- ❌ Cannot override ""upward"" (e.g., activation → tenant)");
 
         // Create knowledge
         adminKnowledgeGroup.MapPost("", async (
@@ -679,9 +671,9 @@ Same as the original knowledge item. User must have permission to modify the age
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Create a new knowledge item (tenant-scoped or system-scoped)";
-            operation.Description = @"Creates a new knowledge item with flexible scoping options. Knowledge can be scoped at three levels: system, tenant, or activation.
+        
+        .WithSummary("Create a new knowledge item (tenant-scoped or system-scoped)")
+        .WithDescription(@"Creates a new knowledge item with flexible scoping options. Knowledge can be scoped at three levels: system, tenant, or activation.
 
 ## Parameters
 
@@ -783,9 +775,7 @@ Returns the created knowledge object with all properties including auto-generate
 |---------------|---------------|
 | System-scoped | SysAdmin |
 | Tenant-scoped | Agent Owner, TenantAdmin, or SysAdmin |
-| Activation-scoped | Agent Owner, TenantAdmin, or SysAdmin |";
-            return operation;
-        });
+| Activation-scoped | Agent Owner, TenantAdmin, or SysAdmin |");
 
         // Update knowledge
         adminKnowledgeGroup.MapPatch("/{knowledgeId}", async (
@@ -872,15 +862,13 @@ Returns the created knowledge object with all properties including auto-generate
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Update knowledge (always creates a new version)";
-            operation.Description = @"Patches knowledge by **always** inserting a new row: new id, new `CreatedAt`, and a `version` value of the form `contentHash:objectId` (hash of content + type, plus a unique suffix for the DB unique index). Prior revisions remain for history.
+        
+        .WithSummary("Update knowledge (always creates a new version)")
+        .WithDescription(@"Patches knowledge by **always** inserting a new row: new id, new `CreatedAt`, and a `version` value of the form `contentHash:objectId` (hash of content + type, plus a unique suffix for the DB unique index). Prior revisions remain for history.
 
             **Behavior:**
             - Content hash is derived from content + type (request `version` is ignored)
-            - Same content as an older revision still inserts a new row; latest is by `CreatedAt`";
-            return operation;
-        });
+            - Same content as an older revision still inserts a new row; latest is by `CreatedAt`");
 
         // Delete knowledge by ID
         adminKnowledgeGroup.MapDelete("/{knowledgeId}", async (
@@ -939,11 +927,9 @@ Returns the created knowledge object with all properties including auto-generate
             }
         })
         .WithName("Delete Knowledge")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete knowledge by ID";
-            operation.Description = "Deletes a specific knowledge item by its ID.";
-            return operation;
-        });
+        
+        .WithSummary("Delete knowledge by ID")
+        .WithDescription("Deletes a specific knowledge item by its ID.");
 
         // Get versions of knowledge by name
         adminKnowledgeGroup.MapGet("/{name}/versions", async (
@@ -1011,11 +997,9 @@ Returns the created knowledge object with all properties including auto-generate
             }
         })
         .WithName("Fetch Knowledge Versions")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all versions of knowledge by name";
-            operation.Description = "Retrieves all versions of a knowledge item with a specific name. Can be filtered by agentName or activationName query parameters.";
-            return operation;
-        });
+        
+        .WithSummary("Get all versions of knowledge by name")
+        .WithDescription("Retrieves all versions of a knowledge item with a specific name. Can be filtered by agentName or activationName query parameters.");
 
         // Delete all versions of knowledge by name and level
         adminKnowledgeGroup.MapDelete("/{name}/{level}/versions", async (
@@ -1143,9 +1127,9 @@ Returns the created knowledge object with all properties including auto-generate
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete all versions of knowledge by name and scope level";
-            operation.Description = @"Deletes all versions of a knowledge item with a specific name at the specified scope level.
+        
+        .WithSummary("Delete all versions of knowledge by name and scope level")
+        .WithDescription(@"Deletes all versions of a knowledge item with a specific name at the specified scope level.
 
 ## Parameters
 
@@ -1235,9 +1219,7 @@ Result: Deletes only the prod activation version, keeps tenant-level and other a
 - ✅ Other scope levels remain unaffected
 - ✅ System-scoped knowledge is never deleted by this endpoint (only tenant/activation)
 - ⚠️ This operation cannot be undone
-- ✅ Returns count of deleted versions for confirmation";
-            return operation;
-        });
+- ✅ Returns count of deleted versions for confirmation");
     }
 }
 

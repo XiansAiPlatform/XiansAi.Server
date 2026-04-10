@@ -65,38 +65,9 @@ public static class UsageEventEndpoints
         .Produces(StatusCodes.Status202Accepted)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Report flexible usage metrics";
-            operation.Description = "Reports usage metrics using the flexible metrics array format. " +
-                                  "Supports standard metrics (tokens, messages, response time) and custom metrics " +
-                                  "(workflow completions, emails sent, etc.).\n\n" +
-                                  "**Example Request:**\n" +
-                                  "```json\n" +
-                                  "{\n" +
-                                  "  \"participantId\": \"user@example.com\",\n" +
-                                  "  \"agentName\": \"EmailAgent\",\n" +
-                                  "  \"activationName\": \"EmailAgent-Production\",\n" +
-                                  "  \"workflowId\": \"tenant:EmailAgent:SendEmail\",\n" +
-                                  "  \"model\": \"gpt-4\",\n" +
-                                  "  \"metrics\": [\n" +
-                                  "    { \"category\": \"tokens\", \"type\": \"prompt_tokens\", \"value\": 100, \"unit\": \"tokens\" },\n" +
-                                  "    { \"category\": \"tokens\", \"type\": \"completion_tokens\", \"value\": 50, \"unit\": \"tokens\" },\n" +
-                                  "    { \"category\": \"tokens\", \"type\": \"total_tokens\", \"value\": 150, \"unit\": \"tokens\" },\n" +
-                                  "    { \"category\": \"activity\", \"type\": \"email_sent\", \"value\": 1, \"unit\": \"count\" },\n" +
-                                  "    { \"category\": \"activity\", \"type\": \"workflow_completed\", \"value\": 1, \"unit\": \"count\" }\n" +
-                                  "  ]\n" +
-                                  "}\n" +
-                                  "```\n\n" +
-                                  "**Standard Metric Categories:**\n" +
-                                  "- `tokens`: Token usage (prompt_tokens, completion_tokens, total_tokens)\n" +
-                                  "- `activity`: Agent activities (message_count, workflow_completed, email_sent, etc.)\n" +
-                                  "- `performance`: Performance metrics (response_time_ms, processing_time_ms)\n" +
-                                  "- `llm_usage`: LLM API usage (llm_calls, cache_hits, cache_misses)\n\n" +
-                                  "**Custom Metrics:**\n" +
-                                  "Any category/type combination can be used for tenant-specific metrics.";
-            return operation;
-        });
+        
+        .WithSummary("Report flexible usage metrics")
+        .WithDescription("Reports usage metrics using the flexible metrics array format. ");
     }
 }
 

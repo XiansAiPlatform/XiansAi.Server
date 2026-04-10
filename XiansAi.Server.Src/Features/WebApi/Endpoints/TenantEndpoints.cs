@@ -24,12 +24,9 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Tenants")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get all tenants";
-            operation.Description = "Retrieves all tenant records";
-            return operation;
-        }).RequiresValidSysAdmin();
+        
+        .WithSummary("Get all tenants")
+        .WithDescription("Retrieves all tenant records").RequiresValidSysAdmin();
 
         tenantsGroup.MapGet("/list", async (
             HttpContext httpContext,
@@ -39,12 +36,9 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Tenant List")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get tenant List";
-            operation.Description = "Retrieves all tenant ids";
-            return operation;
-        }).RequiresValidSysAdmin();
+        
+        .WithSummary("Get tenant List")
+        .WithDescription("Retrieves all tenant ids").RequiresValidSysAdmin();
 
         tenantsGroup.MapGet("/currentTenantInfo", async (
             HttpContext httpContext,
@@ -54,12 +48,9 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get current Tenant info")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get current tenant info";
-            operation.Description = "Retrieves current tenant information";
-            return operation;
-        })
+        
+        .WithSummary("Get current tenant info")
+        .WithDescription("Retrieves current tenant information")
         .RequiresValidTenantAdmin();
 
         tenantsGroup.MapPost("/", async (
@@ -74,12 +65,9 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Create Tenant")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Create a new tenant";
-            operation.Description = "Creates a new tenant record";
-            return operation;
-        }).RequiresValidSysAdmin();
+        
+        .WithSummary("Create a new tenant")
+        .WithDescription("Creates a new tenant record").RequiresValidSysAdmin();
 
         tenantsGroup.MapPut("/{id}", async (
             string id,
@@ -90,11 +78,9 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Update Tenant")
-        .WithOpenApi(operation => {
-            operation.Summary = "Update a tenant";
-            operation.Description = "Updates an existing tenant record";
-            return operation;
-        }).RequiresValidSysAdmin();
+        
+        .WithSummary("Update a tenant")
+        .WithDescription("Updates an existing tenant record").RequiresValidSysAdmin();
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
@@ -104,10 +90,8 @@ public static class TenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("Delete Tenant")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a tenant";
-            operation.Description = "Deletes a tenant by its ID";
-            return operation;
-        }).RequiresValidSysAdmin();
+        
+        .WithSummary("Delete a tenant")
+        .WithDescription("Deletes a tenant by its ID").RequiresValidSysAdmin();
     }
 } 

@@ -6,7 +6,6 @@ using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
 using Features.WebApi.Services;
-using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 
 namespace Shared.Services;
@@ -84,7 +83,6 @@ public class AgentDeletionService : IAgentDeletionService
                 return ServiceResult<AgentDeletionResult>.BadRequest("Agent name is required");
             }
 
-            var sanitizedAgentName = Agent.SanitizeAndValidateName(agentName);
             var tenantId = systemScoped ? null : _tenantContext.TenantId;
 
             // Permission check – system scoped agents require sysadmin, tenant scoped require owner
@@ -97,7 +95,7 @@ public class AgentDeletionService : IAgentDeletionService
             }
             else
             {
-                var ownerPermission = await _permissionsService.HasOwnerPermission(sanitizedAgentName);
+                var ownerPermission = await _permissionsService.HasOwnerPermission(agentName);
                 if (!ownerPermission.IsSuccess)
                 {
                     return ServiceResult<AgentDeletionResult>.BadRequest(ownerPermission.ErrorMessage ?? "Failed to check permissions");
@@ -108,7 +106,7 @@ public class AgentDeletionService : IAgentDeletionService
                 }
             }
 
-            var agent = await _agentRepository.GetByNameInternalAsync(sanitizedAgentName, tenantId);
+            var agent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
             if (agent == null)
             {
                 return ServiceResult<AgentDeletionResult>.NotFound("Agent not found");
@@ -117,12 +115,12 @@ public class AgentDeletionService : IAgentDeletionService
             // Check if there are any activations for this agent
             if (tenantId != null)
             {
-                var activations = await _activationRepository.GetByAgentNameAsync(sanitizedAgentName, tenantId);
+                var activations = await _activationRepository.GetByAgentNameAsync(agentName, tenantId);
                 if (activations != null && activations.Count > 0)
                 {
-                    _logger.LogWarning("Cannot delete agent {AgentName} - {Count} activation(s) exist", sanitizedAgentName, activations.Count);
+                    _logger.LogWarning("Cannot delete agent {AgentName} - {Count} activation(s) exist", agentName, activations.Count);
                     return ServiceResult<AgentDeletionResult>.Conflict(
-                        $"Cannot delete agent '{sanitizedAgentName}' because it has {activations.Count} activation(s). Please delete all activations first.");
+                        $"Cannot delete agent '{agentName}' because it has {activations.Count} activation(s). Please delete all activations first.");
                 }
             }
 
@@ -131,14 +129,14 @@ public class AgentDeletionService : IAgentDeletionService
             // Delete schedules (tenant scoped only)
             if (!systemScoped)
             {
-                var scheduleResult = await _scheduleService.DeleteAllSchedulesByAgentAsync(sanitizedAgentName);
+                var scheduleResult = await _scheduleService.DeleteAllSchedulesByAgentAsync(agentName);
                 if (scheduleResult.IsSuccess)
                 {
                     result.DeletedSchedules = scheduleResult.Data?.DeletedCount ?? 0;
                 }
                 else
                 {
-                    _logger.LogWarning("Failed deleting schedules for agent {Agent}: {Error}", sanitizedAgentName, scheduleResult.ErrorMessage);
+                    _logger.LogWarning("Failed deleting schedules for agent {Agent}: {Error}", agentName, scheduleResult.ErrorMessage);
                 }
             }
 
@@ -146,8 +144,8 @@ public class AgentDeletionService : IAgentDeletionService
             try
             {
                 var knowledgeItems = systemScoped
-                    ? await _knowledgeRepository.GetSystemScopedByAgentAsync<Knowledge>(sanitizedAgentName)
-                    : await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(tenantId, new List<string> { sanitizedAgentName });
+                    ? await _knowledgeRepository.GetSystemScopedByAgentAsync<Knowledge>(agentName)
+                    : await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(tenantId, new List<string> { agentName });
 
                 foreach (var knowledge in knowledgeItems)
                 {
@@ -161,23 +159,23 @@ public class AgentDeletionService : IAgentDeletionService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to delete knowledge for agent {Agent}", sanitizedAgentName);
+                _logger.LogWarning(ex, "Failed to delete knowledge for agent {Agent}", agentName);
             }
 
             // Delete flow definitions
-            result.DeletedFlowDefinitions = (int)await _flowDefinitionRepository.DeleteByAgentAsync(sanitizedAgentName, tenantId);
+            result.DeletedFlowDefinitions = (int)await _flowDefinitionRepository.DeleteByAgentAsync(agentName, tenantId);
 
             // Delete documents tied to agent id
             result.DeletedDocuments = await DeleteDocumentsByAgentAsync(agent.Id, tenantId);
 
             // Delete logs for agent
-            result.DeletedLogs = await DeleteLogsByAgentAsync(sanitizedAgentName, tenantId);
+            result.DeletedLogs = await DeleteLogsByAgentAsync(agentName, tenantId);
 
             // Delete usage events referencing agent in workflow_id
-            result.DeletedUsageEvents = await _usageEventRepository.DeleteByAgentAsync(tenantId ?? string.Empty, sanitizedAgentName);
+            result.DeletedUsageEvents = await _usageEventRepository.DeleteByAgentAsync(tenantId ?? string.Empty, agentName);
 
             // Revoke api keys that appear to belong to this agent (name match)
-            result.RevokedApiKeys = await RevokeApiKeysByNameMatchAsync(tenantId, sanitizedAgentName);
+            result.RevokedApiKeys = await RevokeApiKeysByNameMatchAsync(tenantId, agentName);
 
             // Finally delete the agent record (also deletes definitions inside repository)
             var agentDeleted = await _agentRepository.DeleteAsync(agent.Id, _tenantContext.LoggedInUser, _tenantContext.UserRoles);
@@ -189,10 +187,6 @@ public class AgentDeletionService : IAgentDeletionService
 
             result.Message = "Agent and associated resources deleted";
             return ServiceResult<AgentDeletionResult>.Success(result);
-        }
-        catch (ValidationException ex)
-        {
-            return ServiceResult<AgentDeletionResult>.BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
