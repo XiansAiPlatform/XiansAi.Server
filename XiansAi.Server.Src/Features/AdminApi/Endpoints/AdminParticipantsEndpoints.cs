@@ -40,7 +40,8 @@ public class ParticipantTenantResponse
     public Logo? Logo { get; set; }
     
     /// <summary>
-    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin. Null when tenant matched by domain only.
+    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin.
+    /// Defaults to TenantParticipant when the tenant was matched by email domain only.
     /// </summary>
     [JsonPropertyName("role")]
     public string? Role { get; set; }
@@ -208,7 +209,7 @@ public static class AdminParticipantsEndpoints
                         TenantId = t.TenantId,
                         TenantName = t.Name,
                         Logo = t.Logo,
-                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : null,
+                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : SystemRoles.TenantParticipant,
                         Theme = t.Theme
                     })
                     .OrderBy(t => t.TenantName)
