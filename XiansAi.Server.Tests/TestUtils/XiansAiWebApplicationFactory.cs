@@ -84,9 +84,13 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             // Mock IUserTenantService to always return the test tenant for the test user
             var mockUserTenantService = new Mock<IUserTenantService>();
             // Authorize the test user for both tenants
-            var authorizedTenants = new List<string> { TestTenantId, "99x.io" };
+            var authorizedTenants = new List<TenantInfoDto>
+            {
+                new TenantInfoDto { TenantId = TestTenantId, Name = "Test Tenant" },
+                new TenantInfoDto { TenantId = "99x.io", Name = "99x" }
+            };
             mockUserTenantService.Setup(x => x.GetTenantsForCurrentUser())
-                .ReturnsAsync(ServiceResult<List<string>>.Success(authorizedTenants));
+                .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.Success(authorizedTenants));
             RemoveService<IUserTenantService>(services);
             services.AddSingleton<IUserTenantService>(mockUserTenantService.Object);
 

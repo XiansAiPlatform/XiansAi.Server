@@ -288,7 +288,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 return (false, null, null);
             }
             
-            var tokenTenantIds = userTenants?.Data ?? new List<string>();
+            var tokenTenantIds = userTenants?.Data?.Select(t => t.TenantId).ToList() ?? new List<string>();
 
             // Cache the result (always cache fresh validation results)
             await _tokenCache.CacheValidation(token, tokenSuccess, tokenUserId, tokenTenantIds);

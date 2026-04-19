@@ -17,7 +17,7 @@ public interface IUserRepository
     Task<User?> GetByUserIdAsync(string userId);
     Task<User?> GetByIdAsync(string id);
     Task<User?> GetByUserEmailAsync(string email);
-    Task<List<string>> GetUserTenantsAsync(string userId);
+    Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId);
     Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
     Task<User?> GetAnyUserAsync();
     Task<bool> CreateAsync(User user);
@@ -253,7 +253,7 @@ public class UserRepository : IUserRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserEmail");
     }
 
-    public async Task<List<string>> GetUserTenantsAsync(string userId)
+    public async Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId)
     {
         var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
         var projection = Builders<User>.Projection.Expression(u => u.TenantRoles);
@@ -265,7 +265,7 @@ public class UserRepository : IUserRepository
 
         if (tenantRoles == null || !tenantRoles.Any())
         {
-            return new List<string>();
+            return new List<TenantInfoDto>();
         }
 
         // Get approved tenant IDs from user's tenant roles
@@ -276,7 +276,7 @@ public class UserRepository : IUserRepository
 
         if (!approvedTenantIds.Any())
         {
-            return new List<string>();
+            return new List<TenantInfoDto>();
         }
 
         // Validate that each tenant exists and is enabled (single batch query instead of N+1)
@@ -285,13 +285,13 @@ public class UserRepository : IUserRepository
             var tenants = await _tenantRepository.GetByTenantIdsAsync(approvedTenantIds);
             return tenants
                 .Where(t => t != null && t.Enabled)
-                .Select(t => t.TenantId)
+                .Select(t => new TenantInfoDto { TenantId = t.TenantId, Name = t.Name })
                 .ToList();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error fetching tenants for user {UserId}", userId);
-            return new List<string>();
+            return new List<TenantInfoDto>();
         }
     }
 

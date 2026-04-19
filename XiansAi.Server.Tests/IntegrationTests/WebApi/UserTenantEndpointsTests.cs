@@ -31,7 +31,7 @@ public class UserTenantEndpointsTests : WebApiIntegrationTestBase
         
         if (response.StatusCode == HttpStatusCode.OK && response.Content.Headers.ContentLength > 0)
         {
-            var tenants = await response.Content.ReadFromJsonAsync<List<string>>();
+            var tenants = await response.Content.ReadFromJsonAsync<List<TenantInfoResponse>>();
             Assert.NotNull(tenants);
         }
     }
@@ -490,5 +490,11 @@ public class UserSearchResult
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+}
+
+public class TenantInfoResponse
+{
+    public string TenantId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
 }
 

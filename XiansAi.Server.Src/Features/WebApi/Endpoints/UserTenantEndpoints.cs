@@ -41,7 +41,7 @@ public static class UserTenantEndpoints
         .RequireAuthorization("RequireTokenAuth")
         
         .WithSummary("Get all tenants for current user")
-        .WithDescription("Returns all tenant IDs assigned to current user");
+        .WithDescription("Returns all tenants assigned to current user with tenantId and name fields");
 
         group.MapGet("/tenantUsers", async (
             [FromQuery] int page,
