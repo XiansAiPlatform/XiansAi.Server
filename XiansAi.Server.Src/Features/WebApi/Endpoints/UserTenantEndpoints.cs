@@ -39,12 +39,9 @@ public static class UserTenantEndpoints
         })
         .WithName("GetCurrentUserTenants")
         .RequireAuthorization("RequireTokenAuth")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get all tenants for current user";
-            operation.Description = "Returns all tenant IDs assigned to current user";
-            return operation;
-        });
+        
+        .WithSummary("Get all tenants for current user")
+        .WithDescription("Returns all tenants assigned to current user with tenantId and name fields");
 
         group.MapGet("/tenantUsers", async (
             [FromQuery] int page,
@@ -73,12 +70,9 @@ public static class UserTenantEndpoints
         })
         .WithName("GetCurrentTenantUsers")
         .RequiresValidTenantAdmin()
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get all users for current tenant";
-            operation.Description = "Returns all users IDs assigned to current tenant. Only tenant admins can access this.";
-            return operation;
-        });
+        
+        .WithSummary("Get all users for current tenant")
+        .WithDescription("Returns all users IDs assigned to current tenant. Only tenant admins can access this.");
 
         group.MapPut("/updateTenantUser", async (
            [FromBody] EditUserDto dto,
@@ -91,12 +85,9 @@ public static class UserTenantEndpoints
         })
         .WithName("UpdateTenantUser")
         .RequiresValidTenantAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Update tenant user";
-            operation.Description = "Update tenant user details (name, email) and tenant-specific roles and approval (TenantRoles[].isApproved) for the current tenant only. " +
-                                   "Does not change global account lockout. Cannot modify system admin status or roles in other tenants. Only tenant admins can use this endpoint.";
-            return operation;
-        });
+        
+        .WithSummary("Update tenant user")
+        .WithDescription("Update tenant user details (name, email) and tenant-specific roles and approval (TenantRoles[].isApproved) for the current tenant only. ");
 
         group.MapGet("/unapprovedUsers", async (
             [FromServices] IUserTenantService service) =>
@@ -106,12 +97,9 @@ public static class UserTenantEndpoints
         })
         .WithName("GetUnapprovedUsers")
         .RequireAuthorization("RequireTokenAuth")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get list of unapproved user requests for the current tenant";
-            operation.Description = "Returns users with pending approval for the current tenant (from X-Tenant-Id header). Same for tenant admins and system admins: only the selected tenant's requests are returned. System admins can see all unapproved users for all tenants.";
-            return operation;
-        })
+        
+        .WithSummary("Get list of unapproved user requests for the current tenant")
+        .WithDescription("Returns users with pending approval for the current tenant (from X-Tenant-Id header). Same for tenant admins and system admins: only the selected tenant's requests are returned. System admins can see all unapproved users for all tenants.")
         .RequiresValidTenantAdmin();
 
         group.MapPost("/approveUser", async (
@@ -122,12 +110,9 @@ public static class UserTenantEndpoints
             return Results.Ok(result);
         })
         .WithName("ApproveUser")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Approve user";
-            operation.Description = "Approve user by assigning a tenant and role to user";
-            return operation;
-        })
+        
+        .WithSummary("Approve user")
+        .WithDescription("Approve user by assigning a tenant and role to user")
         .RequiresValidTenantAdmin();
 
         group.MapDelete("/", async (
@@ -138,12 +123,9 @@ public static class UserTenantEndpoints
             return Results.Ok(result);
         })
         .WithName("RemoveTenantFromUser")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Remove a tenant from a user";
-            operation.Description = "Removes a tenant assignment from a user";
-            return operation;
-        })
+        
+        .WithSummary("Remove a tenant from a user")
+        .WithDescription("Removes a tenant assignment from a user")
         .RequiresValidTenantAdmin();
 
         group.MapPost("/AddUserToCurrentTenant", async (
@@ -154,12 +136,9 @@ public static class UserTenantEndpoints
             return Results.Ok(result);
         })
         .WithName("AddUserToCurrentTenant")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Assign a tenant to a user";
-            operation.Description = "Assigns a tenant to a user";
-            return operation;
-        })
+        
+        .WithSummary("Assign a tenant to a user")
+        .WithDescription("Assigns a tenant to a user")
         .RequiresValidTenantAdmin();
 
         group.MapPost("/invite", async (
@@ -173,11 +152,9 @@ public static class UserTenantEndpoints
         })
         .RequiresValidTenantAdmin()
         .WithName("InviteUserToTenant")
-        .WithOpenApi(operation => {
-            operation.Summary = "Invite a user";
-            operation.Description = "Invites a user to join a tenant and assigns roles.";
-            return operation;
-        });
+        
+        .WithSummary("Invite a user")
+        .WithDescription("Invites a user to join a tenant and assigns roles.");
 
         group.MapGet("/invitations", async (
             [FromServices] IUserManagementService userManagementService,
@@ -196,11 +173,9 @@ public static class UserTenantEndpoints
         })
         .WithName("GetTenantInvitations")
         .RequiresValidTenantAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all invitations for current tenant";
-            operation.Description = "Retrieves all invitations for the current tenant specified in X-Tenant-Id header";
-            return operation;
-        });
+        
+        .WithSummary("Get all invitations for current tenant")
+        .WithDescription("Retrieves all invitations for the current tenant specified in X-Tenant-Id header");
 
         group.MapDelete("/invitations/{token}", async (
             string token,
@@ -213,11 +188,9 @@ public static class UserTenantEndpoints
         })
         .WithName("DeleteTenantInvitation")
         .RequiresValidTenantAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a invitation";
-            operation.Description = "Delete a invitation by token";
-            return operation;
-        });
+        
+        .WithSummary("Delete a invitation")
+        .WithDescription("Delete a invitation by token");
 
         group.MapGet("/search", async (
         [FromQuery] string query,
@@ -230,11 +203,9 @@ public static class UserTenantEndpoints
         })
         .WithName("SearchUsersInTenant")
         .RequiresValidTenantAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Search users";
-            operation.Description = "Search users by name, email, or other supported fields";
-            return operation;
-        });
+        
+        .WithSummary("Search users")
+        .WithDescription("Search users by name, email, or other supported fields");
 
         group.MapPost("/CreateNewUser", async (
             [FromBody] CreateNewUserDto dto,
@@ -254,11 +225,8 @@ public static class UserTenantEndpoints
         })
         .WithName("CreateNewUser")
         .RequiresValidTenantAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Create a new user";
-            operation.Description = "Creates a new user account and assigns them to the current tenant with specified roles. " +
-                                   "User email must be unique. Only tenant admins can use this endpoint.";
-            return operation;
-        });
+        
+        .WithSummary("Create a new user")
+        .WithDescription("Creates a new user account and assigns them to the current tenant with specified roles. ");
     }
 }

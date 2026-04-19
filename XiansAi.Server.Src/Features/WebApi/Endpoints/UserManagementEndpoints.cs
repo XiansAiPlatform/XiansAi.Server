@@ -27,11 +27,9 @@ public static class UserManagementEndpoints
         })
         .RequiresValidSysAdmin()
         .WithName("DeleteUser")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a user";
-            operation.Description = "Delete a user by the Id";
-            return operation;
-        });
+        
+        .WithSummary("Delete a user")
+        .WithDescription("Delete a user by the Id");
 
         group.MapGet("/all", async (
             [FromQuery] int page,
@@ -56,11 +54,9 @@ public static class UserManagementEndpoints
         })
         .WithName("GetAllUsers")
         .RequiresValidSysAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all users";
-            operation.Description = "Retrieves all users";
-            return operation;
-        });
+        
+        .WithSummary("Get all users")
+        .WithDescription("Retrieves all users");
 
         group.MapPut("/update", async (
            [FromBody] EditUserDto dto,
@@ -73,11 +69,9 @@ public static class UserManagementEndpoints
         })
         .WithName("UpdateUser")
         .RequiresValidSysAdmin()
-        .WithOpenApi(operation => {
-            operation.Summary = "Update user";
-            operation.Description = "Update user details";
-            return operation;
-        });
+        
+        .WithSummary("Update user")
+        .WithDescription("Update user details");
     }
 }
 

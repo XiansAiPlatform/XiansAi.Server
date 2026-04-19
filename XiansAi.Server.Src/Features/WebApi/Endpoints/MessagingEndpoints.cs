@@ -41,11 +41,9 @@ public static class MessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("Send Data to workflow")
-        .WithOpenApi(operation => {
-            operation.Summary = "Send Data to workflow";
-            operation.Description = "Send a data to a workflow";
-            return operation;
-        });
+        
+        .WithSummary("Send Data to workflow")
+        .WithDescription("Send a data to a workflow");
 
         messagingGroup.MapPost("/inbound/chat", async (
             [FromBody] ChatOrDataRequest request, 
@@ -56,11 +54,9 @@ public static class MessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("Send Chat to workflow")
-        .WithOpenApi(operation => {
-            operation.Summary = "Send Chat to workflow";
-            operation.Description = "Send a chat to a workflow";
-            return operation;
-        });
+        
+        .WithSummary("Send Chat to workflow")
+        .WithDescription("Send a chat to a workflow");
 
         messagingGroup.MapGet("/threads", async (
             [FromServices] IMessagingService endpoint,
@@ -71,11 +67,9 @@ public static class MessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get AllThreads")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all threads for a workflow";
-            operation.Description = "Gets all threads for a given workflow of a tenant";
-            return operation;
-        });   
+        
+        .WithSummary("Get all threads for a workflow")
+        .WithDescription("Gets all threads for a given workflow of a tenant");   
 
         messagingGroup.MapGet("/threads/{threadId}/messages", async (
             [FromServices] IMessagingService endpoint,
@@ -87,11 +81,9 @@ public static class MessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Messages for a thread")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all messages for a thread";
-            operation.Description = "Gets all messages for a given thread. Optionally filter by scope (topic). Pass empty string or null to get messages with no scope.";
-            return operation;
-        });
+        
+        .WithSummary("Get all messages for a thread")
+        .WithDescription("Gets all messages for a given thread. Optionally filter by scope (topic). Pass empty string or null to get messages with no scope.");
 
         messagingGroup.MapGet("/threads/{threadId}/topics", async (
             [FromServices] IMessagingService endpoint,
@@ -102,11 +94,9 @@ public static class MessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Topics for a thread")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get all topics (scopes) for a thread";
-            operation.Description = "Gets all unique topics (scopes) for a given thread with message counts and last activity timestamp. Results are sorted by most recent activity first. Supports pagination with default page size of 50 and maximum of 100.";
-            return operation;
-        });   
+        
+        .WithSummary("Get all topics (scopes) for a thread")
+        .WithDescription("Gets all unique topics (scopes) for a given thread with message counts and last activity timestamp. Results are sorted by most recent activity first. Supports pagination with default page size of 50 and maximum of 100.");   
 
         messagingGroup.MapDelete("/threads/{threadId}", async (
             [FromServices] IMessagingService endpoint,
@@ -115,10 +105,8 @@ public static class MessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("Delete Thread")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a conversation thread";
-            operation.Description = "Deletes a conversation thread and all its messages";
-            return operation;
-        });
+        
+        .WithSummary("Delete a conversation thread")
+        .WithDescription("Deletes a conversation thread and all its messages");
     }
 } 

@@ -31,11 +31,9 @@ public static class CacheEndpoints
         .WithName("Get Cache Value")
         .Produces<object>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Get a value from cache";
-            operation.Description = "Retrieves a value from the cache by its key. Returns the cached value if found, otherwise returns null.";
-            return operation;
-        });
+        
+        .WithSummary("Get a value from cache")
+        .WithDescription("Retrieves a value from the cache by its key. Returns the cached value if found, otherwise returns null.");
 
         cacheGroup.MapPost("/set", async (
             [FromBody] CacheSetRequest request,
@@ -52,11 +50,9 @@ public static class CacheEndpoints
         .WithName("Set Cache Value")
         .Produces<bool>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Set a value in cache";
-            operation.Description = "Stores a value in the cache with the specified key and optional expiration settings";
-            return operation;
-        });
+        
+        .WithSummary("Set a value in cache")
+        .WithDescription("Stores a value in the cache with the specified key and optional expiration settings");
 
         cacheGroup.MapPost("/delete", async (
             [FromBody] CacheKeyRequest request,
@@ -67,10 +63,8 @@ public static class CacheEndpoints
         .WithName("Delete Cache Value")
         .Produces<bool>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a value from cache";
-            operation.Description = "Removes a value from the cache by its key";
-            return operation;
-        });
+        
+        .WithSummary("Delete a value from cache")
+        .WithDescription("Removes a value from the cache by its key");
     }
 } 

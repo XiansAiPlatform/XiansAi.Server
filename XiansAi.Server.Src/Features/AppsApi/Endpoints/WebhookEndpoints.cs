@@ -23,22 +23,7 @@ public static class WebhookEndpoints
             .WithName("HandleWebhookEvents")
             .AllowAnonymous()
             .WithTags("AppsAPI - Webhook")
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Handle Custom Webhook Events",
-                Description = """
-                    Dedicated endpoint for custom/generic webhook integrations.
-                    
-                    Handles webhook events from custom platforms or services that aren't 
-                    directly supported (non-Slack, non-Teams, non-Outlook).
-                    
-                    **Security:**
-                    - Webhook secret in URL provides first layer of defense
-                    - Optional HMAC verification can be configured
-                    
-                    Configure this URL in your custom webhook provider's settings.
-                    """
-            });
+            ;
     }
 
     /// <summary>

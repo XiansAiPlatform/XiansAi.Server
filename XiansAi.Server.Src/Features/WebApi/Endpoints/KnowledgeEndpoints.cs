@@ -22,7 +22,7 @@ public static class KnowledgeEndpoints
             return await endpoint.GetLatestAll(agent);
         })
         .WithName("Get Latest Instructions")
-        .WithOpenApi();
+        ;
         
         knowledgeGroup.MapGet("/{id}", async (
             string id,
@@ -31,7 +31,7 @@ public static class KnowledgeEndpoints
             return await endpoint.GetById(id);
         })
         .WithName("Get Instruction")
-        .WithOpenApi();
+        ;
 
         knowledgeGroup.MapPost("/", async (
             [FromBody] KnowledgeRequest request,
@@ -40,7 +40,7 @@ public static class KnowledgeEndpoints
             return await endpoint.Create(request);
         })
         .WithName("Create Instruction")
-        .WithOpenApi();
+        ;
 
         knowledgeGroup.MapGet("/latest", async (
             [FromQuery] string name,
@@ -51,7 +51,7 @@ public static class KnowledgeEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Latest Instruction")
-        .WithOpenApi();
+        ;
 
         knowledgeGroup.MapDelete("/{id}", async (
             string id,
@@ -60,7 +60,7 @@ public static class KnowledgeEndpoints
             return await endpoint.DeleteById(id);
         })
         .WithName("Delete Instruction")
-        .WithOpenApi();
+        ;
 
         knowledgeGroup.MapDelete("/all", async (
             [FromQuery] string name,
@@ -75,7 +75,7 @@ public static class KnowledgeEndpoints
             return await endpoint.DeleteAllVersions(request);
         })
         .WithName("Delete All Versions")
-        .WithOpenApi();
+        ;
 
         knowledgeGroup.MapGet("/versions", async (
             [FromQuery] string name,
@@ -85,6 +85,6 @@ public static class KnowledgeEndpoints
             return await endpoint.GetVersions(name, agent);
         })
         .WithName("Get Knowledge Versions")
-        .WithOpenApi();
+        ;
     }
 } 

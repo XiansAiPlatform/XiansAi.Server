@@ -77,27 +77,9 @@ public static class UsageStatisticsEndpoints
             }
         })
         .WithName("GetUsageStatistics")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get usage statistics (flexible)";
-            operation.Description = "Retrieves aggregated usage statistics filtered by category and/or metric type with time series data and user breakdown.\n\n" +
-                                  "**Query Parameters:**\n" +
-                                  "- `category` (optional): Metric category - 'tokens', 'activity', 'performance', 'llm_usage'\n" +
-                                  "- `metricType` (optional): Specific metric type (e.g., 'total_tokens', 'workflow_completed')\n" +
-                                  "- `startDate` (required): Start of date range (ISO 8601)\n" +
-                                  "- `endDate` (required): End of date range (ISO 8601)\n" +
-                                  "- `userId` (optional): Filter by user (admins only, defaults to 'all')\n" +
-                                  "- `agentName` (optional): Filter by agent name\n" +
-                                  "- `tenantId` (optional): Filter by tenant (SysAdmin only)\n" +
-                                  "- `groupBy` (optional): Time grouping - 'day', 'week', 'month' (default: 'day')\n\n" +
-                                  "**Authorization:**\n" +
-                                  "- Admins can view all users\n" +
-                                  "- Regular users can only view their own data\n\n" +
-                                  "**Examples:**\n" +
-                                  "- `GET /api/client/usage/statistics?category=tokens&metricType=total_tokens&startDate=2025-01-01&endDate=2025-01-08`\n" +
-                                  "- `GET /api/client/usage/statistics?category=activity&startDate=2025-01-01&endDate=2025-01-08&agentName=EmailAgent`";
-            return operation;
-        });
+        
+        .WithSummary("Get usage statistics (flexible)")
+        .WithDescription("Retrieves aggregated usage statistics filtered by category and/or metric type with time series data and user breakdown.\\n\\n");
 
         // Get users with usage (admin only)
         group.MapGet("/users", async (
@@ -132,13 +114,9 @@ public static class UsageStatisticsEndpoints
             }
         })
         .WithName("GetUsersWithUsage")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get users with usage data";
-            operation.Description = "Returns list of users that have token/message usage in the tenant. " +
-                                  "Admin only endpoint - used for populating user filter dropdown.";
-            return operation;
-        });
+        
+        .WithSummary("Get users with usage data")
+        .WithDescription("Returns list of users that have token/message usage in the tenant. ");
 
         // Get available metrics (discovery endpoint for dynamic dashboard)
         group.MapGet("/available-metrics", async (
@@ -165,22 +143,9 @@ public static class UsageStatisticsEndpoints
             }
         })
         .WithName("GetAvailableMetrics")
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Get available metrics for dynamic dashboard";
-            operation.Description = "Returns all available metric categories and types that have data for the tenant. " +
-                                  "Used by the UI to dynamically build the metrics selection interface.\n\n" +
-                                  "**Response:**\n" +
-                                  "- categories: Array of metric categories\n" +
-                                  "  - categoryId: Category identifier (e.g., 'tokens', 'activity')\n" +
-                                  "  - categoryName: Display name\n" +
-                                  "  - metrics: Array of metric definitions\n" +
-                                  "    - type: Metric type identifier\n" +
-                                  "    - displayName: Human-readable name\n" +
-                                  "    - unit: Measurement unit\n" +
-                                  "    - description: Optional metric description";
-            return operation;
-        });
+        
+        .WithSummary("Get available metrics for dynamic dashboard")
+        .WithDescription("Returns all available metric categories and types that have data for the tenant. ");
     }
 
     /// <summary>

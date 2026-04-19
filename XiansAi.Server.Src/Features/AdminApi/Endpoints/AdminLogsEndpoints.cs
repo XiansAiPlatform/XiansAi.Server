@@ -83,38 +83,6 @@ public static class AdminLogsEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminLogs")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Workflow Execution Logs",
-            Description = @"Retrieve workflow execution logs with comprehensive filtering options.
-
-Query Parameters:
-- agentName (optional): Filter by agent name (exact match)
-- activationName (optional): Filter by activation name
-- participantId (optional): Filter by participant user ID
-- workflowId (optional): Filter by specific workflow ID
-- workflowType (optional): Filter by workflow type
-- logLevel (optional): Filter by log level(s). Single level: 'Error' or multiple levels: 'Error,Warning' (0=Trace, 1=Debug, 2=Information, 3=Warning, 4=Error, 5=Critical)
-- startDate (optional): Start of date range (ISO 8601 format)
-- endDate (optional): End of date range (ISO 8601 format)
-- page (optional): Page number (default: 1)
-- pageSize (optional): Items per page (default: 20, max: 100)
-
-Returns paginated log entries with:
-- Log details (message, level, timestamps)
-- Workflow information (ID, run ID, type)
-- Agent and activation information
-- Participant information
-- Custom properties and exception details (if any)
-
-Examples:
-- Get all logs: GET /api/v1/admin/tenants/default/logs
-- Filter by agent: GET /api/v1/admin/tenants/default/logs?agentName=Order%20Manager%20Agent
-- Filter by activation: GET /api/v1/admin/tenants/default/logs?activationName=Order%20Manager%20Agent%20-%20Remote%20Peafowl
-- Error logs only: GET /api/v1/admin/tenants/default/logs?logLevel=Error
-- Error and Warning logs: GET /api/v1/admin/tenants/default/logs?logLevel=Error,Warning
-- Date range: GET /api/v1/admin/tenants/default/logs?startDate=2025-01-01T00:00:00Z&endDate=2025-01-31T23:59:59Z
-- Combined filters: GET /api/v1/admin/tenants/default/logs?agentName=Order%20Manager%20Agent&logLevel=4&pageSize=50"
-        });
+        ;
     }
 }

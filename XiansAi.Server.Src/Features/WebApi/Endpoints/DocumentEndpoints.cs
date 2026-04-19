@@ -29,11 +29,9 @@ public static class DocumentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Document Types and Activations by Agent")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get document types and activation names for an agent";
-            operation.Description = "Retrieves all distinct document types and activation names for a specific agent";
-            return operation;
-        });
+        
+        .WithSummary("Get document types and activation names for an agent")
+        .WithDescription("Retrieves all distinct document types and activation names for a specific agent");
 
         // Get documents by agent and type with pagination
         documentGroup.MapGet("/agents/{agentId}/types/{type}", async (
@@ -48,11 +46,9 @@ public static class DocumentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Documents by Agent and Type")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get documents by agent and type";
-            operation.Description = "Retrieves documents for a specific agent and document type with pagination support. Optionally filter by activation name.";
-            return operation;
-        });
+        
+        .WithSummary("Get documents by agent and type")
+        .WithDescription("Retrieves documents for a specific agent and document type with pagination support. Optionally filter by activation name.");
 
         // Get a single document by ID
         documentGroup.MapGet("/{id}", async (
@@ -63,11 +59,9 @@ public static class DocumentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get Document by ID")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get document by ID";
-            operation.Description = "Retrieves a single document by its unique identifier";
-            return operation;
-        });
+        
+        .WithSummary("Get document by ID")
+        .WithDescription("Retrieves a single document by its unique identifier");
 
         // Update a document
         documentGroup.MapPut("/{id}", async (
@@ -79,11 +73,9 @@ public static class DocumentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Update Document")
-        .WithOpenApi(operation => {
-            operation.Summary = "Update a document";
-            operation.Description = "Updates an existing document with new data";
-            return operation;
-        });
+        
+        .WithSummary("Update a document")
+        .WithDescription("Updates an existing document with new data");
 
         // Delete a single document
         documentGroup.MapDelete("/{id}", async (
@@ -94,11 +86,9 @@ public static class DocumentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Delete Document")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a document";
-            operation.Description = "Deletes a document by its unique identifier";
-            return operation;
-        });
+        
+        .WithSummary("Delete a document")
+        .WithDescription("Deletes a document by its unique identifier");
 
         // Delete multiple documents
         documentGroup.MapPost("/bulk-delete", async (
@@ -109,10 +99,8 @@ public static class DocumentEndpoints
             return result.ToHttpResult();
         })
         .WithName("Delete Multiple Documents")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete multiple documents";
-            operation.Description = "Deletes multiple documents by their unique identifiers";
-            return operation;
-        });
+        
+        .WithSummary("Delete multiple documents")
+        .WithDescription("Deletes multiple documents by their unique identifiers");
     }
 }

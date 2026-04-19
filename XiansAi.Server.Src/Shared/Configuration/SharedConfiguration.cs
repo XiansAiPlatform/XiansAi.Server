@@ -32,7 +32,7 @@ public static class SharedConfiguration
                 
                 // Trust all proxies (safe in Azure Container Apps / App Service)
                 // The platform-managed load balancer is trusted
-                options.KnownNetworks.Clear();
+                options.KnownIPNetworks.Clear();
                 options.KnownProxies.Clear();
                 
                 // Limit to 1 proxy hop (Azure load balancer)

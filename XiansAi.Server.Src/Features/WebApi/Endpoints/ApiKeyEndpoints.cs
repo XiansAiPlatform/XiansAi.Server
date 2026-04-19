@@ -44,11 +44,7 @@ namespace Features.WebApi.Endpoints
                 });
             })
             .WithName("CreateApiKey")
-            .WithOpenApi(op => {
-                op.Summary = "Create a new API key";
-                op.Description = "Creates a new API key for the current tenant. The raw key is returned only once.";
-                return op;
-            });
+            ;
 
             // List API keys
             group.MapGet("", async (
@@ -74,11 +70,7 @@ namespace Features.WebApi.Endpoints
                 });
             })
             .WithName("ListApiKeys")
-            .WithOpenApi(op => {
-                op.Summary = "List all API keys for the tenant";
-                op.Description = "Returns metadata for all API keys for the current tenant.";
-                return op;
-            });
+            ;
 
             // Revoke API key
             group.MapPost("{id}/revoke", async (
@@ -101,11 +93,7 @@ namespace Features.WebApi.Endpoints
                 });
             })
             .WithName("RevokeApiKey")
-            .WithOpenApi(op => {
-                op.Summary = "Revoke an API key";
-                op.Description = "Revokes the specified API key for the current tenant.";
-                return op;
-            });
+            ;
 
             // Rotate API key
             group.MapPost("{id}/rotate", async (
@@ -129,11 +117,7 @@ namespace Features.WebApi.Endpoints
                 });
             })
             .WithName("RotateApiKey")
-            .WithOpenApi(op => {
-                op.Summary = "Rotate an API key";
-                op.Description = "Rotates the specified API key and returns the new raw key (only once).";
-                return op;
-            });
+            ;
         }
     }
 

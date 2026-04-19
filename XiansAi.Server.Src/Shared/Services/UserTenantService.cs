@@ -25,6 +25,12 @@ public class AddUserToTenantDto
     public string Email { get; set; } = string.Empty;
 }
 
+public class TenantInfoDto
+{
+    public string TenantId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+}
+
 public class CreateNewUserDto
 {
     public required string Email { get; set; }
@@ -34,9 +40,9 @@ public class CreateNewUserDto
 
 public interface IUserTenantService
 {
-    Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token);
-    Task<ServiceResult<List<string>>> GetTenantsForCurrentUser();
-    Task<ServiceResult<List<string>>> GetTenantsForUser(string userId);
+    Task<ServiceResult<List<TenantInfoDto>>> GetCurrentUserTenants(string token);
+    Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser();
+    Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForUser(string userId);
     Task<ServiceResult<List<User>>> GetUnapprovedUsers();
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
@@ -78,16 +84,16 @@ public class UserTenantService : IUserTenantService
         _jwtClaimsExtractor = jwtClaimsExtractor;
     }
 
-    public async Task<ServiceResult<List<string>>> GetCurrentUserTenants(string token)
+    public async Task<ServiceResult<List<TenantInfoDto>>> GetCurrentUserTenants(string token)
     {
         var userId = _tenantContext.LoggedInUser;
         if (string.IsNullOrEmpty(userId))
-            return ServiceResult<List<string>>.Unauthorized("User not authenticated");
+            return ServiceResult<List<TenantInfoDto>>.Unauthorized("User not authenticated");
 
         if (string.IsNullOrEmpty(token))
         {
             _logger.LogWarning("Token is null or empty");
-            return ServiceResult<List<string>>.Unauthorized("Token is required");
+            return ServiceResult<List<TenantInfoDto>>.Unauthorized("Token is required");
         }
 
         var user = await _userRepository.GetByUserIdAsync(userId);
@@ -98,7 +104,7 @@ public class UserTenantService : IUserTenantService
             if (userDto == null)
             {
                 _logger.LogError("Failed to create user from token {Token}", token);
-                return ServiceResult<List<string>>.InternalServerError("Failed to create user from token");
+                return ServiceResult<List<TenantInfoDto>>.InternalServerError("Failed to create user from token");
             }
             _logger.LogInformation("User {UserId} created from token", userDto.UserId);
         }
@@ -106,60 +112,64 @@ public class UserTenantService : IUserTenantService
         return await GetTenantsForCurrentUser();
     }
 
-    public async Task<ServiceResult<List<string>>> GetTenantsForCurrentUser()
+    public async Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser()
     {
         try
         {
             var userId = _tenantContext.LoggedInUser;
             if (string.IsNullOrEmpty(userId))
-                return ServiceResult<List<string>>.Unauthorized("User not authenticated");
+                return ServiceResult<List<TenantInfoDto>>.Unauthorized("User not authenticated");
 
             var isSysAdmin = await _userRepository.IsSysAdmin(userId);
 
             if (isSysAdmin)
             {
                 var allTenants = await _tenantRepository.GetAllAsync();
-                // Filter out disabled tenants
-                var enabledTenantIds = allTenants.Where(t => t.Enabled).Select(t => t.TenantId).ToList();
-                return ServiceResult<List<string>>.Success(enabledTenantIds);
+                var enabledTenants = allTenants
+                    .Where(t => t.Enabled)
+                    .Select(t => new TenantInfoDto { TenantId = t.TenantId, Name = t.Name })
+                    .ToList();
+                return ServiceResult<List<TenantInfoDto>>.Success(enabledTenants);
             }
 
             var tenants = await _userRepository.GetUserTenantsAsync(userId);
 
-            return ServiceResult<List<string>>.Success(tenants);
+            return ServiceResult<List<TenantInfoDto>>.Success(tenants);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting tenants for current user");
-            return ServiceResult<List<string>>.InternalServerError("Error getting tenants for current user");
+            return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error getting tenants for current user");
         }
     }
 
-    public async Task<ServiceResult<List<string>>> GetTenantsForUser(string userId)
+    public async Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForUser(string userId)
     {
         try
         {
             var validationResult = ValidateTenantAccess("get user tenant", null); // only sysadmin can access all user tenants
             if (!validationResult.IsSuccess)
-                return ServiceResult<List<string>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
+                return ServiceResult<List<TenantInfoDto>>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 
             var isSysAdmin = await _userRepository.IsSysAdmin(userId);
 
             if (isSysAdmin)
             {
                 var allTenants = await _tenantRepository.GetAllAsync();
-                // Filter out disabled tenants
-                var enabledTenantIds = allTenants.Where(t => t.Enabled).Select(t => t.TenantId).ToList();
-                return ServiceResult<List<string>>.Success(enabledTenantIds);
+                var enabledTenants = allTenants
+                    .Where(t => t.Enabled)
+                    .Select(t => new TenantInfoDto { TenantId = t.TenantId, Name = t.Name })
+                    .ToList();
+                return ServiceResult<List<TenantInfoDto>>.Success(enabledTenants);
             }
 
             var tenants = await _userRepository.GetUserTenantsAsync(userId);
-            return ServiceResult<List<string>>.Success(tenants);
+            return ServiceResult<List<TenantInfoDto>>.Success(tenants);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting tenants for user {UserId}", userId);
-            return ServiceResult<List<string>>.InternalServerError("Error getting tenants for user");
+            return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error getting tenants for user");
         }
     }
 

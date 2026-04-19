@@ -32,11 +32,7 @@ public static class AdminAgentDeploymentEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListAgentDeployments")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List Agent Deployments",
-            Description = "List all agent deployments for a tenant with optional pagination."
-        });
+        ;
 
         // Get Agent Instance
         adminAgentGroup.MapGet("/{agentName}", async (
@@ -48,11 +44,7 @@ public static class AdminAgentDeploymentEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAgentDeployment")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Agent Deployment",
-            Description = "Get agent deployment details by agent name."
-        });
+        ;
 
         // Update Agent Instance
         adminAgentGroup.MapPatch("/{agentName}", async (
@@ -65,11 +57,7 @@ public static class AdminAgentDeploymentEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateAgentDeployment")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Update Agent Deployment",
-            Description = "Update agent deployment (name, description, onboardingJson)."
-        });
+        ;
 
         // Delete Agent Instance
         adminAgentGroup.MapDelete("/{agentName}", async (
@@ -85,11 +73,7 @@ public static class AdminAgentDeploymentEndpoints
             return Results.Ok(new { message = $"Agent '{agentName}' deleted successfully" });
         })
         .WithName("DeleteAgentDeployment")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Delete Agent Deployment",
-            Description = "Delete an agent instance."
-        });
+        ;
     }
 }
 

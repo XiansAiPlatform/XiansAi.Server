@@ -56,12 +56,9 @@ public static class RestEndpoints
             return result.ToHttpResult();
         })
             .WithName("Send Data to workflow from user api")
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Send Data to workflow";
-                operation.Description = "Send data to a workflow. Requires workflowId, type, participantId and apikey as query parameters. For Chat messages, you can pass text as query parameter and optional JSON data in request body. For Data messages, pass JSON in request body. Optional requestId for correlation.";
-                return operation;
-            });
+            
+        .WithSummary("Send Data to workflow")
+        .WithDescription("Send data to a workflow. Requires workflowId, type, participantId and apikey as query parameters. For Chat messages, you can pass text as query parameter and optional JSON data in request body. For Data messages, pass JSON in request body. Optional requestId for correlation.");
 
         // New synchronous endpoint that waits for responses
         restGroup.MapPost("/converse", async (
@@ -117,12 +114,9 @@ public static class RestEndpoints
                 context.RequestAborted);
         })
             .WithName("Send Data to workflow and wait for response")
-            .WithOpenApi(operation =>
-            {
-                operation.Summary = "Send Data to workflow and wait for response";
-                operation.Description = "Send data to a workflow and wait synchronously for the response. Requires workflowId, type, participantId and apikey as query parameters. For Chat messages, you can pass text as query parameter and optional JSON data in request body. For Data messages, pass JSON in request body. Optional timeoutSeconds (default: 60, max: 300).";
-                return operation;
-            });
+            
+        .WithSummary("Send Data to workflow and wait for response")
+        .WithDescription("Send data to a workflow and wait synchronously for the response. Requires workflowId, type, participantId and apikey as query parameters. For Chat messages, you can pass text as query parameter and optional JSON data in request body. For Data messages, pass JSON in request body. Optional timeoutSeconds (default: 60, max: 300).");
 
         // History endpoint with caching
         restGroup.MapGet("/history", async (

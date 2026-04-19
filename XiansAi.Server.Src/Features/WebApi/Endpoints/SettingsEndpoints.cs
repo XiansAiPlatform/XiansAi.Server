@@ -22,11 +22,9 @@ public static class SettingsEndpoints
             return endpoint.GenerateClientCertificateBase64(revoke_previous);
         })
         .WithName("Generate Client Certificate Base64")
-        .WithOpenApi(operation => {
-            operation.Summary = "Generate a new client certificate in base64 format";
-            operation.Description = "Generates and returns a new client certificate in base64 format";
-            return operation;
-        });
+        
+        .WithSummary("Generate a new client certificate in base64 format")
+        .WithDescription("Generates and returns a new client certificate in base64 format");
 
     }
 } 

@@ -40,7 +40,8 @@ public class ParticipantTenantResponse
     public Logo? Logo { get; set; }
     
     /// <summary>
-    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin. Null when tenant matched by domain only.
+    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin.
+    /// Defaults to TenantParticipant when the tenant was matched by email domain only.
     /// </summary>
     [JsonPropertyName("role")]
     public string? Role { get; set; }
@@ -208,7 +209,7 @@ public static class AdminParticipantsEndpoints
                         TenantId = t.TenantId,
                         TenantName = t.Name,
                         Logo = t.Logo,
-                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : null,
+                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : SystemRoles.TenantParticipant,
                         Theme = t.Theme
                     })
                     .OrderBy(t => t.TenantName)
@@ -245,10 +246,6 @@ public static class AdminParticipantsEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Participant",
-            Description = "Retrieve the participant info by email: tenants (with ID, name, logo, and role per tenant) plus system admin status. Tenants are where the user has TenantParticipant or TenantParticipantAdmin role or where the email domain matches the tenant domain. Role is null for domain-matched tenants. **SysAdmin only** - TenantAdmins are not permitted to prevent cross-tenant information disclosure. **Route**: GET /participants/{email}. If migrating from a deprecated /participants/{email}/tenants route, use this endpoint instead."
-        });
+        ;
     }
 }

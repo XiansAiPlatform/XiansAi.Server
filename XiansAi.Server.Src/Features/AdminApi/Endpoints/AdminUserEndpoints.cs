@@ -117,11 +117,7 @@ public static class AdminUserEndpoints
             }
         })
         .WithName("AdminListTenantParticipantUsers")
-        .WithOpenApi(o => new(o)
-        {
-            Summary = "List participant users",
-            Description = "Lists users in the tenant that have TenantParticipant or TenantParticipantAdmin (including users who also have TenantAdmin or TenantUser). Requires tenant admin or system admin API key. Pass tenantId in the route; use X-Tenant-Id for SysAdmin when needed."
-        });
+        ;
 
         group.MapGet("/{userId}", async (
             string tenantId,
@@ -153,11 +149,7 @@ public static class AdminUserEndpoints
                 : Results.Ok(response);
         })
         .WithName("AdminGetTenantParticipantUser")
-        .WithOpenApi(o => new(o)
-        {
-            Summary = "Get participant user",
-            Description = "Gets a single user by userId if they have TenantParticipant or TenantParticipantAdmin in the tenant (other roles on the same tenant are allowed)."
-        });
+        ;
 
         group.MapPost("", async (
             string tenantId,
@@ -210,11 +202,7 @@ public static class AdminUserEndpoints
                 : Results.Created(location, response);
         })
         .WithName("AdminCreateTenantParticipantUser")
-        .WithOpenApi(o => new(o)
-        {
-            Summary = "Create participant user",
-            Description = "Creates a user with at least TenantParticipant or TenantParticipantAdmin in the tenant. Requires tenant admin or system admin API key."
-        });
+        ;
 
         group.MapPatch("/{userId}", async (
             string tenantId,
@@ -306,11 +294,7 @@ public static class AdminUserEndpoints
                 : Results.Ok(response);
         })
         .WithName("AdminUpdateTenantParticipantUser")
-        .WithOpenApi(o => new(o)
-        {
-            Summary = "Update participant user",
-            Description = "Updates name, email, active (approval), or participant role. Requires tenant admin or system admin API key."
-        });
+        ;
 
         group.MapDelete("/{userId}", async (
             string tenantId,
@@ -356,11 +340,7 @@ public static class AdminUserEndpoints
             return Results.NoContent();
         })
         .WithName("AdminDeleteTenantParticipantUser")
-        .WithOpenApi(o => new(o)
-        {
-            Summary = "Remove participant roles from tenant",
-            Description = "Removes TenantParticipant and TenantParticipantAdmin from this tenant for the user. Other roles on the same tenant (e.g. TenantAdmin) are kept. If no roles remain for the tenant, the tenant membership row is removed. Does not delete the user account. Requires tenant admin or system admin API key."
-        });
+        ;
     }
 
     private static bool TenantRouteMatchesContext(ITenantContext ctx, string tenantIdFromRoute, ILogger logger)

@@ -23,24 +23,7 @@ public static class TeamsWebhookEndpoints
             .WithName("HandleTeamsEventsWebhook")
             .AllowAnonymous()
             .WithTags("AppsAPI - Teams")
-            .WithOpenApi(operation => new(operation)
-            {
-                Summary = "Handle Microsoft Teams Bot Framework Webhook",
-                Description = """
-                    Dedicated endpoint for Microsoft Teams Bot Framework activities.
-                    
-                    Handles:
-                    - Message activities
-                    - Conversation updates
-                    - Invoke activities (adaptive card actions)
-                    
-                    **Security:**
-                    - Webhook secret in URL provides first layer of defense
-                    - Bot Framework JWT verification provides second layer
-                    
-                    Configure this URL as the messaging endpoint in Azure Bot Service.
-                    """
-            });
+            ;
     }
 
     /// <summary>

@@ -145,52 +145,7 @@ public static class AdminMessagingEndpoints
             return await streamHandler.HandleStreamAsync();
         })
         .WithName("ListenToAgentActivationMessagesForAdminApi")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Listen to Agent Activation Messages",
-            Description = """
-                Subscribe to real-time message events for a specific agent activation using Server-Sent Events (SSE).
-                
-                **Workflow ID Construction:**
-                The workflow ID is constructed as: `{tenantId}:{agentName}:{workflowType}:{activationName}`. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for agents like Company Research Agent.
-                
-                **Query Parameters:**
-                - `agentName` (required): Name of the agent
-                - `activationName` (required): Name of the activation
-                - `participantId` (required): Unique identifier for the participant
-                - `workflowType` (optional): Workflow type (default: Supervisor Workflow). Use Conversational for Company Research Agent.
-                - `heartbeatSeconds` (optional): Heartbeat interval in seconds (1-300, default: 60)
-                
-                **Behavior:**
-                - Automatically creates a conversation thread if it doesn't exist
-                - Streams all messages for the specified agent activation and participant
-                - Sends periodic heartbeat events to keep the connection alive
-                - Connection remains open until client disconnects or server shutdown
-                
-                **Response Format:**
-                Server-Sent Events (SSE) stream with events in the following format:
-                ```
-                event: Chat
-                data: {"messageType":"Chat","text":"Hello","timestamp":"2024-01-01T00:00:00Z",...}
-                
-                event: Data
-                data: {"messageType":"Data","text":"","data":{...},...}
-                
-                event: Reasoning
-                data: {"messageType":"Reasoning","text":"","data":{...},...}
-                
-                event: Tool
-                data: {"messageType":"Tool","text":"","data":{...},...}
-                
-                event: heartbeat
-                data: {"timestamp":"2024-01-01T00:00:05Z"}
-                ```
-                
-                **Notes:**
-                - Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
-                - Use EventSource API or similar SSE client to consume this endpoint
-                """
-        });
+        ;
 
         // Unified send message endpoint
         adminMessagingGroup.MapPost("/send", async (
@@ -240,67 +195,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("SendMessageForAdminApi")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Send Message to Agent Activation",
-            Description = """
-                Send a message to a specific agent activation.
-                
-                **Workflow ID Construction:**
-                The workflow ID is automatically constructed as: `{tenantId}:{agentName}:Supervisor Workflow:{activationName}`
-                
-                **Request Body Fields:**
-                - `agentName` (required): Name of the agent
-                - `activationName` (required): Name of the activation
-                - `participantId` (required): Unique identifier for the participant
-                - `text` (required): The message text content
-                - `data` (optional): Additional structured data (JSON object)
-                - `topic` (optional): Topic for the message (stored as 'scope' in the message thread for organizing conversations)
-                - `type` (optional): Message type - 'Chat', 'Data', or 'File' (defaults to 'Chat')
-                - `requestId` (optional): Unique request identifier (auto-generated GUID if not provided)
-                - `hint` (optional): Hint for the agent to use when processing the message
-                - `authorization` (optional): Authorization token (can also be provided via Authorization header)
-                - `origin` (optional): Origin of the message
-                
-                **Message Types:**
-                - `Chat`: Use for conversational messages (default). Set `text` field with the message content.
-                - `Data`: Use for sending structured data to the workflow. Set `data` field with a JSON object and optionally include `text` for context.
-                - `File`: Use for file uploads. Set `data` field with base64 encoded file content (string or object with `content` and optional `fileName`, `contentType`). Routes to OnFileUpload handler.
-                
-                **Examples:**
-                
-                Sending a chat message:
-                ```json
-                {
-                  "agentName": "CustomerSupport",
-                  "activationName": "LiveChat",
-                  "participantId": "user123",
-                  "text": "Hello, I need help with my order",
-                  "topic": "order-assistance"
-                }
-                ```
-                
-                Sending structured data:
-                ```json
-                {
-                  "agentName": "DataProcessor",
-                  "activationName": "Analytics",
-                  "participantId": "system",
-                  "text": "Processing order data",
-                  "type": "Data",
-                  "data": {
-                    "orderId": "ORD-12345",
-                    "status": "completed",
-                    "amount": 99.99
-                  }
-                }
-                ```
-                
-                **Notes:**
-                - Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
-                - Authorization can be provided in the request body or via the Authorization header
-                """
-        });
+        ;
 
         // Get topics (distinct scopes) for a specific agent activation and participant
         adminMessagingGroup.MapGet("/topics", async (
@@ -348,11 +243,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetTopicsForAdminApi")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Topics (Scopes) for Agent Activation",
-            Description = "Retrieves distinct scopes (topics) from message threads for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:{workflowType}:{activationName}. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for agents like Company Research Agent that use Conversational workflow. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=20)."
-        });
+        ;
 
         // Get message history for a specific agent activation and participant
         adminMessagingGroup.MapGet("/history", async (
@@ -412,11 +303,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetHistoryForAdminApi")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Message History for Agent Activation",
-            Description = "Retrieves message history for a specific tenant, agent activation, and participant. The workflow ID is constructed as {tenantId}:{agentName}:{workflowType}:{activationName}. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for Company Research Agent. Optional 'topic' parameter filters by scope (omit or leave empty to get messages with no scope/topic, or specify a topic name to get messages for that specific topic). Optional 'sortOrder' parameter controls sorting: 'desc' for newest first (default), 'asc' for oldest first. Supports pagination with page and pageSize query parameters (defaults: page=1, pageSize=50). Set chatOnly=true to retrieve only chat messages."
-        });
+        ;
 
         // Delete messages by topic for a specific agent activation and participant
         adminMessagingGroup.MapDelete("/messages", async (
@@ -469,32 +356,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteMessagesByTopicForAdminApi")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Delete Messages by Topic for Agent Activation",
-            Description = """
-                Deletes all messages for a specific topic (scope) for a given tenant, agent activation, and participant.
-                
-                **Workflow ID Construction:**
-                The workflow ID is constructed as: `{tenantId}:{agentName}:{workflowType}:{activationName}`. Default workflowType is 'Supervisor Workflow'. Use workflowType=Conversational for Company Research Agent.
-                
-                **Query Parameters:**
-                - `agentName` (required): Name of the agent
-                - `activationName` (required): Name of the activation
-                - `participantId` (required): Unique identifier for the participant
-                - `workflowType` (optional): Workflow type (default: Supervisor Workflow). Use Conversational for Company Research Agent.
-                - `topic` (optional): Topic/scope of messages to delete
-                
-                **Behavior:**
-                - When `topic` is provided with a value: Deletes all messages with that specific topic/scope
-                - When `topic` is omitted, null, or empty string: Deletes all messages with no topic (scope=null or scope=empty)
-                
-                **Notes:**
-                - Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
-                - This operation cannot be undone
-                - Returns success even if no messages match the criteria
-                """
-        });
+        ;
     }
 }
 

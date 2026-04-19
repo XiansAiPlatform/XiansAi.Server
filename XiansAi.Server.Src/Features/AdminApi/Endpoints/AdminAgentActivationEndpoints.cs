@@ -33,11 +33,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListActivations")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "List Agent Activations",
-            Description = "List all agent activations for a tenant. Optionally filter by agent name using the 'agentName' query parameter."
-        });
+        ;
 
         // Get activation by ID
         activationGroup.MapGet("/{activationId}", async (
@@ -49,11 +45,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetActivation")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Get Agent Activation",
-            Description = "Get agent activation details by MongoDB ObjectId."
-        });
+        ;
 
         // Create a new activation
         activationGroup.MapPost("", async (
@@ -67,11 +59,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("CreateActivation")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Create Agent Activation",
-            Description = "Create a new agent activation record."
-        });
+        ;
 
         // Update an existing activation
         activationGroup.MapPut("/{activationId}", async (
@@ -84,11 +72,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateActivation")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Update Agent Activation",
-            Description = "Update an existing agent activation. Note: Cannot update AgentName. For activations with running workflows, only the description field can be updated. To update other fields (name, participantId, workflowConfiguration), deactivate the activation first."
-        });
+        ;
 
         // Activate an agent (start workflow)
         activationGroup.MapPost("/{activationId}/activate", async (
@@ -113,11 +97,7 @@ public static class AdminAgentActivationEndpoints
             });
         })
         .WithName("ActivateAgent")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Activate Agent",
-            Description = "Activate an agent by starting a workflow in Temporal. Optionally provide workflow configuration in the request body."
-        });
+        ;
 
         // Deactivate an agent (cancel workflow)
         activationGroup.MapPost("/{activationId}/deactivate", async (
@@ -138,11 +118,7 @@ public static class AdminAgentActivationEndpoints
             });
         })
         .WithName("DeactivateAgent")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Deactivate Agent",
-            Description = "Deactivate an agent by canceling its workflow in Temporal."
-        });
+        ;
 
         // Delete an activation
         activationGroup.MapDelete("/{activationId}", async (
@@ -158,11 +134,7 @@ public static class AdminAgentActivationEndpoints
             return Results.Ok(new { message = $"Activation '{activationId}' deleted successfully" });
         })
         .WithName("DeleteActivation")
-        .WithOpenApi(operation => new(operation)
-        {
-            Summary = "Delete Agent Activation",
-            Description = "Delete an agent activation. Note: The activation must be deactivated first."
-        });
+        ;
     }
 }
 

@@ -36,11 +36,9 @@ public static class TemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("Get System-Scoped Agent Definitions")
-        .WithOpenApi(operation => {
-            operation.Summary = "Get system-scoped agent definitions";
-            operation.Description = "Retrieves all agent definitions that have system_scoped attribute set to true";
-            return operation;
-        });
+        
+        .WithSummary("Get system-scoped agent definitions")
+        .WithDescription("Retrieves all agent definitions that have system_scoped attribute set to true");
 
         templateGroup.MapPost("/deploy", async (
             [FromBody] DeployTemplateRequest request,
@@ -50,11 +48,9 @@ public static class TemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("Deploy Template Agent")
-        .WithOpenApi(operation => {
-            operation.Summary = "Deploy a template agent to user's tenant";
-            operation.Description = "Creates a replica of a system-scoped agent and its flow definitions in the user's tenant";
-            return operation;
-        });
+        
+        .WithSummary("Deploy a template agent to user's tenant")
+        .WithDescription("Creates a replica of a system-scoped agent and its flow definitions in the user's tenant");
 
         // System Admin only endpoint for deleting system-scoped agents
         templateGroup.MapDelete("/{agentName}", async (
@@ -66,10 +62,8 @@ public static class TemplateEndpoints
         })
         .RequiresValidSysAdmin()
         .WithName("Delete System-Scoped Agent")
-        .WithOpenApi(operation => {
-            operation.Summary = "Delete a system-scoped agent";
-            operation.Description = "Deletes a system-scoped agent and all its associated flow definitions. This operation is only available to system administrators.";
-            return operation;
-        });
+        
+        .WithSummary("Delete a system-scoped agent")
+        .WithDescription("Deletes a system-scoped agent and all its associated flow definitions. This operation is only available to system administrators.");
     }
 }

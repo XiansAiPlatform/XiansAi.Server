@@ -1,6 +1,7 @@
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Exceptions;
+using Shared.Repositories;
 using Shared.Services;
 
 namespace Features.AdminApi.Auth;
@@ -34,20 +35,26 @@ public interface IAdminRoleTenantResolver
 
 /// <summary>
 /// Implementation of admin role and tenant resolution logic.
+/// Falls back to email-domain matching when the user has no explicit admin role:
+/// if the target tenant's domain matches the user's email domain, the user is
+/// granted TenantParticipant access.
 /// </summary>
 public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
 {
     private readonly IRoleCacheService _roleCacheService;
     private readonly ITenantCacheService _tenantCacheService;
+    private readonly IUserRepository _userRepository;
     private readonly ILogger<AdminRoleTenantResolver> _logger;
 
     public AdminRoleTenantResolver(
         IRoleCacheService roleCacheService,
         ITenantCacheService tenantCacheService,
+        IUserRepository userRepository,
         ILogger<AdminRoleTenantResolver> logger)
     {
         _roleCacheService = roleCacheService;
         _tenantCacheService = tenantCacheService;
+        _userRepository = userRepository;
         _logger = logger;
     }
 
@@ -64,8 +71,13 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
 
         if (!hasSysAdmin && !hasTenantAdmin)
         {
+            var domainMatchResult = await TryResolveTenantByDomainMatchAsync(
+                userId, apiKey, tenantIdFromRequest, cancellationToken);
+            if (domainMatchResult != null)
+                return domainMatchResult;
+
             _logger.LogWarning(
-                "User {UserId} does not have SysAdmin or TenantAdmin role. Roles: {Roles}",
+                "User {UserId} does not have SysAdmin or TenantAdmin role and no domain match. Roles: {Roles}",
                 userId, string.Join(", ", userRoles));
             return new AdminRoleTenantResolutionResult(
                 Success: false,
@@ -131,6 +143,45 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
             Success: true,
             finalTenantId,
             userRoles.ToArray(),
+            null);
+    }
+
+    /// <summary>
+    /// When the user has no explicit admin role, checks whether the target tenant's
+    /// domain matches the user's email domain. Returns a successful resolution with
+    /// TenantParticipant role on match, or null to let the caller proceed with the
+    /// standard "no admin role" failure.
+    /// </summary>
+    private async Task<AdminRoleTenantResolutionResult?> TryResolveTenantByDomainMatchAsync(
+        string userId,
+        ApiKey apiKey,
+        string tenantIdFromRequest,
+        CancellationToken cancellationToken)
+    {
+        var targetTenantId = !string.IsNullOrEmpty(tenantIdFromRequest)
+            ? tenantIdFromRequest
+            : apiKey.TenantId;
+
+        var tenant = await _tenantCacheService.GetByTenantIdAsync(targetTenantId, cancellationToken);
+        if (tenant == null || string.IsNullOrEmpty(tenant.Domain))
+            return null;
+
+        var user = await _userRepository.GetByUserIdAsync(userId);
+        if (user == null || string.IsNullOrEmpty(user.Email) || !user.Email.Contains('@'))
+            return null;
+
+        var emailDomain = user.Email.Split('@')[1];
+        if (!string.Equals(emailDomain, tenant.Domain, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        _logger.LogInformation(
+            "User {UserId} matched tenant {TenantId} via email domain {Domain}, granting TenantParticipant role",
+            userId, targetTenantId, tenant.Domain);
+
+        return new AdminRoleTenantResolutionResult(
+            Success: true,
+            targetTenantId,
+            new[] { SystemRoles.TenantParticipant },
             null);
     }
 }
