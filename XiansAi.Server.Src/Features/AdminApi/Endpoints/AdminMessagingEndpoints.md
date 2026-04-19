@@ -83,14 +83,14 @@ How to test:
 
 Listen: 
 
-curl -N -H "Authorization: Bearer sk-Xnai-0DzZq_c6iIXz64aNoST-qCYK8wR-IY8S_T_X5Z49IGo" \
+curl -N -H "Authorization: Bearer $ADMIN_API_KEY" \
   "http://localhost:5005/api/v1/admin/tenants/default/messaging/listen?agentName=Order%20Manager%20Agent&activationName=Order%20Manager%20Agent%20-%20Remote%20Peafowl&participantId=hasith@gmail.com"
 
 
 send messages:
 
 curl -X POST "http://localhost:5005/api/v1/admin/tenants/default/messaging/send" \
-  -H "Authorization: Bearer sk-Xnai-0DzZq_c6iIXz64aNoST-qCYK8wR-IY8S_T_X5Z49IGo" \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "agentName": "Order Manager Agent",
