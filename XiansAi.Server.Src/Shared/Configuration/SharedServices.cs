@@ -26,6 +26,9 @@ public static class SharedServices
         // Register LLM services using the combined factory
         RegisterLlmProviders(services, configuration);
 
+        // Register the active Secret Store provider (database default, optional Azure Key Vault)
+        RegisterSecretStoreProvider(services, configuration);
+
         // Register core services
         services.AddSingleton<CertificateGenerator>();
         
@@ -108,5 +111,15 @@ public static class SharedServices
     {
         // Register the active LLM provider and the factory itself
         LlmProviderFactory.RegisterProvider(services, configuration);
+    }
+
+    /// <summary>
+    /// Registers the active Secret Store provider (used by SecretVaultService) based on configuration.
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterSecretStoreProvider(IServiceCollection services, IConfiguration configuration)
+    {
+        SecretStoreProviderFactory.RegisterProvider(services, configuration);
     }
 } 

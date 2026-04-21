@@ -4,12 +4,28 @@ Webhooks are used to notify the agents when a certain event occurs.
 
 ## Webhook URL Format
 
-POST <server-url>/api/user/webhooks/{workflow}/{methodName}?tenantId={tenantId}&apikey={apikey}
+```
+POST <server-url>/api/user/webhooks/{workflow}/{methodName}
+Authorization: Bearer <apikey>
+```
 
-- `workflow` should either the WorkflowId or the WorkflowType.
+- `workflow` should be either the WorkflowId or the WorkflowType.
 - `methodName` should be equal to the name of the Temporal Update method.
-- `tenantId` must be a valid tenantId (query parameter).
-- `apikey` must be a valid APIKEY of the tenant (query parameter).
+- Authentication: send the API key in the `Authorization: Bearer <apikey>` header. The
+  tenant is derived from the authenticated key — no `tenantId` query parameter is required.
+
+### Deprecated authentication (still accepted, will log a warning)
+
+For backward compatibility, the API key may also be passed as a query parameter:
+
+```
+POST <server-url>/api/user/webhooks/{workflow}/{methodName}?apikey={apikey}
+```
+
+This pattern is **deprecated** and should not be used in new integrations. Query-string
+credentials leak into reverse-proxy access logs, CDN logs, browser history, and `Referer`
+headers, and they are visible to anything that can see the URL. The server logs a
+deprecation warning every time a request authenticates this way.
 
 ## Webhook's Temporal Update Method
 

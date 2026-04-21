@@ -46,13 +46,21 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                 config.AddJsonFile(testConfigPath, optional: false, reloadOnChange: false);
             }
 
-            // Override MongoDB connection string and add required test configuration
+            // Override the MongoDB connection string with the live test fixture's address.
+            // EncryptionKeys:BaseSecret is intentionally NOT overridden here — it is sourced
+            // from appsettings.Tests.json (a synthetic, non-sensitive fixture) and can be
+            // replaced at runtime via the EncryptionKeys__BaseSecret environment variable
+            // through the AddEnvironmentVariables() source registered below.
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["MongoDB:ConnectionString"] = _mongoFixture.MongoConfig.ConnectionString,
-                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName,
-                ["EncryptionKeys:BaseSecret"] = "test-base-secret-key-for-encryption-in-tests-minimum-32-characters-required"
+                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName
             });
+
+            // Register environment variables LAST so devs can override any test fixture
+            // (e.g. EncryptionKeys__BaseSecret, Certificates__AppServerCertPassword) without
+            // editing the committed JSON. Standard ASP.NET Core double-underscore syntax.
+            config.AddEnvironmentVariables();
         });
 
         builder.ConfigureServices(services =>

@@ -56,39 +56,67 @@ namespace Features.UserApi.Auth
             // Note: Rate limiting is handled by the rate limiting middleware (which runs before authentication)
             // All UserApi endpoints should use .WithAgentUserApiRateLimit() to prevent enumeration attacks
 
-            // Check for access token in multiple locations: apikey/apikeyId query param, access_token query param, or Authorization header
-            var accessToken = Request.Query["apikey"].ToString();
+            // Resolve the access token in this priority order:
+            //   1. Authorization: Bearer <token>      (preferred — never logged by reverse proxies)
+            //   2. ?apikey=<token>                    (deprecated — leaks into proxy/CDN/browser logs)
+            //   3. ?access_token=<token>              (deprecated — JWT fallback for EventSource clients)
+            // Putting the header first ensures clients that adopt the secure pattern are not silently
+            // overridden by a stale query parameter, and lets us emit a deprecation warning whenever
+            // the query-string fallback path is used.
             var apikeyId = Request.Query["apikeyId"].ToString();
             var tenantId = Request.Query["tenantId"].ToString();
-            
+
             // Note: tenantId is now optional. If not provided, it will be derived from the API key.
             // This prevents IDOR vulnerabilities by ensuring the tenant matches the authenticated credential.
 
             _logger.LogDebug("Processing Endpoint request: {Path}", Request.Path);
             if (_tenantContext != null)
             {
-                // Check for token in different locations based on authentication method
-                if (string.IsNullOrEmpty(accessToken))
+                string? accessToken = null;
+                var tokenSource = "none";
+
+                // 1. Preferred: Authorization header.
+                var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+                var (tokenExtracted, headerToken) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
+                if (tokenExtracted && !string.IsNullOrEmpty(headerToken))
                 {
-                    // Check for access_token query parameter (used for JWT fallback when EventSource headers aren't supported)
-                    accessToken = Request.Query["access_token"].ToString();
+                    accessToken = headerToken;
+                    tokenSource = "authorization-header";
+                    _tenantContext.Authorization = accessToken;
                 }
-                
+
+                // 2. Deprecated fallback: ?apikey= query parameter.
                 if (string.IsNullOrEmpty(accessToken))
                 {
-                    // Check for Authorization header (preferred method for JWT)
-                    var authHeader = Request.Headers["Authorization"].FirstOrDefault();
-                    var (tokenExtracted, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
-                    
-                    if (tokenExtracted && token != null)
+                    var queryApiKey = Request.Query["apikey"].ToString();
+                    if (!string.IsNullOrEmpty(queryApiKey))
                     {
-                        accessToken = token;
-                        _tenantContext.Authorization = accessToken;
+                        accessToken = queryApiKey;
+                        tokenSource = "query-apikey";
+                        WarnQueryStringCredentialDeprecated("apikey");
                     }
                 }
 
+                // 3. Deprecated fallback: ?access_token= query parameter (used for JWT EventSource).
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    var queryAccessToken = Request.Query["access_token"].ToString();
+                    if (!string.IsNullOrEmpty(queryAccessToken))
+                    {
+                        accessToken = queryAccessToken;
+                        tokenSource = "query-access_token";
+                        WarnQueryStringCredentialDeprecated("access_token");
+                    }
+                }
+
+                _logger.LogDebug("Resolved credential from {Source} for {Path}", tokenSource, Request.Path);
+
                 if (!string.IsNullOrEmpty(apikeyId))
                 {
+                    // apikeyId is itself a credential (anyone holding it can authenticate as
+                    // the associated user), so it carries the same query-string-leak risks as
+                    // ?apikey= and gets the same deprecation warning.
+                    WarnQueryStringCredentialDeprecated("apikeyId");
                     try
                     {
                         var apiKeyById = await _apiKeyService.GetApiKeyByIdAsync(apikeyId);
@@ -250,5 +278,19 @@ namespace Features.UserApi.Auth
             }
         }
 
+        // Logs a one-line deprecation warning when callers authenticate via a query-string
+        // credential. The token VALUE is intentionally never included — query strings already
+        // leak into reverse-proxy access logs, CDN logs, browser history and Referer headers,
+        // and we don't want to amplify the exposure by writing it into application logs too.
+        private void WarnQueryStringCredentialDeprecated(string parameterName)
+        {
+            _logger.LogWarning(
+                "Credential supplied via query parameter '?{Parameter}=' on {Method} {Path} — DEPRECATED. " +
+                "Send 'Authorization: Bearer <token>' instead. Query-string credentials leak into " +
+                "reverse-proxy access logs, CDN logs, browser history, and Referer headers.",
+                parameterName,
+                Request.Method,
+                Request.Path);
+        }
     }
 }

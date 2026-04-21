@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Secret Vault is a simple, secure store for key-value secrets with optional scoping by tenant, agent, and user. The secret **value** is encrypted at rest using AES-256-GCM (via `ISecureEncryptionService`). The vault supports CRUD and a dedicated **fetch-by-key** operation with strict scope matching. Optional **additionalData** allows flat key-value metadata (string keys and string values only), validated and sanitized on create/update.
+The Secret Vault is a simple, secure store for key-value secrets with optional scoping by tenant, agent, and user. The secret **value** is persisted via a **pluggable [Secret Store provider](../Shared/Providers/SecretStore/README.md)** — by default an AES-256-GCM ciphertext in MongoDB, optionally Azure Key Vault. The vault supports CRUD and a dedicated **fetch-by-key** operation with strict scope matching. Optional **additionalData** allows flat key-value metadata (string keys and string values only), validated and sanitized on create/update.
 
 ## Architecture
 
@@ -10,32 +10,38 @@ The Secret Vault is a simple, secure store for key-value secrets with optional s
 
 | Component | Location | Role |
 |-----------|----------|------|
-| **SecretVault** (model) | `Shared/Data/Models/SecretVault.cs` | MongoDB document: key, encrypted value, scope (tenantId, agentId, userId, activationName), additionalData, audit fields |
-| **ISecretVaultRepository** | `Shared/Repositories/SecretVaultRepository.cs` | Persistence: CRUD, find by key+scope, list with optional filters |
-| **ISecretVaultService** | `Shared/Services/SecretVaultService.cs` | Business logic: encrypt/decrypt, validation/sanitization of additionalData, scope rules |
+| **SecretVault** (model) | `Shared/Data/Models/SecretVault.cs` | MongoDB document: key, scope (tenantId, agentId, userId, activationName), additionalData, audit fields. Value is **not** stored on this document. |
+| **ISecretVaultRepository** | `Shared/Repositories/SecretVaultRepository.cs` | Metadata persistence: CRUD, find by key+scope, list with optional filters |
+| **ISecretStoreProvider** | `Shared/Providers/SecretStore/` | Pluggable backend for the secret value: `DatabaseSecretStoreProvider` (default) or `AzureKeyVaultSecretStoreProvider` |
+| **ISecretVaultService** | `Shared/Services/SecretVaultService.cs` | Business logic: validation/sanitization of additionalData, scope rules, orchestrates metadata + provider |
 | **Admin API endpoints** | `Features/AdminApi/Endpoints/AdminSecretVaultEndpoints.cs` | REST under `/api/v1/admin/secrets` (API key auth) |
 | **Agent API endpoints** | `Features/AgentApi/Endpoints/SecretVaultEndpoints.cs` | REST under `/api/agent/secrets` (client certificate auth) |
 
 ### Data Flow
 
 ```
-Create/Update:
+Create:
   Request (key, value, scope, additionalData)
   → Endpoint normalizes additionalData (object → JSON string)
   → Service validates & sanitizes additionalData (flat keys/string values only)
-  → Service encrypts value with SecretVaultKey
-  → Repository persists to MongoDB (collection: secret_vault)
+  → Service generates secretId, calls ISecretStoreProvider.SetAsync(secretId, value)
+  → Repository persists metadata to MongoDB (collection: secret_vault)
+  → On metadata-insert failure, value is rolled back via ISecretStoreProvider.DeleteAsync
+
+Update / Delete:
+  → Same orchestration: provider operation runs alongside the metadata write,
+    with best-effort cleanup on partial failure.
 
 Fetch by key:
   Request (key, tenantId?, agentId?, userId?, activationName?)
   → Repository FindForAccessAsync (strict scope match for all scopes)
-  → Service decrypts value
+  → Service calls ISecretStoreProvider.GetAsync(metadata.Id)
   → Response { value, additionalData } (additionalData as JSON object)
 
 Get by id / List:
   → Repository load
-  → Service decrypts value (for get), parses additionalData to object for response
-  → Response with decrypted value and additionalData as JSON object
+  → Service calls provider for value (get), parses additionalData to object for response
+  → Response with value and additionalData as JSON object
 ```
 
 ### Scope Semantics
@@ -54,33 +60,53 @@ So: to fetch a secret scoped to a tenant, the request must include that tenantId
 
 ## Configuration
 
-### Encryption Key
+### Secret Store Provider
 
-The vault uses a **dedicated** unique secret for encryption (same pattern as Tenant OIDC config): `EncryptionKeys:UniqueSecrets:SecretVaultKey`. If not set, the service falls back to `EncryptionKeys:BaseSecret`.
+Pick one backend at startup via `SecretStore:Provider`. See [`Shared/Providers/SecretStore/README.md`](../Shared/Providers/SecretStore/README.md) for full provider docs.
 
-Add to `appsettings.json` (or environment-specific config):
+```json
+{
+  "SecretStore": {
+    "Provider": "database",
+    "AzureKeyVault": {
+      "VaultUri": "https://my-vault.vault.azure.net/",
+      "SecretNamePrefix": "xians-"
+    }
+  }
+}
+```
+
+| Value | Behavior |
+|-------|----------|
+| `database` (default) | Encrypts each value with AES-256-GCM and stores it in MongoDB collection `secret_vault_values`. |
+| `azurekeyvault` | Stores each value as a Key Vault secret named `{prefix}{secretId}`, authenticated via `DefaultAzureCredential`. Requires `SecretStore:AzureKeyVault:VaultUri`. |
+
+### Encryption Keys (database provider only)
+
+The `database` provider uses the application-wide `ISecureEncryptionService` (`EncryptionKeys:BaseSecret`). The per-row salt input is the secret id itself, so each row uses a distinct AES key.
+
+`EncryptionKeys:UniqueSecrets:SecretVaultKey` is **legacy** — it is only consulted to decrypt rows that were written before the provider abstraction. New writes never use it. After all old rows have been migrated (or expired), this key can be removed from configuration.
 
 ```json
 {
   "EncryptionKeys": {
     "BaseSecret": "your-base-secret-at-least-32-chars",
     "UniqueSecrets": {
-      "TenantOidcSecretKey": "...",
-      "SecretVaultKey": "xiansai_secret_vault_encryption_key_32bytes!!"
+      "SecretVaultKey": "<legacy only — for upgrade fallback>"
     }
   }
 }
 ```
 
-- Use a **unique** value for `SecretVaultKey` (at least 32 characters recommended).
 - Do not commit production keys; use environment variables or a secret manager.
 
 ### Service Registration
 
-The repository and service are registered in **SharedConfiguration**:
+Registered in **SharedConfiguration** / **SharedServices**:
 
 - `ISecretVaultRepository` → `SecretVaultRepository` (scoped)
 - `ISecretVaultService` → `SecretVaultService` (scoped)
+- `ISecretStoreProvider` → `DatabaseSecretStoreProvider` or `AzureKeyVaultSecretStoreProvider` (scoped) — chosen by `SecretStoreProviderFactory.RegisterProvider` based on `SecretStore:Provider`.
 
 Admin and Agent APIs use the same shared service.
 
@@ -90,14 +116,16 @@ Admin and Agent APIs use the same shared service.
 
 Authentication: **API key** (Bearer token). Policy: `AdminEndpointAuthPolicy` (e.g. SysAdmin).
 
+The Admin API can **manage** secrets (create / update / delete / list / probe by key) but **never** returns the secret value. All read endpoints return metadata only (id, key, scope, additionalData, audit). To read a value, use the Agent API with a valid client certificate.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/` | Create secret. Key must be unique. Body: key, value, tenantId?, agentId?, userId?, activationName?, additionalData? |
-| GET | `/` | List secrets. Query: tenantId?, agentId?, activationName? (optional filters) |
-| GET | `/fetch?key=&tenantId=&agentId=&userId=&activationName=` | Fetch secret by key with strict scope; returns `{ value, additionalData }` only |
-| GET | `/{id}` | Get secret by id (full record including decrypted value) |
-| PUT | `/{id}` | Update secret (value, scope, additionalData) |
-| DELETE | `/{id}` | Delete secret |
+| POST | `/` | Create secret. Key must be unique. Body: key, value, tenantId?, agentId?, userId?, activationName?, additionalData?. Response is **metadata only** (no value echo). |
+| GET | `/` | List secrets metadata. Query: tenantId?, agentId?, activationName? (optional filters). |
+| GET | `/fetch?key=&tenantId=&agentId=&userId=&activationName=` | Probe by key with strict scope. Returns metadata only — no value. Useful to confirm a scoped secret exists. |
+| GET | `/{id}` | Get secret metadata by id. **Value is never returned to admin callers.** |
+| PUT | `/{id}` | Update secret (value, scope, additionalData). Response is metadata only. |
+| DELETE | `/{id}` | Delete secret. |
 
 **CreatedBy / UpdatedBy** are set from `ITenantContext.LoggedInUser` (fallback `"system"`).
 
@@ -105,7 +133,7 @@ Authentication: **API key** (Bearer token). Policy: `AdminEndpointAuthPolicy` (e
 
 Authentication: **Client certificate** (Bearer token = Base64-encoded client certificate). Policy: `RequiresCertificate`.
 
-Same operations as Admin API, under base path `/api/agent/secrets`. Actor for CreatedBy/UpdatedBy is `"agent-api"` (no user context in certificate flow).
+Same management operations as Admin API, under base path `/api/agent/secrets`. **Unlike the Admin API**, Agent endpoints return the decrypted value on `GET /{id}`, `GET /fetch`, and on Create/Update responses, because agents legitimately need to consume the secret value at runtime. Actor for CreatedBy/UpdatedBy is `"agent-api"` (no user context in certificate flow).
 
 ### Request / Response Shapes
 
@@ -125,7 +153,7 @@ Same operations as Admin API, under base path `/api/agent/secrets`. Actor for Cr
 
 - **additionalData** is optional. It can be a **JSON object** (recommended) or a JSON string. It must be a flat object with values that are **string**, **number**, or **boolean** only (see Validation & Sanitization below).
 
-**Fetch response** (GET `/fetch?key=...`)
+**Agent fetch response** (GET `/api/agent/secrets/fetch?key=...`)
 
 ```json
 {
@@ -134,9 +162,27 @@ Same operations as Admin API, under base path `/api/agent/secrets`. Actor for Cr
 }
 ```
 
-**Get by id / Create response** (full secret record)
+**Agent get by id / create / update response** (full record, with value)
 
-- Same as above, plus: `id`, `key`, `tenantId`, `agentId`, `userId`, `activationName`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. The `value` is decrypted; `additionalData` is returned as a JSON object.
+- Includes: `id`, `key`, `value`, `tenantId`, `agentId`, `userId`, `activationName`, `additionalData`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. The `value` is decrypted; `additionalData` is returned as a JSON object.
+
+**Admin fetch / get / create / update response** (metadata only — value is never returned)
+
+```json
+{
+  "id": "...",
+  "key": "my-api-key",
+  "tenantId": null,
+  "agentId": null,
+  "userId": null,
+  "activationName": null,
+  "additionalData": { "env": "prod" },
+  "createdAt": "...",
+  "createdBy": "...",
+  "updatedAt": "...",
+  "updatedBy": "..."
+}
+```
 
 ## AdditionalData: Structure and Security
 
@@ -171,16 +217,20 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 
 ## Database
 
-- **Collection:** `secret_vault`
-- **Document fields:** `_id`, `key`, `encrypted_value`, `tenant_id`, `agent_id`, `user_id`, `activation_name`, `additional_data`, `created_at`, `created_by`, `updated_at`, `updated_by`
+- **Metadata collection:** `secret_vault`
+- **Document fields:** `_id`, `key`, `tenant_id`, `agent_id`, `user_id`, `activation_name`, `additional_data`, `created_at`, `created_by`, `updated_at`, `updated_by`. The legacy `encrypted_value` field is read on fallback only and is no longer written by new code.
 - **Uniqueness:** The secret **key** is unique in the collection (one document per key).
+- **Value collection (database provider only):** `secret_vault_values` with `_id` matching the metadata `_id` and a `ciphertext` field. Lookup is by `_id`; no extra indexes required.
 
 ## Security Considerations
 
-- **Encryption:** The secret value is encrypted with `ISecureEncryptionService` using the vault-specific key. Do not reuse the same key for other features.
+- **At-rest encryption:** The database provider encrypts values with `ISecureEncryptionService` (AES-256-GCM, PBKDF2 200k iterations). The per-row salt is the secret id, so each row uses a distinct AES key derived from `BaseSecret`. The Azure Key Vault provider relies on Azure-managed encryption.
+- **Transport:** TLS to MongoDB / Azure Key Vault.
 - **Scope:** Use tenantId/agentId/userId/activationName to limit who can fetch a secret (strict match on fetch for all scopes).
 - **AdditionalData:** Not for sensitive secrets; it is stored in plain JSON (sanitized). Use it for metadata (e.g. env, service name) only.
-- **Key management:** Store `SecretVaultKey` in a secret manager in production; rotate according to policy (rotation will require re-encrypting values if you need to support old keys).
+- **No value logging:** The service never logs secret plaintext or ciphertext. Audit lines include id, key, tenant, actor, and provider name only.
+- **Key management:** Store `BaseSecret` (and any Azure Key Vault credentials) in a secret manager in production. The legacy `SecretVaultKey` should be removed once no rows depend on it.
+- **Switching providers:** Switching `SecretStore:Provider` is **not** an automatic data migration. Existing values written by one provider are not visible to the other; an explicit copy is required.
 
 ## HTTP Test Files
 
@@ -191,8 +241,9 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 
 | Aspect | Detail |
 |--------|--------|
-| **Storage** | MongoDB collection `secret_vault`; value encrypted, additionalData as sanitized JSON string |
+| **Storage** | Metadata in MongoDB `secret_vault`; value via pluggable `ISecretStoreProvider` (database default → `secret_vault_values`, or Azure Key Vault) |
 | **APIs** | Admin API (API key) and Agent API (client cert); same service, different auth |
-| **Scope** | tenantId, agentId, userId, activationName; null = “any”; fetch uses strict scope match for all |
+| **Scope** | tenantId, agentId, userId, activationName; null = "any"; fetch uses strict scope match for all |
 | **AdditionalData** | Flat key-value; values: string, number, or boolean only; validated and sanitized on create/update; returned as JSON object |
-| **Encryption** | `EncryptionKeys:UniqueSecrets:SecretVaultKey` (fallback: BaseSecret) via `ISecureEncryptionService` |
+| **Provider selection** | `SecretStore:Provider` = `database` \| `azurekeyvault` (startup-time, global) |
+| **Encryption (database provider)** | AES-256-GCM via `ISecureEncryptionService`; per-record key derived from `BaseSecret` + secret id |

@@ -1,10 +1,14 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using System.Text.Json;
-using Features.AppsApi.Models;
-using Shared.Services;
-using Shared.Repositories;
-using Shared.Auth;
 using System.Text.Json.Serialization;
+using Features.AppsApi.Models;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
+using Shared.Auth;
+using Shared.Repositories;
+using Shared.Services;
 
 namespace Features.AppsApi.Handlers;
 
@@ -44,10 +48,25 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
     private readonly ITenantContext _tenantContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<TeamsWebhookHandler> _logger;
-    
+
     // Cache for Teams user info to avoid repeated API calls
     // Key format: "{integrationId}:{aadObjectId}"
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, TeamsUserInfo> UserInfoCache = new();
+
+    // Bot Framework OpenID configuration endpoint (public Azure cloud).
+    // See: https://learn.microsoft.com/azure/bot-service/rest-api/bot-framework-rest-connector-authentication
+    private const string BotFrameworkOpenIdConfigUrl =
+        "https://login.botframework.com/v1/.well-known/openidconfiguration";
+
+    // Issuer that Bot Connector tokens are issued under (public cloud).
+    private const string BotFrameworkTokenIssuer = "https://api.botframework.com";
+
+    // Shared across requests so the JWKS document is fetched once and refreshed
+    // automatically. ConfigurationManager is internally thread-safe.
+    private static readonly ConfigurationManager<OpenIdConnectConfiguration> BotFrameworkConfigManager =
+        new(BotFrameworkOpenIdConfigUrl,
+            new OpenIdConnectConfigurationRetriever(),
+            new HttpDocumentRetriever());
 
     public TeamsWebhookHandler(
         IMessageService messageService,
@@ -107,28 +126,110 @@ public class TeamsWebhookHandler : ITeamsWebhookHandler
         AppIntegration integration,
         HttpContext httpContext)
     {
-        // TODO: Implement Bot Framework JWT validation
-        // For now, we'll use basic app ID validation
-        // Production should verify JWT signature from Azure Bot Service
-
-        if (!httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader))
+        try
         {
-            _logger.LogWarning("Missing Authorization header for Teams webhook");
+            if (!httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader))
+            {
+                _logger.LogWarning("Missing Authorization header for Teams webhook on integration {IntegrationId}",
+                    integration.Id);
+                return false;
+            }
+
+            var headerValue = authHeader.ToString();
+            if (string.IsNullOrEmpty(headerValue) ||
+                !headerValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Invalid Authorization header format for Teams webhook on integration {IntegrationId}",
+                    integration.Id);
+                return false;
+            }
+
+            var token = headerValue["Bearer ".Length..].Trim();
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Empty bearer token for Teams webhook on integration {IntegrationId}",
+                    integration.Id);
+                return false;
+            }
+
+            // The bot's app (client) ID is the audience that Bot Connector mints tokens for.
+            // Without it we cannot prove the token was intended for this integration.
+            if (!integration.Configuration.TryGetValue("appId", out var appIdObj) ||
+                string.IsNullOrWhiteSpace(appIdObj?.ToString()))
+            {
+                _logger.LogError(
+                    "Cannot validate Teams Bot Framework JWT: appId is not configured for integration {IntegrationId}",
+                    integration.Id);
+                return false;
+            }
+
+            var appId = appIdObj!.ToString()!;
+
+            // Signing keys are cached and refreshed automatically by ConfigurationManager.
+            var openIdConfig = await BotFrameworkConfigManager.GetConfigurationAsync(httpContext.RequestAborted);
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = BotFrameworkTokenIssuer,
+                ValidateAudience = true,
+                ValidAudience = appId,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKeys = openIdConfig.SigningKeys,
+                ValidateLifetime = true,
+                RequireExpirationTime = true,
+                RequireSignedTokens = true,
+                ValidAlgorithms = new[] { SecurityAlgorithms.RsaSha256 },
+                ClockSkew = TimeSpan.FromMinutes(5)
+            };
+
+            var handler = new JwtSecurityTokenHandler();
+            handler.ValidateToken(token, validationParameters, out _);
+
+            _logger.LogDebug("Teams Bot Framework JWT validated for integration {IntegrationId}", integration.Id);
+            return true;
+        }
+        catch (SecurityTokenExpiredException ex)
+        {
+            _logger.LogWarning("Teams Bot Framework JWT expired for integration {IntegrationId}: {Message}",
+                integration.Id, ex.Message);
             return false;
         }
-
-        // Basic validation - in production, verify JWT signature
-        if (!authHeader.ToString().StartsWith("Bearer "))
+        catch (SecurityTokenInvalidAudienceException ex)
         {
-            _logger.LogWarning("Invalid Authorization header format");
+            _logger.LogWarning(
+                "Teams Bot Framework JWT has invalid audience for integration {IntegrationId}: {Message}",
+                integration.Id, ex.Message);
             return false;
         }
-
-        // TODO: Verify JWT token signature using Microsoft's public keys
-        // For now, accept all authenticated requests
-        _logger.LogDebug("Teams authentication validated (basic check - TODO: implement full JWT validation)");
-        
-        return await Task.FromResult(true);
+        catch (SecurityTokenInvalidIssuerException ex)
+        {
+            _logger.LogWarning(
+                "Teams Bot Framework JWT has invalid issuer for integration {IntegrationId}: {Message}",
+                integration.Id, ex.Message);
+            return false;
+        }
+        catch (SecurityTokenInvalidSignatureException ex)
+        {
+            _logger.LogWarning(
+                "Teams Bot Framework JWT signature verification failed for integration {IntegrationId}: {Message}",
+                integration.Id, ex.Message);
+            return false;
+        }
+        catch (SecurityTokenException ex)
+        {
+            _logger.LogWarning(
+                "Teams Bot Framework JWT validation failed for integration {IntegrationId}: {Message}",
+                integration.Id, ex.Message);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error validating Teams Bot Framework JWT for integration {IntegrationId}",
+                integration.Id);
+            return false;
+        }
     }
 
     public async Task SendMessageToTeamsAsync(

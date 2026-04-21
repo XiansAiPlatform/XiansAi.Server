@@ -106,12 +106,31 @@ ASPNETCORE_ENVIRONMENT=Staging dotnet test --filter "FullyQualifiedName~CacheEnd
 
 ## Configuration Loading in Tests
 
-The test framework loads configuration in this order:
+The test framework loads configuration in this order (later sources win):
 
-1. **`appsettings.json`** - Base configuration from the main application
-2. **`appsettings.{Environment}.json`** - Environment-specific overrides (e.g., `appsettings.Production.json`)
-3. **Test overrides** - MongoDB connection strings are automatically overridden to use the test database
-4. **Environment variables** - Can override any configuration value
+1. **`appsettings.Tests.json`** - Synthetic, non-sensitive test fixtures committed to the
+   repo. Safe to read in any environment because it contains no real credentials.
+2. **In-memory test overrides** - MongoDB connection strings pointed at the ephemeral
+   `MongoDbFixture` instance.
+3. **Environment variables** - Can override any configuration value using the standard
+   ASP.NET Core double-underscore syntax. This is the recommended way to inject real
+   secrets into a CI run without committing them.
+
+### Overriding sensitive values with environment variables
+
+Any key in `appsettings.Tests.json` can be replaced at runtime by an environment variable.
+ASP.NET Core converts the `Section:Key` notation to `Section__Key`. Examples:
+
+```bash
+export EncryptionKeys__BaseSecret="$(openssl rand -base64 48)"
+export Certificates__AppServerPfxBase64="$(base64 < my-cert.pfx)"
+export Certificates__AppServerCertPassword="$MY_REAL_PFX_PASSWORD"
+dotnet test
+```
+
+For repeatable local runs, place these in a `.env` (gitignored — see the repo `.gitignore`)
+and source it before invoking `dotnet test`. **Never commit a `.env` file or hard-code real
+credentials into `appsettings.Tests.json`.**
 
 ### Running the Tests
 
