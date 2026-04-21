@@ -4,9 +4,13 @@
 @tenantId =new-tenant-43
 
 # API Key Authentication
-# Replace with your actual API key (must start with "sk-Xnai-")
-# The API key must belong to a user with SysAdmin role
-@apiKey = sk-Xnai-aH9m_QKEr797ziDXGcHB90gZ8qEMSx-ps5OBxG12utg
+# The API key must belong to a user with SysAdmin role and start with "sk-Xnai-".
+# SECURITY: Never commit a real API key. Provide it via environment instead.
+#   VS Code REST Client : export ADMIN_API_KEY in your shell, or place it in
+#                         XiansAi.Server.Tests/http/.env (see .env.example).
+#   JetBrains HTTP Client: define ADMIN_API_KEY in http-client.private.env.json
+#                          (gitignored) and reference it as {{ADMIN_API_KEY}}.
+@apiKey = {{$processEnv ADMIN_API_KEY}}
 
 # Note: Replace these with actual values from your database
 # tenantObjectId: MongoDB ObjectId from list tenants response (e.g., "6959f2ffb50bd67dcb893910")

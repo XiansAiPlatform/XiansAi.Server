@@ -1,7 +1,7 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Shared.Data.Models;
+using Shared.Providers;
 using Shared.Repositories;
 using Shared.Utils.Services;
 
@@ -54,6 +54,23 @@ public record SecretVaultGetResponse(
 /// <summary>AdditionalData is returned as JSON object for API consumers.</summary>
 public record SecretVaultFetchResponse(string Value, object? AdditionalData);
 
+/// <summary>
+/// Value-redacted view of a secret. Used by the Admin API where the secret value must never be exposed.
+/// Mirrors <see cref="SecretVaultGetResponse"/> minus the <c>Value</c> field.
+/// </summary>
+public record SecretVaultMetadataResponse(
+    string Id,
+    string Key,
+    string? TenantId,
+    string? AgentId,
+    string? UserId,
+    string? ActivationName,
+    object? AdditionalData,
+    DateTime CreatedAt,
+    string CreatedBy,
+    DateTime? UpdatedAt,
+    string? UpdatedBy);
+
 public interface ISecretVaultService
 {
     Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId);
@@ -62,6 +79,19 @@ public interface ISecretVaultService
     Task<ServiceResult<SecretVaultGetResponse>> UpdateAsync(string id, SecretVaultUpdateInput input, string actorUserId);
     Task<ServiceResult<bool>> DeleteAsync(string id);
     Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
+
+    /// <summary>
+    /// Returns metadata for a secret without ever loading or returning the secret value.
+    /// The store provider is not consulted, so this is also cheaper than <see cref="GetByIdAsync"/>.
+    /// Intended for the Admin API.
+    /// </summary>
+    Task<ServiceResult<SecretVaultMetadataResponse?>> GetMetadataByIdAsync(string id);
+
+    /// <summary>
+    /// Resolves a secret by key + scope and returns its metadata only (no value).
+    /// Useful for "does this scoped secret exist?" admin probes.
+    /// </summary>
+    Task<ServiceResult<SecretVaultMetadataResponse?>> FindMetadataByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
 }
 
 public class SecretVaultService : ISecretVaultService
@@ -73,28 +103,17 @@ public class SecretVaultService : ISecretVaultService
     private static readonly Regex AdditionalDataKeyRegex = new(@"^[a-zA-Z0-9_.-]+$", RegexOptions.Compiled);
 
     private readonly ISecretVaultRepository _repository;
-    private readonly ISecureEncryptionService _encryption;
+    private readonly ISecretStoreProvider _secretStore;
     private readonly ILogger<SecretVaultService> _logger;
-    private readonly string _uniqueSecret;
 
     public SecretVaultService(
         ISecretVaultRepository repository,
-        ISecureEncryptionService encryption,
-        ILogger<SecretVaultService> logger,
-        IConfiguration configuration)
+        ISecretStoreProvider secretStore,
+        ILogger<SecretVaultService> logger)
     {
         _repository = repository;
-        _encryption = encryption;
+        _secretStore = secretStore;
         _logger = logger;
-        _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:SecretVaultKey"] ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(_uniqueSecret))
-        {
-            _logger.LogWarning("EncryptionKeys:UniqueSecrets:SecretVaultKey is not configured. Using BaseSecret.");
-            var baseSecret = configuration["EncryptionKeys:BaseSecret"];
-            if (string.IsNullOrWhiteSpace(baseSecret))
-                throw new InvalidOperationException("EncryptionKeys:BaseSecret is not configured");
-            _uniqueSecret = baseSecret;
-        }
     }
 
     public async Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId)
@@ -112,15 +131,19 @@ public class SecretVaultService : ISecretVaultService
         if (additionalDataError != null)
             return ServiceResult<SecretVaultGetResponse>.BadRequest(additionalDataError);
 
+        var id = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
+        var storeWritten = false;
+
         try
         {
-            var encrypted = _encryption.Encrypt(input.Value, _uniqueSecret);
+            await _secretStore.SetAsync(id, input.Value);
+            storeWritten = true;
+
             var now = DateTime.UtcNow;
             var entity = new SecretVault
             {
-                Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                Id = id,
                 Key = input.Key,
-                EncryptedValue = encrypted,
                 TenantId = string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId,
                 AgentId = string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId,
                 UserId = string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId,
@@ -130,17 +153,33 @@ public class SecretVaultService : ISecretVaultService
                 CreatedBy = actorUserId
             };
             await _repository.CreateAsync(entity);
-            var decrypted = _encryption.Decrypt(entity.EncryptedValue, _uniqueSecret);
-            return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, decrypted!), StatusCode.Ok);
-        }
-        catch (AuthenticationTagMismatchException ex)
-        {
-            _logger.LogWarning(ex, "Encryption failed for secret vault create");
-            return ServiceResult<SecretVaultGetResponse>.InternalServerError("Encryption failed");
+
+            _logger.LogInformation(
+                "Secret vault entry created. id={SecretId} key={Key} tenant={TenantId} actor={Actor} provider={Provider}",
+                id, input.Key, entity.TenantId ?? "*", actorUserId, _secretStore.Name);
+
+            return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, input.Value), StatusCode.Ok);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating secret vault key {Key}", input.Key);
+            _logger.LogError(ex,
+                "Error creating secret vault key {Key} (provider={Provider}). storeWritten={StoreWritten}",
+                input.Key, _secretStore.Name, storeWritten);
+
+            if (storeWritten)
+            {
+                try
+                {
+                    await _secretStore.DeleteAsync(id);
+                }
+                catch (Exception cleanupEx)
+                {
+                    _logger.LogError(cleanupEx,
+                        "Failed to clean up orphaned secret value for id {SecretId} after metadata insert failure",
+                        id);
+                }
+            }
+
             return ServiceResult<SecretVaultGetResponse>.InternalServerError("Failed to create secret");
         }
     }
@@ -156,13 +195,16 @@ public class SecretVaultService : ISecretVaultService
 
         try
         {
-            var decrypted = _encryption.Decrypt(entity.EncryptedValue, _uniqueSecret);
-            return ServiceResult<SecretVaultGetResponse?>.Success(ToGetResponse(entity, decrypted ?? ""));
-        }
-        catch (AuthenticationTagMismatchException ex)
-        {
-            _logger.LogWarning(ex, "Decryption failed for secret vault id {Id}", id);
-            return ServiceResult<SecretVaultGetResponse?>.Conflict("Decryption failed; encryption keys may have changed");
+            var value = await _secretStore.GetAsync(entity.Id);
+            if (value == null)
+            {
+                _logger.LogError(
+                    "Secret value missing in store for id {SecretId} (provider={Provider})",
+                    entity.Id, _secretStore.Name);
+                return ServiceResult<SecretVaultGetResponse?>.Conflict("Secret value missing in store");
+            }
+
+            return ServiceResult<SecretVaultGetResponse?>.Success(ToGetResponse(entity, value));
         }
         catch (Exception ex)
         {
@@ -177,7 +219,8 @@ public class SecretVaultService : ISecretVaultService
         {
             var list = await _repository.ListAsync(tenantId, agentId, activationName);
             var items = list.Select(x => new SecretVaultListItem(
-                x.Id, x.Key, x.TenantId, x.AgentId, x.UserId, x.ActivationName, ParseAdditionalDataToObject(x.AdditionalData), x.CreatedAt, x.CreatedBy)).ToList();
+                x.Id, x.Key, x.TenantId, x.AgentId, x.UserId, x.ActivationName,
+                ParseAdditionalDataToObject(x.AdditionalData), x.CreatedAt, x.CreatedBy)).ToList();
             return ServiceResult<List<SecretVaultListItem>>.Success(items);
         }
         catch (Exception ex)
@@ -198,8 +241,13 @@ public class SecretVaultService : ISecretVaultService
 
         try
         {
+            string? updatedValue = null;
             if (input.Value != null)
-                entity.EncryptedValue = _encryption.Encrypt(input.Value, _uniqueSecret);
+            {
+                await _secretStore.SetAsync(entity.Id, input.Value);
+                updatedValue = input.Value;
+            }
+
             if (input.TenantId != null)
                 entity.TenantId = string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId;
             if (input.AgentId != null)
@@ -220,13 +268,14 @@ public class SecretVaultService : ISecretVaultService
             entity.UpdatedBy = actorUserId;
 
             await _repository.UpdateAsync(entity);
-            var decrypted = _encryption.Decrypt(entity.EncryptedValue, _uniqueSecret);
-            return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, decrypted ?? ""), StatusCode.Ok);
-        }
-        catch (AuthenticationTagMismatchException ex)
-        {
-            _logger.LogWarning(ex, "Encryption failed for secret vault update");
-            return ServiceResult<SecretVaultGetResponse>.InternalServerError("Encryption failed");
+
+            _logger.LogInformation(
+                "Secret vault entry updated. id={SecretId} key={Key} tenant={TenantId} actor={Actor} valueChanged={ValueChanged} provider={Provider}",
+                entity.Id, entity.Key, entity.TenantId ?? "*", actorUserId, updatedValue != null, _secretStore.Name);
+
+            // For the response value: prefer the just-set value to avoid an extra round-trip to the store.
+            var responseValue = updatedValue ?? await _secretStore.GetAsync(entity.Id) ?? string.Empty;
+            return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, responseValue), StatusCode.Ok);
         }
         catch (Exception ex)
         {
@@ -243,7 +292,23 @@ public class SecretVaultService : ISecretVaultService
         try
         {
             var removed = await _repository.DeleteAsync(id);
-            return removed ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("Secret not found");
+            if (!removed)
+                return ServiceResult<bool>.NotFound("Secret not found");
+
+            try
+            {
+                await _secretStore.DeleteAsync(id);
+            }
+            catch (Exception storeEx)
+            {
+                // Metadata is already gone; log the orphan but do not fail the caller.
+                _logger.LogError(storeEx,
+                    "Metadata for secret {SecretId} was deleted but store {Provider} delete failed; value may need manual cleanup",
+                    id, _secretStore.Name);
+            }
+
+            _logger.LogInformation("Secret vault entry deleted. id={SecretId} provider={Provider}", id, _secretStore.Name);
+            return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
@@ -263,14 +328,17 @@ public class SecretVaultService : ISecretVaultService
 
         try
         {
-            var decrypted = _encryption.Decrypt(entity.EncryptedValue, _uniqueSecret);
+            var value = await _secretStore.GetAsync(entity.Id);
+            if (value == null)
+            {
+                _logger.LogError(
+                    "Secret value missing in store for key {Key} id {SecretId} (provider={Provider})",
+                    key, entity.Id, _secretStore.Name);
+                return ServiceResult<SecretVaultFetchResponse?>.Conflict("Secret value missing in store");
+            }
+
             return ServiceResult<SecretVaultFetchResponse?>.Success(
-                new SecretVaultFetchResponse(decrypted ?? "", ParseAdditionalDataToObject(entity.AdditionalData)));
-        }
-        catch (AuthenticationTagMismatchException ex)
-        {
-            _logger.LogWarning(ex, "Decryption failed for secret vault fetch key {Key}", key);
-            return ServiceResult<SecretVaultFetchResponse?>.Conflict("Decryption failed");
+                new SecretVaultFetchResponse(value, ParseAdditionalDataToObject(entity.AdditionalData)));
         }
         catch (Exception ex)
         {
@@ -279,12 +347,65 @@ public class SecretVaultService : ISecretVaultService
         }
     }
 
-    private static SecretVaultGetResponse ToGetResponse(SecretVault entity, string decryptedValue)
+    public async Task<ServiceResult<SecretVaultMetadataResponse?>> GetMetadataByIdAsync(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return ServiceResult<SecretVaultMetadataResponse?>.BadRequest("Id is required");
+
+        try
+        {
+            var entity = await _repository.GetByIdAsync(id);
+            if (entity == null)
+                return ServiceResult<SecretVaultMetadataResponse?>.NotFound("Secret not found");
+
+            return ServiceResult<SecretVaultMetadataResponse?>.Success(ToMetadataResponse(entity));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting secret vault metadata for id {Id}", id);
+            return ServiceResult<SecretVaultMetadataResponse?>.InternalServerError("Failed to get secret metadata");
+        }
+    }
+
+    public async Task<ServiceResult<SecretVaultMetadataResponse?>> FindMetadataByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return ServiceResult<SecretVaultMetadataResponse?>.BadRequest("Key is required");
+
+        try
+        {
+            var entity = await _repository.FindForAccessAsync(key, tenantId, agentId, userId, activationName);
+            if (entity == null)
+                return ServiceResult<SecretVaultMetadataResponse?>.NotFound("Secret not found or access denied");
+
+            return ServiceResult<SecretVaultMetadataResponse?>.Success(ToMetadataResponse(entity));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error finding secret vault metadata for key {Key}", key);
+            return ServiceResult<SecretVaultMetadataResponse?>.InternalServerError("Failed to find secret metadata");
+        }
+    }
+
+    private static SecretVaultMetadataResponse ToMetadataResponse(SecretVault entity) => new(
+        entity.Id,
+        entity.Key,
+        entity.TenantId,
+        entity.AgentId,
+        entity.UserId,
+        entity.ActivationName,
+        ParseAdditionalDataToObject(entity.AdditionalData),
+        entity.CreatedAt,
+        entity.CreatedBy,
+        entity.UpdatedAt,
+        entity.UpdatedBy);
+
+    private static SecretVaultGetResponse ToGetResponse(SecretVault entity, string value)
     {
         return new SecretVaultGetResponse(
             entity.Id,
             entity.Key,
-            decryptedValue,
+            value,
             entity.TenantId,
             entity.AgentId,
             entity.UserId,

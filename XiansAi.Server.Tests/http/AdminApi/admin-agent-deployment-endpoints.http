@@ -6,7 +6,7 @@
 # API Key Authentication
 # Replace with your actual API key (must start with "sk-Xnai-")
 # The API key must belong to a user with SysAdmin role
-@apiKey = sk-Xnai-aH9m_QKEr797ziDXGcHB90gZ8qEMSx-ps5OBxG12utg
+@apiKey = {{$processEnv ADMIN_API_KEY}}
 
 # Note: Replace with actual agent name from your database
 @agentName = my-agent-name

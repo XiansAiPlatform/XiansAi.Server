@@ -65,7 +65,8 @@ public class MongoDbFixture : IDisposable
         };
 
         // Create client service
-        _mongoClientService = new MongoDbClientService(new TestMongoDbContext(MongoConfig), _logger);
+        var emptyConfig = new ConfigurationBuilder().Build();
+        _mongoClientService = new MongoDbClientService(new TestMongoDbContext(MongoConfig), _logger, emptyConfig);
 
         // Initialize collections and indexes
         InitializeCollections();

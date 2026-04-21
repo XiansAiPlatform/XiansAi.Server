@@ -21,7 +21,6 @@ public static class WebhookEndpoints
             [FromQuery] string workflowName,
             [FromQuery] string webhookName,
             [FromQuery] string agentName,
-            [FromQuery] string? apikey,
             [FromQuery] string? apikeyId,
             [FromQuery] string? activationName,
             HttpContext httpContext,
@@ -55,10 +54,10 @@ public static class WebhookEndpoints
                     return Results.BadRequest("agentName is required");
                 }
 
-                if (string.IsNullOrWhiteSpace(apikey) && string.IsNullOrWhiteSpace(apikeyId))
-                {
-                    return Results.BadRequest("apikey or apikeyId is required");
-                }
+                // Credential validation (Authorization header preferred, ?apikey= still accepted
+                // as a deprecated fallback) is performed by EndpointAuthenticationHandler and the
+                // "EndpointAuthPolicy" requirement applied below. By the time we reach this point
+                // the request is already authenticated, so we don't re-check the apikey here.
 
                 // Get tenantId from authenticated context, or manually extract from apikeyId when auth context does not support it
                 var tenantId = tenantContext.TenantId;
@@ -258,13 +257,21 @@ public static class WebhookEndpoints
 waiting synchronously for a response using the message passing infrastructure.
             
 The webhook URL format is:
-POST /api/user/webhooks/builtin?workflowName={workflowName}&webhookName={webhookName}&agentName={agentName}&apikey={apikey}
+POST /api/user/webhooks/builtin?workflowName={workflowName}&webhookName={webhookName}&agentName={agentName}
+Authorization: Bearer <api-key>
+
+Authentication (one of):
+- Authorization: Bearer <api-key>   (PREFERRED — never logged by reverse proxies / CDNs)
+- ?apikey={apikey}                   (DEPRECATED — query-string credentials leak into proxy
+                                      logs, CDN logs, browser history and Referer headers.
+                                      Logs a deprecation warning when used.)
+- ?apikeyId={apikeyId}               (DEPRECATED — same exposure as ?apikey=. Used when the
+                                      raw key is not available client-side.)
 
 Query Parameters (Required):
 - workflowName: The name of the builtin workflow to send the message to (e.g., 'IntegrationAgent' or 'My Integration Agent')
 - webhookName: The name of the webhook, used as scope for the message (can contain spaces and special characters)
 - agentName: The agent name (e.g., 'Integration Agent' or 'My Custom Agent')
-- apikey or apikeyId: API key or API key ID for authentication
 
 Query Parameters (Optional):
 - activationName: When provided, targets a specific activation instance. The activation must exist and be active (returns 404 if not found, 409 if deactivated).
@@ -298,13 +305,18 @@ This allows the workflow to control the HTTP response returned to the webhook ca
         app.MapPost("/api/user/webhooks/{workflow}/{methodName}", async (
             string workflow,
             string methodName,
-            [FromQuery] string apikey,
             HttpContext httpContext,
             [FromServices] IWebhookReceiverService webhookService,
             [FromServices] ITenantContext tenantContext) =>
         {
             try
             {
+                // Authentication is handled by EndpointAuthenticationHandler via the
+                // "EndpointAuthPolicy" requirement. It accepts the credential from either
+                // 'Authorization: Bearer <api-key>' (preferred) or '?apikey=' (deprecated,
+                // emits a warning). We don't bind the apikey here — that would force callers
+                // to keep using the query-string form.
+
                 // Get tenantId from authenticated context (set by EndpointAuthenticationHandler)
                 // This prevents IDOR vulnerabilities by ensuring the tenantId matches the authenticated API key
                 var tenantId = tenantContext.TenantId;
@@ -320,9 +332,12 @@ This allows the workflow to control the HTTP response returned to the webhook ca
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
                 var body = await reader.ReadToEndAsync();
 
-                // Extract query parameters (excluding apikey which is used for auth)
+                // Strip auth-related query parameters before forwarding to the workflow.
+                // Both 'apikey' (deprecated) and 'access_token' (deprecated) are accepted by
+                // the auth handler; neither should be visible to user workflow code.
                 var queryParams = httpContext.Request.Query
-                    .Where(q => !string.Equals(q.Key, "apikey", StringComparison.OrdinalIgnoreCase))
+                    .Where(q => !string.Equals(q.Key, "apikey", StringComparison.OrdinalIgnoreCase)
+                             && !string.Equals(q.Key, "access_token", StringComparison.OrdinalIgnoreCase))
                     .ToDictionary(q => q.Key, q => q.Value.ToString());
 
                 // Process the webhook
@@ -362,12 +377,18 @@ This allows the workflow to control the HTTP response returned to the webhook ca
         .WithDescription(@"Receives webhook calls and delivers them as Temporal Updates to the specified workflow.
             
 The webhook URL format is:
-POST /api/user/webhooks/{workflow}/{methodName}?apikey={apikey}
+POST /api/user/webhooks/{workflow}/{methodName}
+Authorization: Bearer <api-key>
 
 Where:
 - workflow: Either the WorkflowId or WorkflowType
 - methodName: The name of the Temporal Update method to call
-- apikey: A valid API key for authentication (query parameter)
+
+Authentication (one of):
+- Authorization: Bearer <api-key>   (PREFERRED — never logged by reverse proxies / CDNs)
+- ?apikey={apikey}                   (DEPRECATED — query-string credentials leak into proxy
+                                      logs, CDN logs, browser history and Referer headers.
+                                      Logs a deprecation warning when used.)
 
 The tenant is automatically determined from the authenticated API key.
 
@@ -375,8 +396,8 @@ The workflow's Update method should have the signature:
 [Update(""method-name"")]
 public async Task<string> WebhookUpdateMethod(IDictionary<string, string> queryParams, string body)
 
-Query parameters (except apikey) are passed to the Update method.
-The request body is passed as a string to the Update method.
+Query parameters (except 'apikey' and 'access_token', which are stripped server-side) are
+passed to the Update method. The request body is passed as a string to the Update method.
 The Update method should return a string response.")
         .Produces<string>(StatusCodes.Status200OK)
         .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)

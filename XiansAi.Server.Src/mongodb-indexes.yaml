@@ -321,6 +321,10 @@ documents:
     background: true
     sparse: true
 
+# secret_vault_values: secret value documents written by DatabaseSecretStoreProvider.
+# Lookup is always by _id (the SecretVault Mongo _id) which has an implicit unique index;
+# no additional indexes are needed. Listed here for documentation only.
+
 # DEPRECATED: Old nested design - kept for reference only
 # usage_events:
 #   - name: idx_tenant_date

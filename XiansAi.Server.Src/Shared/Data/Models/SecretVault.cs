@@ -18,8 +18,16 @@ public class SecretVault
     [BsonElement("key")]
     public required string Key { get; set; }
 
+    /// <summary>
+    /// Legacy field. New writes never populate this; the secret value lives in the active
+    /// <c>ISecretStoreProvider</c> (e.g. <c>secret_vault_values</c> collection or Azure Key Vault),
+    /// keyed by <see cref="Id"/>. Kept nullable so older rows still deserialize and so the
+    /// database provider can fall back to reading them during the upgrade window.
+    /// </summary>
+    [Obsolete("Use ISecretStoreProvider for value storage. Kept only for legacy read fallback.")]
     [BsonElement("encrypted_value")]
-    public required string EncryptedValue { get; set; }
+    [BsonIgnoreIfNull]
+    public string? EncryptedValue { get; set; }
 
     /// <summary>Null = secret is accessible across all tenants.</summary>
     [BsonElement("tenant_id")]
