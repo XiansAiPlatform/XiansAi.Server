@@ -37,13 +37,43 @@ public interface ILogRepository
         string? agentName,
         string? activationName,
         string? participantId,
-        string? workflowId,
+        string[]? workflowIds,
         string? workflowType,
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
         int page = 1,
         int pageSize = 20);
+
+    Task<(IEnumerable<LogStreamSummary> streams, long totalCount)> GetAdminLogStreamsAsync(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string? workflowType,
+        LogLevel[]? logLevels,
+        DateTime? startDate,
+        DateTime? endDate,
+        int page = 1,
+        int pageSize = 20);
+}
+
+/// <summary>
+/// Aggregated summary of logs for a single workflow ("stream"), used by admin log-stream queries.
+/// </summary>
+public class LogStreamSummary
+{
+    public required string WorkflowId { get; set; }
+    public string? WorkflowType { get; set; }
+    public string? WorkflowRunId { get; set; }
+    public required string Agent { get; set; }
+    public string? Activation { get; set; }
+    public string? ParticipantId { get; set; }
+    public required DateTime LastLogAt { get; set; }
+    public required DateTime FirstLogAt { get; set; }
+    public required long LogCount { get; set; }
+    public required LogLevel LastLogLevel { get; set; }
+    public required string LastLogMessage { get; set; }
 }
 
 public class LogRepository : ILogRepository
@@ -303,13 +333,14 @@ public class LogRepository : ILogRepository
     /// <summary>
     /// Gets logs with flexible filtering for admin purposes.
     /// Unlike GetFilteredLogsAsync, this method allows optional agent filtering for cross-agent queries.
+    /// Supports filtering by one or more workflow IDs (streams).
     /// </summary>
     public async Task<(IEnumerable<Log> logs, long totalCount)> GetAdminLogsAsync(
         string tenantId,
         string? agentName,
         string? activationName,
         string? participantId,
-        string? workflowId,
+        string[]? workflowIds,
         string? workflowType,
         LogLevel[]? logLevels,
         DateTime? startDate,
@@ -317,58 +348,150 @@ public class LogRepository : ILogRepository
         int page = 1,
         int pageSize = 20)
     {
-        // Start with tenant filter
-        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId);
-        
-        // Add optional filters
-        if (!string.IsNullOrEmpty(agentName))
-        {
-            filter &= Builders<Log>.Filter.Eq(x => x.Agent, agentName);
-        }
-        
-        if (!string.IsNullOrEmpty(activationName))
-        {
-            filter &= Builders<Log>.Filter.Eq(x => x.Activation, activationName);
-        }
-        
-        if (!string.IsNullOrEmpty(participantId))
-        {
-            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
-        }
-        
-        if (!string.IsNullOrEmpty(workflowId))
-        {
-            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowId, workflowId);
-        }
-        
-        if (!string.IsNullOrEmpty(workflowType))
-        {
-            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
-        }
-        
-        if (logLevels != null && logLevels.Length > 0)
-        {
-            filter &= Builders<Log>.Filter.In(x => x.Level, logLevels);
-        }
-        
-        if (startDate.HasValue)
-        {
-            filter &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startDate.Value);
-        }
-        
-        if (endDate.HasValue)
-        {
-            filter &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endDate.Value);
-        }
-        
-        // Get total count and logs
+        var filter = BuildAdminLogsFilter(
+            tenantId,
+            agentName,
+            activationName,
+            participantId,
+            workflowIds,
+            workflowType,
+            logLevels,
+            startDate,
+            endDate);
+
         var totalCount = await _logs.CountDocumentsAsync(filter);
         var logs = await _logs.Find(filter)
             .SortByDescending(x => x.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Limit(pageSize)
             .ToListAsync();
-            
+
         return (logs, totalCount);
+    }
+
+    /// <summary>
+    /// Gets a paginated list of distinct log streams (grouped by workflow_id) for a tenant,
+    /// sorted by the most recent log timestamp (descending). Each stream summarizes its latest log,
+    /// total log count and time range. Intended as the first step of a two-step admin log query:
+    /// list streams, then fetch logs filtered by selected workflow IDs.
+    /// </summary>
+    public async Task<(IEnumerable<LogStreamSummary> streams, long totalCount)> GetAdminLogStreamsAsync(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string? workflowType,
+        LogLevel[]? logLevels,
+        DateTime? startDate,
+        DateTime? endDate,
+        int page = 1,
+        int pageSize = 20)
+    {
+        var filter = BuildAdminLogsFilter(
+            tenantId,
+            agentName,
+            activationName,
+            participantId,
+            workflowIds: null,
+            workflowType,
+            logLevels,
+            startDate,
+            endDate);
+
+        // Exclude logs without a workflow_id - they cannot form a stream.
+        filter &= Builders<Log>.Filter.Ne(x => x.WorkflowId, null) &
+                  Builders<Log>.Filter.Ne(x => x.WorkflowId, string.Empty);
+
+        // Group by workflow_id, capture summary fields from the most recent log in the group.
+        var pipeline = _logs.Aggregate()
+            .Match(filter)
+            .SortByDescending(x => x.CreatedAt)
+            .Group(x => x.WorkflowId, g => new LogStreamSummary
+            {
+                WorkflowId = g.Key,
+                WorkflowType = g.First().WorkflowType,
+                WorkflowRunId = g.First().WorkflowRunId,
+                Agent = g.First().Agent,
+                Activation = g.First().Activation,
+                ParticipantId = g.First().ParticipantId,
+                LastLogAt = g.First().CreatedAt,
+                FirstLogAt = g.Last().CreatedAt,
+                LogCount = g.LongCount(),
+                LastLogLevel = g.First().Level,
+                LastLogMessage = g.First().Message
+            });
+
+        // Count distinct streams for pagination metadata before applying skip/limit.
+        var countResult = await pipeline.Count().FirstOrDefaultAsync();
+        var totalCount = countResult?.Count ?? 0L;
+
+        var streams = await pipeline
+            .SortByDescending(s => s.LastLogAt)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+
+        return (streams, totalCount);
+    }
+
+    /// <summary>
+    /// Builds the shared MongoDB filter used by admin log queries.
+    /// </summary>
+    private static FilterDefinition<Log> BuildAdminLogsFilter(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string[]? workflowIds,
+        string? workflowType,
+        LogLevel[]? logLevels,
+        DateTime? startDate,
+        DateTime? endDate)
+    {
+        var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId);
+
+        if (!string.IsNullOrEmpty(agentName))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Agent, agentName);
+        }
+
+        if (!string.IsNullOrEmpty(activationName))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.Activation, activationName);
+        }
+
+        if (!string.IsNullOrEmpty(participantId))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.ParticipantId, participantId);
+        }
+
+        if (workflowIds != null && workflowIds.Length > 0)
+        {
+            filter &= workflowIds.Length == 1
+                ? Builders<Log>.Filter.Eq(x => x.WorkflowId, workflowIds[0])
+                : Builders<Log>.Filter.In(x => x.WorkflowId, workflowIds);
+        }
+
+        if (!string.IsNullOrEmpty(workflowType))
+        {
+            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
+        }
+
+        if (logLevels != null && logLevels.Length > 0)
+        {
+            filter &= Builders<Log>.Filter.In(x => x.Level, logLevels);
+        }
+
+        if (startDate.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Gte(x => x.CreatedAt, startDate.Value);
+        }
+
+        if (endDate.HasValue)
+        {
+            filter &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endDate.Value);
+        }
+
+        return filter;
     }
 }

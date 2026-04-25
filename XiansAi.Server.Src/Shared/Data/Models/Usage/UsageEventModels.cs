@@ -466,6 +466,12 @@ public record TypeDiscoveryInfo
     public required DateTime LastSeen { get; init; }
     public required List<string> Agents { get; init; }
     public required double SampleValue { get; init; }
+
+    /// <summary>
+    /// Aggregated statistics (sum, average, min, max) computed from all matching samples.
+    /// Median/p95/p99 are intentionally not populated here to keep the discovery query cheap.
+    /// </summary>
+    public required MetricStats Stats { get; init; }
 }
 
 public record CategoriesSummary

@@ -1564,7 +1564,11 @@ public class UsageEventRepository : IUsageEventRepository
                     { "firstSeen", new BsonDocument("$min", "$created_at") },
                     { "lastSeen", new BsonDocument("$max", "$created_at") },
                     { "agents", new BsonDocument("$addToSet", "$agent_name") },
-                    { "sampleValue", new BsonDocument("$first", "$value") }
+                    { "sampleValue", new BsonDocument("$first", "$value") },
+                    { "sum", new BsonDocument("$sum", "$value") },
+                    { "avg", new BsonDocument("$avg", "$value") },
+                    { "min", new BsonDocument("$min", "$value") },
+                    { "max", new BsonDocument("$max", "$value") }
                 }),
                 new BsonDocument("$group", new BsonDocument
                 {
@@ -1577,7 +1581,11 @@ public class UsageEventRepository : IUsageEventRepository
                             { "firstSeen", "$firstSeen" },
                             { "lastSeen", "$lastSeen" },
                             { "agents", "$agents" },
-                            { "sampleValue", "$sampleValue" }
+                            { "sampleValue", "$sampleValue" },
+                            { "sum", "$sum" },
+                            { "avg", "$avg" },
+                            { "min", "$min" },
+                            { "max", "$max" }
                         })
                     },
                     { "totalRecords", new BsonDocument("$sum", "$sampleCount") }
@@ -1844,15 +1852,22 @@ public class UsageEventRepository : IUsageEventRepository
         var types = doc["types"].AsBsonArray.Select(t =>
         {
             var typeDoc = t.AsBsonDocument;
+            var sampleCount = typeDoc["sampleCount"].ToInt64();
+            var units = typeDoc["units"].AsBsonArray
+                .Where(u => !u.IsBsonNull)
+                .Select(u => u.AsString)
+                .ToList();
+
             return new TypeDiscoveryInfo
             {
                 Type = typeDoc["type"].AsString,
-                SampleCount = typeDoc["sampleCount"].ToInt64(),
-                Units = typeDoc["units"].AsBsonArray.Select(u => u.AsString).ToList(),
+                SampleCount = sampleCount,
+                Units = units,
                 FirstSeen = typeDoc["firstSeen"].ToUniversalTime(),
                 LastSeen = typeDoc["lastSeen"].ToUniversalTime(),
                 Agents = typeDoc["agents"].AsBsonArray.Where(a => !a.IsBsonNull).Select(a => a.AsString).ToList(),
-                SampleValue = typeDoc["sampleValue"].ToDouble()
+                SampleValue = typeDoc["sampleValue"].ToDouble(),
+                Stats = BuildTypeStats(typeDoc, sampleCount, units)
             };
         }).ToList();
 
@@ -1863,6 +1878,38 @@ public class UsageEventRepository : IUsageEventRepository
             TotalMetrics = types.Count,
             TotalRecords = doc["totalRecords"].ToInt64()
         };
+    }
+
+    private static MetricStats BuildTypeStats(BsonDocument typeDoc, long sampleCount, List<string> units)
+    {
+        // Pick a representative unit; "count" is a sensible default when none is recorded.
+        var unit = units.FirstOrDefault() ?? "count";
+
+        return new MetricStats
+        {
+            Count = sampleCount,
+            Sum = SafeReadDouble(typeDoc, "sum"),
+            Average = SafeReadDouble(typeDoc, "avg"),
+            Min = SafeReadDouble(typeDoc, "min"),
+            Max = SafeReadDouble(typeDoc, "max"),
+            // Median/p95/p99 require the full value distribution; intentionally omitted
+            // here to keep the discovery aggregation cheap. Callers that need percentiles
+            // should use the dedicated stats/timeseries endpoints.
+            Median = null,
+            P95 = null,
+            P99 = null,
+            Unit = unit
+        };
+    }
+
+    private static double SafeReadDouble(BsonDocument doc, string field)
+    {
+        if (!doc.Contains(field) || doc[field].IsBsonNull)
+        {
+            return 0d;
+        }
+
+        return doc[field].ToDouble();
     }
 
     private static CategoriesSummary CalculateCategoriesSummary(List<CategoryDiscoveryInfo> categories, AdminMetricsCategoriesRequest request)
