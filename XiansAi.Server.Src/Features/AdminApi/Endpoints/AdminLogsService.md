@@ -18,7 +18,8 @@ The Admin Logs Service provides query access to workflow execution logs for admi
 - `agentName` (optional): Filter by agent name (exact match, query parameter)
 - `activationName` (optional): Filter by activation name (query parameter)
 - `participantId` (optional): Filter by participant user ID (query parameter)
-- `workflowId` (optional): Filter by specific workflow ID (query parameter)
+- `workflowId` (optional): Filter by a single workflow ID (query parameter)
+- `workflowIds` (optional): Filter by multiple workflow IDs / streams as a comma-separated list. Combined with `workflowId` if both are supplied. Typical follow-up to `/logs/streams`.
 - `workflowType` (optional): Filter by workflow type (query parameter)
 - `logLevel` (optional): Filter by log level (Error, Warning, Information, Debug, Trace, query parameter)
 - `startDate` (optional): Start of date range for log filtering (ISO 8601 format, query parameter)
@@ -96,6 +97,49 @@ GET /api/v1/admin/tenants/default/logs?participantId=user@example.com
 
 # Combine multiple filters
 GET /api/v1/admin/tenants/default/logs?agentName=Order%20Manager%20Agent&logLevel=Error&startDate=2025-01-20T00:00:00Z&pageSize=50
+
+# Two-step query: first list the most recent log streams (one per workflow_id)...
+GET /api/v1/admin/tenants/default/logs/streams?pageSize=20&page=1
+
+# ...then fetch logs for the streams of interest using workflowIds (comma-separated).
+GET /api/v1/admin/tenants/default/logs?workflowIds=default:Agent:Workflow:uuid1,default:Agent:Workflow:uuid2&pageSize=100
+```
+
+#### GET /api/v1/admin/tenants/{tenantId}/logs/streams
+
+**Status:** ✅ Implemented
+
+Lists distinct log streams (a stream = a unique `workflow_id`) for a tenant, sorted by most recent log activity. Use this as the first step of a two-step query: discover available streams, then call `/logs?workflowIds=...` to fetch logs filtered to the streams of interest.
+
+**Parameters:**
+
+- `tenantId` (required): Tenant identifier (path parameter)
+- `agentName`, `activationName`, `participantId`, `workflowType`, `logLevel`, `startDate`, `endDate`, `pageSize`, `page` (all optional): Same semantics as `/logs`. Filters are applied to the underlying logs *before* grouping into streams.
+
+**Response:**
+
+```json
+{
+  "streams": [
+    {
+      "workflowId": "default:Order Manager Agent:Task Workflow:uuid",
+      "workflowType": "Order Manager Agent:Task Workflow",
+      "workflowRunId": "run-uuid",
+      "agent": "Order Manager Agent",
+      "activation": "Order Manager Agent - Remote Peafowl",
+      "participantId": "user@example.com",
+      "lastLogAt": "2025-01-25T10:30:00Z",
+      "firstLogAt": "2025-01-25T10:00:00Z",
+      "logCount": 42,
+      "lastLogLevel": "Information",
+      "lastLogMessage": "Task processing completed"
+    }
+  ],
+  "totalCount": 35,
+  "page": 1,
+  "pageSize": 20,
+  "totalPages": 2
+}
 ```
 
 ### Implementation Details

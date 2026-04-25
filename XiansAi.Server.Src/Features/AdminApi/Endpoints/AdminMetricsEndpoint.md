@@ -369,7 +369,18 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
           "firstSeen": "2025-12-01T08:23:45Z",
           "lastSeen": "2026-01-31T18:45:12Z",
           "agents": ["CustomerSupportAgent", "SalesAgent"],
-          "sampleValue": 234567.0
+          "sampleValue": 234567.0,
+          "stats": {
+            "count": 1234,
+            "sum": 234567.0,
+            "average": 190.1,
+            "min": 45.0,
+            "max": 2500.0,
+            "median": null,
+            "p95": null,
+            "p99": null,
+            "unit": "tokens"
+          }
         },
         {
           "type": "completion_tokens",
@@ -378,7 +389,18 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
           "firstSeen": "2025-12-01T08:23:45Z",
           "lastSeen": "2026-01-31T18:45:12Z",
           "agents": ["CustomerSupportAgent", "SalesAgent"],
-          "sampleValue": 222222.0
+          "sampleValue": 222222.0,
+          "stats": {
+            "count": 1234,
+            "sum": 222222.0,
+            "average": 180.1,
+            "min": 30.0,
+            "max": 1800.0,
+            "median": null,
+            "p95": null,
+            "p99": null,
+            "unit": "tokens"
+          }
         },
         {
           "type": "total_tokens",
@@ -387,45 +409,22 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
           "firstSeen": "2025-12-01T08:23:45Z",
           "lastSeen": "2026-01-31T18:45:12Z",
           "agents": ["CustomerSupportAgent", "SalesAgent"],
-          "sampleValue": 456789.0
+          "sampleValue": 456789.0,
+          "stats": {
+            "count": 1234,
+            "sum": 456789.0,
+            "average": 370.2,
+            "min": 75.0,
+            "max": 4300.0,
+            "median": null,
+            "p95": null,
+            "p99": null,
+            "unit": "tokens"
+          }
         }
       ],
       "totalMetrics": 3,
       "totalRecords": 3702
-    },
-    {
-      "category": "performance",
-      "types": [
-        {
-          "type": "response_time",
-          "sampleCount": 1234,
-          "units": ["ms"],
-          "firstSeen": "2025-12-01T08:23:45Z",
-          "lastSeen": "2026-01-31T18:45:12Z",
-          "agents": ["CustomerSupportAgent", "SalesAgent"],
-          "sampleValue": 1245.5
-        },
-        {
-          "type": "processing_time",
-          "sampleCount": 1234,
-          "units": ["ms"],
-          "firstSeen": "2025-12-15T10:00:00Z",
-          "lastSeen": "2026-01-31T18:45:12Z",
-          "agents": ["CustomerSupportAgent"],
-          "sampleValue": 721.6
-        },
-        {
-          "type": "queue_time",
-          "sampleCount": 890,
-          "units": ["ms"],
-          "firstSeen": "2026-01-01T00:00:00Z",
-          "lastSeen": "2026-01-31T18:45:12Z",
-          "agents": ["CustomerSupportAgent"],
-          "sampleValue": 45.2
-        }
-      ],
-      "totalMetrics": 3,
-      "totalRecords": 3358
     },
     {
       "category": "cost",
@@ -437,23 +436,18 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
           "firstSeen": "2025-12-15T00:00:00Z",
           "lastSeen": "2026-01-31T18:45:12Z",
           "agents": ["CustomerSupportAgent", "SalesAgent"],
-          "sampleValue": 12.34
-        }
-      ],
-      "totalMetrics": 1,
-      "totalRecords": 1234
-    },
-    {
-      "category": "quality",
-      "types": [
-        {
-          "type": "success_rate",
-          "sampleCount": 1234,
-          "units": ["percentage", "%"],
-          "firstSeen": "2026-01-01T00:00:00Z",
-          "lastSeen": "2026-01-31T18:45:12Z",
-          "agents": ["CustomerSupportAgent"],
-          "sampleValue": 98.5
+          "sampleValue": 12.34,
+          "stats": {
+            "count": 1234,
+            "sum": 1523.45,
+            "average": 1.234,
+            "min": 0.001,
+            "max": 0.15,
+            "median": null,
+            "p95": null,
+            "p99": null,
+            "unit": "usd"
+          }
         }
       ],
       "totalMetrics": 1,
@@ -461,9 +455,9 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
     }
   ],
   "summary": {
-    "totalCategories": 4,
-    "totalTypes": 8,
-    "totalRecords": 9528,
+    "totalCategories": 2,
+    "totalTypes": 4,
+    "totalRecords": 4936,
     "availableAgents": ["CustomerSupportAgent", "SalesAgent"],
     "dateRange": {
       "earliest": "2025-12-01T08:23:45Z",
@@ -472,6 +466,12 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
   }
 }
 ```
+
+**Notes on `stats`:**
+
+- `count`, `sum`, `average`, `min`, `max` are computed server-side via the MongoDB aggregation pipeline, so they reflect the full filtered result set (not just a sample).
+- `median`, `p95`, `p99` are intentionally `null` on this endpoint to keep discovery queries cheap. Use `/metrics/stats` or `/metrics/timeseries` when percentiles are required.
+- `unit` is the first unit observed for the type. If you mix units for the same `category`/`type`, inspect the `units` array on the parent type entry.
 
 **Use Cases:**
 
@@ -846,7 +846,7 @@ For each dataPoint, create breakdown by activation:
     }
   },
   
-  // Step 2: Group by category and type
+  // Step 2: Group by category and type (with basic stats per type)
   {
     $group: {
       _id: {
@@ -858,7 +858,11 @@ For each dataPoint, create breakdown by activation:
       firstSeen: { $min: "$created_at" },
       lastSeen: { $max: "$created_at" },
       agents: { $addToSet: "$agent_name" },
-      sampleValue: { $first: "$value" }
+      sampleValue: { $first: "$value" },
+      sum: { $sum: "$value" },
+      avg: { $avg: "$value" },
+      min: { $min: "$value" },
+      max: { $max: "$value" }
     }
   },
   
@@ -874,7 +878,11 @@ For each dataPoint, create breakdown by activation:
           firstSeen: "$firstSeen",
           lastSeen: "$lastSeen",
           agents: "$agents",
-          sampleValue: "$sampleValue"
+          sampleValue: "$sampleValue",
+          sum: "$sum",
+          avg: "$avg",
+          min: "$min",
+          max: "$max"
         }
       },
       totalRecords: { $sum: "$sampleCount" }
