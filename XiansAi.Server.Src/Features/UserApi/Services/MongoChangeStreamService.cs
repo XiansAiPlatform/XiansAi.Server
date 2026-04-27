@@ -14,6 +14,11 @@ namespace Features.UserApi.Services
 {
     public class MongoChangeStreamService : BackgroundService
     {
+        // Skip the ListCollectionNames + CreateCollection roundtrip on reconnects after the
+        // first successful WatchAsync. The collection is created once at app startup and
+        // never dropped; re-checking on every transient-error reconnect adds unnecessary I/O.
+        private static volatile bool _collectionEnsured = false;
+
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IHubContext<TenantChatHub> _tenantHubContext;
         private readonly IServiceScopeFactory _scopeFactory;
@@ -67,19 +72,25 @@ namespace Features.UserApi.Services
                     var collectionName = "conversation_message";
                     var collection = database.GetCollection<ConversationMessage>(collectionName);
 
-                    // Ensure collection exists with retry logic
-                    var exists = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+                    // Ensure collection exists — only on first iteration; subsequent reconnects skip this
+                    // to avoid a ListCollectionNames round-trip on every transient-error recovery.
+                    if (!_collectionEnsured)
                     {
-                        var collections = await database.ListCollectionNamesAsync(cancellationToken: stoppingToken);
-                        return await collections.ToListAsync(stoppingToken);
-                    }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "ListCollectionNames");
-
-                    if (!exists.Contains(collectionName))
-                    {
-                        await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+                        var exists = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
                         {
-                            await database.CreateCollectionAsync(collectionName, cancellationToken: stoppingToken);
-                        }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "CreateCollection");
+                            var collections = await database.ListCollectionNamesAsync(cancellationToken: stoppingToken);
+                            return await collections.ToListAsync(stoppingToken);
+                        }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "ListCollectionNames");
+
+                        if (!exists.Contains(collectionName))
+                        {
+                            await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+                            {
+                                await database.CreateCollectionAsync(collectionName, cancellationToken: stoppingToken);
+                            }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "CreateCollection");
+                        }
+
+                        _collectionEnsured = true;
                     }
 
                     var pipeline = new EmptyPipelineDefinition<ChangeStreamDocument<ConversationMessage>>()
