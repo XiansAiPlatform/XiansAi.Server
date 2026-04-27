@@ -31,7 +31,11 @@ public interface IActivationValidationService
 public class ActivationValidationService : IActivationValidationService
 {
     private const string CacheKeyPrefix = "activation:validation:";
+    private const string WorkflowTypeCacheKeyPrefix = "activation:workflow-type:";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(2);
+    // Flow definitions are rarely changed at runtime — cache for 5 minutes to reduce DB load
+    // on every adminapi /send, /listen, /history, /topics call.
+    private static readonly TimeSpan WorkflowTypeCacheDuration = TimeSpan.FromMinutes(5);
 
     private readonly IActivationRepository _activationRepository;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
@@ -71,10 +75,18 @@ public class ActivationValidationService : IActivationValidationService
         if (!result.IsSuccess)
             return result;
 
-        // Optionally validate that the agent has the requested workflow type registered
+        // Optionally validate that the agent has the requested workflow type registered.
+        // Result is cached separately so repeated calls to /send, /listen, /history, /topics
+        // with the same (tenant, agent, workflowType) do not re-query the flow_definition
+        // collection on every request.
         if (!string.IsNullOrWhiteSpace(workflowType))
         {
-            var workflowCheck = await ValidateWorkflowTypeForAgentAsync(tenantId, agentName, workflowType.Trim());
+            var workflowTypeCacheKey = BuildWorkflowTypeCacheKey(tenantId, agentName, workflowType.Trim());
+            var workflowCheck = await _cache.GetOrAddAsync(
+                workflowTypeCacheKey,
+                _ => ValidateWorkflowTypeForAgentAsync(tenantId, agentName, workflowType.Trim()),
+                WorkflowTypeCacheDuration,
+                size: 1);
             if (!workflowCheck.IsSuccess)
                 return workflowCheck;
         }
@@ -89,6 +101,9 @@ public class ActivationValidationService : IActivationValidationService
 
     private static string BuildCacheKey(string tenantId, string agentName, string activationName)
         => $"{CacheKeyPrefix}{tenantId}\x01{agentName}\x01{activationName}";
+
+    private static string BuildWorkflowTypeCacheKey(string tenantId, string agentName, string workflowType)
+        => $"{WorkflowTypeCacheKeyPrefix}{tenantId}\x01{agentName}\x01{workflowType}";
 
     private async Task<ServiceResult> ValidateWorkflowTypeForAgentAsync(string tenantId, string agentName, string workflowType)
     {
