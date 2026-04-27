@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
@@ -38,7 +38,7 @@ namespace Features.UserApi.Services
             _tenantHubContext = tenantHubContext;
             _messageEventPublisher = messageEventPublisher ?? throw new ArgumentNullException(nameof(messageEventPublisher));
             _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
-            
+
             // Get the unique secret for conversation messages
             _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:ConversationMessageKey"] ?? string.Empty;
             if (string.IsNullOrWhiteSpace(_uniqueSecret))
@@ -73,7 +73,7 @@ namespace Features.UserApi.Services
                         var collections = await database.ListCollectionNamesAsync(cancellationToken: stoppingToken);
                         return await collections.ToListAsync(stoppingToken);
                     }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "ListCollectionNames");
-                    
+
                     if (!exists.Contains(collectionName))
                     {
                         await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
@@ -102,11 +102,11 @@ namespace Features.UserApi.Services
                     // Wrap WatchAsync with retry logic to handle initial connection failures
                     using var cursor = await MongoRetryHelper.ExecuteWithRetryAsync(
                         async () => await collection.WatchAsync(pipeline, options, cancellationToken: stoppingToken),
-                        _logger, 
-                        maxRetries: 5, 
-                        baseDelayMs: 2000, 
+                        _logger,
+                        maxRetries: 5,
+                        baseDelayMs: 2000,
                         operationName: "WatchChangeStream");
-                    
+
                     // Iterate using MoveNextAsync and Current
                     while (await cursor.MoveNextAsync(stoppingToken))
                     {
@@ -115,7 +115,7 @@ namespace Features.UserApi.Services
                         var changeBatch = cursor.Current;
                         if (changeBatch == null) continue;
 
-                        foreach(var changeDoc in changeBatch) 
+                        foreach(var changeDoc in changeBatch)
                         {
                             if (stoppingToken.IsCancellationRequested) break;
 
@@ -124,7 +124,7 @@ namespace Features.UserApi.Services
 
                             // Convert BSON metadata to native .NET objects before sending via SignalR
                             ConvertBsonMetadataToObjectInternal(message);
-                            
+
                             // Decrypt the message text
                             DecryptMessageText(message);
 
@@ -136,7 +136,7 @@ namespace Features.UserApi.Services
                             {
                                 try
                                 {
-                                    _logger.LogDebug("Completing pending request {RequestId} with outgoing message {MessageId}", 
+                                    _logger.LogDebug("Completing pending request {RequestId} with outgoing message {MessageId}",
                                         message.RequestId, message.Id);
                                     pendingRequestService.CompleteRequest(message.RequestId, message, message.MessageType);
                                 }
@@ -149,44 +149,52 @@ namespace Features.UserApi.Services
                             // Existing SignalR broadcasting logic (updated for proper handoff routing)
                             if (message.Direction == MessageDirection.Outgoing || message.MessageType == MessageType.Handoff)
                             {
-                                // Route messages based on their type first, then content
+                                // perf: send all SignalR notifications for the same message concurrently
+                                // instead of awaiting each one sequentially. The sends are independent
+                                // (different clients/groups/methods) so no ordering constraint applies.
                                 if (message.MessageType == MessageType.Handoff)
                                 {
                                     // Handoff messages get their own dedicated event
                                     _logger.LogDebug("Sending handoff message to group {GroupId}: {Message}",
                                         groupId, JsonSerializer.Serialize(message));
-                                    await _hubContext.Clients.Group(groupId)
-                                        .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken);
-                                    await _tenantHubContext.Clients.Group(tenantGroupId)
-                                        .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken);
+                                    await Task.WhenAll(
+                                        _hubContext.Clients.Group(groupId)
+                                            .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken),
+                                        _tenantHubContext.Clients.Group(tenantGroupId)
+                                            .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken)
+                                    );
                                 }
                                 else if (message.MessageType == MessageType.Data)
                                 {
                                     // Data/Metadata messages (no text content)
                                     _logger.LogDebug("Sending metadata to group {GroupId}: {Message}",
                                         groupId, JsonSerializer.Serialize(message));
-                                    await _hubContext.Clients.Group(groupId)
+                                    await Task.WhenAll(
                                         // TODO: Remove the backward compatibility ReceiveMetadata later
-                                        .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken);
-                                    await _hubContext.Clients.Group(groupId)
+                                        _hubContext.Clients.Group(groupId)
+                                            .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken),
                                         // New method names
-                                        .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
-                                    await _tenantHubContext.Clients.Group(tenantGroupId)
-                                        .SendAsync("ReceiveData", message, cancellationToken: stoppingToken);
+                                        _hubContext.Clients.Group(groupId)
+                                            .SendAsync("ReceiveData", message, cancellationToken: stoppingToken),
+                                        _tenantHubContext.Clients.Group(tenantGroupId)
+                                            .SendAsync("ReceiveData", message, cancellationToken: stoppingToken)
+                                    );
                                 }
                                 else
                                 {
                                     // Chat messages (with text content)
                                     _logger.LogDebug("Sending message to group {GroupId}: {Message}",
                                         groupId, JsonSerializer.Serialize(message));
-                                    // TODO: Remove the backward compatibility ReceiveMessage later
-                                    await _hubContext.Clients.Group(groupId)
-                                        .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken);
-                                    // New method names
-                                    await _hubContext.Clients.Group(groupId)
-                                        .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken);
-                                    await _tenantHubContext.Clients.Group(tenantGroupId)
-                                        .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken);
+                                    await Task.WhenAll(
+                                        // TODO: Remove the backward compatibility ReceiveMessage later
+                                        _hubContext.Clients.Group(groupId)
+                                            .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken),
+                                        // New method names
+                                        _hubContext.Clients.Group(groupId)
+                                            .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken),
+                                        _tenantHubContext.Clients.Group(tenantGroupId)
+                                            .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken)
+                                    );
                                 }
 
                                 // Publish to SSE subscribers
@@ -213,7 +221,7 @@ namespace Features.UserApi.Services
                 catch (OperationCanceledException)
                 {
                     _logger.LogInformation("MongoChangeStreamService is stopping.");
-                    break; 
+                    break;
                 }
                 catch (MongoException ex) when (ex.HasErrorLabel("TransientTransactionError") || ex is MongoConnectionException || ex is MongoNotPrimaryException || ex is MongoNodeIsRecoveringException)
                 {
