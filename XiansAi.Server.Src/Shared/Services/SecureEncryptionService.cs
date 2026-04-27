@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -22,6 +23,11 @@ public class SecureEncryptionService : ISecureEncryptionService
     private const int TagSize = 16;
     private const int KdfIterations = 200_000;
 
+    // Cache derived keys to avoid repeating 200,000-iteration PBKDF2 on every encrypt/decrypt call.
+    // The derived key is deterministic for a given (baseSecret, uniqueSecret) pair and never changes
+    // during the process lifetime. Key: (baseSecret, uniqueSecret), Value: 32-byte AES-256 key.
+    private static readonly ConcurrentDictionary<(string, string), byte[]> _derivedKeyCache = new();
+
     public SecureEncryptionService(ILogger<SecureEncryptionService> logger, IConfiguration configuration)
     {
         _logger = logger;
@@ -41,7 +47,7 @@ public class SecureEncryptionService : ISecureEncryptionService
             throw new ArgumentException("uniqueSecret must be provided", nameof(uniqueSecret));
         }
 
-        var key = DeriveKey(_baseSecret, uniqueSecret);
+        var key = GetOrDeriveKey(_baseSecret, uniqueSecret);
         var plainBytes = Encoding.UTF8.GetBytes(plaintext);
         var nonce = RandomNumberGenerator.GetBytes(NonceSize);
         var tag = new byte[TagSize];
@@ -63,7 +69,7 @@ public class SecureEncryptionService : ISecureEncryptionService
             throw new ArgumentException("uniqueSecret must be provided", nameof(uniqueSecret));
         }
 
-        var key = DeriveKey(_baseSecret, uniqueSecret);
+        var key = GetOrDeriveKey(_baseSecret, uniqueSecret);
         var payload = Convert.FromBase64String(ciphertext);
         var nonce = new byte[NonceSize];
         var tag = new byte[TagSize];
@@ -77,10 +83,24 @@ public class SecureEncryptionService : ISecureEncryptionService
         return Encoding.UTF8.GetString(plain);
     }
 
+    /// <summary>
+    /// Returns a cached AES-256 key derived from baseSecret + uniqueSecret.
+    /// The derivation (200,000-iteration PBKDF2-SHA256) is performed at most once per
+    /// unique (baseSecret, uniqueSecret) pair for the process lifetime, eliminating
+    /// repeated CPU-intensive KDF work on the hot encryption/decryption path.
+    /// </summary>
+    private static byte[] GetOrDeriveKey(string baseSecret, string uniqueSecret)
+    {
+        return _derivedKeyCache.GetOrAdd((baseSecret, uniqueSecret), static key =>
+        {
+            var (baseSecret, uniqueSecret) = key;
+            return DeriveKey(baseSecret, uniqueSecret);
+        });
+    }
+
     private static byte[] DeriveKey(string baseSecret, string uniqueSecret)
     {
         var salt = SHA256.HashData(Encoding.UTF8.GetBytes(uniqueSecret));
         return Rfc2898DeriveBytes.Pbkdf2(baseSecret, salt, KdfIterations, HashAlgorithmName.SHA256, 32);
     }
 }
-
