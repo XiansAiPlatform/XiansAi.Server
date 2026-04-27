@@ -233,6 +233,12 @@ public interface IConversationRepository
     // Origin operations (scope filters by topic - only consider messages in same topic when auto-routing replies)
     Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId, string? scope = null);
     Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId, string? scope = null);
+    /// <summary>
+    /// Gets both the origin and data from the most recent incoming message in a single DB query.
+    /// Use this instead of calling GetLastIncomingOriginAsync + GetLastIncomingDataAsync separately
+    /// to halve the number of MongoDB round-trips on the outgoing message path.
+    /// </summary>
+    Task<(string? Origin, object? Data)> GetLastIncomingOriginAndDataAsync(string threadId, string tenantId, string? scope = null);
 
     // Statistics operations
     Task<(int totalMessages, int activeUsers)> GetMessagingStatsAsync(string tenantId, DateTime startDate, DateTime endDate, string? participantId = null);
@@ -916,7 +922,50 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingData");
     }
 
-    /// <summary>
+    public async Task<(string? Origin, object? Data)> GetLastIncomingOriginAndDataAsync(string threadId, string tenantId, string? scope = null)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+            // Accept messages that have either an origin or data (inclusive — the caller decides which fields to use)
+            var filterConditions = new List<FilterDefinition<ConversationMessage>>
+            {
+                filterBuilder.Eq(x => x.ThreadId, threadId),
+                filterBuilder.Eq(x => x.TenantId, tenantId),
+                filterBuilder.Eq(x => x.Direction, MessageDirection.Incoming)
+            };
+
+            AddScopeFilter(filterBuilder, filterConditions, scope);
+            var filter = filterBuilder.And(filterConditions);
+
+            // Project both origin and data in a single round-trip
+            var projection = Builders<ConversationMessage>.Projection
+                .Include(x => x.Origin)
+                .Include(x => x.Data);
+
+            var message = await _messagesCollection
+                .Find(filter)
+                .Project<ConversationMessage>(projection)
+                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                .Limit(1)
+                .FirstOrDefaultAsync();
+
+            var origin = string.IsNullOrEmpty(message?.Origin) ? null : message.Origin;
+            object? data = null;
+            if (message?.Data != null)
+            {
+                ConvertBsonDataToObject(message);
+                data = message.Data;
+            }
+
+            _logger.LogDebug("Last incoming origin+data for thread {ThreadId} scope {Scope}: origin={Origin}, hasData={HasData}",
+                threadId, scope ?? "null", origin ?? "none", data != null ? "yes" : "no");
+
+            return (origin, data);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingOriginAndData");
+    }
+
+        /// <summary>
     /// Adds scope filter to match messages in the same topic.
     /// - When scope is null or whitespace: restricts to messages where Scope is null or "" (default topic).
     /// - When scope has a value: restricts to messages with that exact scope.
