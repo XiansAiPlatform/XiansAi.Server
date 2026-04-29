@@ -199,7 +199,9 @@ namespace Features.UserApi.Websocket
                 await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
                 return;
             }
-            await GetScopedThreadHistory(workflow, participantId, page, pageSize, null);
+            // Normalize participant ID to lowercase for consistency with stored data
+            var resolvedParticipantId = participantId.ToLowerInvariant();
+            await GetScopedThreadHistory(workflow, resolvedParticipantId, page, pageSize, null);
         }
 
         public async Task GetScopedThreadHistory(string workflow, string participantId, int page, int pageSize, string? scope)
@@ -254,6 +256,9 @@ namespace Features.UserApi.Websocket
                     return;
                 }
 
+                // Normalize participant ID to lowercase for consistency with stored data
+                var resolvedParticipantId = participantId.ToLowerInvariant();
+
                 string workflowId = workflow;
                 if(!workflow.StartsWith(tenantContext.TenantId + ":")) {
                     // this is workflowType, convert to workflowId
@@ -261,7 +266,7 @@ namespace Features.UserApi.Websocket
                 }
 
                 var messageService = GetScopedMessageService();
-                var result = await messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, scope);
+                var result = await messageService.GetThreadHistoryAsync(workflowId, resolvedParticipantId, page, pageSize, scope);
                 await Clients.Caller.SendAsync(SignalRMethods.ThreadHistory, result.Data, cancellationToken);
             }
             catch (OperationCanceledException)
