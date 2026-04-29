@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using OpenTelemetry.Trace;
 using Shared.Auth;
@@ -70,6 +71,10 @@ public class WorkflowSignalService : IWorkflowSignalService
 {
     private static readonly ActivitySource ActivitySource = new("XiansAi.Server.Temporal");
 
+    // perf: cache IsSystemAgent results — agent system-scope never changes at runtime,
+    // so a process-lifetime ConcurrentDictionary avoids a MongoDB round-trip on every signal.
+    private static readonly ConcurrentDictionary<string, bool> _systemAgentCache = new(StringComparer.Ordinal);
+
     private readonly IAgentService _agentService;
     private readonly ITemporalClientFactory _clientFactory;
     private readonly ILogger<WorkflowSignalService> _logger;
@@ -128,34 +133,36 @@ public class WorkflowSignalService : IWorkflowSignalService
 
             activity?.SetTag("temporal.namespace", client.Options.Namespace);
 
-            var systemScoped = (await _agentService.IsSystemAgent(request.SourceAgent)).Data;
+            // perf: serve IsSystemAgent from the process-lifetime cache to avoid a MongoDB
+            // round-trip on every incoming conversation message signal.
+            var systemScoped = await GetSystemScopedCachedAsync(request.SourceAgent);
 
             var options = new NewWorkflowOptions(
-                request.SourceAgent, 
+                request.SourceAgent,
                 systemScoped,
-                request.TargetWorkflowType, 
-                request.TargetWorkflowId, 
+                request.TargetWorkflowType,
+                request.TargetWorkflowId,
                 _tenantContext,
                 string.IsNullOrWhiteSpace(request.ParticipantId) ? null : request.ParticipantId);
-       
+
             var signalPayload = new object[] { request };
 
             if (request.SignalName == null) throw new Exception("SignalName is required");
 
             options.SignalWithStart(request.SignalName, signalPayload);
 
-            _logger.LogInformation("Starting/invoking workflow `{WorkflowId}` with signal `{SignalName}`", 
+            _logger.LogInformation("Starting/invoking workflow `{WorkflowId}` with signal `{SignalName}`",
                 request.TargetWorkflowId, request.SignalName);
 
             await client.StartWorkflowAsync(request.TargetWorkflowType, new List<object>().AsReadOnly(), options);
 
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            _logger.LogInformation("Successfully invoked workflow type {WorkflowType} with signal {SignalName}", 
+            _logger.LogInformation("Successfully invoked workflow type {WorkflowType} with signal {SignalName}",
                 request.TargetWorkflowType, request.SignalName);
-            
-            return Results.Ok(new { 
-                message = "Signal with start sent successfully", 
+
+            return Results.Ok(new {
+                message = "Signal with start sent successfully",
                 workflowId = request.TargetWorkflowId,
                 signalName = request.SignalName
             });
@@ -174,10 +181,22 @@ public class WorkflowSignalService : IWorkflowSignalService
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddException(ex);
-            _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowType}", 
+            _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowType}",
                 request.SignalName, request.TargetWorkflowType);
-                
+
             throw;
         }
+    }
+
+    private async Task<bool> GetSystemScopedCachedAsync(string agentName)
+    {
+        if (_systemAgentCache.TryGetValue(agentName, out var cached))
+        {
+            return cached;
+        }
+
+        var result = (await _agentService.IsSystemAgent(agentName)).Data;
+        _systemAgentCache[agentName] = result;
+        return result;
     }
 }

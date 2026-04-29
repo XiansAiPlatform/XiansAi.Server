@@ -169,7 +169,11 @@ namespace Features.AgentApi.Endpoints
                 [FromQuery] int timeoutSeconds = 60,
                 [FromQuery] string? requestId = null) =>
             {
-                logger.LogInformation("Converse endpoint called with request: {Request}", JsonSerializer.Serialize(chatOrDataRequest));
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("Converse endpoint called for workflow {WorkflowId}, participant {ParticipantId}, type {Type}",
+                        chatOrDataRequest.WorkflowId, chatOrDataRequest.ParticipantId, type);
+                }
                 var workflow = chatOrDataRequest.WorkflowId;
                 if (string.IsNullOrEmpty(workflow))
                 {

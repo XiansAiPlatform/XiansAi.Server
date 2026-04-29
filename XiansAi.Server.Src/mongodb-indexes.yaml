@@ -84,6 +84,17 @@ conversation_message:
       thread_id: asc
       created_at: desc
     background: true
+  # perf: compound index for chatOnly=true queries (agent thread-history fetch default).
+  # Previously the query matched on (tenant_id, thread_id) then post-filtered on
+  # message_type in memory. Adding message_type to the index lets MongoDB apply the
+  # equality predicate during the index scan, eliminating the post-filter step.
+  - name: thread_chat_message_lookup
+    keys:
+      tenant_id: asc
+      thread_id: asc
+      message_type: asc
+      created_at: desc
+    background: true
   - name: bot_scope_lookup
     keys:
       tenant_id: asc
@@ -100,6 +111,15 @@ conversation_message:
       scope: asc
       created_at: desc
     background: true
+  # perf: compound index for request_id lookups used by PendingRequestService / change stream
+  # to correlate outgoing messages back to their originating sync request.
+  - name: outgoing_request_id_lookup
+    keys:
+      tenant_id: asc
+      request_id: asc
+      direction: asc
+    background: true
+    sparse: true
   - name: tenant_lookup
     keys:
       tenant_id: asc
@@ -399,7 +419,6 @@ usage_metrics:
       agent_name: asc
       activation_name: asc
       created_at: asc
-    background: true
     background: true
   - name: idx_tenant_participant_category_date
     keys:

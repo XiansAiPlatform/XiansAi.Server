@@ -271,21 +271,19 @@ public class MessageService : IMessageService
 
             // Auto-populate origin and platform metadata from last incoming message in the SAME topic if not provided.
             // Scope filtering ensures web replies don't get routed to Slack/Teams when the last message in thread was from another topic.
-            if (string.IsNullOrEmpty(request.Origin))
+            // Use a single merged query to fetch both origin and data in one MongoDB round-trip.
+            if (string.IsNullOrEmpty(request.Origin) || request.Data == null)
             {
-                var lastOrigin = await _conversationRepository.GetLastIncomingOriginAsync(threadId, _tenantContext.TenantId, replyScope);
-                if (!string.IsNullOrEmpty(lastOrigin))
+                var (lastOrigin, lastData) = await _conversationRepository.GetLastIncomingOriginAndDataAsync(threadId, _tenantContext.TenantId, replyScope);
+
+                if (string.IsNullOrEmpty(request.Origin) && !string.IsNullOrEmpty(lastOrigin))
                 {
                     request.Origin = lastOrigin;
                     _logger.LogInformation("Auto-populated origin from last incoming message in scope {Scope}: {Origin}", replyScope ?? "default", lastOrigin);
                 }
-            }
 
-            // Auto-populate platform-specific metadata (e.g., Slack channel, Teams conversation) if not provided
-            if (request.Data == null && !string.IsNullOrEmpty(request.Origin) && request.Origin.StartsWith("app:"))
-            {
-                var lastData = await _conversationRepository.GetLastIncomingDataAsync(threadId, _tenantContext.TenantId, replyScope);
-                if (lastData != null)
+                // Auto-populate platform-specific metadata (e.g., Slack channel, Teams conversation) if not provided
+                if (request.Data == null && !string.IsNullOrEmpty(request.Origin) && request.Origin.StartsWith("app:") && lastData != null)
                 {
                     request.Data = lastData;
                     _logger.LogInformation("Auto-populated platform metadata from last incoming message in scope {Scope}", replyScope ?? "default");

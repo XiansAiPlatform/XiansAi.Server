@@ -233,6 +233,12 @@ public interface IConversationRepository
     // Origin operations (scope filters by topic - only consider messages in same topic when auto-routing replies)
     Task<string?> GetLastIncomingOriginAsync(string threadId, string tenantId, string? scope = null);
     Task<object?> GetLastIncomingDataAsync(string threadId, string tenantId, string? scope = null);
+    /// <summary>
+    /// Gets both the origin and data from the most recent incoming message in a single DB query.
+    /// Use this instead of calling GetLastIncomingOriginAsync + GetLastIncomingDataAsync separately
+    /// to halve the number of MongoDB round-trips on the outgoing message path.
+    /// </summary>
+    Task<(string? Origin, object? Data)> GetLastIncomingOriginAndDataAsync(string threadId, string tenantId, string? scope = null);
 
     // Statistics operations
     Task<(int totalMessages, int activeUsers)> GetMessagingStatsAsync(string tenantId, DateTime startDate, DateTime endDate, string? participantId = null);
@@ -263,17 +269,20 @@ public class ConversationRepository : IConversationRepository
     private readonly ITenantContext _tenantContext;
     private readonly ISecureEncryptionService _encryptionService;
     private readonly string _uniqueSecret;
+    private readonly IBackgroundTaskService _backgroundTaskService;
 
     public ConversationRepository(
         IDatabaseService databaseService, 
         ILogger<ConversationRepository> logger, 
         ITenantContext tenantContext,
         ISecureEncryptionService encryptionService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IBackgroundTaskService backgroundTaskService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
+        _backgroundTaskService = backgroundTaskService ?? throw new ArgumentNullException(nameof(backgroundTaskService));
         
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _database = database;
@@ -449,23 +458,24 @@ public class ConversationRepository : IConversationRepository
             message.Data = ConvertToBsonDocument(message.Data);
         }
 
-        // Use MongoDB's atomic operations for optimal performance
+        // Insert message directly (no transaction needed — message insert is idempotent via ObjectId).
+        // The thread timestamp update is cosmetic (UI sort order) and does not need to be atomic
+        // with the message insert; decoupling it to a background queue removes 3 extra MongoDB
+        // round-trips (BeginTx / UpdateOne / CommitTx) from the hot request path.
         await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            using var session = await _database.Client.StartSessionAsync();
-            await session.WithTransactionAsync(async (session, cancellationToken) =>
-            {
-                // Insert message
-                await _messagesCollection.InsertOneAsync(session, message, cancellationToken: cancellationToken);
-                
-                // Update thread timestamp atomically
-                var threadFilter = Builders<ConversationThread>.Filter.Eq(t => t.Id, message.ThreadId);
-                var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, now);
-                await _threadsCollection.UpdateOneAsync(session, threadFilter, threadUpdate, cancellationToken: cancellationToken);
-                
-                return "completed";
-            });
-        }, _logger, operationName: "SaveMessageWithThreadUpdate");
+            await _messagesCollection.InsertOneAsync(message);
+        }, _logger, operationName: "InsertMessage");
+
+        // Update thread timestamp in the background — non-critical for message delivery correctness.
+        var threadId = message.ThreadId;
+        var threadsCollection = _threadsCollection;
+        _backgroundTaskService.QueueDatabaseOperation(async () =>
+        {
+            var threadFilter = Builders<ConversationThread>.Filter.Eq(t => t.Id, threadId);
+            var threadUpdate = Builders<ConversationThread>.Update.Set(t => t.UpdatedAt, now);
+            await threadsCollection.UpdateOneAsync(threadFilter, threadUpdate);
+        });
 
         return message.Id;
     }
@@ -912,7 +922,50 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingData");
     }
 
-    /// <summary>
+    public async Task<(string? Origin, object? Data)> GetLastIncomingOriginAndDataAsync(string threadId, string tenantId, string? scope = null)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+            // Accept messages that have either an origin or data (inclusive — the caller decides which fields to use)
+            var filterConditions = new List<FilterDefinition<ConversationMessage>>
+            {
+                filterBuilder.Eq(x => x.ThreadId, threadId),
+                filterBuilder.Eq(x => x.TenantId, tenantId),
+                filterBuilder.Eq(x => x.Direction, MessageDirection.Incoming)
+            };
+
+            AddScopeFilter(filterBuilder, filterConditions, scope);
+            var filter = filterBuilder.And(filterConditions);
+
+            // Project both origin and data in a single round-trip
+            var projection = Builders<ConversationMessage>.Projection
+                .Include(x => x.Origin)
+                .Include(x => x.Data);
+
+            var message = await _messagesCollection
+                .Find(filter)
+                .Project<ConversationMessage>(projection)
+                .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                .Limit(1)
+                .FirstOrDefaultAsync();
+
+            var origin = string.IsNullOrEmpty(message?.Origin) ? null : message.Origin;
+            object? data = null;
+            if (message?.Data != null)
+            {
+                ConvertBsonDataToObject(message);
+                data = message.Data;
+            }
+
+            _logger.LogDebug("Last incoming origin+data for thread {ThreadId} scope {Scope}: origin={Origin}, hasData={HasData}",
+                threadId, scope ?? "null", origin ?? "none", data != null ? "yes" : "no");
+
+            return (origin, data);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingOriginAndData");
+    }
+
+        /// <summary>
     /// Adds scope filter to match messages in the same topic.
     /// - When scope is null or whitespace: restricts to messages where Scope is null or "" (default topic).
     /// - When scope has a value: restricts to messages with that exact scope.

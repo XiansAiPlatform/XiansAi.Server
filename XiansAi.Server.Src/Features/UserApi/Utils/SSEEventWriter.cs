@@ -8,6 +8,14 @@ namespace Features.UserApi.Utils;
 /// </summary>
 public static class SSEEventWriter
 {
+    // perf: reuse a single JsonSerializerOptions instance instead of allocating a new one
+    // on every SSE write. JsonSerializerOptions construction is expensive (~2-3 µs + GC
+    // pressure) and happens on every outgoing message on every connected SSE client.
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     /// <summary>
     /// Writes a Server-Sent Event to the response stream
     /// </summary>
@@ -17,10 +25,7 @@ public static class SSEEventWriter
     /// <param name="cancellationToken">Cancellation token</param>
     public static async Task WriteEventAsync(HttpResponse response, string eventType, object data, CancellationToken cancellationToken)
     {
-        var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        var json = JsonSerializer.Serialize(data, _jsonOptions);
 
         var sseData = $"event: {eventType}\ndata: {json}\n\n";
         var bytes = Encoding.UTF8.GetBytes(sseData);
@@ -67,4 +72,4 @@ public static class SSEEventWriter
             subscriberCount
         };
     }
-} 
+}
