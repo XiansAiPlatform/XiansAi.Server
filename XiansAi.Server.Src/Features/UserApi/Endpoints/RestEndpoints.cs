@@ -128,8 +128,10 @@ public static class RestEndpoints
             [FromQuery] int pageSize = 50,
             [FromQuery] string? scope = null) =>
         {
+            // Normalize participant ID to lowercase for consistency
+            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
             var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
-            var result = await messageService.GetThreadHistoryAsync(workflowId, participantId, page, pageSize, scope);
+            var result = await messageService.GetThreadHistoryAsync(workflowId, resolvedParticipantId, page, pageSize, scope);
             return result.ToHttpResult();
         })
         .WithName("GetMessageHistory")
