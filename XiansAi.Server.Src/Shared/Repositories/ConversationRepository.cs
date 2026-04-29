@@ -1050,10 +1050,11 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 "Getting messaging stats for tenantId {TenantId}, dateRange {StartDate} to {EndDate}, participantId {ParticipantId}",
                 tenantId, startDate, endDate, participantId ?? "null");
 
-            // Build filter for messages in date range
+            // Build filter for messages in date range, only counting Chat type messages
             var filterBuilder = Builders<ConversationMessage>.Filter;
             var filter = filterBuilder.And(
                 filterBuilder.Eq(m => m.TenantId, tenantId),
+                filterBuilder.Eq(m => m.MessageType, MessageType.Chat),
                 filterBuilder.Gte(m => m.CreatedAt, startDate),
                 filterBuilder.Lte(m => m.CreatedAt, endDate)
             );
