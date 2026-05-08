@@ -70,6 +70,12 @@ flow_definitions:
       system_scoped: asc
     background: true
 
+processed_event:
+  - name: processed_event_id
+    keys:
+      document_id: asc
+    unique: true
+
 conversation_message:
   - name: bot_message_lookup
     keys:

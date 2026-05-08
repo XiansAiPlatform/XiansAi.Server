@@ -43,7 +43,7 @@ namespace Features.UserApi.Services
             _tenantHubContext = tenantHubContext;
             _messageEventPublisher = messageEventPublisher ?? throw new ArgumentNullException(nameof(messageEventPublisher));
             _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
-
+        
             // Get the unique secret for conversation messages
             _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:ConversationMessageKey"] ?? string.Empty;
             if (string.IsNullOrWhiteSpace(_uniqueSecret))
@@ -67,7 +67,7 @@ namespace Features.UserApi.Services
                     using var scope = _scopeFactory.CreateScope();
                     var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
                     var pendingRequestService = scope.ServiceProvider.GetRequiredService<IPendingRequestService>();
-
+                    var processedEventRepository = scope.ServiceProvider.GetRequiredService<IProcessedEventRepository>();
                     var database = await databaseService.GetDatabaseAsync();
                     var collectionName = "conversation_message";
                     var collection = database.GetCollection<ConversationMessage>(collectionName);
@@ -132,6 +132,19 @@ namespace Features.UserApi.Services
 
                             var message = changeDoc.FullDocument;
                             if (message == null) continue;
+
+                            if (message.Scope == "Slack" || message.Scope == "Teams")
+                            {
+                                if(await processedEventRepository.CreateProcessedEventAsync(message.Id))
+                                {
+                                    _logger.LogInformation("Processing new message with Id {MessageId} and Scope {Scope}", message.Id, message.Scope);
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Skipping already processed message with Id {MessageId} and Scope {Scope}", message.Id, message.Scope);
+                                    continue; // Skip already processed message 
+                                }
+                            } 
 
                             // Convert BSON metadata to native .NET objects before sending via SignalR
                             ConvertBsonMetadataToObjectInternal(message);
