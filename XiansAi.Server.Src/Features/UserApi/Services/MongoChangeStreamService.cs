@@ -67,7 +67,6 @@ namespace Features.UserApi.Services
                     using var scope = _scopeFactory.CreateScope();
                     var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
                     var pendingRequestService = scope.ServiceProvider.GetRequiredService<IPendingRequestService>();
-                    var processedEventRepository = scope.ServiceProvider.GetRequiredService<IProcessedEventRepository>();
                     var database = await databaseService.GetDatabaseAsync();
                     var collectionName = "conversation_message";
                     var collection = database.GetCollection<ConversationMessage>(collectionName);
@@ -133,8 +132,9 @@ namespace Features.UserApi.Services
                             var message = changeDoc.FullDocument;
                             if (message == null) continue;
 
-                            if (message.Scope == "Slack" || message.Scope == "Teams")
+                            if (message.Origin != null && message.Origin.StartsWith("app:"))
                             {
+                                var processedEventRepository = scope.ServiceProvider.GetRequiredService<IProcessedEventRepository>();
                                 if(await processedEventRepository.CreateProcessedEventAsync(message.Id))
                                 {
                                     _logger.LogInformation("Processing new message with Id {MessageId} and Scope {Scope}", message.Id, message.Scope);
