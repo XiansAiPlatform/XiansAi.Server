@@ -241,6 +241,13 @@ logs:
       created_at: desc
     background: true
 
+message_feedback:
+  - name: tenant_id_1_message_id_1
+    keys:
+      tenant_id: asc
+      message_id: asc
+    unique: true
+
 api_keys:
   - name: tenant_name_unique
     keys:

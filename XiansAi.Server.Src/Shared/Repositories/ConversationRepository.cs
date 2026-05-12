@@ -218,6 +218,7 @@ public interface IConversationRepository
 
     // Message operations
     Task<string> SaveMessageAsync(ConversationMessage message);
+    Task<ConversationMessage?> GetMessageByIdAsync(string messageId, string tenantId);
     Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
     Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null, string sortOrder = "desc");
     Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
@@ -478,6 +479,51 @@ public class ConversationRepository : IConversationRepository
         });
 
         return message.Id;
+    }
+
+    public async Task<ConversationMessage?> GetMessageByIdAsync(string messageId, string tenantId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var messageFilter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Eq(x => x.Id, messageId),
+                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId));
+
+            var projection = Builders<ConversationMessage>.Projection
+                .Include(x => x.Id)
+                .Include(x => x.ThreadId)
+                .Include(x => x.TenantId)
+                .Include(x => x.ParticipantId)
+                .Include(x => x.WorkflowId)
+                .Include(x => x.WorkflowType)
+                .Include(x => x.CreatedAt)
+                .Include(x => x.UpdatedAt)
+                .Include(x => x.CreatedBy)
+                .Include(x => x.Direction)
+                .Include(x => x.MessageType)
+                .Include(x => x.Text)
+                .Include(x => x.Data)
+                .Include(x => x.Status)
+                .Include(x => x.Hint)
+                .Include(x => x.TaskId)
+                .Include(x => x.Scope)
+                .Include(x => x.RequestId)
+                .Include(x => x.Origin);
+
+            var message = await _messagesCollection
+                .Find(messageFilter)
+                .Project<ConversationMessage>(projection)
+                .FirstOrDefaultAsync();
+
+            if (message == null)
+            {
+                return null;
+            }
+
+            ConvertBsonDataToObject(message);
+            DecryptMessageText(message);
+            return message;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessageById");
     }
 
     public async Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(

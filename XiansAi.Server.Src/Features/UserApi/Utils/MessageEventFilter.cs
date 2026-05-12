@@ -51,6 +51,7 @@ public static class MessageEventFilter
             id = message.Id,
             threadId = message.ThreadId,
             workflowId = message.WorkflowId,
+            workflowType = message.WorkflowType,
             participantId = message.ParticipantId,
             direction = message.Direction.ToString(),
             messageType = message.MessageType?.ToString(),

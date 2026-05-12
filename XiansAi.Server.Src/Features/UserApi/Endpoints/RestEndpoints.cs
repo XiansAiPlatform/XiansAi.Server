@@ -162,7 +162,21 @@ public static class RestEndpoints
         .WithSummary("Delete conversation thread")
         .WithDescription("Deletes a conversation thread and all its associated messages for the specified workflow and participant");
 
-        
+        restGroup.MapPost("/feedback", async (
+            [FromBody] SubmitMessageFeedbackRequest request,
+            [FromServices] IFeedbackService feedbackService) =>
+        {
+            var result = await feedbackService.SubmitFeedbackAsync(request);
+            if (result.IsSuccess && result.Data != null)
+            {
+                return Results.Created($"/api/user/rest/feedback/{result.Data}", new { id = result.Data });
+            }
 
+            return result.ToHttpResult();
+        })
+        .WithName("SubmitMessageFeedback")
+        .WithSummary("Submit feedback for an agent message")
+        .WithDescription(
+            "Submits a 1–5 star rating for an outgoing (agent) message. When rating is below 4, reasonCategory is required; if reason is Other, comment is required.");
     }
 }
