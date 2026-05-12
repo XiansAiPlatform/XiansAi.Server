@@ -6,6 +6,7 @@ using Features.AppsApi.Models;
 using Shared.Services;
 using Shared.Repositories;
 using Shared.Auth;
+using Features.AppsApi.Converters;
 
 namespace Features.AppsApi.Handlers;
 
@@ -542,8 +543,19 @@ public class SlackWebhookHandler : ISlackWebhookHandler
 
             var slackMessage = new
             {
-                text = message.Text ?? "No message text",
-                thread_ts = metadata.ThreadTs
+                thread_ts = metadata.ThreadTs,
+                blocks = new[]
+                {
+                    new
+                    {
+                        type = "section",
+                        text = new
+                        {
+                            Type = "mrkdwn",
+                            text = message.Text ?? "No message text",
+                        }
+                    }
+                }
             };
 
             var jsonContent = JsonSerializer.Serialize(slackMessage);
@@ -583,7 +595,7 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             var slackMessage = new Dictionary<string, object>
             {
                 ["channel"] = metadata.Channel ?? throw new InvalidOperationException("Channel is required"),
-                ["text"] = message.Text ?? "No message text"
+                ["text"] = MarkdigSlackConverter.ToSlack(message.Text) ?? "No message text"
             };
 
             // Include thread_ts to maintain conversation threading
