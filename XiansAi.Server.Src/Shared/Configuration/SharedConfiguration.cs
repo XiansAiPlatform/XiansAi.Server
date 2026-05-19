@@ -189,6 +189,7 @@ public static class SharedConfiguration
 
         // Register repositories
         builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
+        builder.Services.AddScoped<IFeedbackRepository, FeedbackRepository>();
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
@@ -211,6 +212,7 @@ public static class SharedConfiguration
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
+        builder.Services.AddScoped<IFeedbackService, FeedbackService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
         builder.Services.AddScoped<IUsageEventService, UsageEventService>();

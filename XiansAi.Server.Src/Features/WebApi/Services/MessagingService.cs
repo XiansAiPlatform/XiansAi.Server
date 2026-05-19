@@ -1,5 +1,7 @@
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Repositories;
+using Shared.Services;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
 
@@ -8,7 +10,7 @@ namespace Features.WebApi.Services;
 public interface IMessagingService
 {
     Task<ServiceResult<List<ConversationThread>>> GetThreads(string agent, int? page = null, int? pageSize = null);
-    Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null, string? scope = null);
+    Task<ServiceResult<List<ConversationMessageDto>>> GetMessages(string threadId, int? page = null, int? pageSize = null, string? scope = null);
     Task<ServiceResult<TopicsResult>> GetTopics(string threadId, int page, int pageSize);
     Task<ServiceResult<bool>> DeleteThread(string threadId);
 }
@@ -21,37 +23,41 @@ public class MessagingService : IMessagingService
     private readonly ILogger<MessagingService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IConversationRepository _conversationRepository;
+    private readonly IFeedbackService _feedbackService;
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagingService"/> class.
     /// </summary>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     /// <param name="conversationRepository">Repository for conversation operations.</param>
+    /// <param name="feedbackService">Joins human feedback into message history responses.</param>
     public MessagingService(
         ILogger<MessagingService> logger,
         ITenantContext tenantContext,
-        IConversationRepository conversationRepository
+        IConversationRepository conversationRepository,
+        IFeedbackService feedbackService
     )
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _conversationRepository = conversationRepository ?? throw new ArgumentNullException(nameof(conversationRepository));
+        _feedbackService = feedbackService ?? throw new ArgumentNullException(nameof(feedbackService));
     }
 
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetMessages(string threadId, int? page = null, int? pageSize = null, string? scope = null)
+    public async Task<ServiceResult<List<ConversationMessageDto>>> GetMessages(string threadId, int? page = null, int? pageSize = null, string? scope = null)
     {
         var tenantId = _tenantContext.TenantId;
 
         // Validate pagination parameters
         if (page.HasValue && page.Value <= 0)
         {
-            return ServiceResult<List<ConversationMessage>>.BadRequest("Page number must be greater than 0. Pagination is 1-based.");
+            return ServiceResult<List<ConversationMessageDto>>.BadRequest("Page number must be greater than 0. Pagination is 1-based.");
         }
 
         if (pageSize.HasValue && pageSize.Value <= 0)
         {
-            return ServiceResult<List<ConversationMessage>>.BadRequest("Page size must be greater than 0.");
+            return ServiceResult<List<ConversationMessageDto>>.BadRequest("Page size must be greater than 0.");
         }
 
         // Ensure both page and pageSize are set if either is provided
@@ -85,7 +91,8 @@ public class MessagingService : IMessagingService
         }
 
         var messages = await _conversationRepository.GetMessagesByThreadIdAsync(tenantId, threadId, page, pageSize, normalizedScope);
-        return ServiceResult<List<ConversationMessage>>.Success(messages);
+        var withFeedback = await _feedbackService.BuildMessagesWithFeedbackAsync(messages, tenantId);
+        return ServiceResult<List<ConversationMessageDto>>.Success(withFeedback);
     }
 
     public async Task<ServiceResult<TopicsResult>> GetTopics(string threadId, int page, int pageSize)

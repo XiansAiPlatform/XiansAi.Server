@@ -1,4 +1,5 @@
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
@@ -106,8 +107,8 @@ public interface IMessageService
     Task<ServiceResult<string>> ProcessIncomingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType);
     Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request);
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc");
-    Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
+    Task<ServiceResult<List<ConversationMessageDto>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc");
+    Task<ServiceResult<List<ConversationMessageDto>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope = null, bool chatOnly = false);
     Task<ServiceResult<bool>> DeleteThreadAsync(string workflowId, string participantId);
     Task<ServiceResult<bool>> DeleteMessagesByTopicAsync(string workflowId, string participantId, string? topic);
     Task<ServiceResult<string?>> GetLastTaskIdAsync(string workflowId, string participantId, string? scope = null);
@@ -122,18 +123,21 @@ public class MessageService : IMessageService
 
     private readonly IConversationRepository _conversationRepository;
     private readonly IWorkflowSignalService _workflowSignalService;
+    private readonly IFeedbackService _feedbackService;
 
         public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
         IConversationRepository conversationRepository,
-        IWorkflowSignalService workflowSignalService
+        IWorkflowSignalService workflowSignalService,
+        IFeedbackService feedbackService
         )
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _conversationRepository = conversationRepository;
         _workflowSignalService = workflowSignalService;
+        _feedbackService = feedbackService;
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -205,18 +209,19 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope, bool chatOnly = false)
+    public async Task<ServiceResult<List<ConversationMessageDto>>> GetThreadHistoryAsync(string threadId, int page, int pageSize, string? scope, bool chatOnly = false)
     {
         if (page < 1 || pageSize < 1)
         {
             _logger.LogWarning("Invalid request: page {Page} and pageSize {PageSize} must be greater than 0", page, pageSize);
-            return ServiceResult<List<ConversationMessage>>.BadRequest("Page and PageSize must be greater than 0");
+            return ServiceResult<List<ConversationMessageDto>>.BadRequest("Page and PageSize must be greater than 0");
         }
         var messages = await _conversationRepository.GetMessagesByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize, scope, chatOnly);
-        return ServiceResult<List<ConversationMessage>>.Success(messages);
+        var withFeedback = await _feedbackService.BuildMessagesWithFeedbackAsync(messages, _tenantContext.TenantId);
+        return ServiceResult<List<ConversationMessageDto>>.Success(withFeedback);
     }
 
-    public async Task<ServiceResult<List<ConversationMessage>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc")
+    public async Task<ServiceResult<List<ConversationMessageDto>>> GetThreadHistoryAsync(string workflowId, string participantId, int page, int pageSize, string? scope, bool chatOnly = false, string sortOrder = "desc")
     {
         try
         {
@@ -226,13 +231,13 @@ public class MessageService : IMessageService
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
                 _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
-                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowId and ParticipantId are required");
+                return ServiceResult<List<ConversationMessageDto>>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
             if (page < 1 || pageSize < 1)
             {
                 _logger.LogWarning("Invalid request: page {Page} and pageSize {PageSize} must be greater than 0", page, pageSize);
-                return ServiceResult<List<ConversationMessage>>.BadRequest("Page and PageSize must be greater than 0");
+                return ServiceResult<List<ConversationMessageDto>>.BadRequest("Page and PageSize must be greater than 0");
             }
 
             // Get messages directly by workflow and participant IDs
@@ -240,7 +245,8 @@ public class MessageService : IMessageService
 
             _logger.LogInformation("Found {Count} messages for workflowId {WorkflowId}, participant {ParticipantId}", messages.Count, workflowId, participantId);
 
-            return ServiceResult<List<ConversationMessage>>.Success(messages);
+            var withFeedback = await _feedbackService.BuildMessagesWithFeedbackAsync(messages, _tenantContext.TenantId);
+            return ServiceResult<List<ConversationMessageDto>>.Success(withFeedback);
         }
         catch (Exception ex)
         {
