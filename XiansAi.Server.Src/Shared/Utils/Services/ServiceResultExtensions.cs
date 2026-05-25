@@ -13,7 +13,11 @@ public static class ServiceResultExtensions
     {
         if (result.IsSuccess)
         {
-            return Results.Ok(result.Data);
+            return result.StatusCode switch
+            {
+                StatusCode.Created => Results.Json(result.Data, statusCode: StatusCodes.Status201Created),
+                _ => Results.Ok(result.Data)
+            };
         }
 
         return result.StatusCode switch

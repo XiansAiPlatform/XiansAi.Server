@@ -108,5 +108,22 @@ public static class MessagingEndpoints
         
         .WithSummary("Delete a conversation thread")
         .WithDescription("Deletes a conversation thread and all its messages");
+
+        messagingGroup.MapPost("/feedback", async (
+            [FromBody] SubmitMessageFeedbackRequest request,
+            [FromServices] IFeedbackService feedbackService) =>
+        {
+            var result = await feedbackService.SubmitFeedbackAsync(request);
+            if (result.IsSuccess && result.Data != null)
+            {
+                return Results.Created($"/api/client/messaging/feedback/{result.Data}", new { id = result.Data });
+            }
+
+            return result.ToHttpResult();
+        })
+        .WithName("SubmitWebApiMessageFeedback")
+        .WithSummary("Submit feedback for an agent message")
+        .WithDescription(
+            "Submits a 1–5 star rating for an outgoing (agent) message. When rating is below 4, reasonCategory is required; if reason is Other, comment is required.");
     }
-} 
+}

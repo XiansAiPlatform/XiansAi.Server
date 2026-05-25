@@ -1,6 +1,7 @@
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
+using Shared.Data.Models;
 using Shared.Utils.Services;
 using Shared.Repositories;
 using Shared.Auth;
@@ -247,7 +248,7 @@ namespace Features.AgentApi.Endpoints
             [FromServices] IMessageService messageService)
         {
             if (string.IsNullOrEmpty(query.WorkflowType) && string.IsNullOrEmpty(query.WorkflowId)) {
-                return ServiceResult<List<ConversationMessage>>.BadRequest("WorkflowType or WorkflowId is required").ToHttpResult();
+                return ServiceResult<List<ConversationMessageDto>>.BadRequest("WorkflowType or WorkflowId is required").ToHttpResult();
             }
                         
             if (query.WorkflowId == null)
