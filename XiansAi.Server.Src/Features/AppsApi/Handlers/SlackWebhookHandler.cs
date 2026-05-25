@@ -183,19 +183,18 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         try
         {
             _logger.LogInformation("Sending message to Slack for integration {IntegrationId}", integration.Id);
+            // Get incoming webhook URL or use bot token from encrypted secrets
+            var incomingWebhookUrl = integration.Secrets?.SlackIncomingWebhookUrl;
+            var botToken = integration.Secrets?.SlackBotToken;
 
             // Extract Slack metadata from message
-            var slackMetadata = ExtractSlackMetadata(message);
+            var slackMetadata = await ExtractSlackMetadata(message, botToken, cancellationToken);
 
             if (string.IsNullOrEmpty(slackMetadata.Channel))
             {
                 _logger.LogWarning("No Slack channel found in message metadata, cannot send message");
                 return;
             }
-
-            // Get incoming webhook URL or use bot token from encrypted secrets
-            var incomingWebhookUrl = integration.Secrets?.SlackIncomingWebhookUrl;
-            var botToken = integration.Secrets?.SlackBotToken;
 
             if (!string.IsNullOrEmpty(incomingWebhookUrl))
             {
@@ -499,7 +498,7 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         }
     }
 
-    private SlackMessageMetadata ExtractSlackMetadata(ConversationMessage message)
+    private async Task<SlackMessageMetadata> ExtractSlackMetadata(ConversationMessage message, string? botToken, CancellationToken cancellationToken)
     {
         var metadata = new SlackMessageMetadata();
 
@@ -525,6 +524,17 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to extract Slack metadata from message data");
+            }
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(botToken))
+            {
+                string? channel = await GetSlackChannelIdFromEmailAsync(botToken, message.ParticipantId, cancellationToken);
+                if (!string.IsNullOrEmpty(channel))
+                {
+                    metadata.Channel = channel;
+                }
             }
         }
 
@@ -579,6 +589,148 @@ public class SlackWebhookHandler : ISlackWebhookHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error sending message to Slack via incoming webhook");
+        }
+    }
+
+    private async Task<string?> GetSlackChannelIdFromEmailAsync(
+    string botToken,
+    string email,
+    CancellationToken cancellationToken)
+    {
+        try
+        {
+            var httpClient = _httpClientFactory.CreateClient("SlackApi");
+
+            // Step 1: Lookup user by email
+            var lookupRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"users.lookupByEmail?email={Uri.EscapeDataString(email)}");
+
+            lookupRequest.Headers.Add("Authorization", $"Bearer {botToken}");
+
+            _logger.LogInformation(
+                "Looking up Slack user for email: {Email}",
+                email);
+
+            var lookupResponse =
+                await httpClient.SendAsync(lookupRequest, cancellationToken);
+
+            var lookupBody =
+                await lookupResponse.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!lookupResponse.IsSuccessStatusCode)
+            {
+                _logger.LogError(
+                    "Slack lookup failed: {StatusCode} - {Response}",
+                    lookupResponse.StatusCode,
+                    lookupBody);
+
+                return null;
+            }
+
+            using var lookupDoc = JsonDocument.Parse(lookupBody);
+
+            if (!lookupDoc.RootElement.GetProperty("ok").GetBoolean())
+            {
+                var error = lookupDoc.RootElement
+                    .GetProperty("error")
+                    .GetString();
+
+                _logger.LogError(
+                    "Slack lookup returned error: {Error}",
+                    error);
+
+                return null;
+            }
+
+            var userId = lookupDoc.RootElement
+                .GetProperty("user")
+                .GetProperty("id")
+                .GetString();
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                _logger.LogWarning(
+                    "No Slack user found for email: {Email}",
+                    email);
+
+                return null;
+            }
+
+            _logger.LogInformation(
+                "Found Slack user ID: {UserId}",
+                userId);
+
+            // Step 2: Open DM channel
+            var openRequestBody = new Dictionary<string, string>
+            {
+                ["users"] = userId
+            };
+
+            var openRequest = new HttpRequestMessage(
+                HttpMethod.Post,
+                "conversations.open")
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(openRequestBody),
+                    Encoding.UTF8,
+                    "application/json")
+            };
+
+            openRequest.Headers.Add(
+                "Authorization",
+                $"Bearer {botToken}");
+
+            var openResponse =
+                await httpClient.SendAsync(openRequest, cancellationToken);
+
+            var openBody =
+                await openResponse.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!openResponse.IsSuccessStatusCode)
+            {
+                _logger.LogError(
+                    "Open conversation failed: {StatusCode} - {Response}",
+                    openResponse.StatusCode,
+                    openBody);
+
+                return null;
+            }
+
+            using var openDoc = JsonDocument.Parse(openBody);
+
+            if (!openDoc.RootElement.GetProperty("ok").GetBoolean())
+            {
+                var error = openDoc.RootElement
+                    .GetProperty("error")
+                    .GetString();
+
+                _logger.LogError(
+                    "Open conversation error: {Error}",
+                    error);
+
+                return null;
+            }
+
+            var channelId = openDoc.RootElement
+                .GetProperty("channel")
+                .GetProperty("id")
+                .GetString();
+
+            _logger.LogInformation(
+                "Found Slack channel ID: {ChannelId}",
+                channelId);
+
+            return channelId;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error getting Slack channel from email: {Email}",
+                email);
+
+            return null;
         }
     }
 

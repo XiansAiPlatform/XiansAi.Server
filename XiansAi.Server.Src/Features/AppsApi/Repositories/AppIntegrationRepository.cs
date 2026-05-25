@@ -27,6 +27,11 @@ public interface IAppIntegrationRepository
     /// <summary>
     /// Get integrations for a specific agent activation
     /// </summary>
+    Task<List<AppIntegration>> GetByActivationAsync(string tenantId, string activationName);
+
+    /// <summary>
+    /// Get integrations for a specific agent activation
+    /// </summary>
     Task<List<AppIntegration>> GetByAgentActivationAsync(string tenantId, string agentName, string activationName);
 
     /// <summary>
@@ -171,6 +176,19 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             DecryptSecretsList(integrations);
             return integrations;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationsByTenantAndPlatform");
+    }
+
+    public async Task<List<AppIntegration>> GetByActivationAsync(string tenantId, string activationName)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var integrations = await _integrations
+                .Find(x => x.TenantId == tenantId && x.ActivationName == activationName)
+                .SortByDescending(x => x.CreatedAt)
+                .ToListAsync();
+            DecryptSecretsList(integrations);
+            return integrations;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationsByActivation");
     }
 
     public async Task<List<AppIntegration>> GetByAgentActivationAsync(string tenantId, string agentName, string activationName)

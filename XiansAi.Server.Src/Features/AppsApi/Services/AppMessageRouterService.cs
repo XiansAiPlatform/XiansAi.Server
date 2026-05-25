@@ -66,28 +66,48 @@ public class AppMessageRouterService : BackgroundService
             }
 
             // Check if message is from an app integration (origin format: "app:{platformId}:{integrationId}")
-            if (string.IsNullOrEmpty(message.Origin) || !message.Origin.StartsWith("app:"))
+            if (string.IsNullOrEmpty(message.Origin) || (!message.Origin.StartsWith("app:") && !message.Origin.Equals("agent-initiated")))
             {
                 return; // Not an app-routed message
             }
 
             var originParts = message.Origin.Split(':');
-            if (originParts.Length != 3)
+            if (originParts.Length != 3 && !message.Origin.Equals("agent-initiated"))
             {
                 _logger.LogWarning("Invalid app origin format: {Origin}", message.Origin);
                 return;
             }
 
-            var platformId = originParts[1];
-            var integrationId = originParts[2];
+
+            // Create a scope to resolve scoped services
+            using var scope = _scopeFactory.CreateScope();
+            var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+            var appIntegrationRepository = scope.ServiceProvider.GetRequiredService<IAppIntegrationRepository>();
+            string platformId, integrationId;
+
+            if (message.Origin.StartsWith("agent-initiated") && !string.IsNullOrEmpty(message.Scope))
+            {
+                var originScopeParts = message.Scope.Split(':');
+                platformId = originScopeParts[0];
+                integrationId = originScopeParts[1];
+                List<AppIntegration> appIntegrations = await appIntegrationRepository.GetByActivationAsync(message.TenantId, integrationId);
+                if (
+                    appIntegrations != null &&
+                    appIntegrations.Any() &&
+                    appIntegrations.Any(x => x.PlatformId.Equals(platformId, StringComparison.OrdinalIgnoreCase) && x.IsEnabled))
+                {
+                    integrationId = appIntegrations.First(x => x.PlatformId.Equals(platformId, StringComparison.OrdinalIgnoreCase) && x.IsEnabled).Id;
+                }
+            }
+            else
+            {
+                platformId = originParts[1];
+                integrationId = originParts[2];
+            }
 
             _logger.LogInformation("Routing outgoing message to {Platform} integration {IntegrationId}",
                 platformId, integrationId);
 
-            // Create a scope to resolve scoped services
-            using var scope = _scopeFactory.CreateScope();
-            var appIntegrationRepository = scope.ServiceProvider.GetRequiredService<IAppIntegrationRepository>();
-            var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
 
             // Load integration
             var integration = await appIntegrationRepository.GetByIdAsync(integrationId);
