@@ -76,6 +76,11 @@ public class ChatOrDataRequest
     //public string? ThreadId { get; set; }
     public string? Authorization { get; set; }
     public string? Origin { get; set; }
+
+    /// <summary>
+    /// Optional key-value metadata (e.g. inbound HTTP headers for webhooks).
+    /// </summary>
+    public Dictionary<string, string>? Metadata { get; set; }
 }
 
 public class HandoffRequest
@@ -408,7 +413,8 @@ public class MessageService : IMessageService
                  request.TaskId,
                  request.Data,
                  Type = messageType.ToString(),
-                 request.Authorization
+                 request.Authorization,
+                 request.Metadata
             }
         };
         await _workflowSignalService.SignalWithStartWorkflow(signalRequest);
