@@ -104,13 +104,15 @@ public static class WebhookEndpoints
                 // Build workflowId from workflowName (format: tenant:workflowName)
                 // Using webhookName as the scope/method identifier
                 var workflowId = $"{tenantId}:{agentName}:{workflowName}{(activationName != null ? $":{activationName}" : string.Empty)}";
-                
+
                 // Use participantId from query or default to "webhook" for identification
                 // Normalize to lowercase for consistency (especially important for emails)
                 var resolvedParticipantId = (participantId ?? "webhook").ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
+
+                var inboundMetadata = WebhookHeaderCapture.Capture(httpContext.Request.Headers);
 
                 // Create the chat request for the message service
                 var chatRequest = new ChatOrDataRequest
@@ -122,7 +124,8 @@ public static class WebhookEndpoints
                     Data = body,
                     Scope = scope,
                     Authorization = authorization ?? tenantContext.Authorization,
-                    Origin = $"webhook:builtin:{webhookName}"
+                    Origin = $"webhook:builtin:{webhookName}",
+                    Metadata = inboundMetadata
                 };
 
                 // Use the sync message handler to process and wait for response
@@ -157,7 +160,7 @@ public static class WebhookEndpoints
                 if (dataProperty != null)
                 {
                     var dataValue = dataProperty.GetValue(result);
-                    
+
                     // If Data is already a WebhookResponse
                     if (dataValue is WebhookResponse wr)
                     {
@@ -209,17 +212,17 @@ public static class WebhookEndpoints
                         }
                     }
                 }
-            
+
 
                 // Apply the WebhookResponse to the HTTP context
                 if (webhookResponse != null)
                 {
                     logger.LogInformation(
-                        "Applying WebhookResponse: StatusCode={StatusCode}, ContentType={ContentType}, HeaderCount={HeaderCount}", 
-                        webhookResponse.StatusCode, 
-                        webhookResponse.ContentType, 
+                        "Applying WebhookResponse: StatusCode={StatusCode}, ContentType={ContentType}, HeaderCount={HeaderCount}",
+                        webhookResponse.StatusCode,
+                        webhookResponse.ContentType,
                         webhookResponse.Headers?.Count ?? 0);
-                    
+
                     await webhookResponse.ApplyToHttpContextAsync(httpContext);
                     return Results.Empty;
                 }
@@ -251,7 +254,7 @@ public static class WebhookEndpoints
         .WithTags("User API - Webhooks")
         .RequireAuthorization("EndpointAuthPolicy")
         .WithAgentUserApiRateLimit()
-        
+
         .WithSummary("Process a builtin webhook using message passing infrastructure")
         .WithDescription(@"Receives webhook calls and delivers them as messages to the specified workflow,
 waiting synchronously for a response using the message passing infrastructure.
@@ -320,7 +323,7 @@ This allows the workflow to control the HTTP response returned to the webhook ca
                 // Get tenantId from authenticated context (set by EndpointAuthenticationHandler)
                 // This prevents IDOR vulnerabilities by ensuring the tenantId matches the authenticated API key
                 var tenantId = tenantContext.TenantId;
-                
+
                 if (string.IsNullOrEmpty(tenantId))
                 {
                     return Results.Problem(
@@ -352,10 +355,10 @@ This allows the workflow to control the HTTP response returned to the webhook ca
                 {
                     // Return the WebhookResponse directly
                     var webhookResponse = result.Data ?? throw new Exception("WebhookResponse is null");
-                    
+
                     // Apply the webhook response to the HTTP context
                     await webhookResponse.ApplyToHttpContextAsync(httpContext);
-                    
+
                     return Results.Empty;
                 }
 
@@ -372,7 +375,7 @@ This allows the workflow to control the HTTP response returned to the webhook ca
         .WithTags("User API - Webhooks")
         .RequireAuthorization("EndpointAuthPolicy")
         .WithAgentUserApiRateLimit() // Apply rate limiting to prevent enumeration attacks
-        
+
         .WithSummary("Process a webhook for a temporal workflow")
         .WithDescription(@"Receives webhook calls and delivers them as Temporal Updates to the specified workflow.
             
