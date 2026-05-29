@@ -4,7 +4,7 @@ Webhooks are used to notify the agents when a certain event occurs.
 
 ## Webhook URL Format
 
-```
+```http
 POST <server-url>/api/user/webhooks/{workflow}/{methodName}
 Authorization: Bearer <apikey>
 ```
@@ -18,7 +18,7 @@ Authorization: Bearer <apikey>
 
 For backward compatibility, the API key may also be passed as a query parameter:
 
-```
+```http
 POST <server-url>/api/user/webhooks/{workflow}/{methodName}?apikey={apikey}
 ```
 
@@ -44,11 +44,38 @@ public async Task<string> WebhookUpdateMethod(IDictionary<string, string> queryP
 
 The return value should be a string which will be sent to the webhook URL caller in response body.
 
+## Builtin webhooks
+
+```http
+POST <server-url>/api/user/webhooks/builtin?workflowName=...&webhookName=...&agentName=...
+Authorization: Bearer <apikey>
+```
+
+The agent worker handles the event via `OnWebhook(WebhookContext)` and returns an HTTP response
+when the handler calls `context.Respond(...)`.
+
+### Inbound HTTP headers forwarded to agents
+
+Only the builtin endpoint forwards inbound headers to the agent as
+`WebhookContext.Metadata` (`Dictionary<string, string>`).
+
+**Behavior:**
+
+- All inbound headers are forwarded with no size limit (including auth/sensitive headers).
+- Multiple values for one header: the **first** non-empty value is used.
+- Header names are forwarded using the key casing provided by ASP.NET request headers.
+- Captured metadata is sent on the Temporal signal only; it is **not** stored in MongoDB
+  conversation messages in the current version.
+
+The legacy `POST /api/user/webhooks/{workflow}/{methodName}` (Temporal Update) path does not
+forward inbound headers.
+
 ## Implementation
 
 - Endpoint: Features/UserApi/Endpoints/WebhookEndpoints.cs
   - authenticate with APIkey
   - use WorkflowIdentifier to get the WorkflowId and WorkflowType
+  - builtin path: `Shared/Utils/WebhookHeaderCapture.cs` for inbound header forwarding
 - Service: Features/UserApi/Services/WebhookService.cs
 - Util Class: Shared/Utils/Temporal/UpdateService.cs
   - use NewWorkflowOptions to send the Update with Start
