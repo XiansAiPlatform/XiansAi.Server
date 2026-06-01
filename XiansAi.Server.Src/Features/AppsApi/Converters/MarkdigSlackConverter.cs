@@ -27,12 +27,12 @@ public static class MarkdigSlackConverter
         switch (block)
         {
             case ParagraphBlock paragraph:
-                ProcessInlines(paragraph.Inline, sb);
+                if (paragraph.Inline != null) ProcessInlines(paragraph.Inline, sb);
                 sb.AppendLine("\n"); // Slack needs double newlines for paragraphs
                 break;
             case HeadingBlock heading:
                 sb.Append("*"); // Convert headers to Bold
-                ProcessInlines(heading.Inline, sb);
+                if (heading.Inline != null) ProcessInlines(heading.Inline, sb);
                 sb.AppendLine("*\n");
                 break;
             case ListBlock listBlock:

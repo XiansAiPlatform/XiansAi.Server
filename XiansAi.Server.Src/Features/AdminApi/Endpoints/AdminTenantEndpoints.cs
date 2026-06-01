@@ -118,6 +118,60 @@ public static class AdminTenantEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         ;
 
+        // Enable Tenant - SysAdmin only
+        adminTenantGroup.MapPut("/{tenantId}/enable", async (
+            string tenantId,
+            HttpContext httpContext,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Enable tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can enable tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+                return tenantResult.ToHttpResult();
+
+            var result = await tenantService.UpdateTenant(tenantResult.Data.Id, new UpdateTenantRequest { Enabled = true });
+            return result.ToHttpResult();
+        })
+        .WithName("EnableTenant")
+        .Produces(StatusCodes.Status403Forbidden)
+        ;
+
+        // Disable Tenant - SysAdmin only
+        adminTenantGroup.MapPut("/{tenantId}/disable", async (
+            string tenantId,
+            HttpContext httpContext,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Disable tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can disable tenants" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+                return tenantResult.ToHttpResult();
+
+            var result = await tenantService.UpdateTenant(tenantResult.Data.Id, new UpdateTenantRequest { Enabled = false });
+            return result.ToHttpResult();
+        })
+        .WithName("DisableTenant")
+        .Produces(StatusCodes.Status403Forbidden)
+        ;
+
         // Delete Tenant - SysAdmin only
         adminTenantGroup.MapDelete("/{tenantId}", async (
             string tenantId,
