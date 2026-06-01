@@ -190,6 +190,7 @@ public static class SharedConfiguration
         // Register repositories
         builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
         builder.Services.AddScoped<IFeedbackRepository, FeedbackRepository>();
+        builder.Services.AddScoped<IProcessedEventRepository, ProcessedEventRepository>();
         builder.Services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         builder.Services.AddScoped<IFlowDefinitionRepository, FlowDefinitionRepository>();
         builder.Services.AddScoped<IAgentRepository, AgentRepository>();
