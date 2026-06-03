@@ -109,6 +109,10 @@ public class UserTenantService : IUserTenantService
             _logger.LogInformation("User {UserId} created from token", userDto.UserId);
         }
 
+        // Optional: Azure AD group-based SysAdmin promotion
+        // Runs on every login to keep IsSysAdmin in sync with Azure AD group membership
+        await SyncSysAdminFromGroupClaimsAsync(userId, token);
+
         return await GetTenantsForCurrentUser();
     }
 
@@ -592,6 +596,24 @@ public class UserTenantService : IUserTenantService
             _logger.LogError(ex, "Error creating new user in tenant {TenantId}", tenantId);
             return ServiceResult<User>.InternalServerError("An error occurred while creating the new user");
         }
+    }
+
+    private async Task SyncSysAdminFromGroupClaimsAsync(string userId, string token)
+    {
+        var adminGroupIds = _configuration["Oidc:AdminGroupIds"];
+        if (string.IsNullOrEmpty(adminGroupIds)) return;
+
+        var configuredIds = adminGroupIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var tokenGroupIds = _jwtClaimsExtractor.ExtractClaims(token, "groups")
+            .Concat(_jwtClaimsExtractor.ExtractClaims(token, "roles"));
+
+        var isSysAdmin = tokenGroupIds.Any(id => configuredIds.Contains(id));
+        await _userRepository.SetSysAdminAsync(userId, isSysAdmin);
+
+        _logger.LogInformation("Azure AD group SysAdmin sync: user={UserId} isSysAdmin={IsSysAdmin}", userId, isSysAdmin);
     }
 
     /// <summary>

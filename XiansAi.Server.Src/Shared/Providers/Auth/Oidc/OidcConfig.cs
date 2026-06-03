@@ -11,6 +11,16 @@ public class OidcConfig
     public string[] AcceptedAlgorithms { get; set; } = new[] { "RS256" };
     public bool RequireHttpsMetadata { get; set; } = true;
     public OidcClaimMappings ClaimMappings { get; set; } = new();
+    /// <summary>
+    /// Optional. Comma-separated list of Azure AD / Entra ID group Object IDs used for automatic SysAdmin promotion.
+    /// When set, every login checks whether the authenticated user's token contains any of these group IDs
+    /// in the "groups" or "roles" claims. If any match is found, the user's IsSysAdmin flag is set to true
+    /// in the database; if none match, it is set to false — keeping SysAdmin status automatically in sync
+    /// with Azure AD group membership on every login.
+    /// Leave empty or unset to disable this feature entirely.
+    /// Environment variable: Oidc__AdminGroupIds=&lt;guid1&gt;,&lt;guid2&gt;
+    /// </summary>
+    public string? AdminGroupIds { get; set; }
 }
 
 public class OidcClaimMappings
