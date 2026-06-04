@@ -27,6 +27,7 @@ public interface IUserRepository
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
     Task<bool> IsSysAdmin(string userId);
+    Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin);
     Task<bool> DeleteUser(string userId, string? tenantId = null);
     Task<List<User>> SearchUsersAsync(string query, string? tenantId = null);
 }
@@ -416,6 +417,19 @@ public class UserRepository : IUserRepository
                 .FirstOrDefaultAsync();
             return user?.IsSysAdmin ?? false;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "IsSysAdmin");
+    }
+
+    public async Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var update = Builders<User>.Update
+                .Set(x => x.IsSysAdmin, isSysAdmin)
+                .Set(x => x.UpdatedAt, DateTime.UtcNow);
+
+            var result = await _users.UpdateOneAsync(x => x.UserId == userId, update);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "SetSysAdmin");
     }
 
     public async Task<bool> DeleteUser(string userId, string? tenantId = null)

@@ -47,6 +47,14 @@ public interface IJwtClaimsExtractor
     string? ExtractName(string token);
 
     /// <summary>
+    /// Extracts all values for a claim type from a token (for multi-value claims like "groups")
+    /// </summary>
+    /// <param name="token">The JWT token</param>
+    /// <param name="claimType">The claim type to extract all values for</param>
+    /// <returns>List of all values for the given claim type</returns>
+    IEnumerable<string> ExtractClaims(string token, string claimType);
+
+    /// <summary>
     /// Safely extracts Bearer token from Authorization header
     /// </summary>
     /// <param name="authorizationHeader">The Authorization header value</param>
@@ -139,6 +147,27 @@ public class JwtClaimsExtractor : IJwtClaimsExtractor
         {
             _logger.LogError(ex, "Error validating JWT token and extracting claims");
             return JwtValidationResult.Failure("Token processing failed");
+        }
+    }
+
+    /// <summary>
+    /// Extracts all values for a claim type (handles multi-value claims like "groups")
+    /// </summary>
+    public IEnumerable<string> ExtractClaims(string token, string claimType)
+    {
+        try
+        {
+            var handler = new JwtSecurityTokenHandler();
+            if (handler.ReadToken(token) is not JwtSecurityToken jsonToken) return [];
+
+            return jsonToken.Claims
+                .Where(c => c.Type == claimType)
+                .Select(c => c.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error extracting claims '{ClaimType}' from token", claimType);
+            return [];
         }
     }
 
