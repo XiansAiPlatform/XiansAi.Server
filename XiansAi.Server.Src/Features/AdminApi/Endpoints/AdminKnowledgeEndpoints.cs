@@ -249,11 +249,9 @@ public static class AdminKnowledgeEndpoints
         .Produces(StatusCodes.Status500InternalServerError)
         
         .WithSummary("Get applicable knowledge content")
-        .WithDescription(@"Retrieves the applicable knowledge for the specified tenant, agent, and optional activation. Uses the same fallback logic as the Agent API /latest endpoint:
+        .WithDescription(KnowledgeFallbackDocs.FallbackSummary + @"
 
-1. If activationName is provided: try tenantId + agent + activationName
-2. If not found: try tenantId + agent (any or no activationName)
-3. If not found: try system-scoped knowledge (tenantId=null)
+The tenantId is taken from the URL path. The agent is verified to exist in the tenant and the caller's permissions are checked before resolution. This is the same resolution logic used by the Agent API GET /latest endpoint.
 
 **Query Parameters:**
 - `name` (required): The knowledge item name

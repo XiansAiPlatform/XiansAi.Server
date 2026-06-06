@@ -29,13 +29,12 @@ public static class KnowledgeEndpoints
             [FromServices] IKnowledgeService service,
             [FromServices] ITenantContext tenantContext) =>
         {
-            var tenantId = tenantContext.TenantId ?? "(null)";
+            var tenantId = tenantContext.TenantId;
             _logger.LogInformation(
                 "Agent knowledge/latest request: name={Name}, agent={Agent}, activationName={ActivationName}, tenantId={TenantId}",
-                name, agent, activationName ?? "(null)", tenantId);
-            Console.WriteLine($"[Agent API] knowledge/latest: name={name}, agent={agent}, activationName={activationName ?? "(null)"}, tenantId={tenantId}");
+                name, agent, activationName ?? "(null)", tenantId ?? "(null)");
 
-            var result = await service.GetLatestByNameAsync(name, agent, activationName);
+            var result = await service.GetLatestByNameForTenantAsync(name, agent, tenantId, activationName);
             return result.ToHttpResult();
         })
         .Produces<object>(StatusCodes.Status200OK)
@@ -43,7 +42,9 @@ public static class KnowledgeEndpoints
         .ProducesProblem(StatusCodes.Status500InternalServerError)
         
         .WithSummary("Get latest knowledge")
-        .WithDescription("Retrieves the most recent knowledge for the specified name and agent. ");
+        .WithDescription(KnowledgeFallbackDocs.FallbackSummary +
+            "\n\nThe tenantId is derived from the request's certificate-authenticated tenant context. " +
+            "This is the same resolution logic used by the Admin API GET /latest endpoint.");
 
         knowledgeGroup.MapGet("/latest/system", async (
             [FromQuery] string name,
