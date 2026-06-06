@@ -1,10 +1,12 @@
 public static class SystemRoles
 {
-    public const string SysAdmin = "SysAdmin";
-    public const string TenantAdmin = "TenantAdmin";
-    public const string TenantParticipant = "TenantParticipant";
-    public const string TenantParticipantAdmin = "TenantParticipantAdmin";
-    public const string TenantUser = "TenantUser";
+    public const string SysAdmin = "SysAdmin"; // system admin
+    public const string TenantAdmin = "TenantAdmin"; // tenant admin
+    public const string TenantUser = "TenantUser"; // developer
+    public const string TenantParticipantAdmin = "TenantParticipantAdmin"; // agent participant admin
+    public const string TenantParticipant = "TenantParticipant"; // agent participant
+
+
 }
 
 public static class Policies
