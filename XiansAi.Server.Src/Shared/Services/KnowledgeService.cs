@@ -10,6 +10,28 @@ using Shared.Utils.Services;
 
 namespace Shared.Services;
 
+/// <summary>
+/// Single source of truth for the human-readable description of the knowledge
+/// resolution fallback. Shared by the Agent API and Admin API <c>/latest</c> endpoints
+/// so their OpenAPI docs stay in sync with each other and with the actual logic in
+/// <see cref="KnowledgeService.GetLatestByNameForTenantAsync"/>.
+/// Full details: docs/KNOWLEDGE_FALLBACK.md
+/// </summary>
+public static class KnowledgeFallbackDocs
+{
+    /// <summary>
+    /// Describes the 3-step scope fallback used to resolve a single knowledge item by name.
+    /// Keep this in sync with <c>GetLatestByNameForTenantAsync</c> and docs/KNOWLEDGE_FALLBACK.md.
+    /// </summary>
+    public const string FallbackSummary = @"Resolves the most recent applicable knowledge for the given name + agent using a 3-step scope fallback (see docs/KNOWLEDGE_FALLBACK.md for full details):
+
+1. **Activation-specific** — matches tenantId + agent + activationName. Runs only when both tenantId and activationName are provided.
+2. **Tenant-default** — matches tenantId + agent + activation_name = null. Runs whenever tenantId is provided. Returns only the tenant-default; it never falls back to a different activation's knowledge.
+3. **System-scoped** — matches agent (or null-agent) + tenant_id = null + system_scoped = true. Always runs if steps 1 and 2 miss; an agent-specific system document is preferred over a null-agent one.
+
+Returns the first match in this priority order, or 404 if nothing matches.";
+}
+
 public class KnowledgeRequest
 {
     [JsonPropertyName("name")]
@@ -432,16 +454,19 @@ public class KnowledgeService : IKnowledgeService
             }
         }
 
-        // Priority 2: Try knowledge with requesting tenant_id (any activation)
+        // Priority 2: Try the tenant-default knowledge (activation_name = null) for this tenant.
+        // Strong activation isolation: we deliberately never fall back to a *different* activation's
+        // knowledge. An activation-scoped request that misses in priority 1 falls back to the
+        // tenant-default here, and a request with no activation only ever matches the tenant-default.
         if (!string.IsNullOrEmpty(tenantId))
         {
-            var knowledge = await _knowledgeRepository.GetLatestByNameAndTenantAnyActivationAsync<Knowledge>(
+            var knowledge = await _knowledgeRepository.GetLatestByNameAndTenantAsync<Knowledge>(
                 name, agent, tenantId);
 
             if (knowledge != null)
             {
-                _logger.LogInformation("Found knowledge (priority 2: tenant match) - tenantId={TenantId}, activationName={ActivationName}",
-                    knowledge.TenantId, knowledge.ActivationName ?? "(null)");
+                _logger.LogInformation("Found knowledge (priority 2: tenant-default match, activation_name=null) - tenantId={TenantId}",
+                    knowledge.TenantId);
                 return ServiceResult<Knowledge>.Success(knowledge);
             }
         }
