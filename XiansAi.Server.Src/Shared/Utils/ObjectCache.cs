@@ -51,7 +51,7 @@ public class ObjectCache
     /// <typeparam name="T">The type of the value to cache</typeparam>
     /// <param name="key">The cache key</param>
     /// <param name="value">The value to cache</param>
-    /// <param name="relativeExpiration">Optional. The absolute expiration time relative to now. Default is 24 hours if no expiration is specified.</param>
+    /// <param name="relativeExpiration">Optional. Time offset from now used to compute the absolute expiration moment (not a sliding window). Defaults to 24 hours when neither expiration parameter is provided.</param>
     /// <param name="slidingExpiration">Optional. The sliding expiration time. No default value.</param>
     /// <returns>True if the operation succeeded, false otherwise</returns>
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? relativeExpiration = null, TimeSpan? slidingExpiration = null)
