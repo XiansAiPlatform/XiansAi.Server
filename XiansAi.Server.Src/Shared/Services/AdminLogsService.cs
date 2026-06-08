@@ -1,6 +1,7 @@
 using Features.WebApi.Models;
 using Features.WebApi.Repositories;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -125,9 +126,9 @@ public class AdminLogsService : IAdminLogsService
                 "Retrieving admin logs - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, " +
                 "ParticipantId: {ParticipantId}, WorkflowIds: {WorkflowIds}, WorkflowType: {WorkflowType}, " +
                 "LogLevels: {LogLevels}, StartDate: {StartDate}, EndDate: {EndDate}, Page: {Page}, PageSize: {PageSize}",
-                tenantId, agentName ?? "null", activationName ?? "null", participantId ?? "null",
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName ?? "null"), LogSanitizer.Sanitize(activationName ?? "null"), LogSanitizer.Sanitize(participantId ?? "null"),
                 workflowIds != null ? string.Join(",", workflowIds) : "null",
-                workflowType ?? "null",
+                LogSanitizer.Sanitize(workflowType ?? "null"),
                 logLevels != null ? string.Join(",", logLevels.Select(l => l.ToString())) : "null",
                 startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", page, pageSize);
 
@@ -161,7 +162,7 @@ public class AdminLogsService : IAdminLogsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve admin logs. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve admin logs. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminLogsResponse>.InternalServerError("Failed to retrieve logs");
         }
     }
@@ -195,8 +196,8 @@ public class AdminLogsService : IAdminLogsService
                 "Retrieving admin log streams - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, " +
                 "ParticipantId: {ParticipantId}, WorkflowType: {WorkflowType}, LogLevels: {LogLevels}, " +
                 "StartDate: {StartDate}, EndDate: {EndDate}, Page: {Page}, PageSize: {PageSize}",
-                tenantId, agentName ?? "null", activationName ?? "null", participantId ?? "null",
-                workflowType ?? "null",
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName ?? "null"), LogSanitizer.Sanitize(activationName ?? "null"), LogSanitizer.Sanitize(participantId ?? "null"),
+                LogSanitizer.Sanitize(workflowType ?? "null"),
                 logLevels != null ? string.Join(",", logLevels.Select(l => l.ToString())) : "null",
                 startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", page, pageSize);
 
@@ -229,7 +230,7 @@ public class AdminLogsService : IAdminLogsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve admin log streams. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve admin log streams. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminLogStreamsResponse>.InternalServerError("Failed to retrieve log streams");
         }
     }

@@ -67,7 +67,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error creating API key for tenant {TenantId}", tenantId);
+                    _logger.LogError(ex, "Error creating API key for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                     throw;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateApiKey");
@@ -86,7 +86,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                    _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                     return false;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "RevokeApiKey");
@@ -106,7 +106,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting API keys for tenant {TenantId}", tenantId);
+                    _logger.LogError(ex, "Error getting API keys for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                     return new List<ApiKey>();
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeysByTenant");
@@ -127,7 +127,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting API keys for tenant {TenantId} with type {Type}", tenantId, type);
+                    _logger.LogError(ex, "Error getting API keys for tenant {TenantId} with type {Type}", LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(type));
                     return new List<ApiKey>();
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeysByTenantAndType");
@@ -155,7 +155,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error rotating API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                    _logger.LogError(ex, "Error rotating API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                     return ((string apiKey, ApiKey meta)?)null;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "RotateApiKey");
@@ -171,7 +171,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                    _logger.LogError(ex, "Error getting API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                     return null;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyById");
@@ -187,7 +187,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting API key {ApiKeyId}", id);
+                    _logger.LogError(ex, "Error getting API key {ApiKeyId}", LogSanitizer.Sanitize(id));
                     return null;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyByIdNoTenant");
@@ -204,7 +204,7 @@ namespace Shared.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", tenantId);
+                    _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                     return null;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetApiKeyByRawKey");

@@ -5,6 +5,7 @@ using Features.AppsApi.Models;
 using Features.AppsApi.Repositories;
 using Shared.Services;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Features.AppsApi.Services;
 
@@ -179,7 +180,7 @@ public class AppIntegrationService : IAppIntegrationService
         try
         {
             _logger.LogInformation("Getting integrations for tenant {TenantId}, platform={Platform}, agent={Agent}, activation={Activation}",
-                tenantId, platformId, agentName, activationName);
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(platformId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
 
             List<AppIntegration> integrations;
 
@@ -212,13 +213,13 @@ public class AppIntegrationService : IAppIntegrationService
                 .Select(i => AppIntegrationResponse.FromEntity(i))
                 .ToList();
 
-            _logger.LogInformation("Found {Count} integrations for tenant {TenantId}", responses.Count, tenantId);
+            _logger.LogInformation("Found {Count} integrations for tenant {TenantId}", responses.Count, LogSanitizer.Sanitize(tenantId));
 
             return ServiceResult<List<AppIntegrationResponse>>.Success(responses);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting integrations for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error getting integrations for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<List<AppIntegrationResponse>>.InternalServerError(
                 "An error occurred while retrieving integrations");
         }
@@ -228,7 +229,7 @@ public class AppIntegrationService : IAppIntegrationService
     {
         try
         {
-            _logger.LogInformation("Getting integration {IntegrationId} for tenant {TenantId}", id, tenantId);
+            _logger.LogInformation("Getting integration {IntegrationId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
 
             var integration = await _repository.GetByIdAsync(id);
 
@@ -240,7 +241,7 @@ public class AppIntegrationService : IAppIntegrationService
             if (integration.TenantId != tenantId)
             {
                 _logger.LogWarning("Tenant {TenantId} attempted to access integration {IntegrationId} belonging to tenant {OwnerTenant}",
-                    tenantId, id, integration.TenantId);
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(integration.TenantId));
                 return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
             }
 
@@ -253,7 +254,7 @@ public class AppIntegrationService : IAppIntegrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting integration {IntegrationId}", id);
+            _logger.LogError(ex, "Error getting integration {IntegrationId}", LogSanitizer.Sanitize(id));
             return ServiceResult<AppIntegrationResponse>.InternalServerError(
                 "An error occurred while retrieving the integration");
         }
@@ -267,7 +268,7 @@ public class AppIntegrationService : IAppIntegrationService
         try
         {
             _logger.LogInformation("Creating integration {Name} for tenant {TenantId}, platform {Platform}",
-                request.Name, tenantId, request.PlatformId);
+                LogSanitizer.Sanitize(request.Name), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.PlatformId));
 
             // Check if name already exists for this agent/activation combination
             if (await _repository.ExistsByNameAsync(tenantId, request.AgentName, request.ActivationName, request.Name))
@@ -329,13 +330,13 @@ public class AppIntegrationService : IAppIntegrationService
             var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
 
             _logger.LogInformation("Created integration {IntegrationId} with webhook URL {WebhookUrl}",
-                id, response.WebhookUrl);
+                LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(response.WebhookUrl));
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating integration for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error creating integration for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<AppIntegrationResponse>.InternalServerError(
                 "An error occurred while creating the integration");
         }
@@ -349,7 +350,7 @@ public class AppIntegrationService : IAppIntegrationService
     {
         try
         {
-            _logger.LogInformation("Updating integration {IntegrationId} for tenant {TenantId}", id, tenantId);
+            _logger.LogInformation("Updating integration {IntegrationId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
 
             var existing = await _repository.GetByIdAsync(id);
 
@@ -470,13 +471,13 @@ public class AppIntegrationService : IAppIntegrationService
 
             var response = AppIntegrationResponse.FromEntity(existing);
 
-            _logger.LogInformation("Updated integration {IntegrationId}", id);
+            _logger.LogInformation("Updated integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating integration {IntegrationId}", id);
+            _logger.LogError(ex, "Error updating integration {IntegrationId}", LogSanitizer.Sanitize(id));
             return ServiceResult<AppIntegrationResponse>.InternalServerError(
                 "An error occurred while updating the integration");
         }
@@ -486,7 +487,7 @@ public class AppIntegrationService : IAppIntegrationService
     {
         try
         {
-            _logger.LogInformation("Deleting integration {IntegrationId} for tenant {TenantId}", id, tenantId);
+            _logger.LogInformation("Deleting integration {IntegrationId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
 
             var existing = await _repository.GetByIdAsync(id);
 
@@ -507,13 +508,13 @@ public class AppIntegrationService : IAppIntegrationService
                 return ServiceResult<bool>.InternalServerError("Failed to delete integration");
             }
 
-            _logger.LogInformation("Deleted integration {IntegrationId}", id);
+            _logger.LogInformation("Deleted integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting integration {IntegrationId}", id);
+            _logger.LogError(ex, "Error deleting integration {IntegrationId}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.InternalServerError(
                 "An error occurred while deleting the integration");
         }
@@ -646,12 +647,12 @@ public class AppIntegrationService : IAppIntegrationService
             integration.Id = id;
 
             var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
-            _logger.LogInformation("Created builtin webhook integration {IntegrationId} with webhook URL", id);
+            _logger.LogInformation("Created builtin webhook integration {IntegrationId} with webhook URL", LogSanitizer.Sanitize(id));
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating builtin webhook for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error creating builtin webhook for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<AppIntegrationResponse>.InternalServerError("An error occurred while creating the builtin webhook");
         }
     }
@@ -678,7 +679,7 @@ public class AppIntegrationService : IAppIntegrationService
             {
                 var revokeResult = await _apiKeyService.RevokeApiKeyAsync(apiKeyId, tenantId);
                 if (!revokeResult.IsSuccess)
-                    _logger.LogWarning("Failed to revoke API key {ApiKeyId} when deleting builtin webhook: {Error}", apiKeyId, revokeResult.ErrorMessage);
+                    _logger.LogWarning("Failed to revoke API key {ApiKeyId} when deleting builtin webhook: {Error}", LogSanitizer.Sanitize(apiKeyId), LogSanitizer.Sanitize(revokeResult.ErrorMessage));
             }
         }
 
@@ -692,7 +693,7 @@ public class AppIntegrationService : IAppIntegrationService
     {
         try
         {
-            _logger.LogInformation("Enabling integration {IntegrationId}", id);
+            _logger.LogInformation("Enabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
             var existing = await _repository.GetByIdAsync(id);
 
@@ -720,13 +721,13 @@ public class AppIntegrationService : IAppIntegrationService
 
             var response = AppIntegrationResponse.FromEntity(existing);
 
-            _logger.LogInformation("Enabled integration {IntegrationId}", id);
+            _logger.LogInformation("Enabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error enabling integration {IntegrationId}", id);
+            _logger.LogError(ex, "Error enabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
             return ServiceResult<AppIntegrationResponse>.InternalServerError(
                 "An error occurred while enabling the integration");
         }
@@ -739,7 +740,7 @@ public class AppIntegrationService : IAppIntegrationService
     {
         try
         {
-            _logger.LogInformation("Disabling integration {IntegrationId}", id);
+            _logger.LogInformation("Disabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
             var existing = await _repository.GetByIdAsync(id);
 
@@ -767,13 +768,13 @@ public class AppIntegrationService : IAppIntegrationService
 
             var response = AppIntegrationResponse.FromEntity(existing);
 
-            _logger.LogInformation("Disabled integration {IntegrationId}", id);
+            _logger.LogInformation("Disabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error disabling integration {IntegrationId}", id);
+            _logger.LogError(ex, "Error disabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
             return ServiceResult<AppIntegrationResponse>.InternalServerError(
                 "An error occurred while disabling the integration");
         }
@@ -788,7 +789,7 @@ public class AppIntegrationService : IAppIntegrationService
     {
         try
         {
-            _logger.LogInformation("Testing integration {IntegrationId}", id);
+            _logger.LogInformation("Testing integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
             var integration = await _repository.GetByIdAsync(id);
 
@@ -814,7 +815,7 @@ public class AppIntegrationService : IAppIntegrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error testing integration {IntegrationId}", id);
+            _logger.LogError(ex, "Error testing integration {IntegrationId}", LogSanitizer.Sanitize(id));
             return ServiceResult<IntegrationTestResult>.InternalServerError(
                 "An error occurred while testing the integration");
         }
@@ -928,7 +929,7 @@ public class AppIntegrationService : IAppIntegrationService
             return; // Already migrated
         }
 
-        _logger.LogInformation("Migrating old integration {IntegrationId} to encrypted secrets format", integration.Id);
+        _logger.LogInformation("Migrating old integration {IntegrationId} to encrypted secrets format", LogSanitizer.Sanitize(integration.Id));
 
         // Migrate secrets from Configuration
         MigrateSecretsFromConfiguration(integration);
@@ -946,7 +947,7 @@ public class AppIntegrationService : IAppIntegrationService
         integration.UpdatedBy = "system-migration";
         await _repository.UpdateAsync(integration.Id, integration);
 
-        _logger.LogInformation("Successfully migrated integration {IntegrationId}", integration.Id);
+        _logger.LogInformation("Successfully migrated integration {IntegrationId}", LogSanitizer.Sanitize(integration.Id));
     }
 
     /// <summary>

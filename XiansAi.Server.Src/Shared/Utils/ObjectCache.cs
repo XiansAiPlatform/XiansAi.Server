@@ -1,4 +1,5 @@
 using Shared.Providers;
+using Shared.Utils;
 
 namespace Shared.Utils;
 
@@ -39,7 +40,7 @@ public class ObjectCache
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving value from cache for key: {Key}", key);
+            _logger.LogError(ex, "Error retrieving value from cache for key: {Key}", LogSanitizer.Sanitize(key));
             return default;
         }
     }
@@ -62,7 +63,7 @@ public class ObjectCache
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting value in cache for key: {Key}", key);
+            _logger.LogError(ex, "Error setting value in cache for key: {Key}", LogSanitizer.Sanitize(key));
             return false;
         }
     }
@@ -80,7 +81,7 @@ public class ObjectCache
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing value from cache for key: {Key}", key);
+            _logger.LogError(ex, "Error removing value from cache for key: {Key}", LogSanitizer.Sanitize(key));
             return false;
         }
     }

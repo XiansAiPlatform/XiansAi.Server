@@ -6,6 +6,7 @@ using Shared.Services;
 using Shared.Repositories;
 using Temporalio.Client;
 using System.Text.Json;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -151,7 +152,7 @@ public class ScheduleService : IScheduleService
                         if (!hasPermission)
                         {
                             _logger.LogDebug("Skipping schedule {ScheduleId} - user lacks permission for agent {AgentName}", 
-                                scheduleId, scheduleModel.AgentName);
+                                LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.AgentName));
                             continue;
                         }
                     }
@@ -182,12 +183,12 @@ public class ScheduleService : IScheduleService
                 }
                 catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
                 {
-                    _logger.LogDebug("Schedule {ScheduleId} was found in listing but not found when describing - likely recently deleted or stale cache", schedule.Id);
+                    _logger.LogDebug("Schedule {ScheduleId} was found in listing but not found when describing - likely recently deleted or stale cache", LogSanitizer.Sanitize(schedule.Id));
                     // Continue with other schedules - this is normal when schedules are recently deleted
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to process schedule {ScheduleId}", schedule.Id);
+                    _logger.LogWarning(ex, "Failed to process schedule {ScheduleId}", LogSanitizer.Sanitize(schedule.Id));
                     // Continue with other schedules instead of failing completely
                 }
             }
@@ -230,12 +231,12 @@ public class ScheduleService : IScheduleService
                 });
             }
             
-            _logger.LogInformation("Retrieved {Count} upcoming runs for schedule {ScheduleId}", upcomingRuns.Count, scheduleId);
+            _logger.LogInformation("Retrieved {Count} upcoming runs for schedule {ScheduleId}", upcomingRuns.Count, LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<List<ScheduleRunModel>>.Success(upcomingRuns);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get upcoming runs for schedule {ScheduleId}", scheduleId);
+            _logger.LogError(ex, "Failed to get upcoming runs for schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<List<ScheduleRunModel>>.InternalServerError($"Failed to retrieve upcoming runs: {ex.Message}");
         }
     }
@@ -275,12 +276,12 @@ public class ScheduleService : IScheduleService
             // Sort by scheduled time descending (most recent first)
             historyRuns = historyRuns.OrderByDescending(r => r.ScheduledTime).ToList();
             
-            _logger.LogInformation("Retrieved {Count} history runs for schedule {ScheduleId}", historyRuns.Count, scheduleId);
+            _logger.LogInformation("Retrieved {Count} history runs for schedule {ScheduleId}", historyRuns.Count, LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<List<ScheduleRunModel>>.Success(historyRuns);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get schedule history for schedule {ScheduleId}", scheduleId);
+            _logger.LogError(ex, "Failed to get schedule history for schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<List<ScheduleRunModel>>.InternalServerError($"Failed to retrieve schedule history: {ex.Message}");
         }
     }
@@ -296,17 +297,17 @@ public class ScheduleService : IScheduleService
             // Create a simple mock entry for mapping
             var schedule = MapToScheduleModel(scheduleId, description);
             
-            _logger.LogInformation("Retrieved schedule {ScheduleId}", scheduleId);
+            _logger.LogInformation("Retrieved schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<ScheduleModel>.Success(schedule);
         }
         catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
         {
-            _logger.LogWarning("Schedule {ScheduleId} not found", scheduleId);
+            _logger.LogWarning("Schedule {ScheduleId} not found", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<ScheduleModel>.NotFound($"Schedule {scheduleId} not found");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get schedule {ScheduleId}", scheduleId);
+            _logger.LogError(ex, "Failed to get schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<ScheduleModel>.InternalServerError($"Failed to retrieve schedule: {ex.Message}");
         }
     }
@@ -358,7 +359,7 @@ public class ScheduleService : IScheduleService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to calculate last run time for schedule {ScheduleId}", scheduleId);
+                _logger.LogWarning(ex, "Failed to calculate last run time for schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
                 lastRunTime = null;
             }
         }
@@ -393,7 +394,7 @@ public class ScheduleService : IScheduleService
             if (!readPermissionResult.IsSuccess)
             {
                 _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
-                    agentName, readPermissionResult.ErrorMessage);
+                    LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(readPermissionResult.ErrorMessage));
                 return false;
             }
             
@@ -401,7 +402,7 @@ public class ScheduleService : IScheduleService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error checking schedule access for agent {AgentName}", agentName);
+            _logger.LogWarning(ex, "Error checking schedule access for agent {AgentName}", LogSanitizer.Sanitize(agentName));
             return false;
         }
     }
@@ -662,7 +663,7 @@ public class ScheduleService : IScheduleService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to parse cron expression: {CronExpression}", cronExpression);
+            _logger.LogWarning(ex, "Failed to parse cron expression: {CronExpression}", LogSanitizer.Sanitize(cronExpression));
         }
         
         return from.AddHours(1);
@@ -822,7 +823,7 @@ public class ScheduleService : IScheduleService
                 scheduleModel.TenantId != _tenantContext.TenantId)
             {
                 _logger.LogWarning("Attempted to delete schedule {ScheduleId} from different tenant. Schedule tenant: {ScheduleTenant}, Current tenant: {CurrentTenant}", 
-                    scheduleId, scheduleModel.TenantId, _tenantContext.TenantId);
+                    LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.TenantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<bool>.Forbidden("You do not have permission to delete this schedule");
             }
             
@@ -833,7 +834,7 @@ public class ScheduleService : IScheduleService
                 if (!hasWritePermission.IsSuccess || !hasWritePermission.Data)
                 {
                     _logger.LogWarning("User lacks write permission for agent {AgentName} when attempting to delete schedule {ScheduleId}", 
-                        scheduleModel.AgentName, scheduleId);
+                        LogSanitizer.Sanitize(scheduleModel.AgentName), LogSanitizer.Sanitize(scheduleId));
                     return ServiceResult<bool>.Forbidden($"You do not have permission to delete schedules for agent {scheduleModel.AgentName}");
                 }
             }
@@ -842,18 +843,18 @@ public class ScheduleService : IScheduleService
             await scheduleHandle.DeleteAsync();
             
             _logger.LogInformation("Successfully deleted schedule {ScheduleId} for agent {AgentName}", 
-                scheduleId, scheduleModel.AgentName);
+                LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.AgentName));
             
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
         {
-            _logger.LogWarning("Schedule {ScheduleId} not found", scheduleId);
+            _logger.LogWarning("Schedule {ScheduleId} not found", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<bool>.NotFound($"Schedule {scheduleId} not found");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete schedule {ScheduleId}", scheduleId);
+            _logger.LogError(ex, "Failed to delete schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<bool>.InternalServerError($"Failed to delete schedule: {ex.Message}");
         }
     }
@@ -871,7 +872,7 @@ public class ScheduleService : IScheduleService
             var hasWritePermission = await _permissionsService.HasWritePermission(agentName);
             if (!hasWritePermission.IsSuccess || !hasWritePermission.Data)
             {
-                _logger.LogWarning("User lacks write permission for agent {AgentName}", agentName);
+                _logger.LogWarning("User lacks write permission for agent {AgentName}", LogSanitizer.Sanitize(agentName));
                 return ServiceResult<ScheduleDeleteResult>.Forbidden($"You do not have permission to delete schedules for agent {agentName}");
             }
             
@@ -884,7 +885,7 @@ public class ScheduleService : IScheduleService
             
             if (agent == null)
             {
-                _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", agentName, _tenantContext.TenantId);
+                _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<ScheduleDeleteResult>.NotFound($"Agent {agentName} not found");
             }
             
@@ -905,7 +906,7 @@ public class ScheduleService : IScheduleService
             
             var query = string.Join(" AND ", queryParts);
             
-            _logger.LogInformation("Deleting all schedules for agent {AgentName} with query: {Query}", agentName, query);
+            _logger.LogInformation("Deleting all schedules for agent {AgentName} with query: {Query}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(query));
             
             var listOptions = !string.IsNullOrEmpty(query) 
                 ? new Temporalio.Client.Schedules.ScheduleListOptions { Query = query }
@@ -918,7 +919,7 @@ public class ScheduleService : IScheduleService
                 scheduleIds.Add(schedule.Id);
             }
             
-            _logger.LogInformation("Found {Count} schedules to delete for agent {AgentName}", scheduleIds.Count, agentName);
+            _logger.LogInformation("Found {Count} schedules to delete for agent {AgentName}", scheduleIds.Count, LogSanitizer.Sanitize(agentName));
             
             // Delete each schedule
             foreach (var scheduleId in scheduleIds)
@@ -931,23 +932,23 @@ public class ScheduleService : IScheduleService
                     result.DeletedScheduleIds.Add(scheduleId);
                     result.DeletedCount++;
                     
-                    _logger.LogInformation("Successfully deleted schedule {ScheduleId}", scheduleId);
+                    _logger.LogInformation("Successfully deleted schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", scheduleId);
+                    _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
                     result.FailedScheduleIds.Add(scheduleId);
                 }
             }
             
             _logger.LogInformation("Deleted {DeletedCount} schedules for agent {AgentName}. Failed: {FailedCount}", 
-                result.DeletedCount, agentName, result.FailedScheduleIds.Count);
+                result.DeletedCount, LogSanitizer.Sanitize(agentName), result.FailedScheduleIds.Count);
             
             return ServiceResult<ScheduleDeleteResult>.Success(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete schedules for agent {AgentName}", agentName);
+            _logger.LogError(ex, "Failed to delete schedules for agent {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<ScheduleDeleteResult>.InternalServerError($"Failed to delete schedules: {ex.Message}");
         }
     }
@@ -968,7 +969,7 @@ public class ScheduleService : IScheduleService
 
             var query = queryParts.Count > 0 ? string.Join(" AND ", queryParts) : string.Empty;
 
-            _logger.LogInformation("Deleting all schedules for tenant {TenantId}", _tenantContext.TenantId);
+            _logger.LogInformation("Deleting all schedules for tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.TenantId));
 
             var listOptions = !string.IsNullOrEmpty(query)
                 ? new Temporalio.Client.Schedules.ScheduleListOptions { Query = query }
@@ -980,7 +981,7 @@ public class ScheduleService : IScheduleService
                 scheduleIds.Add(schedule.Id);
             }
 
-            _logger.LogInformation("Found {Count} schedules to delete for tenant {TenantId}", scheduleIds.Count, _tenantContext.TenantId);
+            _logger.LogInformation("Found {Count} schedules to delete for tenant {TenantId}", scheduleIds.Count, LogSanitizer.Sanitize(_tenantContext.TenantId));
 
             foreach (var scheduleId in scheduleIds)
             {
@@ -992,23 +993,23 @@ public class ScheduleService : IScheduleService
                     result.DeletedScheduleIds.Add(scheduleId);
                     result.DeletedCount++;
 
-                    _logger.LogInformation("Successfully deleted schedule {ScheduleId}", scheduleId);
+                    _logger.LogInformation("Successfully deleted schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", scheduleId);
+                    _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
                     result.FailedScheduleIds.Add(scheduleId);
                 }
             }
 
             _logger.LogInformation("Deleted {DeletedCount} schedules for tenant {TenantId}. Failed: {FailedCount}",
-                result.DeletedCount, _tenantContext.TenantId, result.FailedScheduleIds.Count);
+                result.DeletedCount, LogSanitizer.Sanitize(_tenantContext.TenantId), result.FailedScheduleIds.Count);
 
             return ServiceResult<ScheduleDeleteResult>.Success(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete all schedules for tenant {TenantId}", _tenantContext.TenantId);
+            _logger.LogError(ex, "Failed to delete all schedules for tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.TenantId));
             return ServiceResult<ScheduleDeleteResult>.InternalServerError($"Failed to delete all schedules: {ex.Message}");
         }
     }

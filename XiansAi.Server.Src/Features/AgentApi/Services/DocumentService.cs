@@ -8,6 +8,7 @@ using Shared.Utils.Services;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Features.AgentApi.Services;
 
@@ -67,7 +68,7 @@ public class DocumentService : IDocumentService
             if (!hasPermission)
             {
                 _logger.LogWarning("User {UserId} attempted to save document for agent {AgentId} without write permission", 
-                    _tenantContext.LoggedInUser, documentData.AgentId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(documentData.AgentId));
                 return ServiceResult<JsonElement>.Forbidden("Write access required for this agent");
             }
 
@@ -121,7 +122,7 @@ public class DocumentService : IDocumentService
                 {
                     var message = $"UseKeyAsIdentifier requires both Type and Key properties. Missing: {string.Join(", ", missingFields)}";
                     _logger.LogWarning("Document save failed: {Message}. Document Type={Type}, Key={Key}, AgentId={AgentId}", 
-                        message, document.Type, document.Key, document.AgentId);
+                        LogSanitizer.Sanitize(message), LogSanitizer.Sanitize(document.Type), LogSanitizer.Sanitize(document.Key), LogSanitizer.Sanitize(document.AgentId));
                     return ServiceResult<JsonElement>.BadRequest(message);
                 }
 
@@ -219,7 +220,7 @@ public class DocumentService : IDocumentService
             // Validate that AgentId is present
             if (string.IsNullOrEmpty(document.AgentId))
             {
-                _logger.LogWarning("Document {Id} has no AgentId, denying access", id);
+                _logger.LogWarning("Document {Id} has no AgentId, denying access", LogSanitizer.Sanitize(id));
                 return ServiceResult<JsonElement?>.Forbidden("Document has no associated agent");
             }
 
@@ -228,7 +229,7 @@ public class DocumentService : IDocumentService
             if (!hasPermission)
             {
                 _logger.LogWarning("User {UserId} attempted to get document {Id} for agent {AgentId} without read permission", 
-                    _tenantContext.LoggedInUser, id, document.AgentId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(document.AgentId));
                 return ServiceResult<JsonElement?>.Forbidden("Read access required for this agent");
             }
 
@@ -239,7 +240,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting document with ID: {Id}", id);
+            _logger.LogError(ex, "Error getting document with ID: {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<JsonElement?>.InternalServerError("Error retrieving document");
         }
     }
@@ -258,7 +259,7 @@ public class DocumentService : IDocumentService
             // Validate that AgentId is present
             if (string.IsNullOrEmpty(document.AgentId))
             {
-                _logger.LogWarning("Document with Type: {Type} and Key: {Key} has no AgentId, denying access", type, key);
+                _logger.LogWarning("Document with Type: {Type} and Key: {Key} has no AgentId, denying access", LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(key));
                 return ServiceResult<JsonElement?>.Forbidden("Document has no associated agent");
             }
 
@@ -267,7 +268,7 @@ public class DocumentService : IDocumentService
             if (!hasPermission)
             {
                 _logger.LogWarning("User {UserId} attempted to get document with Type: {Type} and Key: {Key} for agent {AgentId} without read permission", 
-                    _tenantContext.LoggedInUser, type, key, document.AgentId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(document.AgentId));
                 return ServiceResult<JsonElement?>.Forbidden("Read access required for this agent");
             }
 
@@ -278,7 +279,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting document with Type: {Type} and Key: {Key}", type, key);
+            _logger.LogError(ex, "Error getting document with Type: {Type} and Key: {Key}", LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(key));
             return ServiceResult<JsonElement?>.InternalServerError("Error retrieving document");
         }
     }
@@ -293,7 +294,7 @@ public class DocumentService : IDocumentService
             // If user has no access to any agents, return empty result
             if (!authorizedAgentNames.Any())
             {
-                _logger.LogInformation("User {UserId} has no read access to any agents", _tenantContext.LoggedInUser);
+                _logger.LogInformation("User {UserId} has no read access to any agents", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 var emptyResult = JsonSerializer.SerializeToElement(new List<object>());
                 return ServiceResult<JsonElement>.Success(emptyResult);
             }
@@ -306,7 +307,7 @@ public class DocumentService : IDocumentService
                 if (!authorizedAgentNames.Contains(request.Query.AgentId))
                 {
                     _logger.LogWarning("User {UserId} attempted to query agent {AgentId} without permission", 
-                        _tenantContext.LoggedInUser, request.Query.AgentId);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(request.Query.AgentId));
                     var emptyResult = JsonSerializer.SerializeToElement(new List<object>());
                     return ServiceResult<JsonElement>.Success(emptyResult);
                 }
@@ -376,7 +377,7 @@ public class DocumentService : IDocumentService
             // Validate that AgentId is present
             if (string.IsNullOrEmpty(existing.AgentId))
             {
-                _logger.LogWarning("Document {Id} has no AgentId, denying update", documentData.Id);
+                _logger.LogWarning("Document {Id} has no AgentId, denying update", LogSanitizer.Sanitize(documentData.Id));
                 return ServiceResult<bool>.Forbidden("Document has no associated agent");
             }
 
@@ -385,7 +386,7 @@ public class DocumentService : IDocumentService
             if (!hasPermission)
             {
                 _logger.LogWarning("User {UserId} attempted to update document {Id} for agent {AgentId} without write permission", 
-                    _tenantContext.LoggedInUser, documentData.Id, existing.AgentId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(documentData.Id), LogSanitizer.Sanitize(existing.AgentId));
                 return ServiceResult<bool>.Forbidden("Write access required for this agent");
             }
 
@@ -452,7 +453,7 @@ public class DocumentService : IDocumentService
             // Validate that AgentId is present
             if (string.IsNullOrEmpty(document.AgentId))
             {
-                _logger.LogWarning("Document {Id} has no AgentId, denying delete", id);
+                _logger.LogWarning("Document {Id} has no AgentId, denying delete", LogSanitizer.Sanitize(id));
                 return ServiceResult<bool>.Forbidden("Document has no associated agent");
             }
 
@@ -461,7 +462,7 @@ public class DocumentService : IDocumentService
             if (!hasPermission)
             {
                 _logger.LogWarning("User {UserId} attempted to delete document {Id} for agent {AgentId} without write permission", 
-                    _tenantContext.LoggedInUser, id, document.AgentId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(document.AgentId));
                 return ServiceResult<bool>.Forbidden("Write access required for this agent");
             }
 
@@ -476,7 +477,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting document with ID: {Id}", id);
+            _logger.LogError(ex, "Error deleting document with ID: {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.BadRequest("Error deleting document");
         }
     }
@@ -499,7 +500,7 @@ public class DocumentService : IDocumentService
             // If user has no write access to any agents, return 0 deleted
             if (!authorizedAgentNames.Any())
             {
-                _logger.LogWarning("User {UserId} has no write access to any agents, cannot delete documents", _tenantContext.LoggedInUser);
+                _logger.LogWarning("User {UserId} has no write access to any agents, cannot delete documents", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 var zeroResult = new BulkDeleteResult { DeletedCount = 0 };
                 return ServiceResult<BulkDeleteResult>.Success(zeroResult);
             }
@@ -535,7 +536,7 @@ public class DocumentService : IDocumentService
             // If document has no AgentId, deny access
             if (string.IsNullOrEmpty(document.AgentId))
             {
-                _logger.LogWarning("Document {Id} has no AgentId, denying existence check", id);
+                _logger.LogWarning("Document {Id} has no AgentId, denying existence check", LogSanitizer.Sanitize(id));
                 return ServiceResult<ExistsResult>.Forbidden("Document has no associated agent");
             }
 
@@ -544,7 +545,7 @@ public class DocumentService : IDocumentService
             if (!hasPermission)
             {
                 _logger.LogWarning("User {UserId} attempted to check existence of document {Id} for agent {AgentId} without read permission", 
-                    _tenantContext.LoggedInUser, id, document.AgentId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(document.AgentId));
                 // Return false for documents the user doesn't have access to (don't reveal existence)
                 var result = new ExistsResult { Exists = false };
                 return ServiceResult<ExistsResult>.Success(result);
@@ -555,7 +556,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking document existence with ID: {Id}", id);
+            _logger.LogError(ex, "Error checking document existence with ID: {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<ExistsResult>.InternalServerError("Error checking document existence");
         }
     }
@@ -636,7 +637,7 @@ public class DocumentService : IDocumentService
         var currentPermissions = await _agentPermissionRepository.GetAgentPermissionsAsync(agentId);
         if (currentPermissions == null)
         {
-            _logger.LogWarning("No permissions found for agent: {AgentId}", agentId);
+            _logger.LogWarning("No permissions found for agent: {AgentId}", LogSanitizer.Sanitize(agentId));
             return false;
         }
 

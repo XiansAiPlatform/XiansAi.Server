@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Shared.Data;
 using Shared.Auth;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -40,12 +41,12 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
     public async Task<Permission?> GetAgentPermissionsAsync(string agentName)
     {
-        _logger.LogInformation("Getting permissions for agent: {AgentName}", agentName);
+        _logger.LogInformation("Getting permissions for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
 
         // Check cache first (request-scoped cache to avoid repeated DB calls)
         if (_permissionsCache.TryGetValue(agentName, out var cachedPermissions))
         {
-            _logger.LogDebug("Agent permissions cache hit for agent: {AgentName}", agentName);
+            _logger.LogDebug("Agent permissions cache hit for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
             return cachedPermissions;
         }
 
@@ -53,7 +54,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
         if (agent == null)
         {
-            _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            _logger.LogWarning("Agent not found: {AgentName}", LogSanitizer.Sanitize(agentName));
             _permissionsCache[agentName] = null;
             return null;
         }
@@ -66,13 +67,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         };
 
         _permissionsCache[agentName] = permission;
-        _logger.LogDebug("Agent permissions cache miss for agent: {AgentName}, loaded from DB", agentName);
+        _logger.LogDebug("Agent permissions cache miss for agent: {AgentName}, loaded from DB", LogSanitizer.Sanitize(agentName));
         return permission;
     }
 
     public async Task<string?> GetAgentTenantAsync(string agentName)
     {
-        _logger.LogInformation("Getting tenant for agent: {AgentName}", agentName);
+        _logger.LogInformation("Getting tenant for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
 
         if (_agentTenantCache.TryGetValue(agentName, out var cachedTenant))
         {
@@ -82,7 +83,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
         if (agent == null)
         {
-            _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            _logger.LogWarning("Agent not found: {AgentName}", LogSanitizer.Sanitize(agentName));
             _agentTenantCache[agentName] = string.Empty;
             return string.Empty;
         }
@@ -93,7 +94,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
     public async Task<bool> UpdateAgentPermissionsAsync(string agentName, Permission permissions)
     {
-        _logger.LogInformation("Updating permissions for agent: {AgentName}", agentName);
+        _logger.LogInformation("Updating permissions for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
 
         // Use permission-aware method that checks if user has owner permission
         var agentUpdated = await _agentRepository.UpdatePermissionsAsync(
@@ -105,13 +106,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
         if (!agentUpdated)
         {
-            _logger.LogWarning("Failed to update permissions for agent {AgentName} - either not found or insufficient permissions", agentName);
+            _logger.LogWarning("Failed to update permissions for agent {AgentName} - either not found or insufficient permissions", LogSanitizer.Sanitize(agentName));
             return false;
         }
 
         // Invalidate cache since permissions have changed
         _permissionsCache.Remove(agentName);
-        _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", agentName);
+        _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
 
         return true;
     }
@@ -125,7 +126,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
         if (agent == null)
         {
-            _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            _logger.LogWarning("Agent not found: {AgentName}", LogSanitizer.Sanitize(agentName));
             return false;
         }
 
@@ -133,7 +134,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission",
-                _tenantContext.LoggedInUser, agentName);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
             return false;
         }
 
@@ -163,7 +164,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         {
             // Invalidate cache since permissions have changed
             _permissionsCache.Remove(agentName);
-            _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", agentName);
+            _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
         }
 
         return result;
@@ -171,13 +172,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
 
     public async Task<bool> RemoveUserFromAgentAsync(string agentName, string userId)
     {
-        _logger.LogInformation("Removing user {UserId} from agent {AgentName}", userId, agentName);
+        _logger.LogInformation("Removing user {UserId} from agent {AgentName}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(agentName));
 
         // Get the agent without permission check first, then check owner permission explicitly
         var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
         if (agent == null)
         {
-            _logger.LogWarning("Agent not found: {AgentName}", agentName);
+            _logger.LogWarning("Agent not found: {AgentName}", LogSanitizer.Sanitize(agentName));
             return false;
         }
 
@@ -185,7 +186,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         if (!CheckPermissions(agent, PermissionLevel.Owner))
         {
             _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission",
-                _tenantContext.LoggedInUser, agentName);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
             return false;
         }
 
@@ -206,13 +207,13 @@ public class AgentPermissionRepository : IAgentPermissionRepository
         {
             // Invalidate cache since permissions have changed
             _permissionsCache.Remove(agentName);
-            _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", agentName);
+            _logger.LogDebug("Invalidated permissions cache for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
         }
 
         // If the user wasn't found in any permission list, still consider it successful (idempotent operation)
         if (!wasUserFound)
         {
-            _logger.LogInformation("User {UserId} was not found in any permission lists for agent {AgentName}, operation considered successful", userId, agentName);
+            _logger.LogInformation("User {UserId} was not found in any permission lists for agent {AgentName}, operation considered successful", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(agentName));
             return true;
         }
 
@@ -235,7 +236,7 @@ public class AgentPermissionRepository : IAgentPermissionRepository
     {
         // Flow definitions no longer have permissions - they inherit from agent permissions
         // This method is no longer needed but kept for backward compatibility
-        _logger.LogInformation("Permission sync to flow definitions is no longer needed for agent {AgentName}", agentName);
+        _logger.LogInformation("Permission sync to flow definitions is no longer needed for agent {AgentName}", LogSanitizer.Sanitize(agentName));
     }
 
     private Permission CleanPermissionLevels(Permission permissions)

@@ -7,6 +7,7 @@ using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Utils;
 
 namespace Features.AgentApi.Services.Lib;
 
@@ -163,7 +164,7 @@ public class DefinitionsService : IDefinitionsService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Invalid agent name: {AgentName}. Error: {Error}", request.Agent, ex.Message);
+            _logger.LogWarning("Invalid agent name: {AgentName}. Error: {Error}", LogSanitizer.Sanitize(request.Agent), LogSanitizer.Sanitize(ex.Message));
             return Results.Problem(
                 title: "Bad Request",
                 detail: ex.Message,
@@ -175,14 +176,14 @@ public class DefinitionsService : IDefinitionsService
         // Only system admins can create system agents
         if (request.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
-            _logger.LogError("User {UserId} attempted to create system agent {AgentName} without system admin permission", currentUser, request.Agent);
+            _logger.LogError("User {UserId} attempted to create system agent {AgentName} without system admin permission", LogSanitizer.Sanitize(currentUser), LogSanitizer.Sanitize(request.Agent));
             throw new InvalidOperationException("User does not have system admin permission to create `system` agents");
         }
 
         // if not systemScoped and there is an systemscoped agent with the same name, throw an error
         if (!request.SystemScoped && await _agentRepository.IsSystemAgent(request.Agent))
         {
-            _logger.LogError("User {UserId} attempted to create non-system agent {AgentName} with the same name as an existing system scoped agent", currentUser, request.Agent);
+            _logger.LogError("User {UserId} attempted to create non-system agent {AgentName} with the same name as an existing system scoped agent", LogSanitizer.Sanitize(currentUser), LogSanitizer.Sanitize(request.Agent));
             return Results.Problem(
                 title: "Internal Server Error",
                 detail: $"An system scoped agent with the same name already exists. Trying to create definition for {request.WorkflowType} for agent {request.Agent}",
@@ -225,7 +226,7 @@ public class DefinitionsService : IDefinitionsService
         {
             if (existingDefinition.Hash != definition.Hash)
             {
-                _logger.LogInformation("Flow definition with workflow type {WorkflowType} has changed hash. Deleting existing and creating new one.", request.WorkflowType);
+                _logger.LogInformation("Flow definition with workflow type {WorkflowType} has changed hash. Deleting existing and creating new one.", LogSanitizer.Sanitize(request.WorkflowType));
                 await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id);
                 await GenerateMarkdown(definition);
                 // Create new definition with fresh ID
@@ -237,7 +238,7 @@ public class DefinitionsService : IDefinitionsService
             return Results.Ok("Definition already up to date");
         }
 
-        _logger.LogInformation("Creating new definition {WorkflowType}", definition.WorkflowType);
+        _logger.LogInformation("Creating new definition {WorkflowType}", LogSanitizer.Sanitize(definition.WorkflowType));
         await GenerateMarkdown(definition);
         await _flowDefinitionRepository.CreateAsync(definition);
         return Results.Ok("New definition created successfully");
@@ -265,7 +266,7 @@ public class DefinitionsService : IDefinitionsService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Invalid agent name: {AgentName}. Error: {Error}", request.AgentName, ex.Message);
+            _logger.LogWarning("Invalid agent name: {AgentName}. Error: {Error}", LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(ex.Message));
             return Results.Problem(
                 title: "Bad Request",
                 detail: ex.Message,
@@ -277,7 +278,7 @@ public class DefinitionsService : IDefinitionsService
         // Only system admins can create system agents
         if (request.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
-            _logger.LogError("User {UserId} attempted to create system agent {AgentName} without system admin permission", currentUser, request.AgentName);
+            _logger.LogError("User {UserId} attempted to create system agent {AgentName} without system admin permission", LogSanitizer.Sanitize(currentUser), LogSanitizer.Sanitize(request.AgentName));
             return Results.Problem(
                 title: "Forbidden",
                 detail: "User does not have system admin permission to create `system` agents",
@@ -287,7 +288,7 @@ public class DefinitionsService : IDefinitionsService
         // if not systemScoped and there is a systemscoped agent with the same name, throw an error
         if (!request.SystemScoped && await _agentRepository.IsSystemAgent(request.AgentName))
         {
-            _logger.LogError("User {UserId} attempted to create non-system agent {AgentName} with the same name as an existing system scoped agent", currentUser, request.AgentName);
+            _logger.LogError("User {UserId} attempted to create non-system agent {AgentName} with the same name as an existing system scoped agent", LogSanitizer.Sanitize(currentUser), LogSanitizer.Sanitize(request.AgentName));
             return Results.Problem(
                 title: "Conflict",
                 detail: $"A system scoped agent with the same name already exists. Agent name: {request.AgentName}",
@@ -308,7 +309,7 @@ public class DefinitionsService : IDefinitionsService
             request.Category,
             request.SamplePrompts);
         
-        _logger.LogInformation("Agent {AgentName} created/updated successfully by user {UserId}", request.AgentName, currentUser);
+        _logger.LogInformation("Agent {AgentName} created/updated successfully by user {UserId}", LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(currentUser));
         
         return Results.Ok(new 
         { 

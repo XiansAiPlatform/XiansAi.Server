@@ -49,8 +49,10 @@ public static class MarkdigSlackConverter
         }
     }
 
-    private static void ProcessInlines(ContainerInline inlines, StringBuilder sb)
+    private static void ProcessInlines(ContainerInline? inlines, StringBuilder sb)
     {
+        if (inlines == null) return;
+
         foreach (var inline in inlines)
         {
             switch (inline)

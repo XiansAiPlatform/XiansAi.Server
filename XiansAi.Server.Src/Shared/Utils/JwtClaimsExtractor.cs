@@ -191,7 +191,7 @@ public class JwtClaimsExtractor : IJwtClaimsExtractor
             var claimValue = jsonToken.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
             if (!string.IsNullOrEmpty(claimValue))
             {
-                _logger.LogDebug("Found claim '{ClaimType}': {Value}", claimType, claimValue);
+                _logger.LogDebug("Found claim '{ClaimType}'", claimType);
                 return claimValue;
             }
 
@@ -201,8 +201,8 @@ public class JwtClaimsExtractor : IJwtClaimsExtractor
                 claimValue = jsonToken.Claims.FirstOrDefault(c => c.Type == fallbackType)?.Value;
                 if (!string.IsNullOrEmpty(claimValue))
                 {
-                    _logger.LogDebug("Found claim '{FallbackType}' (fallback for '{ClaimType}'): {Value}", 
-                        fallbackType, claimType, claimValue);
+                    _logger.LogDebug("Found claim '{FallbackType}' (fallback for '{ClaimType}')", 
+                        fallbackType, claimType);
                     return claimValue;
                 }
             }

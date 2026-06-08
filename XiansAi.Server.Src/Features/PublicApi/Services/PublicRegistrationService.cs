@@ -116,14 +116,14 @@ public class PublicRegistrationService : IPublicRegistrationService
             var tenant = await _tenantRepository.GetByTenantIdAsync(request.TenantId);
             if (tenant == null)
             {
-                _logger.LogWarning("Tenant join request failed: Tenant {TenantId} not found", request.TenantId);
+                _logger.LogWarning("Tenant join request failed: Tenant {TenantId} not found", LogSanitizer.Sanitize(request.TenantId));
                 return ServiceResult<PublicJoinTenantResponse>.NotFound("Tenant not found");
             }
 
             // Check if tenant is enabled
             if (!tenant.Enabled)
             {
-                _logger.LogWarning("Tenant join request failed: Tenant {TenantId} is disabled", request.TenantId);
+                _logger.LogWarning("Tenant join request failed: Tenant {TenantId} is disabled", LogSanitizer.Sanitize(request.TenantId));
                 return ServiceResult<PublicJoinTenantResponse>.BadRequest("Tenant is not accepting new members");
             }
 
@@ -151,7 +151,7 @@ public class PublicRegistrationService : IPublicRegistrationService
                 if (!createUserResult.IsSuccess)
                 {
                     _logger.LogError("Failed to create user {UserId} for tenant join request: {Error}", 
-                        jwtResult.UserId, createUserResult.ErrorMessage);
+                        LogSanitizer.Sanitize(jwtResult.UserId), LogSanitizer.Sanitize(createUserResult.ErrorMessage));
                     return ServiceResult<PublicJoinTenantResponse>.InternalServerError("Failed to create user account");
                 }
 
@@ -203,12 +203,12 @@ public class PublicRegistrationService : IPublicRegistrationService
             if (!updateResult)
             {
                 _logger.LogError("Failed to update user {UserId} with tenant join request for {TenantId}", 
-                    user.UserId, request.TenantId);
+                    LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(request.TenantId));
                 return ServiceResult<PublicJoinTenantResponse>.InternalServerError("Failed to submit join request");
             }
 
             _logger.LogInformation("User {UserId} ({Email}) requested to join tenant {TenantId}", 
-                user.UserId, user.Email, request.TenantId);
+                LogSanitizer.Sanitize(user.UserId), LogSanitizer.RedactEmail(user.Email), LogSanitizer.Sanitize(request.TenantId));
 
             return ServiceResult<PublicJoinTenantResponse>.Success(new PublicJoinTenantResponse
             {
@@ -220,7 +220,7 @@ public class PublicRegistrationService : IPublicRegistrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing tenant join request for tenant {TenantId}", request.TenantId);
+            _logger.LogError(ex, "Error processing tenant join request for tenant {TenantId}", LogSanitizer.Sanitize(request.TenantId));
             return ServiceResult<PublicJoinTenantResponse>.InternalServerError("An error occurred while processing your request");
         }
     }
@@ -258,7 +258,7 @@ public class PublicRegistrationService : IPublicRegistrationService
             }
             catch (ValidationException ex)
             {
-                _logger.LogWarning("Invalid tenant ID provided: {TenantId}, Error: {Error}", request.TenantId, ex.Message);
+                _logger.LogWarning("Invalid tenant ID provided: {TenantId}, Error: {Error}", LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(ex.Message));
                 return ServiceResult<PublicCreateTenantResponse>.BadRequest($"Invalid tenant ID: {ex.Message}");
             }
 
@@ -266,7 +266,7 @@ public class PublicRegistrationService : IPublicRegistrationService
             var existingTenant = await _tenantRepository.GetByTenantIdAsync(request.TenantId);
             if (existingTenant != null)
             {
-                _logger.LogWarning("Tenant creation failed: Tenant {TenantId} already exists", request.TenantId);
+                _logger.LogWarning("Tenant creation failed: Tenant {TenantId} already exists", LogSanitizer.Sanitize(request.TenantId));
                 return ServiceResult<PublicCreateTenantResponse>.Conflict("A tenant with this ID already exists");
             }
 
@@ -291,7 +291,7 @@ public class PublicRegistrationService : IPublicRegistrationService
             var tenantResult = await _tenantService.CreateTenant(createTenantRequest, jwtResult.UserId);
             if (!tenantResult.IsSuccess)
             {
-                _logger.LogError("Failed to create tenant {TenantId}: {Error}", request.TenantId, tenantResult.ErrorMessage);
+                _logger.LogError("Failed to create tenant {TenantId}: {Error}", LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(tenantResult.ErrorMessage));
                 return ServiceResult<PublicCreateTenantResponse>.BadRequest(tenantResult.ErrorMessage ?? "Failed to create tenant");
             }
 
@@ -311,7 +311,7 @@ public class PublicRegistrationService : IPublicRegistrationService
                 if (!createUserResult.IsSuccess)
                 {
                     _logger.LogError("Failed to create user {UserId} for tenant creation: {Error}", 
-                        jwtResult.UserId, createUserResult.ErrorMessage);
+                        LogSanitizer.Sanitize(jwtResult.UserId), LogSanitizer.Sanitize(createUserResult.ErrorMessage));
                     return ServiceResult<PublicCreateTenantResponse>.InternalServerError("Failed to create user account");
                 }
 
@@ -334,12 +334,12 @@ public class PublicRegistrationService : IPublicRegistrationService
             if (!roleResult.IsSuccess)
             {
                 _logger.LogError("Created tenant {TenantId} but failed to assign admin role to user {UserId}: {Error}", 
-                    request.TenantId, jwtResult.UserId, roleResult.ErrorMessage);
+                    LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(jwtResult.UserId), LogSanitizer.Sanitize(roleResult.ErrorMessage));
                 return ServiceResult<PublicCreateTenantResponse>.InternalServerError("Failed to assign admin role to user. Pelase contact support.");
             }
 
             _logger.LogInformation("User {UserId} ({Email}) created new tenant {TenantId} and was assigned as admin", 
-                jwtResult.UserId, jwtResult.Email, request.TenantId);
+                LogSanitizer.Sanitize(jwtResult.UserId), LogSanitizer.RedactEmail(jwtResult.Email), LogSanitizer.Sanitize(request.TenantId));
 
             return ServiceResult<PublicCreateTenantResponse>.Success(new PublicCreateTenantResponse
             {
@@ -350,7 +350,7 @@ public class PublicRegistrationService : IPublicRegistrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating new tenant {TenantId}", request.TenantId);
+            _logger.LogError(ex, "Error creating new tenant {TenantId}", LogSanitizer.Sanitize(request.TenantId));
             return ServiceResult<PublicCreateTenantResponse>.InternalServerError("An error occurred while creating the tenant");
         }
     }

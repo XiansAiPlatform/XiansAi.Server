@@ -1,5 +1,6 @@
 using Shared.Auth;
 using Shared.Utils.GenAi;
+using Shared.Utils;
 
 namespace Shared.Providers;
 
@@ -86,7 +87,7 @@ public class DummyLlmProvider : ILlmProvider
     public Task<string> GetChatCompletionAsync(List<ChatMessage> messages, string model = "dummy-echo-model")
     {
         _logger.LogInformation("DummyLlmProvider: Processing {MessageCount} messages with model {Model}", 
-            messages.Count, model);
+            messages.Count, LogSanitizer.Sanitize(model));
 
         if (messages == null || messages.Count == 0)
         {
@@ -99,7 +100,7 @@ public class DummyLlmProvider : ILlmProvider
         if (lastUserMessage != null)
         {
             var response = $"Echo from Dummy LLM: {lastUserMessage.Content}";
-            _logger.LogInformation("DummyLlmProvider: Echoing user message: {Message}", lastUserMessage.Content);
+            _logger.LogInformation("DummyLlmProvider: Echoing user message: {Message}", LogSanitizer.Sanitize(lastUserMessage.Content));
             return Task.FromResult(response);
         }
 

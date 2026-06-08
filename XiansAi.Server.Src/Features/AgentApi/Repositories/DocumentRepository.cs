@@ -90,7 +90,7 @@ public class DocumentRepository : IDocumentRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving document with ID: {Id}", id);
+            _logger.LogError(ex, "Error retrieving document with ID: {Id}", LogSanitizer.Sanitize(id));
             throw;
         }
     }
@@ -114,7 +114,7 @@ public class DocumentRepository : IDocumentRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving document with Type: {Type} and Key: {Key}", type, key);
+            _logger.LogError(ex, "Error retrieving document with Type: {Type} and Key: {Key}", LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(key));
             throw;
         }
     }
@@ -296,7 +296,7 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting distinct document types for tenant {TenantId}, agent {AgentId}", 
-                tenantId, agentId);
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentId));
             throw;
         }
     }
@@ -336,7 +336,7 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting distinct activation names for tenant {TenantId}, agent {AgentId}", 
-                tenantId, agentId);
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentId));
             throw;
         }
     }
@@ -363,7 +363,7 @@ public class DocumentRepository : IDocumentRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating document with ID: {Id}", document.Id);
+            _logger.LogError(ex, "Error updating document with ID: {Id}", LogSanitizer.Sanitize(document.Id));
             throw;
         }
     }
@@ -388,7 +388,7 @@ public class DocumentRepository : IDocumentRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting document with ID: {Id}", id);
+            _logger.LogError(ex, "Error deleting document with ID: {Id}", LogSanitizer.Sanitize(id));
             throw;
         }
     }
@@ -472,14 +472,14 @@ public class DocumentRepository : IDocumentRepository
                 _logger);
 
             _logger.LogInformation("Deleted {DeletedCount} documents matching filter - AgentId: {AgentId}, Type: {Type}, ActivationName: {ActivationName}", 
-                result.DeletedCount, filter.AgentId, filter.Type, filter.ActivationName);
+                result.DeletedCount, LogSanitizer.Sanitize(filter.AgentId), LogSanitizer.Sanitize(filter.Type), LogSanitizer.Sanitize(filter.ActivationName));
 
             return (int)result.DeletedCount;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting documents by filter - AgentId: {AgentId}, Type: {Type}", 
-                filter.AgentId, filter.Type);
+                LogSanitizer.Sanitize(filter.AgentId), LogSanitizer.Sanitize(filter.Type));
             throw;
         }
     }
@@ -504,7 +504,7 @@ public class DocumentRepository : IDocumentRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking document existence with ID: {Id}", id);
+            _logger.LogError(ex, "Error checking document existence with ID: {Id}", LogSanitizer.Sanitize(id));
             throw;
         }
     }
@@ -530,7 +530,7 @@ public class DocumentRepository : IDocumentRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking document existence with Type: {Type} and Key: {Key}", type, key);
+            _logger.LogError(ex, "Error checking document existence with Type: {Type} and Key: {Key}", LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(key));
             throw;
         }
     }

@@ -3,6 +3,7 @@ using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -61,21 +62,21 @@ public class TemplateService : ITemplateService
         try
         {
             _logger.LogInformation("Retrieving system-scoped agent definitions for user {UserId} in tenant {TenantId} (no permission checks)", 
-                _tenantContext.LoggedInUser, _tenantContext.TenantId);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId));
 
             // Get system-scoped agents without permission checks
             // System-scoped agents are available to any logged-in user with a valid tenant
             var systemScopedAgents = await _agentRepository.GetSystemScopedAgentsWithDefinitionsAsync(basicDataOnly);
 
             _logger.LogInformation("Found {Count} system-scoped agents for user {UserId}", 
-                systemScopedAgents.Count, _tenantContext.LoggedInUser);
+                systemScopedAgents.Count, LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
 
             return ServiceResult<List<AgentWithDefinitions>>.Success(systemScopedAgents);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving system-scoped agent definitions for user {UserId} in tenant {TenantId}", 
-                _tenantContext.LoggedInUser, _tenantContext.TenantId);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId));
             return ServiceResult<List<AgentWithDefinitions>>.InternalServerError(
                 "An error occurred while retrieving system-scoped agent definitions");
         }
@@ -143,7 +144,7 @@ public class TemplateService : ITemplateService
         try
         {
             _logger.LogInformation("Attempting to delete system-scoped agent {AgentName} by user {UserId}", 
-                agentName, _tenantContext.LoggedInUser);
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
 
             // Validate input
             if (string.IsNullOrWhiteSpace(agentName))
@@ -156,14 +157,14 @@ public class TemplateService : ITemplateService
             
             if (agent == null)
             {
-                _logger.LogWarning("Agent {AgentName} not found", agentName);
+                _logger.LogWarning("Agent {AgentName} not found", LogSanitizer.Sanitize(agentName));
                 return ServiceResult<bool>.NotFound($"Agent '{agentName}' not found");
             }
 
             // Verify that the agent is system-scoped
             if (!agent.SystemScoped)
             {
-                _logger.LogWarning("Agent {AgentName} is not system-scoped", agentName);
+                _logger.LogWarning("Agent {AgentName} is not system-scoped", LogSanitizer.Sanitize(agentName));
                 return ServiceResult<bool>.BadRequest($"Agent '{agentName}' is not a system-scoped agent. Only system-scoped agents can be deleted through this endpoint.");
             }
 
@@ -182,7 +183,7 @@ public class TemplateService : ITemplateService
             
             if (!success)
             {
-                _logger.LogWarning("Failed to delete system-scoped agent {AgentName}", agentName);
+                _logger.LogWarning("Failed to delete system-scoped agent {AgentName}", LogSanitizer.Sanitize(agentName));
                 return ServiceResult<bool>.InternalServerError($"Failed to delete system-scoped agent '{agentName}'");
             }
 
@@ -193,7 +194,7 @@ public class TemplateService : ITemplateService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting system-scoped agent {AgentName}", agentName);
+            _logger.LogError(ex, "Error deleting system-scoped agent {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.InternalServerError(
                 "An error occurred while deleting the system-scoped agent");
         }
@@ -214,7 +215,7 @@ public class TemplateService : ITemplateService
         try
         {
             _logger.LogInformation("Deploying template agent {AgentName} to tenant {TenantId} by user {CreatedBy}", 
-                agentName, tenantId, createdBy);
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
 
             // Validate input
             if (string.IsNullOrWhiteSpace(agentName))
@@ -238,7 +239,7 @@ public class TemplateService : ITemplateService
 
             if (templateAgent == null)
             {
-                _logger.LogWarning("System-scoped agent {AgentName} not found", agentName);
+                _logger.LogWarning("System-scoped agent {AgentName} not found", LogSanitizer.Sanitize(agentName));
                 return ServiceResult<Agent>.NotFound($"System-scoped agent '{agentName}' not found");
             }
 
@@ -246,7 +247,7 @@ public class TemplateService : ITemplateService
             var existingAgent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
             if (existingAgent != null)
             {
-                _logger.LogWarning("Agent {AgentName} already exists in tenant {TenantId}", agentName, tenantId);
+                _logger.LogWarning("Agent {AgentName} already exists in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<Agent>.Conflict($"Agent '{agentName}' already exists in tenant '{tenantId}'. Delete it first if you want to redeploy.");
             }
 
@@ -277,7 +278,7 @@ public class TemplateService : ITemplateService
             // Create the agent
             await _agentRepository.CreateAsync(newAgent);
             _logger.LogInformation("Created agent replica {AgentName} with ID {AgentId} for tenant {TenantId} by user {CreatedBy}", 
-                agentName, newAgent.Id, tenantId, createdBy);
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(newAgent.Id), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
 
             // Clone all flow definitions from the template
             var clonedDefinitionsCount = 0;
@@ -305,7 +306,7 @@ public class TemplateService : ITemplateService
                 clonedDefinitionsCount++;
                 
                 _logger.LogDebug("Cloned flow definition {WorkflowType} for agent {AgentName}", 
-                    templateDefinition.WorkflowType, agentName);
+                    LogSanitizer.Sanitize(templateDefinition.WorkflowType), LogSanitizer.Sanitize(agentName));
             }
 
             _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions by user {CreatedBy}", 
@@ -316,7 +317,7 @@ public class TemplateService : ITemplateService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deploying template agent {AgentName} to tenant {TenantId} by user {CreatedBy}", 
-                agentName, tenantId, createdBy);
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
             return ServiceResult<Agent>.InternalServerError(
                 "An error occurred while deploying the template to tenant");
         }
@@ -331,7 +332,7 @@ public class TemplateService : ITemplateService
     {
         try
         {
-            _logger.LogInformation("Retrieving system-scoped agent template by ID {TemplateObjectId}", templateObjectId);
+            _logger.LogInformation("Retrieving system-scoped agent template by ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
 
             if (string.IsNullOrWhiteSpace(templateObjectId))
             {
@@ -341,13 +342,13 @@ public class TemplateService : ITemplateService
             var template = await _agentRepository.GetByIdInternalAsync(templateObjectId);
             if (template == null)
             {
-                _logger.LogWarning("Template with ID {TemplateObjectId} not found", templateObjectId);
+                _logger.LogWarning("Template with ID {TemplateObjectId} not found", LogSanitizer.Sanitize(templateObjectId));
                 return ServiceResult<Agent>.NotFound($"Agent template with ID '{templateObjectId}' not found");
             }
 
             if (!template.SystemScoped)
             {
-                _logger.LogWarning("Agent with ID {TemplateObjectId} is not system-scoped", templateObjectId);
+                _logger.LogWarning("Agent with ID {TemplateObjectId} is not system-scoped", LogSanitizer.Sanitize(templateObjectId));
                 return ServiceResult<Agent>.BadRequest($"Agent with ID '{templateObjectId}' is not a system-scoped template");
             }
 
@@ -355,7 +356,7 @@ public class TemplateService : ITemplateService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving system-scoped agent template by ID {TemplateObjectId}", templateObjectId);
+            _logger.LogError(ex, "Error retrieving system-scoped agent template by ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
             return ServiceResult<Agent>.InternalServerError(
                 "An error occurred while retrieving the template");
         }
@@ -376,7 +377,7 @@ public class TemplateService : ITemplateService
     {
         try
         {
-            _logger.LogInformation("Updating system-scoped agent template by ID {TemplateObjectId}", templateObjectId);
+            _logger.LogInformation("Updating system-scoped agent template by ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
 
             if (string.IsNullOrWhiteSpace(templateObjectId))
             {
@@ -386,13 +387,13 @@ public class TemplateService : ITemplateService
             var template = await _agentRepository.GetByIdInternalAsync(templateObjectId);
             if (template == null)
             {
-                _logger.LogWarning("Template with ID {TemplateObjectId} not found", templateObjectId);
+                _logger.LogWarning("Template with ID {TemplateObjectId} not found", LogSanitizer.Sanitize(templateObjectId));
                 return ServiceResult<Agent>.NotFound($"Agent template with ID '{templateObjectId}' not found");
             }
 
             if (!template.SystemScoped)
             {
-                _logger.LogWarning("Agent with ID {TemplateObjectId} is not system-scoped", templateObjectId);
+                _logger.LogWarning("Agent with ID {TemplateObjectId} is not system-scoped", LogSanitizer.Sanitize(templateObjectId));
                 return ServiceResult<Agent>.BadRequest($"Agent with ID '{templateObjectId}' is not a system-scoped template");
             }
 
@@ -430,16 +431,16 @@ public class TemplateService : ITemplateService
             var updated = await _agentRepository.UpdateInternalAsync(template.Id, template);
             if (!updated)
             {
-                _logger.LogWarning("Failed to update template with ID {TemplateObjectId}", templateObjectId);
+                _logger.LogWarning("Failed to update template with ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
                 return ServiceResult<Agent>.InternalServerError("Failed to update the template");
             }
 
-            _logger.LogInformation("Successfully updated system-scoped agent template {TemplateObjectId}", templateObjectId);
+            _logger.LogInformation("Successfully updated system-scoped agent template {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
             return ServiceResult<Agent>.Success(template);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating system-scoped agent template by ID {TemplateObjectId}", templateObjectId);
+            _logger.LogError(ex, "Error updating system-scoped agent template by ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
             return ServiceResult<Agent>.InternalServerError(
                 "An error occurred while updating the template");
         }

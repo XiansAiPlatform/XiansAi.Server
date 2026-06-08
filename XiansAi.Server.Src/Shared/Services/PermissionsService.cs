@@ -3,6 +3,7 @@ using Shared.Data;
 using Shared.Auth;
 using Shared.Utils.Services;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -60,12 +61,12 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<PermissionDto>.BadRequest("Agent name is required");
         }
 
-        _logger.LogInformation("Getting permissions for agent: {AgentName}", agentName);
+        _logger.LogInformation("Getting permissions for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
         
         var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
         if (permissions == null)
         {
-            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            _logger.LogWarning("No permissions found for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<PermissionDto>.NotFound("No permissions found for this agent");
         }
         
@@ -97,14 +98,14 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.BadRequest("Permissions object must contain ownerAccess, readAccess, and writeAccess arrays");
         }
 
-        _logger.LogInformation("Updating permissions for agent: {AgentName}", agentName);
+        _logger.LogInformation("Updating permissions for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
         
         var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
 
         if (!hasPermission)
         {
             _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission",
-                _tenantContext.LoggedInUser, agentName);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.Forbidden("You must have owner permission to update permissions");
         }
 
@@ -140,21 +141,21 @@ public class PermissionsService : IPermissionsService
         }
 
         _logger.LogInformation("Adding user {UserId} to agent {AgentName} with permission level {PermissionLevel}", 
-            userId, agentName, permissionLevel);
+            LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(permissionLevel));
         
         var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
 
         if (!hasPermission)
         {
             _logger.LogWarning("User {UserId} attempted to add user to agent {AgentName} without owner permission", 
-                _tenantContext.LoggedInUser, agentName);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.Forbidden("You must have owner permission to add users");
         }
 
         var level = NormalizePermissionLevel(permissionLevel);
         if (level == null)
         {
-            _logger.LogWarning("Invalid permission level: {PermissionLevel}", permissionLevel);
+            _logger.LogWarning("Invalid permission level: {PermissionLevel}", LogSanitizer.Sanitize(permissionLevel));
             return ServiceResult<bool>.BadRequest("Invalid permission level. Must be one of: Owner, Write, Read");
         }
 
@@ -176,14 +177,14 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.BadRequest("User ID is required");
         }
 
-        _logger.LogInformation("Removing user {UserId} from agent {AgentName}", userId, agentName);
+        _logger.LogInformation("Removing user {UserId} from agent {AgentName}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(agentName));
         
         var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
 
         if (!hasPermission)
         {
             _logger.LogWarning("User {UserId} attempted to remove user from agent {AgentName} without owner permission", 
-                _tenantContext.LoggedInUser, agentName);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.Forbidden("You must have owner permission to remove users");
         }
 
@@ -212,21 +213,21 @@ public class PermissionsService : IPermissionsService
         }
 
         _logger.LogInformation("Updating permission for user {UserId} in agent {AgentName} to {PermissionLevel}", 
-            userId, agentName, newPermissionLevel);
+            LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(newPermissionLevel));
         
         var hasPermission = await CheckPermissions(agentName, PermissionLevel.Owner);
 
         if (!hasPermission)
         {
             _logger.LogWarning("User {UserId} attempted to update user permission for agent {AgentName} without owner permission", 
-                _tenantContext.LoggedInUser, agentName);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.Forbidden("You must have owner permission to update user permissions");
         }
 
         var level = NormalizePermissionLevel(newPermissionLevel);
         if (level == null)
         {
-            _logger.LogWarning("Invalid permission level: {PermissionLevel}", newPermissionLevel);
+            _logger.LogWarning("Invalid permission level: {PermissionLevel}", LogSanitizer.Sanitize(newPermissionLevel));
             return ServiceResult<bool>.BadRequest("Invalid permission level. Must be one of: Owner, Write, Read");
         }
 
@@ -242,12 +243,12 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.BadRequest("Agent name is required");
         }
 
-        _logger.LogInformation("Checking read permission for agent: {AgentName}", agentName);
+        _logger.LogInformation("Checking read permission for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
         
         var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
         if (permissions == null)
         {
-            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            _logger.LogWarning("No permissions found for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.NotFound("Agent not found");
         }
 
@@ -263,12 +264,12 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.BadRequest("Agent name is required");
         }
 
-        _logger.LogInformation("Checking write permission for agent: {AgentName}", agentName);
+        _logger.LogInformation("Checking write permission for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
         
         var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
         if (permissions == null)
         {
-            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            _logger.LogWarning("No permissions found for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.NotFound("Agent not found");
         }
 
@@ -284,12 +285,12 @@ public class PermissionsService : IPermissionsService
             return ServiceResult<bool>.BadRequest("Agent name is required");
         }
 
-        _logger.LogInformation("Checking owner permission for agent: {AgentName}", agentName);
+        _logger.LogInformation("Checking owner permission for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
         
         var permissions = await _permissionRepository.GetAgentPermissionsAsync(agentName);
         if (permissions == null)
         {
-            _logger.LogWarning("No permissions found for agent: {AgentName}", agentName);
+            _logger.LogWarning("No permissions found for agent: {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<bool>.NotFound("Agent not found");
         }
 

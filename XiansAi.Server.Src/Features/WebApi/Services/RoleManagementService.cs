@@ -5,6 +5,7 @@ using Shared.Data.Models;
 using Shared.Providers.Auth;
 using Shared.Services;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Features.WebApi.Services
 {
@@ -93,7 +94,7 @@ namespace Features.WebApi.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error assigning bootstrap sysadmin roles to user {UserId}", _tenantContext.LoggedInUser);
+                _logger.LogError(ex, "Error assigning bootstrap sysadmin roles to user {UserId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return ServiceResult<bool>.InternalServerError("An error occurred while assigning bootstrap sysadmin roles.");
             }
         }
@@ -125,7 +126,7 @@ namespace Features.WebApi.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error assigning roles to user {UserId}", userId);
+                _logger.LogError(ex, "Error assigning roles to user {UserId}", LogSanitizer.Sanitize(userId));
                 return ServiceResult<bool>.InternalServerError("Error assigning roles");
             }
         }
@@ -152,7 +153,7 @@ namespace Features.WebApi.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error removing roles from user {UserId}", userId);
+                _logger.LogError(ex, "Error removing roles from user {UserId}", LogSanitizer.Sanitize(userId));
                 return ServiceResult<bool>.InternalServerError("Error removing roles");
             }
         }
@@ -325,7 +326,7 @@ namespace Features.WebApi.Services
                 else if (tenantEntry.Roles.Contains(roleToAssign))
                 {
                     _logger.LogWarning("Role {Role} already assigned to user {UserId} in tenant {TenantId}",
-                        roleToAssign, roleDto.UserId, roleDto.TenantId);
+                        LogSanitizer.Sanitize(roleToAssign), LogSanitizer.Sanitize(roleDto.UserId), LogSanitizer.Sanitize(roleDto.TenantId));
                     return ServiceResult<bool>.Success(true); // Role already exists, no action needed
                 }
                 else if (!tenantEntry.Roles.Contains(roleToAssign))
@@ -360,7 +361,7 @@ namespace Features.WebApi.Services
                 if (string.IsNullOrEmpty(_tenantContext.TenantId))
                 {
                     _logger.LogWarning("No tenant ID found in context for user {UserId}",
-                        _tenantContext.LoggedInUser);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                     return ServiceResult<List<string>>.BadRequest("No tenant ID found in context");
                 }
 
@@ -384,8 +385,8 @@ namespace Features.WebApi.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving current user roles for user {UserId} in tenant {TenantId}",
-                    _tenantContext.LoggedInUser,
-                    _tenantContext.TenantId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser),
+                    LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving current user roles");
             }
         }
@@ -404,7 +405,7 @@ namespace Features.WebApi.Services
                 if (!_tenantContext.TenantId.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Tenant admin {UserId} attempted to {Operation} in different tenant {TenantId}",
-                        _tenantContext.LoggedInUser, operation, tenantId);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(operation), LogSanitizer.Sanitize(tenantId));
                     return ServiceResult.Failure("Tenant admins can only access their own tenant", StatusCode.Forbidden);
                 }
                 return ServiceResult.Success();
@@ -412,7 +413,7 @@ namespace Features.WebApi.Services
 
             // Regular users need to be at least tenant admin
             _logger.LogWarning("User {UserId} attempted to {Operation} without proper permissions",
-                _tenantContext.LoggedInUser, operation);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(operation));
             return ServiceResult.Failure("Insufficient permissions to manage roles", StatusCode.Forbidden);
         }
 

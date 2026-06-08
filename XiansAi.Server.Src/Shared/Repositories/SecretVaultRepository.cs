@@ -1,6 +1,7 @@
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -36,7 +37,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving secret vault by id {Id}", id);
+            _logger.LogError(ex, "Error retrieving secret vault by id {Id}", LogSanitizer.Sanitize(id));
             return null;
         }
     }
@@ -62,7 +63,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving secret vault by key {Key}", key);
+            _logger.LogError(ex, "Error retrieving secret vault by key {Key}", LogSanitizer.Sanitize(key));
             return null;
         }
     }
@@ -91,7 +92,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking existence for key {Key}", key);
+            _logger.LogError(ex, "Error checking existence for key {Key}", LogSanitizer.Sanitize(key));
             return false;
         }
     }
@@ -134,7 +135,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error finding secret for access key {Key}", key);
+            _logger.LogError(ex, "Error finding secret for access key {Key}", LogSanitizer.Sanitize(key));
             return null;
         }
     }
@@ -168,7 +169,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating secret vault key {Key}", entity.Key);
+            _logger.LogError(ex, "Error creating secret vault key {Key}", LogSanitizer.Sanitize(entity.Key));
             throw;
         }
     }
@@ -182,7 +183,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating secret vault id {Id}", entity.Id);
+            _logger.LogError(ex, "Error updating secret vault id {Id}", LogSanitizer.Sanitize(entity.Id));
             return false;
         }
     }
@@ -196,7 +197,7 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting secret vault id {Id}", id);
+            _logger.LogError(ex, "Error deleting secret vault id {Id}", LogSanitizer.Sanitize(id));
             return false;
         }
     }

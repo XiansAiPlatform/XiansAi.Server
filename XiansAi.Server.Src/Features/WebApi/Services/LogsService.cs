@@ -1,6 +1,7 @@
 using Features.WebApi.Repositories;
 using Shared.Utils.Services;
 using Features.WebApi.Models;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -46,12 +47,12 @@ public class LogsService : ILogsService
                 request.Limit, 
                 request.LogLevel
             );
-            _logger.LogInformation("Found {Count} logs for workflow {WorkflowRunId}", logs.Count, request.WorkflowRunId);
+            _logger.LogInformation("Found {Count} logs for workflow {WorkflowRunId}", logs.Count, LogSanitizer.Sanitize(request.WorkflowRunId));
             return ServiceResult<List<Log>>.Success(logs);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting logs by workflow run id: {WorkflowRunId}", request.WorkflowRunId);
+            _logger.LogError(ex, "Error getting logs by workflow run id: {WorkflowRunId}", LogSanitizer.Sanitize(request.WorkflowRunId));
             return ServiceResult<List<Log>>.InternalServerError("An error occurred while retrieving the logs");
         }
     }

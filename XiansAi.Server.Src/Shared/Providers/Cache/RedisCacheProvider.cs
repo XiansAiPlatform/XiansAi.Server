@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
+using Shared.Utils;
 
 namespace Shared.Providers;
 
@@ -42,7 +43,7 @@ public class RedisCacheProvider : ICacheProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving value from Redis cache for key: {Key}", key);
+            _logger.LogError(ex, "Error retrieving value from Redis cache for key: {Key}", LogSanitizer.Sanitize(key));
             return default;
         }
     }
@@ -78,7 +79,7 @@ public class RedisCacheProvider : ICacheProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting value in Redis cache for key: {Key}", key);
+            _logger.LogError(ex, "Error setting value in Redis cache for key: {Key}", LogSanitizer.Sanitize(key));
             return false;
         }
     }
@@ -97,7 +98,7 @@ public class RedisCacheProvider : ICacheProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing value from Redis cache for key: {Key}", key);
+            _logger.LogError(ex, "Error removing value from Redis cache for key: {Key}", LogSanitizer.Sanitize(key));
             return false;
         }
     }

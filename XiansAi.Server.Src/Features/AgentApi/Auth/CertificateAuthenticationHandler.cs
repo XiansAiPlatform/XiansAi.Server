@@ -50,11 +50,11 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var path = Request.Path.Value?.ToLowerInvariant() ?? "";
             if (!path.StartsWith("/api/agent/"))
             {
-                _logger.LogDebug("Skipping certificate authentication for non-AgentApi path: {Path}", Request.Path);
+                _logger.LogDebug("Skipping certificate authentication for non-AgentApi path: {Path}", LogSanitizer.Sanitize(Request.Path));
                 return AuthenticateResult.NoResult(); // Let other handlers process this request
             }
 
-            _logger.LogDebug("Handling certificate authentication for {Path}", Request.Path);
+            _logger.LogDebug("Handling certificate authentication for {Path}", LogSanitizer.Sanitize(Request.Path));
 
             var certHeader = await ExtractCertificateFromHeader();
             if (certHeader == null)
@@ -76,7 +76,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var validationResult = await ValidateCertificateAsync(cert);
             if (!validationResult.IsValid)
             {
-                _logger.LogWarning("Certificate validation failed for tenant ID {TenantId}", cert.Subject);
+                _logger.LogWarning("Certificate validation failed for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
                 // Note: Invalid results are not cached to prevent cache pollution
                 return AuthenticateResult.Fail(string.Join(", ", validationResult.Errors));
             }
@@ -133,7 +133,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             // Check if certificate is revoked
             if (await _certificateRepository.IsRevokedAsync(cert.Thumbprint))
             {
-                _logger.LogWarning("Certificate has been revoked for tenant ID {TenantId}", cert.Subject);
+                _logger.LogWarning("Certificate has been revoked for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
                 result.AddError("Certificate has been revoked");
                 return result;
             }
@@ -151,7 +151,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             
             if (!isValid)
             {
-                _logger.LogWarning("Certificate validation chain failed for tenant ID {TenantId}", cert.Subject);
+                _logger.LogWarning("Certificate validation chain failed for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
                 var errors = chain.ChainStatus
                     .Select(s => $"Chain validation error: {s.StatusInformation}")
                     .ToList();
@@ -163,7 +163,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var chainRoot = chain.ChainElements[chain.ChainElements.Count - 1].Certificate;
             if (!chainRoot.Thumbprint.Equals(rootCert.Thumbprint, StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Certificate is not signed by the expected root CA for tenant ID {TenantId}", cert.Subject);
+                _logger.LogWarning("Certificate is not signed by the expected root CA for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
                 result.AddError("Certificate is not signed by the expected root CA");
                 return result;
             }
@@ -175,7 +175,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
                 
             if (enhancedKeyUsage == null || !HasClientAuthenticationPurpose(enhancedKeyUsage))
             {
-                _logger.LogWarning("Certificate does not have client authentication purpose for tenant ID {TenantId}", cert.Subject);
+                _logger.LogWarning("Certificate does not have client authentication purpose for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
                 result.AddError("Certificate does not have client authentication purpose");
                 return result;
             }
@@ -184,16 +184,16 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var tenantId = GetSubjectValue(cert.Subject, "O");
             if (string.IsNullOrEmpty(tenantId))
             {
-                _logger.LogWarning("Invalid tenant: No tenant ID found in certificate for tenant ID {TenantId}", cert.Subject);
+                _logger.LogWarning("Invalid tenant: No tenant ID found in certificate for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
                 result.AddError("Invalid tenant: No tenant ID found in certificate");
                 return result;
             }
-            _logger.LogInformation("Getting tenant by tenant ID {TenantId}", tenantId);
+            _logger.LogInformation("Getting tenant by tenant ID {TenantId}", LogSanitizer.Sanitize(tenantId));
             var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
             _logger.LogInformation("Tenant result: {TenantResult}", tenant);
             if (tenant == null)
             {
-                _logger.LogWarning("Invalid tenant: {TenantId} not found", tenantId);
+                _logger.LogWarning("Invalid tenant: {TenantId} not found", LogSanitizer.Sanitize(tenantId));
                 result.AddError($"Invalid tenant: {tenantId}.");
                 return result;
             }
@@ -269,7 +269,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             {
                 // Sys admin can impersonate any tenant
                 _logger.LogInformation("Sys admin {UserId} impersonating tenant {ImpersonatedTenantId} (original tenant: {OriginalTenantId})", 
-                    userId, requestedTenantIdStr, tenantId);
+                    LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(requestedTenantIdStr), LogSanitizer.Sanitize(tenantId));
                 tenantId = requestedTenantIdStr;
             }
             else
@@ -278,10 +278,10 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
                 if (!tenantId.Equals(requestedTenantIdStr, StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Non admin User `{UserId}` attempted to access tenant `{RequestedTenantId}` but certificate is for tenant `{CertTenantId}`", 
-                        userId, requestedTenantIdStr, tenantId);
+                        LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(requestedTenantIdStr), LogSanitizer.Sanitize(tenantId));
                     return Task.FromResult(AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID"));
                 }
-                _logger.LogDebug("User {UserId} X-Tenant-Id header matches certificate tenant {TenantId}", userId, tenantId);
+                _logger.LogDebug("User {UserId} X-Tenant-Id header matches certificate tenant {TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
             }
         }
 

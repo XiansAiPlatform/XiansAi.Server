@@ -5,6 +5,7 @@ using Shared.Utils.Services;
 using Features.WebApi.Models;
 using Shared.Services;
 using System.ComponentModel.DataAnnotations;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -87,13 +88,13 @@ public class AgentService : IAgentService
             var agents = await _agentRepository.GetAgentsWithPermissionAsync(_tenantContext.LoggedInUser, tenantIdToQuery);
             var agentNames = agents.Select(a => a.Name).ToList();
             
-            _logger.LogInformation("Found {Count} agents for scope {Scope}", agentNames.Count, scope ?? "default");
+            _logger.LogInformation("Found {Count} agents for scope {Scope}", agentNames.Count, LogSanitizer.Sanitize(scope ?? "default"));
             
             return ServiceResult<List<string>>.Success(agentNames);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agent names for scope {Scope}", scope ?? "default");
+            _logger.LogError(ex, "Error retrieving agent names for scope {Scope}", LogSanitizer.Sanitize(scope ?? "default"));
             return ServiceResult<List<string>>.InternalServerError("An error occurred while retrieving agent names");
         }
     }
@@ -102,7 +103,7 @@ public class AgentService : IAgentService
     {
         try
         {
-            _logger.LogInformation("Getting grouped definitions for user {UserId} in tenant {Tenant}", _tenantContext.LoggedInUser, _tenantContext.TenantId);   
+            _logger.LogInformation("Getting grouped definitions for user {UserId} in tenant {Tenant}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId));   
             var definitions = await _agentRepository.GetAgentsWithDefinitionsAsync(_tenantContext.LoggedInUser, _tenantContext.TenantId, null, null, basicDataOnly: basicDataOnly);
             return ServiceResult<List<AgentWithDefinitions>>.Success(definitions);
         }
@@ -136,7 +137,7 @@ public class AgentService : IAgentService
                 if (!readPermissionResult.Data)
                 {
                     _logger.LogWarning("User {UserId} attempted to access workflows for agent {AgentName} without read permission",
-                        _tenantContext.LoggedInUser, agentName);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
                     return ServiceResult<List<WorkflowResponse>>.Forbidden("You do not have permission to access workflows for this agent");
                 }
             }
@@ -155,13 +156,13 @@ public class AgentService : IAgentService
             else
             {
                 _logger.LogWarning("Workflow service returned error for agent {AgentName} and type {TypeName}: {Error}",
-                    agentName, typeName, workflowResult.ErrorMessage);
+                    LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(typeName), LogSanitizer.Sanitize(workflowResult.ErrorMessage));
                 return ServiceResult<List<WorkflowResponse>>.BadRequest(workflowResult.ErrorMessage ?? "Failed to retrieve workflows");
             }
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving workflows: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving workflows: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<List<WorkflowResponse>>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
@@ -196,7 +197,7 @@ public class AgentService : IAgentService
             if (!ownerPermissionResult.Data)
             {
                 _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission",
-                    _tenantContext.LoggedInUser, agentName);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
                 return ServiceResult<AgentDeleteResult>.Forbidden("You must have owner permission to delete this agent");
             }
 
@@ -204,7 +205,7 @@ public class AgentService : IAgentService
             var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent {AgentName} not found for deletion", agentName);
+                _logger.LogWarning("Agent {AgentName} not found for deletion", LogSanitizer.Sanitize(agentName));
                 return ServiceResult<AgentDeleteResult>.NotFound("Agent not found");
             }
 
@@ -212,11 +213,11 @@ public class AgentService : IAgentService
             var agentDeleted = await _agentRepository.DeleteAsync(agent.Id, _tenantContext.LoggedInUser, _tenantContext.UserRoles);
             if (!agentDeleted)
             {
-                _logger.LogError("Failed to delete agent {AgentName} with ID {AgentId}", agentName, agent.Id);
+                _logger.LogError("Failed to delete agent {AgentName} with ID {AgentId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(agent.Id));
                 return ServiceResult<AgentDeleteResult>.BadRequest("Failed to delete the agent");
             }
 
-            _logger.LogInformation("Successfully deleted agent {AgentName} and its associated flow definitions", agentName);
+            _logger.LogInformation("Successfully deleted agent {AgentName} and its associated flow definitions", LogSanitizer.Sanitize(agentName));
 
             var result = new AgentDeleteResult
             {
@@ -227,12 +228,12 @@ public class AgentService : IAgentService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while deleting agent: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while deleting agent: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AgentDeleteResult>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting agent {AgentName}", agentName);
+            _logger.LogError(ex, "Error deleting agent {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<AgentDeleteResult>.InternalServerError("An error occurred while deleting the agent");
         }
     }
@@ -262,7 +263,7 @@ public class AgentService : IAgentService
             if (!readPermissionResult.Data)
             {
                 _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission",
-                    _tenantContext.LoggedInUser, agentName);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
                 return ServiceResult<List<FlowDefinition>>.Forbidden("You do not have permission to access this agent");
             }
 
@@ -273,12 +274,12 @@ public class AgentService : IAgentService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving definitions: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving definitions: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<List<FlowDefinition>>.BadRequest($"Validation failed: {ex.Message}");
         }   
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving definitions for agent {AgentName}", agentName);
+            _logger.LogError(ex, "Error retrieving definitions for agent {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<List<FlowDefinition>>.InternalServerError("An error occurred while retrieving agent definitions");
         }
     }

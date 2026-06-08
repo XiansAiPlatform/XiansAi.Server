@@ -4,6 +4,7 @@ using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.Services;
 using System.ComponentModel.DataAnnotations;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -131,13 +132,13 @@ public class MessagingService : IMessagingService
 
             var result = await _conversationRepository.GetTopicsByThreadIdAsync(tenantId, threadId, page, pageSize);
             
-            _logger.LogDebug("GetTopics returned {Count} topics for thread {ThreadId}", result.Topics.Count, threadId);
+            _logger.LogDebug("GetTopics returned {Count} topics for thread {ThreadId}", result.Topics.Count, LogSanitizer.Sanitize(threadId));
             
             return ServiceResult<TopicsResult>.Success(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving topics for thread {ThreadId}", threadId);
+            _logger.LogError(ex, "Error retrieving topics for thread {ThreadId}", LogSanitizer.Sanitize(threadId));
             return ServiceResult<TopicsResult>.InternalServerError("An error occurred while retrieving topics");
         }
     }
@@ -179,13 +180,13 @@ public class MessagingService : IMessagingService
 
             var threads = await _conversationRepository.GetByTenantAndAgentAsync(tenantId, validatedAgentName, page, pageSize);
             
-            _logger.LogDebug("GetThreads returned {Count} threads for agent {Agent}", threads.Count, validatedAgentName);
+            _logger.LogDebug("GetThreads returned {Count} threads for agent {Agent}", threads.Count, LogSanitizer.Sanitize(validatedAgentName));
             
             return ServiceResult<List<ConversationThread>>.Success(threads);
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving threads: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving threads: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<List<ConversationThread>>.BadRequest($"Validation failed: {ex.Message}");
         }
     }
@@ -208,7 +209,7 @@ public class MessagingService : IMessagingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting thread {ThreadId}", threadId);
+            _logger.LogError(ex, "Error deleting thread {ThreadId}", LogSanitizer.Sanitize(threadId));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
         }
     }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Shared.Configuration;
 using Shared.Data.Models.Usage;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -72,10 +73,10 @@ public class UsageEventService : IUsageEventService
 
         _logger.LogInformation(
             "Recording flattened usage metrics: tenant={TenantId}, participant={ParticipantId}, agent={AgentName}, activation={ActivationName}, metricsCount={MetricsCount}",
-            tenantId,
-            participantId,
-            request.AgentName,
-            request.ActivationName,
+            LogSanitizer.Sanitize(tenantId),
+            LogSanitizer.Sanitize(participantId),
+            LogSanitizer.Sanitize(request.AgentName),
+            LogSanitizer.Sanitize(request.ActivationName),
             request.Metrics.Count);
 
         // Use agent name from request if provided, otherwise extract from workflow_id
@@ -152,7 +153,7 @@ public class UsageEventService : IUsageEventService
 
         _logger.LogInformation(
             "Retrieved statistics: category={Category}, type={MetricType}, totalValue={TotalValue}, requests={RequestCount}, users={UserCount}",
-            stats.Category, stats.MetricType, stats.TotalValue, stats.TotalMetrics.RequestCount, stats.UserBreakdown.Count);
+            LogSanitizer.Sanitize(stats.Category), LogSanitizer.Sanitize(stats.MetricType), stats.TotalValue, stats.TotalMetrics.RequestCount, stats.UserBreakdown.Count);
 
         return stats;
     }
@@ -166,7 +167,7 @@ public class UsageEventService : IUsageEventService
             throw new ArgumentException("Tenant ID is required", nameof(tenantId));
         }
 
-        _logger.LogInformation("Retrieving users with usage for tenant={TenantId}", tenantId);
+        _logger.LogInformation("Retrieving users with usage for tenant={TenantId}", LogSanitizer.Sanitize(tenantId));
 
         var users = await _repository.GetUsersWithUsageAsync(tenantId, cancellationToken);
 
@@ -184,7 +185,7 @@ public class UsageEventService : IUsageEventService
             throw new ArgumentException("Tenant ID is required", nameof(tenantId));
         }
 
-        _logger.LogInformation("Retrieving available metrics for tenant={TenantId}", tenantId);
+        _logger.LogInformation("Retrieving available metrics for tenant={TenantId}", LogSanitizer.Sanitize(tenantId));
 
         var metrics = await _repository.GetAvailableMetricsAsync(tenantId, cancellationToken);
 

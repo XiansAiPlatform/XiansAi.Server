@@ -1,5 +1,6 @@
 using Shared.Repositories;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -113,7 +114,7 @@ public class ActivationValidationService : IActivationValidationService
             var flowDefinitions = await _flowDefinitionRepository.GetByNameAsync(agentName, tenantId);
             if (flowDefinitions == null || flowDefinitions.Count == 0)
             {
-                _logger.LogWarning("No workflow definitions found for agent '{AgentName}' in tenant {TenantId}", agentName, tenantId);
+                _logger.LogWarning("No workflow definitions found for agent '{AgentName}' in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult.Failure(
                     $" No agent process registered for agent '{agentName}'. Unable to use this agent for this purpose.",
                     StatusCode.BadRequest);
@@ -134,7 +135,7 @@ public class ActivationValidationService : IActivationValidationService
                 var registeredList = registeredTypes.Count > 0 ? string.Join(", ", registeredTypes) : "none";
                 _logger.LogWarning(
                     "Workflow type '{WorkflowType}' is not registered for agent '{AgentName}'. Registered types: {Registered}",
-                    workflowType, agentName, registeredList);
+                    LogSanitizer.Sanitize(workflowType), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(registeredList));
                 return ServiceResult.Failure(
                     $"Workflow type '{workflowType}' is not registered for agent '{agentName}'. Registered workflow types: {registeredList}.",
                     StatusCode.BadRequest);
@@ -146,7 +147,7 @@ public class ActivationValidationService : IActivationValidationService
         {
             _logger.LogError(ex,
                 "Error validating workflow type '{WorkflowType}' for agent '{AgentName}' in tenant {TenantId}",
-                workflowType, agentName, tenantId);
+                LogSanitizer.Sanitize(workflowType), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult.InternalServerError(
                 "An error occurred while validating the workflow type");
         }
@@ -161,7 +162,7 @@ public class ActivationValidationService : IActivationValidationService
             {
                 _logger.LogWarning(
                     "Activation '{ActivationName}' not found for agent '{AgentName}' in tenant {TenantId}",
-                    activationName, agentName, tenantId);
+                    LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult.Failure(
                     $"Activation '{activationName}' not found for agent '{agentName}'",
                     StatusCode.NotFound);
@@ -171,7 +172,7 @@ public class ActivationValidationService : IActivationValidationService
             {
                 _logger.LogWarning(
                     "Activation '{ActivationName}' for agent '{AgentName}' is deactivated",
-                    activationName, agentName);
+                    LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(agentName));
                 return ServiceResult.Failure(
                     $"Activation '{activationName}' is deactivated",
                     StatusCode.Conflict);
@@ -183,7 +184,7 @@ public class ActivationValidationService : IActivationValidationService
         {
             _logger.LogError(ex,
                 "Error validating activation '{ActivationName}' for agent '{AgentName}' in tenant {TenantId}",
-                activationName, agentName, tenantId);
+                LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult.InternalServerError(
                 "An error occurred while validating the activation");
         }

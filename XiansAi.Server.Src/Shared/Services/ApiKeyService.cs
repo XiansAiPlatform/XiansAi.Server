@@ -5,6 +5,7 @@ using Shared.Data.Models;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using System.Text;
+using Shared.Utils;
 namespace Shared.Services
 {
     public interface IApiKeyService
@@ -42,7 +43,7 @@ namespace Shared.Services
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
         {
-            _logger.LogInformation("Creating API key for tenant {TenantId} by {CreatedBy}", tenantId, createdBy);
+            _logger.LogInformation("Creating API key for tenant {TenantId} by {CreatedBy}", LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
             try
             {
                 var result = await _apiKeyRepository.CreateAsync(tenantId, name, createdBy, agentName, activationName, type, workflowName, participantId, timeoutInSeconds, webhookName);
@@ -50,19 +51,19 @@ namespace Shared.Services
             }
             catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
             {
-                _logger.LogWarning("Duplicate API key name '{Name}' for tenant {TenantId}", name, tenantId);
+                _logger.LogWarning("Duplicate API key name '{Name}' for tenant {TenantId}", LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<(string, ApiKey)>.Conflict($"API key name '{name}' was previously created for this tenant, use another name.");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating API key for tenant {TenantId}", tenantId);
+                _logger.LogError(ex, "Error creating API key for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<(string, ApiKey)>.InternalServerError("An error occurred while creating the API key");
             }
         }
 
         public async Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId)
         {
-            _logger.LogInformation("Revoking API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+            _logger.LogInformation("Revoking API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
             try
             {
                 // Get the API key first to invalidate its cache entry
@@ -77,21 +78,21 @@ namespace Shared.Services
                 {
                     var cacheKey = $"{CacheKeyPrefix}{tenantId}:{existingKey.HashedKey}";
                     _cache.Remove(cacheKey);
-                    _logger.LogDebug("Invalidated cache for revoked API key {ApiKeyId} in tenant {TenantId}", id, tenantId);
+                    _logger.LogDebug("Invalidated cache for revoked API key {ApiKeyId} in tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 }
                 
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<bool>.InternalServerError("An error occurred while revoking the API key");
             }
         }
 
         public async Task<ServiceResult<List<ApiKey>>> GetApiKeysAsync(string tenantId)
         {
-            _logger.LogInformation("Getting API keys for tenant {TenantId}", tenantId);
+            _logger.LogInformation("Getting API keys for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             try
             {
                 var keys = await _apiKeyRepository.GetByTenantAsync(tenantId);
@@ -99,14 +100,14 @@ namespace Shared.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting API keys for tenant {TenantId}", tenantId);
+                _logger.LogError(ex, "Error getting API keys for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<List<ApiKey>>.InternalServerError("An error occurred while retrieving API keys");
             }
         }
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId)
         {
-            _logger.LogInformation("Rotating API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+            _logger.LogInformation("Rotating API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
             try
             {
                 // Get the existing API key to invalidate its cache entry
@@ -121,7 +122,7 @@ namespace Shared.Services
                 {
                     var oldCacheKey = $"{CacheKeyPrefix}{tenantId}:{existingKey.HashedKey}";
                     _cache.Remove(oldCacheKey);
-                    _logger.LogDebug("Invalidated old cache for rotated API key {ApiKeyId} in tenant {TenantId}", id, tenantId);
+                    _logger.LogDebug("Invalidated old cache for rotated API key {ApiKeyId} in tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 }
                 
                 // The new key will be cached on first use by GetApiKeyByRawKeyAsync
@@ -130,7 +131,7 @@ namespace Shared.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error rotating API key {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                _logger.LogError(ex, "Error rotating API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<(string, ApiKey)?>.InternalServerError("An error occurred while rotating the API key");
             }
         }
@@ -146,7 +147,7 @@ namespace Shared.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting API key by id {ApiKeyId} for tenant {TenantId}", id, tenantId);
+                _logger.LogError(ex, "Error getting API key by id {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<ApiKey?>.InternalServerError("An error occurred while retrieving the API key");
             }
         }
@@ -159,7 +160,7 @@ namespace Shared.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting API key by id {ApiKeyId}", id);
+                _logger.LogError(ex, "Error getting API key by id {ApiKeyId}", LogSanitizer.Sanitize(id));
                 return null;
             }
         }
@@ -172,7 +173,7 @@ namespace Shared.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting webhook API keys for tenant {TenantId}", tenantId);
+                _logger.LogError(ex, "Error getting webhook API keys for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 return new List<ApiKey>();
             }
         }
@@ -189,12 +190,12 @@ namespace Shared.Services
                 // Try to get from cache first
                 if (_cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
                 {
-                    _logger.LogDebug("Retrieved API key for tenant {TenantId} from cache", tenantId);
+                    _logger.LogDebug("Retrieved API key for tenant {TenantId} from cache", LogSanitizer.Sanitize(tenantId));
                     return cachedApiKey;
                 }
                 
                 // Cache miss - fetch from database
-                _logger.LogDebug("Cache miss for tenant {TenantId} API key, fetching from database", tenantId);
+                _logger.LogDebug("Cache miss for tenant {TenantId} API key, fetching from database", LogSanitizer.Sanitize(tenantId));
                 var apiKey = await _apiKeyRepository.GetByRawKeyAsync(rawKey, tenantId);
                 
                 // Cache the result (including null results to prevent repeated DB hits for invalid keys)
@@ -214,14 +215,14 @@ namespace Shared.Services
                         .SetAbsoluteExpiration(TimeSpan.FromMinutes(2))
                         .SetSize(1);
                     _cache.Set(cacheKey, (ApiKey?)null, cacheOptions);
-                    _logger.LogDebug("Cached null API key result for tenant {TenantId}", tenantId);
+                    _logger.LogDebug("Cached null API key result for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 }
                 
                 return apiKey;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", tenantId);
+                _logger.LogError(ex, "Error getting API key by raw key for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 throw;
             }
         }

@@ -1,5 +1,6 @@
 using MongoDB.Driver;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Shared.Data.Migrations;
 
@@ -60,7 +61,7 @@ public class NormalizeEmailsMigration
                         {
                             updateCount++;
                             _logger.LogInformation("Normalized email: {Original} -> {Normalized}", 
-                                originalEmail, normalizedEmail);
+                                LogSanitizer.RedactEmail(originalEmail), LogSanitizer.RedactEmail(normalizedEmail));
                         }
                     }
                 }

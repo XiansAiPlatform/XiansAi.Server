@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Shared.Utils;
 
 namespace Shared.Providers;
 
@@ -55,7 +56,7 @@ public class InMemoryCacheProvider : ICacheProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving value from memory cache for key: {Key}", key);
+            _logger.LogError(ex, "Error retrieving value from memory cache for key: {Key}", LogSanitizer.Sanitize(key));
             return Task.FromResult<T?>(default);
         }
     }
@@ -102,7 +103,7 @@ public class InMemoryCacheProvider : ICacheProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting value in memory cache for key: {Key}", key);
+            _logger.LogError(ex, "Error setting value in memory cache for key: {Key}", LogSanitizer.Sanitize(key));
             return Task.FromResult(false);
         }
     }
@@ -128,7 +129,7 @@ public class InMemoryCacheProvider : ICacheProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing value from memory cache for key: {Key}", key);
+            _logger.LogError(ex, "Error removing value from memory cache for key: {Key}", LogSanitizer.Sanitize(key));
             return Task.FromResult(false);
         }
     }

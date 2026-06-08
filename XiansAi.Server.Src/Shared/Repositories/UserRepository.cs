@@ -291,7 +291,7 @@ public class UserRepository : IUserRepository
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error fetching tenants for user {UserId}", userId);
+            _logger.LogWarning(ex, "Error fetching tenants for user {UserId}", LogSanitizer.Sanitize(userId));
             return new List<TenantInfoDto>();
         }
     }
@@ -336,12 +336,12 @@ public class UserRepository : IUserRepository
             }
             catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
             {
-                _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", user.UserId);
+                _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", LogSanitizer.Sanitize(user.UserId));
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating user {UserId}", user.UserId);
+                _logger.LogError(ex, "Error creating user {UserId}", LogSanitizer.Sanitize(user.UserId));
                 return false;
             }
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateUser");
@@ -442,7 +442,7 @@ public class UserRepository : IUserRepository
             
             if (user == null)
             {
-                _logger.LogWarning("User {UserId} not found", userId);
+                _logger.LogWarning("User {UserId} not found", LogSanitizer.Sanitize(userId));
                 return false;
             }
 
@@ -452,7 +452,7 @@ public class UserRepository : IUserRepository
                 var belongsToTenant = user.TenantRoles.Any(tr => tr.Tenant == tenantId);
                 if (!belongsToTenant)
                 {
-                    _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", userId, tenantId);
+                    _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
                     return false;
                 }
             }

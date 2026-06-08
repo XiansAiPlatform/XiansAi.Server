@@ -314,7 +314,7 @@ public class ConversationRepository : IConversationRepository
             if (existingThread != null)
             {
                 _logger.LogInformation("Found existing thread {ThreadId} for tenantId {TenantId}, workflowId {WorkflowId}, and participantId {ParticipantId}", 
-                    existingThread.Id, thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+                    LogSanitizer.Sanitize(existingThread.Id), LogSanitizer.Sanitize(thread.TenantId), LogSanitizer.Sanitize(thread.WorkflowId), LogSanitizer.Sanitize(thread.ParticipantId));
                 return existingThread.Id;
             }
 
@@ -325,7 +325,7 @@ public class ConversationRepository : IConversationRepository
             {
                 await _threadsCollection.InsertOneAsync(thread);
                 _logger.LogInformation("Created new thread {ThreadId} for tenantId {TenantId}, workflowId {WorkflowId}, and participantId {ParticipantId}", 
-                    thread.Id, thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+                    LogSanitizer.Sanitize(thread.Id), LogSanitizer.Sanitize(thread.TenantId), LogSanitizer.Sanitize(thread.WorkflowId), LogSanitizer.Sanitize(thread.ParticipantId));
                 return thread.Id;
             }
             catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000)
@@ -367,7 +367,7 @@ public class ConversationRepository : IConversationRepository
 
             var results = await query.ToListAsync();
             _logger.LogDebug("GetByTenantAndAgentAsync returned {Count} threads for tenant {TenantId} and agent {Agent}", 
-                results.Count, tenantId, agent);
+                results.Count, LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agent));
             
             return results;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantAndAgent");
@@ -381,14 +381,14 @@ public class ConversationRepository : IConversationRepository
             var thread = await _threadsCollection.Find(x => x.Id == id).FirstOrDefaultAsync();
             if (thread == null)
             {
-                _logger.LogWarning("Thread {ThreadId} not found", id);
+                _logger.LogWarning("Thread {ThreadId} not found", LogSanitizer.Sanitize(id));
                 return false;
             }
 
             // Validate tenant ownership (skip check if tenantId is null - SysAdmin action)
             if (tenantId != null && thread.TenantId != tenantId)
             {
-                _logger.LogWarning("Thread {ThreadId} does not belong to tenant {TenantId}. IDOR attempt detected.", id, tenantId);
+                _logger.LogWarning("Thread {ThreadId} does not belong to tenant {TenantId}. IDOR attempt detected.", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 return false;
             }
 
@@ -406,7 +406,7 @@ public class ConversationRepository : IConversationRepository
                         cancellationToken: cancellationToken);
                     
                     _logger.LogInformation("Deleted {MessageCount} messages from thread {ThreadId}", 
-                        messageDeleteResult.DeletedCount, id);
+                        messageDeleteResult.DeletedCount, LogSanitizer.Sanitize(id));
 
                     // Delete the thread
                     var threadDeleteResult = await _threadsCollection.DeleteOneAsync(
@@ -421,7 +421,7 @@ public class ConversationRepository : IConversationRepository
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting thread {ThreadId}", id);
+                _logger.LogError(ex, "Error deleting thread {ThreadId}", LogSanitizer.Sanitize(id));
                 throw;
             }
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteThread");
@@ -448,7 +448,7 @@ public class ConversationRepository : IConversationRepository
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to encrypt message text for message {MessageId}", message.Id);
+                _logger.LogError(ex, "Failed to encrypt message text for message {MessageId}", LogSanitizer.Sanitize(message.Id));
                 throw new InvalidOperationException("Failed to encrypt message text", ex);
             }
         }
@@ -552,7 +552,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 }
                 else
                 {
-                    _logger.LogDebug("Filtering messages by scope `{Scope}`", scope);
+                    _logger.LogDebug("Filtering messages by scope `{Scope}`", LogSanitizer.Sanitize(scope));
                     messageFilter = Builders<ConversationMessage>.Filter.And(
                         messageFilter, 
                         Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope));
@@ -612,7 +612,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 DecryptMessageText(message);
             }
             
-            _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, threadId);
+            _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, LogSanitizer.Sanitize(threadId));
             return messages;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessagesByThreadId");
     }
@@ -635,12 +635,12 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             // - If scope has a value: return only messages with that exact scope
             if (string.IsNullOrEmpty(scope))
             {
-                _logger.LogDebug("Filtering messages with no scope (null) for workflowId {WorkflowId}", workflowId);
+                _logger.LogDebug("Filtering messages with no scope (null) for workflowId {WorkflowId}", LogSanitizer.Sanitize(workflowId));
                 filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, null));
             }
             else
             {
-                _logger.LogDebug("Filtering messages by scope `{Scope}` for workflowId {WorkflowId}", scope, workflowId);
+                _logger.LogDebug("Filtering messages by scope `{Scope}` for workflowId {WorkflowId}", LogSanitizer.Sanitize(scope), LogSanitizer.Sanitize(workflowId));
                 filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, scope));
             }
 
@@ -704,13 +704,13 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 operationName: "DeleteMessagesByThreadId");
 
             _logger.LogInformation("Deleted {DeletedCount} messages for thread {ThreadId}", 
-                result.DeletedCount, threadId);
+                result.DeletedCount, LogSanitizer.Sanitize(threadId));
             
             return result.DeletedCount >= 0; // Return true even if no messages were found
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting messages for thread {ThreadId}", threadId);
+            _logger.LogError(ex, "Error deleting messages for thread {ThreadId}", LogSanitizer.Sanitize(threadId));
             throw;
         }
     }
@@ -728,7 +728,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             catch (KeyNotFoundException)
             {
                 _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. No messages to delete.", 
-                    workflowId, participantId, tenantId);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(tenantId));
                 return true; // Consider success if thread doesn't exist
             }
 
@@ -757,14 +757,14 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 operationName: "DeleteMessagesByWorkflowParticipantAndScope");
 
             _logger.LogInformation("Deleted {DeletedCount} messages for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
-                result.DeletedCount, workflowId, participantId, scope ?? "null");
+                result.DeletedCount, LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"));
             
             return result.DeletedCount >= 0; // Return true even if no messages were found
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting messages for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
-                workflowId, participantId, scope ?? "null");
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"));
             throw;
         }
     }
@@ -927,7 +927,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .FirstOrDefaultAsync();
 
             _logger.LogDebug("Last incoming origin for thread {ThreadId} scope {Scope}: {Origin}",
-                threadId, scope ?? "null", message?.Origin ?? "none");
+                LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(scope ?? "null"), LogSanitizer.Sanitize(message?.Origin ?? "none"));
 
             return message?.Origin;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingOrigin");
@@ -962,7 +962,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .FirstOrDefaultAsync();
 
             _logger.LogDebug("Last incoming data for thread {ThreadId} scope {Scope}: {HasData}",
-                threadId, scope ?? "null", message?.Data != null ? "yes" : "none");
+                LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(scope ?? "null"), message?.Data != null ? "yes" : "none");
 
             return message?.Data;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingData");
@@ -1005,7 +1005,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             }
 
             _logger.LogDebug("Last incoming origin+data for thread {ThreadId} scope {Scope}: origin={Origin}, hasData={HasData}",
-                threadId, scope ?? "null", origin ?? "none", data != null ? "yes" : "no");
+                LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(scope ?? "null"), LogSanitizer.Sanitize(origin ?? "none"), data != null ? "yes" : "no");
 
             return (origin, data);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastIncomingOriginAndData");
@@ -1063,7 +1063,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 }
                 else
                 {
-                    _logger.LogDebug("Filtering messages by scope `{Scope}` for last task id", scope);
+                    _logger.LogDebug("Filtering messages by scope `{Scope}` for last task id", LogSanitizer.Sanitize(scope));
                     filter = filterBuilder.And(filter, filterBuilder.Eq(x => x.Scope, scope));
                 }
             }
@@ -1078,7 +1078,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 .FirstOrDefaultAsync();
 
             _logger.LogDebug("Last task id for workflow {WorkflowId}, participant {ParticipantId}, scope {Scope}: {TaskId}",
-                workflowId, participantId, scope ?? "null", message?.TaskId ?? "none");
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"), LogSanitizer.Sanitize(message?.TaskId ?? "none"));
 
             return message?.TaskId;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLastTaskId");
@@ -1154,23 +1154,23 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 var messageSpecificSecret = $"{_uniqueSecret}";
                 var decryptedText = _encryptionService.Decrypt(message.Text, messageSpecificSecret);
                 message.Text = decryptedText;
-                _logger.LogTrace("Successfully decrypted message {MessageId}", message.Id);
+                _logger.LogTrace("Successfully decrypted message {MessageId}", LogSanitizer.Sanitize(message.Id));
             }
             catch (FormatException)
             {
                 // Not a valid Base64 string - this is plain text
-                _logger.LogDebug("Message {MessageId} is not encrypted (invalid Base64), treating as plain text", message.Id);
+                _logger.LogDebug("Message {MessageId} is not encrypted (invalid Base64), treating as plain text", LogSanitizer.Sanitize(message.Id));
                 // Leave message.Text as-is
             }
             catch (System.Security.Cryptography.AuthenticationTagMismatchException)
             {
                 // This might be Base64 data that wasn't encrypted by our system
-                _logger.LogWarning("Message {MessageId} appears to be Base64 but decryption failed (authentication tag mismatch). This might be legacy data or corrupted encryption.", message.Id);
+                _logger.LogWarning("Message {MessageId} appears to be Base64 but decryption failed (authentication tag mismatch). This might be legacy data or corrupted encryption.", LogSanitizer.Sanitize(message.Id));
                 // Leave message.Text as-is
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error decrypting message {MessageId}. Text will remain as-is.", message.Id);
+                _logger.LogError(ex, "Unexpected error decrypting message {MessageId}. Text will remain as-is.", LogSanitizer.Sanitize(message.Id));
                 // Leave message.Text as-is
             }
         }

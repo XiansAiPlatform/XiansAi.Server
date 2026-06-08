@@ -150,7 +150,7 @@ public class KnowledgeService : IKnowledgeService
         if (knowledge.TenantId != null && knowledge.TenantId != _tenantContext.TenantId)
         {
             _logger.LogWarning("Unauthorized access attempt to knowledge {Id} from tenant {TenantId}",
-                knowledge.Id, _tenantContext.TenantId);
+                LogSanitizer.Sanitize(knowledge.Id), LogSanitizer.Sanitize(_tenantContext.TenantId));
             throw new SecurityException("Access denied: Knowledge does not belong to this tenant");
         }
     }
@@ -221,7 +221,7 @@ public class KnowledgeService : IKnowledgeService
             if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
                 _logger.LogWarning("Unauthorized access attempt to delete system-scoped knowledge by user {UserId}",
-                    _tenantContext.LoggedInUser);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return Results.Json(
                     new { error = "Forbidden", message = "Only system administrators can delete system-scoped knowledge" },
                     statusCode: StatusCodes.Status403Forbidden);
@@ -237,7 +237,7 @@ public class KnowledgeService : IKnowledgeService
                 if (!agentNames.Contains(knowledge.Agent, StringComparer.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Unauthorized access attempt to delete knowledge for agent {Agent} by user {UserId}",
-                        knowledge.Agent, _tenantContext.LoggedInUser);
+                        LogSanitizer.Sanitize(knowledge.Agent), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                     return Results.Json(
                         new { error = "Forbidden", message = "You do not have permission to delete this knowledge" },
                         statusCode: StatusCodes.Status403Forbidden);
@@ -286,7 +286,7 @@ public class KnowledgeService : IKnowledgeService
             if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
                 _logger.LogWarning("Unauthorized access attempt to delete system-scoped knowledge by user {UserId}",
-                    _tenantContext.LoggedInUser);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return Results.Json(
                     new { error = "Forbidden", message = "Only system administrators can delete system-scoped knowledge" },
                     statusCode: StatusCodes.Status403Forbidden);
@@ -302,7 +302,7 @@ public class KnowledgeService : IKnowledgeService
                 if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Unauthorized access attempt to delete knowledge for agent {Agent} by user {UserId}",
-                        request.Agent, _tenantContext.LoggedInUser);
+                        LogSanitizer.Sanitize(request.Agent), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                     return Results.Json(
                         new { error = "Forbidden", message = "You do not have permission to delete knowledge for this agent" },
                         statusCode: StatusCodes.Status403Forbidden);
@@ -333,7 +333,7 @@ public class KnowledgeService : IKnowledgeService
             if (!agentNames.Contains(agent, StringComparer.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Unauthorized access attempt to get knowledge for agent {Agent} by user {UserId}",
-                    agent, _tenantContext.LoggedInUser);
+                    LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return Results.Json(
                     new { error = "Forbidden", message = "You do not have permission to access knowledge for this agent" },
                     statusCode: StatusCodes.Status403Forbidden);
@@ -403,7 +403,7 @@ public class KnowledgeService : IKnowledgeService
             groups.Add(group);
         }
 
-        _logger.LogInformation("Found {Count} knowledge groups for agent {Agent}", groups.Count, agent);
+        _logger.LogInformation("Found {Count} knowledge groups for agent {Agent}", groups.Count, LogSanitizer.Sanitize(agent));
 
         var response = new GroupedKnowledgeResponse { Groups = groups };
         return Results.Ok(response);
@@ -438,7 +438,7 @@ public class KnowledgeService : IKnowledgeService
         }
 
         _logger.LogDebug("GetLatestByNameForTenantAsync: name={Name}, agent={Agent}, activationName={ActivationName}, tenantId={TenantId}",
-            name, agent, activationName ?? "(null)", tenantId ?? "(null)");
+            LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(activationName ?? "(null)"), LogSanitizer.Sanitize(tenantId ?? "(null)"));
 
         // Priority 1: If activationName is provided, try knowledge with matching tenant + agent + activationName
         if (!string.IsNullOrEmpty(activationName) && !string.IsNullOrEmpty(tenantId))
@@ -449,7 +449,7 @@ public class KnowledgeService : IKnowledgeService
             if (knowledge != null)
             {
                 _logger.LogInformation("Found knowledge (priority 1: matching activation_name) - tenantId={TenantId}, activationName={ActivationName}",
-                    knowledge.TenantId, knowledge.ActivationName);
+                    LogSanitizer.Sanitize(knowledge.TenantId), LogSanitizer.Sanitize(knowledge.ActivationName));
                 return ServiceResult<Knowledge>.Success(knowledge);
             }
         }
@@ -466,7 +466,7 @@ public class KnowledgeService : IKnowledgeService
             if (knowledge != null)
             {
                 _logger.LogInformation("Found knowledge (priority 2: tenant-default match, activation_name=null) - tenantId={TenantId}",
-                    knowledge.TenantId);
+                    LogSanitizer.Sanitize(knowledge.TenantId));
                 return ServiceResult<Knowledge>.Success(knowledge);
             }
         }
@@ -498,7 +498,7 @@ public class KnowledgeService : IKnowledgeService
         if (!request.SystemScoped && string.IsNullOrWhiteSpace(_tenantContext.TenantId))
         {
             _logger.LogError("Cannot create non-system knowledge without a tenant ID. User: {UserId}", 
-                _tenantContext.LoggedInUser);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return Results.Json(
                 new { error = "BadRequest", message = "Non-system knowledge must be associated with a tenant" },
                 statusCode: StatusCodes.Status400BadRequest);
@@ -508,7 +508,7 @@ public class KnowledgeService : IKnowledgeService
         if (request.SystemScoped && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
         {
             _logger.LogWarning("Unauthorized access attempt to create system-scoped knowledge by user {UserId}",
-                _tenantContext.LoggedInUser);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return Results.Json(
                 new { error = "Forbidden", message = "Only system administrators can create system-scoped knowledge" },
                 statusCode: StatusCodes.Status403Forbidden);
@@ -522,7 +522,7 @@ public class KnowledgeService : IKnowledgeService
             if (!agentNames.Contains(request.Agent, StringComparer.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
-                    request.Agent, _tenantContext.LoggedInUser);
+                    LogSanitizer.Sanitize(request.Agent), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return Results.Json(
                     new { error = "Forbidden", message = "You do not have permission to create knowledge for this agent" },
                     statusCode: StatusCodes.Status403Forbidden);
@@ -545,7 +545,7 @@ public class KnowledgeService : IKnowledgeService
             latest.SystemScoped == request.SystemScoped &&
             latest.ActivationName == request.ActivationName)
         {
-            _logger.LogInformation("Knowledge {Name} already exists with the same content hash, scope, and activation", request.Name);
+            _logger.LogInformation("Knowledge {Name} already exists with the same content hash, scope, and activation", LogSanitizer.Sanitize(request.Name));
             return Results.Ok(latest);
         }
 
@@ -576,13 +576,13 @@ public class KnowledgeService : IKnowledgeService
         catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
         {
             // Handle race condition where knowledge was created between our check and insert
-            _logger.LogWarning(ex, "Duplicate key error creating knowledge {Name}. Retrieving existing knowledge.", request.Name);
+            _logger.LogWarning(ex, "Duplicate key error creating knowledge {Name}. Retrieving existing knowledge.", LogSanitizer.Sanitize(request.Name));
             
             // Try to get the existing knowledge again
             var existingKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
             if (existingKnowledge.IsSuccess && existingKnowledge.Data != null)
             {
-                _logger.LogInformation("Returning existing knowledge {Name} after duplicate key error", request.Name);
+                _logger.LogInformation("Returning existing knowledge {Name} after duplicate key error", LogSanitizer.Sanitize(request.Name));
                 return Results.Ok(existingKnowledge.Data);
             }
             
@@ -603,7 +603,7 @@ public class KnowledgeService : IKnowledgeService
             if (!agentNames.Contains(agent, StringComparer.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Unauthorized access attempt to list knowledge for agent {Agent} by user {UserId}",
-                    agent, _tenantContext.LoggedInUser);
+                    LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return Results.Json(
                     new { error = "Forbidden", message = "You do not have permission to list knowledge for this agent" },
                     statusCode: StatusCodes.Status403Forbidden);
@@ -612,7 +612,7 @@ public class KnowledgeService : IKnowledgeService
 
         var knowledge = await _knowledgeRepository.GetUniqueLatestAsync<Knowledge>(_tenantContext.TenantId, new List<string> { agent });
 
-        _logger.LogInformation("Found {Count} knowledge items for agent {Agent}", knowledge.Count, agent);
+        _logger.LogInformation("Found {Count} knowledge items for agent {Agent}", knowledge.Count, LogSanitizer.Sanitize(agent));
         
         foreach (var item in knowledge)
         {

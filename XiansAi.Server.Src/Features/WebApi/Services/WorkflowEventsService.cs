@@ -4,6 +4,7 @@ using Temporalio.Api.Enums.V1;
 using Temporalio.Api.History.V1;
 using Temporalio.Client;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -81,7 +82,7 @@ public class WorkflowEventsService : IWorkflowEventsService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error streaming workflow events for workflow {WorkflowId}", workflowId);
+                _logger.LogError(ex, "Error streaming workflow events for workflow {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             }
         }, "text/event-stream");
     }
@@ -214,13 +215,13 @@ public class WorkflowEventsService : IWorkflowEventsService
             var activityEvents = ExtractActivityEvents(events);
 
             _logger.LogInformation("Successfully extracted {Count} activity events for workflow {WorkflowId}", 
-                activityEvents.Count, workflowId);
+                activityEvents.Count, LogSanitizer.Sanitize(workflowId));
 
             return ServiceResult<List<WorkflowActivityEvent>>.Success(activityEvents);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error fetching workflow events for workflow {WorkflowId}", workflowId);
+            _logger.LogError(ex, "Error fetching workflow events for workflow {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             return ServiceResult<List<WorkflowActivityEvent>>.InternalServerError("Failed to fetch workflow events");
         }
     }

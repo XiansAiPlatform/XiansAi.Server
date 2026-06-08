@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Shared.Utils;
 
 namespace Features.AdminApi.Utils;
 
@@ -36,7 +37,7 @@ public class AdminApiDebugLoggingMiddleware
             _logger.LogWarning(
                 "AdminApi:EnableDebugLogging is enabled but forced OFF in {Environment} environment. " +
                 "Full request/response body logging exposes PII and must not run in production or staging.",
-                hostEnvironment.EnvironmentName);
+                LogSanitizer.Sanitize(hostEnvironment.EnvironmentName));
             _isEnabled = false;
         }
         else
@@ -62,7 +63,7 @@ public class AdminApiDebugLoggingMiddleware
         {
             var requestId = Guid.NewGuid().ToString("N");
             await LogRequest(context, requestId);
-            _logger.LogDebug("[AdminAPI Debug] [RequestId: {RequestId}] Streaming endpoint - skipping response capture", requestId);
+            _logger.LogDebug("[AdminAPI Debug] [RequestId: {RequestId}] Streaming endpoint - skipping response capture", LogSanitizer.Sanitize(requestId));
             await _next(context);
             return;
         }
@@ -95,7 +96,7 @@ public class AdminApiDebugLoggingMiddleware
             stopwatch.Stop();
             _logger.LogError(ex, 
                 "[AdminAPI Debug] [RequestId: {RequestId}] Exception occurred after {ElapsedMs}ms", 
-                normalRequestId, 
+                LogSanitizer.Sanitize(normalRequestId), 
                 stopwatch.ElapsedMilliseconds);
             throw;
         }

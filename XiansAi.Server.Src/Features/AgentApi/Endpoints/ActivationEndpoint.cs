@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Auth;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -37,7 +38,7 @@ public static class ActivationEndpoints
 
             _logger.LogInformation(
                 "Retrieving workflow inputs: activationName={ActivationName}, agentName={AgentName}, workflowType={WorkflowType}, workflowId={WorkflowId}, tenantId={TenantId}",
-                activationName, agentName, workflowType, workflowId, tenantId);
+                LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(workflowType), LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(tenantId));
 
             var activation = await activationRepository.GetByNameAndAgentAsync(tenantId, agentName, activationName);
 
@@ -45,7 +46,7 @@ public static class ActivationEndpoints
             {
                 _logger.LogWarning(
                     "Activation not found: activationName={ActivationName}, agentName={AgentName}, tenantId={TenantId}",
-                    activationName, agentName, tenantId);
+                    LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return Results.Problem(
                     $"Activation '{activationName}' not found for agent '{agentName}'",
                     statusCode: StatusCodes.Status404NotFound);
@@ -55,7 +56,7 @@ public static class ActivationEndpoints
             {
                 _logger.LogWarning(
                     "Activation '{ActivationName}' for agent '{AgentName}' in tenant '{TenantId}' is not active",
-                    activationName, agentName, tenantId);
+                    LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return Results.Problem(
                     $"Activation '{activationName}' is not active",
                     statusCode: StatusCodes.Status400BadRequest);
@@ -65,7 +66,7 @@ public static class ActivationEndpoints
             {
                 _logger.LogWarning(
                     "WorkflowId '{WorkflowId}' is not registered in activation '{ActivationName}'",
-                    workflowId, activationName);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(activationName));
                 return Results.Problem(
                     $"WorkflowId '{workflowId}' is not registered in activation '{activationName}'",
                     statusCode: StatusCodes.Status400BadRequest);
@@ -78,7 +79,7 @@ public static class ActivationEndpoints
             {
                 _logger.LogWarning(
                     "WorkflowType '{WorkflowType}' not found in activation '{ActivationName}'",
-                    workflowType, activationName);
+                    LogSanitizer.Sanitize(workflowType), LogSanitizer.Sanitize(activationName));
                 return Results.Ok(Array.Empty<object>());
             }
 
@@ -88,7 +89,7 @@ public static class ActivationEndpoints
 
             _logger.LogInformation(
                 "Returning {Count} workflow input(s) for workflowType={WorkflowType}, workflowId={WorkflowId}, activationName={ActivationName}",
-                inputValues.Length, workflowType, workflowId, activationName);
+                inputValues.Length, LogSanitizer.Sanitize(workflowType), LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(activationName));
 
             return Results.Ok(inputValues);
         })

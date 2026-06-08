@@ -14,7 +14,7 @@ namespace Shared.Repositories;
 public class ProcessedEvent
 {
     [BsonId]
-    public string DocumentId { get; set; } // ResumeToken string
+    public required string DocumentId { get; set; } // ResumeToken string
     public DateTime ProcessedAt { get; set; }
 }
 

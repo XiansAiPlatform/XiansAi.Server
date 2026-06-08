@@ -116,11 +116,11 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         var success = await TryAuthorizeWithRetry(context, httpContext, requirement);
         if (!success)
         {
-            _logger.LogWarning("Authorization failed for requirement: {RequirementType}", requirement.GetType().Name);
+            _logger.LogWarning("Authorization failed for requirement: {RequirementType}", LogSanitizer.Sanitize(requirement.GetType().Name));
             return; // Context.Fail() already called in TryAuthorize methods
         }
         
-        _logger.LogInformation("Authorization succeeded for requirement: {RequirementType}", requirement.GetType().Name);
+        _logger.LogInformation("Authorization succeeded for requirement: {RequirementType}", LogSanitizer.Sanitize(requirement.GetType().Name));
         context.Succeed(requirement);
     }
     
@@ -200,7 +200,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId, httpContext.RequestAborted);
                 if (!tenantResult.IsSuccess || tenantResult.Data == null)
                 {
-                    _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", currentTenantId);
+                    _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", LogSanitizer.Sanitize(currentTenantId));
                     context.Fail(new AuthorizationFailureReason(this, 
                         $"Tenant {currentTenantId} configuration not found"));
                     return false;
@@ -209,7 +209,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 // Check if tenant is enabled
                 if (!tenantResult.Data.Enabled)
                 {
-                    _logger.LogWarning("Tenant {TenantId} is disabled", currentTenantId);
+                    _logger.LogWarning("Tenant {TenantId} is disabled", LogSanitizer.Sanitize(currentTenantId));
                     context.Fail(new AuthorizationFailureReason(this, 
                         $"Tenant {currentTenantId} is disabled"));
                     return false;
@@ -284,7 +284,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
             
             if (!userTenants.IsSuccess)
             {
-                _logger.LogWarning("Failed to get or create user tenants for {UserId}: {Error}", tokenUserId, userTenants.ErrorMessage);
+                _logger.LogWarning("Failed to get or create user tenants for {UserId}: {Error}", LogSanitizer.Sanitize(tokenUserId), LogSanitizer.Sanitize(userTenants.ErrorMessage));
                 return (false, null, null);
             }
             

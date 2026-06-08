@@ -4,6 +4,7 @@ using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
+using Shared.Utils;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -75,16 +76,6 @@ public class ParticipantTenantsResponse
 public static class AdminParticipantsEndpoints
 {
     /// <summary>
-    /// Redacts email for logging to reduce PII retention. Returns "***@domain" format.
-    /// </summary>
-    private static string RedactEmailForLogging(string? email)
-    {
-        if (string.IsNullOrEmpty(email)) return "[empty]";
-        var atIndex = email.IndexOf('@');
-        if (atIndex < 0) return "***@[no-domain]";
-        return "***@" + email[(atIndex + 1)..];
-    }
-    /// <summary>
     /// Maps all AdminApi participant endpoints.
     /// </summary>
     public static void MapAdminParticipantsEndpoints(this RouteGroupBuilder adminApiGroup)
@@ -116,7 +107,7 @@ public static class AdminParticipantsEndpoints
                 var validatedEmail = ValidationHelpers.SanitizeAndValidateEmail(email);
                 if (validatedEmail == null)
                 {
-                    logger.LogWarning("Invalid email format or length for participant lookup: {EmailRedacted}", RedactEmailForLogging(email));
+                    logger.LogWarning("Invalid email format or length for participant lookup: {EmailRedacted}", LogSanitizer.RedactEmail(email));
                     return Results.Problem(
                         detail: "Invalid email address. Email must be well-formed and not exceed 254 characters.",
                         statusCode: StatusCodes.Status400BadRequest);
@@ -133,7 +124,7 @@ public static class AdminParticipantsEndpoints
                 // Reject locked-out users
                 if (user?.IsLockedOut == true)
                 {
-                    logger.LogWarning("Participant lookup denied: user {EmailRedacted} is locked out", RedactEmailForLogging(email));
+                    logger.LogWarning("Participant lookup denied: user {EmailRedacted} is locked out", LogSanitizer.RedactEmail(email));
                     return Results.Problem(
                         detail: "Access denied: the user account is locked out",
                         statusCode: StatusCodes.Status403Forbidden);
@@ -156,11 +147,11 @@ public static class AdminParticipantsEndpoints
                     }
 
                     logger.LogInformation("User {EmailRedacted} has participant roles in {Count} tenants: {TenantIds}", 
-                        RedactEmailForLogging(email), participantTenantIds.Count, string.Join(", ", participantTenantIds));
+                        LogSanitizer.RedactEmail(email), participantTenantIds.Count, string.Join(", ", participantTenantIds));
                 }
                 else
                 {
-                    logger.LogInformation("User {EmailRedacted} not found, will check domain matching only", RedactEmailForLogging(email));
+                    logger.LogInformation("User {EmailRedacted} not found, will check domain matching only", LogSanitizer.RedactEmail(email));
                 }
 
                 // Query tenants by domain matching (if email has domain)
@@ -220,7 +211,7 @@ public static class AdminParticipantsEndpoints
                 {
                     logger.LogWarning("User {EmailRedacted} has matching tenants but no enabled tenants found. " +
                         "Matching tenant IDs: {TenantIds}, Matched tenants: {MatchedCount}", 
-                        RedactEmailForLogging(email), string.Join(", ", matchingTenants.Select(t => t.TenantId)), matchingTenants.Count);
+                        LogSanitizer.RedactEmail(email), string.Join(", ", matchingTenants.Select(t => t.TenantId)), matchingTenants.Count);
                     return Results.NotFound(new { message = $"User with email '{email}' has no enabled tenants" });
                 }
 
@@ -234,7 +225,7 @@ public static class AdminParticipantsEndpoints
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error retrieving participant tenants for {EmailRedacted}", RedactEmailForLogging(email));
+                logger.LogError(ex, "Error retrieving participant tenants for {EmailRedacted}", LogSanitizer.RedactEmail(email));
                 return Results.Problem(
                     detail: "An error occurred while retrieving participant tenants",
                     statusCode: StatusCodes.Status500InternalServerError);

@@ -1,3 +1,4 @@
+using Shared.Utils;
 namespace Shared.Providers;
 
 /// <summary>
@@ -41,14 +42,14 @@ public class ConsoleEmailProvider : IEmailProvider
     {
         await Task.Delay(1); // Simulate async operation
 
-        var recipients = string.Join(", ", to);
+        var recipients = string.Join(", ", to.Select(LogSanitizer.RedactEmail));
         var contentType = isHtml ? "HTML" : "Plain Text";
 
         _logger.LogInformation("=== EMAIL SENT (Console Provider) ===");
         _logger.LogInformation("To: {Recipients}", recipients);
-        _logger.LogInformation("Subject: {Subject}", subject);
-        _logger.LogInformation("Content Type: {ContentType}", contentType);
-        _logger.LogInformation("Body: {Body}", body);
+        _logger.LogInformation("Subject: {Subject}", LogSanitizer.Sanitize(subject));
+        _logger.LogInformation("Content Type: {ContentType}", LogSanitizer.Sanitize(contentType));
+        _logger.LogInformation("Body: {Body}", LogSanitizer.Sanitize(body));
         _logger.LogInformation("=====================================");
 
         return true;

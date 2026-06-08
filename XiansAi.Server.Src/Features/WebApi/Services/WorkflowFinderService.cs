@@ -98,7 +98,7 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", workflowId, workflowRunId);
+            _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(workflowRunId));
             var client = await _clientFactory.GetClientAsync();
             var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
 
@@ -116,7 +116,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             //log the workflow description object
-            _logger.LogDebug("Workflow description: {Description}", JsonSerializer.Serialize(workflowDescription));
+            _logger.LogDebug("Workflow description: {Description}", LogSanitizer.Sanitize(JsonSerializer.Serialize(workflowDescription)));
             string recentWorkerCount = await GetRecentWorkerCount(client, workflowDescription.TaskQueue!);
 
             var history = await workflowHandle.FetchHistoryAsync();
@@ -127,13 +127,13 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             _logger.LogInformation("Successfully retrieved workflow {WorkflowId} of type {WorkflowType}",
-                workflow.WorkflowId, workflow.WorkflowType);
+                LogSanitizer.Sanitize(workflow.WorkflowId), LogSanitizer.Sanitize(workflow.WorkflowType));
             return ServiceResult<WorkflowResponse>.Success(workflow);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve workflow {WorkflowId}. Error: {ErrorMessage}",
-                workflowId, ex.Message);
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<WorkflowResponse>.BadRequest("Failed to retrieve workflow");
         }
     }
@@ -261,7 +261,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             var listQuery = string.Join(" and ", queryParts);
-            _logger.LogDebug("Executing paginated workflow query: {Query}", listQuery);
+            _logger.LogDebug("Executing paginated workflow query: {Query}", LogSanitizer.Sanitize(listQuery));
 
             // Pagination uses a page-number token; for page N we fetch and discard (N-1)*pageSize records.
             // This becomes expensive for deep pages. Temporal exposes ListWorkflowsPaginatedAsync with
@@ -355,7 +355,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve paginated workflows. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve paginated workflows. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<PaginatedWorkflowsResponse>.InternalServerError("Failed to retrieve workflows");
         }
     }
@@ -367,7 +367,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <returns>A result containing the list of filtered workflows.</returns>
     public async Task<ServiceResult<List<WorkflowsWithAgent>>> GetWorkflows(string? status)
     {
-        _logger.LogInformation("Retrieving workflows with filters - Status: {Status}", status ?? "null");
+        _logger.LogInformation("Retrieving workflows with filters - Status: {Status}", LogSanitizer.Sanitize(status ?? "null"));
 
         var loggedInUser = _tenantContext.LoggedInUser;
         if (string.IsNullOrEmpty(loggedInUser))
@@ -391,7 +391,7 @@ public class WorkflowFinderService : IWorkflowFinderService
 
             var listQuery = BuildQuery(agentNames, status);
 
-            _logger.LogDebug("Executing workflow query: {Query}", string.IsNullOrEmpty(listQuery) ? "No date filters" : listQuery);
+            _logger.LogDebug("Executing workflow query: {Query}", LogSanitizer.Sanitize(string.IsNullOrEmpty(listQuery) ? "No date filters" : listQuery));
 
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
             {
@@ -454,7 +454,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve workflows. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve workflows. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<List<WorkflowsWithAgent>>.InternalServerError("Failed to retrieve workflows");
         }
     }
@@ -479,7 +479,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             return ServiceResult<List<string>>.BadRequest("Agent cannot be empty");
         }
 
-        _logger.LogInformation("Retrieving workflow types for agent: {Agent}", agent);
+        _logger.LogInformation("Retrieving workflow types for agent: {Agent}", LogSanitizer.Sanitize(agent));
 
         try
         {
@@ -508,7 +508,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             };
 
             var listQuery = string.Join(" and ", queryParts);
-            _logger.LogDebug("Executing workflow types query: {Query}", listQuery);
+            _logger.LogDebug("Executing workflow types query: {Query}", LogSanitizer.Sanitize(listQuery));
 
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
             {
@@ -519,7 +519,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             var sortedTypes = workflowTypes.OrderBy(t => t).ToList();
-            _logger.LogInformation("Retrieved {Count} unique workflow types for agent {Agent}", sortedTypes.Count, agent);
+            _logger.LogInformation("Retrieved {Count} unique workflow types for agent {Agent}", sortedTypes.Count, LogSanitizer.Sanitize(agent));
             return ServiceResult<List<string>>.Success(sortedTypes);
         }
         catch (ArgumentException ex)
@@ -529,7 +529,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve workflow types for agent {Agent}. Error: {ErrorMessage}", agent, ex.Message);
+            _logger.LogError(ex, "Failed to retrieve workflow types for agent {Agent}. Error: {ErrorMessage}", LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<List<string>>.InternalServerError("Failed to retrieve workflow types");
         }
     }
@@ -613,7 +613,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get distinct idPostfix values from Temporal. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to get distinct idPostfix values from Temporal. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<List<string>>.InternalServerError("Failed to get distinct idPostfix values");
         }
     }
@@ -634,7 +634,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
 
         _logger.LogInformation("Retrieving workflows with filters - AgentName: {AgentName}, TypeName: {TypeName}",
-            agentName ?? "null", typeName ?? "null");
+            LogSanitizer.Sanitize(agentName ?? "null"), LogSanitizer.Sanitize(typeName ?? "null"));
 
         try
         {
@@ -675,7 +675,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             string listQuery = string.Join(" and ", queryParts);
-            _logger.LogDebug("Executing workflow query: {Query}", listQuery);
+            _logger.LogDebug("Executing workflow query: {Query}", LogSanitizer.Sanitize(listQuery));
 
             await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
             {
@@ -696,7 +696,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve workflows by agent and type. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve workflows by agent and type. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<List<WorkflowResponse>>.InternalServerError("Failed to retrieve workflows by agent and type");
         }
     }
@@ -772,7 +772,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         // Join all query parts with AND operator
         var andParts = string.Join(" and ", queryParts);
 
-        _logger.LogDebug("Built query: {Query}", andParts);
+        _logger.LogDebug("Built query: {Query}", LogSanitizer.Sanitize(andParts));
 
         return andParts;
     }
@@ -850,7 +850,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             if (currentActivity != null)
             {
                 _logger.LogDebug("Current activity: Type = {ActivityType}, ActivityId = {ActivityId}",
-                    currentActivity.ActivityType?.Name, currentActivity.ActivityId);
+                    LogSanitizer.Sanitize(currentActivity.ActivityType?.Name), LogSanitizer.Sanitize(currentActivity.ActivityId));
             }
             else
             {
@@ -930,15 +930,15 @@ public class WorkflowFinderService : IWorkflowFinderService
             string recentWorkerCount = recentWorkers.Count.ToString();
             _logger.LogInformation(
                 "TaskQueue {TaskQueue} has {WorkerCount} worker(s) polling it within the last minute",
-                taskQueueName,
-                recentWorkerCount
+                LogSanitizer.Sanitize(taskQueueName),
+                LogSanitizer.Sanitize(recentWorkerCount)
             );
 
             return recentWorkerCount;
         }
         catch (Exception)
         {
-            _logger.LogWarning("Failed to retrieve recent worker count for TaskQueue {TaskQueue}", taskQueueName);
+            _logger.LogWarning("Failed to retrieve recent worker count for TaskQueue {TaskQueue}", LogSanitizer.Sanitize(taskQueueName));
             return "N/A"; // Return "N/A" if unable to retrieve the count
         }
 

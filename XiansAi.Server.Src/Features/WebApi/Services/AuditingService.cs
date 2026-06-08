@@ -3,6 +3,7 @@ using MongoDB.Driver;
 using Features.WebApi.Repositories;
 using Features.WebApi.Models;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -80,7 +81,7 @@ public class AuditingService : IAuditingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving participants for agent {Agent}", agent);
+            _logger.LogError(ex, "Error retrieving participants for agent {Agent}", LogSanitizer.Sanitize(agent));
             return ServiceResult<(IEnumerable<string?> participants, long totalCount)>.InternalServerError("An error occurred while retrieving participants");
         }
     }
@@ -107,7 +108,7 @@ public class AuditingService : IAuditingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving workflow types for agent {Agent} and participant {ParticipantId}", agent, participantId);
+            _logger.LogError(ex, "Error retrieving workflow types for agent {Agent} and participant {ParticipantId}", LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(participantId));
             return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow types");
         }
     }
@@ -142,7 +143,7 @@ public class AuditingService : IAuditingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving workflow IDs for agent {Agent}, workflow type {WorkflowType}, and participant {ParticipantId}", 
-                agent, workflowType, participantId);
+                LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(workflowType), LogSanitizer.Sanitize(participantId));
             return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving workflow IDs");
         }
     }
@@ -195,7 +196,7 @@ public class AuditingService : IAuditingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving logs for agent {Agent}", agent);
+            _logger.LogError(ex, "Error retrieving logs for agent {Agent}", LogSanitizer.Sanitize(agent));
             return ServiceResult<(IEnumerable<Log> logs, long totalCount)>.InternalServerError("An error occurred while retrieving logs");
         }
     }

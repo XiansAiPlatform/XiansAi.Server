@@ -48,7 +48,7 @@ namespace Features.UserApi.Auth
                 return AuthenticateResult.NoResult(); // Let other handlers process this request
             }
 
-            _logger.LogDebug("Processing SignalR/Websocket request: {Path}", Request.Path);
+            _logger.LogDebug("Processing SignalR/Websocket request: {Path}", LogSanitizer.Sanitize(Request.Path));
 
             // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
             var accessToken = Request.Query["apikey"].ToString();
@@ -112,7 +112,7 @@ namespace Features.UserApi.Auth
                                 apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
                                 if (apiKey == null || apiKey.TenantId != tenantId)
                                 {
-                                    _logger.LogWarning("API key does not match provided tenant {TenantId}", tenantId);
+                                    _logger.LogWarning("API key does not match provided tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                                     return AuthenticateResult.Fail("Invalid API key or Tenant ID");
                                 }
                             }
@@ -131,7 +131,7 @@ namespace Features.UserApi.Auth
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
                             var principal = new ClaimsPrincipal(identity);
                             var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogInformation("Successfully authenticated WebSocket connection: User={UserId}, Tenant={TenantId}", apiKey.CreatedBy, apiKey.TenantId);
+                            _logger.LogInformation("Successfully authenticated WebSocket connection: User={UserId}, Tenant={TenantId}", LogSanitizer.Sanitize(apiKey.CreatedBy), LogSanitizer.Sanitize(apiKey.TenantId));
 
                             return AuthenticateResult.Success(ticket);
                         }
@@ -154,7 +154,7 @@ namespace Features.UserApi.Auth
                             var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
                             if (!validation.success || string.IsNullOrEmpty(validation.canonicalUserId))
                             {
-                                _logger.LogWarning("JWT validation failed: {Error}", validation.error);
+                                _logger.LogWarning("JWT validation failed: {Error}", LogSanitizer.Sanitize(validation.error));
                                 return AuthenticateResult.Fail(validation.error ?? "JWT validation failed");
                             }
                             var userId = validation.canonicalUserId;
@@ -168,7 +168,7 @@ namespace Features.UserApi.Auth
 
                             _tenantContext.TenantId = tenantId;
                             _tenantContext.AuthorizedTenantIds = tenantIds;
-                            _logger.LogDebug("UserID-{Id}", userId);
+                            _logger.LogDebug("UserID-{Id}", LogSanitizer.Sanitize(userId));
                             var claims = new List<Claim>
                             {
                                 new Claim(ClaimTypes.NameIdentifier, userId),
@@ -176,14 +176,14 @@ namespace Features.UserApi.Auth
                             };
                             foreach (var tId in tenantIds)
                             {
-                                _logger.LogDebug("tenantIds-{tId}: ", tId);
+                                _logger.LogDebug("tenantIds-{tId}: ", LogSanitizer.Sanitize(tId));
                                 claims.Add(new Claim("AuthorizedTenantId", tId));
                             }
 
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
                             var principal = new ClaimsPrincipal(identity);
                             var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogDebug("Successfully authenticated Websocket JWT: User={UserId}, Tenant={TenantId}", userId, tenantId);
+                            _logger.LogDebug("Successfully authenticated Websocket JWT: User={UserId}, Tenant={TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
                             return AuthenticateResult.Success(ticket);
                         }
                         else
