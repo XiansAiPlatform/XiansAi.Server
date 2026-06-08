@@ -3,6 +3,9 @@ on:
   push:
     branches: [ production ]
 
+permissions:
+  contents: read
+
 env:
   RESOURCE_GROUP: rg-api
   APP_NAME: xiansai-server

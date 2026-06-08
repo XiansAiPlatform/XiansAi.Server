@@ -3,6 +3,9 @@ on:
   push:
     branches: [ uat ]
 
+permissions:
+  contents: read
+
 env:
   RESOURCE_GROUP: rg-xiansai-uat
   APP_NAME: xiansai-server-uat
