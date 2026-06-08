@@ -127,7 +127,7 @@ public class AdminLogsService : IAdminLogsService
                 "ParticipantId: {ParticipantId}, WorkflowIds: {WorkflowIds}, WorkflowType: {WorkflowType}, " +
                 "LogLevels: {LogLevels}, StartDate: {StartDate}, EndDate: {EndDate}, Page: {Page}, PageSize: {PageSize}",
                 LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName ?? "null"), LogSanitizer.Sanitize(activationName ?? "null"), LogSanitizer.Sanitize(participantId ?? "null"),
-                workflowIds != null ? string.Join(",", workflowIds) : "null",
+                workflowIds != null ? string.Join(",", workflowIds.Select(LogSanitizer.Sanitize)) : "null",
                 LogSanitizer.Sanitize(workflowType ?? "null"),
                 logLevels != null ? string.Join(",", logLevels.Select(l => l.ToString())) : "null",
                 startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", page, pageSize);
