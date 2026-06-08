@@ -1,0 +1,7 @@
+name: "XiansAi Server CodeQL Configuration"
+
+# Register the local model pack that declares LogSanitizer.Sanitize and
+# LogSanitizer.RedactEmail as sanitizers, preventing false-positive alerts
+# for cs/log-forging (CWE-117) and cs/exposure-of-sensitive-information (CWE-359).
+model-packs:
+  - ./.github/codeql-models

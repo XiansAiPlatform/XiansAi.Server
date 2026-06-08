@@ -157,7 +157,7 @@ public class SecretVaultService : ISecretVaultService
 
             _logger.LogInformation(
                 "Secret vault entry created. id={SecretId} key={Key} tenant={TenantId} actor={Actor} provider={Provider}",
-                LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(input.Key), entity.TenantId ?? "*", LogSanitizer.Sanitize(actorUserId), LogSanitizer.Sanitize(_secretStore.Name));
+                LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(input.Key), LogSanitizer.Sanitize(entity.TenantId ?? "*"), LogSanitizer.Sanitize(actorUserId), LogSanitizer.Sanitize(_secretStore.Name));
 
             return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, input.Value), StatusCode.Ok);
         }
@@ -272,7 +272,7 @@ public class SecretVaultService : ISecretVaultService
 
             _logger.LogInformation(
                 "Secret vault entry updated. id={SecretId} key={Key} tenant={TenantId} actor={Actor} valueChanged={ValueChanged} provider={Provider}",
-                LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(entity.Key), entity.TenantId ?? "*", LogSanitizer.Sanitize(actorUserId), updatedValue != null, LogSanitizer.Sanitize(_secretStore.Name));
+                LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(entity.Key), LogSanitizer.Sanitize(entity.TenantId ?? "*"), LogSanitizer.Sanitize(actorUserId), updatedValue != null, LogSanitizer.Sanitize(_secretStore.Name));
 
             // For the response value: prefer the just-set value to avoid an extra round-trip to the store.
             var responseValue = updatedValue ?? await _secretStore.GetAsync(entity.Id) ?? string.Empty;
