@@ -13,7 +13,7 @@ public class ObjectCache
     private readonly TimeSpan _defaultExpiration;
 
     /// <summary>
-    /// Creates a new instance of the ObjectCacheService
+    /// Creates a new instance of the ObjectCache
     /// </summary>
     /// <param name="cacheProvider">Cache provider</param>
     /// <param name="logger">Logger for the service</param>
