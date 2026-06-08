@@ -165,19 +165,19 @@ public class FeedbackService : IFeedbackService
         try
         {
             var id = await _feedbackRepository.SaveFeedbackAsync(doc);
-            _logger.LogInformation("Saved message feedback {FeedbackId} for message {MessageId}", id, request.MessageId);
+            _logger.LogInformation("Saved message feedback {FeedbackId} for message {MessageId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(request.MessageId));
             return ServiceResult<string>.Success(id, StatusCode.Created);
         }
         catch (MongoWriteException ex) when (
             ex.WriteError?.Code == 11000
             || ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
         {
-            _logger.LogDebug(ex, "Duplicate feedback insert for message {MessageId} (tenant unique index)", request.MessageId);
+            _logger.LogDebug(ex, "Duplicate feedback insert for message {MessageId} (tenant unique index)", LogSanitizer.Sanitize(request.MessageId));
             return ServiceResult<string>.Conflict("Feedback has already been submitted for this message.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save feedback for message {MessageId}", request.MessageId);
+            _logger.LogError(ex, "Failed to save feedback for message {MessageId}", LogSanitizer.Sanitize(request.MessageId));
             return ServiceResult<string>.InternalServerError("Failed to save feedback.");
         }
     }

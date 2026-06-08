@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Features.AgentApi.Repositories;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Features.AgentApi.Services.Lib;
 public class ActivityHistoryRequest
@@ -81,7 +82,7 @@ public class ActivityHistoryService : IActivityHistoryService
     public void Create(ActivityHistoryRequest request)
     {
         _logger.LogInformation("Received request to create activity at: {Time} for {ActivityName}", 
-            DateTime.UtcNow, request.ActivityName);
+            DateTime.UtcNow, LogSanitizer.Sanitize(request.ActivityName));
         var activity = new ActivityHistory
         {
             Id = ObjectId.GenerateNewId().ToString(),

@@ -73,7 +73,7 @@ public class AgentRepository : IAgentRepository
         // Check if user has at least read permission
         if (!CheckPermissions(agent, PermissionLevel.Read))
         {
-            _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission", userId, name);
+            _logger.LogWarning("User {UserId} attempted to access agent {AgentName} without read permission", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(name));
             return null;
         }
 
@@ -104,7 +104,7 @@ public class AgentRepository : IAgentRepository
         // Check if user has at least read permission
         if (!CheckPermissions(agent, PermissionLevel.Read))
         {
-            _logger.LogWarning("User {UserId} attempted to access agent {AgentId} without read permission", userId, id);
+            _logger.LogWarning("User {UserId} attempted to access agent {AgentId} without read permission", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(id));
             return null;
         }
 
@@ -188,14 +188,14 @@ public class AgentRepository : IAgentRepository
         var existingAgent = await _agents.Find(x => x.Id == id).FirstOrDefaultAsync();
         if (existingAgent == null)
         {
-            _logger.LogWarning("Agent with ID {AgentId} not found", id);
+            _logger.LogWarning("Agent with ID {AgentId} not found", LogSanitizer.Sanitize(id));
             return false;
         }
 
         // Check if user has write permission
         if (!CheckPermissions(existingAgent, PermissionLevel.Write))
         {
-            _logger.LogWarning("User {UserId} attempted to update agent {AgentName} without write permission", userId, existingAgent.Name);
+            _logger.LogWarning("User {UserId} attempted to update agent {AgentName} without write permission", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(existingAgent.Name));
             return false;
         }
 
@@ -218,14 +218,14 @@ public class AgentRepository : IAgentRepository
             var agent = await GetByNameInternalAsync(name, tenant);
             if (agent == null)
             {
-                _logger.LogWarning("Agent {AgentName} not found in tenant {Tenant}", name, tenant);
+                _logger.LogWarning("Agent {AgentName} not found in tenant {Tenant}", LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(tenant));
                 return false;
             }   
 
             // Check if user has owner permission
             if (!CheckPermissions(agent, PermissionLevel.Owner))
             {
-                _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", userId, name);
+                _logger.LogWarning("User {UserId} attempted to update permissions for agent {AgentName} without owner permission", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(name));
                 return false;
             }
 
@@ -254,14 +254,14 @@ public class AgentRepository : IAgentRepository
             var agent = await _agents.Find(x => x.Id == id).FirstOrDefaultAsync();
             if (agent == null)
             {
-                _logger.LogWarning("Agent with ID {AgentId} not found", id);
+                _logger.LogWarning("Agent with ID {AgentId} not found", LogSanitizer.Sanitize(id));
                 return false;
             }
 
             // Check if user has owner permission
             if (!CheckPermissions(agent, PermissionLevel.Owner))
             {
-                _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", userId, agent.Name);
+                _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(agent.Name));
                 return false;
             }
 
@@ -273,7 +273,7 @@ public class AgentRepository : IAgentRepository
             );
 
             var definitionDeleteResult = await _definitions.DeleteManyAsync(definitionFilter);
-            _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", definitionDeleteResult.DeletedCount, agent.Name);
+            _logger.LogInformation("Deleted {Count} flow definitions for agent {AgentName}", definitionDeleteResult.DeletedCount, LogSanitizer.Sanitize(agent.Name));
 
             // Delete the agent
             var result = await _agents.DeleteOneAsync(x => x.Id == id);
@@ -290,7 +290,7 @@ public class AgentRepository : IAgentRepository
         
         if (!allowedAgents.Any())
         {
-            _logger.LogInformation("User {UserId} has no access to any agents in tenant {Tenant}", userId, tenant);
+            _logger.LogInformation("User {UserId} has no access to any agents in tenant {Tenant}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenant));
             return new List<AgentWithDefinitions>();
         }
 
@@ -342,7 +342,7 @@ public class AgentRepository : IAgentRepository
             Definitions = definitionsByAgent.TryGetValue(agent.Name, out var defs) ? defs : new List<FlowDefinition>()
         }).ToList();
 
-        _logger.LogInformation("Returning {Count} agents with their definitions for user {UserId}", result.Count, userId);
+        _logger.LogInformation("Returning {Count} agents with their definitions for user {UserId}", result.Count, LogSanitizer.Sanitize(userId));
         return result;
     }
 
@@ -449,7 +449,7 @@ public class AgentRepository : IAgentRepository
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             _logger.LogInformation("Upserting agent: {AgentName} for user: {UserId} in tenant: {Tenant}. Summary: {Summary}, Description: {Description}, Version: {Version}, Author: {Author}, Category: {Category}", 
-                agentName, createdBy, tenant, summary ?? "NULL", description ?? "NULL", version ?? "NULL", author ?? "NULL", category ?? "NULL");
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(createdBy), LogSanitizer.Sanitize(tenant), LogSanitizer.Sanitize(summary ?? "NULL"), LogSanitizer.Sanitize(description ?? "NULL"), LogSanitizer.Sanitize(version ?? "NULL"), LogSanitizer.Sanitize(author ?? "NULL"), LogSanitizer.Sanitize(category ?? "NULL"));
             
             // Create new agent object
             var newAgent = new Agent
@@ -477,12 +477,12 @@ public class AgentRepository : IAgentRepository
             {
                 // Try to insert the new agent - will fail if duplicate exists due to unique index
                 await _agents.InsertOneAsync(newAgent);
-                _logger.LogInformation("Agent {AgentName} created successfully", agentName);
+                _logger.LogInformation("Agent {AgentName} created successfully", LogSanitizer.Sanitize(agentName));
                 return newAgent;
             }
             catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
             {
-                _logger.LogInformation("Agent {AgentName} already exists, will update. Provided Summary: {Summary}", agentName, summary ?? "NULL");
+                _logger.LogInformation("Agent {AgentName} already exists, will update. Provided Summary: {Summary}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(summary ?? "NULL"));
                 
                 // Agent already exists, get the existing one
                 // Use the actual tenant value from the new agent (which is null for system-scoped agents)
@@ -511,7 +511,7 @@ public class AgentRepository : IAgentRepository
                     if (summary != null)
                     {
                         _logger.LogInformation("Updating summary from '{OldSummary}' to '{NewSummary}' for agent {AgentName}", 
-                            existingAgent.Summary ?? "NULL", summary, agentName);
+                            LogSanitizer.Sanitize(existingAgent.Summary ?? "NULL"), LogSanitizer.Sanitize(summary), LogSanitizer.Sanitize(agentName));
                         updates.Add(updateBuilder.Set(x => x.Summary, summary));
                         existingAgent.Summary = summary;
                         hasUpdates = true;
@@ -519,7 +519,7 @@ public class AgentRepository : IAgentRepository
                     else
                     {
                         _logger.LogInformation("Summary is null, skipping update for agent {AgentName}. Current value: '{CurrentSummary}'", 
-                            agentName, existingAgent.Summary ?? "NULL");
+                            LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(existingAgent.Summary ?? "NULL"));
                     }
                     
                     if (version != null)
@@ -552,7 +552,7 @@ public class AgentRepository : IAgentRepository
                     
                     if (hasUpdates)
                     {
-                        _logger.LogInformation("Updating {Count} fields for existing agent {AgentName}", updates.Count, agentName);
+                        _logger.LogInformation("Updating {Count} fields for existing agent {AgentName}", updates.Count, LogSanitizer.Sanitize(agentName));
                         
                         var tenantFilter = existingAgent.Tenant == null
                             ? Builders<Agent>.Filter.Eq(x => x.Tenant, null)
@@ -566,23 +566,23 @@ public class AgentRepository : IAgentRepository
                         var combinedUpdate = updateBuilder.Combine(updates);
                         var updateResult = await _agents.UpdateOneAsync(filter, combinedUpdate);
                         _logger.LogInformation("Update result for agent {AgentName}: Matched={Matched}, Modified={Modified}", 
-                            agentName, updateResult.MatchedCount, updateResult.ModifiedCount);
+                            LogSanitizer.Sanitize(agentName), updateResult.MatchedCount, updateResult.ModifiedCount);
                     }
                     else
                     {
-                        _logger.LogInformation("No updates to apply for agent {AgentName}", agentName);
+                        _logger.LogInformation("No updates to apply for agent {AgentName}", LogSanitizer.Sanitize(agentName));
                     }
                     
                     return existingAgent;
                 }
                 
                 // This shouldn't happen, but if it does, throw the original exception
-                _logger.LogError(ex, "Agent {AgentName} duplicate key error but could not retrieve existing agent", agentName);
+                _logger.LogError(ex, "Agent {AgentName} duplicate key error but could not retrieve existing agent", LogSanitizer.Sanitize(agentName));
                 throw new InvalidOperationException($"Agent {agentName} creation failed due to duplicate key, but existing agent could not be retrieved", ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error while upserting agent {AgentName}", agentName);
+                _logger.LogError(ex, "Unexpected error while upserting agent {AgentName}", LogSanitizer.Sanitize(agentName));
                 throw;
             }
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpsertAgent");

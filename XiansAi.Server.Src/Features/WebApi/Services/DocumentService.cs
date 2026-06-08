@@ -8,6 +8,7 @@ using Shared.Data.Models;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using System.Text.Json;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -66,7 +67,7 @@ public class DocumentService : IDocumentService
             var agent = await _agentRepository.GetByNameInternalAsync(agentId, _tenantContext.TenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent {AgentId} not found", agentId);
+                _logger.LogWarning("Agent {AgentId} not found", LogSanitizer.Sanitize(agentId));
                 return ServiceResult<List<string>>.NotFound("Agent not found");
             }
 
@@ -75,7 +76,7 @@ public class DocumentService : IDocumentService
             if (!readPermissionResult.IsSuccess)
             {
                 _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
-                    agent.Name, readPermissionResult.ErrorMessage);
+                    LogSanitizer.Sanitize(agent.Name), LogSanitizer.Sanitize(readPermissionResult.ErrorMessage));
                 return ServiceResult<List<string>>.BadRequest(
                     readPermissionResult.ErrorMessage ?? "Failed to check permissions");
             }
@@ -83,7 +84,7 @@ public class DocumentService : IDocumentService
             if (!readPermissionResult.Data)
             {
                 _logger.LogWarning("User {UserId} attempted to access document types for agent {AgentName} without read permission",
-                    _tenantContext.LoggedInUser, agent.Name);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agent.Name));
                 return ServiceResult<List<string>>.Forbidden(
                     "You do not have permission to access documents for this agent");
             }
@@ -95,7 +96,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving document types for agent {AgentId}", agentId);
+            _logger.LogError(ex, "Error retrieving document types for agent {AgentId}", LogSanitizer.Sanitize(agentId));
             return ServiceResult<List<string>>.InternalServerError("Error retrieving document types");
         }
     }
@@ -117,7 +118,7 @@ public class DocumentService : IDocumentService
             var agent = await _agentRepository.GetByNameInternalAsync(agentId, _tenantContext.TenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent {AgentId} not found", agentId);
+                _logger.LogWarning("Agent {AgentId} not found", LogSanitizer.Sanitize(agentId));
                 return ServiceResult<DocumentTypesAndActivationsResponse>.NotFound("Agent not found");
             }
 
@@ -126,7 +127,7 @@ public class DocumentService : IDocumentService
             if (!readPermissionResult.IsSuccess)
             {
                 _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
-                    agent.Name, readPermissionResult.ErrorMessage);
+                    LogSanitizer.Sanitize(agent.Name), LogSanitizer.Sanitize(readPermissionResult.ErrorMessage));
                 return ServiceResult<DocumentTypesAndActivationsResponse>.BadRequest(
                     readPermissionResult.ErrorMessage ?? "Failed to check permissions");
             }
@@ -134,7 +135,7 @@ public class DocumentService : IDocumentService
             if (!readPermissionResult.Data)
             {
                 _logger.LogWarning("User {UserId} attempted to access document types and activations for agent {AgentName} without read permission",
-                    _tenantContext.LoggedInUser, agent.Name);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agent.Name));
                 return ServiceResult<DocumentTypesAndActivationsResponse>.Forbidden(
                     "You do not have permission to access documents for this agent");
             }
@@ -155,7 +156,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving document types and activations for agent {AgentId}", agentId);
+            _logger.LogError(ex, "Error retrieving document types and activations for agent {AgentId}", LogSanitizer.Sanitize(agentId));
             return ServiceResult<DocumentTypesAndActivationsResponse>.InternalServerError("Error retrieving document types and activations");
         }
     }
@@ -187,7 +188,7 @@ public class DocumentService : IDocumentService
             var agent = await _agentRepository.GetByNameInternalAsync(agentId, _tenantContext.TenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent {AgentId} not found", agentId);
+                _logger.LogWarning("Agent {AgentId} not found", LogSanitizer.Sanitize(agentId));
                 return ServiceResult<DocumentListResponse>.NotFound("Agent not found");
             }
 
@@ -196,7 +197,7 @@ public class DocumentService : IDocumentService
             if (!readPermissionResult.IsSuccess)
             {
                 _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
-                    agent.Name, readPermissionResult.ErrorMessage);
+                    LogSanitizer.Sanitize(agent.Name), LogSanitizer.Sanitize(readPermissionResult.ErrorMessage));
                 return ServiceResult<DocumentListResponse>.BadRequest(
                     readPermissionResult.ErrorMessage ?? "Failed to check permissions");
             }
@@ -204,7 +205,7 @@ public class DocumentService : IDocumentService
             if (!readPermissionResult.Data)
             {
                 _logger.LogWarning("User {UserId} attempted to access documents for agent {AgentName} without read permission",
-                    _tenantContext.LoggedInUser, agent.Name);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agent.Name));
                 return ServiceResult<DocumentListResponse>.Forbidden(
                     "You do not have permission to access documents for this agent");
             }
@@ -260,7 +261,7 @@ public class DocumentService : IDocumentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving documents for agent {AgentId}, type {Type}, activation {ActivationName}", 
-                agentId, type, activationName ?? "all");
+                LogSanitizer.Sanitize(agentId), LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(activationName ?? "all"));
             return ServiceResult<DocumentListResponse>.InternalServerError("Error retrieving documents");
         }
     }
@@ -289,7 +290,7 @@ public class DocumentService : IDocumentService
             if (!string.IsNullOrEmpty(document.TenantId) && document.TenantId != _tenantContext.TenantId)
             {
                 _logger.LogWarning("User {UserId} attempted to access document {DocumentId} from different tenant",
-                    _tenantContext.LoggedInUser, id);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id));
                 return ServiceResult<DocumentDto<JsonElement>>.Forbidden("Access denied");
             }
 
@@ -300,7 +301,7 @@ public class DocumentService : IDocumentService
                 if (agent == null)
                 {
                     _logger.LogWarning("Agent {AgentId} not found for document {DocumentId}", 
-                        document.AgentId, id);
+                        LogSanitizer.Sanitize(document.AgentId), LogSanitizer.Sanitize(id));
                     return ServiceResult<DocumentDto<JsonElement>>.NotFound("Associated agent not found");
                 }
 
@@ -309,7 +310,7 @@ public class DocumentService : IDocumentService
                 if (!readPermissionResult.IsSuccess)
                 {
                     _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
-                        agent.Name, readPermissionResult.ErrorMessage);
+                        LogSanitizer.Sanitize(agent.Name), LogSanitizer.Sanitize(readPermissionResult.ErrorMessage));
                     return ServiceResult<DocumentDto<JsonElement>>.BadRequest(
                         readPermissionResult.ErrorMessage ?? "Failed to check permissions");
                 }
@@ -317,7 +318,7 @@ public class DocumentService : IDocumentService
                 if (!readPermissionResult.Data)
                 {
                     _logger.LogWarning("User {UserId} attempted to access document {DocumentId} for agent {AgentName} without read permission",
-                        _tenantContext.LoggedInUser, id, agent.Name);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(agent.Name));
                     return ServiceResult<DocumentDto<JsonElement>>.Forbidden(
                         "You do not have permission to access documents for this agent");
                 }
@@ -328,7 +329,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving document with ID {Id}", id);
+            _logger.LogError(ex, "Error retrieving document with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<DocumentDto<JsonElement>>.InternalServerError("Error retrieving document");
         }
     }
@@ -357,7 +358,7 @@ public class DocumentService : IDocumentService
             if (!string.IsNullOrEmpty(existing.TenantId) && existing.TenantId != _tenantContext.TenantId)
             {
                 _logger.LogWarning("User {UserId} attempted to update document {DocumentId} from different tenant",
-                    _tenantContext.LoggedInUser, id);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id));
                 return ServiceResult<DocumentDto<JsonElement>>.Forbidden("Access denied");
             }
 
@@ -368,7 +369,7 @@ public class DocumentService : IDocumentService
                 if (agent == null)
                 {
                     _logger.LogWarning("Agent {AgentId} not found for document {DocumentId}", 
-                        existing.AgentId, id);
+                        LogSanitizer.Sanitize(existing.AgentId), LogSanitizer.Sanitize(id));
                     return ServiceResult<DocumentDto<JsonElement>>.NotFound("Associated agent not found");
                 }
 
@@ -377,7 +378,7 @@ public class DocumentService : IDocumentService
                 if (!writePermissionResult.IsSuccess)
                 {
                     _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
-                        agent.Name, writePermissionResult.ErrorMessage);
+                        LogSanitizer.Sanitize(agent.Name), LogSanitizer.Sanitize(writePermissionResult.ErrorMessage));
                     return ServiceResult<DocumentDto<JsonElement>>.BadRequest(
                         writePermissionResult.ErrorMessage ?? "Failed to check permissions");
                 }
@@ -385,7 +386,7 @@ public class DocumentService : IDocumentService
                 if (!writePermissionResult.Data)
                 {
                     _logger.LogWarning("User {UserId} attempted to update document {DocumentId} for agent {AgentName} without write permission",
-                        _tenantContext.LoggedInUser, id, agent.Name);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(agent.Name));
                     return ServiceResult<DocumentDto<JsonElement>>.Forbidden(
                         "You do not have permission to modify documents for this agent");
                 }
@@ -433,7 +434,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating document with ID {Id}", id);
+            _logger.LogError(ex, "Error updating document with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<DocumentDto<JsonElement>>.InternalServerError("Error updating document");
         }
     }
@@ -462,7 +463,7 @@ public class DocumentService : IDocumentService
             if (!string.IsNullOrEmpty(document.TenantId) && document.TenantId != _tenantContext.TenantId)
             {
                 _logger.LogWarning("User {UserId} attempted to delete document {DocumentId} from different tenant",
-                    _tenantContext.LoggedInUser, id);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id));
                 return ServiceResult<bool>.Forbidden("Access denied");
             }
 
@@ -473,7 +474,7 @@ public class DocumentService : IDocumentService
                 if (agent == null)
                 {
                     _logger.LogWarning("Agent {AgentId} not found for document {DocumentId}", 
-                        document.AgentId, id);
+                        LogSanitizer.Sanitize(document.AgentId), LogSanitizer.Sanitize(id));
                     return ServiceResult<bool>.NotFound("Associated agent not found");
                 }
 
@@ -482,7 +483,7 @@ public class DocumentService : IDocumentService
                 if (!writePermissionResult.IsSuccess)
                 {
                     _logger.LogWarning("Permission check failed for agent {AgentName}: {Error}", 
-                        agent.Name, writePermissionResult.ErrorMessage);
+                        LogSanitizer.Sanitize(agent.Name), LogSanitizer.Sanitize(writePermissionResult.ErrorMessage));
                     return ServiceResult<bool>.BadRequest(
                         writePermissionResult.ErrorMessage ?? "Failed to check permissions");
                 }
@@ -490,7 +491,7 @@ public class DocumentService : IDocumentService
                 if (!writePermissionResult.Data)
                 {
                     _logger.LogWarning("User {UserId} attempted to delete document {DocumentId} for agent {AgentName} without write permission",
-                        _tenantContext.LoggedInUser, id, agent.Name);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(agent.Name));
                     return ServiceResult<bool>.Forbidden(
                         "You do not have permission to delete documents for this agent");
                 }
@@ -506,7 +507,7 @@ public class DocumentService : IDocumentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting document with ID {Id}", id);
+            _logger.LogError(ex, "Error deleting document with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.InternalServerError("Error deleting document");
         }
     }
@@ -533,7 +534,7 @@ public class DocumentService : IDocumentService
                 var document = await _repository.GetByIdAsync(id);
                 if (document == null)
                 {
-                    _logger.LogWarning("Document {DocumentId} not found, skipping", id);
+                    _logger.LogWarning("Document {DocumentId} not found, skipping", LogSanitizer.Sanitize(id));
                     continue;
                 }
 
@@ -541,7 +542,7 @@ public class DocumentService : IDocumentService
                 if (!string.IsNullOrEmpty(document.TenantId) && document.TenantId != _tenantContext.TenantId)
                 {
                     _logger.LogWarning("User {UserId} attempted to delete document {DocumentId} from different tenant",
-                        _tenantContext.LoggedInUser, id);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(id));
                     permissionDenied.Add(id);
                     continue;
                 }
@@ -553,7 +554,7 @@ public class DocumentService : IDocumentService
                     if (agent == null)
                     {
                         _logger.LogWarning("Agent {AgentId} not found for document {DocumentId}", 
-                            document.AgentId, id);
+                            LogSanitizer.Sanitize(document.AgentId), LogSanitizer.Sanitize(id));
                         permissionDenied.Add(id);
                         continue;
                     }
@@ -563,7 +564,7 @@ public class DocumentService : IDocumentService
                     if (!writePermissionResult.IsSuccess || !writePermissionResult.Data)
                     {
                         _logger.LogWarning("User {UserId} does not have write permission for agent {AgentName} (document {DocumentId})",
-                            _tenantContext.LoggedInUser, agent.Name, id);
+                            LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agent.Name), LogSanitizer.Sanitize(id));
                         permissionDenied.Add(id);
                         continue;
                     }
@@ -575,7 +576,7 @@ public class DocumentService : IDocumentService
             if (permissionDenied.Any())
             {
                 _logger.LogWarning("User {UserId} was denied permission to delete {Count} documents",
-                    _tenantContext.LoggedInUser, permissionDenied.Count);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), permissionDenied.Count);
                 return ServiceResult<BulkDeleteResult>.Forbidden(
                     $"Permission denied for {permissionDenied.Count} document(s)");
             }

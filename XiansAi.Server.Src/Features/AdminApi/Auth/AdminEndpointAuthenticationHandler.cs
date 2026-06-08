@@ -6,6 +6,7 @@ using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Features.AdminApi.Auth
 {
@@ -39,12 +40,12 @@ namespace Features.AdminApi.Auth
             var adminApiPattern = "/api/";
             var adminSuffix = "/admin";
             
-            _logger.LogDebug("AdminEndpointAuthenticationHandler: Evaluating path '{Path}'", Request.Path);
+            _logger.LogDebug("AdminEndpointAuthenticationHandler: Evaluating path '{Path}'", LogSanitizer.Sanitize(Request.Path));
             
             // Check if path matches AdminApi pattern: /api/{version}/admin
             if (!path.StartsWith(adminApiPattern) || !path.Contains(adminSuffix))
             {
-                _logger.LogDebug("Skipping admin endpoint authentication for non-AdminApi path: {Path}", Request.Path);
+                _logger.LogDebug("Skipping admin endpoint authentication for non-AdminApi path: {Path}", LogSanitizer.Sanitize(Request.Path));
                 return AuthenticateResult.NoResult(); // Let other handlers process this request
             }
             
@@ -52,11 +53,11 @@ namespace Features.AdminApi.Auth
             var pathParts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (pathParts.Length < 3 || pathParts[0] != "api" || pathParts[2] != "admin")
             {
-                _logger.LogDebug("Skipping admin endpoint authentication for non-AdminApi path: {Path}", Request.Path);
+                _logger.LogDebug("Skipping admin endpoint authentication for non-AdminApi path: {Path}", LogSanitizer.Sanitize(Request.Path));
                 return AuthenticateResult.NoResult(); // Let other handlers process this request
             }
 
-            _logger.LogDebug("Processing AdminApi endpoint request: {Path}", Request.Path);
+            _logger.LogDebug("Processing AdminApi endpoint request: {Path}", LogSanitizer.Sanitize(Request.Path));
 
             // Extract API key from Authorization header only.
             // Query parameter (?apikey=) is not supported: it can leak into reverse-proxy logs, CDN logs, and browser history.
@@ -92,7 +93,7 @@ namespace Features.AdminApi.Auth
             // Note: tenantId is now optional. If not provided, it will be derived from the API key.
             // This prevents IDOR vulnerabilities by ensuring the tenant matches the authenticated credential.
 
-            _logger.LogDebug("Processing AdminApi Endpoint request: {Path}", Request.Path);
+            _logger.LogDebug("Processing AdminApi Endpoint request: {Path}", LogSanitizer.Sanitize(Request.Path));
             if (_tenantContext != null)
             {
 
@@ -150,7 +151,7 @@ namespace Features.AdminApi.Auth
                         var principal = new ClaimsPrincipal(identity);
                         var ticket = new AuthenticationTicket(principal, Scheme.Name);
                         _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 
-                            apiKey.CreatedBy, finalTenantId, string.Join(", ", userRoles));
+                            LogSanitizer.Sanitize(apiKey.CreatedBy), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
 
                         return AuthenticateResult.Success(ticket);
                     }

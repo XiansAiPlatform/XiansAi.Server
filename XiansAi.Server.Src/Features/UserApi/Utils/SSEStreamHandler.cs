@@ -1,5 +1,6 @@
 using Features.UserApi.Services;
 using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.UserApi.Utils;
 
@@ -57,7 +58,7 @@ public class SSEStreamHandler
         try
         {
             _logger.LogInformation("SSE connection established for workflow {WorkflowId}, participant {ParticipantId}, tenant {TenantId}",
-                _workflowId, _participantId, _tenantId);
+                LogSanitizer.Sanitize(_workflowId), LogSanitizer.Sanitize(_participantId), LogSanitizer.Sanitize(_tenantId));
 
             // Set SSE headers
             SSEEventWriter.SetSSEHeaders(_httpContext.Response);
@@ -103,7 +104,7 @@ public class SSEStreamHandler
             {
                 var eventType = message.MessageType?.ToString() ?? "unknown";
                 _logger.LogDebug("Sending SSE event {EventType} for message {MessageId} to workflow {WorkflowId}, participant {ParticipantId}",
-                        eventType, message.Id, _workflowId, _participantId);
+                        LogSanitizer.Sanitize(eventType), LogSanitizer.Sanitize(message.Id), LogSanitizer.Sanitize(_workflowId), LogSanitizer.Sanitize(_participantId));
 
                 await SSEEventWriter.WriteEventAsync(_httpContext.Response, eventType, 
                     MessageEventFilter.CreateMessageEventData(message), 
@@ -112,12 +113,12 @@ public class SSEStreamHandler
         }
         catch (Exception ex) when (ex is OperationCanceledException || _cancellationToken.IsCancellationRequested)
         {
-            _logger.LogDebug("SSE connection cancelled for workflow {WorkflowId}, participant {ParticipantId}", _workflowId, _participantId);
+            _logger.LogDebug("SSE connection cancelled for workflow {WorkflowId}, participant {ParticipantId}", LogSanitizer.Sanitize(_workflowId), LogSanitizer.Sanitize(_participantId));
             _completionSource?.TrySetResult(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling SSE message event for workflow {WorkflowId}, participant {ParticipantId}", _workflowId, _participantId);
+            _logger.LogError(ex, "Error handling SSE message event for workflow {WorkflowId}, participant {ParticipantId}", LogSanitizer.Sanitize(_workflowId), LogSanitizer.Sanitize(_participantId));
         }
     }
 
@@ -148,6 +149,6 @@ public class SSEStreamHandler
         _messageEventPublisher.MessageReceived -= HandleMessage;
         
         _logger.LogInformation("SSE connection closed for workflow {WorkflowId}, participant {ParticipantId}, tenant {TenantId}",
-            _workflowId, _participantId, _tenantId);
+            LogSanitizer.Sanitize(_workflowId), LogSanitizer.Sanitize(_participantId), LogSanitizer.Sanitize(_tenantId));
     }
 } 

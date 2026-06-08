@@ -7,6 +7,7 @@ using Shared.Repositories;
 using Shared.Utils.Services;
 using Features.WebApi.Services;
 using System.Text.RegularExpressions;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -118,7 +119,7 @@ public class AgentDeletionService : IAgentDeletionService
                 var activations = await _activationRepository.GetByAgentNameAsync(agentName, tenantId);
                 if (activations != null && activations.Count > 0)
                 {
-                    _logger.LogWarning("Cannot delete agent {AgentName} - {Count} activation(s) exist", agentName, activations.Count);
+                    _logger.LogWarning("Cannot delete agent {AgentName} - {Count} activation(s) exist", LogSanitizer.Sanitize(agentName), activations.Count);
                     return ServiceResult<AgentDeletionResult>.Conflict(
                         $"Cannot delete agent '{agentName}' because it has {activations.Count} activation(s). Please delete all activations first.");
                 }
@@ -136,7 +137,7 @@ public class AgentDeletionService : IAgentDeletionService
                 }
                 else
                 {
-                    _logger.LogWarning("Failed deleting schedules for agent {Agent}: {Error}", agentName, scheduleResult.ErrorMessage);
+                    _logger.LogWarning("Failed deleting schedules for agent {Agent}: {Error}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(scheduleResult.ErrorMessage));
                 }
             }
 
@@ -159,7 +160,7 @@ public class AgentDeletionService : IAgentDeletionService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to delete knowledge for agent {Agent}", agentName);
+                _logger.LogWarning(ex, "Failed to delete knowledge for agent {Agent}", LogSanitizer.Sanitize(agentName));
             }
 
             // Delete flow definitions
@@ -190,7 +191,7 @@ public class AgentDeletionService : IAgentDeletionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error deleting agent {AgentName}", agentName);
+            _logger.LogError(ex, "Unexpected error deleting agent {AgentName}", LogSanitizer.Sanitize(agentName));
             return ServiceResult<AgentDeletionResult>.InternalServerError("An error occurred while deleting the agent");
         }
     }

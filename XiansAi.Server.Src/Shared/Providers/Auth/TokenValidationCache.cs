@@ -2,6 +2,7 @@ using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using System.Text;
 using System.Collections.Concurrent;
+using Shared.Utils;
 
 namespace Shared.Providers.Auth;
 
@@ -147,7 +148,7 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         var tokens = _userTokens.GetOrAdd(userId, _ => new ConcurrentBag<string>());
         tokens.Add(cacheKey);
 
-        _logger.LogDebug("Cached successful token validation result for user {UserId}", userId);
+        _logger.LogDebug("Cached successful token validation result for user {UserId}", LogSanitizer.Sanitize(userId));
         return Task.CompletedTask;
     }
 
@@ -193,7 +194,7 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         // Try to remove and get the token bag for this user atomically
         if (!_userTokens.TryRemove(userId, out var tokenBag))
         {
-            _logger.LogDebug("No cached tokens found for user {UserId}", userId);
+            _logger.LogDebug("No cached tokens found for user {UserId}", LogSanitizer.Sanitize(userId));
             return Task.CompletedTask;
         }
 
@@ -215,7 +216,7 @@ public class MemoryTokenValidationCache : ITokenValidationCache
             }
         }
 
-        _logger.LogInformation("Invalidated {Count} cached tokens for user {UserId}", tokenKeys.Length, userId);
+        _logger.LogInformation("Invalidated {Count} cached tokens for user {UserId}", tokenKeys.Length, LogSanitizer.Sanitize(userId));
         return Task.CompletedTask;
     }
 

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Shared.Providers.Auth.Auth0;
 using Shared.Services;
+using Shared.Utils;
 
 namespace Shared.Providers.Auth.GitHub;
 
@@ -160,7 +161,7 @@ public class GitHubProvider : IAuthProvider
                         }
 
                         _logger.LogDebug("Added {RoleCount} roles for GitHub user {UserId} in tenant {TenantId}",
-                            uniqueRoles.Count, userId, tenantId);
+                            uniqueRoles.Count, LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
                     }
                     else
                     {
@@ -168,7 +169,7 @@ public class GitHubProvider : IAuthProvider
                         if (!identity.Claims.Any(c => c.Type == ClaimTypes.Role && c.Value == SystemRoles.TenantUser))
                         {
                             identity.AddClaim(new Claim(ClaimTypes.Role, SystemRoles.TenantUser));
-                            _logger.LogDebug("No X-Tenant-Id header, assigned default TenantUser role to {UserId}", userId);
+                            _logger.LogDebug("No X-Tenant-Id header, assigned default TenantUser role to {UserId}", LogSanitizer.Sanitize(userId));
                         }
                     }
 
@@ -179,14 +180,14 @@ public class GitHubProvider : IAuthProvider
 
             OnAuthenticationFailed = context =>
             {
-                _logger.LogError("GitHub JWT authentication failed: {Exception}", context.Exception?.Message);
+                _logger.LogError("GitHub JWT authentication failed: {Exception}", LogSanitizer.Sanitize(context.Exception?.Message));
                 return Task.CompletedTask;
             },
 
             OnChallenge = context =>
             {
                 _logger.LogWarning("GitHub JWT challenge triggered: {Error}, {ErrorDescription}",
-                    context.Error, context.ErrorDescription);
+                    LogSanitizer.Sanitize(context.Error), LogSanitizer.Sanitize(context.ErrorDescription));
                 return Task.CompletedTask;
             }
         };
@@ -201,7 +202,7 @@ public class GitHubProvider : IAuthProvider
     {
         // For GitHub, user info is embedded in the JWT claims
         // We could optionally call GitHub API here if needed
-        _logger.LogInformation("GetUserInfo called for GitHub user {UserId}", userId);
+        _logger.LogInformation("GetUserInfo called for GitHub user {UserId}", LogSanitizer.Sanitize(userId));
 
         // Return minimal user info (could be enhanced to call GitHub API)
         return Task.FromResult(new UserInfo
@@ -225,7 +226,7 @@ public class GitHubProvider : IAuthProvider
     {
         // Tenants are managed in the database, not in GitHub
         _logger.LogInformation("SetNewTenant called for GitHub user {UserId}, tenant {TenantId}",
-            userId, tenantId);
+            LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
         return Task.FromResult("Tenant association managed via database");
     }
 }

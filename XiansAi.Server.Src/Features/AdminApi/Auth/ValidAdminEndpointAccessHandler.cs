@@ -3,6 +3,7 @@ using Shared.Auth;
 using Shared.Exceptions;
 using Shared.Services;
 using System.Security.Claims;
+using Shared.Utils;
 
 namespace Features.AdminApi.Auth
 {
@@ -130,7 +131,7 @@ namespace Features.AdminApi.Auth
 
                 if (!resolutionResult.Success)
                 {
-                    _logger.LogWarning("Admin role resolution failed: {Error}", resolutionResult.ErrorMessage);
+                    _logger.LogWarning("Admin role resolution failed: {Error}", LogSanitizer.Sanitize(resolutionResult.ErrorMessage));
                     context.Fail();
                     return;
                 }
@@ -148,7 +149,7 @@ namespace Features.AdminApi.Auth
                 _tenantContext.Authorization = accessToken;
 
                 _logger.LogInformation("Successfully authorized AdminApi Endpoint Connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 
-                    loggedInUser, finalTenantId, string.Join(", ", userRoles));
+                    LogSanitizer.Sanitize(loggedInUser), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
                 context.Succeed(requirement);
             }
             catch (TenantNotFoundException)

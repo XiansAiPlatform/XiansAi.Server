@@ -152,14 +152,14 @@ public class WorkflowSignalService : IWorkflowSignalService
             options.SignalWithStart(request.SignalName, signalPayload);
 
             _logger.LogInformation("Starting/invoking workflow `{WorkflowId}` with signal `{SignalName}`",
-                request.TargetWorkflowId, request.SignalName);
+                LogSanitizer.Sanitize(request.TargetWorkflowId), LogSanitizer.Sanitize(request.SignalName));
 
             await client.StartWorkflowAsync(request.TargetWorkflowType, new List<object>().AsReadOnly(), options);
 
             activity?.SetStatus(ActivityStatusCode.Ok);
 
             _logger.LogInformation("Successfully invoked workflow type {WorkflowType} with signal {SignalName}",
-                request.TargetWorkflowType, request.SignalName);
+                LogSanitizer.Sanitize(request.TargetWorkflowType), LogSanitizer.Sanitize(request.SignalName));
 
             return Results.Ok(new {
                 message = "Signal with start sent successfully",
@@ -171,7 +171,7 @@ public class WorkflowSignalService : IWorkflowSignalService
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddException(ex);
-            _logger.LogWarning(ex, "Workflow reference not found for type: {WorkflowType}", request.TargetWorkflowType);
+            _logger.LogWarning(ex, "Workflow reference not found for type: {WorkflowType}", LogSanitizer.Sanitize(request.TargetWorkflowType));
             return Results.NotFound(new {
                 message = $"Workflow type '{request.TargetWorkflowType}' could not be started or referenced",
                 workflowType = request.TargetWorkflowType
@@ -182,7 +182,7 @@ public class WorkflowSignalService : IWorkflowSignalService
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddException(ex);
             _logger.LogError(ex, "Error sending signal {SignalName} to workflow {WorkflowType}",
-                request.SignalName, request.TargetWorkflowType);
+                LogSanitizer.Sanitize(request.SignalName), LogSanitizer.Sanitize(request.TargetWorkflowType));
 
             throw;
         }

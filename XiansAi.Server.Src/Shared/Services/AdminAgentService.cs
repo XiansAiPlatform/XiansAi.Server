@@ -3,6 +3,7 @@ using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -71,7 +72,7 @@ public class AdminAgentService : IAdminAgentService
     {
         try
         {
-            _logger.LogInformation("Retrieving agent instances for tenant {TenantId}", tenantId);
+            _logger.LogInformation("Retrieving agent instances for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
 
             // Get tenant-scoped agents (instances) - SystemScoped = false
             var agents = await _agentRepository.GetAgentsWithPermissionAsync(
@@ -107,7 +108,7 @@ public class AdminAgentService : IAdminAgentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agent instances for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error retrieving agent instances for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<AgentListResult>.InternalServerError(
                 "An error occurred while retrieving agent instances");
         }
@@ -120,7 +121,7 @@ public class AdminAgentService : IAdminAgentService
     {
         try
         {
-            _logger.LogInformation("Retrieving agent instance by name {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogInformation("Retrieving agent instance by name {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
             if (string.IsNullOrWhiteSpace(agentName))
             {
@@ -135,14 +136,14 @@ public class AdminAgentService : IAdminAgentService
             var agent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", agentName, tenantId);
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<AgentWithDefinitions>.NotFound($"Agent with name '{agentName}' not found in tenant '{tenantId}'");
             }
 
             // Fetch workflow definitions for this agent
             var definitions = await _flowDefinitionRepository.GetByNameAsync(agentName, tenantId);
             
-            _logger.LogInformation("Found {Count} workflow definitions for agent {AgentName}", definitions?.Count ?? 0, agentName);
+            _logger.LogInformation("Found {Count} workflow definitions for agent {AgentName}", definitions?.Count ?? 0, LogSanitizer.Sanitize(agentName));
 
             var result = new AgentWithDefinitions
             {
@@ -154,7 +155,7 @@ public class AdminAgentService : IAdminAgentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agent instance by name {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogError(ex, "Error retrieving agent instance by name {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<AgentWithDefinitions>.InternalServerError(
                 "An error occurred while retrieving the agent instance");
         }
@@ -167,7 +168,7 @@ public class AdminAgentService : IAdminAgentService
     {
         try
         {
-            _logger.LogInformation("Updating agent instance {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogInformation("Updating agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
             if (string.IsNullOrWhiteSpace(agentName))
             {
@@ -182,7 +183,7 @@ public class AdminAgentService : IAdminAgentService
             var agent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", agentName, tenantId);
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<Agent>.NotFound($"Agent with name '{agentName}' not found in tenant '{tenantId}'");
             }
 
@@ -193,7 +194,7 @@ public class AdminAgentService : IAdminAgentService
                 var existingAgent = await _agentRepository.GetByNameInternalAsync(request.Name, agent.Tenant);
                 if (existingAgent != null && existingAgent.Id != agent.Id)
                 {
-                    _logger.LogWarning("Agent with name {Name} already exists in tenant {TenantId}", request.Name, agent.Tenant);
+                    _logger.LogWarning("Agent with name {Name} already exists in tenant {TenantId}", LogSanitizer.Sanitize(request.Name), LogSanitizer.Sanitize(agent.Tenant));
                     return ServiceResult<Agent>.Conflict($"Agent with name '{request.Name}' already exists in tenant");
                 }
                 agent.Name = request.Name;
@@ -217,16 +218,16 @@ public class AdminAgentService : IAdminAgentService
             var updated = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
             if (!updated)
             {
-                _logger.LogWarning("Failed to update agent {AgentName} in tenant {TenantId}", agentName, tenantId);
+                _logger.LogWarning("Failed to update agent {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<Agent>.InternalServerError("Failed to update the agent");
             }
 
-            _logger.LogInformation("Successfully updated agent instance {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogInformation("Successfully updated agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<Agent>.Success(agent);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating agent instance {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogError(ex, "Error updating agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<Agent>.InternalServerError(
                 "An error occurred while updating the agent instance");
         }
@@ -239,7 +240,7 @@ public class AdminAgentService : IAdminAgentService
     {
         try
         {
-            _logger.LogInformation("Deleting agent instance {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogInformation("Deleting agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
             if (string.IsNullOrWhiteSpace(agentName))
             {
@@ -254,7 +255,7 @@ public class AdminAgentService : IAdminAgentService
             var agent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", agentName, tenantId);
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<bool>.NotFound($"Agent with name '{agentName}' not found in tenant '{tenantId}'");
             }
 
@@ -262,7 +263,7 @@ public class AdminAgentService : IAdminAgentService
             var deletionResult = await _agentDeletionService.DeleteAgentAsync(agent.Name, agent.SystemScoped);
             if (!deletionResult.IsSuccess)
             {
-                _logger.LogWarning("Failed to delete agent {AgentName} in tenant {TenantId}: {Error}", agentName, tenantId, deletionResult.ErrorMessage);
+                _logger.LogWarning("Failed to delete agent {AgentName} in tenant {TenantId}: {Error}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(deletionResult.ErrorMessage));
                 return deletionResult.StatusCode switch
                 {
                     StatusCode.BadRequest => ServiceResult<bool>.BadRequest(deletionResult.ErrorMessage ?? "Bad request"),
@@ -274,12 +275,12 @@ public class AdminAgentService : IAdminAgentService
                 };
             }
 
-            _logger.LogInformation("Successfully deleted agent instance {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogInformation("Successfully deleted agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting agent instance {AgentName} in tenant {TenantId}", agentName, tenantId);
+            _logger.LogError(ex, "Error deleting agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<bool>.InternalServerError(
                 "An error occurred while deleting the agent instance");
         }

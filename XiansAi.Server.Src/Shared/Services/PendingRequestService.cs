@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -38,7 +39,7 @@ public class PendingRequestService : IPendingRequestService, IDisposable
         
         if (!_pendingRequests.TryAdd(requestId, pendingRequest))
         {
-            _logger.LogWarning("Request with ID {RequestId} already exists", requestId);
+            _logger.LogWarning("Request with ID {RequestId} already exists", LogSanitizer.Sanitize(requestId));
             return default(T);
         }
 
@@ -56,7 +57,7 @@ public class PendingRequestService : IPendingRequestService, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogDebug("Request {RequestId} was cancelled by caller", requestId);
+            _logger.LogDebug("Request {RequestId} was cancelled by caller", LogSanitizer.Sanitize(requestId));
             throw;
         }
         catch (OperationCanceledException)
@@ -93,18 +94,18 @@ public class PendingRequestService : IPendingRequestService, IDisposable
                     return;
                 }
 
-                _logger.LogDebug("Completing request {RequestId} with {MessageType} response", requestId, messageType?.ToString() ?? "unspecified");
+                _logger.LogDebug("Completing request {RequestId} with {MessageType} response", LogSanitizer.Sanitize(requestId), LogSanitizer.Sanitize(messageType?.ToString() ?? "unspecified"));
                 typedRequest.TaskCompletionSource.SetResult(response);
             }
             else
             {
                 _logger.LogWarning("Type mismatch when completing request {RequestId}. Expected {ExpectedType}, got {ActualType}", 
-                    requestId, typeof(T).Name, pendingRequest.GetType().GetGenericArguments().FirstOrDefault()?.Name ?? "unknown");
+                    LogSanitizer.Sanitize(requestId), typeof(T).Name, LogSanitizer.Sanitize(pendingRequest.GetType().GetGenericArguments().FirstOrDefault()?.Name ?? "unknown"));
             }
         }
         else
         {
-            _logger.LogDebug("No pending request found for RequestId {RequestId} - may have already completed or timed out", requestId);
+            _logger.LogDebug("No pending request found for RequestId {RequestId} - may have already completed or timed out", LogSanitizer.Sanitize(requestId));
         }
     }
 
@@ -118,12 +119,12 @@ public class PendingRequestService : IPendingRequestService, IDisposable
 
         if (_pendingRequests.TryRemove(requestId, out var pendingRequest))
         {
-            _logger.LogDebug("Completing request {RequestId} with error: {Error}", requestId, exception.Message);
+            _logger.LogDebug("Completing request {RequestId} with error: {Error}", LogSanitizer.Sanitize(requestId), LogSanitizer.Sanitize(exception.Message));
             pendingRequest.SetException(exception);
         }
         else
         {
-            _logger.LogDebug("No pending request found for RequestId {RequestId} when setting error", requestId);
+            _logger.LogDebug("No pending request found for RequestId {RequestId} when setting error", LogSanitizer.Sanitize(requestId));
         }
     }
 
@@ -137,7 +138,7 @@ public class PendingRequestService : IPendingRequestService, IDisposable
 
         if (_pendingRequests.TryRemove(requestId, out var pendingRequest))
         {
-            _logger.LogDebug("Cancelling request {RequestId}", requestId);
+            _logger.LogDebug("Cancelling request {RequestId}", LogSanitizer.Sanitize(requestId));
             pendingRequest.SetCanceled();
         }
     }
@@ -164,7 +165,7 @@ public class PendingRequestService : IPendingRequestService, IDisposable
         {
             if (_pendingRequests.TryRemove(requestId, out var pendingRequest))
             {
-                _logger.LogDebug("Cleaning up expired request {RequestId}", requestId);
+                _logger.LogDebug("Cleaning up expired request {RequestId}", LogSanitizer.Sanitize(requestId));
                 pendingRequest.SetException(new TimeoutException($"Request {requestId} expired"));
             }
         }

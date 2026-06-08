@@ -1,4 +1,5 @@
 using Shared.Providers;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -43,7 +44,7 @@ public class EmailService : IEmailService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending email to {Recipient} with subject '{Subject}'", to, subject);
+            _logger.LogError(ex, "Error sending email to {Recipient} with subject '{Subject}'", LogSanitizer.RedactEmail(to), LogSanitizer.Sanitize(subject));
             throw new Exception("Error sending email", ex);
         }
     }
@@ -68,7 +69,7 @@ public class EmailService : IEmailService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending email to {RecipientCount} recipients with subject '{Subject}'", to.Count(), subject);
+            _logger.LogError(ex, "Error sending email to {RecipientCount} recipients with subject '{Subject}'", to.Count(), LogSanitizer.Sanitize(subject));
             throw new Exception("Error sending email", ex);
         }
     }

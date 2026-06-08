@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Auth;
 using Shared.Utils.Services;
 using Shared.Services;
+using Shared.Utils;
 
 namespace Features.WebApi.Endpoints;
 

@@ -147,7 +147,7 @@ public class MessageService : IMessageService
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
     {
-        _logger.LogInformation("Processing handover for thread {ThreadId}", request.ThreadId);
+        _logger.LogInformation("Processing handover for thread {ThreadId}", LogSanitizer.Sanitize(request.ThreadId));
 
         try
         {
@@ -235,7 +235,7 @@ public class MessageService : IMessageService
 
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
-                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
+                _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
                 return ServiceResult<List<ConversationMessageDto>>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
@@ -248,14 +248,14 @@ public class MessageService : IMessageService
             // Get messages directly by workflow and participant IDs
             var messages = await _conversationRepository.GetMessagesByWorkflowAndParticipantAsync(workflowId, participantId, page, pageSize, scope, sortOrder);
 
-            _logger.LogInformation("Found {Count} messages for workflowId {WorkflowId}, participant {ParticipantId}", messages.Count, workflowId, participantId);
+            _logger.LogInformation("Found {Count} messages for workflowId {WorkflowId}, participant {ParticipantId}", messages.Count, LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
 
             var withFeedback = await _feedbackService.BuildMessagesWithFeedbackAsync(messages, _tenantContext.TenantId);
             return ServiceResult<List<ConversationMessageDto>>.Success(withFeedback);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting message history for workflowId {WorkflowId}, participant {ParticipantId}", workflowId, participantId);
+            _logger.LogError(ex, "Error getting message history for workflowId {WorkflowId}, participant {ParticipantId}", LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
             throw;
         }
     }
@@ -263,7 +263,7 @@ public class MessageService : IMessageService
     public async Task<ServiceResult<string>> ProcessOutgoingMessage(ChatOrDataRequest request, MessageType messageType)
     {
         _logger.LogInformation("Processing outbound message from workflow {WorkflowId} to participant {ParticipantId}",
-             request.WorkflowId, request.ParticipantId);
+             LogSanitizer.Sanitize(request.WorkflowId), LogSanitizer.Sanitize(request.ParticipantId));
 
         try
         {
@@ -290,14 +290,14 @@ public class MessageService : IMessageService
                 if (string.IsNullOrEmpty(request.Origin) && !string.IsNullOrEmpty(lastOrigin))
                 {
                     request.Origin = lastOrigin;
-                    _logger.LogInformation("Auto-populated origin from last incoming message in scope {Scope}: {Origin}", replyScope ?? "default", lastOrigin);
+                    _logger.LogInformation("Auto-populated origin from last incoming message in scope {Scope}: {Origin}", LogSanitizer.Sanitize(replyScope ?? "default"), LogSanitizer.Sanitize(lastOrigin));
                 }
 
                 // Auto-populate platform-specific metadata (e.g., Slack channel, Teams conversation) if not provided
                 if (request.Data == null && !string.IsNullOrEmpty(request.Origin) && request.Origin.StartsWith("app:") && lastData != null)
                 {
                     request.Data = lastData;
-                    _logger.LogInformation("Auto-populated platform metadata from last incoming message in scope {Scope}", replyScope ?? "default");
+                    _logger.LogInformation("Auto-populated platform metadata from last incoming message in scope {Scope}", LogSanitizer.Sanitize(replyScope ?? "default"));
                 }
             }
 
@@ -355,7 +355,7 @@ public class MessageService : IMessageService
         }
 
         _logger.LogInformation("Processing inbound message for WorkflowId `{WorkflowId}` from participant {ParticipantId}",
-            request.WorkflowId, request.ParticipantId);
+            LogSanitizer.Sanitize(request.WorkflowId), LogSanitizer.Sanitize(request.ParticipantId));
         
         // Critical Operation: If the threadId is not provided, we need to create a new thread
         var threadId = await CreateOrGetThread(request);
@@ -480,7 +480,7 @@ public class MessageService : IMessageService
 
         // Save the message with transaction support
         message.Id = await _conversationRepository.SaveMessageAsync(message);
-        _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", message.Id, message.ThreadId);
+        _logger.LogInformation("Created conversation message {MessageId} in thread {ThreadId}", LogSanitizer.Sanitize(message.Id), LogSanitizer.Sanitize(message.ThreadId));
 
         return message;
     }
@@ -490,12 +490,12 @@ public class MessageService : IMessageService
         try
         {
             _logger.LogInformation("Attempting to delete thread for workflowId {WorkflowId}, participant {ParticipantId}", 
-                workflowId, participantId);
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
 
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
                 _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
-                    workflowId, participantId);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
                 return ServiceResult<bool>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
@@ -508,13 +508,13 @@ public class MessageService : IMessageService
             catch (KeyNotFoundException)
             {
                 _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}", 
-                    workflowId, participantId, _tenantContext.TenantId);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<bool>.NotFound("Thread not found");
             }
 
             // Delete all messages in the thread first
             await _conversationRepository.DeleteMessagesByThreadIdAsync(threadId);
-            _logger.LogInformation("Deleted messages for thread {ThreadId}", threadId);
+            _logger.LogInformation("Deleted messages for thread {ThreadId}", LogSanitizer.Sanitize(threadId));
 
             // Delete the thread
             var result = await _conversationRepository.DeleteThreadAsync(threadId, _tenantContext.TenantId);
@@ -522,18 +522,18 @@ public class MessageService : IMessageService
             if (!result)
             {
                 _logger.LogWarning("Failed to delete thread {ThreadId} for workflowId {WorkflowId}, participant {ParticipantId}", 
-                    threadId, workflowId, participantId);
+                    LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
                 return ServiceResult<bool>.InternalServerError("Failed to delete thread");
             }
 
             _logger.LogInformation("Successfully deleted thread {ThreadId} for workflowId {WorkflowId}, participant {ParticipantId}", 
-                threadId, workflowId, participantId);
+                LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}", 
-                workflowId, participantId);
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
         }
     }
@@ -543,12 +543,12 @@ public class MessageService : IMessageService
         try
         {
             _logger.LogInformation("Attempting to delete messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
-                workflowId, participantId, topic ?? "null");
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(topic ?? "null"));
 
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
                 _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
-                    workflowId, participantId);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
                 return ServiceResult<bool>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
@@ -559,18 +559,18 @@ public class MessageService : IMessageService
             if (!result)
             {
                 _logger.LogWarning("Failed to delete messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
-                    workflowId, participantId, topic ?? "null");
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(topic ?? "null"));
                 return ServiceResult<bool>.InternalServerError("Failed to delete messages");
             }
 
             _logger.LogInformation("Successfully deleted messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
-                workflowId, participantId, topic ?? "null");
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(topic ?? "null"));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
-                workflowId, participantId, topic ?? "null");
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(topic ?? "null"));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting messages");
         }
     }
@@ -580,12 +580,12 @@ public class MessageService : IMessageService
         try
         {
             _logger.LogInformation("Getting last task id for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
-                workflowId, participantId, scope ?? "null");
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"));
 
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
                 _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}",
-                    workflowId, participantId);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
                 return ServiceResult<string?>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
@@ -594,12 +594,12 @@ public class MessageService : IMessageService
             if (taskId == null)
             {
                 _logger.LogInformation("No task id found for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
-                    workflowId, participantId, scope ?? "null");
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"));
             }
             else
             {
                 _logger.LogInformation("Found task id for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}",
-                    workflowId, participantId, scope ?? "null");
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"));
             }
 
             return ServiceResult<string?>.Success(taskId);
@@ -607,7 +607,7 @@ public class MessageService : IMessageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting last task id for workflowId {WorkflowId}, participant {ParticipantId}",
-                workflowId, participantId);
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
             return ServiceResult<string?>.InternalServerError("An error occurred while getting the last task id");
         }
     }
@@ -622,7 +622,7 @@ public class MessageService : IMessageService
             if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
             {
                 _logger.LogWarning("Invalid request: missing required fields workflowId {WorkflowId}, participant {ParticipantId}", 
-                    workflowId, participantId);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
                 return ServiceResult<TopicsResult>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
@@ -641,7 +641,7 @@ public class MessageService : IMessageService
             catch (KeyNotFoundException)
             {
                 _logger.LogInformation("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. Returning empty topics list.", 
-                    workflowId, participantId, _tenantContext.TenantId);
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 
                 // Return empty result when thread doesn't exist
                 return ServiceResult<TopicsResult>.Success(new TopicsResult
@@ -669,14 +669,14 @@ public class MessageService : IMessageService
             var topicsResult = await _conversationRepository.GetTopicsByThreadIdAsync(_tenantContext.TenantId, threadId, page, pageSize);
 
             _logger.LogInformation("Found {Count} topics for workflowId {WorkflowId}, participant {ParticipantId}", 
-                topicsResult.Topics.Count, workflowId, participantId);
+                topicsResult.Topics.Count, LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
 
             return ServiceResult<TopicsResult>.Success(topicsResult);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting topics for workflowId {WorkflowId}, participant {ParticipantId}", 
-                workflowId, participantId);
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
             return ServiceResult<TopicsResult>.InternalServerError("An error occurred while retrieving topics");
         }
     }

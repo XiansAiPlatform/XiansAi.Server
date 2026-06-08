@@ -2,6 +2,7 @@ using Features.AgentApi.Repositories;
 using Shared.Utils.Services;
 using System.Text.Json;
 using MongoDB.Bson;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -194,13 +195,13 @@ public class AdminDataService : IAdminDataService
 
             _logger.LogInformation(
                 "Data schema retrieved successfully - AgentName: {AgentName}, Types: {TypeCount}",
-                request.AgentName, documentTypes.Count);
+                LogSanitizer.Sanitize(request.AgentName), documentTypes.Count);
 
             return ServiceResult<AdminDataSchemaResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve data schema. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve data schema. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminDataSchemaResponse>.InternalServerError("Failed to retrieve data schema");
         }
     }
@@ -271,7 +272,7 @@ public class AdminDataService : IAdminDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve data. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve data. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminDataListResponse>.InternalServerError("Failed to retrieve data");
         }
     }
@@ -330,7 +331,7 @@ public class AdminDataService : IAdminDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete data. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to delete data. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminDataDeleteResponse>.InternalServerError("Failed to delete data");
         }
     }
@@ -350,7 +351,7 @@ public class AdminDataService : IAdminDataService
         {
             _logger.LogInformation(
                 "Deleting record - TenantId: {TenantId}, RecordId: {RecordId}",
-                request.TenantId, request.RecordId);
+                LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(request.RecordId));
 
             // First, get the record to return it in the response (for confirmation)
             var existingRecord = await _documentRepository.GetByIdAsync(request.RecordId);
@@ -361,12 +362,12 @@ public class AdminDataService : IAdminDataService
                 if (existingRecord == null)
                 {
                     _logger.LogWarning("Record not found - RecordId: {RecordId}, TenantId: {TenantId}", 
-                        request.RecordId, request.TenantId);
+                        LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId));
                 }
                 else
                 {
                     _logger.LogWarning("Access denied - Record belongs to different tenant. RecordId: {RecordId}, RequestedTenant: {TenantId}, ActualTenant: {ActualTenantId}", 
-                        request.RecordId, request.TenantId, existingRecord.TenantId);
+                        LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(existingRecord.TenantId));
                 }
 
                 // Return a not found response (the endpoint will handle the structured response)
@@ -387,13 +388,13 @@ public class AdminDataService : IAdminDataService
             {
                 _logger.LogInformation(
                     "Record deleted successfully - RecordId: {RecordId}, TenantId: {TenantId}, AgentName: {AgentName}, DataType: {DataType}",
-                    request.RecordId, request.TenantId, existingRecord.AgentId, existingRecord.Type);
+                    LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(existingRecord.AgentId), LogSanitizer.Sanitize(existingRecord.Type));
             }
             else
             {
                 _logger.LogWarning(
                     "Record deletion failed - RecordId: {RecordId}, TenantId: {TenantId}",
-                    request.RecordId, request.TenantId);
+                    LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId));
             }
 
             return ServiceResult<AdminDataDeleteRecordResponse>.Success(response);
@@ -401,7 +402,7 @@ public class AdminDataService : IAdminDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete record. RecordId: {RecordId}, Error: {ErrorMessage}", 
-                request.RecordId, ex.Message);
+                LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminDataDeleteRecordResponse>.InternalServerError("Failed to delete record");
         }
     }

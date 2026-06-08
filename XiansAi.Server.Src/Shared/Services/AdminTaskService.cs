@@ -108,7 +108,7 @@ public class AdminTaskService : IAdminTaskService
 
         try
         {
-            _logger.LogInformation("Retrieving task with workflow ID: {WorkflowId}", workflowId);
+            _logger.LogInformation("Retrieving task with workflow ID: {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             var client = await _clientFactory.GetClientAsync();
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
@@ -185,13 +185,13 @@ public class AdminTaskService : IAdminTaskService
                 TenantId = tenantId
             };
 
-            _logger.LogInformation("Successfully retrieved task {WorkflowId}", workflowId);
+            _logger.LogInformation("Successfully retrieved task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             return ServiceResult<AdminTaskInfoResponse>.Success(response);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve task {WorkflowId}. Error: {ErrorMessage}",
-                workflowId, ex.Message);
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminTaskInfoResponse>.BadRequest($"Failed to retrieve task: {ex.Message}");
         }
     }
@@ -256,7 +256,7 @@ public class AdminTaskService : IAdminTaskService
             }
 
             var listQuery = string.Join(" and ", queryParts);
-            _logger.LogDebug("Executing paginated tasks query: {Query}", listQuery);
+            _logger.LogDebug("Executing paginated tasks query: {Query}", LogSanitizer.Sanitize(listQuery));
 
             // Get total count efficiently using CountWorkflow API if available
             int? totalCount = await GetWorkflowCountAsync(client, listQuery, agentName);
@@ -335,12 +335,12 @@ public class AdminTaskService : IAdminTaskService
             };
 
             _logger.LogInformation("Retrieved {Count} tasks for page (Total: {TotalCount})", 
-                allTasks.Count, totalCount?.ToString() ?? "unknown");
+                allTasks.Count, LogSanitizer.Sanitize(totalCount?.ToString() ?? "unknown"));
             return ServiceResult<AdminPaginatedTasksResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve paginated tasks. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve paginated tasks. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminPaginatedTasksResponse>.InternalServerError("Failed to retrieve tasks");
         }
     }
@@ -356,7 +356,7 @@ public class AdminTaskService : IAdminTaskService
             // Build count query - add Task Workflow filter when agentName is not specified
             var countQuery = listQuery;
 
-            _logger.LogDebug("Executing count query: {CountQuery}", countQuery);
+            _logger.LogDebug("Executing count query: {CountQuery}", LogSanitizer.Sanitize(countQuery));
 
             // Call CountWorkflowsAsync directly - available in Temporal Server v1.20+
             var countResponse = await client.CountWorkflowsAsync(countQuery);
@@ -365,7 +365,7 @@ public class AdminTaskService : IAdminTaskService
         }
         catch (NotSupportedException ex)
         {
-            _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", ex.Message);
+            _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", LogSanitizer.Sanitize(ex.Message));
             return null;
         }
         catch (Exception ex)
@@ -467,7 +467,7 @@ public class AdminTaskService : IAdminTaskService
             }
 
             var baseQuery = string.Join(" and ", baseQueryParts);
-            _logger.LogDebug("Base statistics query: {Query}", baseQuery);
+            _logger.LogDebug("Base statistics query: {Query}", LogSanitizer.Sanitize(baseQuery));
 
             // Try to use CountWorkflow API for efficient statistics
             var statistics = await GetTaskStatisticsUsingCountApi(client, baseQuery);
@@ -482,7 +482,7 @@ public class AdminTaskService : IAdminTaskService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve task statistics. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve task statistics. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<TaskStatisticsResponse>.InternalServerError("Failed to retrieve task statistics");
         }
     }
@@ -553,7 +553,7 @@ public class AdminTaskService : IAdminTaskService
         }
         catch (NotSupportedException ex)
         {
-            _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", ex.Message);
+            _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", LogSanitizer.Sanitize(ex.Message));
             return null;
         }
         catch (Exception ex)
@@ -671,7 +671,7 @@ public class AdminTaskService : IAdminTaskService
 
         try
         {
-            _logger.LogInformation("Updating draft for task {WorkflowId}", workflowId);
+            _logger.LogInformation("Updating draft for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             var client = await _clientFactory.GetClientAsync();
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
@@ -679,13 +679,13 @@ public class AdminTaskService : IAdminTaskService
             // Send UpdateDraft signal
             await workflowHandle.SignalAsync("UpdateDraft", new object[] { updatedDraft });
 
-            _logger.LogInformation("Successfully updated draft for task {WorkflowId}", workflowId);
+            _logger.LogInformation("Successfully updated draft for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             return ServiceResult<object>.Success(new { message = "Draft updated successfully" });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to update draft for task {WorkflowId}. Error: {ErrorMessage}",
-                workflowId, ex.Message);
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<object>.BadRequest($"Failed to update draft: {ex.Message}");
         }
     }
@@ -703,14 +703,14 @@ public class AdminTaskService : IAdminTaskService
 
         if (string.IsNullOrWhiteSpace(action))
         {
-            _logger.LogWarning("Attempt to perform action with empty action for task {WorkflowId}", workflowId);
+            _logger.LogWarning("Attempt to perform action with empty action for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             return ServiceResult<object>.BadRequest("Action cannot be empty");
         }
 
         try
         {
             _logger.LogInformation("Performing action '{Action}' on task {WorkflowId} with comment: {Comment}", 
-                action, workflowId, comment ?? "(none)");
+                LogSanitizer.Sanitize(action), LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(comment ?? "(none)"));
             var client = await _clientFactory.GetClientAsync();
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
@@ -719,13 +719,13 @@ public class AdminTaskService : IAdminTaskService
             var actionRequest = new { Action = action, Comment = comment };
             await workflowHandle.SignalAsync("PerformAction", new object[] { actionRequest });
 
-            _logger.LogInformation("Successfully performed action '{Action}' on task {WorkflowId}", action, workflowId);
+            _logger.LogInformation("Successfully performed action '{Action}' on task {WorkflowId}", LogSanitizer.Sanitize(action), LogSanitizer.Sanitize(workflowId));
             return ServiceResult<object>.Success(new { message = $"Action '{action}' performed successfully" });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to perform action '{Action}' on task {WorkflowId}. Error: {ErrorMessage}",
-                action, workflowId, ex.Message);
+                LogSanitizer.Sanitize(action), LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<object>.BadRequest($"Failed to perform action: {ex.Message}");
         }
     }

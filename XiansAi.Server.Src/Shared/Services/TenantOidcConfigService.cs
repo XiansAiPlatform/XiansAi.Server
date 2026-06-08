@@ -87,7 +87,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             
             if (cachedRules != null)
             {
-                _logger.LogDebug("Retrieved OIDC config for tenant {TenantId} from cache", tenantId);
+                _logger.LogDebug("Retrieved OIDC config for tenant {TenantId} from cache", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<TenantOidcRules?>.Success(cachedRules);
             }
 
@@ -96,12 +96,12 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             var hasNullResult = await _cache.GetAsync<bool?>(nullCacheKey);
             if (hasNullResult == true)
             {
-                _logger.LogDebug("Retrieved null OIDC config for tenant {TenantId} from cache", tenantId);
+                _logger.LogDebug("Retrieved null OIDC config for tenant {TenantId} from cache", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<TenantOidcRules?>.Success(null);
             }
 
             // Cache miss - fetch from database
-            _logger.LogDebug("Cache miss for tenant {TenantId} OIDC config, fetching from database", tenantId);
+            _logger.LogDebug("Cache miss for tenant {TenantId} OIDC config, fetching from database", LogSanitizer.Sanitize(tenantId));
             var result = await GetForTenantFromDatabaseAsync(tenantId);
             
             // Cache the result based on success/failure
@@ -127,7 +127,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting cached OIDC config for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error getting cached OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             // Fallback to database on cache errors
             return await GetForTenantFromDatabaseAsync(tenantId);
         }
@@ -152,13 +152,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             }
             catch (AuthenticationTagMismatchException ex)
             {
-                _logger.LogWarning(ex, "Decryption failed due to tag mismatch for tenant {TenantId}", tenantId);
+                _logger.LogWarning(ex, "Decryption failed due to tag mismatch for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<TenantOidcRules?>.Conflict("The encryption keys may have changed. Please reconfigure the tenant OIDC settings.");
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting OIDC config for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error getting OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<TenantOidcRules?>.InternalServerError("Failed to load OIDC configuration");
         }
     }
@@ -224,13 +224,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             
             // Invalidate cache after successful update
             await InvalidateCacheAsync(tenantId);
-            _logger.LogDebug("Invalidated cache for tenant {TenantId} after upsert", tenantId);
+            _logger.LogDebug("Invalidated cache for tenant {TenantId} after upsert", LogSanitizer.Sanitize(tenantId));
             
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error upserting OIDC config for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error upserting OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<bool>.InternalServerError("Failed to save OIDC configuration");
         }
     }
@@ -248,14 +248,14 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             {
                 // Invalidate cache after successful deletion
                 await InvalidateCacheAsync(tenantId);
-                _logger.LogDebug("Invalidated cache for tenant {TenantId} after deletion", tenantId);
+                _logger.LogDebug("Invalidated cache for tenant {TenantId} after deletion", LogSanitizer.Sanitize(tenantId));
             }
             
             return removed ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting OIDC config for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error deleting OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<bool>.InternalServerError("Failed to delete OIDC configuration");
         }
     }
@@ -276,7 +276,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to decrypt/deserialize OIDC config for tenant {TenantId}", item.TenantId);
+                    _logger.LogError(ex, "Failed to decrypt/deserialize OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(item.TenantId));
                     list.Add((item.TenantId, null));
                 }
             }
@@ -329,7 +329,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to invalidate cache for tenant {TenantId}", tenantId);
+            _logger.LogWarning(ex, "Failed to invalidate cache for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             // Don't throw - cache invalidation failure shouldn't break the main operation
         }
     }

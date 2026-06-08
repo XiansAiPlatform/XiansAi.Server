@@ -1,6 +1,7 @@
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Utils;
 
 namespace Shared.Repositories;
 
@@ -32,7 +33,7 @@ public class TenantOidcConfigRepository : ITenantOidcConfigRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving OIDC config for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error retrieving OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return null;
         }
     }
@@ -46,7 +47,7 @@ public class TenantOidcConfigRepository : ITenantOidcConfigRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error upserting OIDC config for tenant {TenantId}", config.TenantId);
+            _logger.LogError(ex, "Error upserting OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(config.TenantId));
             throw;
         }
     }
@@ -60,7 +61,7 @@ public class TenantOidcConfigRepository : ITenantOidcConfigRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting OIDC config for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error deleting OIDC config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return false;
         }
     }

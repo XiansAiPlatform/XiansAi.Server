@@ -4,6 +4,7 @@ using Features.AgentApi.Services;
 using Features.AgentApi.Models;
 using System.Text.Json;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -50,7 +51,7 @@ public static class DocumentEndpoints
             [FromBody] DocumentIdRequest request,
             [FromServices] IDocumentService service) =>
         {
-            _logger.LogInformation("Getting document with ID: {Id}", request.Id);
+            _logger.LogInformation("Getting document with ID: {Id}", LogSanitizer.Sanitize(request.Id));
             var result = await service.GetAsync(request.Id);
             return result.ToHttpResult();
         })
@@ -65,7 +66,7 @@ public static class DocumentEndpoints
             [FromBody] DocumentKeyRequest request,
             [FromServices] IDocumentService service) =>
         {
-            _logger.LogInformation("Getting document with Type: {Type} and Key: {Key}", request.Type, request.Key);
+            _logger.LogInformation("Getting document with Type: {Type} and Key: {Key}", LogSanitizer.Sanitize(request.Type), LogSanitizer.Sanitize(request.Key));
             var result = await service.GetByKeyAsync(request.Type, request.Key);
             return result.ToHttpResult();
         })
@@ -111,7 +112,7 @@ public static class DocumentEndpoints
             [FromBody] DocumentIdRequest request,
             [FromServices] IDocumentService service) =>
         {
-            _logger.LogInformation("Deleting document with ID: {Id}", request.Id);
+            _logger.LogInformation("Deleting document with ID: {Id}", LogSanitizer.Sanitize(request.Id));
             var result = await service.DeleteAsync(request.Id);
             return result.ToHttpResult();
         })
@@ -141,7 +142,7 @@ public static class DocumentEndpoints
             [FromBody] DocumentIdRequest request,
             [FromServices] IDocumentService service) =>
         {
-            _logger.LogInformation("Checking existence of document with ID: {Id}", request.Id);
+            _logger.LogInformation("Checking existence of document with ID: {Id}", LogSanitizer.Sanitize(request.Id));
             var result = await service.ExistsAsync(request.Id);
             return result.ToHttpResult();
         })

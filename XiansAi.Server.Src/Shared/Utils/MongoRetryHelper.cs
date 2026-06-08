@@ -1,5 +1,6 @@
 using MongoDB.Driver;
 using System.Net.Sockets;
+using Shared.Utils;
 
 namespace Shared.Utils;
 

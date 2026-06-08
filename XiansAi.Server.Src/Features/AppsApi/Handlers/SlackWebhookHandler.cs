@@ -6,6 +6,7 @@ using Features.AppsApi.Models;
 using Shared.Services;
 using Shared.Repositories;
 using Shared.Auth;
+using Shared.Utils;
 using Features.AppsApi.Converters;
 
 namespace Features.AppsApi.Handlers;
@@ -610,7 +611,7 @@ public class SlackWebhookHandler : ISlackWebhookHandler
 
             _logger.LogInformation(
                 "Looking up Slack user for email: {Email}",
-                email);
+                LogSanitizer.RedactEmail(email));
 
             var lookupResponse =
                 await httpClient.SendAsync(lookupRequest, cancellationToken);
@@ -652,7 +653,7 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             {
                 _logger.LogWarning(
                     "No Slack user found for email: {Email}",
-                    email);
+                    LogSanitizer.RedactEmail(email));
 
                 return null;
             }
@@ -728,7 +729,7 @@ public class SlackWebhookHandler : ISlackWebhookHandler
             _logger.LogError(
                 ex,
                 "Error getting Slack channel from email: {Email}",
-                email);
+                LogSanitizer.RedactEmail(email));
 
             return null;
         }

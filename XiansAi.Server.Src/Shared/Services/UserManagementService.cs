@@ -181,12 +181,12 @@ public class UserManagementService : IUserManagementService
 
             // Invalidate all cached tokens for this user to ensure locked users cannot access the system
             await _tokenCache.InvalidateUserTokens(userId);
-            _logger.LogInformation("User {UserId} locked by {AdminUserId} and tokens invalidated", userId, _tenantContext.LoggedInUser);
+            _logger.LogInformation("User {UserId} locked by {AdminUserId} and tokens invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error locking user {UserId}", userId);
+            _logger.LogError(ex, "Error locking user {UserId}", LogSanitizer.Sanitize(userId));
             return ServiceResult<bool>.InternalServerError("An error occurred while locking the user");
         }
     }
@@ -209,12 +209,12 @@ public class UserManagementService : IUserManagementService
 
             // Invalidate cached tokens so user needs to re-authenticate with fresh token
             await _tokenCache.InvalidateUserTokens(userId);
-            _logger.LogInformation("User {UserId} unlocked by {AdminUserId} and tokens invalidated", userId, _tenantContext.LoggedInUser);
+            _logger.LogInformation("User {UserId} unlocked by {AdminUserId} and tokens invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error unlocking user {UserId}", userId);
+            _logger.LogError(ex, "Error unlocking user {UserId}", LogSanitizer.Sanitize(userId));
             return ServiceResult<bool>.InternalServerError("An error occurred while unlocking the user");
         }
     }
@@ -228,7 +228,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking lock status for user {UserId}", userId);
+            _logger.LogError(ex, "Error checking lock status for user {UserId}", LogSanitizer.Sanitize(userId));
             return ServiceResult<bool>.InternalServerError("An error occurred while checking user lock status");
         }
     }
@@ -252,7 +252,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving user {UserId}", userId);
+            _logger.LogError(ex, "Error retrieving user {UserId}", LogSanitizer.Sanitize(userId));
             return ServiceResult<User>.InternalServerError("An error occurred while retrieving the user");
         }
     }
@@ -290,23 +290,23 @@ public class UserManagementService : IUserManagementService
                     existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                     if (existingUser != null)
                     {
-                        _logger.LogInformation("User {UserId} already exists, creation was redundant", userDto.UserId);
+                        _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.Sanitize(userDto.UserId));
                         return ServiceResult<bool>.Conflict("User already exists");
                     }
                     return ServiceResult<bool>.InternalServerError("Failed to create new user");
                 }
-                _logger.LogInformation("New user created: {UserId}", userDto.UserId);
+                _logger.LogInformation("New user created: {UserId}", LogSanitizer.Sanitize(userDto.UserId));
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception createEx)
             {
-                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", userDto.UserId);
+                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", LogSanitizer.Sanitize(userDto.UserId));
 
                 // Check if user was created by another process
                 existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                 if (existingUser != null)
                 {
-                    _logger.LogInformation("User {UserId} already exists after creation failure", userDto.UserId);
+                    _logger.LogInformation("User {UserId} already exists after creation failure", LogSanitizer.Sanitize(userDto.UserId));
                     return ServiceResult<bool>.Conflict("User already exists");
                 }
 
@@ -315,7 +315,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating new user {UserId}", userDto.UserId);
+            _logger.LogError(ex, "Error creating new user {UserId}", LogSanitizer.Sanitize(userDto.UserId));
             return ServiceResult<bool>.InternalServerError("An error occurred while creating the new user");
         }
     }
@@ -334,7 +334,7 @@ public class UserManagementService : IUserManagementService
             var belongsToTenant = existingUser.TenantRoles.Any(tr => tr.Tenant == _tenantContext.TenantId);
             if (!belongsToTenant && !existingUser.IsSysAdmin)
             {
-                _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", user.UserId, _tenantContext.TenantId);
+                _logger.LogWarning("User {UserId} does not belong to tenant {TenantId}. IDOR attempt detected.", LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<bool>.Forbidden("User does not belong to the current tenant");
             }
         }
@@ -364,7 +364,7 @@ public class UserManagementService : IUserManagementService
 
         // Invalidate all cached tokens for this user to ensure permission changes take effect immediately
         await _tokenCache.InvalidateUserTokens(user.UserId);
-        _logger.LogInformation("Invalidated cached tokens for user {UserId} after update", user.UserId);
+        _logger.LogInformation("Invalidated cached tokens for user {UserId} after update", LogSanitizer.Sanitize(user.UserId));
 
         return ServiceResult<bool>.Success(true);
     }
@@ -379,7 +379,7 @@ public class UserManagementService : IUserManagementService
                 if (!_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
                 {
                     _logger.LogWarning("User {UserId} attempted to invite user without admin permissions", 
-                        _tenantContext.LoggedInUser);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                     return ServiceResult<string>.Forbidden("Only admins can invite users");
                 }
                 
@@ -387,7 +387,7 @@ public class UserManagementService : IUserManagementService
                 if (invite.TenantId != _tenantContext.TenantId)
                 {
                     _logger.LogWarning("Tenant admin {UserId} attempted to invite user to different tenant. Current: {CurrentTenant}, Invite: {InviteTenant}", 
-                        _tenantContext.LoggedInUser, _tenantContext.TenantId, invite.TenantId);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.Sanitize(invite.TenantId));
                     return ServiceResult<string>.Forbidden("Cannot invite users to other tenants");
                 }
             }
@@ -409,12 +409,12 @@ public class UserManagementService : IUserManagementService
             await _emailService.SendEmailAsync(invite.Email, EMAIL_SUBJECT, GetEmailBody(invitation.ExpiresAt.ToString("f")), false);
 
             _logger.LogInformation("Invitation created for {Email} (tenant: {TenantId}) by user {UserId}", 
-                invite.Email, invite.TenantId, _tenantContext.LoggedInUser);
+                LogSanitizer.Sanitize(invite.Email), LogSanitizer.Sanitize(invite.TenantId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<string>.Success(token);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error inviting user {Email}", invite.Email);
+            _logger.LogError(ex, "Error inviting user {Email}", LogSanitizer.Sanitize(invite.Email));
             return ServiceResult<string>.InternalServerError("An error occurred while inviting the user");
         }
     }
@@ -429,7 +429,7 @@ public class UserManagementService : IUserManagementService
                 if (!_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
                 {
                     _logger.LogWarning("User {UserId} attempted to get invitations without admin permissions", 
-                        _tenantContext.LoggedInUser);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                     return ServiceResult<List<InviteDto>>.Forbidden("Only admins can view invitations");
                 }
                 
@@ -437,7 +437,7 @@ public class UserManagementService : IUserManagementService
                 if (tenantId != _tenantContext.TenantId)
                 {
                     _logger.LogWarning("Tenant admin {UserId} attempted to get invitations for different tenant. Current: {CurrentTenant}, Requested: {RequestedTenant}", 
-                        _tenantContext.LoggedInUser, _tenantContext.TenantId, tenantId);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.Sanitize(tenantId));
                     return ServiceResult<List<InviteDto>>.Forbidden("Cannot view invitations from other tenants");
                 }
             }
@@ -451,7 +451,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting invitations for tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error getting invitations for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<List<InviteDto>>.InternalServerError("An error occurred while retrieving invitations");
         }
     }
@@ -479,7 +479,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving invitation for user {userId}", _tenantContext.LoggedInUser);
+            _logger.LogError(ex, "Error retrieving invitation for user {userId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<InviteDto?>.InternalServerError("An error occurred while retrieving the invitation");
         }
     }
@@ -508,7 +508,7 @@ public class UserManagementService : IUserManagementService
             if (!string.Equals(invitation.Email, existingUser.Email, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("User {UserId} ({Email}) attempted to accept invitation for different email {InvitationEmail}", 
-                    _tenantContext.LoggedInUser, existingUser.Email, invitation.Email);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.RedactEmail(existingUser.Email), LogSanitizer.RedactEmail(invitation.Email));
                 return ServiceResult<bool>.Forbidden("This invitation is for a different email address");
             }
             
@@ -516,7 +516,7 @@ public class UserManagementService : IUserManagementService
             if (existingUser.TenantRoles.Any(tr => tr.Tenant == invitation.TenantId))
             {
                 _logger.LogWarning("User {UserId} already has access to tenant {TenantId}", 
-                    _tenantContext.LoggedInUser, invitation.TenantId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(invitation.TenantId));
                 return ServiceResult<bool>.Conflict("You already have access to this tenant");
             }
 
@@ -534,12 +534,12 @@ public class UserManagementService : IUserManagementService
 
             await _invitationRepository.MarkAsAcceptedAsync(invitationToken);
 
-            _logger.LogInformation("User {UserId} accepted invitation for tenant {TenantId}", _tenantContext.LoggedInUser, invitation.TenantId);
+            _logger.LogInformation("User {UserId} accepted invitation for tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(invitation.TenantId));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error accepting invitation for user {UserId}", _tenantContext.LoggedInUser);
+            _logger.LogError(ex, "Error accepting invitation for user {UserId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.InternalServerError("An error occurred while accepting the invitation");
         }
     }
@@ -559,7 +559,7 @@ public class UserManagementService : IUserManagementService
         
         // Invalidate all cached tokens for the deleted user
         await _tokenCache.InvalidateUserTokens(userId);
-        _logger.LogInformation("User {UserId} deleted and tokens invalidated", userId);
+        _logger.LogInformation("User {UserId} deleted and tokens invalidated", LogSanitizer.Sanitize(userId));
         
         return ServiceResult<bool>.Success(deleted);
     }
@@ -598,7 +598,7 @@ public class UserManagementService : IUserManagementService
                 if (!_tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin))
                 {
                     _logger.LogWarning("User {UserId} attempted to delete invitation without admin permissions", 
-                        _tenantContext.LoggedInUser);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                     return ServiceResult<bool>.Forbidden("Only admins can delete invitations");
                 }
                 
@@ -606,7 +606,7 @@ public class UserManagementService : IUserManagementService
                 if (invitation.TenantId != _tenantContext.TenantId)
                 {
                     _logger.LogWarning("Tenant admin {UserId} attempted to delete invitation for different tenant. Current: {CurrentTenant}, Invitation: {InvitationTenant}", 
-                        _tenantContext.LoggedInUser, _tenantContext.TenantId, invitation.TenantId);
+                        LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.Sanitize(invitation.TenantId));
                     return ServiceResult<bool>.Forbidden("Cannot delete invitations from other tenants");
                 }
             }
@@ -617,12 +617,12 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.InternalServerError("Failed to delete invitation");
             }
             
-            _logger.LogInformation("Invitation {Token} deleted by user {UserId}", token, _tenantContext.LoggedInUser);
+            _logger.LogInformation("Invitation {Token} deleted by user {UserId}", LogSanitizer.Sanitize(token), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting invitation {Token}", token);
+            _logger.LogError(ex, "Error deleting invitation {Token}", LogSanitizer.Sanitize(token));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the invitation");
         }
     }
@@ -639,17 +639,17 @@ public class UserManagementService : IUserManagementService
             if (!jwtResult.IsValid)
             {
                 _logger.LogWarning("JWT token validation failed in getUserEmailfromToken: {Error}", 
-                    jwtResult.ErrorMessage);
+                    LogSanitizer.Sanitize(jwtResult.ErrorMessage));
                 throw new ArgumentException(jwtResult.ErrorMessage ?? "Invalid or expired token", nameof(token));
             }
             
             if (string.IsNullOrWhiteSpace(jwtResult.Email))
             {
-                _logger.LogWarning("Email claim not found in validated token for user: {UserId}", jwtResult.UserId);
+                _logger.LogWarning("Email claim not found in validated token for user: {UserId}", LogSanitizer.Sanitize(jwtResult.UserId));
                 throw new ArgumentException("Email not found in token", nameof(token));
             }
 
-            _logger.LogDebug("Successfully extracted email from validated token for user: {UserId}", jwtResult.UserId);
+            _logger.LogDebug("Successfully extracted email from validated token for user: {UserId}", LogSanitizer.Sanitize(jwtResult.UserId));
             return jwtResult.Email;
         }
         catch (ArgumentException)

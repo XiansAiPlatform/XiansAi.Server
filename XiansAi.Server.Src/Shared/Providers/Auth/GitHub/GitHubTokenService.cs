@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using RestSharp;
+using Shared.Utils;
 using JwtClaims = System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames;
 
 namespace Shared.Providers.Auth.GitHub;
@@ -197,7 +198,7 @@ public class GitHubTokenService : ITokenService
             var primaryEmail = emails?.FirstOrDefault(e => e.Primary && e.Verified)?.Email;
             if (!string.IsNullOrEmpty(primaryEmail))
             {
-                _logger.LogDebug("Found primary verified email: {Email}", primaryEmail);
+                _logger.LogDebug("Found primary verified email: {Email}", LogSanitizer.RedactEmail(primaryEmail));
             }
 
             return primaryEmail;

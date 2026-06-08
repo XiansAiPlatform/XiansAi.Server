@@ -3,6 +3,7 @@ using Features.AgentApi.Models;
 using Features.AgentApi.Repositories;
 using Shared.Data;
 using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.AgentApi.Services.Lib;
 
@@ -141,7 +142,7 @@ public class LogsService : ILogsService
             };
 
             await _logRepository.CreateAsync(log);
-            _logger.LogDebug("Created log: {Log}", log.ToJson());
+            _logger.LogDebug("Created log: {Log}", LogSanitizer.Sanitize(log.ToJson()));
             return Results.Ok(log);
         }
         catch (Exception ex)
@@ -171,7 +172,7 @@ public class LogsService : ILogsService
         if (!requestTenantId.Trim().Equals(_tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Non-admin user {UserId} attempted to log for tenant {RequestedTenantId} but current tenant is {CurrentTenantId}",
-                _tenantContext.LoggedInUser, requestTenantId, _tenantContext.TenantId);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(requestTenantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
             return (null, Results.BadRequest("TenantId does not match the current tenant. Only system administrators can log for other tenants."));
         }
 

@@ -1,6 +1,7 @@
 using Shared.Data.Models.Usage;
 using Shared.Repositories;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -81,7 +82,7 @@ public class AdminMetricsService : IAdminMetricsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve metrics stats. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve metrics stats. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminMetricsStatsResponse>.InternalServerError("Failed to retrieve metrics statistics");
         }
     }
@@ -101,7 +102,7 @@ public class AdminMetricsService : IAdminMetricsService
         {
             _logger.LogInformation(
                 "Getting metrics timeseries - TenantId: {TenantId}, AgentName: {AgentName}, Category: {Category}, Type: {Type}, GroupBy: {GroupBy}",
-                request.TenantId, request.AgentName, request.Category, request.Type, request.GroupBy);
+                LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(request.Category), LogSanitizer.Sanitize(request.Type), LogSanitizer.Sanitize(request.GroupBy));
 
             var response = await _repository.GetAdminMetricsTimeSeriesAsync(request, cancellationToken);
 
@@ -113,7 +114,7 @@ public class AdminMetricsService : IAdminMetricsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve metrics timeseries. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve metrics timeseries. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminMetricsTimeSeriesResponse>.InternalServerError("Failed to retrieve metrics timeseries");
         }
     }
@@ -133,7 +134,7 @@ public class AdminMetricsService : IAdminMetricsService
         {
             _logger.LogInformation(
                 "Getting metrics categories - TenantId: {TenantId}, AgentName: {AgentName}",
-                request.TenantId, request.AgentName ?? "all");
+                LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(request.AgentName ?? "all"));
 
             var response = await _repository.GetAdminMetricsCategoriesAsync(request, cancellationToken);
 
@@ -145,7 +146,7 @@ public class AdminMetricsService : IAdminMetricsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve metrics categories. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve metrics categories. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminMetricsCategoriesResponse>.InternalServerError("Failed to retrieve metrics categories");
         }
     }
@@ -233,14 +234,14 @@ public class AdminMetricsService : IAdminMetricsService
 
         if (!ValidGroupByValues.Contains(request.GroupBy.ToLower()))
         {
-            _logger.LogWarning("Invalid groupBy value: {GroupBy}", request.GroupBy);
+            _logger.LogWarning("Invalid groupBy value: {GroupBy}", LogSanitizer.Sanitize(request.GroupBy));
             return ServiceResult<AdminMetricsTimeSeriesResponse>.BadRequest(
                 $"GroupBy must be one of: {string.Join(", ", ValidGroupByValues)}");
         }
 
         if (!ValidAggregationValues.Contains(request.Aggregation.ToLower()))
         {
-            _logger.LogWarning("Invalid aggregation value: {Aggregation}", request.Aggregation);
+            _logger.LogWarning("Invalid aggregation value: {Aggregation}", LogSanitizer.Sanitize(request.Aggregation));
             return ServiceResult<AdminMetricsTimeSeriesResponse>.BadRequest(
                 $"Aggregation must be one of: {string.Join(", ", ValidAggregationValues)}");
         }

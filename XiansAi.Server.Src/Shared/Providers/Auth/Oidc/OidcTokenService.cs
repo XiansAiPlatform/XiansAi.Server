@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Shared.Utils;
 
 namespace Shared.Providers.Auth.Oidc;
 
@@ -100,13 +101,13 @@ public class OidcTokenService : ITokenService
             
             if (string.IsNullOrEmpty(userId))
             {
-                _logger.LogWarning("User ID claim '{UserIdClaim}' not found in token", _config.ClaimMappings.UserIdClaim);
+                _logger.LogWarning("User ID claim '{UserIdClaim}' not found in token", LogSanitizer.Sanitize(_config.ClaimMappings.UserIdClaim));
                 var result = (false, (string?)null);
                 // Don't cache failed validations
                 return result;
             }
 
-            _logger.LogInformation("Successfully validated OIDC token for user: {UserId}", userId);
+            _logger.LogInformation("Successfully validated OIDC token for user: {UserId}", LogSanitizer.Sanitize(userId));
             var successResult = (true, (string?)userId);
             
             // Cache successful validation for 5 minutes
@@ -120,12 +121,12 @@ public class OidcTokenService : ITokenService
         }
         catch (SecurityTokenExpiredException ex)
         {
-            _logger.LogWarning("Token expired: {Message}", ex.Message);
+            _logger.LogWarning("Token expired: {Message}", LogSanitizer.Sanitize(ex.Message));
             return (false, null);
         }
         catch (SecurityTokenException ex)
         {
-            _logger.LogError("Token validation failed: {Message}", ex.Message);
+            _logger.LogError("Token validation failed: {Message}", LogSanitizer.Sanitize(ex.Message));
             return (false, null);
         }
         catch (Exception ex)
@@ -141,7 +142,7 @@ public class OidcTokenService : ITokenService
         var userId = token.Claims.FirstOrDefault(c => c.Type == _config.ClaimMappings.UserIdClaim)?.Value;
         if (!string.IsNullOrEmpty(userId))
         {
-            _logger.LogDebug("Found user ID in '{ClaimType}' claim: {UserId}", _config.ClaimMappings.UserIdClaim, userId);
+            _logger.LogDebug("Found user ID in '{ClaimType}' claim: {UserId}", LogSanitizer.Sanitize(_config.ClaimMappings.UserIdClaim), LogSanitizer.Sanitize(userId));
             return userId;
         }
 
@@ -149,7 +150,7 @@ public class OidcTokenService : ITokenService
         userId = token.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
         if (!string.IsNullOrEmpty(userId))
         {
-            _logger.LogDebug("Found user ID in 'sub' claim: {UserId}", userId);
+            _logger.LogDebug("Found user ID in 'sub' claim: {UserId}", LogSanitizer.Sanitize(userId));
             return userId;
         }
 
@@ -160,7 +161,7 @@ public class OidcTokenService : ITokenService
             userId = token.Claims.FirstOrDefault(c => c.Type == claimType)?.Value;
             if (!string.IsNullOrEmpty(userId))
             {
-                _logger.LogInformation("Found user ID in '{ClaimType}' claim: {UserId}", claimType, userId);
+                _logger.LogInformation("Found user ID in '{ClaimType}' claim: {UserId}", LogSanitizer.Sanitize(claimType), LogSanitizer.Sanitize(userId));
                 return userId;
             }
         }

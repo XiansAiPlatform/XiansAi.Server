@@ -129,7 +129,7 @@ public class KnowledgeRepository : IKnowledgeRepository
 
     public async Task<List<T>> GetByNameAsync<T>(string name, string? agent, string tenantId) where T : IKnowledge
     {
-        _logger.LogInformation("GetByNameAsync: name: {Name}, agent: {Agent}, tenantId: {TenantId}", name, agent, tenantId);
+        _logger.LogInformation("GetByNameAsync: name: {Name}, agent: {Agent}, tenantId: {TenantId}", LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(tenantId));
         var collection = GetTypedCollection<T>();
         
         var nameFilter = Builders<T>.Filter.Eq(x => x.Name, name);

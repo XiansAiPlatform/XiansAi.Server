@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Shared.Exceptions;
 using System.Text;
 using System.Text.Json;
+using Shared.Utils;
 
 namespace Features.Shared.Configuration;
 
@@ -104,7 +105,7 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
             // Check if response has already started
             if (context.Response.HasStarted)
             {
-                _logger.LogWarning("Cannot write 401 response - response has already started for path: {Path}", context.Request.Path);
+                _logger.LogWarning("Cannot write 401 response - response has already started for path: {Path}", LogSanitizer.Sanitize(context.Request.Path));
                 return;
             }
 
@@ -131,7 +132,7 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
             await context.Response.CompleteAsync();
             
             _logger.LogWarning("Authentication challenge returned for path: {Path}, wrote response body ({Length} bytes): {JsonString}", 
-                context.Request.Path, bytes.Length, jsonString);
+                LogSanitizer.Sanitize(context.Request.Path), bytes.Length, LogSanitizer.Sanitize(jsonString));
             return;
         }
 
@@ -141,7 +142,7 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
             // Check if response has already started
             if (context.Response.HasStarted)
             {
-                _logger.LogWarning("Cannot write 403 response - response has already started for path: {Path}", context.Request.Path);
+                _logger.LogWarning("Cannot write 403 response - response has already started for path: {Path}", LogSanitizer.Sanitize(context.Request.Path));
                 return;
             }
 
@@ -156,8 +157,8 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
                 : "You do not have permission to access this resource";
 
             _logger.LogInformation("Authorization forbidden for path: {Path}, Reasons: {Reasons}", 
-                context.Request.Path, 
-                string.Join("; ", failureReasons));
+                LogSanitizer.Sanitize(context.Request.Path), 
+                LogSanitizer.Sanitize(string.Join("; ", failureReasons)));
 
             var responseBody = new
             {
@@ -181,7 +182,7 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
             await context.Response.Body.FlushAsync();
             await context.Response.CompleteAsync();
             
-            _logger.LogInformation("Wrote 403 response body ({Length} bytes): {JsonString}", bytes.Length, jsonString);
+            _logger.LogInformation("Wrote 403 response body ({Length} bytes): {JsonString}", bytes.Length, LogSanitizer.Sanitize(jsonString));
             
             return;
         }

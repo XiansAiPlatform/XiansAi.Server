@@ -162,7 +162,7 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            _logger.LogInformation("Deleting all flow definitions for agent: {AgentName} in tenant: {Tenant}", agentName, tenant);
+            _logger.LogInformation("Deleting all flow definitions for agent: {AgentName} in tenant: {Tenant}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenant));
             
             // Build filter to match agent name, tenant, and system scoped value
             var filter = Builders<FlowDefinition>.Filter.And(
@@ -172,7 +172,7 @@ public class FlowDefinitionRepository : IFlowDefinitionRepository
             );
             
             var result = await _definitions.DeleteManyAsync(filter);
-            _logger.LogInformation("Deleted {Count} flow definitions for agent: {AgentName} in tenant: {Tenant}", result.DeletedCount, agentName, tenant);
+            _logger.LogInformation("Deleted {Count} flow definitions for agent: {AgentName} in tenant: {Tenant}", result.DeletedCount, LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenant));
             return result.DeletedCount;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteFlowDefinitionsByAgent");
     }

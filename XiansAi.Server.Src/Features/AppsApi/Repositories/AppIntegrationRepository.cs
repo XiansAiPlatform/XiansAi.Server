@@ -131,7 +131,7 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to create indexes for {Collection}. They may already exist.", CollectionName);
+            _logger.LogWarning(ex, "Failed to create indexes for {Collection}. They may already exist.", LogSanitizer.Sanitize(CollectionName));
         }
     }
 
@@ -256,7 +256,7 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             await _integrations.InsertOneAsync(integration);
             
             _logger.LogInformation("Created app integration {IntegrationId} for tenant {TenantId}", 
-                integration.Id, integration.TenantId);
+                LogSanitizer.Sanitize(integration.Id), LogSanitizer.Sanitize(integration.TenantId));
             
             return integration.Id;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateAppIntegration");
@@ -280,11 +280,11 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             
             if (success)
             {
-                _logger.LogInformation("Updated app integration {IntegrationId}", id);
+                _logger.LogInformation("Updated app integration {IntegrationId}", LogSanitizer.Sanitize(id));
             }
             else
             {
-                _logger.LogWarning("Failed to update app integration {IntegrationId} - not found or tenant mismatch", id);
+                _logger.LogWarning("Failed to update app integration {IntegrationId} - not found or tenant mismatch", LogSanitizer.Sanitize(id));
             }
 
             return success;
@@ -302,11 +302,11 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             
             if (success)
             {
-                _logger.LogInformation("Deleted app integration {IntegrationId}", id);
+                _logger.LogInformation("Deleted app integration {IntegrationId}", LogSanitizer.Sanitize(id));
             }
             else
             {
-                _logger.LogWarning("Failed to delete app integration {IntegrationId} - not found or tenant mismatch", id);
+                _logger.LogWarning("Failed to delete app integration {IntegrationId} - not found or tenant mismatch", LogSanitizer.Sanitize(id));
             }
 
             return success;
@@ -333,7 +333,7 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             }
             else
             {
-                _logger.LogWarning("Failed to set enabled status for app integration {IntegrationId}", id);
+                _logger.LogWarning("Failed to set enabled status for app integration {IntegrationId}", LogSanitizer.Sanitize(id));
             }
 
             return success;
@@ -348,13 +348,13 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         if (integration.Secrets?.HasAnySecrets() == true)
         {
             integration.SecretsEncrypted = _encryptionService.EncryptObject(integration.Secrets);
-            _logger.LogDebug("Encrypted secrets for integration {IntegrationId}", integration.Id ?? "new");
+            _logger.LogDebug("Encrypted secrets for integration {IntegrationId}", LogSanitizer.Sanitize(integration.Id ?? "new"));
         }
         else
         {
             integration.SecretsEncrypted = null;
             _logger.LogWarning("No secrets to encrypt for integration {IntegrationId}. WebhookSecret: {HasWebhook}, Secrets null: {SecretsNull}", 
-                integration.Id ?? "new",
+                LogSanitizer.Sanitize(integration.Id ?? "new"),
                 integration.Secrets?.WebhookSecret != null,
                 integration.Secrets == null);
         }

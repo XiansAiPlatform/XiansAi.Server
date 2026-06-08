@@ -57,15 +57,15 @@ public class ObjectCacheWrapperService : IObjectCacheWrapperService
     /// <returns>The cached value or NotFound if not found</returns>
     public async Task<IResult> GetValue(string key)
     {
-        _logger.LogInformation("Getting value for key: {Key}", key);
+        _logger.LogInformation("Getting value for key: {Key}", LogSanitizer.Sanitize(key));
         var value = await _objectCache.GetAsync<object>(key);
         if (value == null)
         {
-            _logger.LogWarning("No value found for key: {Key}", key);
+            _logger.LogWarning("No value found for key: {Key}", LogSanitizer.Sanitize(key));
             return Results.NotFound($"No value found for key: {key}");
         }
 
-        _logger.LogInformation("Retrieved value for key {Key}: {Value}", key, JsonSerializer.Serialize(value));
+        _logger.LogInformation("Retrieved value for key {Key}: {Value}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(JsonSerializer.Serialize(value)));
         return Results.Ok(value);
     }
 
@@ -79,11 +79,11 @@ public class ObjectCacheWrapperService : IObjectCacheWrapperService
     /// <returns>Success or error result</returns>
     public async Task<IResult> SetValue(string key, [FromBody] JsonElement value, CacheOptions? options = null)
     {
-        _logger.LogInformation("Setting value for key: {Key}, Value: {Value}", key, value.ToString());
+        _logger.LogInformation("Setting value for key: {Key}, Value: {Value}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(value.ToString()));
         
         if (value.ValueKind == JsonValueKind.Null)
         {
-            _logger.LogWarning("Attempted to set null value for key: {Key}", key);
+            _logger.LogWarning("Attempted to set null value for key: {Key}", LogSanitizer.Sanitize(key));
             return Results.BadRequest("Value cannot be null");
         }
 
@@ -102,11 +102,11 @@ public class ObjectCacheWrapperService : IObjectCacheWrapperService
         var success = await _objectCache.SetAsync(key, value, relativeExpiration, slidingExpiration);
         if (!success)
         {
-            _logger.LogError("Failed to set value for key: {Key}, Value: {Value}", key, value.ToString());
+            _logger.LogError("Failed to set value for key: {Key}, Value: {Value}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(value.ToString()));
             return Results.Json(new { message = "Failed to set value in cache" }, statusCode: 500);
         }
 
-        _logger.LogInformation("Successfully set value for key: {Key}, Value: {Value}", key, value.ToString());
+        _logger.LogInformation("Successfully set value for key: {Key}, Value: {Value}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(value.ToString()));
         return Results.Ok(new { message = "Value set successfully" });
     }
 
@@ -117,15 +117,15 @@ public class ObjectCacheWrapperService : IObjectCacheWrapperService
     /// <returns>Success or error result</returns>
     public async Task<IResult> DeleteValue(string key)
     {
-        _logger.LogInformation("Deleting value for key: {Key}", key);
+        _logger.LogInformation("Deleting value for key: {Key}", LogSanitizer.Sanitize(key));
         var success = await _objectCache.RemoveAsync(key);
         if (!success)
         {
-            _logger.LogError("Failed to delete value for key: {Key}", key);
+            _logger.LogError("Failed to delete value for key: {Key}", LogSanitizer.Sanitize(key));
             return Results.Json(new { message = "Failed to delete value from cache" }, statusCode: 500);
         }
 
-        _logger.LogInformation("Successfully deleted value for key: {Key}", key);
+        _logger.LogInformation("Successfully deleted value for key: {Key}", LogSanitizer.Sanitize(key));
         return Results.Ok(new { message = "Value deleted successfully" });
     }
 } 

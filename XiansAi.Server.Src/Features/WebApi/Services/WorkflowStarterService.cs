@@ -7,6 +7,7 @@ using Shared.Utils.Temporal;
 using Shared.Utils.Services;
 using Shared.Repositories;
 using Features.WebApi.Utils;
+using Shared.Utils;
 
 namespace Features.WebApi.Services;
 
@@ -86,7 +87,7 @@ public class WorkflowStarterService : IWorkflowStarterService
     public async Task<ServiceResult<WorkflowStartResult>> HandleStartWorkflow(WorkflowRequest request, string? userId = null)
     {
         _logger.LogInformation("Received workflow start request of type {WorkflowType} with data {Request}", 
-            request?.WorkflowType ?? "null", JsonSerializer.Serialize(request));
+            LogSanitizer.Sanitize(request?.WorkflowType ?? "null"), LogSanitizer.Sanitize(JsonSerializer.Serialize(request)));
         
         if (request == null)
         {
@@ -99,7 +100,7 @@ public class WorkflowStarterService : IWorkflowStarterService
             if (validationResults.Count > 0)
             {
                 _logger.LogWarning("Invalid workflow request: {Errors}", 
-                    string.Join(", ", validationResults));
+                    LogSanitizer.Sanitize(string.Join(", ", validationResults)));
                 return ServiceResult<WorkflowStartResult>.BadRequest(string.Join(", ", validationResults));
             }
 
@@ -113,7 +114,7 @@ public class WorkflowStarterService : IWorkflowStarterService
 
             if (flowDefinition == null)
             {
-                _logger.LogWarning("Flow definition not found for workflow type: {WorkflowType}", request.WorkflowType);
+                _logger.LogWarning("Flow definition not found for workflow type: {WorkflowType}", LogSanitizer.Sanitize(request.WorkflowType));
                 return ServiceResult<WorkflowStartResult>.NotFound($"Workflow definition not found for type: {request.WorkflowType}");
             }
 
@@ -127,11 +128,11 @@ public class WorkflowStarterService : IWorkflowStarterService
                     flowDefinition.ParameterDefinitions);
                 
                 _logger.LogDebug("Converted {Count} parameters for workflow {WorkflowType}", 
-                    convertedParameters.Length, request.WorkflowType);
+                    convertedParameters.Length, LogSanitizer.Sanitize(request.WorkflowType));
             }
             catch (ArgumentException ex)
             {
-                _logger.LogWarning(ex, "Parameter conversion failed for workflow {WorkflowType}", request.WorkflowType);
+                _logger.LogWarning(ex, "Parameter conversion failed for workflow {WorkflowType}", LogSanitizer.Sanitize(request.WorkflowType));
                 return ServiceResult<WorkflowStartResult>.BadRequest($"Parameter conversion error: {ex.Message}");
             }
 
@@ -143,7 +144,7 @@ public class WorkflowStarterService : IWorkflowStarterService
                 _tenantContext,
                 userId);
             
-            _logger.LogDebug("Starting workflow with options: {Options}", JsonSerializer.Serialize(options));
+            _logger.LogDebug("Starting workflow with options: {Options}", LogSanitizer.Sanitize(JsonSerializer.Serialize(options)));
             var handle = await StartWorkflowAsync(convertedParameters, options, request.WorkflowType);
             
             var result = new WorkflowStartResult
@@ -157,7 +158,7 @@ public class WorkflowStarterService : IWorkflowStarterService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error starting workflow of type {WorkflowType}", request?.WorkflowType);
+            _logger.LogError(ex, "Error starting workflow of type {WorkflowType}", LogSanitizer.Sanitize(request?.WorkflowType));
             return ServiceResult<WorkflowStartResult>.InternalServerError("Workflow start failed");
         }
     }
@@ -171,7 +172,7 @@ public class WorkflowStarterService : IWorkflowStarterService
         string workflowType)
     {
         _logger.LogDebug("Starting workflow {WorkflowType} with {ParamCount} parameters", 
-            workflowType, parameters.Length);
+            LogSanitizer.Sanitize(workflowType), parameters.Length);
         
         var client = await _clientFactory.GetClientAsync();
         return await client.StartWorkflowAsync(

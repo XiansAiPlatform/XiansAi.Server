@@ -1,5 +1,6 @@
 using Shared.Repositories;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -101,7 +102,7 @@ public class AdminStatsService : IAdminStatsService
             
             if (!taskStatsResult.IsSuccess)
             {
-                _logger.LogError("Failed to retrieve task statistics: {Error}", taskStatsResult.ErrorMessage);
+                _logger.LogError("Failed to retrieve task statistics: {Error}", LogSanitizer.Sanitize(taskStatsResult.ErrorMessage));
                 return ServiceResult<AdminStatsResponse>.InternalServerError("Failed to retrieve task statistics");
             }
 
@@ -130,7 +131,7 @@ public class AdminStatsService : IAdminStatsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve admin stats. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve admin stats. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminStatsResponse>.InternalServerError("Failed to retrieve admin statistics");
         }
     }
@@ -160,7 +161,7 @@ public class AdminStatsService : IAdminStatsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve messaging statistics. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve messaging statistics. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             
             // Return zero stats on error rather than failing the entire request
             return new MessagingStatsData

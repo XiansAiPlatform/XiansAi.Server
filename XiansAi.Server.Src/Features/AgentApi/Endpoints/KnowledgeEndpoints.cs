@@ -3,6 +3,7 @@ using Features.AgentApi.Auth;
 using Shared.Auth;
 using Shared.Services;
 using Shared.Utils.Services;
+using Shared.Utils;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -32,7 +33,7 @@ public static class KnowledgeEndpoints
             var tenantId = tenantContext.TenantId;
             _logger.LogInformation(
                 "Agent knowledge/latest request: name={Name}, agent={Agent}, activationName={ActivationName}, tenantId={TenantId}",
-                name, agent, activationName ?? "(null)", tenantId ?? "(null)");
+                LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(activationName ?? "(null)"), LogSanitizer.Sanitize(tenantId ?? "(null)"));
 
             var result = await service.GetLatestByNameForTenantAsync(name, agent, tenantId, activationName);
             return result.ToHttpResult();
@@ -51,7 +52,7 @@ public static class KnowledgeEndpoints
             [FromQuery] string agent,
             [FromServices] IKnowledgeService service) =>
         {
-            _logger.LogInformation("Getting latest system knowledge for name: {name}, agent: {agent}", name, agent);
+            _logger.LogInformation("Getting latest system knowledge for name: {name}, agent: {agent}", LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(agent));
             var result = await service.GetLatestSystemByNameAsync(name, agent);
             return result.ToHttpResult();
         })
@@ -67,7 +68,7 @@ public static class KnowledgeEndpoints
             [FromServices] IKnowledgeService endpoint) =>
         {
             _logger.LogInformation("Creating new knowledge with name: {Name}, agent: {Agent}, activationName: {ActivationName}", 
-                request.Name, request.Agent, request.ActivationName);
+                LogSanitizer.Sanitize(request.Name), LogSanitizer.Sanitize(request.Agent), LogSanitizer.Sanitize(request.ActivationName));
             var knowledgeRequest = new KnowledgeRequest 
             {
                 Name = request.Name,
@@ -94,7 +95,7 @@ public static class KnowledgeEndpoints
             [FromQuery] string agent,
             [FromServices] IKnowledgeService service) =>
         {
-            _logger.LogInformation("Deleting knowledge with name: {Name}, agent: {Agent}", name, agent);
+            _logger.LogInformation("Deleting knowledge with name: {Name}, agent: {Agent}", LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(agent));
             var deleteRequest = new DeleteAllVersionsRequest 
             {
                 Name = name,
@@ -114,7 +115,7 @@ public static class KnowledgeEndpoints
             [FromQuery] string agent,
             [FromServices] IKnowledgeService service) =>
         {
-            _logger.LogInformation("Listing knowledge for agent: {Agent}", agent);
+            _logger.LogInformation("Listing knowledge for agent: {Agent}", LogSanitizer.Sanitize(agent));
             var result = await service.GetLatestByAgent(agent);
             return result;
         })

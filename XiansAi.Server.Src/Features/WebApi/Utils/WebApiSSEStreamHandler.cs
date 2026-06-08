@@ -1,6 +1,7 @@
 using Features.UserApi.Services;
 using Features.UserApi.Utils;
 using Shared.Auth;
+using Shared.Utils;
 
 namespace Features.WebApi.Utils;
 
@@ -47,7 +48,7 @@ public class WebApiSSEStreamHandler
         try
         {
             _logger.LogInformation("WebAPI SSE connection established for thread {ThreadId}, tenant {TenantId}",
-                _threadId, _tenantId);
+                LogSanitizer.Sanitize(_threadId), LogSanitizer.Sanitize(_tenantId));
 
             // Set SSE headers
             SSEEventWriter.SetSSEHeaders(_httpContext.Response);
@@ -93,7 +94,7 @@ public class WebApiSSEStreamHandler
             {
                 var eventType = message.MessageType?.ToString() ?? "unknown";
                 _logger.LogDebug("Sending WebAPI SSE event {EventType} for message {MessageId} to thread {ThreadId}",
-                        eventType, message.Id, _threadId);
+                        LogSanitizer.Sanitize(eventType), LogSanitizer.Sanitize(message.Id), LogSanitizer.Sanitize(_threadId));
 
                 await SSEEventWriter.WriteEventAsync(_httpContext.Response, eventType, 
                     MessageEventFilter.CreateMessageEventData(message), 
@@ -102,12 +103,12 @@ public class WebApiSSEStreamHandler
         }
         catch (Exception ex) when (ex is OperationCanceledException || _cancellationToken.IsCancellationRequested)
         {
-            _logger.LogDebug("WebAPI SSE connection cancelled for thread {ThreadId}", _threadId);
+            _logger.LogDebug("WebAPI SSE connection cancelled for thread {ThreadId}", LogSanitizer.Sanitize(_threadId));
             _completionSource?.TrySetResult(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling WebAPI SSE message event for thread {ThreadId}", _threadId);
+            _logger.LogError(ex, "Error handling WebAPI SSE message event for thread {ThreadId}", LogSanitizer.Sanitize(_threadId));
         }
     }
 
@@ -149,7 +150,7 @@ public class WebApiSSEStreamHandler
         _messageEventPublisher.MessageReceived -= HandleMessage;
         
         _logger.LogInformation("WebAPI SSE connection closed for thread {ThreadId}, tenant {TenantId}",
-            _threadId, _tenantId);
+            LogSanitizer.Sanitize(_threadId), LogSanitizer.Sanitize(_tenantId));
     }
 }
 

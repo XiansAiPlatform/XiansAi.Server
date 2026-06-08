@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using Shared.Auth;
+using Shared.Utils;
 using Shared.Utils.Services;
 using Shared.Data.Models;
 using System.ComponentModel.DataAnnotations;
@@ -83,7 +84,7 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while ensuring tenant access: {Message}", LogSanitizer.Sanitize(ex.Message));
             throw;
         }
 
@@ -101,7 +102,7 @@ public class TenantService : ITenantService
         }
 
         // Otherwise, forbidden
-        _logger.LogWarning("Attempted to access tenant `{Id}` but is restricted to SysAdmins and of tenant `{TenantId}`", tenantId, _tenantContext.TenantId);
+        _logger.LogWarning("Attempted to access tenant `{Id}` but is restricted to SysAdmins and of tenant `{TenantId}`", LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
         throw new UnauthorizedAccessException("Access denied: insufficient permissions");
     }
 
@@ -113,7 +114,7 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while sanitizing and validating ID: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while sanitizing and validating ID: {Message}", LogSanitizer.Sanitize(ex.Message));
             throw;
         }
     }
@@ -126,14 +127,14 @@ public class TenantService : ITenantService
             var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == id);
             if (accessibleTenantId == null)
             {
-                _logger.LogWarning("Unauthorized access attempt to tenant with ID {Id}", id);
+                _logger.LogWarning("Unauthorized access attempt to tenant with ID {Id}", LogSanitizer.Sanitize(id));
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
             var tenant = await _tenantRepository.GetByIdAsync(id);
             if (tenant == null)
             {
-                _logger.LogWarning("Tenant with ID {Id} not found", id);
+                _logger.LogWarning("Tenant with ID {Id} not found", LogSanitizer.Sanitize(id));
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
@@ -141,12 +142,12 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving tenant by ID: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving tenant by ID: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tenant with ID {Id}", id);
+            _logger.LogError(ex, "Error retrieving tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }
@@ -160,7 +161,7 @@ public class TenantService : ITenantService
             var tenant = await _tenantRepository.GetByDomainAsync(domain);
             if (tenant == null)
             {
-                _logger.LogWarning("Tenant with domain {Domain} not found", domain);
+                _logger.LogWarning("Tenant with domain {Domain} not found", LogSanitizer.Sanitize(domain));
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
@@ -168,12 +169,12 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving tenant by domain: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tenant with domain {Domain}", domain);
+            _logger.LogError(ex, "Error retrieving tenant with domain {Domain}", LogSanitizer.Sanitize(domain));
             return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }
@@ -186,14 +187,14 @@ public class TenantService : ITenantService
             var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
             if (accessibleTenantId == null)
             {
-                _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
+                _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
             var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
             if (tenant == null)
             {
-                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
@@ -201,12 +202,12 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving tenant by tenant ID: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving tenant by tenant ID: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tenant with tenant ID {TenantId}", tenantId);
+            _logger.LogError(ex, "Error retrieving tenant with tenant ID {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<Tenant>.InternalServerError("An error occurred while retrieving the tenant.");
         }
     }
@@ -226,14 +227,14 @@ public class TenantService : ITenantService
             var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
             if (accessibleTenantId == null)
             {
-                _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", tenantId);
+                _logger.LogWarning("Unauthorized access attempt to tenant with tenant ID {TenantId}", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
             var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
             if (tenant == null)
             {
-                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", tenantId);
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
@@ -241,7 +242,7 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while retrieving current tenant info: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while retrieving current tenant info: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (Exception ex)
@@ -258,7 +259,7 @@ public class TenantService : ITenantService
             // Only SysAdmin can get all tenants
             if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
-                _logger.LogWarning("Unauthorized attempt to get all tenants by user {UserId}", _tenantContext.LoggedInUser);
+                _logger.LogWarning("Unauthorized attempt to get all tenants by user {UserId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return ServiceResult<List<Tenant>>.Forbidden("Access denied: Only system administrators can retrieve all tenants");
             }
 
@@ -279,7 +280,7 @@ public class TenantService : ITenantService
             // Only SysAdmin can get tenant list
             if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
-                _logger.LogWarning("Unauthorized attempt to get tenant list by user {UserId}", _tenantContext.LoggedInUser);
+                _logger.LogWarning("Unauthorized attempt to get tenant list by user {UserId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return ServiceResult<List<string>>.Forbidden("Access denied: Only system administrators can retrieve tenant list");
             }
 
@@ -298,10 +299,10 @@ public class TenantService : ITenantService
         try
         {
             _logger.LogInformation("CreateTenant request received - CreatedBy: {RequestCreatedBy}, Method param CreatedBy: {MethodCreatedBy}, LoggedInUser: {LoggedInUser}", 
-                request.CreatedBy, createdBy, _tenantContext.LoggedInUser);
+                LogSanitizer.Sanitize(request.CreatedBy), LogSanitizer.Sanitize(createdBy), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
 
             var finalCreatedBy = request.CreatedBy ?? createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
-            _logger.LogInformation("Final CreatedBy value determined: {FinalCreatedBy}", finalCreatedBy);
+            _logger.LogInformation("Final CreatedBy value determined: {FinalCreatedBy}", LogSanitizer.Sanitize(finalCreatedBy));
 
             var tenant = new Tenant
             {
@@ -318,14 +319,14 @@ public class TenantService : ITenantService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            _logger.LogInformation("Tenant object created with CreatedBy: {CreatedBy}", tenant.CreatedBy);
+            _logger.LogInformation("Tenant object created with CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(tenant.CreatedBy));
             
             var validatedTenant = tenant.SanitizeAndValidate();
-            _logger.LogInformation("After sanitization, CreatedBy: {CreatedBy}", validatedTenant.CreatedBy);
+            _logger.LogInformation("After sanitization, CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
 
             await _tenantRepository.CreateAsync(validatedTenant);
-            _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", validatedTenant.Id, validatedTenant.CreatedBy);
+            _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
             var result = new TenantCreatedResult
             {
@@ -336,12 +337,12 @@ public class TenantService : ITenantService
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while creating tenant: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while creating tenant: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<TenantCreatedResult>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
         {
-            _logger.LogWarning("Duplicate tenant ID or domain: {TenantId}", request.TenantId);
+            _logger.LogWarning("Duplicate tenant ID or domain: {TenantId}", LogSanitizer.Sanitize(request.TenantId));
             return ServiceResult<TenantCreatedResult>.BadRequest("A tenant with this ID or domain already exists.");
         }
         catch (Exception ex)
@@ -360,7 +361,7 @@ public class TenantService : ITenantService
             var existingTenant = await _tenantRepository.GetByIdAsync(id);
             if (existingTenant == null)
             {
-                _logger.LogWarning("Tenant with ID {Id} not found for update", id);
+                _logger.LogWarning("Tenant with ID {Id} not found for update", LogSanitizer.Sanitize(id));
                 return ServiceResult<Tenant>.NotFound("Tenant not found");
             }
 
@@ -397,29 +398,29 @@ public class TenantService : ITenantService
                 if (!string.IsNullOrEmpty(existingTenant.TenantId))
                     _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
                 else
-                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", id);
-                _logger.LogInformation("Updated tenant with ID {Id}", id);
+                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
+                _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
                 return ServiceResult<Tenant>.Success(validatedTenant);
             }
             else
             {
-                _logger.LogError("Failed to update tenant with ID {Id}", id);
+                _logger.LogError("Failed to update tenant with ID {Id}", LogSanitizer.Sanitize(id));
                 return ServiceResult<Tenant>.BadRequest("Failed to update tenant.");
             }
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while updating tenant: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while updating tenant: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (UnauthorizedAccessException ex)
         {
-            _logger.LogWarning("Access denied: {Message}", ex.Message);
+            _logger.LogWarning("Access denied: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating tenant with ID {Id}", id);
+            _logger.LogError(ex, "Error updating tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<Tenant>.InternalServerError("An error occurred while updating the tenant.");
         }
     }
@@ -432,7 +433,7 @@ public class TenantService : ITenantService
             var existingTenant = await _tenantRepository.GetByIdAsync(id);
             if (existingTenant == null)
             {
-                _logger.LogWarning("Tenant with ID {Id} not found for deletion", id);
+                _logger.LogWarning("Tenant with ID {Id} not found for deletion", LogSanitizer.Sanitize(id));
                 return ServiceResult<bool>.NotFound("Tenant not found");
             }
             EnsureTenantAccessOrThrow(existingTenant.TenantId);
@@ -443,29 +444,29 @@ public class TenantService : ITenantService
                 if (!string.IsNullOrEmpty(existingTenant.TenantId))
                     _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
                 else
-                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", id);
-                _logger.LogInformation("Deleted tenant with ID {Id}", id);
+                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
+                _logger.LogInformation("Deleted tenant with ID {Id}", LogSanitizer.Sanitize(id));
                 return ServiceResult<bool>.Success(true);
             }
             else
             {
-                _logger.LogWarning("Tenant with ID {Id} not found for deletion", id);
+                _logger.LogWarning("Tenant with ID {Id} not found for deletion", LogSanitizer.Sanitize(id));
                 return ServiceResult<bool>.NotFound("Tenant not found");
             }
         }
         catch (ValidationException ex)
         {
-            _logger.LogWarning("Validation failed while deleting tenant: {Message}", ex.Message);
+            _logger.LogWarning("Validation failed while deleting tenant: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
         }
         catch (UnauthorizedAccessException ex)
         {
-            _logger.LogWarning("Access denied: {Message}", ex.Message);
+            _logger.LogWarning("Access denied: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<bool>.Forbidden("Access denied: insufficient permissions");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting tenant with ID {Id}", id);
+            _logger.LogError(ex, "Error deleting tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the tenant.");
         }
     }

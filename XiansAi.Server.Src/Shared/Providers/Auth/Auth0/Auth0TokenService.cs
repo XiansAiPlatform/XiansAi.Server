@@ -57,7 +57,7 @@ public class Auth0TokenService : ITokenService
             var validationResult = await ValidateJwtWithJwks(token);
             if (!validationResult.success)
             {
-                _logger.LogWarning("JWT token validation failed: {Error}", validationResult.errorMessage);
+                _logger.LogWarning("JWT token validation failed: {Error}", LogSanitizer.Sanitize(validationResult.errorMessage));
                 return (false, null);
             }
 
@@ -66,7 +66,7 @@ public class Auth0TokenService : ITokenService
 
             if (jsonToken == null)
             {
-                _logger.LogWarning("Invalid JWT token format: {Token}", token);
+                _logger.LogWarning("Invalid JWT token format: {Token}", LogSanitizer.Sanitize(token));
                 return (false, null);
             }
 
@@ -174,24 +174,24 @@ public class Auth0TokenService : ITokenService
 
             // Validate the token
             _logger.LogDebug("Validating JWT token with issuer: {Issuer}, audience: {Audience}",
-                validationParameters.ValidIssuer, validationParameters.ValidAudience);
+                LogSanitizer.Sanitize(validationParameters.ValidIssuer), LogSanitizer.Sanitize(validationParameters.ValidAudience));
 
             var result = await handler.ValidateTokenAsync(token, validationParameters);
 
             if (!result.IsValid)
             {
                 var errorMessage = result.Exception?.Message ?? "Token validation failed";
-                _logger.LogWarning("JWT validation failed: {ErrorMessage}", errorMessage);
+                _logger.LogWarning("JWT validation failed: {ErrorMessage}", LogSanitizer.Sanitize(errorMessage));
                 if (result.Exception != null)
                 {
                     _logger.LogWarning("JWT validation exception details: {ExceptionType}: {ExceptionMessage}",
-                        result.Exception.GetType().Name, result.Exception.Message);
+                        LogSanitizer.Sanitize(result.Exception.GetType().Name), LogSanitizer.Sanitize(result.Exception.Message));
                 }
                 return (false, errorMessage);
             }
 
             _logger.LogDebug("JWT token validated successfully with issuer: {Issuer} and audience: {Audience}",
-                validationParameters.ValidIssuer, validationParameters.ValidAudience);
+                LogSanitizer.Sanitize(validationParameters.ValidIssuer), LogSanitizer.Sanitize(validationParameters.ValidAudience));
             return (true, null);
         }
         catch (Exception ex)
@@ -226,7 +226,7 @@ public class Auth0TokenService : ITokenService
             }
 
             // Fetch fresh JWKS
-            _logger.LogDebug("Fetching JWKS from: {JwksUrl}", jwksUri);
+            _logger.LogDebug("Fetching JWKS from: {JwksUrl}", LogSanitizer.Sanitize(jwksUri));
 
             var response = await _httpClient.GetAsync(jwksUri);
             if (!response.IsSuccessStatusCode)
@@ -297,7 +297,7 @@ public class Auth0TokenService : ITokenService
     {
         if (!response.IsSuccessful)
         {
-            _logger.LogError("Failed to {Operation}: {ErrorMessage}", operation, response.ErrorMessage);
+            _logger.LogError("Failed to {Operation}: {ErrorMessage}", LogSanitizer.Sanitize(operation), LogSanitizer.Sanitize(response.ErrorMessage));
             throw new Exception($"Failed to {operation}: {response.ErrorMessage}");
         }
     }

@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Shared.Data.Models;
 using Shared.Providers;
 using Shared.Repositories;
+using Shared.Utils;
 using Shared.Utils.Services;
 
 namespace Shared.Services;
@@ -156,7 +157,7 @@ public class SecretVaultService : ISecretVaultService
 
             _logger.LogInformation(
                 "Secret vault entry created. id={SecretId} key={Key} tenant={TenantId} actor={Actor} provider={Provider}",
-                id, input.Key, entity.TenantId ?? "*", actorUserId, _secretStore.Name);
+                LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(input.Key), entity.TenantId ?? "*", LogSanitizer.Sanitize(actorUserId), LogSanitizer.Sanitize(_secretStore.Name));
 
             return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, input.Value), StatusCode.Ok);
         }
@@ -176,7 +177,7 @@ public class SecretVaultService : ISecretVaultService
                 {
                     _logger.LogError(cleanupEx,
                         "Failed to clean up orphaned secret value for id {SecretId} after metadata insert failure",
-                        id);
+                        LogSanitizer.Sanitize(id));
                 }
             }
 
@@ -200,7 +201,7 @@ public class SecretVaultService : ISecretVaultService
             {
                 _logger.LogError(
                     "Secret value missing in store for id {SecretId} (provider={Provider})",
-                    entity.Id, _secretStore.Name);
+                    LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(_secretStore.Name));
                 return ServiceResult<SecretVaultGetResponse?>.Conflict("Secret value missing in store");
             }
 
@@ -208,7 +209,7 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting secret vault id {Id}", id);
+            _logger.LogError(ex, "Error getting secret vault id {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<SecretVaultGetResponse?>.InternalServerError("Failed to get secret");
         }
     }
@@ -271,7 +272,7 @@ public class SecretVaultService : ISecretVaultService
 
             _logger.LogInformation(
                 "Secret vault entry updated. id={SecretId} key={Key} tenant={TenantId} actor={Actor} valueChanged={ValueChanged} provider={Provider}",
-                entity.Id, entity.Key, entity.TenantId ?? "*", actorUserId, updatedValue != null, _secretStore.Name);
+                LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(entity.Key), entity.TenantId ?? "*", LogSanitizer.Sanitize(actorUserId), updatedValue != null, LogSanitizer.Sanitize(_secretStore.Name));
 
             // For the response value: prefer the just-set value to avoid an extra round-trip to the store.
             var responseValue = updatedValue ?? await _secretStore.GetAsync(entity.Id) ?? string.Empty;
@@ -279,7 +280,7 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating secret vault id {Id}", id);
+            _logger.LogError(ex, "Error updating secret vault id {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<SecretVaultGetResponse>.InternalServerError("Failed to update secret");
         }
     }
@@ -304,15 +305,15 @@ public class SecretVaultService : ISecretVaultService
                 // Metadata is already gone; log the orphan but do not fail the caller.
                 _logger.LogError(storeEx,
                     "Metadata for secret {SecretId} was deleted but store {Provider} delete failed; value may need manual cleanup",
-                    id, _secretStore.Name);
+                    LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(_secretStore.Name));
             }
 
-            _logger.LogInformation("Secret vault entry deleted. id={SecretId} provider={Provider}", id, _secretStore.Name);
+            _logger.LogInformation("Secret vault entry deleted. id={SecretId} provider={Provider}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(_secretStore.Name));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting secret vault id {Id}", id);
+            _logger.LogError(ex, "Error deleting secret vault id {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.InternalServerError("Failed to delete secret");
         }
     }
@@ -333,7 +334,7 @@ public class SecretVaultService : ISecretVaultService
             {
                 _logger.LogError(
                     "Secret value missing in store for key {Key} id {SecretId} (provider={Provider})",
-                    key, entity.Id, _secretStore.Name);
+                    LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(_secretStore.Name));
                 return ServiceResult<SecretVaultFetchResponse?>.Conflict("Secret value missing in store");
             }
 
@@ -342,7 +343,7 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error fetching secret vault key {Key}", key);
+            _logger.LogError(ex, "Error fetching secret vault key {Key}", LogSanitizer.Sanitize(key));
             return ServiceResult<SecretVaultFetchResponse?>.InternalServerError("Failed to fetch secret");
         }
     }
@@ -362,7 +363,7 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting secret vault metadata for id {Id}", id);
+            _logger.LogError(ex, "Error getting secret vault metadata for id {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<SecretVaultMetadataResponse?>.InternalServerError("Failed to get secret metadata");
         }
     }
@@ -382,7 +383,7 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error finding secret vault metadata for key {Key}", key);
+            _logger.LogError(ex, "Error finding secret vault metadata for key {Key}", LogSanitizer.Sanitize(key));
             return ServiceResult<SecretVaultMetadataResponse?>.InternalServerError("Failed to find secret metadata");
         }
     }

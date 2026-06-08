@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Azure;
 using Azure.Core;
 using Azure.Security.KeyVault.Secrets;
+using Shared.Utils;
 
 namespace Shared.Providers;
 

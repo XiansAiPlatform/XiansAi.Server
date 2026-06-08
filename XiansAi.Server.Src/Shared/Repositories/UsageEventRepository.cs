@@ -1355,7 +1355,7 @@ public class UsageEventRepository : IUsageEventRepository
         {
             _logger.LogInformation(
                 "Getting admin metrics timeseries for tenant={TenantId}, agent={AgentName}, category={Category}, type={Type}, groupBy={GroupBy}",
-                request.TenantId, request.AgentName, request.Category, request.Type, request.GroupBy);
+                LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(request.Category), LogSanitizer.Sanitize(request.Type), LogSanitizer.Sanitize(request.GroupBy));
 
             // Build filter as BsonDocument to ensure proper field name mapping
             var matchFilter = new BsonDocument
@@ -1521,7 +1521,7 @@ public class UsageEventRepository : IUsageEventRepository
         {
             _logger.LogInformation(
                 "Getting admin metrics categories for tenant={TenantId}, agent={AgentName}, activation={ActivationName}",
-                request.TenantId, request.AgentName ?? "all", request.ActivationName ?? "all");
+                LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(request.AgentName ?? "all"), LogSanitizer.Sanitize(request.ActivationName ?? "all"));
 
             // Build filter as BsonDocument to ensure proper field name mapping
             var matchFilter = new BsonDocument

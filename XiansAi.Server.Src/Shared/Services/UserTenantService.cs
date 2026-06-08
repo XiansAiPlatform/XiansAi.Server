@@ -103,10 +103,10 @@ public class UserTenantService : IUserTenantService
             var userDto = await createUserFromToken(token);
             if (userDto == null)
             {
-                _logger.LogError("Failed to create user from token {Token}", token);
+                _logger.LogError("Failed to create user from token {Token}", LogSanitizer.Sanitize(token));
                 return ServiceResult<List<TenantInfoDto>>.InternalServerError("Failed to create user from token");
             }
-            _logger.LogInformation("User {UserId} created from token", userDto.UserId);
+            _logger.LogInformation("User {UserId} created from token", LogSanitizer.Sanitize(userDto.UserId));
         }
 
         // Optional: Azure AD group-based SysAdmin promotion
@@ -172,7 +172,7 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenants for user {UserId}", userId);
+            _logger.LogError(ex, "Error getting tenants for user {UserId}", LogSanitizer.Sanitize(userId));
             return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error getting tenants for user");
         }
     }
@@ -210,7 +210,7 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding tenant {TenantId} to user {UserId}", tenantId, userId);
+            _logger.LogError(ex, "Error adding tenant {TenantId} to user {UserId}", LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(userId));
             return ServiceResult<bool>.InternalServerError("Error adding tenant to user");
         }
     }
@@ -251,7 +251,7 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding user with email user {email} to tenant {TenantId}", _tenantContext.TenantId, email);
+            _logger.LogError(ex, "Error adding user with email user {email} to tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.RedactEmail(email));
             return ServiceResult<bool>.InternalServerError("Error adding tenant to user with email {email}, email");
         }
     }
@@ -276,7 +276,7 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing tenant {TenantId} from user {UserId}", tenantId, userId);
+            _logger.LogError(ex, "Error removing tenant {TenantId} from user {UserId}", LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(userId));
             return ServiceResult<bool>.InternalServerError("Error removing tenant from user");
         }
     }
@@ -305,7 +305,7 @@ public class UserTenantService : IUserTenantService
             else
             {
                 _logger.LogWarning("User {UserId} attempted to get unapproved users without proper permissions",
-                    _tenantContext.LoggedInUser);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
                 return ServiceResult<List<User>>.Forbidden("Insufficient permissions to view unapproved users");
             }
             
@@ -334,7 +334,7 @@ public class UserTenantService : IUserTenantService
             {
                 if (user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId)?.IsApproved == true)
                 {
-                    _logger.LogWarning("User {UserId} already approved for tenant {TenantId}", userId, tenantId);
+                    _logger.LogWarning("User {UserId} already approved for tenant {TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
                     return ServiceResult<bool>.Conflict("User already approved for this tenant");
                 }
 
@@ -366,7 +366,7 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error approving user {UserId} for tenant {TenantId}", userId, tenantId);
+            _logger.LogError(ex, "Error approving user {UserId} for tenant {TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<bool>.InternalServerError("Error approving user");
         }
     }
@@ -385,7 +385,7 @@ public class UserTenantService : IUserTenantService
             if (!_tenantContext.TenantId.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Tenant admin {UserId} attempted to {Operation} in different tenant {TenantId}",
-                    _tenantContext.LoggedInUser, operation, tenantId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(operation), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult.Failure("Tenant admins can only access their own tenant", StatusCode.Forbidden);
             }
             return ServiceResult.Success();
@@ -393,7 +393,7 @@ public class UserTenantService : IUserTenantService
 
         // Regular users need to be at least tenant admin
         _logger.LogWarning("User {UserId} attempted to {Operation} without proper permissions",
-            _tenantContext.LoggedInUser, operation);
+            LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(operation));
         return ServiceResult.Failure("Insufficient permissions to manage roles", StatusCode.Forbidden);
     }
 
@@ -406,7 +406,7 @@ public class UserTenantService : IUserTenantService
                 return ServiceResult<bool>.NotFound("User not found");
             if (user.TenantRoles.Any(tr => tr.Tenant == tenantId))
             {
-                _logger.LogWarning("User {UserId} in tenant {TenantId}", _tenantContext.LoggedInUser, tenantId);
+                _logger.LogWarning("User {UserId} in tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<bool>.Conflict("User already in this tenant");
             }
             var tenantEntry = new TenantRole
@@ -423,7 +423,7 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error approving user {UserId} for tenant {TenantId}", _tenantContext.LoggedInUser, tenantId);
+            _logger.LogError(ex, "Error approving user {UserId} for tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<bool>.InternalServerError("Error approving user");
         }
     }
@@ -456,7 +456,7 @@ public class UserTenantService : IUserTenantService
         if (user.IsSysAdmin != existingUser.IsSysAdmin)
         {
             _logger.LogWarning("Attempt to modify system admin status for user {UserId} via tenant endpoint by {LoggedInUser}", 
-                user.UserId, _tenantContext.LoggedInUser);
+                LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Forbidden("Cannot modify system admin status via this endpoint");
         }
 
@@ -465,7 +465,7 @@ public class UserTenantService : IUserTenantService
         if (rolesForOtherTenants.Any())
         {
             _logger.LogWarning("Attempt to modify roles for other tenants by user {LoggedInUser} in tenant {TenantId}", 
-                _tenantContext.LoggedInUser, _tenantContext.TenantId);
+                LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId));
             return ServiceResult<bool>.Forbidden("Can only modify roles for the current tenant");
         }
 
@@ -488,7 +488,7 @@ public class UserTenantService : IUserTenantService
             if (hasSystemRoles && !_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
             {
                 _logger.LogWarning("Attempt to assign system-wide roles by non-sysadmin user {LoggedInUser} in tenant {TenantId}",
-                    _tenantContext.LoggedInUser, _tenantContext.TenantId);
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<bool>.Forbidden("Cannot assign system-wide roles");
             }
 
@@ -511,7 +511,7 @@ public class UserTenantService : IUserTenantService
         await _userRepository.UpdateAsync(existingUser.UserId, existingUser);
 
         _logger.LogInformation("User {UserId} updated by {LoggedInUser} in tenant {TenantId}", 
-            user.UserId, _tenantContext.LoggedInUser, _tenantContext.TenantId);
+            LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(_tenantContext.TenantId));
 
         return ServiceResult<bool>.Success(true);
     }
@@ -574,18 +574,18 @@ public class UserTenantService : IUserTenantService
             var created = await _userRepository.CreateAsync(newUser);
             if (!created)
             {
-                _logger.LogError("Failed to create user {Email} in database", dto.Email);
+                _logger.LogError("Failed to create user {Email} in database", LogSanitizer.RedactEmail(dto.Email));
                 return ServiceResult<User>.InternalServerError("Failed to create user");
             }
 
             _logger.LogInformation("User {UserId} ({Email}) created by {CreatedBy} in tenant {TenantId}",
-                userId, dto.Email, _tenantContext.LoggedInUser, tenantId);
+                LogSanitizer.Sanitize(userId), LogSanitizer.RedactEmail(dto.Email), LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(tenantId));
 
             // Retrieve the created user to return complete data
             var createdUser = await _userRepository.GetByUserIdAsync(userId);
             if (createdUser == null)
             {
-                _logger.LogError("Created user {UserId} but failed to retrieve it", userId);
+                _logger.LogError("Created user {UserId} but failed to retrieve it", LogSanitizer.Sanitize(userId));
                 return ServiceResult<User>.InternalServerError("User created but failed to retrieve");
             }
 
@@ -593,7 +593,7 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating new user in tenant {TenantId}", tenantId);
+            _logger.LogError(ex, "Error creating new user in tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<User>.InternalServerError("An error occurred while creating the new user");
         }
     }
@@ -627,7 +627,7 @@ public class UserTenantService : IUserTenantService
         if (!jwtResult.IsValid || string.IsNullOrEmpty(jwtResult.UserId))
         {
             _logger.LogWarning("JWT token validation failed in createUserFromToken: {Error}", 
-                jwtResult.ErrorMessage);
+                LogSanitizer.Sanitize(jwtResult.ErrorMessage));
             throw new ArgumentException(jwtResult.ErrorMessage ?? "Invalid or expired token", nameof(token));
         }
 
@@ -642,7 +642,7 @@ public class UserTenantService : IUserTenantService
 
         if (!createdUser.IsSuccess && createdUser.StatusCode == StatusCode.Conflict)
         {
-            _logger.LogInformation("User {UserId} already exists, returning existing user", jwtResult.UserId);
+            _logger.LogInformation("User {UserId} already exists, returning existing user", LogSanitizer.Sanitize(jwtResult.UserId));
             return newUser;
         }
 

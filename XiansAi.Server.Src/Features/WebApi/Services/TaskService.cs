@@ -190,7 +190,7 @@ public class TaskService : ITaskService
             }
 
             var listQuery = string.Join(" and ", queryParts);
-            _logger.LogDebug("Executing paginated tasks query: {Query}", listQuery);
+            _logger.LogDebug("Executing paginated tasks query: {Query}", LogSanitizer.Sanitize(listQuery));
 
             // Calculate pagination parameters
             int skipCount = 0;
@@ -264,7 +264,7 @@ public class TaskService : ITaskService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve paginated tasks. Error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "Failed to retrieve paginated tasks. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<PaginatedTasksResponse>.InternalServerError("Failed to retrieve tasks");
         }
     }
