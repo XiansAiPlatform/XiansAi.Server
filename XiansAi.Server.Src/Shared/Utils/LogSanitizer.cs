@@ -38,6 +38,7 @@ public static class LogSanitizer
         if (atIndex < 0)
             return "***@[no-domain]";
 
-        return "***@" + email[(atIndex + 1)..];
+        var domain = email[(atIndex + 1)..].Replace('\r', ' ').Replace('\n', ' ');
+        return "***@" + domain;
     }
 }
