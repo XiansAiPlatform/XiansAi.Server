@@ -1,7 +1,10 @@
 # CodeQL model extensions for XiansAi Server
 #
 # Declares LogSanitizer utility methods as neutral (no taint propagation),
-# telling CodeQL that data flowing through these methods is sanitized.
+# telling CodeQL that data flowing through these methods is sanitized and
+# should not be flagged as a source of taint.
+#
+# neutralModel columns: namespace, type, name, signature, kind, provenance
 #
 # LogSanitizer.Sanitize() strips CR/LF to prevent log injection (CWE-117).
 # LogSanitizer.RedactEmail() masks email local-parts to prevent PII exposure (CWE-359).
@@ -11,5 +14,5 @@ extensions:
       pack: codeql/csharp-all
       extensible: neutralModel
     data:
-      - ["Shared.Utils", "LogSanitizer", false, "Sanitize", "(System.String)", "summary", "manual"]
-      - ["Shared.Utils", "LogSanitizer", false, "RedactEmail", "(System.String)", "summary", "manual"]
+      - ["Shared.Utils", "LogSanitizer", "Sanitize", "(System.String)", "summary", "manual"]
+      - ["Shared.Utils", "LogSanitizer", "RedactEmail", "(System.String)", "summary", "manual"]

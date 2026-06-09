@@ -4,4 +4,4 @@ name: "XiansAi Server CodeQL Configuration"
 # LogSanitizer.RedactEmail as sanitizers, preventing false-positive alerts
 # for cs/log-forging (CWE-117) and cs/exposure-of-sensitive-information (CWE-359).
 model-packs:
-  - ./.github/codeql-models
+  - .github/codeql-models
