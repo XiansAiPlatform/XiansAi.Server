@@ -128,6 +128,7 @@ public static class AdminApiConfiguration
         AdminTaskEndpoints.MapAdminTaskEndpoints(adminApiGroup);
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
         AdminUserEndpoints.MapAdminUserEndpoints(adminApiGroup);
+        AdminGlobalUserEndpoints.MapAdminGlobalUserEndpoints(adminApiGroup);
         AdminStatsEndpoints.MapAdminStatsEndpoints(adminApiGroup);
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);
         AdminMetricsEndpoints.MapAdminMetricsEndpoints(adminApiGroup);

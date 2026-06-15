@@ -133,7 +133,8 @@ public static class SharedConfiguration
         builder = builder
             .AddCorsConfiguration()
             .AddRateLimiting()
-            .AddRequestLimits();
+            .AddRequestLimits()
+            .AddDataProtectionConfiguration();
             
         // Add infrastructure services (clients, data access, etc.)
         builder.Services.AddInfrastructureServices(builder.Configuration);
@@ -223,6 +224,8 @@ public static class SharedConfiguration
         builder.Services.AddSingleton<ITenantCacheService, TenantCacheService>();
         builder.Services.AddScoped<IUserTenantService, UserTenantService>();
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+        builder.Services.AddScoped<IGlobalUserAdminService, GlobalUserAdminService>();
+        builder.Services.AddScoped<ITenantParticipantUserService, TenantParticipantUserService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();

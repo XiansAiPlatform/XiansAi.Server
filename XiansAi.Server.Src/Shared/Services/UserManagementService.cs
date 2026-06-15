@@ -87,6 +87,12 @@ public class UserFilter
     public string? Tenant { get; set; }
     [JsonPropertyName("search")]
     public string? Search { get; set; }
+    /// <summary>When set, restricts results to users where IsSysAdmin matches this value.</summary>
+    [JsonPropertyName("isSysAdmin")]
+    public bool? IsSysAdmin { get; set; }
+    /// <summary>When set, restricts results to enabled (true) or disabled (false) accounts.</summary>
+    [JsonPropertyName("isEnabled")]
+    public bool? IsEnabled { get; set; }
 }
 
 public class PagedUserResult
