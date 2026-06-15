@@ -41,8 +41,8 @@ public class ParticipantTenantResponse
     public Logo? Logo { get; set; }
     
     /// <summary>
-    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin.
-    /// Defaults to TenantParticipant when the tenant was matched by email domain only.
+    /// User's highest-privilege role in this tenant.
+    /// Defaults to TenantParticipant when the tenant was matched by email domain only (no explicit membership).
     /// </summary>
     [JsonPropertyName("role")]
     public string? Role { get; set; }
@@ -130,23 +130,18 @@ public static class AdminParticipantsEndpoints
                         statusCode: StatusCodes.Status403Forbidden);
                 }
 
-                // Get tenant IDs and role per tenant where user has TenantParticipant or TenantParticipantAdmin (if user exists)
+                // Get tenant IDs and highest-privilege role per tenant for all memberships (approved or not)
                 var participantTenantIds = new List<string>();
-                var tenantRoleMap = new Dictionary<string, string>(); // tenantId -> TenantParticipant or TenantParticipantAdmin
+                var tenantRoleMap = new Dictionary<string, string>(); // tenantId -> highest role
                 if (user != null)
                 {
-                    var participantTenantRoles = user.TenantRoles
-                        .Where(tr => (tr.Roles.Contains(SystemRoles.TenantParticipant) || tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)) && tr.IsApproved);
-                    foreach (var tr in participantTenantRoles)
+                    foreach (var tr in user.TenantRoles)
                     {
                         participantTenantIds.Add(tr.Tenant);
-                        // Prefer TenantParticipantAdmin if user has both roles
-                        tenantRoleMap[tr.Tenant] = tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)
-                            ? SystemRoles.TenantParticipantAdmin
-                            : SystemRoles.TenantParticipant;
+                        tenantRoleMap[tr.Tenant] = PrimaryRole(tr.Roles);
                     }
 
-                    logger.LogInformation("User {EmailRedacted} has participant roles in {Count} tenants: {TenantIds}", 
+                    logger.LogInformation("User {EmailRedacted} has roles in {Count} tenants: {TenantIds}", 
                         LogSanitizer.RedactEmail(email), participantTenantIds.Count, string.Join(", ", participantTenantIds));
                 }
                 else
@@ -163,12 +158,12 @@ public static class AdminParticipantsEndpoints
                         domainMatchedTenants.Count, emailDomain, string.Join(", ", domainMatchedTenants.Select(t => t.TenantId)));
                 }
 
-                // Query tenants by participant role tenant IDs (if user has participant roles)
+                // Query tenants by tenant IDs from user's memberships
                 var participantTenants = new List<Tenant>();
                 if (participantTenantIds.Any())
                 {
                     participantTenants = await tenantRepository.GetByTenantIdsAsync(participantTenantIds);
-                    logger.LogInformation("Found {Count} tenants from participant roles: {TenantIds}", 
+                    logger.LogInformation("Found {Count} tenants from roles: {TenantIds}", 
                         participantTenants.Count, string.Join(", ", participantTenants.Select(t => t.TenantId)));
                 }
 
@@ -233,10 +228,26 @@ public static class AdminParticipantsEndpoints
         })
         .WithName("GetParticipantTenants")
         .Produces<ParticipantTenantsResponse>()
+
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         ;
+    }
+
+    /// <summary>
+    /// Returns the highest-privilege role from the list, falling back to TenantParticipant.
+    /// Priority: TenantAdmin → TenantUser → TenantParticipantAdmin → TenantParticipant.
+    /// </summary>
+    private static string PrimaryRole(List<string> roles)
+    {
+        string[] priority = { SystemRoles.TenantAdmin, SystemRoles.TenantUser, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantParticipant };
+        foreach (var candidate in priority)
+        {
+            if (roles.Contains(candidate))
+                return candidate;
+        }
+        return roles.FirstOrDefault() ?? SystemRoles.TenantParticipant;
     }
 }

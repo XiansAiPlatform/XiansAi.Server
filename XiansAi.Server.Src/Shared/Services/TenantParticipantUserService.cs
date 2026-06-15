@@ -416,14 +416,14 @@ public class TenantParticipantUserService : ITenantParticipantUserService
     }
 
     /// <summary>
-    /// Tenant roles that may be assigned, ordered highest to lowest privilege.
+    /// Tenant roles ordered highest to lowest privilege: TenantAdmin > TenantUser > TenantParticipantAdmin > TenantParticipant.
     /// Used for validation and for picking the primary display role.
     /// </summary>
     private static readonly string[] AllowedTenantRoles =
     {
         SystemRoles.TenantAdmin,
-        SystemRoles.TenantParticipantAdmin,
         SystemRoles.TenantUser,
+        SystemRoles.TenantParticipantAdmin,
         SystemRoles.TenantParticipant,
     };
 
