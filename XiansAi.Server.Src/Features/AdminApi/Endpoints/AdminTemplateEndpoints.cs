@@ -2,6 +2,7 @@ using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
 using Shared.Auth;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -64,8 +65,17 @@ public static class AdminTemplateEndpoints
         adminTemplateGroup.MapPatch("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
             [FromBody] UpdateAgentTemplateRequest request,
-            [FromServices] ITemplateService templateService) =>
+            [FromServices] ITemplateService templateService,
+            [FromServices] ITenantContext tenantContext) =>
         {
+            // Templates are system-scoped (global) resources; only SysAdmins may modify them.
+            if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext))
+            {
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can modify agent templates" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             var result = await templateService.UpdateSystemScopedAgentAsync(
                 templateObjectId,
                 request.Description,
@@ -82,8 +92,17 @@ public static class AdminTemplateEndpoints
         // Delete Agent Template
         adminTemplateGroup.MapDelete("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
-            [FromServices] ITemplateService templateService) =>
+            [FromServices] ITemplateService templateService,
+            [FromServices] ITenantContext tenantContext) =>
         {
+            // Templates are system-scoped (global) resources; only SysAdmins may delete them.
+            if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext))
+            {
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can delete agent templates" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // Get template to find its name
             var templateResult = await templateService.GetSystemScopedAgentByIdAsync(templateObjectId);
             if (!templateResult.IsSuccess)
@@ -110,6 +129,16 @@ public static class AdminTemplateEndpoints
             [FromServices] ITemplateService templateService,
             [FromServices] ITenantContext tenantContext) =>
         {
+            // SysAdmins may deploy a template into any tenant; other admins (e.g. TenantAdmin) may
+            // only deploy into their own resolved tenant. This prevents cross-tenant deployment.
+            if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext) &&
+                !string.Equals(tenantId, tenantContext.TenantId, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Json(
+                    new { message = "Access denied: you can only deploy templates to your own tenant" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // Get template to find its name
             var templateResult = await templateService.GetSystemScopedAgentByIdAsync(templateObjectId);
             if (!templateResult.IsSuccess)

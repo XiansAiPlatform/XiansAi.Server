@@ -4,6 +4,7 @@ using Features.AppsApi.Services;
 using Features.AppsApi.Endpoints;
 using Shared.Auth;
 using Shared.Utils.Services;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -105,7 +106,8 @@ public static class AdminAppIntegrationEndpoints
         // Builtin webhook endpoints (stored as app integrations with platformId=builtin_webhook)
         var webhookGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/webhooks")
             .WithTags("AdminAPI - Webhooks")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         webhookGroup.MapPost("", async (
             string tenantId,
@@ -161,7 +163,8 @@ public static class AdminAppIntegrationEndpoints
         // Tenant-specific integration endpoints
         var integrationGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/integrations")
             .WithTags("AdminAPI - App Integrations")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // List all integrations for a tenant
         integrationGroup.MapGet("", async (

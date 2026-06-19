@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Shared.Utils.Services;
+using Shared.Auth;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -18,7 +20,8 @@ public static class WorkflowManagementEndpoints
     {
         var adminWorkflowGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/workflows")
             .WithTags("AdminAPI - Workflow Management")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // Activate Workflow (Start/Create New Workflow)
         adminWorkflowGroup.MapPost("/activate", async (
@@ -34,12 +37,18 @@ public static class WorkflowManagementEndpoints
         ;
 
         // Get Workflow by ID
-        adminWorkflowGroup.MapGet("", async (
+        adminWorkflowGroup.MapGet("", async Task<IResult> (
             string tenantId,
             [FromQuery] string workflowId,
             [FromQuery] string? runId,
-            [FromServices] IWorkflowFinderService workflowFinderService) =>
+            [FromServices] IWorkflowFinderService workflowFinderService,
+            [FromServices] ITenantContext tenantContext) =>
         {
+            if (!AdminTenantScopeGuard.WorkflowIdBelongsToContext(tenantContext, workflowId))
+            {
+                return Results.NotFound(new { message = "Workflow not found in the specified tenant" });
+            }
+
             var result = await workflowFinderService.GetWorkflow(workflowId, runId);
             return result.ToHttpResult();
         })
@@ -65,11 +74,19 @@ public static class WorkflowManagementEndpoints
         ;
 
         // Get Workflow Events
-        adminWorkflowGroup.MapGet("/events", async (
+        adminWorkflowGroup.MapGet("/events", async Task<IResult> (
             string tenantId,
             [FromQuery] string workflowId,
-            [FromServices] IWorkflowEventsService workflowEventsService) =>
+            [FromServices] IWorkflowEventsService workflowEventsService,
+            [FromServices] ITenantContext tenantContext) =>
         {
+            // WorkflowEventsService applies no tenant scoping; enforce tenant ownership via the
+            // tenant-prefixed workflow ID to prevent cross-tenant event/history disclosure.
+            if (!AdminTenantScopeGuard.WorkflowIdBelongsToContext(tenantContext, workflowId))
+            {
+                return Results.NotFound(new { message = "Workflow not found in the specified tenant" });
+            }
+
             var result = await workflowEventsService.GetWorkflowEvents(workflowId);
             return result.ToHttpResult();
         })
@@ -80,8 +97,14 @@ public static class WorkflowManagementEndpoints
         adminWorkflowGroup.MapGet("/events/stream", (
             string tenantId,
             [FromQuery] string workflowId,
-            [FromServices] IWorkflowEventsService workflowEventsService) =>
+            [FromServices] IWorkflowEventsService workflowEventsService,
+            [FromServices] ITenantContext tenantContext) =>
         {
+            if (!AdminTenantScopeGuard.WorkflowIdBelongsToContext(tenantContext, workflowId))
+            {
+                return Results.NotFound(new { message = "Workflow not found in the specified tenant" });
+            }
+
             return workflowEventsService.StreamWorkflowEvents(workflowId);
         })
         .WithName("StreamWorkflowEvents")
@@ -100,12 +123,18 @@ public static class WorkflowManagementEndpoints
         ;
 
         // Cancel Workflow
-        adminWorkflowGroup.MapPost("/cancel", async (
+        adminWorkflowGroup.MapPost("/cancel", async Task<IResult> (
             string tenantId,
             [FromQuery] string workflowId,
             [FromQuery] bool force,
-            [FromServices] IWorkflowCancelService workflowCancelService) =>
+            [FromServices] IWorkflowCancelService workflowCancelService,
+            [FromServices] ITenantContext tenantContext) =>
         {
+            if (!AdminTenantScopeGuard.WorkflowIdBelongsToContext(tenantContext, workflowId))
+            {
+                return Results.NotFound(new { message = "Workflow not found in the specified tenant" });
+            }
+
             var result = await workflowCancelService.CancelWorkflow(workflowId, force);
             return result.ToHttpResult();
         })

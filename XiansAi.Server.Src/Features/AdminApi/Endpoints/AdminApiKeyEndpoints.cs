@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Features.AdminApi.Constants;
+using Features.AdminApi.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Auth;
 using Shared.Services;
@@ -44,7 +45,8 @@ public static class AdminApiKeyEndpoints
     {
         var group = adminApiGroup.MapGroup("/tenants/{tenantId}/agent-certificates")
             .WithTags("AdminAPI - Agent Certificates")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // POST /tenants/{tenantId}/agent-certificates/generate?userId=&name=&revokePrevious=
         group.MapPost("/generate", async (
@@ -140,7 +142,8 @@ public static class AdminApiKeyEndpoints
     {
         var group = adminApiGroup.MapGroup("/tenants/{tenantId}/admin-apikeys")
             .WithTags("AdminAPI - Admin API Keys")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // POST /tenants/{tenantId}/admin-apikeys?userId=
         group.MapPost("", async (

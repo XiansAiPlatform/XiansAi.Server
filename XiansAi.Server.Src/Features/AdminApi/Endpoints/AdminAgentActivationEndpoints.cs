@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Shared.Data.Models;
 using Shared.Utils.Services;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -21,7 +22,8 @@ public static class AdminAgentActivationEndpoints
     {
         var activationGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agentActivations")
             .WithTags("AdminAPI - Agent Activation")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // List all activations for a tenant
         activationGroup.MapGet("", async (
@@ -42,6 +44,15 @@ public static class AdminAgentActivationEndpoints
             [FromServices] IActivationService activationService) =>
         {
             var result = await activationService.GetActivationByIdAsync(activationId);
+
+            // Ensure the activation belongs to the caller's tenant (route tenant is validated
+            // against the resolved context by TenantRouteScopeFilter). GetActivationByIdAsync
+            // performs no tenant scoping, so enforce it here to prevent cross-tenant reads.
+            if (result.IsSuccess && result.Data?.TenantId != tenantId)
+            {
+                return Results.NotFound(new { message = "Activation not found in the specified tenant" });
+            }
+
             return result.ToHttpResult();
         })
         .WithName("GetActivation")
@@ -126,6 +137,19 @@ public static class AdminAgentActivationEndpoints
             string activationId,
             [FromServices] IActivationService activationService) =>
         {
+            // Verify the activation belongs to the caller's tenant before deleting.
+            // DeleteActivationAsync performs no tenant scoping, so enforce it here to
+            // prevent cross-tenant deletion (route tenant is validated by TenantRouteScopeFilter).
+            var existing = await activationService.GetActivationByIdAsync(activationId);
+            if (!existing.IsSuccess)
+            {
+                return existing.ToHttpResult();
+            }
+            if (existing.Data?.TenantId != tenantId)
+            {
+                return Results.NotFound(new { message = "Activation not found in the specified tenant" });
+            }
+
             var result = await activationService.DeleteActivationAsync(activationId);
             if (!result.IsSuccess)
             {

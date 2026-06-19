@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Shared.Services;
 using Shared.Utils.Services;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -18,7 +19,8 @@ public static class AdminDataEndpoints
     {
         var dataGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/data")
             .WithTags("AdminAPI - Data")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // Get available data schema (types and filters)
         dataGroup.MapGet("/schema", async (

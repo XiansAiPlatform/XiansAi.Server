@@ -7,6 +7,7 @@ using Shared.Utils.Services;
 using Shared.Repositories;
 using Shared.Utils;
 using System.Text.Json.Serialization;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -65,7 +66,8 @@ public static class AdminMessagingEndpoints
     {
         var adminMessagingGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/messaging")
             .WithTags("AdminAPI - Messaging")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // Server-Sent Events endpoint for real-time message streaming
         adminMessagingGroup.MapGet("/listen", async (

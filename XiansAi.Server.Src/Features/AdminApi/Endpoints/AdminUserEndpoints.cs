@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Features.AdminApi.Constants;
+using Features.AdminApi.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Auth;
 using Shared.Providers.Auth;
@@ -49,7 +50,8 @@ public static class AdminUserEndpoints
     {
         var group = adminApiGroup.MapGroup("/tenants/{tenantId}/users")
             .WithTags("AdminAPI - Tenant participant users")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         group.MapGet("", async (
             string tenantId,
