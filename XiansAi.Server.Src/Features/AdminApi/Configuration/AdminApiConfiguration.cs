@@ -37,6 +37,9 @@ public static class AdminApiConfiguration
         // Register App Integration services
         builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
         builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
+
+        // Register Admin API key service
+        builder.Services.AddScoped<IAdminApiKeyService, AdminApiKeyService>();
         
         // PendingRequestService for heartbeat sync flow (TryAdd: UserApi may already register it)
         builder.Services.TryAddSingleton<IPendingRequestService, PendingRequestService>();
@@ -135,6 +138,7 @@ public static class AdminApiConfiguration
         AdminDataEndpoints.MapAdminDataEndpoints(adminApiGroup);
         AdminAppIntegrationEndpoints.MapAdminAppIntegrationEndpoints(adminApiGroup);
         AdminSecretVaultEndpoints.MapAdminSecretVaultEndpoints(adminApiGroup);
+        AdminApiKeyEndpoints.MapAdminApiKeyEndpoints(adminApiGroup);
     }
 }
 

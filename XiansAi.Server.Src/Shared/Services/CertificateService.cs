@@ -80,7 +80,7 @@ public class CertificateService
         return temporalConfig.PrivateKeyBase64;
     }
 
-    private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId, bool revokePrevious)
+    private async Task<X509Certificate2> GenerateAndStoreCertificate(string name, string userId, bool revokePrevious, string? friendlyName = null)
     {
         // Revoke previous certificates for this user
         if (revokePrevious)
@@ -90,25 +90,15 @@ public class CertificateService
             {
                 if (!prevCert.IsRevoked)
                 {
-                    // Use RevokeAsync to ensure cache invalidation
-                    var revoked = await _certificateRepository.RevokeAsync(
-                        prevCert.Thumbprint, 
-                        "Replaced by new certificate");
-                    
-                    if (revoked)
-                    {
+                    var deleted = await _certificateRepository.DeleteByThumbprintAsync(prevCert.Thumbprint);
+                    if (deleted)
                         _logger.LogInformation(
-                            "Revoked previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
-                            prevCert.Thumbprint, 
-                            userId);
-                    }
+                            "Deleted previous certificate. Thumbprint: {Thumbprint}, User: {UserId}",
+                            prevCert.Thumbprint, userId);
                     else
-                    {
                         _logger.LogWarning(
-                            "Failed to revoke previous certificate. Thumbprint: {Thumbprint}, User: {UserId}", 
-                            prevCert.Thumbprint, 
-                            userId);
-                    }
+                            "Failed to delete previous certificate. Thumbprint: {Thumbprint}, User: {UserId}",
+                            prevCert.Thumbprint, userId);
                 }
             }
         }
@@ -129,9 +119,9 @@ public class CertificateService
         {
             var newCertificate = new Certificate
             {
-
                 Thumbprint = cert.Thumbprint,
                 SubjectName = cert.Subject,
+                FriendlyName = string.IsNullOrWhiteSpace(friendlyName) ? null : friendlyName,
                 TenantId = _tenantContext.TenantId,
                 IssuedTo = userId,
                 IssuedAt = DateTime.UtcNow,
@@ -157,21 +147,65 @@ public class CertificateService
         return cert;
     }
 
+    /// <summary>
+    /// Returns all certificates issued to <paramref name="targetUserId"/> within their tenant,
+    /// ordered newest first.
+    /// </summary>
+    public async Task<IEnumerable<Certificate>> ListCertificatesForUserAsync(string targetUserId)
+    {
+        var tenantId = _tenantContext.TenantId
+            ?? throw new InvalidOperationException("Tenant context is required");
+        return await _certificateRepository.GetByUserAsync(tenantId, targetUserId);
+    }
+
+    /// <summary>
+    /// Permanently deletes a certificate, but only if it was issued to <paramref name="targetUserId"/>
+    /// within their tenant. Returns false when not found or ownership does not match.
+    /// The validation cache is invalidated before deletion so in-flight auth attempts fail immediately.
+    /// </summary>
+    public async Task<bool> RevokeCertificateAsync(string thumbprint, string reason, string targetUserId)
+    {
+        var cert = await _certificateRepository.GetByThumbprintAsync(thumbprint);
+        if (cert == null
+            || !string.Equals(cert.TenantId, _tenantContext.TenantId, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(cert.IssuedTo, targetUserId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return await _certificateRepository.DeleteByThumbprintAsync(thumbprint);
+    }
+
+    /// <summary>
+    /// Generates a certificate for the calling user (reads <c>LoggedInUser</c> from tenant context).
+    /// Used by the WebAPI; admin callers should use the overload that accepts an explicit userId.
+    /// </summary>
     public async Task<IResult> GenerateClientCertificateBase64(bool revokePrevious = false)
+    {
+        var userId = _tenantContext.LoggedInUser
+            ?? throw new UnauthorizedAccessException("User not authenticated");
+        return await GenerateClientCertificateBase64ForUser(userId, revokePrevious);
+    }
+
+    /// <summary>
+    /// Generates a certificate issued to <paramref name="targetUserId"/>.
+    /// <paramref name="friendlyName"/> is an optional display label stored alongside the certificate
+    /// for identification in UIs; it does not affect the X.509 subject.
+    /// </summary>
+    public async Task<IResult> GenerateClientCertificateBase64ForUser(
+        string targetUserId, bool revokePrevious = false, string? friendlyName = null)
     {
         try
         {
             var certName = "XiansAi-Client-Certificate";
-            var userId = _tenantContext.LoggedInUser
-                ?? throw new UnauthorizedAccessException("User not authenticated");
 
             _logger.LogInformation(
-                "Generating base64 client certificate for {Name}, Tenant: {TenantId}, User: {UserId}", 
-                certName, 
-                _tenantContext.TenantId, 
-                userId);
+                "Generating base64 client certificate for {Name}, Tenant: {TenantId}, User: {UserId}",
+                certName,
+                _tenantContext.TenantId,
+                targetUserId);
 
-            var cert = await GenerateAndStoreCertificate(certName, userId, revokePrevious);
+            var cert = await GenerateAndStoreCertificate(certName, targetUserId, revokePrevious, friendlyName);
             var certBytes = cert.Export(X509ContentType.Cert);
             var base64String = Convert.ToBase64String(certBytes);
 

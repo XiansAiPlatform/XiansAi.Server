@@ -9,10 +9,20 @@ namespace Features.AgentApi.Repositories;
 public interface ICertificateRepository
 {
     Task<Certificate?> GetByThumbprintAsync(string thumbprint);
+    /// <summary>
+    /// Returns true when the certificate is explicitly revoked OR when it no longer exists
+    /// (hard-deleted certificates are treated as revoked for auth purposes).
+    /// </summary>
     Task<bool> IsRevokedAsync(string thumbprint);
     Task<bool> RevokeAsync(string thumbprint, string reason);
+    /// <summary>
+    /// Permanently deletes a certificate and invalidates its validation cache entry.
+    /// Returns true when the document was found and deleted.
+    /// </summary>
+    Task<bool> DeleteByThumbprintAsync(string thumbprint);
     Task CreateAsync(Certificate certificate);
     Task<IEnumerable<Certificate>> GetByUserAsync(string tenantId, string userId);
+    Task<IEnumerable<Certificate>> GetByTenantAsync(string tenantId);
     Task UpdateAsync(Certificate certificate);
 }
 
@@ -46,8 +56,9 @@ public class CertificateRepository : ICertificateRepository
             .Find(cert => cert.Thumbprint == thumbprint)
             .Project(cert => new { cert.IsRevoked })
             .FirstOrDefaultAsync();
-            
-        return certificate?.IsRevoked ?? false;
+
+        // Treat a missing document as revoked: hard-deleted certs must not authenticate.
+        return certificate == null || certificate.IsRevoked;
     }
 
     public async Task<bool> RevokeAsync(string thumbprint, string reason)
@@ -86,6 +97,22 @@ public class CertificateRepository : ICertificateRepository
         }
     }
 
+    public async Task<bool> DeleteByThumbprintAsync(string thumbprint)
+    {
+        // Invalidate the validation cache before deleting so in-flight auth attempts fail immediately.
+        _validationCache.RemoveValidation(thumbprint);
+
+        var result = await _collection.DeleteOneAsync(cert => cert.Thumbprint == thumbprint);
+        if (result.DeletedCount > 0)
+        {
+            _logger.LogInformation("Deleted certificate with thumbprint: {Thumbprint}", thumbprint);
+            return true;
+        }
+
+        _logger.LogWarning("Certificate not found for deletion. Thumbprint: {Thumbprint}", thumbprint);
+        return false;
+    }
+
     public async Task<IEnumerable<Certificate>> GetByUserAsync(string tenantId, string userId)
     {
         var filter = Builders<Certificate>.Filter.And(
@@ -101,6 +128,20 @@ public class CertificateRepository : ICertificateRepository
         {
             _logger.LogError(ex, "Error retrieving certificates for user {UserId} in tenant {TenantId}", 
                 userId, tenantId);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<Certificate>> GetByTenantAsync(string tenantId)
+    {
+        var filter = Builders<Certificate>.Filter.Eq(x => x.TenantId, tenantId);
+        try
+        {
+            return await _collection.Find(filter).SortByDescending(x => x.IssuedAt).ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving certificates for tenant {TenantId}", tenantId);
             throw;
         }
     }
