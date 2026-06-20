@@ -126,10 +126,20 @@ public static class AdminParticipantsEndpoints
                     logger.LogInformation("User {EmailRedacted} not found", LogSanitizer.RedactEmail(email));
                 }
 
-                // Tenants are derived strictly from the user's explicit memberships (TenantRoles).
+                // Check if user is system admin
+                var isSystemAdmin = user?.IsSysAdmin ?? false;
+
+                // System admins have access to all tenants, regardless of explicit memberships.
+                // Other users' tenants are derived strictly from their explicit memberships (TenantRoles).
                 // Email-domain matching is intentionally not used to grant tenant access or roles.
                 var matchingTenants = new List<Tenant>();
-                if (participantTenantIds.Any())
+                if (isSystemAdmin)
+                {
+                    matchingTenants = await tenantRepository.GetAllAsync();
+                    logger.LogInformation("User {EmailRedacted} is a system admin. Returning all {Count} tenants.",
+                        LogSanitizer.RedactEmail(email), matchingTenants.Count);
+                }
+                else if (participantTenantIds.Any())
                 {
                     matchingTenants = await tenantRepository.GetByTenantIdsAsync(participantTenantIds);
                     logger.LogInformation("Found {Count} tenants from roles: {TenantIds}", 
@@ -145,8 +155,9 @@ public static class AdminParticipantsEndpoints
                     matchingTenants.Count, 
                     string.Join(", ", matchingTenants.Select(t => $"{t.TenantId}(enabled:{t.Enabled})")));
 
-                // Check if user is system admin
-                var isSystemAdmin = user?.IsSysAdmin ?? false;
+                // Default role for tenants where the user has no explicit membership.
+                // System admins implicitly have access to every tenant via their SysAdmin role.
+                var defaultRole = isSystemAdmin ? SystemRoles.SysAdmin : SystemRoles.TenantParticipant;
 
                 var tenantList = matchingTenants
                     .Where(t => t.Enabled)
@@ -155,7 +166,7 @@ public static class AdminParticipantsEndpoints
                         TenantId = t.TenantId,
                         TenantName = t.Name,
                         Logo = t.Logo,
-                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : SystemRoles.TenantParticipant,
+                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : defaultRole,
                         Theme = t.Theme
                     })
                     .OrderBy(t => t.TenantName)
