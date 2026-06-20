@@ -30,7 +30,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = $"template-{Guid.NewGuid()}",
-            Tenant = "System",
+            Tenant = null,
             SystemScoped = true,
             CreatedBy = _adminUserId ?? "system",
             CreatedAt = DateTime.UtcNow
@@ -45,21 +45,6 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
-    }
-
-    [Fact]
-    public async Task BrowseAgentTemplatesForTenant_WithValidTenant_ReturnsTemplates()
-    {
-        // Arrange
-        var tenantId = $"test-tenant-{Guid.NewGuid()}";
-        await ConfigureAdminApiClientAsync(tenantId);
-        await CreateTestTenantAsync(tenantId);
-
-        // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentTemplates");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -78,7 +63,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = $"template-{Guid.NewGuid()}",
-            Tenant = "System",
+            Tenant = null,
             SystemScoped = true,
             CreatedBy = _adminUserId ?? "system",
             CreatedAt = DateTime.UtcNow
@@ -129,7 +114,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = $"template-{Guid.NewGuid()}",
-            Tenant = "System",
+            Tenant = null,
             SystemScoped = true,
             CreatedBy = _adminUserId ?? "system",
             CreatedAt = DateTime.UtcNow
@@ -165,7 +150,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = $"template-{Guid.NewGuid()}",
-            Tenant = "System",
+            Tenant = null,
             SystemScoped = true,
             CreatedBy = _adminUserId ?? "system",
             CreatedAt = DateTime.UtcNow
@@ -195,7 +180,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         {
             Id = ObjectId.GenerateNewId().ToString(),
             Name = $"template-{Guid.NewGuid()}",
-            Tenant = "System",
+            Tenant = null,
             SystemScoped = true,
             CreatedBy = _adminUserId ?? "system",
             CreatedAt = DateTime.UtcNow

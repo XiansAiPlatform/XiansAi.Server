@@ -1,5 +1,6 @@
 using Features.AdminApi.Constants;
 using Features.AdminApi.Endpoints;
+using Features.AdminApi.Services;
 using Features.AdminApi.Auth;
 using Features.AdminApi.Utils;
 using Features.AgentApi.Repositories;
@@ -40,6 +41,9 @@ public static class AdminApiConfiguration
 
         // Register Admin API key service
         builder.Services.AddScoped<IAdminApiKeyService, AdminApiKeyService>();
+
+        // Register platform bootstrap service
+        builder.Services.AddScoped<IBootstrapService, BootstrapService>();
         
         // PendingRequestService for heartbeat sync flow (TryAdd: UserApi may already register it)
         builder.Services.TryAddSingleton<IPendingRequestService, PendingRequestService>();
@@ -119,6 +123,7 @@ public static class AdminApiConfiguration
     {
         var adminApiGroup = app.MapGroup(AdminApiConstants.GetVersionedBasePath(version));
         
+        AdminBootstrapEndpoints.MapAdminBootstrapEndpoints(adminApiGroup);
         AdminHeartbeatEndpoints.MapAdminHeartbeatEndpoints(adminApiGroup);
         AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
         AdminAgentDeploymentEndpoints.MapAdminAgentDeploymentsEndpoints(adminApiGroup);

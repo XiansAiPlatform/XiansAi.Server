@@ -1,0 +1,41 @@
+### Variables
+@baseUrl = http://localhost:5005
+@apiVersion = v1
+@adminEmail = admin@example.com
+
+### ============================================
+### Platform Bootstrap (anonymous, one-time)
+### ============================================
+# The bootstrap endpoint is intentionally UNAUTHENTICATED.
+# It only succeeds while NO users exist in the database; afterwards it returns 409 Conflict.
+#
+# Flow:
+#   1. After setting up a fresh server, call this endpoint with the admin email.
+#   2. The server creates a SysAdmin user (UserId == email), ensures an enabled tenant
+#      (defaults to "default" when tenantId is omitted), and mints an API key.
+#   3. Use the returned `apiKey` to configure AgentStudio.
+#   4. The admin later logs in to AgentStudio with a JWT whose user id equals the same email.
+
+### 1. Bootstrap with default tenant
+# Creates the SysAdmin and a "default" tenant, returns an API key.
+GET {{baseUrl}}/api/{{apiVersion}}/admin/bootstrap?email={{adminEmail}}
+Accept: application/json
+
+###
+
+### 2. Bootstrap with a custom tenant id
+GET {{baseUrl}}/api/{{apiVersion}}/admin/bootstrap?email={{adminEmail}}&tenantId=acme
+Accept: application/json
+
+###
+
+### 3. Bootstrap without an email (expected: 400 Bad Request)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/bootstrap
+Accept: application/json
+
+###
+
+### 4. Bootstrap after the platform already has users (expected: 409 Conflict)
+# Run this after a successful bootstrap to confirm the endpoint is locked.
+GET {{baseUrl}}/api/{{apiVersion}}/admin/bootstrap?email={{adminEmail}}
+Accept: application/json

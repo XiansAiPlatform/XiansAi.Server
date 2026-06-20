@@ -208,6 +208,57 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
+  /admin/tenants/{tenantId}/logo:
+    get:
+      tags:
+        - Tenant Management
+      summary: Get Tenant Logo
+      description: |
+        Serves the tenant logo image. This is the endpoint referenced by the `logo.url`
+        field returned in tenant responses (tenant responses never embed the raw base64 image).
+
+        - If the logo is stored as base64, the decoded image bytes are returned with the detected `Content-Type`.
+        - If the logo is stored as an external URL, the request is redirected (302) to that URL.
+      operationId: getTenantLogo
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
+      responses:
+        '200':
+          description: Logo image bytes
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '302':
+          description: Redirect to the external logo URL
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
   /admin/tenants/by-domain/{domain}:
     get:
       tags:
@@ -364,7 +415,7 @@ components:
           description: Description
           example: "Acme Corporation - Main tenant"
         logo:
-          $ref: '#/components/schemas/Logo'
+          $ref: '#/components/schemas/LogoResponse'
         theme:
           type: string
           description: Theme identifier
@@ -405,6 +456,10 @@ components:
 
     Logo:
       type: object
+      description: |
+        Logo payload used when creating/updating a tenant. Either `url` or `imgBase64`
+        must be provided, but not both. Note: tenant **responses** never return `imgBase64`;
+        instead they return a `logo.url` pointing to the `GET /admin/tenants/{tenantId}/logo` endpoint.
       properties:
         url:
           type: string
@@ -431,7 +486,32 @@ components:
       oneOf:
         - required: [url, width, height]
         - required: [imgBase64, width, height]
-      description: Either url or imgBase64 must be provided, but not both
+
+    LogoResponse:
+      type: object
+      description: |
+        Logo as returned in tenant responses. The raw base64 image is never embedded;
+        `url` always points to a fetchable image location (the dedicated logo endpoint
+        for base64-stored logos, or the original external URL).
+      properties:
+        url:
+          type: string
+          description: |
+            Fetchable URL for the logo image. For base64-stored logos this points to
+            `GET /admin/tenants/{tenantId}/logo`; for external logos it is the original URL.
+          example: "https://api.example.com/api/v1/admin/tenants/acme-corp/logo"
+        width:
+          type: integer
+          description: Width of the logo in pixels
+          minimum: 1
+          maximum: 10000
+          example: 200
+        height:
+          type: integer
+          description: Height of the logo in pixels
+          minimum: 1
+          maximum: 10000
+          example: 100
 
     ErrorResponse:
       type: object

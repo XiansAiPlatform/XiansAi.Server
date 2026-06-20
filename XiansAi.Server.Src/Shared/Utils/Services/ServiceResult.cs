@@ -37,6 +37,11 @@ public class ServiceResult<T>
         return new ServiceResult<T>(true, data, null, statusCode);
     }
 
+    public static ServiceResult<T> Failure(string errorMessage, StatusCode statusCode = StatusCode.BadRequest)
+    {
+        return new ServiceResult<T>(false, default, errorMessage, statusCode);
+    }
+
     public static ServiceResult<T> BadRequest(string errorMessage, StatusCode statusCode = StatusCode.BadRequest)
     {
         return new ServiceResult<T>(false, default, errorMessage, statusCode);

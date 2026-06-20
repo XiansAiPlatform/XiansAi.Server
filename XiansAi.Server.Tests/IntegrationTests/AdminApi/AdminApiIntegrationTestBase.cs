@@ -153,7 +153,7 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
     /// <summary>
     /// Creates a test tenant.
     /// </summary>
-    protected async Task<Tenant> CreateTestTenantAsync(string tenantId, string? name = null)
+    protected async Task<Tenant> CreateTestTenantAsync(string tenantId, string? name = null, Logo? logo = null)
     {
         using var scope = _factory.Services.CreateScope();
         var tenantRepository = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
@@ -172,6 +172,7 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
             Name = name ?? $"Test Tenant {tenantId}",
             Domain = $"{tenantId}.test.com",
             Description = $"Test tenant for integration tests",
+            Logo = logo,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = _adminUserId ?? "test-admin",
             Enabled = true
