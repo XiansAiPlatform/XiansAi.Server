@@ -6,11 +6,7 @@ info:
     
     These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed, configured, and assigned to reporting targets. A marketplace is one example use case where agent templates can be browsed and deployed.
     
-    **Template Collections:** Agent templates are stored in two collections for backward compatibility:
-    - **New templates** in `agent_templates` collection
-    - **Legacy templates** in `agents` collection (where `SystemScoped = true`)
-    
-    The GET endpoints return templates from both collections, and the deploy endpoint automatically detects which collection a template belongs to based on the ObjectId provided.
+    **Template Storage:** Agent templates are stored in the `agents` collection and flagged with `SystemScoped = true`. They are deployed to a tenant by creating a tenant-scoped replica (`SystemScoped = false`) of the template agent and its flow definitions.
     
     **Important Notes:**
     - All endpoints are under `/api/v1/admin/` prefix (API versioning via URL path)
@@ -611,9 +607,7 @@ paths:
       summary: Browse Agent Templates (System Admin)
       description: |
         Browse all available agent templates (system-scoped reusable agent definitions).
-        This endpoint returns templates from both collections:
-        - New templates from agent_templates collection
-        - Legacy system-scoped templates from agents collection (SystemScoped = true)
+        Templates are agents in the `agents` collection flagged with `SystemScoped = true`.
         **System admin only. No X-Tenant-Id header required.**
       operationId: browseAgentTemplates
       parameters:
@@ -653,9 +647,7 @@ paths:
       summary: Browse Agent Templates for Tenant
       description: |
         Browse agent templates eligible for a specific tenant.
-        This endpoint returns templates from both collections:
-        - New templates from agent_templates collection
-        - Legacy system-scoped templates from agents collection (SystemScoped = true)
+        Templates are agents in the `agents` collection flagged with `SystemScoped = true`.
         **X-Tenant-Id header required.**
         Future: Eligibility filtering will be implemented.
       operationId: browseAgentTemplatesForTenant
@@ -865,9 +857,8 @@ paths:
       summary: Deploy Agent Template to Tenant
       description: |
         Deploy an agent template to a specific tenant, creating a new agent instance.
-        This endpoint handles both:
-        - New templates from agent_templates collection (by ObjectId)
-        - Legacy system-scoped templates from agents collection (by ObjectId, SystemScoped = true)
+        The template is resolved from the `agents` collection by ObjectId (SystemScoped = true)
+        and a tenant-scoped replica is created.
         **X-Tenant-Id header required.**
         Future: Eligibility validation will be implemented.
       operationId: deployAgentTemplate

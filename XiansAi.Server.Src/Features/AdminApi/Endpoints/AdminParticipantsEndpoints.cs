@@ -9,24 +9,6 @@ using Shared.Utils;
 namespace Features.AdminApi.Endpoints;
 
 /// <summary>
-/// Comparer for Tenant objects that compares by TenantId
-/// </summary>
-internal class TenantIdComparer : IEqualityComparer<Tenant>
-{
-    public bool Equals(Tenant? x, Tenant? y)
-    {
-        if (x == null && y == null) return true;
-        if (x == null || y == null) return false;
-        return x.TenantId == y.TenantId;
-    }
-
-    public int GetHashCode(Tenant obj)
-    {
-        return obj.TenantId.GetHashCode();
-    }
-}
-
-/// <summary>
 /// Response model for participant tenant information
 /// </summary>
 public class ParticipantTenantResponse
@@ -41,8 +23,7 @@ public class ParticipantTenantResponse
     public Logo? Logo { get; set; }
     
     /// <summary>
-    /// User's highest-privilege role in this tenant.
-    /// Defaults to TenantParticipant when the tenant was matched by email domain only (no explicit membership).
+    /// User's highest-privilege role in this tenant, derived from their explicit tenant membership.
     /// </summary>
     [JsonPropertyName("role")]
     public string? Role { get; set; }
@@ -113,10 +94,6 @@ public static class AdminParticipantsEndpoints
                         statusCode: StatusCodes.Status400BadRequest);
                 }
                 email = validatedEmail;
-                
-                // Extract email domain
-                var emailDomain = email.Contains('@') ? email.Split('@')[1] : string.Empty;
-                logger.LogInformation("Processing participant lookup for domain {Domain}", emailDomain);
 
                 // Get user by email
                 var user = await userRepository.GetByUserEmailAsync(email);
@@ -146,39 +123,22 @@ public static class AdminParticipantsEndpoints
                 }
                 else
                 {
-                    logger.LogInformation("User {EmailRedacted} not found, will check domain matching only", LogSanitizer.RedactEmail(email));
+                    logger.LogInformation("User {EmailRedacted} not found", LogSanitizer.RedactEmail(email));
                 }
 
-                // Query tenants by domain matching (if email has domain)
-                var domainMatchedTenants = new List<Tenant>();
-                if (!string.IsNullOrEmpty(emailDomain))
-                {
-                    domainMatchedTenants = await tenantRepository.GetByDomainListAsync(emailDomain);
-                    logger.LogInformation("Found {Count} tenants matching email domain {Domain}: {TenantIds}", 
-                        domainMatchedTenants.Count, emailDomain, string.Join(", ", domainMatchedTenants.Select(t => t.TenantId)));
-                }
-
-                // Query tenants by tenant IDs from user's memberships
-                var participantTenants = new List<Tenant>();
+                // Tenants are derived strictly from the user's explicit memberships (TenantRoles).
+                // Email-domain matching is intentionally not used to grant tenant access or roles.
+                var matchingTenants = new List<Tenant>();
                 if (participantTenantIds.Any())
                 {
-                    participantTenants = await tenantRepository.GetByTenantIdsAsync(participantTenantIds);
+                    matchingTenants = await tenantRepository.GetByTenantIdsAsync(participantTenantIds);
                     logger.LogInformation("Found {Count} tenants from roles: {TenantIds}", 
-                        participantTenants.Count, string.Join(", ", participantTenants.Select(t => t.TenantId)));
+                        matchingTenants.Count, string.Join(", ", matchingTenants.Select(t => t.TenantId)));
                 }
-
-                // Combine both lists and remove duplicates
-                var matchingTenants = participantTenants
-                    .Union(domainMatchedTenants, new TenantIdComparer())
-                    .ToList();
-
-                logger.LogInformation("Total matching tenants: {Count} ({ParticipantCount} from roles, {DomainCount} from domain): {TenantIds}",
-                    matchingTenants.Count, participantTenants.Count, domainMatchedTenants.Count, 
-                    string.Join(", ", matchingTenants.Select(t => t.TenantId)));
 
                 if (!matchingTenants.Any())
                 {
-                    return Results.NotFound(new { message = $"User with email '{email}' has no matching tenants (neither participant roles nor domain match)" });
+                    return Results.NotFound(new { message = $"User with email '{email}' has no matching tenants" });
                 }
                 
                 logger.LogInformation("Matched {Count} tenants by TenantId. Tenants: {Tenants}", 
