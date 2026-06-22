@@ -134,6 +134,7 @@ public static class AdminApiConfiguration
         WorkflowManagementEndpoints.MapWorkflowManagementEndpoints(adminApiGroup);
         AdminMessagingEndpoints.MapAdminMessagingEndpoints(adminApiGroup);
         AdminTaskEndpoints.MapAdminTaskEndpoints(adminApiGroup);
+        AdminScheduleEndpoints.MapAdminScheduleEndpoints(adminApiGroup);
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
         AdminUserEndpoints.MapAdminUserEndpoints(adminApiGroup);
         AdminGlobalUserEndpoints.MapAdminGlobalUserEndpoints(adminApiGroup);
