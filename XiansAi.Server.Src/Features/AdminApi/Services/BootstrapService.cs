@@ -113,7 +113,22 @@ public class BootstrapService : IBootstrapService
                     createUserResult.ErrorMessage ?? "Failed to create bootstrap user", createUserResult.StatusCode);
             }
 
-            // 6. Mint an API key owned by the new SysAdmin
+            // 6. Purge any pre-existing API keys across all tenants. The "no users" gate guarantees
+            // these are orphaned (their owners are gone), and removing them avoids both a stale-credential
+            // security gap and a duplicate-name conflict on the fixed bootstrap key name.
+            var purgeResult = await _apiKeyService.DeleteAllApiKeysAsync();
+            if (!purgeResult.IsSuccess)
+            {
+                return ServiceResult<BootstrapResponse>.Failure(
+                    purgeResult.ErrorMessage ?? "Failed to clear existing API keys", purgeResult.StatusCode);
+            }
+            if (purgeResult.Data > 0)
+            {
+                _logger.LogWarning("Bootstrap removed {Count} pre-existing API key(s) before minting the bootstrap key",
+                    purgeResult.Data);
+            }
+
+            // 7. Mint an API key owned by the new SysAdmin
             var apiKeyResult = await _apiKeyService.CreateApiKeyAsync(resolvedTenantId, BootstrapApiKeyName, email);
             if (!apiKeyResult.IsSuccess)
             {
