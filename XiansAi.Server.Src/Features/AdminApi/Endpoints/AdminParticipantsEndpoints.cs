@@ -57,6 +57,12 @@ public class ParticipantTenantsResponse
 public static class AdminParticipantsEndpoints
 {
     /// <summary>
+    /// Route name used to generate the logo URL embedded in participant tenant responses.
+    /// Must match the route name registered in <see cref="AdminTenantEndpoints"/>.
+    /// </summary>
+    private const string LogoRouteName = "AdminGetTenantLogo";
+
+    /// <summary>
     /// Maps all AdminApi participant endpoints.
     /// </summary>
     public static void MapAdminParticipantsEndpoints(this RouteGroupBuilder adminApiGroup)
@@ -68,9 +74,11 @@ public static class AdminParticipantsEndpoints
         // Get participant by email (tenants + role per tenant)
         participantGroup.MapGet("/{email}", async (
             string email,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IUserRepository userRepository,
             [FromServices] ITenantRepository tenantRepository,
+            [FromServices] LinkGenerator linkGenerator,
             [FromServices] ILogger<IUserRepository> logger) =>
         {
             try
@@ -165,7 +173,7 @@ public static class AdminParticipantsEndpoints
                     {
                         TenantId = t.TenantId,
                         TenantName = t.Name,
-                        Logo = t.Logo,
+                        Logo = BuildLogoResponse(t, httpContext, linkGenerator),
                         Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : defaultRole,
                         Theme = t.Theme
                     })
@@ -205,6 +213,41 @@ public static class AdminParticipantsEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         ;
+    }
+
+    /// <summary>
+    /// Builds the logo for a participant tenant response. A base64-stored logo is converted to a
+    /// URL pointing to the dedicated tenant logo endpoint so the (potentially large) base64 payload
+    /// is never embedded in the response. Logos stored as external URLs are returned as-is.
+    /// A fresh <see cref="Logo"/> instance is returned to avoid mutating the source tenant.
+    /// </summary>
+    private static Logo? BuildLogoResponse(Tenant tenant, HttpContext httpContext, LinkGenerator linkGenerator)
+    {
+        var logo = tenant.Logo;
+        if (logo == null)
+        {
+            return null;
+        }
+
+        // External URL logos are returned without modification.
+        if (string.IsNullOrEmpty(logo.ImgBase64))
+        {
+            return logo;
+        }
+
+        var logoUrl = linkGenerator.GetUriByName(
+            httpContext,
+            LogoRouteName,
+            new { tenantId = tenant.TenantId });
+
+        // Never expose the base64 payload; return a URL-only logo when one can be generated.
+        return new Logo
+        {
+            Url = string.IsNullOrEmpty(logoUrl) ? null : logoUrl,
+            ImgBase64 = null,
+            Width = logo.Width,
+            Height = logo.Height
+        };
     }
 
     /// <summary>
