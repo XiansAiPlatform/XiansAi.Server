@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using System;
 using System.Collections.Generic;
+using Shared.Utils;
 
 namespace Features.AgentApi.Auth;
 
@@ -125,7 +126,7 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
 
         var cacheKey = GetCacheKey(thumbprint);
         _cache.Remove(cacheKey);
-        _logger.LogDebug("Removed certificate validation cache entry for thumbprint: {Thumbprint}", thumbprint);
+        _logger.LogDebug("Removed certificate validation cache entry for thumbprint: {Thumbprint}", LogSanitizer.Sanitize(thumbprint));
     }
 
     private static string GetCacheKey(string thumbprint)

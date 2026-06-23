@@ -296,23 +296,23 @@ public class UserManagementService : IUserManagementService
                     existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                     if (existingUser != null)
                     {
-                        _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.Sanitize(userDto.UserId));
+                        _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.RedactEmail(userDto.UserId));
                         return ServiceResult<bool>.Conflict("User already exists");
                     }
                     return ServiceResult<bool>.InternalServerError("Failed to create new user");
                 }
-                _logger.LogInformation("New user created: {UserId}", LogSanitizer.Sanitize(userDto.UserId));
+                _logger.LogInformation("New user created: {UserId}", LogSanitizer.RedactEmail(userDto.UserId));
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception createEx)
             {
-                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", LogSanitizer.Sanitize(userDto.UserId));
+                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", LogSanitizer.RedactEmail(userDto.UserId));
 
                 // Check if user was created by another process
                 existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                 if (existingUser != null)
                 {
-                    _logger.LogInformation("User {UserId} already exists after creation failure", LogSanitizer.Sanitize(userDto.UserId));
+                    _logger.LogInformation("User {UserId} already exists after creation failure", LogSanitizer.RedactEmail(userDto.UserId));
                     return ServiceResult<bool>.Conflict("User already exists");
                 }
 
@@ -321,7 +321,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating new user {UserId}", LogSanitizer.Sanitize(userDto.UserId));
+            _logger.LogError(ex, "Error creating new user {UserId}", LogSanitizer.RedactEmail(userDto.UserId));
             return ServiceResult<bool>.InternalServerError("An error occurred while creating the new user");
         }
     }

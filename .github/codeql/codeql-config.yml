@@ -1,7 +1,13 @@
 name: "XiansAi Server CodeQL Configuration"
 
-# Register the local model pack that declares LogSanitizer.Sanitize and
-# LogSanitizer.RedactEmail as sanitizers, preventing false-positive alerts
-# for cs/log-forging (CWE-117) and cs/exposure-of-sensitive-information (CWE-359).
-model-packs:
-  - .github/codeql-models
+# NOTE: The local model pack in .github/codeql-models (which declares
+# LogSanitizer.Sanitize / LogSanitizer.RedactEmail as taint barriers for
+# cs/log-forging (CWE-117) and cs/exposure-of-sensitive-information (CWE-359))
+# is NOT loaded from here.
+#
+# GitHub code scanning only honours `packs:` / `model-packs:` entries that point
+# at *published* packs; a `model-packs:` key referencing a local directory is
+# silently ignored. The local pack is therefore loaded by injecting
+# `--additional-packs` + `--model-packs` into the analysis via the
+# CODEQL_ACTION_EXTRA_OPTIONS environment variable on the "Perform CodeQL
+# Analysis" step in .github/workflows/codeql.yml.

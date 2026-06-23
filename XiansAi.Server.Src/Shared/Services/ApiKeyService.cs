@@ -44,7 +44,7 @@ namespace Shared.Services
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
         {
-            _logger.LogInformation("Creating API key for tenant {TenantId} by {CreatedBy}", LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
+            _logger.LogInformation("Creating API key for tenant {TenantId} by {CreatedBy}", LogSanitizer.Sanitize(tenantId), LogSanitizer.RedactEmail(createdBy));
             try
             {
                 var result = await _apiKeyRepository.CreateAsync(tenantId, name, createdBy, agentName, activationName, type, workflowName, participantId, timeoutInSeconds, webhookName);

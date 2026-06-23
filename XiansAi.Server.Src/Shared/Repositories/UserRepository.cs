@@ -348,12 +348,12 @@ public class UserRepository : IUserRepository
             }
             catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
             {
-                _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", LogSanitizer.Sanitize(user.UserId));
+                _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", LogSanitizer.RedactEmail(user.UserId));
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating user {UserId}", LogSanitizer.Sanitize(user.UserId));
+                _logger.LogError(ex, "Error creating user {UserId}", LogSanitizer.RedactEmail(user.UserId));
                 return false;
             }
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateUser");
