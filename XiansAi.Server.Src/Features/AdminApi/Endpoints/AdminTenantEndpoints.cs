@@ -3,6 +3,7 @@ using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
 using Shared.Data.Models;
+using Features.AdminApi.Utils;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -13,10 +14,6 @@ namespace Features.AdminApi.Endpoints;
 /// </summary>
 public static class AdminTenantEndpoints
 {
-    /// <summary>
-    /// Route name used to generate the logo URL that is embedded in tenant responses.
-    /// </summary>
-    private const string LogoRouteName = "AdminGetTenantLogo";
 
     /// <summary>
     /// Maps all AdminApi tenant endpoints.
@@ -47,7 +44,7 @@ public static class AdminTenantEndpoints
             {
                 foreach (var tenant in result.Data)
                 {
-                    ReplaceLogoWithUrl(tenant, httpContext, linkGenerator);
+                    TenantLogoHelper.ApplyLogoUrl(tenant, httpContext, linkGenerator);
                 }
             }
             return result.ToHttpResult();
@@ -75,7 +72,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
             if (result.IsSuccess)
             {
-                ReplaceLogoWithUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -129,7 +126,7 @@ public static class AdminTenantEndpoints
             httpContext.Response.Headers.CacheControl = "private, max-age=3600";
             return Results.File(imageBytes, contentType);
         })
-        .WithName(LogoRouteName)
+        .WithName(TenantLogoHelper.LogoRouteName)
         .Produces(StatusCodes.Status302Found)
         .Produces(StatusCodes.Status404NotFound)
         ;
@@ -155,7 +152,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.CreateTenant(request, createdBy);
             if (result.IsSuccess && result.Data != null)
             {
-                ReplaceLogoWithUrl(result.Data.Tenant, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyLogoUrl(result.Data.Tenant, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -192,7 +189,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.UpdateTenant(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
-                ReplaceLogoWithUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -230,33 +227,6 @@ public static class AdminTenantEndpoints
         .WithName("DeleteTenant")
         .Produces(StatusCodes.Status403Forbidden)
         ;
-    }
-
-    /// <summary>
-    /// Replaces an embedded base64 logo with a URL pointing to the dedicated logo endpoint,
-    /// so tenant responses never carry the (potentially large) base64 payload.
-    /// Logos stored as external URLs are left untouched.
-    /// </summary>
-    private static void ReplaceLogoWithUrl(Tenant? tenant, HttpContext httpContext, LinkGenerator linkGenerator)
-    {
-        var logo = tenant?.Logo;
-        if (logo == null || string.IsNullOrEmpty(logo.ImgBase64))
-        {
-            return;
-        }
-
-        var logoUrl = linkGenerator.GetUriByName(
-            httpContext,
-            LogoRouteName,
-            new { tenantId = tenant!.TenantId });
-
-        if (!string.IsNullOrEmpty(logoUrl))
-        {
-            logo.Url = logoUrl;
-        }
-
-        // Never expose the base64 payload in tenant responses, regardless of URL generation.
-        logo.ImgBase64 = null;
     }
 
     /// <summary>
