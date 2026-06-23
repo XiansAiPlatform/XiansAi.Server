@@ -34,6 +34,11 @@ public class UpdateTenantRequest
     public bool? Enabled { get; set; }
 }
 
+public class UpdateTenantThemeRequest
+{
+    public string? Theme { get; set; }
+}
+
 public class TenantCreatedResult
 {
     public Tenant Tenant { get; set; } = default!;
@@ -50,6 +55,8 @@ public interface ITenantService
     Task<ServiceResult<List<string>>> GetTenantIdList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null);
     Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
+    Task<ServiceResult<Tenant>> UpdateTenantTheme(string id, string? theme);
+    Task<ServiceResult<Tenant>> UpdateTenantLogo(string id, Logo? logo);
     Task<ServiceResult<bool>> DeleteTenant(string id);
 }
 
@@ -389,24 +396,7 @@ public class TenantService : ITenantService
             if (request.Timezone != null)
                 existingTenant.Timezone = request.Timezone;
 
-            existingTenant.UpdatedAt = DateTime.UtcNow;
-            var validatedTenant = existingTenant.SanitizeAndValidate();
-
-            var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
-            if (success)
-            {
-                if (!string.IsNullOrEmpty(existingTenant.TenantId))
-                    _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
-                else
-                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
-                _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
-                return ServiceResult<Tenant>.Success(validatedTenant);
-            }
-            else
-            {
-                _logger.LogError("Failed to update tenant with ID {Id}", LogSanitizer.Sanitize(id));
-                return ServiceResult<Tenant>.BadRequest("Failed to update tenant.");
-            }
+            return await PersistTenantUpdate(existingTenant, id);
         }
         catch (ValidationException ex)
         {
@@ -423,6 +413,109 @@ public class TenantService : ITenantService
             _logger.LogError(ex, "Error updating tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<Tenant>.InternalServerError("An error occurred while updating the tenant.");
         }
+    }
+
+    /// <summary>
+    /// Sets (or clears) the tenant's theme. Passing a null or whitespace theme removes it.
+    /// </summary>
+    public async Task<ServiceResult<Tenant>> UpdateTenantTheme(string id, string? theme)
+    {
+        try
+        {
+            SanitizeAndValidateId(id);
+
+            var existingTenant = await _tenantRepository.GetByIdAsync(id);
+            if (existingTenant == null)
+            {
+                _logger.LogWarning("Tenant with ID {Id} not found for theme update", LogSanitizer.Sanitize(id));
+                return ServiceResult<Tenant>.NotFound("Tenant not found");
+            }
+
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
+
+            existingTenant.Theme = string.IsNullOrWhiteSpace(theme) ? null : theme;
+
+            return await PersistTenantUpdate(existingTenant, id);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while updating tenant theme: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Access denied: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating theme for tenant with ID {Id}", LogSanitizer.Sanitize(id));
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while updating the tenant theme.");
+        }
+    }
+
+    /// <summary>
+    /// Sets (or clears) the tenant's logo. Passing a null logo removes it.
+    /// </summary>
+    public async Task<ServiceResult<Tenant>> UpdateTenantLogo(string id, Logo? logo)
+    {
+        try
+        {
+            SanitizeAndValidateId(id);
+
+            var existingTenant = await _tenantRepository.GetByIdAsync(id);
+            if (existingTenant == null)
+            {
+                _logger.LogWarning("Tenant with ID {Id} not found for logo update", LogSanitizer.Sanitize(id));
+                return ServiceResult<Tenant>.NotFound("Tenant not found");
+            }
+
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
+
+            existingTenant.Logo = logo;
+
+            return await PersistTenantUpdate(existingTenant, id);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while updating tenant logo: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Access denied: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating logo for tenant with ID {Id}", LogSanitizer.Sanitize(id));
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while updating the tenant logo.");
+        }
+    }
+
+    /// <summary>
+    /// Validates, persists and cache-invalidates an already-mutated tenant entity.
+    /// Shared by the tenant update operations so the save/validate/cache logic lives in one place.
+    /// </summary>
+    private async Task<ServiceResult<Tenant>> PersistTenantUpdate(Tenant existingTenant, string id)
+    {
+        existingTenant.UpdatedAt = DateTime.UtcNow;
+        var validatedTenant = existingTenant.SanitizeAndValidate();
+
+        var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
+        if (!success)
+        {
+            _logger.LogError("Failed to update tenant with ID {Id}", LogSanitizer.Sanitize(id));
+            return ServiceResult<Tenant>.BadRequest("Failed to update tenant.");
+        }
+
+        if (!string.IsNullOrEmpty(existingTenant.TenantId))
+            _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+        else
+            _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
+
+        _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
+        return ServiceResult<Tenant>.Success(validatedTenant);
     }
 
     public async Task<ServiceResult<bool>> DeleteTenant(string id)
