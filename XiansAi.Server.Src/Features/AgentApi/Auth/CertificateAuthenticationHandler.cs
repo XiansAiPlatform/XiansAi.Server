@@ -218,18 +218,26 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     private async Task<(bool success, string? error, CachedCertificateValidation validation)> BuildCachedValidationAsync(X509Certificate2 cert)
     {
         var tenantId = GetSubjectValue(cert.Subject, "O");
-        var userId = GetSubjectValue(cert.Subject, "OU");
+        var subjectUser = GetSubjectValue(cert.Subject, "OU");
 
-        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(userId))
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(subjectUser))
         {
             return (false, "Invalid certificate subject format", new CachedCertificateValidation { IsValid = false });
         }
 
-        var user = await _userRepository.GetByUserIdAsync(userId);
+        // The certificate's OU may carry either the canonical user id or the user's email,
+        // depending on which UI issued the certificate. Resolve by user id first, then
+        // fall back to email so certificates issued by either path authenticate correctly.
+        var user = await _userRepository.GetByUserIdAsync(subjectUser)
+            ?? await _userRepository.GetByUserEmailAsync(subjectUser);
         if (user == null)
         {
             return (false, "Invalid user ID", new CachedCertificateValidation { IsValid = false });
         }
+
+        // Always use the canonical user id for the authenticated context, regardless of
+        // whether the certificate identified the user by id or by email.
+        var userId = string.IsNullOrEmpty(user.UserId) ? subjectUser : user.UserId;
 
         var roles = user.TenantRoles
             .FirstOrDefault(tr => tr.Tenant == tenantId)?.Roles?.ToList() ?? new List<string>();

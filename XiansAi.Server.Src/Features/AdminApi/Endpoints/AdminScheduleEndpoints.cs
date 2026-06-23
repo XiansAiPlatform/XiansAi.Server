@@ -138,6 +138,64 @@ public static class AdminScheduleEndpoints
         .WithDescription("Retrieves the execution history for a specific schedule belonging to the agent. Provide scheduleId as a query parameter.")
         ;
 
+        // Pause (suspend) a specific schedule
+        scheduleGroup.MapPost("/pause", async Task<IResult> (
+            string tenantId,
+            string agentName,
+            [FromQuery] string scheduleId,
+            [FromServices] IScheduleService scheduleService,
+            [FromQuery] string? note = null) =>
+        {
+            if (string.IsNullOrWhiteSpace(scheduleId))
+            {
+                return Results.BadRequest(new { message = "scheduleId is required" });
+            }
+
+            var ownershipError = await EnsureScheduleOwnedByAgent(scheduleService, scheduleId, agentName);
+            if (ownershipError != null)
+            {
+                return ownershipError;
+            }
+
+            var result = await scheduleService.PauseScheduleAsync(scheduleId, note);
+            return result.ToHttpResult();
+        })
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .WithName("AdminPauseAgentSchedule")
+        .WithSummary("Pause a schedule")
+        .WithDescription("Pauses (suspends) a specific schedule belonging to the agent. Provide scheduleId as a query parameter and an optional note.")
+        ;
+
+        // Resume (unpause) a specific schedule
+        scheduleGroup.MapPost("/resume", async Task<IResult> (
+            string tenantId,
+            string agentName,
+            [FromQuery] string scheduleId,
+            [FromServices] IScheduleService scheduleService,
+            [FromQuery] string? note = null) =>
+        {
+            if (string.IsNullOrWhiteSpace(scheduleId))
+            {
+                return Results.BadRequest(new { message = "scheduleId is required" });
+            }
+
+            var ownershipError = await EnsureScheduleOwnedByAgent(scheduleService, scheduleId, agentName);
+            if (ownershipError != null)
+            {
+                return ownershipError;
+            }
+
+            var result = await scheduleService.ResumeScheduleAsync(scheduleId, note);
+            return result.ToHttpResult();
+        })
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .WithName("AdminResumeAgentSchedule")
+        .WithSummary("Resume a schedule")
+        .WithDescription("Resumes (unpauses) a specific schedule belonging to the agent. Provide scheduleId as a query parameter and an optional note.")
+        ;
+
         // Delete a specific schedule by ID
         scheduleGroup.MapDelete("/by-id", async Task<IResult> (
             string tenantId,
