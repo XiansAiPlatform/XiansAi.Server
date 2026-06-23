@@ -94,11 +94,11 @@ public class CertificateService
                     if (deleted)
                         _logger.LogInformation(
                             "Deleted previous certificate. Thumbprint: {Thumbprint}, User: {UserId}",
-                            prevCert.Thumbprint, userId);
+                            LogSanitizer.Sanitize(prevCert.Thumbprint), LogSanitizer.Sanitize(userId));
                     else
                         _logger.LogWarning(
                             "Failed to delete previous certificate. Thumbprint: {Thumbprint}, User: {UserId}",
-                            prevCert.Thumbprint, userId);
+                            LogSanitizer.Sanitize(prevCert.Thumbprint), LogSanitizer.Sanitize(userId));
                 }
             }
         }
@@ -202,8 +202,8 @@ public class CertificateService
             _logger.LogInformation(
                 "Generating base64 client certificate for {Name}, Tenant: {TenantId}, User: {UserId}",
                 certName,
-                _tenantContext.TenantId,
-                targetUserId);
+                LogSanitizer.Sanitize(_tenantContext.TenantId),
+                LogSanitizer.Sanitize(targetUserId));
 
             var cert = await GenerateAndStoreCertificate(certName, targetUserId, revokePrevious, friendlyName);
             var certBytes = cert.Export(X509ContentType.Cert);

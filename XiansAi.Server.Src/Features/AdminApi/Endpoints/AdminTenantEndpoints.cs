@@ -1,6 +1,7 @@
 using Shared.Auth;
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Utils;
 using Shared.Utils.Services;
 using Shared.Data.Models;
 using Features.AdminApi.Utils;
@@ -118,7 +119,7 @@ public static class AdminTenantEndpoints
             }
             catch (FormatException ex)
             {
-                logger.LogError(ex, "Tenant {TenantId} has invalid base64 logo data", tenantId);
+                logger.LogError(ex, "Tenant {TenantId} has invalid base64 logo data", LogSanitizer.Sanitize(tenantId));
                 return Results.Problem("Stored logo image is invalid", statusCode: StatusCodes.Status500InternalServerError);
             }
 

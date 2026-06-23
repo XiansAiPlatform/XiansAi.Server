@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Shared.Auth;
 using Shared.Providers.Auth;
 using Shared.Services;
+using Shared.Utils;
 using Shared.Utils.Services;
 
 namespace Features.AdminApi.Endpoints;
@@ -179,7 +180,7 @@ public static class AdminUserEndpoints
 
         loggerFactory.CreateLogger("AdminUserEndpoints").LogWarning(
             "Tenant route {RouteTenant} does not match resolved tenant context {CtxTenant}",
-            tenantIdFromRoute, ctx.TenantId);
+            LogSanitizer.Sanitize(tenantIdFromRoute), LogSanitizer.Sanitize(ctx.TenantId));
         forbid = Results.Json(new { message = "Tenant scope mismatch" }, statusCode: StatusCodes.Status403Forbidden);
         return false;
     }

@@ -3,6 +3,7 @@ using Features.AgentApi.Models;
 using Features.AgentApi.Auth;
 using MongoDB.Driver;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Features.AgentApi.Repositories;
 
@@ -105,11 +106,11 @@ public class CertificateRepository : ICertificateRepository
         var result = await _collection.DeleteOneAsync(cert => cert.Thumbprint == thumbprint);
         if (result.DeletedCount > 0)
         {
-            _logger.LogInformation("Deleted certificate with thumbprint: {Thumbprint}", thumbprint);
+            _logger.LogInformation("Deleted certificate with thumbprint: {Thumbprint}", LogSanitizer.Sanitize(thumbprint));
             return true;
         }
 
-        _logger.LogWarning("Certificate not found for deletion. Thumbprint: {Thumbprint}", thumbprint);
+        _logger.LogWarning("Certificate not found for deletion. Thumbprint: {Thumbprint}", LogSanitizer.Sanitize(thumbprint));
         return false;
     }
 
