@@ -74,6 +74,9 @@ Admin API endpoint.
   `AdminTenantScopeGuard.IsSysAdmin(...)` or a direct `SysAdmin` role check and return
   `403 Forbidden` for any other role:
   - **Tenant lifecycle** (`AdminTenantEndpoints`): list, get, create, update, delete tenants.
+    Note that the **tenant branding** operations (theme and logo management — see below) are
+    *not* SysAdmin-only; they are scoped per tenant and a `TenantAdmin` may use them on their
+    own tenant.
   - **Global user management** (`AdminGlobalUserEndpoints`): list/get/patch users
     platform-wide, set the SysAdmin flag, and set user status.
   - **Cross-tenant participant lookup** (`AdminParticipantsEndpoints`): look up a participant
@@ -90,6 +93,8 @@ Admin API endpoint.
   (`"Tenant ID does not match API key tenant"`).
 - **Permissions within their own tenant** include managing:
   - Tenant participant users (`AdminUserEndpoints`)
+  - Tenant branding — theme and logo (`AdminTenantEndpoints`, see below)
+  - Tenant OIDC token-acceptance configuration (`AdminTenantEndpoints`, see below)
   - Agents, agent deployment, and activation
   - Knowledge entries
   - Schedules, tasks, and workflows
@@ -144,6 +149,80 @@ be any tenant role:
 `TenantParticipant` is the default role assigned to a non-SysAdmin user. Assigning these roles
 does **not** grant the user Admin API access unless the assigned role is `TenantAdmin` (or the
 user is flagged as `SysAdmin`).
+
+## Tenant Branding (Theme & Logo) Endpoints
+
+`AdminTenantEndpoints` exposes dedicated endpoints for managing a tenant's branding. Unlike
+the tenant lifecycle endpoints (create/update/delete), these are **tenant-scoped, not
+SysAdmin-only**: access is enforced by `ITenantService` (`EnsureTenantAccessOrThrow`), so a
+`SysAdmin` may manage any tenant and a `TenantAdmin` may manage their **own** tenant.
+
+All routes are relative to the versioned admin prefix `/api/v{version}/admin/tenants`.
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/{tenantId}/theme` | Returns the tenant's theme: `{ "theme": "<value-or-null>" }`. |
+| `PUT` | `/{tenantId}/theme` | Sets/replaces the theme. Body: `{ "theme": "<value>" }`. |
+| `DELETE` | `/{tenantId}/theme` | Clears the theme. |
+| `GET` | `/{tenantId}/logo` | Serves the logo image (redirects for URL logos, streams bytes for base64). |
+| `PUT` | `/{tenantId}/logo` | Sets/replaces the logo. Body is a `Logo` object. |
+| `DELETE` | `/{tenantId}/logo` | Removes the logo. |
+
+**Theme** is a short identifier (max 50 chars, `[a-zA-Z0-9._-]`). An empty or whitespace value
+is treated as "no theme".
+
+**Logo** accepts *either* an external `url` *or* a base64 image (`imgBase64`) — never both —
+plus the required `width` and `height`:
+
+```json
+{
+  "url": "https://cdn.example.com/logo.png",
+  "width": 200,
+  "height": 80
+}
+```
+
+To keep responses small, a stored base64 logo is never echoed back: `PUT /{tenantId}/logo`
+returns the logo as a `url` pointing at the `GET /{tenantId}/logo` endpoint instead of the raw
+base64 payload.
+
+## Tenant OIDC Configuration Endpoints
+
+`AdminTenantEndpoints` also lets admins manage a tenant's **per-tenant OIDC token-acceptance
+configuration** — the rules that govern which external OIDC-issued tokens are accepted for that
+tenant's User API interactions (consumed by `DynamicOidcValidator`). These mirror the WebApi
+`OidcConfigEndpoints` but are tenant-scoped via the route.
+
+Like the branding endpoints these are **tenant-scoped, not SysAdmin-only**. They are nested
+under `/tenants/{tenantId}/oidc-config` and protected by the **`TenantRouteScopeFilter`**, so a
+`TenantAdmin` may only manage their own tenant while a `SysAdmin` may target any tenant they have
+resolved. All routes are relative to `/api/v{version}/admin`.
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/tenants/{tenantId}/oidc-config` | Returns the tenant's OIDC config, or `null` when none exists. |
+| `POST` | `/tenants/{tenantId}/oidc-config` | Creates/replaces the config (upsert). Body is the config JSON. |
+| `PUT` | `/tenants/{tenantId}/oidc-config` | Creates/replaces the config (upsert). Body is the config JSON. |
+| `DELETE` | `/tenants/{tenantId}/oidc-config` | Removes the config. |
+| `GET` | `/tenants/{tenantId}/oidc-config/template` | Returns a sample config (with `tenantId` pre-filled) to use as a starting point. |
+
+The request body matches the schema validated by `TenantOidcConfigService` (1–5 providers, each
+requiring an `issuer`). The route `tenantId` is authoritative: the server forces the payload's
+`tenantId` to the route value, so callers never need to set it and cannot point a config at a
+different tenant.
+
+> **Persistence depends on the auth provider of the host.** Per-tenant OIDC configs are stored
+> encrypted by the DB-backed `TenantOidcConfigService`. When the WebApi host runs with
+> `AuthProvider:Provider = "Oidc"`, `ITenantOidcConfigService` is overridden by the read-only
+> `StaticOidcConfigService`, and writes return `400 Bad Request` ("not supported") — identical to
+> the existing WebApi OIDC endpoints. For all other auth providers the DB-backed service is used
+> and writes persist normally.
+
+### Template endpoint rationale
+
+The management UI previously hard-coded the example/template configuration string. The
+`GET .../oidc-config/template` endpoint centralizes that template on the server (kept in sync with
+the validated schema) so clients can fetch a starting point instead of duplicating it.
 
 ## Failure Responses
 
