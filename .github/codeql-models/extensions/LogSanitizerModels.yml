@@ -1,18 +1,33 @@
 # CodeQL model extensions for XiansAi Server
 #
-# Declares LogSanitizer utility methods as neutral (no taint propagation),
-# telling CodeQL that data flowing through these methods is sanitized and
-# should not be flagged as a source of taint.
+# Declares the LogSanitizer utility methods as barriers so CodeQL recognises
+# them as sanitizers and stops tracking taint through them. This clears the
+# false positives that remained even after the redaction code was added,
+# because the LogSanitizer source lives in this repository and CodeQL was
+# otherwise tracking taint straight through the real method bodies
+# (string concatenation / String.Replace preserve taint).
 #
-# neutralModel columns: namespace, type, name, signature, kind, provenance
+# A `neutralModel` is NOT sufficient here: neutral models only override
+# generated summaries for dependency code, they do not act as barriers for
+# first-party methods whose source is analysed directly.
 #
-# LogSanitizer.Sanitize() strips CR/LF to prevent log injection (CWE-117).
-# LogSanitizer.RedactEmail() masks email local-parts to prevent PII exposure (CWE-359).
+# barrierModel columns:
+#   namespace, type, subtypes, name, signature, ext, output, kind, provenance
+#
+# Barrier kinds (must match the kind used by the corresponding query):
+#   * log-injection      -> cs/log-forging (CWE-117)
+#   * file-content-store -> cs/exposure-of-sensitive-information (CWE-359)
+#
+# LogSanitizer.Sanitize()    strips CR/LF to prevent log injection (CWE-117).
+# LogSanitizer.RedactEmail() masks the email local-part to prevent PII
+#                            exposure (CWE-359); its output is also newline-free
+#                            so it is safe for log injection too.
 
 extensions:
   - addsTo:
       pack: codeql/csharp-all
-      extensible: neutralModel
+      extensible: barrierModel
     data:
-      - ["Shared.Utils", "LogSanitizer", "Sanitize", "(System.String)", "summary", "manual"]
-      - ["Shared.Utils", "LogSanitizer", "RedactEmail", "(System.String)", "summary", "manual"]
+      - ["Shared.Utils", "LogSanitizer", False, "Sanitize", "(System.String)", "", "ReturnValue", "log-injection", "manual"]
+      - ["Shared.Utils", "LogSanitizer", False, "RedactEmail", "(System.String)", "", "ReturnValue", "file-content-store", "manual"]
+      - ["Shared.Utils", "LogSanitizer", False, "RedactEmail", "(System.String)", "", "ReturnValue", "log-injection", "manual"]

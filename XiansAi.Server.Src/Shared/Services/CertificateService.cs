@@ -140,9 +140,9 @@ public class CertificateService
         }
         _logger.LogInformation(
             "Generated new certificate. Name: {Name}, Thumbprint: {Thumbprint}, User: {UserId}", 
-            name, 
+            LogSanitizer.Sanitize(name), 
             cert.Thumbprint,
-            userId);
+            LogSanitizer.Sanitize(userId));
 
         return cert;
     }

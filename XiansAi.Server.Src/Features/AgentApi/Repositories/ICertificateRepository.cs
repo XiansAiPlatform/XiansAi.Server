@@ -128,7 +128,7 @@ public class CertificateRepository : ICertificateRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving certificates for user {UserId} in tenant {TenantId}", 
-                userId, tenantId);
+                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
             throw;
         }
     }

@@ -181,10 +181,11 @@ public class CertificateGenerator
 
     public X509Certificate2 GenerateClientCertificate(string certName, string tenantName, string userName)
     {
-        _logger.LogDebug("Generating client certificate for {certName}, {tenantName}, {userName}", certName, tenantName, userName);
+        _logger.LogDebug("Generating client certificate for {certName}, {tenantName}, {userName}",
+            LogSanitizer.Sanitize(certName), LogSanitizer.Sanitize(tenantName), LogSanitizer.Sanitize(userName));
 
         var subject = $"CN=XiansAi, OU={userName}, O={tenantName}";
-        _logger.LogDebug("Subject: {subject}", subject);
+        _logger.LogDebug("Subject: {subject}", LogSanitizer.Sanitize(subject));
 
         using var rsa = RSA.Create(2048);
         var distinguishedName = new X500DistinguishedName(subject);
