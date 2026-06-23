@@ -134,13 +134,13 @@ public class BootstrapService : IBootstrapService
             {
                 // The platform is still bootstrapped (SysAdmin exists); the admin can mint a key from the UI.
                 _logger.LogError("Bootstrap created SysAdmin {Email} but failed to mint API key: {Error}",
-                    LogSanitizer.Sanitize(email), LogSanitizer.Sanitize(apiKeyResult.ErrorMessage));
+                    LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(apiKeyResult.ErrorMessage));
                 return ServiceResult<BootstrapResponse>.Failure(
                     apiKeyResult.ErrorMessage ?? "Failed to create API key", apiKeyResult.StatusCode);
             }
 
             _logger.LogInformation("Platform bootstrapped with SysAdmin {Email} on tenant {TenantId}",
-                LogSanitizer.Sanitize(email), LogSanitizer.Sanitize(resolvedTenantId));
+                LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(resolvedTenantId));
 
             return ServiceResult<BootstrapResponse>.Success(new BootstrapResponse
             {
