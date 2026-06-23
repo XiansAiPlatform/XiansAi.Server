@@ -15,6 +15,36 @@ public interface ITemplateService
     Task<ServiceResult<Agent>> DeployTemplateToTenant(string agentName, string tenantId, string createdBy, string? onboardingJson = null);
     Task<ServiceResult<Agent>> GetSystemScopedAgentByIdAsync(string templateObjectId);
     Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null);
+    Task<ServiceResult<TemplateDeployments>> GetTemplateDeploymentsAsync(string templateObjectId);
+
+    // Name-based variants (templates are uniquely identified by their agent name).
+    Task<ServiceResult<Agent>> GetSystemScopedAgentByNameAsync(string templateAgentName);
+    Task<ServiceResult<Agent>> UpdateSystemScopedAgentByNameAsync(string templateAgentName, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null);
+    Task<ServiceResult<TemplateDeployments>> GetTemplateDeploymentsByNameAsync(string templateAgentName);
+}
+
+/// <summary>
+/// Summary of the tenants that have a deployed instance of a system template.
+/// Deployments are matched by agent name (a deployment is a tenant-scoped replica
+/// of the template that shares the template's name).
+/// </summary>
+public class TemplateDeployments
+{
+    public required string TemplateId { get; set; }
+    public required string TemplateName { get; set; }
+    public required int DeploymentCount { get; set; }
+    public required List<TemplateDeployment> Deployments { get; set; }
+}
+
+/// <summary>
+/// A single tenant-scoped deployment of a system template.
+/// </summary>
+public class TemplateDeployment
+{
+    public required string AgentId { get; set; }
+    public required string? Tenant { get; set; }
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
@@ -363,6 +393,116 @@ public class TemplateService : ITemplateService
     }
 
     /// <summary>
+    /// Gets a system-scoped agent template by its (unique) agent name.
+    /// </summary>
+    /// <param name="templateAgentName">The name of the template agent.</param>
+    /// <returns>A service result containing the template agent.</returns>
+    public async Task<ServiceResult<Agent>> GetSystemScopedAgentByNameAsync(string templateAgentName)
+    {
+        try
+        {
+            _logger.LogInformation("Retrieving system-scoped agent template by name {TemplateAgentName}", LogSanitizer.Sanitize(templateAgentName));
+
+            if (string.IsNullOrWhiteSpace(templateAgentName))
+            {
+                return ServiceResult<Agent>.BadRequest("Template agent name is required");
+            }
+
+            var template = await _agentRepository.GetSystemScopedByNameAsync(templateAgentName);
+            if (template == null)
+            {
+                _logger.LogWarning("Template with name {TemplateAgentName} not found", LogSanitizer.Sanitize(templateAgentName));
+                return ServiceResult<Agent>.NotFound($"Agent template with name '{templateAgentName}' not found");
+            }
+
+            return ServiceResult<Agent>.Success(template);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving system-scoped agent template by name {TemplateAgentName}", LogSanitizer.Sanitize(templateAgentName));
+            return ServiceResult<Agent>.InternalServerError(
+                "An error occurred while retrieving the template");
+        }
+    }
+
+    /// <summary>
+    /// Returns the tenants that currently have a deployed instance of the given system template.
+    /// Deployments are tenant-scoped replicas (SystemScoped = false) that share the template's name.
+    /// </summary>
+    /// <param name="templateObjectId">The MongoDB ObjectId of the system template.</param>
+    /// <returns>A service result containing the template's deployments grouped by tenant.</returns>
+    public async Task<ServiceResult<TemplateDeployments>> GetTemplateDeploymentsAsync(string templateObjectId)
+    {
+        var templateResult = await GetSystemScopedAgentByIdAsync(templateObjectId);
+        if (!templateResult.IsSuccess)
+        {
+            return ServiceResult<TemplateDeployments>.Failure(templateResult.ErrorMessage!, templateResult.StatusCode);
+        }
+
+        return await BuildTemplateDeploymentsAsync(templateResult.Data!);
+    }
+
+    /// <summary>
+    /// Returns the tenants that currently have a deployed instance of the given system template,
+    /// resolved by template agent name.
+    /// </summary>
+    /// <param name="templateAgentName">The name of the system template.</param>
+    /// <returns>A service result containing the template's deployments grouped by tenant.</returns>
+    public async Task<ServiceResult<TemplateDeployments>> GetTemplateDeploymentsByNameAsync(string templateAgentName)
+    {
+        var templateResult = await GetSystemScopedAgentByNameAsync(templateAgentName);
+        if (!templateResult.IsSuccess)
+        {
+            return ServiceResult<TemplateDeployments>.Failure(templateResult.ErrorMessage!, templateResult.StatusCode);
+        }
+
+        return await BuildTemplateDeploymentsAsync(templateResult.Data!);
+    }
+
+    /// <summary>
+    /// Builds the deployment summary for an already-resolved system template.
+    /// </summary>
+    private async Task<ServiceResult<TemplateDeployments>> BuildTemplateDeploymentsAsync(Agent template)
+    {
+        try
+        {
+            _logger.LogInformation("Retrieving deployments for template {TemplateName} ({TemplateId})",
+                LogSanitizer.Sanitize(template.Name), LogSanitizer.Sanitize(template.Id));
+
+            var instances = await _agentRepository.GetDeployedInstancesByNameAsync(template.Name);
+
+            var deployments = instances
+                .Select(instance => new TemplateDeployment
+                {
+                    AgentId = instance.Id,
+                    Tenant = instance.Tenant,
+                    CreatedBy = instance.CreatedBy,
+                    CreatedAt = instance.CreatedAt
+                })
+                .ToList();
+
+            var result = new TemplateDeployments
+            {
+                TemplateId = template.Id,
+                TemplateName = template.Name,
+                DeploymentCount = deployments.Count,
+                Deployments = deployments
+            };
+
+            _logger.LogInformation("Template {TemplateName} is deployed in {Count} tenant(s)",
+                LogSanitizer.Sanitize(template.Name), deployments.Count);
+
+            return ServiceResult<TemplateDeployments>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving deployments for template {TemplateName}", LogSanitizer.Sanitize(template.Name));
+            return ServiceResult<TemplateDeployments>.InternalServerError(
+                "An error occurred while retrieving the template deployments");
+        }
+    }
+
+    /// <summary>
     /// Updates a system-scoped agent template.
     /// </summary>
     /// <param name="templateObjectId">The MongoDB ObjectId of the template.</param>
@@ -375,29 +515,45 @@ public class TemplateService : ITemplateService
     /// <returns>A service result containing the updated template agent.</returns>
     public async Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null)
     {
+        var templateResult = await GetSystemScopedAgentByIdAsync(templateObjectId);
+        if (!templateResult.IsSuccess)
+        {
+            return templateResult;
+        }
+
+        return await ApplyTemplateUpdatesAsync(templateResult.Data!, description, onboardingJson, ownerAccess, readAccess, writeAccess, samplePrompts);
+    }
+
+    /// <summary>
+    /// Updates a system-scoped agent template, resolved by template agent name.
+    /// </summary>
+    /// <param name="templateAgentName">The name of the template agent.</param>
+    /// <param name="description">Optional description to update.</param>
+    /// <param name="onboardingJson">Optional onboarding JSON to update.</param>
+    /// <param name="ownerAccess">Optional owner access list to update.</param>
+    /// <param name="readAccess">Optional read access list to update.</param>
+    /// <param name="writeAccess">Optional write access list to update.</param>
+    /// <param name="samplePrompts">Optional sample prompts list to update.</param>
+    /// <returns>A service result containing the updated template agent.</returns>
+    public async Task<ServiceResult<Agent>> UpdateSystemScopedAgentByNameAsync(string templateAgentName, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null)
+    {
+        var templateResult = await GetSystemScopedAgentByNameAsync(templateAgentName);
+        if (!templateResult.IsSuccess)
+        {
+            return templateResult;
+        }
+
+        return await ApplyTemplateUpdatesAsync(templateResult.Data!, description, onboardingJson, ownerAccess, readAccess, writeAccess, samplePrompts);
+    }
+
+    /// <summary>
+    /// Applies the provided (optional) field updates to an already-resolved system template and persists it.
+    /// Only non-null fields are updated.
+    /// </summary>
+    private async Task<ServiceResult<Agent>> ApplyTemplateUpdatesAsync(Agent template, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts)
+    {
         try
         {
-            _logger.LogInformation("Updating system-scoped agent template by ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
-
-            if (string.IsNullOrWhiteSpace(templateObjectId))
-            {
-                return ServiceResult<Agent>.BadRequest("Template ObjectId is required");
-            }
-
-            var template = await _agentRepository.GetByIdInternalAsync(templateObjectId);
-            if (template == null)
-            {
-                _logger.LogWarning("Template with ID {TemplateObjectId} not found", LogSanitizer.Sanitize(templateObjectId));
-                return ServiceResult<Agent>.NotFound($"Agent template with ID '{templateObjectId}' not found");
-            }
-
-            if (!template.SystemScoped)
-            {
-                _logger.LogWarning("Agent with ID {TemplateObjectId} is not system-scoped", LogSanitizer.Sanitize(templateObjectId));
-                return ServiceResult<Agent>.BadRequest($"Agent with ID '{templateObjectId}' is not a system-scoped template");
-            }
-
-            // Update fields if provided
             if (description != null)
             {
                 template.Description = description;
@@ -431,16 +587,16 @@ public class TemplateService : ITemplateService
             var updated = await _agentRepository.UpdateInternalAsync(template.Id, template);
             if (!updated)
             {
-                _logger.LogWarning("Failed to update template with ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
+                _logger.LogWarning("Failed to update template {TemplateId}", LogSanitizer.Sanitize(template.Id));
                 return ServiceResult<Agent>.InternalServerError("Failed to update the template");
             }
 
-            _logger.LogInformation("Successfully updated system-scoped agent template {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
+            _logger.LogInformation("Successfully updated system-scoped agent template {TemplateId}", LogSanitizer.Sanitize(template.Id));
             return ServiceResult<Agent>.Success(template);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating system-scoped agent template by ID {TemplateObjectId}", LogSanitizer.Sanitize(templateObjectId));
+            _logger.LogError(ex, "Error updating system-scoped agent template {TemplateId}", LogSanitizer.Sanitize(template.Id));
             return ServiceResult<Agent>.InternalServerError(
                 "An error occurred while updating the template");
         }

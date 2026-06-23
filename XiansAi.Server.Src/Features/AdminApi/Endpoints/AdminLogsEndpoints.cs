@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Shared.Services;
 using Shared.Utils.Services;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -21,7 +22,8 @@ public static class AdminLogsEndpoints
     {
         var logsGroup = adminApiGroup.MapGroup("/tenants/{tenantId}")
             .WithTags("AdminAPI - Logs")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // Step 1: list distinct log streams (unique workflow_id) sorted by recent activity.
         logsGroup.MapGet("/logs/streams", async (

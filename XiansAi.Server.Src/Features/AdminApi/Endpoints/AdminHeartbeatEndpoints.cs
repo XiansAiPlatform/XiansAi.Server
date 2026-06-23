@@ -4,6 +4,7 @@ using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils;
 using Shared.Utils.Services;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -22,7 +23,8 @@ public static class AdminHeartbeatEndpoints
     {
         var heartbeatGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/heartbeat")
             .WithTags("AdminAPI - Health")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         heartbeatGroup.MapGet("", async (
             string tenantId,

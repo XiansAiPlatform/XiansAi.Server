@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Routing;
 using Shared.Data.Models.Usage;
 using Shared.Services;
 using Shared.Utils.Services;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -20,7 +21,8 @@ public static class AdminMetricsEndpoints
     {
         var metricsGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/metrics")
             .WithTags("AdminAPI - Metrics")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // Get aggregated metrics statistics
         metricsGroup.MapGet("/stats", async (

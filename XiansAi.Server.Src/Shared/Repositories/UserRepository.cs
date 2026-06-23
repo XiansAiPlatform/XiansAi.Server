@@ -82,6 +82,18 @@ public class UserRepository : IUserRepository
                 filters.Add(builder.ElemMatch(u => u.TenantRoles, tr => tr.Tenant == filter.Tenant));
             }
 
+            // Filter by explicit IsSysAdmin value (overrides UserTypeFilter.ADMIN/NON_ADMIN if both set)
+            if (filter.IsSysAdmin.HasValue)
+            {
+                filters.Add(builder.Eq(u => u.IsSysAdmin, filter.IsSysAdmin.Value));
+            }
+
+            // Filter by account enabled state (IsEnabled = !IsLockedOut)
+            if (filter.IsEnabled.HasValue)
+            {
+                filters.Add(builder.Eq(u => u.IsLockedOut, !filter.IsEnabled.Value));
+            }
+
             // Search by name or email (case-insensitive, partial match)
             if (!string.IsNullOrWhiteSpace(filter.Search))
             {

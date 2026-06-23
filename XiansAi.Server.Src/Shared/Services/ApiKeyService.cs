@@ -12,6 +12,7 @@ namespace Shared.Services
     {
         Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null);
         Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId);
+        Task<ServiceResult<long>> DeleteAllApiKeysAsync();
         Task<ServiceResult<List<ApiKey>>> GetApiKeysAsync(string tenantId);
         Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId);
         Task<ServiceResult<ApiKey?>> GetApiKeyByIdAsync(string id, string tenantId);
@@ -87,6 +88,29 @@ namespace Shared.Services
             {
                 _logger.LogError(ex, "Error revoking API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 return ServiceResult<bool>.InternalServerError("An error occurred while revoking the API key");
+            }
+        }
+
+        public async Task<ServiceResult<long>> DeleteAllApiKeysAsync()
+        {
+            _logger.LogWarning("Deleting ALL API keys across all tenants");
+            try
+            {
+                var deleted = await _apiKeyRepository.DeleteAllAsync();
+
+                // Drop cached lookups so the deleted keys can no longer authenticate from cache.
+                if (_cache is MemoryCache memoryCache)
+                {
+                    memoryCache.Clear();
+                }
+
+                _logger.LogWarning("Deleted {Count} API key(s) across all tenants", deleted);
+                return ServiceResult<long>.Success(deleted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting all API keys");
+                return ServiceResult<long>.InternalServerError("An error occurred while deleting API keys");
             }
         }
 

@@ -6,6 +6,7 @@ using Shared.Data.Models;
 using Shared.Utils.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -99,7 +100,8 @@ public static class AdminKnowledgeEndpoints
     {
         var adminKnowledgeGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/knowledge")
             .WithTags("AdminAPI - Knowledge Management")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // List all knowledge for a tenant (filtered by agentName, required)
         adminKnowledgeGroup.MapGet("", async (

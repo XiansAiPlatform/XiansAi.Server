@@ -82,20 +82,21 @@ Accept: application/json
 
 ###
 
-### Tenant-Scoped Operations (X-Tenant-Id required)
-### ============================================
-
-### List Agent Templates for Tenant
-# Browse agent templates eligible for a specific tenant
-# Tenant ID can be provided via route parameter (in URL) or X-Tenant-Id header
-# Optional query parameter: basicDataOnly (boolean, default: false)
-# Future: Eligibility filtering will be implemented
-GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/agentTemplates?basicDataOnly=false
+### List Template Deployments (System Admin)
+# List which tenants have a deployed instance of a system template
+# System admin only - NO X-Tenant-Id header required
+# Note: Uses MongoDB ObjectId - get from list templates response
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/deployments
 Authorization: Bearer {{apiKey}}
-X-Tenant-Id: {{tenantId}}
 Accept: application/json
 
 ###
+
+### Tenant-Scoped Operations (X-Tenant-Id required)
+### ============================================
+# Note: Browsing tenant-scoped agents (deployments) is handled by the
+# Agent Deployment endpoints (/api/v1/admin/tenants/{tenantId}/agentDeployments),
+# not by the template endpoints. Templates themselves are system-scoped (global).
 
 ### Deploy Agent Template to Tenant
 # Deploy an agent template to a specific tenant
@@ -103,6 +104,55 @@ Accept: application/json
 # Tenant ID can be provided via query parameter, route parameter, or X-Tenant-Id header
 # Note: Uses MongoDB ObjectId - get from list templates response
 POST {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/{{templateObjectId}}/deploy?tenantId={{tenantId}}
+Authorization: Bearer {{apiKey}}
+X-Tenant-Id: {{tenantId}}
+Accept: application/json
+
+###
+
+### ============================================
+### Name-Based Operations (templates are uniquely identified by agent name)
+### ============================================
+# These are equivalents of the ObjectId-based endpoints above, addressing the
+# template by its agent name under the /by-name/ segment.
+@templateAgentName = support-agent
+
+### Get Agent Template Details by Name (System Admin)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/by-name/{{templateAgentName}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Update Agent Template by Name (System Admin)
+PATCH {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/by-name/{{templateAgentName}}
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "description": "Customer support agent template",
+  "samplePrompts": ["Help a customer with their order status"]
+}
+
+###
+
+### Delete Agent Template by Name (System Admin)
+DELETE {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/by-name/{{templateAgentName}}
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### List Template Deployments by Name (System Admin)
+GET {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/by-name/{{templateAgentName}}/deployments
+Authorization: Bearer {{apiKey}}
+Accept: application/json
+
+###
+
+### Deploy Agent Template to Tenant by Name
+POST {{baseUrl}}/api/{{apiVersion}}/admin/agentTemplates/by-name/{{templateAgentName}}/deploy?tenantId={{tenantId}}
 Authorization: Bearer {{apiKey}}
 X-Tenant-Id: {{tenantId}}
 Accept: application/json

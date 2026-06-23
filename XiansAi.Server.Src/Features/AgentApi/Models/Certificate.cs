@@ -40,6 +40,16 @@ public class Certificate : ModelValidatorBase<Certificate>
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
     public DateTime? RevokedAt { get; set; }
 
+    /// <summary>
+    /// Optional user-supplied display name for identification in UIs.
+    /// Null for certificates created before this field was introduced.
+    /// </summary>
+    [BsonElement("friendly_name")]
+    [BsonIgnoreIfNull]
+    [StringLength(200, ErrorMessage = "Certificate name cannot exceed 200 characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=""]+$", ErrorMessage = "Certificate name contains invalid characters")]
+    public string? FriendlyName { get; set; }
+
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -55,6 +65,9 @@ public class Certificate : ModelValidatorBase<Certificate>
             Id = this.Id,
             Thumbprint = ValidationHelpers.SanitizeString(this.Thumbprint),
             SubjectName = ValidationHelpers.SanitizeString(this.SubjectName),
+            FriendlyName = this.FriendlyName != null
+                ? ValidationHelpers.SanitizeString(this.FriendlyName)
+                : null,
             TenantId = ValidationHelpers.SanitizeString(this.TenantId),
             IssuedTo = ValidationHelpers.SanitizeString(this.IssuedTo),
             IssuedAt = this.IssuedAt,

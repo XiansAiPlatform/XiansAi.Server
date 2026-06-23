@@ -1,5 +1,6 @@
 using Features.AdminApi.Constants;
 using Features.AdminApi.Endpoints;
+using Features.AdminApi.Services;
 using Features.AdminApi.Auth;
 using Features.AdminApi.Utils;
 using Features.AgentApi.Repositories;
@@ -37,6 +38,12 @@ public static class AdminApiConfiguration
         // Register App Integration services
         builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
         builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
+
+        // Register Admin API key service
+        builder.Services.AddScoped<IAdminApiKeyService, AdminApiKeyService>();
+
+        // Register platform bootstrap service
+        builder.Services.AddScoped<IBootstrapService, BootstrapService>();
         
         // PendingRequestService for heartbeat sync flow (TryAdd: UserApi may already register it)
         builder.Services.TryAddSingleton<IPendingRequestService, PendingRequestService>();
@@ -116,6 +123,7 @@ public static class AdminApiConfiguration
     {
         var adminApiGroup = app.MapGroup(AdminApiConstants.GetVersionedBasePath(version));
         
+        AdminBootstrapEndpoints.MapAdminBootstrapEndpoints(adminApiGroup);
         AdminHeartbeatEndpoints.MapAdminHeartbeatEndpoints(adminApiGroup);
         AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
         AdminAgentDeploymentEndpoints.MapAdminAgentDeploymentsEndpoints(adminApiGroup);
@@ -126,14 +134,17 @@ public static class AdminApiConfiguration
         WorkflowManagementEndpoints.MapWorkflowManagementEndpoints(adminApiGroup);
         AdminMessagingEndpoints.MapAdminMessagingEndpoints(adminApiGroup);
         AdminTaskEndpoints.MapAdminTaskEndpoints(adminApiGroup);
+        AdminScheduleEndpoints.MapAdminScheduleEndpoints(adminApiGroup);
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
         AdminUserEndpoints.MapAdminUserEndpoints(adminApiGroup);
+        AdminGlobalUserEndpoints.MapAdminGlobalUserEndpoints(adminApiGroup);
         AdminStatsEndpoints.MapAdminStatsEndpoints(adminApiGroup);
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);
         AdminMetricsEndpoints.MapAdminMetricsEndpoints(adminApiGroup);
         AdminDataEndpoints.MapAdminDataEndpoints(adminApiGroup);
         AdminAppIntegrationEndpoints.MapAdminAppIntegrationEndpoints(adminApiGroup);
         AdminSecretVaultEndpoints.MapAdminSecretVaultEndpoints(adminApiGroup);
+        AdminApiKeyEndpoints.MapAdminApiKeyEndpoints(adminApiGroup);
     }
 }
 

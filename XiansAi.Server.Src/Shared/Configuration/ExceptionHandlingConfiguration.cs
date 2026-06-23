@@ -109,10 +109,23 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
                 return;
             }
 
+            // Surface the specific failure reason recorded by the authentication handler
+            // (e.g. "Invalid API key", "Invalid API key format") instead of a generic
+            // message, so callers can distinguish a credential mismatch from a missing one.
+            var failureMessage = context.Items.TryGetValue(
+                    Features.AdminApi.Auth.AdminEndpointAuthenticationHandler.FailureReasonItemKey,
+                    out var reason)
+                ? reason as string
+                : null;
+
+            var message = !string.IsNullOrEmpty(failureMessage)
+                ? failureMessage!
+                : "Authentication is required to access this resource";
+
             var responseBody = new
             {
                 error = "Unauthorized",
-                message = "Authentication is required to access this resource"
+                message
             };
             
             // Serialize to string first, then write as bytes

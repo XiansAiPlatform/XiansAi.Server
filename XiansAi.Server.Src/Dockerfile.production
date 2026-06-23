@@ -42,6 +42,12 @@ WORKDIR /app
 
 # Create non-root user for security
 RUN groupadd -r xiansai && useradd -r -g xiansai -m xiansai
+
+# Data Protection keys directory. Mount a persistent/shared volume here so keys survive
+# container restarts and are shared across replicas (override via DataProtection__KeysDirectory).
+RUN mkdir -p /app/keys
+VOLUME ["/app/keys"]
+
 RUN chown -R xiansai:xiansai /app
 USER xiansai
 

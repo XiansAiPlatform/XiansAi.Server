@@ -12,10 +12,23 @@ namespace Features.AdminApi.Auth
 {
     public class AdminEndpointAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
+        /// <summary>
+        /// HttpContext.Items key used to surface the specific authentication failure reason
+        /// to the authorization result handler, so the 401 response carries a meaningful
+        /// message instead of a generic one.
+        /// </summary>
+        public const string FailureReasonItemKey = "AdminApi.AuthFailureReason";
+
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<AdminEndpointAuthenticationHandler> _logger;
         private readonly IApiKeyService _apiKeyService;
         private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
+
+        private AuthenticateResult FailWithReason(string reason)
+        {
+            Context.Items[FailureReasonItemKey] = reason;
+            return AuthenticateResult.Fail(reason);
+        }
 
         public AdminEndpointAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -105,7 +118,7 @@ namespace Features.AdminApi.Auth
                         if (!accessToken.StartsWith("sk-Xnai-"))
                         {
                             _logger.LogWarning("Invalid API key format. API key must start with 'sk-Xnai-'");
-                            return AuthenticateResult.Fail("Invalid API key format");
+                            return FailWithReason("Invalid API key format");
                         }
 
                         // Look up API key
@@ -118,7 +131,7 @@ namespace Features.AdminApi.Auth
                         if (apiKey == null)
                         {
                             _logger.LogWarning("Invalid API key submitted");
-                            return AuthenticateResult.Fail("Invalid API key");
+                            return FailWithReason("Invalid API key");
                         }
 
                         var resolutionResult = await _adminRoleTenantResolver.ResolveAsync(
@@ -126,7 +139,7 @@ namespace Features.AdminApi.Auth
 
                         if (!resolutionResult.Success)
                         {
-                            return AuthenticateResult.Fail(resolutionResult.ErrorMessage ?? "Authorization failed");
+                            return FailWithReason(resolutionResult.ErrorMessage ?? "Authorization failed");
                         }
 
                         var finalTenantId = resolutionResult.FinalTenantId!;
@@ -163,19 +176,19 @@ namespace Features.AdminApi.Auth
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error processing access token for AdminApi Endpoint connection");
-                        return AuthenticateResult.Fail("Error processing access token for AdminApi Endpoint connection");
+                        return FailWithReason("Error processing access token for AdminApi Endpoint connection");
                     }
                 }
                 else
                 {
                     _logger.LogWarning("No access token found for AdminApi Endpoint connection");
-                    return AuthenticateResult.Fail("No access token found for AdminApi Endpoint connection");
+                    return FailWithReason("No access token found for AdminApi Endpoint connection");
                 }
             }
             else
             {
                 _logger.LogError("Failed to resolve ITenantContext from request scope");
-                return AuthenticateResult.Fail("Failed to resolve ITenantContext from request scope");
+                return FailWithReason("Failed to resolve ITenantContext from request scope");
             }
         }
 

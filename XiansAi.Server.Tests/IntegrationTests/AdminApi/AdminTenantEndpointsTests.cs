@@ -1,3 +1,4 @@
+using System;
 using System.Net;
 using Shared.Data.Models;
 using Xunit;
@@ -7,6 +8,10 @@ namespace Tests.IntegrationTests.AdminApi;
 
 public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
 {
+    // A valid 1x1 transparent PNG encoded as base64 (no data-URI prefix).
+    private const string OnePixelPngBase64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
     public AdminTenantEndpointsTests(MongoDbFixture mongoDbFixture) : base(mongoDbFixture)
     {
     }
@@ -49,6 +54,70 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         var result = await ReadAsJsonAsync<Tenant>(response);
         Assert.NotNull(result);
         Assert.Equal(tenant.TenantId, result.TenantId);
+    }
+
+    [Fact]
+    public async Task GetTenantByTenantId_WithBase64Logo_ReturnsLogoUrlInsteadOfBase64()
+    {
+        // Arrange
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        var logo = new Logo { ImgBase64 = OnePixelPngBase64, Width = 1, Height = 1 };
+        await CreateTestTenantAsync(tenantId, logo: logo);
+
+        // Act
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(OnePixelPngBase64, content);
+
+        var result = await ReadAsJsonAsync<Tenant>(response);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Logo);
+        Assert.Null(result.Logo!.ImgBase64);
+        Assert.False(string.IsNullOrEmpty(result.Logo.Url));
+        Assert.Contains($"/tenants/{tenantId}/logo", result.Logo.Url!);
+    }
+
+    [Fact]
+    public async Task GetTenantLogo_WithBase64Logo_ReturnsImageBytes()
+    {
+        // Arrange
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        var logo = new Logo { ImgBase64 = OnePixelPngBase64, Width = 1, Height = 1 };
+        await CreateTestTenantAsync(tenantId, logo: logo);
+
+        // Act
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/logo");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        Assert.Equal(Convert.FromBase64String(OnePixelPngBase64), bytes);
+    }
+
+    [Fact]
+    public async Task GetTenantLogo_WithoutLogo_ReturnsNotFound()
+    {
+        // Arrange
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        await CreateTestTenantAsync(tenantId);
+
+        // Act
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/logo");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

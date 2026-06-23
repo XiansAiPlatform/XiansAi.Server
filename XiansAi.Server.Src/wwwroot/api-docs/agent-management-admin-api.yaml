@@ -6,11 +6,7 @@ info:
     
     These APIs are designed for **administrators** to manage agents across tenants. The Agent Management APIs support **agent templates** (system-scoped reusable agent definitions) that can be deployed as **agent instances** (tenant-scoped deployed agents). Agent templates can be organized by categories (Marketing, Sales, Service) and deployed to tenants. Once deployed as agent instances, they can be managed, configured, and assigned to reporting targets. A marketplace is one example use case where agent templates can be browsed and deployed.
     
-    **Template Collections:** Agent templates are stored in two collections for backward compatibility:
-    - **New templates** in `agent_templates` collection
-    - **Legacy templates** in `agents` collection (where `SystemScoped = true`)
-    
-    The GET endpoints return templates from both collections, and the deploy endpoint automatically detects which collection a template belongs to based on the ObjectId provided.
+    **Template Storage:** Agent templates are stored in the `agents` collection and flagged with `SystemScoped = true`. They are deployed to a tenant by creating a tenant-scoped replica (`SystemScoped = false`) of the template agent and its flow definitions.
     
     **Important Notes:**
     - All endpoints are under `/api/v1/admin/` prefix (API versioning via URL path)
@@ -611,9 +607,7 @@ paths:
       summary: Browse Agent Templates (System Admin)
       description: |
         Browse all available agent templates (system-scoped reusable agent definitions).
-        This endpoint returns templates from both collections:
-        - New templates from agent_templates collection
-        - Legacy system-scoped templates from agents collection (SystemScoped = true)
+        Templates are agents in the `agents` collection flagged with `SystemScoped = true`.
         **System admin only. No X-Tenant-Id header required.**
       operationId: browseAgentTemplates
       parameters:
@@ -626,64 +620,17 @@ paths:
             default: false
       responses:
         '200':
-          description: List of agent templates
+          description: List of agent templates with their flow definitions
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  agents:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AgentTemplate'
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentTemplateWithDefinitions'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-      security:
-        - bearerAuth: []
-        - apiKey: []
-
-  /api/v1/admin/tenants/{tenantId}/agentTemplates:
-    get:
-      tags:
-        - Agent Templates
-      summary: Browse Agent Templates for Tenant
-      description: |
-        Browse agent templates eligible for a specific tenant.
-        This endpoint returns templates from both collections:
-        - New templates from agent_templates collection
-        - Legacy system-scoped templates from agents collection (SystemScoped = true)
-        **X-Tenant-Id header required.**
-        Future: Eligibility filtering will be implemented.
-      operationId: browseAgentTemplatesForTenant
-      parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - name: basicDataOnly
-          in: query
-          description: If true, return only basic template data without full details
-          required: false
-          schema:
-            type: boolean
-            default: false
-      responses:
-        '200':
-          description: List of agent templates eligible for the tenant
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  agents:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AgentTemplate'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
       security:
@@ -696,7 +643,7 @@ paths:
         - Agent Templates
       summary: Get Agent Template Details (System Admin)
       description: |
-        Get detailed information about an agent template by MongoDB ObjectId, including sample prompts and metadata.
+        Get detailed information about an agent template by MongoDB ObjectId.
         **System admin only. No X-Tenant-Id header required.**
       operationId: getAgentTemplateDetails
       parameters:
@@ -707,20 +654,13 @@ paths:
           schema:
             type: string
             example: 69596ca63f39925d6e26b216
-        - name: basicDataOnly
-          in: query
-          description: If true, return only basic template data without full details
-          required: false
-          schema:
-            type: boolean
-            default: false
       responses:
         '200':
           description: Agent template details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentTemplateDetails'
+                $ref: '#/components/schemas/AgentTemplate'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -732,12 +672,12 @@ paths:
     patch:
       tags:
         - Agent Templates
-      summary: Update Agent Template Metadata (System Admin - Partial)
+      summary: Update Agent Template (System Admin - Partial)
       description: |
-        Update metadata of an agent template (category, description, icon, samplePrompts).
-        Category supports multiple values as comma-separated string (e.g., "customer-support,beta").
+        Partially update an agent template. Only the fields provided in the request body are updated
+        (description, onboardingJson, ownerAccess, readAccess, writeAccess, samplePrompts).
         **System admin only. No X-Tenant-Id header required.**
-      operationId: updateAgentTemplateMetadata
+      operationId: updateAgentTemplate
       parameters:
         - name: templateObjectId
           in: path
@@ -812,17 +752,16 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/v1/admin/agentTemplates/{templateObjectId}/Metadata:
-    patch:
+  /api/v1/admin/agentTemplates/{templateObjectId}/deployments:
+    get:
       tags:
         - Agent Templates
-      summary: Update Agent Template Metadata (System Admin - Partial)
+      summary: List Template Deployments (System Admin)
       description: |
-        Update metadata of an agent template (category, description, icon, samplePrompts).
-        Category supports multiple values as comma-separated string (e.g., "customer-support,beta").
-        This is an alias for PUT /api/admin/agentTemplates/{templateObjectId}.
+        List the tenants that currently have a deployed instance of the given system template.
+        A deployment is a tenant-scoped agent (`systemScoped = false`) that shares the template's name.
         **System admin only. No X-Tenant-Id header required.**
-      operationId: updateAgentTemplateMetadataExplicit
+      operationId: getAgentTemplateDeployments
       parameters:
         - name: templateObjectId
           in: path
@@ -831,6 +770,112 @@ paths:
           schema:
             type: string
             example: 69596ca63f39925d6e26b216
+      responses:
+        '200':
+          description: Tenants with a deployed instance of the template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDeployments'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /api/v1/admin/agentTemplates/{templateObjectId}/deploy:
+    post:
+      tags:
+        - Agent Templates
+      summary: Deploy Agent Template to Tenant
+      description: |
+        Deploy an agent template to a specific tenant, creating a new agent instance.
+        The template is resolved from the `agents` collection by ObjectId (SystemScoped = true)
+        and a tenant-scoped replica is created.
+        **X-Tenant-Id header required.**
+        Future: Eligibility validation will be implemented.
+      operationId: deployAgentTemplate
+      parameters:
+        - name: templateObjectId
+          in: path
+          required: true
+          description: Agent template MongoDB ObjectId
+          schema:
+            type: string
+            example: 69596ca63f39925d6e26b216
+        - name: tenantId
+          in: query
+          required: true
+          description: Tenant ID to deploy the agent to
+          schema:
+            type: string
+            example: acme-corp
+      responses:
+        '201':
+          description: |
+            Agent deployed successfully. Returns the newly created tenant-scoped
+            agent instance (a replica of the template with `systemScoped = false`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /api/v1/admin/agentTemplates/by-name/{templateAgentName}:
+    get:
+      tags:
+        - Agent Templates
+      summary: Get Agent Template Details by Name (System Admin)
+      description: |
+        Get an agent template by its (unique) agent name. Name-based equivalent of
+        `GET /agentTemplates/{templateObjectId}`.
+        **System admin only. No X-Tenant-Id header required.**
+      operationId: getAgentTemplateDetailsByName
+      parameters:
+        - $ref: '#/components/parameters/TemplateAgentName'
+      responses:
+        '200':
+          description: Agent template details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTemplate'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+    patch:
+      tags:
+        - Agent Templates
+      summary: Update Agent Template by Name (System Admin - Partial)
+      description: |
+        Partially update an agent template resolved by name. Name-based equivalent of
+        `PATCH /agentTemplates/{templateObjectId}`. Only the fields provided in the request body are
+        updated (description, onboardingJson, ownerAccess, readAccess, writeAccess, samplePrompts).
+        **System admin only. No X-Tenant-Id header required.**
+      operationId: updateAgentTemplateByName
+      parameters:
+        - $ref: '#/components/parameters/TemplateAgentName'
       requestBody:
         required: true
         content:
@@ -858,27 +903,77 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
-  /api/v1/admin/agentTemplates/{templateObjectId}/deploy:
+    delete:
+      tags:
+        - Agent Templates
+      summary: Delete Agent Template by Name (System Admin)
+      description: |
+        Delete an agent template resolved by name. Name-based equivalent of
+        `DELETE /agentTemplates/{templateObjectId}`.
+        **System admin only. No X-Tenant-Id header required.**
+      operationId: deleteAgentTemplateByName
+      parameters:
+        - $ref: '#/components/parameters/TemplateAgentName'
+      responses:
+        '204':
+          description: Agent template deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /api/v1/admin/agentTemplates/by-name/{templateAgentName}/deployments:
+    get:
+      tags:
+        - Agent Templates
+      summary: List Template Deployments by Name (System Admin)
+      description: |
+        List the tenants that currently have a deployed instance of the given system template,
+        resolved by name. Name-based equivalent of
+        `GET /agentTemplates/{templateObjectId}/deployments`.
+        **System admin only. No X-Tenant-Id header required.**
+      operationId: getAgentTemplateDeploymentsByName
+      parameters:
+        - $ref: '#/components/parameters/TemplateAgentName'
+      responses:
+        '200':
+          description: Tenants with a deployed instance of the template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDeployments'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
+  /api/v1/admin/agentTemplates/by-name/{templateAgentName}/deploy:
     post:
       tags:
         - Agent Templates
-      summary: Deploy Agent Template to Tenant
+      summary: Deploy Agent Template to Tenant by Name
       description: |
-        Deploy an agent template to a specific tenant, creating a new agent instance.
-        This endpoint handles both:
-        - New templates from agent_templates collection (by ObjectId)
-        - Legacy system-scoped templates from agents collection (by ObjectId, SystemScoped = true)
+        Deploy an agent template to a specific tenant, resolved by name. Name-based equivalent of
+        `POST /agentTemplates/{templateObjectId}/deploy`. Creates a tenant-scoped replica
+        (`systemScoped = false`) of the template.
         **X-Tenant-Id header required.**
-        Future: Eligibility validation will be implemented.
-      operationId: deployAgentTemplate
+      operationId: deployAgentTemplateByName
       parameters:
-        - name: templateObjectId
-          in: path
-          required: true
-          description: Agent template MongoDB ObjectId
-          schema:
-            type: string
-            example: 69596ca63f39925d6e26b216
+        - $ref: '#/components/parameters/TemplateAgentName'
         - name: tenantId
           in: query
           required: true
@@ -888,11 +983,13 @@ paths:
             example: acme-corp
       responses:
         '201':
-          description: Agent deployed successfully
+          description: |
+            Agent deployed successfully. Returns the newly created tenant-scoped
+            agent instance (a replica of the template with `systemScoped = false`).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentResponse'
+                $ref: '#/components/schemas/AgentTemplate'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1254,6 +1351,14 @@ components:
         type: string
         pattern: '^[0-9a-fA-F]{24}$'
         example: 507f1f77bcf86cd799439011
+    TemplateAgentName:
+      name: templateAgentName
+      in: path
+      required: true
+      description: The unique agent name of the system template.
+      schema:
+        type: string
+        example: support-agent
 
   schemas:
     UpdateAgentRequest:
@@ -1596,120 +1701,241 @@ components:
           type: integer
           example: 42
 
-    AgentTemplate:
+    UpdateAgentTemplateRequest:
       type: object
+      description: |
+        Partial update payload for an agent template. All fields are optional;
+        only the fields present in the request are applied to the template.
       properties:
-        templateId:
-          type: string
-          example: support-agent-v1
-        name:
-          type: string
-          example: Support Agent
-        category:
-          type: string
-          description: Category stored in metadata. Supports multiple categories as comma-separated string (e.g., "customer-support,beta")
-          example: service
         description:
           type: string
-          description: Description stored in metadata
-          example: Customer support agent for handling inquiries
-        icon:
+          description: Template description
+          example: Customer support agent template
+        onboardingJson:
           type: string
-          description: Icon identifier or URL stored in metadata
-          example: https://example.com/icons/support-agent.png
+          description: Onboarding configuration as a JSON string
+          example: '{"description":"Customer support agent"}'
+        ownerAccess:
+          type: array
+          items:
+            type: string
+          description: User identifiers granted owner access
+          example: ["github|195087421"]
+        readAccess:
+          type: array
+          items:
+            type: string
+          description: User identifiers granted read access
+          example: ["github|195087421"]
+        writeAccess:
+          type: array
+          items:
+            type: string
+          description: User identifiers granted write access
+          example: []
         samplePrompts:
           type: array
           items:
-            $ref: '#/components/schemas/SamplePrompt'
-          description: Sample prompts stored in metadata
-        metadata:
-          type: object
-          description: Flexible metadata dictionary containing template-specific data (category, samplePrompts, description, icon, etc.)
-          additionalProperties: true
-          example:
-            category: service
-            description: Customer support agent for handling inquiries
-            icon: https://example.com/icons/support-agent.png
-            samplePrompts:
-              - id: prompt-1
-                title: Basic Customer Inquiry
-                prompt: "Help a customer with their order status"
-        isDeployed:
-          type: boolean
-          description: Whether this agent is already deployed in the current tenant
-          example: false
+            type: string
+          description: Sample prompts shown for the template
+          example: ["Help a customer with their order status"]
 
-    AgentTemplateDetails:
-      allOf:
-        - $ref: '#/components/schemas/AgentTemplate'
-        - type: object
-          properties:
-            features:
-              type: array
-              items:
-                type: string
-              example: ["Ticket management", "Email integration", "Knowledge base"]
-            requirements:
-              type: array
-              items:
-                type: string
-              example: ["Email access", "CRM integration"]
-            samplePrompts:
-              type: array
-              items:
-                $ref: '#/components/schemas/SamplePrompt'
-            testScenarios:
-              type: array
-              items:
-                $ref: '#/components/schemas/TestScenario'
-            configurationExamples:
-              type: array
-              items:
-                type: object
-                additionalProperties: true
-
-    SamplePrompt:
+    AgentTemplate:
       type: object
+      description: |
+        An agent template is an agent stored in the `agents` collection with `systemScoped = true`.
+        This schema reflects the serialized `Agent` model (camelCase property names).
       properties:
         id:
           type: string
-          example: prompt-1
-        title:
-          type: string
-          example: Basic Customer Inquiry
-        prompt:
-          type: string
-          example: "Help a customer with their order status"
-        description:
-          type: string
-          example: Test basic customer inquiry handling
-        icon:
-          type: string
-          description: Icon identifier or URL for the prompt (can be embedded)
-          example: document
-        category:
-          type: string
-          enum: [basic, advanced, edge-case]
-          example: basic
-
-    TestScenario:
-      type: object
-      properties:
-        id:
-          type: string
-          example: scenario-1
+          description: MongoDB ObjectId of the template agent
+          example: 69596ca63f39925d6e26b216
         name:
           type: string
-          example: Order Status Inquiry
+          example: support-agent
+        tenant:
+          type: string
+          nullable: true
+          description: Owning tenant. Null for system-scoped templates; set to the tenant ID for deployed instances.
+          example: null
+        createdBy:
+          type: string
+          example: admin@example.com
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+        ownerAccess:
+          type: array
+          items:
+            type: string
+          example: ["github|195087421"]
+        readAccess:
+          type: array
+          items:
+            type: string
+          example: []
+        writeAccess:
+          type: array
+          items:
+            type: string
+          example: []
+        systemScoped:
+          type: boolean
+          description: True for templates (global, reusable agent definitions)
+          example: true
+        onboardingJson:
+          type: string
+          nullable: true
+          description: Onboarding configuration as a JSON string
+          example: '{"description":"Customer support agent"}'
         description:
           type: string
-          example: Test order status inquiry handling
-        input:
-          type: object
-          additionalProperties: true
-        expectedOutput:
-          type: object
-          additionalProperties: true
+          nullable: true
+          example: Customer support agent for handling inquiries
+        summary:
+          type: string
+          nullable: true
+          example: Handles customer support inquiries
+        version:
+          type: string
+          nullable: true
+          example: 1.0.0
+        author:
+          type: string
+          nullable: true
+          example: Acme Corp
+        category:
+          type: string
+          nullable: true
+          example: service
+        samplePrompts:
+          type: array
+          items:
+            type: string
+          example: ["Help a customer with their order status"]
+        flows:
+          type: array
+          nullable: true
+          description: Optional embedded flow summaries
+          items:
+            type: object
+            additionalProperties: true
+
+    AgentTemplateWithDefinitions:
+      type: object
+      description: |
+        Item returned by the list endpoint: a template agent together with its flow definitions.
+      properties:
+        agent:
+          $ref: '#/components/schemas/AgentTemplate'
+        definitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowDefinition'
+
+    TemplateDeployments:
+      type: object
+      description: |
+        Summary of the tenants that have a deployed instance of a system template.
+        Deployments are matched by agent name.
+      properties:
+        templateId:
+          type: string
+          description: MongoDB ObjectId of the system template
+          example: 69596ca63f39925d6e26b216
+        templateName:
+          type: string
+          example: support-agent
+        deploymentCount:
+          type: integer
+          example: 2
+        deployments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateDeployment'
+
+    TemplateDeployment:
+      type: object
+      description: A single tenant-scoped deployment of a system template.
+      properties:
+        agentId:
+          type: string
+          description: MongoDB ObjectId of the deployed (tenant-scoped) agent
+          example: 69597aa11c0fe34d6e26c721
+        tenant:
+          type: string
+          nullable: true
+          example: acme-corp
+        createdBy:
+          type: string
+          nullable: true
+          example: admin@example.com
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+
+    FlowDefinition:
+      type: object
+      description: A workflow definition belonging to an agent (serialized `FlowDefinition` model, camelCase).
+      properties:
+        id:
+          type: string
+          example: 69596ca63f39925d6e26b300
+        workflowType:
+          type: string
+          example: support-agent:MainFlow
+        agent:
+          type: string
+          example: support-agent
+        name:
+          type: string
+          nullable: true
+          example: Main Flow
+        hash:
+          type: string
+          example: a1b2c3d4e5f6
+        source:
+          type: string
+          nullable: true
+        markdown:
+          type: string
+          nullable: true
+        activityDefinitions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        parameterDefinitions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          example: admin@example.com
+        tenant:
+          type: string
+          nullable: true
+        systemScoped:
+          type: boolean
+          example: true
+        activable:
+          type: boolean
+          example: false
+        summary:
+          type: string
+          nullable: true
+        onboardingJson:
+          type: string
+          nullable: true
 
     Pagination:
       type: object

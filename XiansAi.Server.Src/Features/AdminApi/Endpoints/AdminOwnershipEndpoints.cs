@@ -3,6 +3,7 @@ using Shared.Repositories;
 using Shared.Auth;
 using System.ComponentModel.DataAnnotations;
 using Features.AdminApi.Utils;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -28,10 +29,12 @@ public static class AdminOwnershipEndpoints
     {
         var adminOwnershipGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/ownership")
             .WithTags("AdminAPI - Agent Ownership")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // Get Ownership Information
         adminOwnershipGroup.MapGet("", async (
+            string tenantId,
             string agentId,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext) =>
@@ -51,6 +54,14 @@ public static class AdminOwnershipEndpoints
                 if (string.IsNullOrEmpty(parsedTenant))
                 {
                     return Results.BadRequest(new { error = "Agent tenant is not set" });
+                }
+
+                // GetByIdInternalAsync performs no tenant scoping. Ensure the agent belongs to the
+                // caller's tenant (route tenant validated against context by TenantRouteScopeFilter)
+                // to prevent cross-tenant ownership disclosure.
+                if (!string.Equals(parsedTenant, tenantId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
                 }
 
                 return Results.Ok(new
@@ -78,6 +89,7 @@ public static class AdminOwnershipEndpoints
 
         // Transfer Ownership
         adminOwnershipGroup.MapPatch("", async (
+            string tenantId,
             string agentId,
             [FromBody] TransferOwnershipRequest request,
             [FromServices] IAgentRepository agentRepository,
@@ -99,6 +111,14 @@ public static class AdminOwnershipEndpoints
                 if (string.IsNullOrEmpty(parsedTenant))
                 {
                     return Results.BadRequest(new { error = "Agent tenant is not set" });
+                }
+
+                // GetByIdInternalAsync performs no tenant scoping. Ensure the agent belongs to the
+                // caller's tenant (route tenant validated against context by TenantRouteScopeFilter)
+                // to prevent transferring ownership of another tenant's agent.
+                if (!string.Equals(parsedTenant, tenantId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.NotFound(new { error = $"Agent with ID '{agentId}' not found" });
                 }
 
                 // Check permissions (must be current owner, TenantAdmin, or SysAdmin)

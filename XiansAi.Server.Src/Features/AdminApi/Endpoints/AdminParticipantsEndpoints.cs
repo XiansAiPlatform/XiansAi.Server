@@ -5,26 +5,9 @@ using Shared.Data.Models.Validation;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 using Shared.Utils;
+using Features.AdminApi.Utils;
 
 namespace Features.AdminApi.Endpoints;
-
-/// <summary>
-/// Comparer for Tenant objects that compares by TenantId
-/// </summary>
-internal class TenantIdComparer : IEqualityComparer<Tenant>
-{
-    public bool Equals(Tenant? x, Tenant? y)
-    {
-        if (x == null && y == null) return true;
-        if (x == null || y == null) return false;
-        return x.TenantId == y.TenantId;
-    }
-
-    public int GetHashCode(Tenant obj)
-    {
-        return obj.TenantId.GetHashCode();
-    }
-}
 
 /// <summary>
 /// Response model for participant tenant information
@@ -41,8 +24,7 @@ public class ParticipantTenantResponse
     public Logo? Logo { get; set; }
     
     /// <summary>
-    /// User's role in this tenant: TenantParticipant or TenantParticipantAdmin.
-    /// Defaults to TenantParticipant when the tenant was matched by email domain only.
+    /// User's highest-privilege role in this tenant, derived from their explicit tenant membership.
     /// </summary>
     [JsonPropertyName("role")]
     public string? Role { get; set; }
@@ -87,9 +69,11 @@ public static class AdminParticipantsEndpoints
         // Get participant by email (tenants + role per tenant)
         participantGroup.MapGet("/{email}", async (
             string email,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IUserRepository userRepository,
             [FromServices] ITenantRepository tenantRepository,
+            [FromServices] LinkGenerator linkGenerator,
             [FromServices] ILogger<IUserRepository> logger) =>
         {
             try
@@ -113,10 +97,6 @@ public static class AdminParticipantsEndpoints
                         statusCode: StatusCodes.Status400BadRequest);
                 }
                 email = validatedEmail;
-                
-                // Extract email domain
-                var emailDomain = email.Contains('@') ? email.Split('@')[1] : string.Empty;
-                logger.LogInformation("Processing participant lookup for domain {Domain}", emailDomain);
 
                 // Get user by email
                 var user = await userRepository.GetByUserEmailAsync(email);
@@ -130,68 +110,57 @@ public static class AdminParticipantsEndpoints
                         statusCode: StatusCodes.Status403Forbidden);
                 }
 
-                // Get tenant IDs and role per tenant where user has TenantParticipant or TenantParticipantAdmin (if user exists)
+                // Get tenant IDs and highest-privilege role per tenant for all memberships (approved or not)
                 var participantTenantIds = new List<string>();
-                var tenantRoleMap = new Dictionary<string, string>(); // tenantId -> TenantParticipant or TenantParticipantAdmin
+                var tenantRoleMap = new Dictionary<string, string>(); // tenantId -> highest role
                 if (user != null)
                 {
-                    var participantTenantRoles = user.TenantRoles
-                        .Where(tr => (tr.Roles.Contains(SystemRoles.TenantParticipant) || tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)) && tr.IsApproved);
-                    foreach (var tr in participantTenantRoles)
+                    foreach (var tr in user.TenantRoles)
                     {
                         participantTenantIds.Add(tr.Tenant);
-                        // Prefer TenantParticipantAdmin if user has both roles
-                        tenantRoleMap[tr.Tenant] = tr.Roles.Contains(SystemRoles.TenantParticipantAdmin)
-                            ? SystemRoles.TenantParticipantAdmin
-                            : SystemRoles.TenantParticipant;
+                        tenantRoleMap[tr.Tenant] = PrimaryRole(tr.Roles);
                     }
 
-                    logger.LogInformation("User {EmailRedacted} has participant roles in {Count} tenants: {TenantIds}", 
+                    logger.LogInformation("User {EmailRedacted} has roles in {Count} tenants: {TenantIds}", 
                         LogSanitizer.RedactEmail(email), participantTenantIds.Count, string.Join(", ", participantTenantIds));
                 }
                 else
                 {
-                    logger.LogInformation("User {EmailRedacted} not found, will check domain matching only", LogSanitizer.RedactEmail(email));
+                    logger.LogInformation("User {EmailRedacted} not found", LogSanitizer.RedactEmail(email));
                 }
 
-                // Query tenants by domain matching (if email has domain)
-                var domainMatchedTenants = new List<Tenant>();
-                if (!string.IsNullOrEmpty(emailDomain))
+                // Check if user is system admin
+                var isSystemAdmin = user?.IsSysAdmin ?? false;
+
+                // System admins have access to all tenants, regardless of explicit memberships.
+                // Other users' tenants are derived strictly from their explicit memberships (TenantRoles).
+                // Email-domain matching is intentionally not used to grant tenant access or roles.
+                var matchingTenants = new List<Tenant>();
+                if (isSystemAdmin)
                 {
-                    domainMatchedTenants = await tenantRepository.GetByDomainListAsync(emailDomain);
-                    logger.LogInformation("Found {Count} tenants matching email domain {Domain}: {TenantIds}", 
-                        domainMatchedTenants.Count, emailDomain, string.Join(", ", domainMatchedTenants.Select(t => t.TenantId)));
+                    matchingTenants = await tenantRepository.GetAllAsync();
+                    logger.LogInformation("User {EmailRedacted} is a system admin. Returning all {Count} tenants.",
+                        LogSanitizer.RedactEmail(email), matchingTenants.Count);
                 }
-
-                // Query tenants by participant role tenant IDs (if user has participant roles)
-                var participantTenants = new List<Tenant>();
-                if (participantTenantIds.Any())
+                else if (participantTenantIds.Any())
                 {
-                    participantTenants = await tenantRepository.GetByTenantIdsAsync(participantTenantIds);
-                    logger.LogInformation("Found {Count} tenants from participant roles: {TenantIds}", 
-                        participantTenants.Count, string.Join(", ", participantTenants.Select(t => t.TenantId)));
+                    matchingTenants = await tenantRepository.GetByTenantIdsAsync(participantTenantIds);
+                    logger.LogInformation("Found {Count} tenants from roles: {TenantIds}", 
+                        matchingTenants.Count, string.Join(", ", matchingTenants.Select(t => t.TenantId)));
                 }
-
-                // Combine both lists and remove duplicates
-                var matchingTenants = participantTenants
-                    .Union(domainMatchedTenants, new TenantIdComparer())
-                    .ToList();
-
-                logger.LogInformation("Total matching tenants: {Count} ({ParticipantCount} from roles, {DomainCount} from domain): {TenantIds}",
-                    matchingTenants.Count, participantTenants.Count, domainMatchedTenants.Count, 
-                    string.Join(", ", matchingTenants.Select(t => t.TenantId)));
 
                 if (!matchingTenants.Any())
                 {
-                    return Results.NotFound(new { message = $"User with email '{email}' has no matching tenants (neither participant roles nor domain match)" });
+                    return Results.NotFound(new { message = $"User with email '{email}' has no matching tenants" });
                 }
                 
                 logger.LogInformation("Matched {Count} tenants by TenantId. Tenants: {Tenants}", 
                     matchingTenants.Count, 
                     string.Join(", ", matchingTenants.Select(t => $"{t.TenantId}(enabled:{t.Enabled})")));
 
-                // Check if user is system admin
-                var isSystemAdmin = user?.IsSysAdmin ?? false;
+                // Default role for tenants where the user has no explicit membership.
+                // System admins implicitly have access to every tenant via their SysAdmin role.
+                var defaultRole = isSystemAdmin ? SystemRoles.SysAdmin : SystemRoles.TenantParticipant;
 
                 var tenantList = matchingTenants
                     .Where(t => t.Enabled)
@@ -199,8 +168,8 @@ public static class AdminParticipantsEndpoints
                     {
                         TenantId = t.TenantId,
                         TenantName = t.Name,
-                        Logo = t.Logo,
-                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : SystemRoles.TenantParticipant,
+                        Logo = TenantLogoHelper.BuildLogoResponse(t, httpContext, linkGenerator),
+                        Role = tenantRoleMap.TryGetValue(t.TenantId, out var role) ? role : defaultRole,
                         Theme = t.Theme
                     })
                     .OrderBy(t => t.TenantName)
@@ -233,10 +202,26 @@ public static class AdminParticipantsEndpoints
         })
         .WithName("GetParticipantTenants")
         .Produces<ParticipantTenantsResponse>()
+
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         ;
+    }
+
+    /// <summary>
+    /// Returns the highest-privilege role from the list, falling back to TenantParticipant.
+    /// Priority: TenantAdmin → TenantUser → TenantParticipantAdmin → TenantParticipant.
+    /// </summary>
+    private static string PrimaryRole(List<string> roles)
+    {
+        string[] priority = { SystemRoles.TenantAdmin, SystemRoles.TenantUser, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantParticipant };
+        foreach (var candidate in priority)
+        {
+            if (roles.Contains(candidate))
+                return candidate;
+        }
+        return roles.FirstOrDefault() ?? SystemRoles.TenantParticipant;
     }
 }

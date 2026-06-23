@@ -1,6 +1,7 @@
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -19,7 +20,8 @@ public static class AdminAgentDeploymentEndpoints
     {
         var adminAgentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agentDeployments")
             .WithTags("AdminAPI - Agent Deployment")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // List Agent deployments
         adminAgentGroup.MapGet("", async (

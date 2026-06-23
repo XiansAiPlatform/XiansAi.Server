@@ -1,7 +1,10 @@
 using Shared.Auth;
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Utils;
 using Shared.Utils.Services;
+using Shared.Data.Models;
+using Features.AdminApi.Utils;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -12,6 +15,7 @@ namespace Features.AdminApi.Endpoints;
 /// </summary>
 public static class AdminTenantEndpoints
 {
+
     /// <summary>
     /// Maps all AdminApi tenant endpoints.
     /// </summary>
@@ -23,6 +27,8 @@ public static class AdminTenantEndpoints
 
         // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants)
         adminTenantGroup.MapGet("", async (
+            HttpContext httpContext,
+            [FromServices] LinkGenerator linkGenerator,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -35,6 +41,13 @@ public static class AdminTenantEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
             var result = await tenantService.GetAllTenants();
+            if (result.IsSuccess && result.Data != null)
+            {
+                foreach (var tenant in result.Data)
+                {
+                    TenantLogoHelper.ApplyLogoUrl(tenant, httpContext, linkGenerator);
+                }
+            }
             return result.ToHttpResult();
         })
         .WithName("ListTenants")
@@ -45,6 +58,7 @@ public static class AdminTenantEndpoints
         adminTenantGroup.MapGet("/{tenantId}", async (
             string tenantId,
             HttpContext httpContext,
+            [FromServices] LinkGenerator linkGenerator,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -57,15 +71,72 @@ public static class AdminTenantEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
             var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            if (result.IsSuccess)
+            {
+                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+            }
             return result.ToHttpResult();
         })
         .WithName("GetTenantByTenantId")
         .Produces(StatusCodes.Status403Forbidden)
         ;
 
+        // Get Tenant Logo - serves the image so the (potentially large) base64 payload
+        // does not have to be embedded in every tenant response.
+        adminTenantGroup.MapGet("/{tenantId}/logo", async (
+            string tenantId,
+            HttpContext httpContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                return result.ToHttpResult();
+            }
+
+            var logo = result.Data.Logo;
+            if (logo == null)
+            {
+                return Results.NotFound(new { message = "Tenant has no logo" });
+            }
+
+            // Logo stored as an external URL: redirect to the source image.
+            if (!string.IsNullOrEmpty(logo.Url))
+            {
+                return Results.Redirect(logo.Url);
+            }
+
+            if (string.IsNullOrEmpty(logo.ImgBase64))
+            {
+                return Results.NotFound(new { message = "Tenant has no logo" });
+            }
+
+            byte[] imageBytes;
+            try
+            {
+                imageBytes = Convert.FromBase64String(logo.ImgBase64);
+            }
+            catch (FormatException ex)
+            {
+                logger.LogError(ex, "Tenant {TenantId} has invalid base64 logo data", LogSanitizer.Sanitize(tenantId));
+                return Results.Problem("Stored logo image is invalid", statusCode: StatusCodes.Status500InternalServerError);
+            }
+
+            var contentType = DetectImageContentType(imageBytes);
+            httpContext.Response.Headers.CacheControl = "private, max-age=3600";
+            return Results.File(imageBytes, contentType);
+        })
+        .WithName(TenantLogoHelper.LogoRouteName)
+        .Produces(StatusCodes.Status302Found)
+        .Produces(StatusCodes.Status404NotFound)
+        ;
+
         // Create Tenant - No X-Tenant-Id header required (creating new tenant)
         adminTenantGroup.MapPost("", async (
             [FromBody] CreateTenantRequest request,
+            HttpContext httpContext,
+            [FromServices] LinkGenerator linkGenerator,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -80,6 +151,10 @@ public static class AdminTenantEndpoints
 
             var createdBy = tenantContext.LoggedInUser ?? "system";
             var result = await tenantService.CreateTenant(request, createdBy);
+            if (result.IsSuccess && result.Data != null)
+            {
+                TenantLogoHelper.ApplyLogoUrl(result.Data.Tenant, httpContext, linkGenerator);
+            }
             return result.ToHttpResult();
         })
         .WithName("CreateTenant")
@@ -91,6 +166,7 @@ public static class AdminTenantEndpoints
             string tenantId,
             [FromBody] UpdateTenantRequest request,
             HttpContext httpContext,
+            [FromServices] LinkGenerator linkGenerator,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -112,6 +188,10 @@ public static class AdminTenantEndpoints
             
             // Use the ObjectId for the update operation
             var result = await tenantService.UpdateTenant(tenantResult.Data.Id, request);
+            if (result.IsSuccess)
+            {
+                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+            }
             return result.ToHttpResult();
         })
         .WithName("UpdateTenant")
@@ -149,6 +229,40 @@ public static class AdminTenantEndpoints
         .Produces(StatusCodes.Status403Forbidden)
         ;
     }
+
+    /// <summary>
+    /// Best-effort detection of an image content type from its leading magic bytes.
+    /// Stored base64 logos do not carry a MIME type, so we sniff the decoded bytes.
+    /// </summary>
+    private static string DetectImageContentType(byte[] bytes)
+    {
+        if (bytes.Length >= 4 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+        {
+            return "image/png";
+        }
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+        {
+            return "image/jpeg";
+        }
+        if (bytes.Length >= 3 && bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46)
+        {
+            return "image/gif";
+        }
+        if (bytes.Length >= 12 &&
+            bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+            bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50)
+        {
+            return "image/webp";
+        }
+        if (bytes.Length >= 2 && bytes[0] == 0x42 && bytes[1] == 0x4D)
+        {
+            return "image/bmp";
+        }
+        // SVG is text based and starts with '<' (e.g. "<svg" or "<?xml").
+        if (bytes.Length >= 1 && bytes[0] == (byte)'<')
+        {
+            return "image/svg+xml";
+        }
+        return "application/octet-stream";
+    }
 }
-
-

@@ -39,6 +39,16 @@ public interface IScheduleService
     /// Deletes a specific schedule by ID
     /// </summary>
     Task<ServiceResult<bool>> DeleteScheduleByIdAsync(string scheduleId);
+
+    /// <summary>
+    /// Pauses (suspends) a specific schedule by ID
+    /// </summary>
+    Task<ServiceResult<bool>> PauseScheduleAsync(string scheduleId, string? note = null);
+
+    /// <summary>
+    /// Resumes (unpauses) a specific schedule by ID
+    /// </summary>
+    Task<ServiceResult<bool>> ResumeScheduleAsync(string scheduleId, string? note = null);
     
     /// <summary>
     /// Deletes all schedules for a specific agent
@@ -217,8 +227,13 @@ public class ScheduleService : IScheduleService
             
             var upcomingRuns = new List<ScheduleRunModel>();
             
-            // Calculate next execution times based on schedule spec
-            var nextRunTimes = CalculateNextRunTimes(description.Schedule.Spec, count);
+            // Prefer the REAL next action times computed by Temporal; only fall back
+            // to our own estimation if Temporal did not return any (e.g. paused).
+            var nextRunTimes = description.Info?.NextActionTimes?.Take(count).ToList();
+            if (nextRunTimes == null || nextRunTimes.Count == 0)
+            {
+                nextRunTimes = CalculateNextRunTimes(description.Schedule.Spec, count);
+            }
             
             foreach (var (runTime, index) in nextRunTimes.Select((t, i) => (t, i)))
             {
@@ -253,28 +268,29 @@ public class ScheduleService : IScheduleService
             
             var historyRuns = new List<ScheduleRunModel>();
             
-            // Get recent actions from schedule description
-            var recentActions = description.Info?.RecentActions?.Take(count).ToList() ?? new List<Temporalio.Client.Schedules.ScheduleActionResult>();
+            // Use the REAL recent actions recorded by Temporal. Each action carries
+            // its actual scheduled and started timestamps, so we must not fabricate
+            // them. RecentActions is ordered oldest-first, so take the most recent.
+            var recentActions = description.Info?.RecentActions?.ToList()
+                ?? new List<Temporalio.Client.Schedules.ScheduleActionResult>();
             
-            foreach (var action in recentActions.Select((a, i) => new { Action = a, Index = i }))
+            foreach (var action in recentActions.OrderByDescending(a => a.ScheduledAt).Take(count))
             {
-                var runStatus = ScheduleRunStatus.Completed; // Simplified - assume all past actions completed
-                var scheduledTime = DateTime.UtcNow.AddHours(-action.Index - 1); // Mock scheduled time
-                var actualTime = scheduledTime.AddMinutes(2); // Mock actual time
+                var startWorkflow = action.Action as Temporalio.Client.Schedules.ScheduleActionExecutionStartWorkflow;
                 
                 historyRuns.Add(new ScheduleRunModel
                 {
-                    RunId = $"{scheduleId}-history-{action.Index}",
+                    RunId = startWorkflow?.FirstExecutionRunId
+                        ?? $"{scheduleId}-history-{action.ScheduledAt:yyyyMMddHHmmss}",
                     ScheduleId = scheduleId,
-                    ScheduledTime = scheduledTime,
-                    ActualRunTime = actualTime,
-                    Status = runStatus,
-                    WorkflowRunId = $"workflow-{scheduleId}-{action.Index}"
+                    ScheduledTime = action.ScheduledAt,
+                    ActualRunTime = action.StartedAt,
+                    // A recorded action means the workflow was started. Temporal's
+                    // schedule info does not include the workflow's final outcome.
+                    Status = ScheduleRunStatus.Completed,
+                    WorkflowRunId = startWorkflow?.FirstExecutionRunId
                 });
             }
-            
-            // Sort by scheduled time descending (most recent first)
-            historyRuns = historyRuns.OrderByDescending(r => r.ScheduledTime).ToList();
             
             _logger.LogInformation("Retrieved {Count} history runs for schedule {ScheduleId}", historyRuns.Count, LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<List<ScheduleRunModel>>.Success(historyRuns);
@@ -320,49 +336,20 @@ public class ScheduleService : IScheduleService
         var workflowType = ExtractWorkflowTypeFromAction(description.Schedule.Action) ?? "Unknown";
         var metadata = ExtractMetadataFromMemo(description.Schedule.Action) ?? new Dictionary<string, object>();
         
-        // Calculate next run time
-        var nextRunTime = CalculateNextRunTime(description.Schedule.Spec);
+        // Use Temporal's real next action time; fall back to estimation only when
+        // Temporal didn't provide one (e.g. paused/exhausted schedules).
+        var temporalNextTimes = description.Info?.NextActionTimes;
+        var nextRunTime = temporalNextTimes != null && temporalNextTimes.Count > 0
+            ? temporalNextTimes.First()
+            : CalculateNextRunTime(description.Schedule.Spec);
         
-        // Get last run information with better estimation
-        var recentActions = description.Info?.RecentActions?.ToList() ?? new List<Temporalio.Client.Schedules.ScheduleActionResult>();
-        DateTime? lastRunTime = null;
-        
-        if (recentActions.Any())
-        {
-            try
-            {
-                // Try to get the actual timestamp from the most recent action
-                var mostRecentAction = recentActions.First();
-                
-                // If we have action result info, use it to estimate timing
-                if (description.Info?.NumActions > 0)
-                {
-                    // Estimate based on schedule pattern and number of actions
-                    var totalActions = (long)description.Info.NumActions;
-                    var createdTime = description.Info?.CreatedAt ?? DateTime.UtcNow;
-                    
-                    if (totalActions > 1)
-                    {
-                        // Estimate average interval between runs
-                        var timeSinceCreation = DateTime.UtcNow - createdTime;
-                        var averageInterval = timeSinceCreation.TotalMilliseconds / (totalActions - 1);
-                        lastRunTime = DateTime.UtcNow.AddMilliseconds(-averageInterval);
-                    }
-                    else
-                    {
-                        // Only one execution, estimate based on when it might have last run
-                        var nextRun = CalculateNextRunTime(description.Schedule.Spec);
-                        var estimatedInterval = nextRun - DateTime.UtcNow;
-                        lastRunTime = DateTime.UtcNow.Subtract(estimatedInterval);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to calculate last run time for schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
-                lastRunTime = null;
-            }
-        }
+        // Last run time comes from the most recent recorded action's actual start
+        // time — never an estimate.
+        var recentActions = description.Info?.RecentActions?.ToList()
+            ?? new List<Temporalio.Client.Schedules.ScheduleActionResult>();
+        DateTime? lastRunTime = recentActions.Count > 0
+            ? recentActions.Max(a => a.StartedAt)
+            : null;
         
         return new ScheduleModel
         {
@@ -543,16 +530,94 @@ public class ScheduleService : IScheduleService
     
     private string FormatScheduleSpec(Temporalio.Client.Schedules.ScheduleSpec spec)
     {
-        // Format the schedule specification for display
+        // Produce a compact, human/machine-friendly representation of the spec.
+        // The raw ScheduleSpec.ToString() only emits collection type names
+        // (e.g. "Calendars = System.Collections.Generic.List`1[...]"), which is
+        // useless for display, so we format the meaningful parts ourselves.
         try
         {
-            // Try to get a readable format from the spec
-            return spec.ToString() ?? "Unknown schedule";
+            var parts = new List<string>();
+
+            if (spec.CronExpressions?.Any() == true)
+            {
+                parts.AddRange(spec.CronExpressions.Where(c => !string.IsNullOrWhiteSpace(c)));
+            }
+
+            if (spec.Intervals?.Any() == true)
+            {
+                foreach (var interval in spec.Intervals)
+                {
+                    var desc = $"Every {FormatTimeSpan(interval.Every)}";
+                    if (interval.Offset is { } offset && offset != TimeSpan.Zero)
+                    {
+                        desc += $" (offset {FormatTimeSpan(offset)})";
+                    }
+                    parts.Add(desc);
+                }
+            }
+
+            if (spec.Calendars?.Any() == true)
+            {
+                parts.AddRange(spec.Calendars.Select(FormatCalendarSpec));
+            }
+
+            var result = string.Join("; ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+            return string.IsNullOrWhiteSpace(result) ? "Unknown schedule" : result;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to format schedule spec");
             return "Unknown schedule";
         }
+    }
+
+    /// <summary>
+    /// Formats a <see cref="TimeSpan"/> as a compact duration like "1d 2h 30m".
+    /// </summary>
+    private static string FormatTimeSpan(TimeSpan ts)
+    {
+        if (ts <= TimeSpan.Zero) return "0s";
+
+        var segments = new List<string>();
+        if (ts.Days > 0) segments.Add($"{ts.Days}d");
+        if (ts.Hours > 0) segments.Add($"{ts.Hours}h");
+        if (ts.Minutes > 0) segments.Add($"{ts.Minutes}m");
+        if (ts.Seconds > 0) segments.Add($"{ts.Seconds}s");
+        return segments.Count > 0 ? string.Join(" ", segments) : "0s";
+    }
+
+    /// <summary>
+    /// Formats a calendar spec as a standard 5-field cron expression
+    /// ("minute hour day-of-month month day-of-week") so the client can render
+    /// it in a friendly way.
+    /// </summary>
+    private static string FormatCalendarSpec(Temporalio.Client.Schedules.ScheduleCalendarSpec calendar)
+    {
+        var minute = FormatRanges(calendar.Minute, "0");
+        var hour = FormatRanges(calendar.Hour, "0");
+        var dayOfMonth = FormatRanges(calendar.DayOfMonth, "*");
+        var month = FormatRanges(calendar.Month, "*");
+        var dayOfWeek = FormatRanges(calendar.DayOfWeek, "*");
+        return $"{minute} {hour} {dayOfMonth} {month} {dayOfWeek}";
+    }
+
+    /// <summary>
+    /// Formats a collection of <see cref="Temporalio.Client.Schedules.ScheduleRange"/>
+    /// values into a cron field. Falls back to <paramref name="defaultValue"/> when empty.
+    /// </summary>
+    private static string FormatRanges(
+        IReadOnlyCollection<Temporalio.Client.Schedules.ScheduleRange>? ranges,
+        string defaultValue)
+    {
+        if (ranges == null || ranges.Count == 0) return defaultValue;
+        return string.Join(",", ranges.Select(FormatRange));
+    }
+
+    private static string FormatRange(Temporalio.Client.Schedules.ScheduleRange range)
+    {
+        var isSingle = range.End <= range.Start;
+        var basePart = isSingle ? range.Start.ToString() : $"{range.Start}-{range.End}";
+        return range.Step > 1 ? $"{basePart}/{range.Step}" : basePart;
     }
     
     private DateTime CalculateNextRunTime(Temporalio.Client.Schedules.ScheduleSpec spec)
@@ -814,36 +879,19 @@ public class ScheduleService : IScheduleService
             
             // First, get the schedule to verify permissions and tenant
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
-            var description = await scheduleHandle.DescribeAsync();
-            
-            var scheduleModel = MapToScheduleModel(scheduleId, description);
-            
-            // Security check: Tenant isolation
-            if (!string.IsNullOrEmpty(scheduleModel.TenantId) && 
-                scheduleModel.TenantId != _tenantContext.TenantId)
+
+            // Security check: Tenant isolation and agent write permission
+            var authResult = await AuthorizeScheduleWriteAsync(scheduleHandle, scheduleId, "delete");
+            if (!authResult.IsSuccess)
             {
-                _logger.LogWarning("Attempted to delete schedule {ScheduleId} from different tenant. Schedule tenant: {ScheduleTenant}, Current tenant: {CurrentTenant}", 
-                    LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.TenantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
-                return ServiceResult<bool>.Forbidden("You do not have permission to delete this schedule");
-            }
-            
-            // Security check: Agent permission
-            if (!string.IsNullOrEmpty(scheduleModel.AgentName))
-            {
-                var hasWritePermission = await _permissionsService.HasWritePermission(scheduleModel.AgentName);
-                if (!hasWritePermission.IsSuccess || !hasWritePermission.Data)
-                {
-                    _logger.LogWarning("User lacks write permission for agent {AgentName} when attempting to delete schedule {ScheduleId}", 
-                        LogSanitizer.Sanitize(scheduleModel.AgentName), LogSanitizer.Sanitize(scheduleId));
-                    return ServiceResult<bool>.Forbidden($"You do not have permission to delete schedules for agent {scheduleModel.AgentName}");
-                }
+                return ServiceResult<bool>.Failure(authResult.ErrorMessage!, authResult.StatusCode);
             }
             
             // Delete the schedule
             await scheduleHandle.DeleteAsync();
             
             _logger.LogInformation("Successfully deleted schedule {ScheduleId} for agent {AgentName}", 
-                LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.AgentName));
+                LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(authResult.Data!.AgentName));
             
             return ServiceResult<bool>.Success(true);
         }
@@ -857,6 +905,122 @@ public class ScheduleService : IScheduleService
             _logger.LogError(ex, "Failed to delete schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<bool>.InternalServerError($"Failed to delete schedule: {ex.Message}");
         }
+    }
+
+    public async Task<ServiceResult<bool>> PauseScheduleAsync(string scheduleId, string? note = null)
+    {
+        if (string.IsNullOrWhiteSpace(scheduleId))
+        {
+            return ServiceResult<bool>.BadRequest("Schedule ID is required");
+        }
+
+        try
+        {
+            var client = await _clientFactory.GetClientAsync();
+            var scheduleHandle = client.GetScheduleHandle(scheduleId);
+
+            // Security check: Tenant isolation and agent write permission
+            var authResult = await AuthorizeScheduleWriteAsync(scheduleHandle, scheduleId, "pause");
+            if (!authResult.IsSuccess)
+            {
+                return ServiceResult<bool>.Failure(authResult.ErrorMessage!, authResult.StatusCode);
+            }
+
+            await scheduleHandle.PauseAsync(string.IsNullOrWhiteSpace(note) ? "Paused via API" : note);
+
+            _logger.LogInformation("Successfully paused schedule {ScheduleId} for agent {AgentName}",
+                LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(authResult.Data!.AgentName));
+
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
+        {
+            _logger.LogWarning("Schedule {ScheduleId} not found", LogSanitizer.Sanitize(scheduleId));
+            return ServiceResult<bool>.NotFound($"Schedule {scheduleId} not found");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to pause schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
+            return ServiceResult<bool>.InternalServerError($"Failed to pause schedule: {ex.Message}");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> ResumeScheduleAsync(string scheduleId, string? note = null)
+    {
+        if (string.IsNullOrWhiteSpace(scheduleId))
+        {
+            return ServiceResult<bool>.BadRequest("Schedule ID is required");
+        }
+
+        try
+        {
+            var client = await _clientFactory.GetClientAsync();
+            var scheduleHandle = client.GetScheduleHandle(scheduleId);
+
+            // Security check: Tenant isolation and agent write permission
+            var authResult = await AuthorizeScheduleWriteAsync(scheduleHandle, scheduleId, "resume");
+            if (!authResult.IsSuccess)
+            {
+                return ServiceResult<bool>.Failure(authResult.ErrorMessage!, authResult.StatusCode);
+            }
+
+            await scheduleHandle.UnpauseAsync(string.IsNullOrWhiteSpace(note) ? "Resumed via API" : note);
+
+            _logger.LogInformation("Successfully resumed schedule {ScheduleId} for agent {AgentName}",
+                LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(authResult.Data!.AgentName));
+
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
+        {
+            _logger.LogWarning("Schedule {ScheduleId} not found", LogSanitizer.Sanitize(scheduleId));
+            return ServiceResult<bool>.NotFound($"Schedule {scheduleId} not found");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resume schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
+            return ServiceResult<bool>.InternalServerError($"Failed to resume schedule: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Verifies the current caller may modify the given schedule: the schedule must belong to the
+    /// caller's tenant and the caller must have write permission for the schedule's agent.
+    /// Returns the mapped schedule on success, or a failed result describing the error.
+    /// </summary>
+    /// <param name="scheduleHandle">Handle used to describe the schedule.</param>
+    /// <param name="scheduleId">Schedule ID (used for logging).</param>
+    /// <param name="operation">Human-readable operation name used in error messages and logs (e.g. "pause").</param>
+    private async Task<ServiceResult<ScheduleModel>> AuthorizeScheduleWriteAsync(
+        Temporalio.Client.Schedules.ScheduleHandle scheduleHandle,
+        string scheduleId,
+        string operation)
+    {
+        var description = await scheduleHandle.DescribeAsync();
+        var scheduleModel = MapToScheduleModel(scheduleId, description);
+
+        // Security check: Tenant isolation
+        if (!string.IsNullOrEmpty(scheduleModel.TenantId) &&
+            scheduleModel.TenantId != _tenantContext.TenantId)
+        {
+            _logger.LogWarning("Attempted to {Operation} schedule {ScheduleId} from different tenant. Schedule tenant: {ScheduleTenant}, Current tenant: {CurrentTenant}",
+                operation, LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.TenantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
+            return ServiceResult<ScheduleModel>.Forbidden($"You do not have permission to {operation} this schedule");
+        }
+
+        // Security check: Agent write permission
+        if (!string.IsNullOrEmpty(scheduleModel.AgentName))
+        {
+            var hasWritePermission = await _permissionsService.HasWritePermission(scheduleModel.AgentName);
+            if (!hasWritePermission.IsSuccess || !hasWritePermission.Data)
+            {
+                _logger.LogWarning("User lacks write permission for agent {AgentName} when attempting to {Operation} schedule {ScheduleId}",
+                    LogSanitizer.Sanitize(scheduleModel.AgentName), operation, LogSanitizer.Sanitize(scheduleId));
+                return ServiceResult<ScheduleModel>.Forbidden($"You do not have permission to {operation} schedules for agent {scheduleModel.AgentName}");
+            }
+        }
+
+        return ServiceResult<ScheduleModel>.Success(scheduleModel);
     }
     
     public async Task<ServiceResult<ScheduleDeleteResult>> DeleteAllSchedulesByAgentAsync(string agentName)

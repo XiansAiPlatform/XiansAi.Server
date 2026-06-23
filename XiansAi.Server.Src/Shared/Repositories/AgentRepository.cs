@@ -36,6 +36,21 @@ public interface IAgentRepository
     Task<List<AgentWithDefinitions>> GetAgentsWithDefinitionsAsync(string userId, string tenant, DateTime? startTime, DateTime? endTime, bool basicDataOnly = false);
     Task<List<AgentWithDefinitions>> GetSystemScopedAgentsWithDefinitionsAsync(bool basicDataOnly = false);
 
+    /// <summary>
+    /// Finds all tenant-scoped agent instances (SystemScoped = false) that share the given name.
+    /// These represent deployments of a system template across tenants.
+    /// </summary>
+    /// <param name="agentName">The template/agent name to match.</param>
+    /// <returns>The list of tenant-scoped agents with the given name.</returns>
+    Task<List<Agent>> GetDeployedInstancesByNameAsync(string agentName);
+
+    /// <summary>
+    /// Finds a system-scoped agent template by name (SystemScoped = true), regardless of tenant.
+    /// </summary>
+    /// <param name="agentName">The template/agent name to match.</param>
+    /// <returns>The system-scoped agent, or null if none exists with that name.</returns>
+    Task<Agent?> GetSystemScopedByNameAsync(string agentName);
+
 }
 
 public class AgentRepository : IAgentRepository
@@ -400,6 +415,46 @@ public class AgentRepository : IAgentRepository
 
         _logger.LogInformation("Returning {Count} system-scoped agents with their definitions (sorted by most recent first)", result.Count);
         return result;
+    }
+
+    public async Task<List<Agent>> GetDeployedInstancesByNameAsync(string agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            return new List<Agent>();
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filterBuilder = Builders<Agent>.Filter;
+            var filter = filterBuilder.And(
+                filterBuilder.Eq(x => x.Name, agentName),
+                filterBuilder.Eq(x => x.SystemScoped, false)
+            );
+
+            return await _agents.Find(filter)
+                .SortBy(x => x.Tenant)
+                .ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetDeployedInstancesByName");
+    }
+
+    public async Task<Agent?> GetSystemScopedByNameAsync(string agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            return null;
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filterBuilder = Builders<Agent>.Filter;
+            var filter = filterBuilder.And(
+                filterBuilder.Eq(x => x.Name, agentName),
+                filterBuilder.Eq(x => x.SystemScoped, true)
+            );
+
+            return await _agents.Find(filter).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetSystemScopedByName");
     }
 
     private async Task ReplaceCreatedByWithUserNames(List<FlowDefinition> definitions)

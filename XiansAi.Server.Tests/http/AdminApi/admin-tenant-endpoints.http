@@ -52,7 +52,17 @@ Accept: application/json
 
 ###
 
-### 3. Create Tenant
+### 3. Get Tenant Logo
+# Serves the tenant logo image. This is the endpoint that tenant responses point to
+# via the `logo.url` field (responses never embed the raw base64 image).
+# Returns the decoded image bytes, or a 302 redirect for externally-hosted logos.
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}/logo
+Authorization: Bearer {{apiKey}}
+Accept: image/*
+
+###
+
+### 4. Create Tenant
 # Create a new tenant
 # Note: No X-Tenant-Id header required for this endpoint
 POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants
@@ -70,7 +80,29 @@ Accept: application/json
 
 ###
 
-### 4. Update Tenant
+### 4b. Create Tenant with a base64 logo
+# The logo is accepted as base64 on input, but tenant responses will return a
+# `logo.url` (pointing to the logo endpoint) instead of the embedded base64.
+POST {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "tenantId": "new-tenant-64",
+  "name": "New Tenant With Logo",
+  "domain": "newtenant64.example.com",
+  "description": "A new tenant with a base64 logo",
+  "logo": {
+    "imgBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "width": 1,
+    "height": 1
+  }
+}
+
+###
+
+### 5. Update Tenant
 # Update tenant properties (name, domain, description, etc.)
 # Note: Uses tenantId (e.g., 'spacex01') in the URL path
 # No X-Tenant-Id header required for this endpoint
@@ -89,7 +121,7 @@ Accept: application/json
 
 ###
 
-### 5. Delete Tenant
+### 6. Delete Tenant
 # Delete a tenant by tenantId (e.g., 'spacex01')
 # Note: No X-Tenant-Id header required for this endpoint
 DELETE {{baseUrl}}/api/{{apiVersion}}/admin/tenants/{{tenantId}}

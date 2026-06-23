@@ -2,6 +2,7 @@ using Shared.Services;
 using Shared.Utils.Services;
 using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Models;
+using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -19,7 +20,8 @@ public static class AdminTaskEndpoints
     {
         var taskGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/tasks")
             .WithTags("AdminAPI - Tasks")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>();
 
         // List all tasks for a tenant with optional filters
         taskGroup.MapGet("", async (
@@ -83,31 +85,71 @@ public static class AdminTaskEndpoints
         ;
 
         // Update draft for a task
-        taskGroup.MapPut("/draft", async (
+        taskGroup.MapPut("/draft", async Task<IResult> (
+            string tenantId,
             [FromQuery] string taskId,
             [FromBody] UpdateDraftRequest request,
             [FromServices] IAdminTaskService taskService) =>
         {
+            var ownershipError = await EnsureTaskInTenant(taskService, taskId, tenantId);
+            if (ownershipError != null)
+            {
+                return ownershipError;
+            }
+
             var result = await taskService.UpdateDraft(taskId, request.UpdatedDraft);
             return result.ToHttpResult();
         })
         .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
         .WithName("UpdateTaskDraft")
         ;
 
         // Perform action on a task
-        taskGroup.MapPost("/actions", async (
+        taskGroup.MapPost("/actions", async Task<IResult> (
+            string tenantId,
             [FromQuery] string taskId,
             [FromBody] PerformActionRequest request,
             [FromServices] IAdminTaskService taskService) =>
         {
+            var ownershipError = await EnsureTaskInTenant(taskService, taskId, tenantId);
+            if (ownershipError != null)
+            {
+                return ownershipError;
+            }
+
             var result = await taskService.PerformAction(taskId, request.Action, request.Comment);
             return result.ToHttpResult();
         })
         .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
         .WithName("PerformTaskAction")
         ;
+    }
+
+    /// <summary>
+    /// Verifies the task identified by <paramref name="taskId"/> belongs to <paramref name="tenantId"/>.
+    /// The task service signals Temporal by workflow ID without any tenant scoping, so this check
+    /// prevents cross-tenant task mutation. The route tenant is validated against the resolved
+    /// context by <see cref="Auth.TenantRouteScopeFilter"/>.
+    /// Returns null when the task is in the tenant; otherwise the error <see cref="IResult"/> to return.
+    /// </summary>
+    private static async Task<IResult?> EnsureTaskInTenant(
+        IAdminTaskService taskService,
+        string taskId,
+        string tenantId)
+    {
+        var task = await taskService.GetTaskById(taskId);
+        if (!task.IsSuccess)
+        {
+            return task.ToHttpResult();
+        }
+        if (task.Data?.TenantId != tenantId)
+        {
+            return Results.NotFound(new { message = "Task not found in the specified tenant" });
+        }
+        return null;
     }
 }
