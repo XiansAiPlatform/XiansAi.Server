@@ -49,7 +49,7 @@ public interface ITenantService
 {
     Task<ServiceResult<Tenant>> GetTenantById(string id);
     Task<ServiceResult<Tenant>> GetTenantByDomain(string domain);
-    Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default);
+    Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false);
     Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default);
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
     Task<ServiceResult<List<string>>> GetTenantIdList();
@@ -186,7 +186,7 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default)
+    public async Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false)
     {
         try
         {
@@ -198,7 +198,7 @@ public class TenantService : ITenantService
                 return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
             }
 
-            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken, bypassCache);
             if (tenant == null)
             {
                 _logger.LogWarning("Tenant with tenant ID {TenantId} not found", LogSanitizer.Sanitize(tenantId));
