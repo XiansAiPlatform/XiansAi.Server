@@ -1,6 +1,7 @@
 using Shared.Auth;
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Utils;
 using Shared.Utils.Services;
 
 namespace Features.AdminApi.Endpoints;
@@ -56,7 +57,10 @@ public static class AdminTenantEndpoints
                     new { message = "Access denied: Only system administrators can retrieve tenant details by ID" },
                     statusCode: StatusCodes.Status403Forbidden);
             }
-            var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            // Honor the standard "Cache-Control: no-cache" request header: when present, read the
+            // tenant directly from the database (bypassing, then refreshing, the tenant cache).
+            var bypassCache = httpContext.Request.IsNoCacheRequested();
+            var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted, bypassCache);
             return result.ToHttpResult();
         })
         .WithName("GetTenantByTenantId")
