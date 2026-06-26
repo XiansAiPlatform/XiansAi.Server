@@ -18,8 +18,10 @@ public interface ITenantCacheService
     /// Gets a tenant by ID from cache or database.
     /// Null results are cached with a shorter TTL to mitigate brute-force enumeration.
     /// Returns a shallow copy so callers cannot mutate the cached original.
+    /// When <paramref name="bypassCache"/> is true, the cache is not read; the tenant is fetched
+    /// directly from the database and the cache entry is refreshed with the fresh value.
     /// </summary>
-    Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false);
 
     /// <summary>
     /// Invalidates the cached tenant when it is updated or deleted.
@@ -60,7 +62,7 @@ public class TenantCacheService : ITenantCacheService
         _nullResultCacheExpiration = TimeSpan.FromMinutes(Math.Max(1, nullResultExpirationMinutes));
     }
 
-    public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
+    public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -77,10 +79,11 @@ public class TenantCacheService : ITenantCacheService
             await semaphore.WaitAsync(cancellationToken);
             acquired = true;
 
-            if (_cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
+            if (!bypassCache && _cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
                 return cachedHolder?.Tenant?.ShallowCopy();
 
-            _logger.LogDebug("Cache miss for tenant {TenantId}, fetching from database", tenantId);
+            _logger.LogDebug("Fetching tenant {TenantId} from database (bypassCache: {BypassCache})", tenantId, bypassCache);
+
             using var scope = _scopeFactory.CreateScope();
             var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
             var tenant = await repo.GetByTenantIdAsync(tenantId, cancellationToken);
