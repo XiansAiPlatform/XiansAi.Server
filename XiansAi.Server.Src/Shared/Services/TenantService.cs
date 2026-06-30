@@ -21,6 +21,7 @@ public class CreateTenantRequest
     public Logo? Logo { get; set; }
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
+    public bool UseSpecificTemporalNamespace { get; set; } = false;
 }
 
 public class UpdateTenantRequest
@@ -32,6 +33,7 @@ public class UpdateTenantRequest
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
     public bool? Enabled { get; set; }
+    public bool? UseSpecificTemporalNamespace { get; set; }
 }
 
 public class UpdateTenantThemeRequest
@@ -322,6 +324,7 @@ public class TenantService : ITenantService
                 Theme = request.Theme,
                 Timezone = request.Timezone,
                 Enabled = false,
+                UseSpecificTemporalNamespace = request.UseSpecificTemporalNamespace,
                 CreatedBy = finalCreatedBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -395,6 +398,9 @@ public class TenantService : ITenantService
 
             if (request.Timezone != null)
                 existingTenant.Timezone = request.Timezone;
+
+            if (request.UseSpecificTemporalNamespace.HasValue)
+                existingTenant.UseSpecificTemporalNamespace = request.UseSpecificTemporalNamespace.Value;
 
             return await PersistTenantUpdate(existingTenant, id);
         }

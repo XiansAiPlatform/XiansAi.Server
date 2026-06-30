@@ -69,6 +69,9 @@ public class Tenant : ModelValidatorBase<Tenant>
     [BsonElement("enabled")]
     public bool Enabled { get; set; } = true;
 
+    [BsonElement("use_specific_temporal_namespace")]
+    public bool UseSpecificTemporalNamespace { get; set; } = false;
+
     public override void Validate()
     {
         // Call base validation (Data Annotations)
@@ -135,7 +138,8 @@ public class Tenant : ModelValidatorBase<Tenant>
             CreatedAt = CreatedAt,
             CreatedBy = CreatedBy,
             UpdatedAt = UpdatedAt,
-            Enabled = Enabled
+            Enabled = Enabled,
+            UseSpecificTemporalNamespace = UseSpecificTemporalNamespace
         };
     }
 
@@ -155,6 +159,7 @@ public class Tenant : ModelValidatorBase<Tenant>
             CreatedBy = ValidationHelpers.SanitizeString(this.CreatedBy),
             UpdatedAt = this.UpdatedAt,
             Enabled = this.Enabled,
+            UseSpecificTemporalNamespace = this.UseSpecificTemporalNamespace,
             Logo = this.Logo,
             Agents = this.Agents,
             Permissions = this.Permissions
