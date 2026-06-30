@@ -13,6 +13,7 @@ public interface ITemplateService
     Task<ServiceResult<Agent>> DeployTemplate(string agentName);
     Task<ServiceResult<bool>> DeleteSystemScopedAgent(string agentName);
     Task<ServiceResult<Agent>> DeployTemplateToTenant(string agentName, string tenantId, string createdBy, string? onboardingJson = null);
+    Task<ServiceResult<Agent>> PromoteAgentToTemplateAsync(string agentName, string tenantId, string createdBy);
     Task<ServiceResult<Agent>> GetSystemScopedAgentByIdAsync(string templateObjectId);
     Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null);
     Task<ServiceResult<TemplateDeployments>> GetTemplateDeploymentsAsync(string templateObjectId);
@@ -350,6 +351,132 @@ public class TemplateService : ITemplateService
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
             return ServiceResult<Agent>.InternalServerError(
                 "An error occurred while deploying the template to tenant");
+        }
+    }
+
+    /// <summary>
+    /// Converts a running tenant-scoped agent into a system-scoped template by creating a new template
+    /// agent and cloning the tenant agent's flow definitions. The source agent (and any active
+    /// AgentActivation/workflows) is left untouched - this creates an independent template copy.
+    /// </summary>
+    /// <param name="agentName">The name of the tenant-scoped agent to promote.</param>
+    /// <param name="tenantId">The tenant ID that owns the source agent.</param>
+    /// <param name="createdBy">The user ID performing the promotion.</param>
+    /// <returns>A service result containing the newly created template agent.</returns>
+    public async Task<ServiceResult<Agent>> PromoteAgentToTemplateAsync(string agentName, string tenantId, string createdBy)
+    {
+        try
+        {
+            _logger.LogInformation("Promoting agent {AgentName} in tenant {TenantId} to a system template, requested by {CreatedBy}",
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
+
+            if (string.IsNullOrWhiteSpace(agentName))
+            {
+                return ServiceResult<Agent>.BadRequest("Agent name is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                return ServiceResult<Agent>.BadRequest("Tenant ID is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(createdBy))
+            {
+                return ServiceResult<Agent>.BadRequest("Created by user ID is required");
+            }
+
+            // Find the source tenant-scoped agent
+            var sourceAgent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
+            if (sourceAgent == null)
+            {
+                _logger.LogWarning("Agent {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<Agent>.NotFound($"Agent '{agentName}' not found in tenant '{tenantId}'");
+            }
+
+            if (sourceAgent.SystemScoped)
+            {
+                return ServiceResult<Agent>.BadRequest($"Agent '{agentName}' is already a system-scoped template");
+            }
+
+            // Template names must be unique across the system
+            var existingTemplate = await _agentRepository.GetSystemScopedByNameAsync(agentName);
+            if (existingTemplate != null)
+            {
+                _logger.LogWarning("A template named {AgentName} already exists", LogSanitizer.Sanitize(agentName));
+                return ServiceResult<Agent>.Conflict($"A template named '{agentName}' already exists. Delete it first if you want to re-promote.");
+            }
+
+            // Create the template agent from the source agent's metadata
+            var newTemplate = new Agent
+            {
+                Id = ObjectId.GenerateNewId().ToString(),
+                Name = sourceAgent.Name,
+                Tenant = null,
+                CreatedBy = createdBy,
+                CreatedAt = DateTime.UtcNow,
+                SystemScoped = true,
+                OnboardingJson = sourceAgent.OnboardingJson,
+                Description = sourceAgent.Description,
+                Summary = sourceAgent.Summary,
+                Category = sourceAgent.Category,
+                Version = sourceAgent.Version,
+                Author = sourceAgent.Author,
+                SamplePrompts = sourceAgent.SamplePrompts?.ToList() ?? new List<string>(),
+                OwnerAccess = new List<string>(),
+                ReadAccess = new List<string>(),
+                WriteAccess = new List<string>()
+            };
+
+            newTemplate.GrantOwnerAccess(createdBy);
+
+            await _agentRepository.CreateAsync(newTemplate);
+            _logger.LogInformation("Created template agent {AgentName} with ID {AgentId} from tenant {TenantId} by user {CreatedBy}",
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(newTemplate.Id), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
+
+            // Clone the source agent's own (non-system-scoped) flow definitions into the new template
+            var sourceDefinitions = (await _flowDefinitionRepository.GetByNameAsync(agentName, tenantId))
+                .Where(d => !d.SystemScoped && string.Equals(d.Tenant, tenantId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var clonedDefinitionsCount = 0;
+            foreach (var sourceDefinition in sourceDefinitions)
+            {
+                var newDefinition = new FlowDefinition
+                {
+                    Id = ObjectId.GenerateNewId().ToString(),
+                    WorkflowType = sourceDefinition.WorkflowType,
+                    Agent = agentName,
+                    Name = sourceDefinition.Name,
+                    Hash = sourceDefinition.Hash,
+                    Source = sourceDefinition.Source,
+                    Markdown = sourceDefinition.Markdown,
+                    ActivityDefinitions = CloneActivityDefinitions(sourceDefinition.ActivityDefinitions),
+                    ParameterDefinitions = CloneParameterDefinitions(sourceDefinition.ParameterDefinitions),
+                    CreatedBy = createdBy,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    Tenant = null,
+                    SystemScoped = true
+                };
+
+                await _flowDefinitionRepository.CreateAsync(newDefinition);
+                clonedDefinitionsCount++;
+
+                _logger.LogDebug("Cloned flow definition {WorkflowType} for template agent {AgentName}",
+                    LogSanitizer.Sanitize(sourceDefinition.WorkflowType), LogSanitizer.Sanitize(agentName));
+            }
+
+            _logger.LogInformation("Successfully promoted agent {AgentName} from tenant {TenantId} to a system template with {DefinitionsCount} flow definitions by user {CreatedBy}",
+                agentName, tenantId, clonedDefinitionsCount, createdBy);
+
+            return ServiceResult<Agent>.Success(newTemplate);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error promoting agent {AgentName} in tenant {TenantId} to a system template",
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<Agent>.InternalServerError(
+                "An error occurred while promoting the agent to a template");
         }
     }
 
