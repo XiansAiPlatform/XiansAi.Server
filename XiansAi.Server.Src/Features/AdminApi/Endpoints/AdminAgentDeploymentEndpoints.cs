@@ -1,6 +1,7 @@
 using Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Utils.Services;
+using Shared.Auth;
 using Features.AdminApi.Auth;
 
 namespace Features.AdminApi.Endpoints;
@@ -75,6 +76,27 @@ public static class AdminAgentDeploymentEndpoints
             return Results.Ok(new { message = $"Agent '{agentName}' deleted successfully" });
         })
         .WithName("DeleteAgentDeployment")
+        ;
+
+        // Promote a running tenant-scoped agent into a new system-scoped template
+        adminAgentGroup.MapPost("/{agentName}/promote-to-template", async (
+            string tenantId,
+            string agentName,
+            [FromServices] ITemplateService templateService,
+            [FromServices] ITenantContext tenantContext) =>
+        {
+            // Promoting creates a new system-scoped (global) template; only SysAdmins may do this.
+            if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext))
+            {
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can promote an agent to a template" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var result = await templateService.PromoteAgentToTemplateAsync(agentName, tenantId, tenantContext.LoggedInUser);
+            return result.ToHttpResult();
+        })
+        .WithName("PromoteAgentDeploymentToTemplate")
         ;
     }
 }
