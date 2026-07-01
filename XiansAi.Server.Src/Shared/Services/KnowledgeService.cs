@@ -130,18 +130,21 @@ public class KnowledgeService : IKnowledgeService
     private readonly ILogger<KnowledgeService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IAgentRepository _agentRepository;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     
     public KnowledgeService(
         IKnowledgeRepository knowledgeRepository,
         ILogger<KnowledgeService> logger,
         ITenantContext tenantContext,
-        IAgentRepository agentRepository
+        IAgentRepository agentRepository,
+        IWebhookEventPublisher webhookEventPublisher
     )
     {
         _knowledgeRepository = knowledgeRepository;
         _logger = logger;
         _tenantContext = tenantContext;
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
     }
 
     // Validate that knowledge belongs to the user's tenant or is global
@@ -316,6 +319,11 @@ public class KnowledgeService : IKnowledgeService
         
         if (!result)
             return Results.NotFound("Knowledge not found or could not be deleted");
+
+        await _webhookEventPublisher.PublishAsync(
+            WebhookEventTypes.KnowledgeDeleted,
+            new { tenantId = tenantIdToDelete, name = request.Name, agentName = request.Agent, systemScoped = existingKnowledge.SystemScoped },
+            tenantIdToDelete);
 
         return Results.Ok(new { message = "All versions deleted" });
     }
@@ -571,6 +579,12 @@ public class KnowledgeService : IKnowledgeService
         try
         {
             await _knowledgeRepository.CreateAsync(knowledge);
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.KnowledgeCreated,
+                new { tenantId = knowledge.TenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName = knowledge.Agent, activationName = knowledge.ActivationName, systemScoped = knowledge.SystemScoped, version = knowledge.Version, createdBy = knowledge.CreatedBy },
+                knowledge.TenantId);
+
             return Results.Ok(knowledge);
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
@@ -679,7 +693,17 @@ public class KnowledgeService : IKnowledgeService
             return false;
         }
         
-        return await _knowledgeRepository.DeleteAsync<Knowledge>(id);
+        var deleted = await _knowledgeRepository.DeleteAsync<Knowledge>(id);
+
+        if (deleted)
+        {
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.KnowledgeDeleted,
+                new { tenantId, knowledgeId = id, name = knowledge.Name, agentName = knowledge.Agent, activationName = knowledge.ActivationName },
+                tenantId);
+        }
+
+        return deleted;
     }
 
     public async Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null)
@@ -724,6 +748,12 @@ public class KnowledgeService : IKnowledgeService
         };
 
         await _knowledgeRepository.CreateAsync(knowledge);
+
+        await _webhookEventPublisher.PublishAsync(
+            WebhookEventTypes.KnowledgeCreated,
+            new { tenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName, activationName, systemScoped, version = knowledge.Version, createdBy },
+            tenantId);
+
         return knowledge;
     }
 
@@ -778,6 +808,12 @@ public class KnowledgeService : IKnowledgeService
         };
 
         await _knowledgeRepository.CreateAsync(updatedKnowledge);
+
+        await _webhookEventPublisher.PublishAsync(
+            WebhookEventTypes.KnowledgeUpdated,
+            new { tenantId, knowledgeId = updatedKnowledge.Id, name = updatedKnowledge.Name, type = updatedKnowledge.Type, agentName = updatedKnowledge.Agent, updatedBy },
+            tenantId);
+
         return updatedKnowledge;
     }
 }

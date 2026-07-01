@@ -66,12 +66,15 @@ public class TemplateService : ITemplateService
     /// <param name="knowledgeRepository">Repository for knowledge operations.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
+
     public TemplateService(
         IAgentRepository agentRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
         IKnowledgeRepository knowledgeRepository,
         ILogger<TemplateService> logger,
-        ITenantContext tenantContext
+        ITenantContext tenantContext,
+        IWebhookEventPublisher webhookEventPublisher
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -79,6 +82,7 @@ public class TemplateService : ITemplateService
         _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
     }
 
     /// <summary>
@@ -220,6 +224,10 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Successfully deleted system-scoped agent {AgentName} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items", 
                 agentName, deletedDefinitionsCount, deletedKnowledgeCount);
 
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.TemplateDeleted,
+                new { templateId = agent.Id, name = agent.Name });
+
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -341,6 +349,11 @@ public class TemplateService : ITemplateService
 
             _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions by user {CreatedBy}", 
                 agentName, tenantId, clonedDefinitionsCount, createdBy);
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.AgentTemplateDeployed,
+                new { tenantId, templateName = agentName, agentId = newAgent.Id, agentName = newAgent.Name, createdBy, definitionsCount = clonedDefinitionsCount },
+                tenantId);
 
             return ServiceResult<Agent>.Success(newAgent);
         }
@@ -592,6 +605,11 @@ public class TemplateService : ITemplateService
             }
 
             _logger.LogInformation("Successfully updated system-scoped agent template {TemplateId}", LogSanitizer.Sanitize(template.Id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.TemplateUpdated,
+                new { templateId = template.Id, name = template.Name });
+
             return ServiceResult<Agent>.Success(template);
         }
         catch (Exception ex)

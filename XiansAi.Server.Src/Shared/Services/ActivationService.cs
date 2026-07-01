@@ -50,6 +50,7 @@ public class ActivationService : IActivationService
     private readonly IWorkflowStarterService _workflowStarterService;
     private readonly IActivationCleanupService _cleanupService;
     private readonly IActivationValidationService _activationValidationService;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -60,6 +61,7 @@ public class ActivationService : IActivationService
         ITemporalClientService temporalClientService,
         IActivationCleanupService cleanupService,
         IActivationValidationService activationValidationService,
+        IWebhookEventPublisher webhookEventPublisher,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -68,6 +70,7 @@ public class ActivationService : IActivationService
         _workflowStarterService = workflowStarterService ?? throw new ArgumentNullException(nameof(workflowStarterService));
         _cleanupService = cleanupService ?? throw new ArgumentNullException(nameof(cleanupService));
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -136,6 +139,12 @@ public class ActivationService : IActivationService
             await _activationRepository.CreateAsync(activation);
 
             _logger.LogInformation("Successfully created activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationCreated,
+                new { tenantId, activationId = activation.Id, name = activation.Name, agentName = request.AgentName },
+                tenantId);
+
             return ServiceResult<AgentActivation>.Success(activation);
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000)
@@ -265,6 +274,12 @@ public class ActivationService : IActivationService
             await _activationRepository.UpdateAsync(activationId, activation);
 
             _logger.LogInformation("Successfully updated activation {ActivationId}", LogSanitizer.Sanitize(activationId));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationUpdated,
+                new { tenantId, activationId = activation.Id, name = activation.Name },
+                tenantId);
+
             return ServiceResult<AgentActivation>.Success(activation);
         }
         catch (MongoDB.Driver.MongoWriteException ex) when (ex.WriteError?.Code == 11000)
@@ -505,7 +520,12 @@ public class ActivationService : IActivationService
 
                 _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}", 
                     startedCount, flowDefinitions.Count, activationId);
-                
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.ActivationActivated,
+                    new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds },
+                    tenantId);
+
                 return ServiceResult<AgentActivation>.Success(activation);
             }
             catch (Exception ex)
@@ -612,7 +632,12 @@ public class ActivationService : IActivationService
                 LogSanitizer.Sanitize(activationId),
                 cleanup.WorkflowCleanup.TotalWorkflows,
                 cleanup.ScheduleCleanup.TotalSchedules);
-            
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationDeactivated,
+                new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName },
+                activation.TenantId);
+
             return ServiceResult<AgentActivation>.Success(activation);
         }
         catch (Exception ex)
@@ -661,6 +686,12 @@ public class ActivationService : IActivationService
             }
 
             _logger.LogInformation("Successfully deleted activation {ActivationId}", LogSanitizer.Sanitize(activationId));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationDeleted,
+                new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName },
+                activation.TenantId);
+
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
