@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Features.AppsApi.Models;
 using Features.AppsApi.Repositories;
+using Shared.Data.Models;
 using Shared.Services;
 using Shared.Utils.Services;
 using Shared.Utils;
@@ -98,17 +99,20 @@ public class AppIntegrationService : IAppIntegrationService
     private readonly IAppIntegrationRepository _repository;
     private readonly IApiKeyService _apiKeyService;
     private readonly IActivationValidationService _activationValidationService;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<AppIntegrationService> _logger;
 
     public AppIntegrationService(
         IAppIntegrationRepository repository,
         IApiKeyService apiKeyService,
         IActivationValidationService activationValidationService,
+        IWebhookEventPublisher webhookEventPublisher,
         ILogger<AppIntegrationService> logger)
     {
         _repository = repository;
         _apiKeyService = apiKeyService;
         _activationValidationService = activationValidationService;
+        _webhookEventPublisher = webhookEventPublisher;
         _logger = logger;
     }
 
@@ -332,6 +336,11 @@ public class AppIntegrationService : IAppIntegrationService
             _logger.LogInformation("Created integration {IntegrationId} with webhook URL {WebhookUrl}",
                 LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(response.WebhookUrl));
 
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationCreated,
+                new { tenantId, integrationId = id, name = integration.Name, platformId = integration.PlatformId, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
+                tenantId);
+
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
@@ -473,6 +482,11 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Updated integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationUpdated,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
+                tenantId);
+
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
@@ -509,6 +523,11 @@ public class AppIntegrationService : IAppIntegrationService
             }
 
             _logger.LogInformation("Deleted integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationDeleted,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId },
+                tenantId);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -648,6 +667,12 @@ public class AppIntegrationService : IAppIntegrationService
 
             var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
             _logger.LogInformation("Created builtin webhook integration {IntegrationId} with webhook URL", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationWebhookCreated,
+                new { tenantId, integrationId = id, name = integration.Name, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
+                tenantId);
+
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
@@ -723,6 +748,11 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Enabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationEnabled,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
+                tenantId);
+
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
         catch (Exception ex)
@@ -769,6 +799,11 @@ public class AppIntegrationService : IAppIntegrationService
             var response = AppIntegrationResponse.FromEntity(existing);
 
             _logger.LogInformation("Disabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationDisabled,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
+                tenantId);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }

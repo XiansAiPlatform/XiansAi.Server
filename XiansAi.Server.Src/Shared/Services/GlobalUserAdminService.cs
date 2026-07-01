@@ -99,6 +99,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
     private readonly ITenantCacheService _tenantCacheService;
     private readonly IRoleCacheService _roleCacheService;
     private readonly ITokenValidationCache _tokenCache;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<GlobalUserAdminService> _logger;
 
     public GlobalUserAdminService(
@@ -106,12 +107,14 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         ITenantCacheService tenantCacheService,
         IRoleCacheService roleCacheService,
         ITokenValidationCache tokenCache,
+        IWebhookEventPublisher webhookEventPublisher,
         ILogger<GlobalUserAdminService> logger)
     {
         _userRepository = userRepository;
         _tenantCacheService = tenantCacheService;
         _roleCacheService = roleCacheService;
         _tokenCache = tokenCache;
+        _webhookEventPublisher = webhookEventPublisher;
         _logger = logger;
     }
 
@@ -203,6 +206,10 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             await InvalidateCachesAsync(user);
             _logger.LogInformation("Global user {UserId} profile updated", LogSanitizer.Sanitize(userId));
 
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.UserUpdated,
+                new { userId = user.UserId, email = user.Email, name = user.Name });
+
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
         catch (Exception ex)
@@ -228,6 +235,10 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             await InvalidateCachesAsync(user);
             _logger.LogInformation("SysAdmin flag for user {UserId} set to {Value}",
                 LogSanitizer.Sanitize(userId), isSysAdmin);
+
+            await _webhookEventPublisher.PublishAsync(
+                isSysAdmin ? WebhookEventTypes.UserSysAdminGranted : WebhookEventTypes.UserSysAdminRevoked,
+                new { userId = user.UserId, email = user.Email, isSysAdmin });
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -272,6 +283,10 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             await InvalidateCachesAsync(user);
             _logger.LogInformation("User {UserId} {Action}",
                 LogSanitizer.Sanitize(userId), enabled ? "enabled" : "disabled");
+
+            await _webhookEventPublisher.PublishAsync(
+                enabled ? WebhookEventTypes.UserEnabled : WebhookEventTypes.UserDisabled,
+                new { userId = user.UserId, email = user.Email, enabled, reason, actingUserId });
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }

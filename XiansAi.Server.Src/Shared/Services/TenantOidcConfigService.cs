@@ -49,18 +49,20 @@ public class TenantOidcConfigService : ITenantOidcConfigService
     private readonly ISecureEncryptionService _encryption;
     private readonly ILogger<TenantOidcConfigService> _logger;
     private readonly ObjectCache _cache;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly string _uniqueSecret;
     
     // Cache configuration
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromHours(1);
     private static readonly string CacheKeyPrefix = "tenant_oidc_config:";
 
-    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration, ObjectCache cache)
+    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration, ObjectCache cache, IWebhookEventPublisher webhookEventPublisher)
     {
         _repository = repository;
         _encryption = encryption;
         _logger = logger;
         _cache = cache;
+        _webhookEventPublisher = webhookEventPublisher;
         _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:TenantOidcSecretKey"] ?? string.Empty;
         if (string.IsNullOrWhiteSpace(_uniqueSecret))
         {
@@ -225,7 +227,12 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             // Invalidate cache after successful update
             await InvalidateCacheAsync(tenantId);
             _logger.LogDebug("Invalidated cache for tenant {TenantId} after upsert", LogSanitizer.Sanitize(tenantId));
-            
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.TenantOidcUpdated,
+                new { tenantId, created = existing == null, actorUserId },
+                tenantId);
+
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -249,6 +256,11 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                 // Invalidate cache after successful deletion
                 await InvalidateCacheAsync(tenantId);
                 _logger.LogDebug("Invalidated cache for tenant {TenantId} after deletion", LogSanitizer.Sanitize(tenantId));
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.TenantOidcDeleted,
+                    new { tenantId },
+                    tenantId);
             }
             
             return removed ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");
