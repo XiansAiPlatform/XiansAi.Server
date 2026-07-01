@@ -30,6 +30,7 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IActivationService, ActivationService>();
         builder.Services.AddScoped<IActivationCleanupService, ActivationCleanupService>();
         builder.Services.AddScoped<IAdminStatsService, AdminStatsService>();
+        builder.Services.AddScoped<IFeedbackQueryService, FeedbackQueryService>();
         builder.Services.AddScoped<IAdminLogsService, AdminLogsService>();
         builder.Services.AddScoped<IAdminMetricsService, AdminMetricsService>();
         builder.Services.AddScoped<IAdminDataService, AdminDataService>();
@@ -133,6 +134,7 @@ public static class AdminApiConfiguration
         AdminKnowledgeEndpoints.MapAdminKnowledgeEndpoints(adminApiGroup);
         WorkflowManagementEndpoints.MapWorkflowManagementEndpoints(adminApiGroup);
         AdminMessagingEndpoints.MapAdminMessagingEndpoints(adminApiGroup);
+        AdminFeedbackEndpoints.MapAdminFeedbackEndpoints(adminApiGroup);
         AdminTaskEndpoints.MapAdminTaskEndpoints(adminApiGroup);
         AdminScheduleEndpoints.MapAdminScheduleEndpoints(adminApiGroup);
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
