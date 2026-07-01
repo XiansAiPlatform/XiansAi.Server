@@ -169,7 +169,12 @@ public class Program
         {
             case ServiceType.WebApi:
                 builder.AddWebApiServices();
-                builder.AddWebApiAuth();
+                // WebAPI (Agent Studio browser login) requires an OIDC provider. Only wire its
+                // authentication when one is configured; otherwise run on Admin API key auth alone.
+                if (IsAuthProviderConfigured(builder.Configuration))
+                {
+                    builder.AddWebApiAuth();
+                }
                 builder.AddAdminApiServices();
                 builder.AddAdminApiAuth();
                 builder.AddAppsApiServices();
@@ -192,7 +197,12 @@ public class Program
                 builder.AddWebApiServices();
                 builder.AddAgentApiServices();
                 builder.AddAgentApiAuth();
-                builder.AddWebApiAuth();
+                // WebAPI (Agent Studio browser login) requires an OIDC provider. Only wire its
+                // authentication when one is configured; otherwise run on Admin API key auth alone.
+                if (IsAuthProviderConfigured(builder.Configuration))
+                {
+                    builder.AddWebApiAuth();
+                }
                 builder.AddAdminApiServices();
                 builder.AddAdminApiAuth();
                 builder.AddAppsApiServices();
@@ -201,6 +211,19 @@ public class Program
                 builder.AddPublicApiServices();
                 break;
         }
+    }
+
+    /// <summary>
+    /// Determines whether an OIDC identity provider is configured for WebAPI authentication.
+    /// The <c>AuthProvider:Provider</c> setting acts as the on/off switch: when it is missing,
+    /// empty, or set to "None", OIDC is treated as not configured and the WebAPI surface is
+    /// skipped so the platform can run purely on Admin API key authentication.
+    /// </summary>
+    private static bool IsAuthProviderConfigured(IConfiguration config)
+    {
+        var provider = config["AuthProvider:Provider"];
+        return !string.IsNullOrWhiteSpace(provider)
+            && !provider.Equals("None", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -247,7 +270,12 @@ public class Program
             case ServiceType.WebApi:
                 // Configure AdminApi middleware and endpoints (WebApi includes AdminApi)
                 app.UseAdminApiMiddleware();
-                app.UseWebApiEndpoints();
+                // Only map WebAPI endpoints when an OIDC provider is configured; their auth
+                // policies depend on the JWT scheme wired by AddWebApiAuth().
+                if (IsAuthProviderConfigured(app.Configuration))
+                {
+                    app.UseWebApiEndpoints();
+                }
                 app.UseAdminApiEndpoints();
                 app.UseAppsApiEndpoints();
                 break;
@@ -263,7 +291,12 @@ public class Program
                 break;
             case ServiceType.All:
             default:
-                app.UseWebApiEndpoints();                
+                // Only map WebAPI endpoints when an OIDC provider is configured; their auth
+                // policies depend on the JWT scheme wired by AddWebApiAuth().
+                if (IsAuthProviderConfigured(app.Configuration))
+                {
+                    app.UseWebApiEndpoints();
+                }
                 app.UseAgentApiEndpoints(loggerFactory);
                 app.UseUserApiEndpoints();
                 app.UseAdminApiMiddleware();

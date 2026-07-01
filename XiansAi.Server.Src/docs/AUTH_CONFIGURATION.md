@@ -2,6 +2,8 @@
 
 This document provides a comprehensive guide for configuring authentication providers in the XiansAi Server. The system supports multiple authentication providers through a unified interface, allowing you to switch between providers with minimal configuration changes.
 
+> **Note:** Configuring an identity provider is optional. It is only required for Agent Studio user (browser) login via the WebAPI. If `AuthProvider__Provider` is omitted (or set to `None`), the WebAPI login surface is not wired and the platform runs in Admin-API-key-only mode — Admin APIs authenticate with the bootstrapped API key and agents authenticate with certificates.
+
 ## Architecture Overview
 
 The authentication system uses a factory pattern to support multiple providers:
