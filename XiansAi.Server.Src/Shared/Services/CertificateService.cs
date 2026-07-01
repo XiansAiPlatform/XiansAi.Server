@@ -13,11 +13,6 @@ public class FlowServerSettings
     public required string FlowServerNamespace { get; set; }
     public string? FlowServerCertBase64 { get; set; }
     public string? FlowServerPrivateKeyBase64 { get; set; }
-    public required string ApiKey { get; set; }
-    public required string? ProviderName { get; set; }
-    public required string ModelName { get; set; }
-    public Dictionary<string, string>? AdditionalConfig { get; set; }
-    public required string? BaseUrl { get; set; }
 }
 
 public class CertificateService
@@ -26,20 +21,17 @@ public class CertificateService
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
-    private readonly ILlmService _llmService;
 
     public CertificateService(
         ILogger<CertificateService> logger,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
-        ICertificateRepository certificateRepository,
-        ILlmService llmService)
+        ICertificateRepository certificateRepository)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
-        _llmService = llmService;
     }
 
     public FlowServerSettings GetFlowServerSettings()
@@ -50,12 +42,7 @@ public class CertificateService
             FlowServerUrl = _tenantContext.GetTemporalConfig().FlowServerUrlExternal ?? _tenantContext.GetTemporalConfig().FlowServerUrl ?? throw new Exception($"FlowServerUrl not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerCertBase64 = GetFlowServerCertBase64(),
-            FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
-            ApiKey = _llmService.GetApiKey(),
-            ProviderName = _llmService.GetLlmProvider(),
-            ModelName = _llmService.GetModel(),
-            AdditionalConfig = _llmService.GetAdditionalConfig(),
-            BaseUrl = _llmService.GetBaseUrl()
+            FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64()
         };
     }
 

@@ -23,9 +23,6 @@ public static class SharedServices
         // Register email services using the combined factory
         RegisterEmailProviders(services, configuration);
 
-        // Register LLM services using the combined factory
-        RegisterLlmProviders(services, configuration);
-
         // Register the active Secret Store provider (database default, optional Azure Key Vault)
         RegisterSecretStoreProvider(services, configuration);
 
@@ -38,7 +35,6 @@ public static class SharedServices
         // Register business services
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<IEmailService, EmailService>();
-        services.AddScoped<ILlmService, LlmService>();
         services.AddScoped<IAuthorizationCacheService, AuthorizationCacheService>();
         
 
@@ -100,17 +96,6 @@ public static class SharedServices
     {
         // Register the active email provider and the factory itself
         EmailProviderFactory.RegisterProvider(services, configuration);
-    }
-
-    /// <summary>
-    /// Registers LLM services using the combined factory
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Application configuration</param>
-    private static void RegisterLlmProviders(IServiceCollection services, IConfiguration configuration)
-    {
-        // Register the active LLM provider and the factory itself
-        LlmProviderFactory.RegisterProvider(services, configuration);
     }
 
     /// <summary>

@@ -136,7 +136,6 @@ public class DefinitionsService : IDefinitionsService
     private readonly Repositories.IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IAgentRepository _agentRepository;
     private readonly ITenantContext _tenantContext;
-    private readonly IMarkdownService _markdownService; 
     private readonly IAgentPermissionRepository _agentPermissionRepository;
     
     public DefinitionsService(
@@ -144,7 +143,6 @@ public class DefinitionsService : IDefinitionsService
         IAgentRepository agentRepository,
         ILogger<DefinitionsService> logger,
         ITenantContext tenantContext,
-        IMarkdownService markdownService,
         IAgentPermissionRepository agentPermissionRepository
     )
     {
@@ -152,7 +150,6 @@ public class DefinitionsService : IDefinitionsService
         _agentRepository = agentRepository;
         _logger = logger;
         _tenantContext = tenantContext;
-        _markdownService = markdownService;
         _agentPermissionRepository = agentPermissionRepository;
     }
 
@@ -228,7 +225,6 @@ public class DefinitionsService : IDefinitionsService
             {
                 _logger.LogInformation("Flow definition with workflow type {WorkflowType} has changed hash. Deleting existing and creating new one.", LogSanitizer.Sanitize(request.WorkflowType));
                 await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id);
-                await GenerateMarkdown(definition);
                 // Create new definition with fresh ID
                 definition.Id = ObjectId.GenerateNewId().ToString();
                 await _flowDefinitionRepository.CreateAsync(definition);
@@ -239,7 +235,6 @@ public class DefinitionsService : IDefinitionsService
         }
 
         _logger.LogInformation("Creating new definition {WorkflowType}", LogSanitizer.Sanitize(definition.WorkflowType));
-        await GenerateMarkdown(definition);
         await _flowDefinitionRepository.CreateAsync(definition);
         return Results.Ok("New definition created successfully");
     }
@@ -326,16 +321,6 @@ public class DefinitionsService : IDefinitionsService
         });
     }
 
-
-    private async Task GenerateMarkdown(FlowDefinition definition)
-    {
-        if (string.IsNullOrEmpty(definition.Source))
-        {
-            return;
-        }
-        definition.Markdown = await _markdownService.GenerateMarkdown(definition.Source);
-        definition.UpdatedAt = DateTime.UtcNow;
-    }
 
     private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null, bool systemScoped = false)
     {

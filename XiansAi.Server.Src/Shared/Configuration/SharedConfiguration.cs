@@ -208,7 +208,6 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IActivationValidationService, ActivationValidationService>();
 
         // Register Utility services
-        builder.Services.AddScoped<IMarkdownService, MarkdownService>();
         builder.Services.AddScoped<IJwtClaimsExtractor, JwtClaimsExtractor>();
 
         // Register services
