@@ -17,6 +17,9 @@ public static class SharedServices
         services.Configure<UsageEventsOptions>(configuration.GetSection(UsageEventsOptions.SectionName));
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<UsageEventsOptions>>().Value);
 
+        // Bind outbound webhook options and register the delivery infrastructure
+        RegisterWebhookServices(services, configuration);
+
         // Register cache services using the combined factory
         RegisterCacheProviders(services, configuration);
 
@@ -78,6 +81,47 @@ public static class SharedServices
         }
         
         return services;
+    }
+
+    /// <summary>
+    /// Registers the outbound webhook options, the named HttpClient used for delivery, and the
+    /// background dispatcher. The dispatcher is only registered when webhooks are enabled; when
+    /// several instances run, its atomic outbox claim guarantees each event is delivered once.
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Application configuration</param>
+    private static void RegisterWebhookServices(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<WebhooksOptions>(configuration.GetSection(WebhooksOptions.SectionName));
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<WebhooksOptions>>().Value);
+
+        var webhookOptions = configuration.GetSection(WebhooksOptions.SectionName).Get<WebhooksOptions>()
+            ?? new WebhooksOptions();
+
+        var requestTimeout = TimeSpan.FromSeconds(Math.Max(1, webhookOptions.RequestTimeoutSeconds));
+        services.AddHttpClient("Webhooks", client =>
+        {
+            client.Timeout = requestTimeout;
+            // Cap buffering in case any code path reads the response body; deliveries never do.
+            client.MaxResponseContentBufferSize = 64 * 1024;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("XiansAi-Webhooks/1.0");
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+        {
+            // Do not follow redirects: a compromised listener could 3xx-redirect the dispatcher
+            // toward internal endpoints (SSRF). Redirects are surfaced as non-2xx failures instead.
+            AllowAutoRedirect = false,
+            // Webhook delivery is stateless; never send or store cookies.
+            UseCookies = false,
+            // Avoid decompressing attacker-controlled response bodies.
+            AutomaticDecompression = System.Net.DecompressionMethods.None,
+            ConnectTimeout = requestTimeout
+        });
+
+        if (webhookOptions.Enabled)
+        {
+            services.AddHostedService<WebhookDispatcherService>();
+        }
     }
 
     /// <summary>

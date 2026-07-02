@@ -67,6 +67,7 @@ public class TenantService : ITenantService
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IRoleManagementService _roleManagementService;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
 
 
     public TenantService(
@@ -74,13 +75,15 @@ public class TenantService : ITenantService
         ITenantCacheService tenantCacheService,
         ILogger<TenantService> logger,
         ITenantContext tenantContext,
-        IRoleManagementService roleManagementService)
+        IRoleManagementService roleManagementService,
+        IWebhookEventPublisher webhookEventPublisher)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -335,6 +338,17 @@ public class TenantService : ITenantService
             await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.TenantCreated,
+                new
+                {
+                    tenantId = validatedTenant.TenantId,
+                    name = validatedTenant.Name,
+                    domain = validatedTenant.Domain,
+                    createdBy = validatedTenant.CreatedBy,
+                },
+                validatedTenant.TenantId);
+
             var result = new TenantCreatedResult
             {
                 Tenant = validatedTenant,
@@ -374,6 +388,8 @@ public class TenantService : ITenantService
 
             EnsureTenantAccessOrThrow(existingTenant.TenantId);
 
+            var wasEnabled = existingTenant.Enabled;
+
             // Update only the properties that are provided in the request
             if (request.Name != null)
                 existingTenant.Name = request.Name;
@@ -396,7 +412,17 @@ public class TenantService : ITenantService
             if (request.Timezone != null)
                 existingTenant.Timezone = request.Timezone;
 
-            return await PersistTenantUpdate(existingTenant, id);
+            var result = await PersistTenantUpdate(existingTenant, id);
+
+            if (result.IsSuccess && request.Enabled.HasValue && request.Enabled.Value != wasEnabled)
+            {
+                await _webhookEventPublisher.PublishAsync(
+                    request.Enabled.Value ? WebhookEventTypes.TenantEnabled : WebhookEventTypes.TenantDisabled,
+                    new { tenantId = existingTenant.TenantId, id = existingTenant.Id },
+                    existingTenant.TenantId);
+            }
+
+            return result;
         }
         catch (ValidationException ex)
         {
@@ -515,6 +541,19 @@ public class TenantService : ITenantService
             _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
 
         _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
+
+        await _webhookEventPublisher.PublishAsync(
+            WebhookEventTypes.TenantUpdated,
+            new
+            {
+                tenantId = validatedTenant.TenantId,
+                id = validatedTenant.Id,
+                name = validatedTenant.Name,
+                domain = validatedTenant.Domain,
+                enabled = validatedTenant.Enabled,
+            },
+            validatedTenant.TenantId);
+
         return ServiceResult<Tenant>.Success(validatedTenant);
     }
 
@@ -539,6 +578,12 @@ public class TenantService : ITenantService
                 else
                     _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
                 _logger.LogInformation("Deleted tenant with ID {Id}", LogSanitizer.Sanitize(id));
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.TenantDeleted,
+                    new { tenantId = existingTenant.TenantId, id = existingTenant.Id, name = existingTenant.Name },
+                    existingTenant.TenantId);
+
                 return ServiceResult<bool>.Success(true);
             }
             else
