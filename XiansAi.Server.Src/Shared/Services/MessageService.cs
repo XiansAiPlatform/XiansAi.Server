@@ -129,13 +129,15 @@ public class MessageService : IMessageService
     private readonly IConversationRepository _conversationRepository;
     private readonly IWorkflowSignalService _workflowSignalService;
     private readonly IFeedbackService _feedbackService;
+    private readonly IMessageFileStorage _fileStorage;
 
         public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
         IConversationRepository conversationRepository,
         IWorkflowSignalService workflowSignalService,
-        IFeedbackService feedbackService
+        IFeedbackService feedbackService,
+        IMessageFileStorage fileStorage
         )
     {
         _logger = logger;
@@ -143,6 +145,7 @@ public class MessageService : IMessageService
         _conversationRepository = conversationRepository;
         _workflowSignalService = workflowSignalService;
         _feedbackService = feedbackService;
+        _fileStorage = fileStorage;
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -552,6 +555,11 @@ public class MessageService : IMessageService
                 return ServiceResult<bool>.BadRequest("WorkflowId and ParticipantId are required");
             }
 
+            // Collect referenced GridFS file ids before deleting the messages so we can
+            // clean up the stored blobs afterwards (references are gone once messages are deleted).
+            var fileIds = await _conversationRepository.GetFileIdsByWorkflowParticipantAndScopeAsync(
+                _tenantContext.TenantId, workflowId, participantId, topic);
+
             // Delete messages by workflow, participant, and scope (topic)
             var result = await _conversationRepository.DeleteMessagesByWorkflowParticipantAndScopeAsync(
                 _tenantContext.TenantId, workflowId, participantId, topic);
@@ -561,6 +569,20 @@ public class MessageService : IMessageService
                 _logger.LogWarning("Failed to delete messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(topic ?? "null"));
                 return ServiceResult<bool>.InternalServerError("Failed to delete messages");
+            }
+
+            // Best-effort cleanup of stored file blobs. Failure here must not fail the delete.
+            if (fileIds.Count > 0)
+            {
+                try
+                {
+                    await _fileStorage.DeleteAsync(_tenantContext.TenantId, fileIds);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to clean up {Count} stored files after deleting messages for workflowId {WorkflowId}",
+                        fileIds.Count, LogSanitizer.Sanitize(workflowId));
+                }
             }
 
             _logger.LogInformation("Successfully deleted messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 

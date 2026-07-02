@@ -233,6 +233,12 @@ public interface IConversationRepository
     Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
     Task<bool> DeleteMessagesByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope);
 
+    /// <summary>
+    /// Collects GridFS file ids referenced by File-type messages matching the given
+    /// workflow/participant/scope, so the stored blobs can be cleaned up on delete.
+    /// </summary>
+    Task<List<string>> GetFileIdsByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope);
+
     // Topics operations
     Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize);
 
@@ -801,6 +807,58 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             _logger.LogError(ex, "Error deleting messages for thread {ThreadId}", LogSanitizer.Sanitize(threadId));
             throw;
         }
+    }
+
+    public async Task<List<string>> GetFileIdsByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope)
+    {
+        var fileIds = new List<string>();
+
+        string threadId;
+        try
+        {
+            threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
+        }
+        catch (KeyNotFoundException)
+        {
+            return fileIds;
+        }
+
+        // Query the raw documents so we can walk the free-form "data" sub-document.
+        var bsonCollection = _database.GetCollection<BsonDocument>("conversation_message");
+        var filter = new BsonDocument
+        {
+            { "thread_id", threadId },
+            { "tenant_id", tenantId },
+            { "message_type", "File" },
+            { "scope", scope == null ? BsonNull.Value : scope },
+        };
+        var projection = Builders<BsonDocument>.Projection.Include("data");
+
+        var docs = await MongoRetryHelper.ExecuteWithRetryAsync(
+            async () => await (await bsonCollection.FindAsync(filter, new FindOptions<BsonDocument> { Projection = projection })).ToListAsync(),
+            _logger,
+            operationName: "GetFileIdsByWorkflowParticipantAndScope");
+
+        foreach (var doc in docs)
+        {
+            if (!doc.TryGetValue("data", out var dataVal) || dataVal is not BsonDocument dataDoc)
+            {
+                continue;
+            }
+            if (!dataDoc.TryGetValue("files", out var filesVal) || filesVal is not BsonArray filesArr)
+            {
+                continue;
+            }
+            foreach (var f in filesArr)
+            {
+                if (f is BsonDocument fd && fd.TryGetValue("fileId", out var idVal) && idVal.IsString)
+                {
+                    fileIds.Add(idVal.AsString);
+                }
+            }
+        }
+
+        return fileIds;
     }
 
     public async Task<bool> DeleteMessagesByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope)

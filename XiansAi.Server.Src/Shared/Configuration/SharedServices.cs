@@ -79,7 +79,12 @@ public static class SharedServices
             services.AddSingleton<IBackgroundTaskService>(sp => sp.GetRequiredService<BackgroundTaskService>());
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<BackgroundTaskService>());
         }
-        
+
+        // Periodically remove expired message file attachments from GridFS. Their message documents
+        // expire via a MongoDB TTL index, but the GridFS blobs need an explicit sweep because a native
+        // TTL index on the files collection would orphan the chunk documents.
+        services.AddHostedService<ExpiredMessageFileCleanupService>();
+
         return services;
     }
 
