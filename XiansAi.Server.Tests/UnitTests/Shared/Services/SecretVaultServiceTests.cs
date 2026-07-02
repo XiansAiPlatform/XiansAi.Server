@@ -13,12 +13,13 @@ namespace Tests.UnitTests.Shared.Services;
 public class SecretVaultServiceTests
 {
     private readonly Mock<ISecretVaultRepository> _repo = new(MockBehavior.Strict);
+    private readonly Mock<IWebhookEventPublisher> _webhookEventPublisher = new();
     private readonly InMemorySecretStoreProvider _store = new();
     private readonly SecretVaultService _service;
 
     public SecretVaultServiceTests()
     {
-        _service = new SecretVaultService(_repo.Object, _store, NullLogger<SecretVaultService>.Instance);
+        _service = new SecretVaultService(_repo.Object, _store, _webhookEventPublisher.Object, NullLogger<SecretVaultService>.Instance);
     }
 
     [Fact]
@@ -149,6 +150,7 @@ public class SecretVaultServiceTests
     {
         var entity = NewEntity("tenant-a", "k1");
         await _store.SetAsync(entity.Id, "to-die");
+        _repo.Setup(r => r.GetByIdAsync(entity.Id)).ReturnsAsync(entity);
         _repo.Setup(r => r.DeleteAsync(entity.Id)).ReturnsAsync(true);
 
         var result = await _service.DeleteAsync(entity.Id);
@@ -160,6 +162,7 @@ public class SecretVaultServiceTests
     [Fact]
     public async Task DeleteAsync_Does_Not_Touch_Store_When_Metadata_Missing()
     {
+        _repo.Setup(r => r.GetByIdAsync("missing")).ReturnsAsync((SecretVault?)null);
         _repo.Setup(r => r.DeleteAsync("missing")).ReturnsAsync(false);
         await _store.SetAsync("missing", "should-stay");
 

@@ -4,6 +4,8 @@ using Shared.Auth;
 using System.ComponentModel.DataAnnotations;
 using Features.AdminApi.Utils;
 using Features.AdminApi.Auth;
+using Shared.Data.Models;
+using Shared.Services;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -94,6 +96,7 @@ public static class AdminOwnershipEndpoints
             [FromBody] TransferOwnershipRequest request,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
+            [FromServices] IWebhookEventPublisher webhookEventPublisher,
             [FromServices] ITenantContext tenantContext) =>
         {
             try
@@ -159,6 +162,19 @@ public static class AdminOwnershipEndpoints
                 {
                     return Results.Problem("Failed to transfer ownership");
                 }
+
+                await webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.AgentOwnershipTransferred,
+                    new
+                    {
+                        tenantId = parsedTenant,
+                        agentId = agent.Id,
+                        agentName,
+                        previousOwners,
+                        newOwner = newAdminUserId,
+                        transferredBy = tenantContext.LoggedInUser
+                    },
+                    parsedTenant);
 
                 return Results.Ok(new
                 {

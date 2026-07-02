@@ -44,6 +44,7 @@ public class AgentDeletionService : IAgentDeletionService
     private readonly IScheduleService _scheduleService;
     private readonly IDatabaseService _databaseService;
     private readonly IActivationRepository _activationRepository;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<AgentService> _logger;
 
     private IMongoCollection<BsonDocument> LogsCollection => _databaseService.GetDatabaseAsync().Result.GetCollection<BsonDocument>("logs");
@@ -60,6 +61,7 @@ public class AgentDeletionService : IAgentDeletionService
         IScheduleService scheduleService,
         IDatabaseService databaseService,
         IActivationRepository activationRepository,
+        IWebhookEventPublisher webhookEventPublisher,
         ILogger<AgentService> logger)
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -72,6 +74,7 @@ public class AgentDeletionService : IAgentDeletionService
         _scheduleService = scheduleService ?? throw new ArgumentNullException(nameof(scheduleService));
         _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -187,6 +190,21 @@ public class AgentDeletionService : IAgentDeletionService
             }
 
             result.Message = "Agent and associated resources deleted";
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.AgentDeleted,
+                new
+                {
+                    tenantId,
+                    agentId = agent.Id,
+                    agentName = agent.Name,
+                    systemScoped,
+                    deletedFlowDefinitions = result.DeletedFlowDefinitions,
+                    deletedKnowledgeItems = result.DeletedKnowledgeItems,
+                    revokedApiKeys = result.RevokedApiKeys,
+                },
+                tenantId);
+
             return ServiceResult<AgentDeletionResult>.Success(result);
         }
         catch (Exception ex)

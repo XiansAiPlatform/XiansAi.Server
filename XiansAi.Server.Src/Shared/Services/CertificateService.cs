@@ -1,6 +1,7 @@
 using System.Security.Cryptography.X509Certificates;
 using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
+using Shared.Data.Models;
 using Features.AgentApi.Repositories;
 using Features.AgentApi.Models;
 using Shared.Utils;
@@ -21,17 +22,20 @@ public class CertificateService
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
 
     public CertificateService(
         ILogger<CertificateService> logger,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
-        ICertificateRepository certificateRepository)
+        ICertificateRepository certificateRepository,
+        IWebhookEventPublisher webhookEventPublisher)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
+        _webhookEventPublisher = webhookEventPublisher;
     }
 
     public FlowServerSettings GetFlowServerSettings()
@@ -160,7 +164,17 @@ public class CertificateService
             return false;
         }
 
-        return await _certificateRepository.DeleteByThumbprintAsync(thumbprint);
+        var revoked = await _certificateRepository.DeleteByThumbprintAsync(thumbprint);
+
+        if (revoked)
+        {
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.CertificateRevoked,
+                new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason },
+                cert.TenantId);
+        }
+
+        return revoked;
     }
 
     /// <summary>
@@ -195,6 +209,11 @@ public class CertificateService
             var cert = await GenerateAndStoreCertificate(certName, targetUserId, revokePrevious, friendlyName);
             var certBytes = cert.Export(X509ContentType.Cert);
             var base64String = Convert.ToBase64String(certBytes);
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.CertificateCreated,
+                new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName },
+                _tenantContext.TenantId);
 
             return Results.Ok(new { certificate = base64String });
         }

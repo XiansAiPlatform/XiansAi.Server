@@ -528,3 +528,23 @@ app_integrations:
       activation_name: asc
       name: asc
     unique: true
+
+webhook_deliveries:
+  # Drives the dispatcher's atomic claim query (status + due time).
+  - name: webhook_delivery_claim
+    keys:
+      status: asc
+      next_attempt_at: asc
+    background: true
+  # Audit lookups: "what did this user trigger, most recent first".
+  - name: webhook_delivery_actor
+    keys:
+      actor_user_id: asc
+      created_at: desc
+    background: true
+  # TTL cleanup: remove delivery rows 15 days after creation.
+  - name: webhook_delivery_ttl
+    keys:
+      created_at: asc
+    expire_after: 15d
+    background: true
