@@ -57,6 +57,7 @@ public class TemplateService : ITemplateService
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly ILogger<TemplateService> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TemplateService"/> class.
@@ -66,8 +67,7 @@ public class TemplateService : ITemplateService
     /// <param name="knowledgeRepository">Repository for knowledge operations.</param>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
-    private readonly IWebhookEventPublisher _webhookEventPublisher;
-
+    /// <param name="webhookEventPublisher">Publisher for outbound webhook events.</param>
     public TemplateService(
         IAgentRepository agentRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
