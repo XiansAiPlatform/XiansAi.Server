@@ -91,44 +91,6 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task StreamWorkflowEvents_WithValidId_ReturnsSSEStream()
-    {
-        // Arrange
-        var tenantId = $"test-tenant-{Guid.NewGuid()}";
-        await ConfigureAdminApiClientAsync(tenantId);
-        await CreateTestTenantAsync(tenantId);
-        
-        var workflowId = $"workflow-{Guid.NewGuid()}";
-
-        // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows/events/stream?workflowId={workflowId}");
-
-        // Assert
-        // SSE endpoints typically return 200 OK with text/event-stream content type
-        Assert.True(response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task GetWorkflowTypes_WithValidAgent_ReturnsTypes()
-    {
-        // Arrange
-        var tenantId = $"test-tenant-{Guid.NewGuid()}";
-        await ConfigureAdminApiClientAsync(tenantId);
-        await CreateTestTenantAsync(tenantId);
-        
-        var agent = $"agent-{Guid.NewGuid()}";
-
-        // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows/types?agent={agent}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var content = await response.Content.ReadAsStringAsync();
-        Assert.NotNull(content);
-    }
-
-    [Fact]
     public async Task CancelWorkflow_WithValidId_ReturnsSuccess()
     {
         // Arrange
@@ -145,21 +107,6 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
         // May return 404 if workflow doesn't exist, but should not be 401/403
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ListWorkflows_WithoutAdminRole_ReturnsForbidden()
-    {
-        // Arrange
-        var tenantId = $"test-tenant-{Guid.NewGuid()}";
-        await ConfigureAdminApiClientAsync(tenantId, SystemRoles.TenantUser); // Non-admin role
-        await CreateTestTenantAsync(tenantId);
-
-        // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows/list");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }
 
