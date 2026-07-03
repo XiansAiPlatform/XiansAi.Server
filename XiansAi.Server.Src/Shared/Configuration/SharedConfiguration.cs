@@ -209,12 +209,12 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IActivationValidationService, ActivationValidationService>();
 
         // Register Utility services
-        builder.Services.AddScoped<IMarkdownService, MarkdownService>();
         builder.Services.AddScoped<IJwtClaimsExtractor, JwtClaimsExtractor>();
 
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
+        builder.Services.AddScoped<IMessageFileStorage, MessageFileStorage>();
         builder.Services.AddScoped<IFeedbackService, FeedbackService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
