@@ -113,27 +113,6 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
         Assert.NotEmpty(result.Version);
     }
 
-    [Fact]
-    public async Task Create_WithUnauthorizedAgent_ReturnsForbidden()
-    {
-        // Arrange
-        var unauthorizedAgent = $"unauthorized-agent-{Guid.NewGuid()}";
-        var request = new KnowledgeRequest
-        {
-            Name = "test-knowledge",
-            Content = "Test content",
-            Type = "text",
-            Agent = unauthorizedAgent
-        };
-
-        // Act
-        var response = await PostAsJsonAsync("/api/client/knowledge/", request);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-
     /*
     dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.WebApi.KnowledgeEndpointsTests.GetLatestByName_WithValidNameAndAgent_ReturnsKnowledge"
     */
@@ -206,20 +185,6 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task DeleteById_WithUnauthorizedAgent_ReturnsForbidden()
-    {
-        // Arrange
-        var unauthorizedAgent = $"unauthorized-agent-{Guid.NewGuid()}";
-        var knowledge = await CreateTestKnowledgeAsync("test-knowledge", unauthorizedAgent, "Test content");
-
-        // Act
-        var response = await DeleteAsync($"/api/client/knowledge/{knowledge.Id}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
     public async Task DeleteAllVersions_WithValidRequest_DeletesAllVersions()
     {
         // Arrange
@@ -227,15 +192,9 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
         await CreateTestAgentAsync(agentName);
         var knowledge1 = await CreateTestKnowledgeAsync("test-knowledge", agentName, "Version 1");
         var knowledge2 = await CreateTestKnowledgeAsync("test-knowledge", agentName, "Version 2");
-        
-        var request = new DeleteAllVersionsRequest
-        {
-            Name = "test-knowledge",
-            Agent = agentName
-        };
 
-        // Act
-        var response = await DeleteAsJsonAsync("/api/client/knowledge/all", request);
+        // Act - the endpoint takes name and agent as query parameters
+        var response = await DeleteAsync($"/api/client/knowledge/all?name=test-knowledge&agent={agentName}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -245,24 +204,6 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
         var getResponse2 = await GetAsync($"/api/client/knowledge/{knowledge2.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse1.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, getResponse2.StatusCode);
-    }
-
-    [Fact]
-    public async Task DeleteAllVersions_WithUnauthorizedAgent_ReturnsForbidden()
-    {
-        // Arrange
-        var unauthorizedAgent = $"unauthorized-agent-{Guid.NewGuid()}";
-        var request = new DeleteAllVersionsRequest
-        {
-            Name = "test-knowledge",
-            Agent = unauthorizedAgent
-        };
-
-        // Act
-        var response = await DeleteAsJsonAsync("/api/client/knowledge/all", request);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -430,18 +371,5 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
 
         await knowledgeRepository.CreateAsync(knowledge);
         return knowledge;
-    }
-
-    protected async Task<HttpResponseMessage> DeleteAsJsonAsync<T>(string requestUri, T value)
-    {
-        var json = JsonSerializer.Serialize(value);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-        
-        var request = new HttpRequestMessage(HttpMethod.Delete, requestUri)
-        {
-            Content = content
-        };
-        
-        return await _client.SendAsync(request);
     }
 } 

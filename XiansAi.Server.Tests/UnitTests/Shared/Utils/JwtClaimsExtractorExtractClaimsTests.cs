@@ -20,70 +20,37 @@ public class JwtClaimsExtractorExtractClaimsTests
     }
 
     [Fact]
-    public void ExtractClaims_ReturnsAllValues_ForMultiValueClaim()
+    public void ExtractClaims_ReturnsOnlyMatchingValues_ForMultiValueClaim()
     {
         var token = BuildToken(
             new Claim("groups", "group-id-1"),
             new Claim("groups", "group-id-2"),
-            new Claim("groups", "group-id-3"));
+            new Claim("roles", "role-id-1"));
 
+        var groups = _extractor.ExtractClaims(token, "groups").ToList();
+
+        Assert.Equal(2, groups.Count);
+        Assert.Contains("group-id-1", groups);
+        Assert.Contains("group-id-2", groups);
+        Assert.DoesNotContain("role-id-1", groups);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not.a.valid.jwt.token")]
+    public void ExtractClaims_ReturnsEmpty_ForEmptyOrInvalidToken(string token)
+    {
         var result = _extractor.ExtractClaims(token, "groups").ToList();
 
-        Assert.Equal(3, result.Count);
-        Assert.Contains("group-id-1", result);
-        Assert.Contains("group-id-2", result);
-        Assert.Contains("group-id-3", result);
+        Assert.Empty(result);
     }
 
     [Fact]
-    public void ExtractClaims_ReturnsEmpty_WhenClaimTypeNotPresent()
+    public void ExtractClaims_ReturnsEmpty_WhenClaimTypeMissing()
     {
         var token = BuildToken(new Claim("sub", "user-123"));
 
         var result = _extractor.ExtractClaims(token, "groups").ToList();
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void ExtractClaims_ReturnsEmpty_ForInvalidToken()
-    {
-        var result = _extractor.ExtractClaims("not.a.valid.jwt.token", "groups").ToList();
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void ExtractClaims_ReturnsSingleValue_WhenOnlyOneClaim()
-    {
-        var token = BuildToken(new Claim("groups", "only-group-id"));
-
-        var result = _extractor.ExtractClaims(token, "groups").ToList();
-
-        Assert.Single(result);
-        Assert.Equal("only-group-id", result[0]);
-    }
-
-    [Fact]
-    public void ExtractClaims_DoesNotReturnOtherClaimTypes()
-    {
-        var token = BuildToken(
-            new Claim("groups", "group-id-1"),
-            new Claim("roles", "role-id-1"));
-
-        var groups = _extractor.ExtractClaims(token, "groups").ToList();
-        var roles = _extractor.ExtractClaims(token, "roles").ToList();
-
-        Assert.Single(groups);
-        Assert.Equal("group-id-1", groups[0]);
-        Assert.Single(roles);
-        Assert.Equal("role-id-1", roles[0]);
-    }
-
-    [Fact]
-    public void ExtractClaims_ReturnsEmpty_WhenTokenIsEmpty()
-    {
-        var result = _extractor.ExtractClaims(string.Empty, "groups").ToList();
 
         Assert.Empty(result);
     }

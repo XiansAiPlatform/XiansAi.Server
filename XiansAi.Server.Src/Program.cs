@@ -167,7 +167,7 @@ public class Program
         {
             case ServiceType.WebApi:
                 builder.AddWebApiServices();
-                // WebAPI (Agent Studio browser login) requires an OIDC provider. Only wire its
+                // WebAPI (Legacy Xians UI browser login) requires an OIDC provider. Only wire its
                 // authentication when one is configured; otherwise run on Admin API key auth alone.
                 if (IsAuthProviderConfigured(builder.Configuration))
                 {
@@ -192,7 +192,7 @@ public class Program
                 builder.AddWebApiServices();
                 builder.AddAgentApiServices();
                 builder.AddAgentApiAuth();
-                // WebAPI (Agent Studio browser login) requires an OIDC provider. Only wire its
+                // WebAPI (Legacy Xians UI browser login) requires an OIDC provider. Only wire its
                 // authentication when one is configured; otherwise run on Admin API key auth alone.
                 if (IsAuthProviderConfigured(builder.Configuration))
                 {

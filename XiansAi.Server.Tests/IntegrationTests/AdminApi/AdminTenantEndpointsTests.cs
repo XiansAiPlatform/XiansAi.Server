@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Text.Json;
 using Shared.Data.Models;
 using Xunit;
 using Tests.TestUtils;
@@ -155,11 +156,13 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         var response = await PostAsJsonAsync("/api/v1/admin/tenants", request);
 
         // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.Created || response.StatusCode == HttpStatusCode.OK);
-        
-        var result = await ReadAsJsonAsync<Tenant>(response);
-        Assert.NotNull(result);
-        Assert.Equal(request.tenantId, result.TenantId);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The endpoint returns a TenantCreatedResult wrapper: { tenant, location }.
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+        var tenantId2 = json.RootElement.GetProperty("tenant").GetProperty("tenantId").GetString();
+        Assert.Equal(request.tenantId, tenantId2);
     }
 
     [Fact]

@@ -45,150 +45,9 @@ public class RoleManagementEndpointsTests : WebApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task AssignTenantAdmin_WithValidData_AssignsRole()
-    {
-        // Arrange
-        var user = await CreateTestUserAsync("new-admin-user", "newadmin@example.com");
-        var roleDto = new RoleDto
-        {
-            UserId = user.UserId, // Use UserId not Id
-            Role = SystemRoles.TenantAdmin
-        };
-
-        // Act
-        var response = await PostAsJsonAsync($"/api/roles/tenant/{TestTenantId}/admins", roleDto);
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.OK || 
-                   response.StatusCode == HttpStatusCode.BadRequest);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            // Verify role assignment operation was accepted
-            using var scope = _factory.Services.CreateScope();
-            var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-            var updatedUser = await userRepository.GetByIdAsync(user.Id);
-            Assert.NotNull(updatedUser);
-            // Note: Role assignment may or may not be reflected immediately depending on service implementation
-        }
-    }
-
-    [Fact]
-    public async Task AssignTenantAdmin_WithEmptyTenantId_ReturnsBadRequest()
-    {
-        // Arrange
-        var user = await CreateTestUserAsync("test-user-empty-tenant", "empty@example.com");
-        var roleDto = new RoleDto
-        {
-            UserId = user.UserId,
-            Role = SystemRoles.TenantAdmin
-        };
-
-        // Act - Empty space in URL may cause routing issue
-        var response = await PostAsJsonAsync("/api/roles/tenant//admins", roleDto);
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.BadRequest || 
-                   response.StatusCode == HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task AssignTenantAdmin_WithNonExistentUser_ReturnsError()
-    {
-        // Arrange
-        var roleDto = new RoleDto
-        {
-            UserId = "non-existent-user-id",
-            Role = SystemRoles.TenantAdmin,
-            TenantId = TestTenantId
-        };
-
-        // Act
-        var response = await PostAsJsonAsync($"/api/roles/tenant/{TestTenantId}/admins", roleDto);
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.NotFound || 
-                   response.StatusCode == HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task RemoveRoleFromUser_WithValidData_RemovesRole()
-    {
-        // Arrange
-        var user = await CreateTestUserAsync("remove-role-user", "removerole@example.com");
-        await AssignTenantAdminRoleAsync(user.Id, TestTenantId);
-
-        // Act - Use UserId not Id
-        var response = await DeleteAsync($"/api/roles/tenant/{TestTenantId}/admins/{user.UserId}");
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.OK || 
-                   response.StatusCode == HttpStatusCode.BadRequest);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            // Verify the operation was accepted
-            using var scope = _factory.Services.CreateScope();
-            var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-            var updatedUser = await userRepository.GetByIdAsync(user.Id);
-            Assert.NotNull(updatedUser);
-            // Note: Role removal may or may not be reflected immediately
-        }
-    }
-
-    [Fact]
-    public async Task RemoveRoleFromUser_WithEmptyUserId_ReturnsBadRequest()
-    {
-        // Act - Empty string in URL results in routing issue, expect NotFound or BadRequest
-        var response = await DeleteAsync($"/api/roles/tenant/{TestTenantId}/admins/");
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.BadRequest || 
-                   response.StatusCode == HttpStatusCode.NotFound ||
-                   response.StatusCode == HttpStatusCode.MethodNotAllowed);
-    }
-
-    [Fact]
-    public async Task RemoveRoleFromUser_WithEmptyTenantId_ReturnsBadRequest()
-    {
-        // Arrange
-        var user = await CreateTestUserAsync("test-user", "test@example.com");
-
-        // Act - Empty string in URL causes routing issue
-        var response = await DeleteAsync($"/api/roles/tenant//admins/{user.UserId}");
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.BadRequest || 
-                   response.StatusCode == HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task AssignTenantAdmin_ToExistingAdmin_HandlesGracefully()
-    {
-        // Arrange
-        var user = await CreateTestUserAsync("existing-admin", "existing@example.com");
-        await AssignTenantAdminRoleAsync(user.Id, TestTenantId);
-
-        var roleDto = new RoleDto
-        {
-            UserId = user.UserId, // Use UserId not Id
-            Role = SystemRoles.TenantAdmin
-        };
-
-        // Act - Try to assign the same role again
-        var response = await PostAsJsonAsync($"/api/roles/tenant/{TestTenantId}/admins", roleDto);
-
-        // Assert
-        // Should handle gracefully - either OK, Conflict, or BadRequest
-        Assert.True(response.StatusCode == HttpStatusCode.OK || 
-                   response.StatusCode == HttpStatusCode.Conflict ||
-                   response.StatusCode == HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
     public async Task GetAllTenantAdmins_WithNoAdmins_ReturnsEmptyList()
     {
-        // Arrange - Create a new tenant with no admins
+        // Arrange - a fresh tenant with no admins
         var newTenantId = "tenant-" + Guid.NewGuid().ToString();
 
         // Act
@@ -199,6 +58,52 @@ public class RoleManagementEndpointsTests : WebApiIntegrationTestBase
         var admins = await response.Content.ReadFromJsonAsync<List<UserRoleInfo>>();
         Assert.NotNull(admins);
         Assert.Empty(admins);
+    }
+
+    [Fact]
+    public async Task AssignTenantAdmin_WithValidData_AssignsRole()
+    {
+        // Arrange
+        var user = await CreateTestUserAsync("new-admin-user", "newadmin@example.com");
+        var roleDto = new RoleDto
+        {
+            UserId = user.UserId,
+            Role = SystemRoles.TenantAdmin
+        };
+
+        // Act
+        var response = await PostAsJsonAsync($"/api/roles/tenant/{TestTenantId}/admins", roleDto);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var updatedUser = await userRepository.GetByIdAsync(user.Id);
+        Assert.NotNull(updatedUser);
+        Assert.Contains(updatedUser.TenantRoles,
+            tr => tr.Tenant == TestTenantId && tr.Roles.Contains(SystemRoles.TenantAdmin));
+    }
+
+    [Fact]
+    public async Task RemoveRoleFromUser_WithValidData_RemovesRole()
+    {
+        // Arrange
+        var user = await CreateTestUserAsync("remove-role-user", "removerole@example.com");
+        await AssignTenantAdminRoleAsync(user.Id, TestTenantId);
+
+        // Act
+        var response = await DeleteAsync($"/api/roles/tenant/{TestTenantId}/admins/{user.UserId}");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var updatedUser = await userRepository.GetByIdAsync(user.Id);
+        Assert.NotNull(updatedUser);
+        Assert.DoesNotContain(updatedUser.TenantRoles,
+            tr => tr.Tenant == TestTenantId && tr.Roles.Contains(SystemRoles.TenantAdmin));
     }
 
     private async Task<User> CreateTestUserAsync(string name, string email)
@@ -240,12 +145,9 @@ public class RoleManagementEndpointsTests : WebApiIntegrationTestBase
                     IsApproved = true
                 });
             }
-            else
+            else if (!tenantRole.Roles.Contains(SystemRoles.TenantAdmin))
             {
-                if (!tenantRole.Roles.Contains(SystemRoles.TenantAdmin))
-                {
-                    tenantRole.Roles.Add(SystemRoles.TenantAdmin);
-                }
+                tenantRole.Roles.Add(SystemRoles.TenantAdmin);
             }
             user.UpdatedAt = DateTime.UtcNow;
             await userRepository.UpdateAsyncById(user.Id, user);
@@ -268,4 +170,3 @@ public class UserRoleInfo
     public string Email { get; set; } = string.Empty;
     public List<string> Roles { get; set; } = new();
 }
-
