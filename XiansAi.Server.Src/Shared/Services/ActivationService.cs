@@ -519,7 +519,7 @@ public class ActivationService : IActivationService
                 _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
                 _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}", 
-                    startedCount, flowDefinitions.Count, activationId);
+                    startedCount, flowDefinitions.Count, LogSanitizer.Sanitize(activationId));
 
                 await _webhookEventPublisher.PublishAsync(
                     WebhookEventTypes.ActivationActivated,
