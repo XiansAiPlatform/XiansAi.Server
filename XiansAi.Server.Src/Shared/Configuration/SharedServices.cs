@@ -26,7 +26,6 @@ public static class SharedServices
         // Register email services using the combined factory
         RegisterEmailProviders(services, configuration);
 
-        // Register LLM services using the combined factory
         // Register the active Secret Store provider (database default, optional Azure Key Vault)
         RegisterSecretStoreProvider(services, configuration);
 

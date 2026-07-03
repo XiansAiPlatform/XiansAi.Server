@@ -6,7 +6,6 @@ using Features.WebApi.Auth;
 using Shared.Data;
 using Features.WebApi.Scripts;
 using Features.UserApi.Configuration;
-using Features.PublicApi.Configuration;
 using Features.AdminApi.Configuration;
 using Features.AppsApi.Configuration;
 
@@ -23,7 +22,6 @@ public class Program
         WebApi,
         LibApi,
         UserApi,
-        PublicApi,
         All
     }
 
@@ -169,7 +167,12 @@ public class Program
         {
             case ServiceType.WebApi:
                 builder.AddWebApiServices();
-                builder.AddWebApiAuth();
+                // WebAPI (Agent Studio browser login) requires an OIDC provider. Only wire its
+                // authentication when one is configured; otherwise run on Admin API key auth alone.
+                if (IsAuthProviderConfigured(builder.Configuration))
+                {
+                    builder.AddWebApiAuth();
+                }
                 builder.AddAdminApiServices();
                 builder.AddAdminApiAuth();
                 builder.AddAppsApiServices();
@@ -183,24 +186,38 @@ public class Program
                 builder.AddUserApiServices();
                 builder.AddUserApiAuth();
                 break;
-            case ServiceType.PublicApi:
-                builder.AddPublicApiServices();
-                break;
 
             case ServiceType.All:
             default:
                 builder.AddWebApiServices();
                 builder.AddAgentApiServices();
                 builder.AddAgentApiAuth();
-                builder.AddWebApiAuth();
+                // WebAPI (Agent Studio browser login) requires an OIDC provider. Only wire its
+                // authentication when one is configured; otherwise run on Admin API key auth alone.
+                if (IsAuthProviderConfigured(builder.Configuration))
+                {
+                    builder.AddWebApiAuth();
+                }
                 builder.AddAdminApiServices();
                 builder.AddAdminApiAuth();
                 builder.AddAppsApiServices();
                 builder.AddUserApiServices();
                 builder.AddUserApiAuth();
-                builder.AddPublicApiServices();
                 break;
         }
+    }
+
+    /// <summary>
+    /// Determines whether an OIDC identity provider is configured for WebAPI authentication.
+    /// The <c>AuthProvider:Provider</c> setting acts as the on/off switch: when it is missing,
+    /// empty, or set to "None", OIDC is treated as not configured and the WebAPI surface is
+    /// skipped so the platform can run purely on Admin API key authentication.
+    /// </summary>
+    private static bool IsAuthProviderConfigured(IConfiguration config)
+    {
+        var provider = config["AuthProvider:Provider"];
+        return !string.IsNullOrWhiteSpace(provider)
+            && !provider.Equals("None", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -247,7 +264,12 @@ public class Program
             case ServiceType.WebApi:
                 // Configure AdminApi middleware and endpoints (WebApi includes AdminApi)
                 app.UseAdminApiMiddleware();
-                app.UseWebApiEndpoints();
+                // Only map WebAPI endpoints when an OIDC provider is configured; their auth
+                // policies depend on the JWT scheme wired by AddWebApiAuth().
+                if (IsAuthProviderConfigured(app.Configuration))
+                {
+                    app.UseWebApiEndpoints();
+                }
                 app.UseAdminApiEndpoints();
                 app.UseAppsApiEndpoints();
                 break;
@@ -258,18 +280,19 @@ public class Program
             case ServiceType.UserApi:
                 app.UseUserApiEndpoints();
                 break;
-            case ServiceType.PublicApi:
-                app.UsePublicApiEndpoints();
-                break;
             case ServiceType.All:
             default:
-                app.UseWebApiEndpoints();                
+                // Only map WebAPI endpoints when an OIDC provider is configured; their auth
+                // policies depend on the JWT scheme wired by AddWebApiAuth().
+                if (IsAuthProviderConfigured(app.Configuration))
+                {
+                    app.UseWebApiEndpoints();
+                }
                 app.UseAgentApiEndpoints(loggerFactory);
                 app.UseUserApiEndpoints();
                 app.UseAdminApiMiddleware();
                 app.UseAdminApiEndpoints();
                 app.UseAppsApiEndpoints();
-                app.UsePublicApiEndpoints();
                 break;
         }
     }
@@ -304,10 +327,6 @@ public class Program
             else if (arg.Equals("--user", StringComparison.OrdinalIgnoreCase))
             {
                 commandLineArgs.ServiceType = ServiceType.UserApi;
-            }
-            else if (arg.Equals("--public", StringComparison.OrdinalIgnoreCase))
-            {
-                commandLineArgs.ServiceType = ServiceType.PublicApi;
             }
             else if (arg.Equals("--all", StringComparison.OrdinalIgnoreCase))
             {
@@ -443,7 +462,6 @@ public class Program
         Console.WriteLine("  --web                 Start WebApi service only");
         Console.WriteLine("  --lib                 Start LibApi (Agent API) service only");
         Console.WriteLine("  --user                Start UserApi service only");
-        Console.WriteLine("  --public              Start PublicApi service only");
         Console.WriteLine("  --all                 Start all services (default)");
         Console.WriteLine();
         Console.WriteLine("Environment Options:");
@@ -471,7 +489,6 @@ public class Program
         Console.WriteLine("  WebApi    - Main web API with agent management, workflows, tenants");
         Console.WriteLine("  LibApi    - Agent API for library/agent interactions");
         Console.WriteLine("  UserApi   - User-facing API with webhooks and websockets");
-        Console.WriteLine("  PublicApi - Public API with endpoints that don't require authentication");
     }
 
     /// <summary>
@@ -485,7 +502,6 @@ public class Program
             ServiceType.WebApi => "WebApi service (Main web API)",
             ServiceType.LibApi => "LibApi service (Agent API)",
             ServiceType.UserApi => "UserApi service (User-facing API)",
-            ServiceType.PublicApi => "PublicApi service (Public API without authentication)",
             ServiceType.All => "All services (WebApi, LibApi, UserApi)",
             _ => "Unknown service type"
         };
