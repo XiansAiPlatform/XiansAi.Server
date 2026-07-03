@@ -76,14 +76,6 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             RemoveService<IEmailService>(services);
             services.AddSingleton(mockEmailService.Object);
 
-            var mockLlmService = new Mock<ILlmService>();
-            mockLlmService.Setup(x => x.GetApiKey())
-                .Returns("test-api-key");
-            mockLlmService.Setup(x => x.GetLlmProvider())
-                .Returns("test-provider");
-            RemoveService<ILlmService>(services);
-            services.AddSingleton(mockLlmService.Object);
-
             // Mock background task service
             var mockBackgroundTaskService = new Mock<IBackgroundTaskService>();
             RemoveService<IBackgroundTaskService>(services);

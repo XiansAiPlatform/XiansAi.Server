@@ -486,7 +486,7 @@ public class Program
             ServiceType.LibApi => "LibApi service (Agent API)",
             ServiceType.UserApi => "UserApi service (User-facing API)",
             ServiceType.PublicApi => "PublicApi service (Public API without authentication)",
-            ServiceType.All => "All services (WebApi, LibApi, UserApi, PublicApi)",
+            ServiceType.All => "All services (WebApi, LibApi, UserApi)",
             _ => "Unknown service type"
         };
 
