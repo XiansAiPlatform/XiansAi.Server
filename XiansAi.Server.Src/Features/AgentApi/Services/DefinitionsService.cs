@@ -136,24 +136,24 @@ public class DefinitionsService : IDefinitionsService
     private readonly Repositories.IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IAgentRepository _agentRepository;
     private readonly ITenantContext _tenantContext;
-    private readonly IMarkdownService _markdownService; 
     private readonly IAgentPermissionRepository _agentPermissionRepository;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     
     public DefinitionsService(
         Repositories.IFlowDefinitionRepository flowDefinitionRepository,
         IAgentRepository agentRepository,
         ILogger<DefinitionsService> logger,
         ITenantContext tenantContext,
-        IMarkdownService markdownService,
-        IAgentPermissionRepository agentPermissionRepository
+        IAgentPermissionRepository agentPermissionRepository,
+        IWebhookEventPublisher webhookEventPublisher
     )
     {
         _flowDefinitionRepository = flowDefinitionRepository;
         _agentRepository = agentRepository;
         _logger = logger;
         _tenantContext = tenantContext;
-        _markdownService = markdownService;
         _agentPermissionRepository = agentPermissionRepository;
+        _webhookEventPublisher = webhookEventPublisher;
     }
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
@@ -228,10 +228,15 @@ public class DefinitionsService : IDefinitionsService
             {
                 _logger.LogInformation("Flow definition with workflow type {WorkflowType} has changed hash. Deleting existing and creating new one.", LogSanitizer.Sanitize(request.WorkflowType));
                 await _flowDefinitionRepository.DeleteAsync(existingDefinition.Id);
-                await GenerateMarkdown(definition);
                 // Create new definition with fresh ID
                 definition.Id = ObjectId.GenerateNewId().ToString();
                 await _flowDefinitionRepository.CreateAsync(definition);
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.FlowDefinitionUpdated,
+                    new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash },
+                    _tenantContext.TenantId);
+
                 return Results.Ok("Definition deleted and recreated successfully");
             }
             
@@ -239,8 +244,13 @@ public class DefinitionsService : IDefinitionsService
         }
 
         _logger.LogInformation("Creating new definition {WorkflowType}", LogSanitizer.Sanitize(definition.WorkflowType));
-        await GenerateMarkdown(definition);
         await _flowDefinitionRepository.CreateAsync(definition);
+
+        await _webhookEventPublisher.PublishAsync(
+            WebhookEventTypes.FlowDefinitionCreated,
+            new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash },
+            _tenantContext.TenantId);
+
         return Results.Ok("New definition created successfully");
     }
 
@@ -295,6 +305,11 @@ public class DefinitionsService : IDefinitionsService
                 statusCode: StatusCodes.Status409Conflict);
         }
 
+        // Determine whether this is a brand-new agent (so we only publish agent.registered once,
+        // rather than on every worker restart which re-upserts the same agent).
+        var existingAgent = await _agentRepository.GetByNameInternalAsync(
+            request.AgentName, request.SystemScoped ? null! : _tenantContext.TenantId);
+
         // Create or update agent using thread-safe upsert operation
         var agent = await _agentRepository.UpsertAgentAsync(
             request.AgentName, 
@@ -310,6 +325,14 @@ public class DefinitionsService : IDefinitionsService
             request.SamplePrompts);
         
         _logger.LogInformation("Agent {AgentName} created/updated successfully by user {UserId}", LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(currentUser));
+
+        if (existingAgent == null)
+        {
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.AgentRegistered,
+                new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy },
+                _tenantContext.TenantId);
+        }
         
         return Results.Ok(new 
         { 
@@ -326,16 +349,6 @@ public class DefinitionsService : IDefinitionsService
         });
     }
 
-
-    private async Task GenerateMarkdown(FlowDefinition definition)
-    {
-        if (string.IsNullOrEmpty(definition.Source))
-        {
-            return;
-        }
-        definition.Markdown = await _markdownService.GenerateMarkdown(definition.Source);
-        definition.UpdatedAt = DateTime.UtcNow;
-    }
 
     private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null, bool systemScoped = false)
     {
