@@ -222,7 +222,7 @@ public class TemplateService : ITemplateService
             }
 
             _logger.LogInformation("Successfully deleted system-scoped agent {AgentName} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items", 
-                agentName, deletedDefinitionsCount, deletedKnowledgeCount);
+                LogSanitizer.Sanitize(agentName), deletedDefinitionsCount, deletedKnowledgeCount);
 
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.TemplateDeleted,
@@ -348,7 +348,7 @@ public class TemplateService : ITemplateService
             }
 
             _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions by user {CreatedBy}", 
-                agentName, tenantId, clonedDefinitionsCount, createdBy);
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
 
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.AgentTemplateDeployed,

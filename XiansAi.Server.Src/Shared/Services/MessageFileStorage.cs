@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
 using Shared.Data;
+using Shared.Utils;
 
 namespace Shared.Services;
 
@@ -133,7 +134,7 @@ public class MessageFileStorage : IMessageFileStorage
 
         _logger.LogInformation(
             "Stored file {FileId} ({FileSize} bytes) for tenant {TenantId}",
-            fileId, content.Length, tenantId);
+            fileId, content.Length, LogSanitizer.Sanitize(tenantId));
 
         return new StoredFileRef
         {
@@ -169,7 +170,7 @@ public class MessageFileStorage : IMessageFileStorage
         {
             _logger.LogWarning(
                 "Rejected cross-tenant file access: file {FileId} belongs to a different tenant than {TenantId}",
-                fileId, tenantId);
+                LogSanitizer.Sanitize(fileId), LogSanitizer.Sanitize(tenantId));
             return null;
         }
 
