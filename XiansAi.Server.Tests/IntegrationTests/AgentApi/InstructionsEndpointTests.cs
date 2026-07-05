@@ -8,16 +8,10 @@ namespace Tests.IntegrationTests.AgentApi;
 
 public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
-    /*
-    dotnet test --filter "FullyQualifiedName~InstructionsEndpointTests"
-    */
     public InstructionsEndpointTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_ReturnsLatestInstruction"
-    */
     [Fact]
     public async Task GetLatestInstruction_ReturnsLatestInstruction()
     {
@@ -82,9 +76,6 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         Assert.Equal("v3", result.Version);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_WithNonExistentName_ReturnsNotFound"
-    */
     [Fact]
     public async Task GetLatestInstruction_WithNonExistentName_ReturnsNotFound()
     {
