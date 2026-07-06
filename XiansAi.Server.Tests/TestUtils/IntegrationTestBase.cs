@@ -20,26 +20,26 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
     protected IntegrationTestBase(MongoDbFixture mongoFixture, string? environment = null)
     {
         _mongoFixture = mongoFixture;
-        
+
         // Initialize environment variables for certificate authentication
         // This should be done before creating the factory to ensure proper configuration
         TestCertificateHelper.Initialize();
-        
+
         _factory = new XiansAiWebApplicationFactory(mongoFixture, environment);
-        
+
         var httpClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false,
             HandleCookies = true,
             BaseAddress = new Uri("http://localhost")
         });
-        
+
         // Configure client with authentication
         ConfigureClientWithAuth(httpClient);
-        
+
         // Create retry client
         _client = new RetryHttpClient(httpClient, () => ConfigureClientWithAuth(httpClient));
-        
+
         _database = _mongoFixture.Database;
     }
 
@@ -48,19 +48,19 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         _client?.DisposeAsync();
         return Task.CompletedTask;
     }
-    
+
     protected virtual void ConfigureClientWithAuth(HttpClient client)
     {
         try
         {
-            if (client == null) 
+            if (client == null)
             {
                 throw new InvalidOperationException("Client is not initialized");
             }
-            
+
             // Clear existing headers
             client.DefaultRequestHeaders.Clear();
-            
+
             // Add API key for API endpoints
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TestApiKey);
 
@@ -116,12 +116,12 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
             }
 
             response = await _client.SendAsync(request);
-            
+
             // Check if response is not a retryable status code or we've reached max retries
-            bool isTimeout = response.StatusCode == HttpStatusCode.RequestTimeout || 
+            bool isTimeout = response.StatusCode == HttpStatusCode.RequestTimeout ||
                              response.StatusCode == HttpStatusCode.GatewayTimeout;
             bool shouldRetry = response.StatusCode == HttpStatusCode.Unauthorized || isTimeout;
-            
+
             if (!shouldRetry || retryCount == maxRetries)
             {
                 return response;
@@ -142,4 +142,4 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
 
         return response;
     }
-} 
+}

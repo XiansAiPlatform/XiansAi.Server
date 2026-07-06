@@ -32,7 +32,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var threads = await ReadAsJsonAsync<List<ConversationThread>>(response);
         Assert.NotNull(threads);
         Assert.True(threads.Count >= 2);
@@ -221,13 +221,20 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         return thread;
     }
 
+    /// <summary>
+    /// Creates a test message. The scope is normalized so that null, empty, and
+    /// whitespace-only values are all treated as the default (unscoped) topic.
+    /// </summary>
     private async Task<ConversationMessage> CreateTestMessageAsync(
         string threadId,
         string content = "Test message",
-        MessageDirection direction = MessageDirection.Incoming)
+        MessageDirection direction = MessageDirection.Incoming,
+        string? scope = null)
     {
-        using var scope = _factory.Services.CreateScope();
-        var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        using var serviceScope = _factory.Services.CreateScope();
+        var databaseService = serviceScope.ServiceProvider.GetRequiredService<IDatabaseService>();
+
+        var normalizedScope = string.IsNullOrWhiteSpace(scope) ? null : scope.Trim();
 
         var message = new ConversationMessage
         {
@@ -242,6 +249,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             CreatedBy = TestUserId,
             Direction = direction,
             Text = content,
+            Scope = normalizedScope,
             Status = MessageStatus.DeliveredToWorkflow,
             Data = new Dictionary<string, object>
             {
@@ -259,77 +267,38 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
 
     private async Task<ConversationThread?> GetThreadByIdAsync(string threadId)
     {
-        using var scope = _factory.Services.CreateScope();
-        var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        using var serviceScope = _factory.Services.CreateScope();
+        var databaseService = serviceScope.ServiceProvider.GetRequiredService<IDatabaseService>();
         var database = await databaseService.GetDatabaseAsync();
         var collection = database.GetCollection<ConversationThread>("conversation_thread");
-        
+
         return await collection.Find(t => t.Id == threadId).FirstOrDefaultAsync();
     }
-
-    private async Task<ConversationMessage> CreateTestMessageWithScopeAsync(
-        string threadId,
-        string? scope = null,
-        string content = "Test message",
-        MessageDirection direction = MessageDirection.Incoming)
-    {
-        using var scope2 = _factory.Services.CreateScope();
-        var databaseService = scope2.ServiceProvider.GetRequiredService<IDatabaseService>();
-
-        // Normalize scope: empty string and whitespace should be treated as null (default topic)
-        var normalizedScope = string.IsNullOrWhiteSpace(scope) ? null : scope.Trim();
-
-        var message = new ConversationMessage
-        {
-            Id = ObjectId.GenerateNewId().ToString(),
-            ThreadId = threadId,
-            TenantId = TestTenantId,
-            ParticipantId = $"test-participant-{Guid.NewGuid()}",
-            WorkflowId = $"test-workflow-{Guid.NewGuid()}",
-            WorkflowType = "TestWorkflowType",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedBy = TestUserId,
-            Direction = direction,
-            Text = content,
-            Scope = normalizedScope,  // Use normalized scope
-            Status = MessageStatus.DeliveredToWorkflow
-        };
-
-        // Insert directly into repository
-        var database = await databaseService.GetDatabaseAsync();
-        var collection = database.GetCollection<ConversationMessage>("conversation_message");
-        await collection.InsertOneAsync(message);
-
-        return message;
-    }
-
-    #region Topics Tests
 
     [Fact]
     public async Task GetTopics_WithValidThreadId_ReturnsTopics()
     {
         // Arrange
         var thread = await CreateTestThreadAsync();
-        
+
         // Create messages with different scopes
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing question");
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "Billing question");
         await Task.Delay(10);
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: "support", content: "Support question");
+        await CreateTestMessageAsync(thread.Id, scope: "support", content: "Support question");
         await Task.Delay(10);
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "General message");
+        await CreateTestMessageAsync(thread.Id, scope: null, content: "General message");
 
         // Act
         var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<TopicsResult>(response);
         Assert.NotNull(result);
         Assert.NotNull(result.Topics);
         Assert.Equal(3, result.Topics.Count); // billing, support, null
-        
+
         // Verify pagination metadata
         Assert.NotNull(result.Pagination);
         Assert.Equal(1, result.Pagination.CurrentPage);
@@ -337,7 +306,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         Assert.Equal(3, result.Pagination.TotalTopics);
         Assert.Equal(1, result.Pagination.TotalPages);
         Assert.False(result.Pagination.HasMore);
-        
+
         // Verify topics are sorted by most recent activity
         Assert.Equal("General message", result.Topics[0].Scope == null ? "General message" : result.Topics[0].Scope);
         Assert.Equal(1, result.Topics.First(t => t.Scope == null).MessageCount);
@@ -350,11 +319,11 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     {
         // Arrange
         var thread = await CreateTestThreadAsync();
-        
+
         // Create messages with 5 different scopes
         for (int i = 0; i < 5; i++)
         {
-            await CreateTestMessageWithScopeAsync(thread.Id, scope: $"topic-{i}", content: $"Message {i}");
+            await CreateTestMessageAsync(thread.Id, scope: $"topic-{i}", content: $"Message {i}");
             await Task.Delay(10); // Ensure different timestamps
         }
 
@@ -435,12 +404,12 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     {
         // Arrange
         var thread = await CreateTestThreadAsync();
-        
+
         // Create messages with different scopes
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing message 1");
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: "billing", content: "Billing message 2");
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: "support", content: "Support message");
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "General message");
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "Billing message 1");
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "Billing message 2");
+        await CreateTestMessageAsync(thread.Id, scope: "support", content: "Support message");
+        await CreateTestMessageAsync(thread.Id, scope: null, content: "General message");
 
         // Act - Filter by "billing" scope
         var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/messages?page=1&pageSize=50&scope=billing");
@@ -458,17 +427,17 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
     {
         // Arrange
         var thread = await CreateTestThreadAsync();
-        
+
         // Create messages with null scope
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: null, content: "Message with null scope");
+        await CreateTestMessageAsync(thread.Id, scope: null, content: "Message with null scope");
         await Task.Delay(10);
-        
+
         // Create messages with empty string scope (should be normalized to null)
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: "", content: "Message with empty scope");
+        await CreateTestMessageAsync(thread.Id, scope: "", content: "Message with empty scope");
         await Task.Delay(10);
-        
+
         // Create messages with whitespace scope (should be normalized to null)
-        await CreateTestMessageWithScopeAsync(thread.Id, scope: "   ", content: "Message with whitespace scope");
+        await CreateTestMessageAsync(thread.Id, scope: "   ", content: "Message with whitespace scope");
 
         // Act
         var response = await GetAsync($"/api/client/messaging/threads/{thread.Id}/topics?page=1&pageSize=50");
@@ -477,17 +446,15 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await ReadAsJsonAsync<TopicsResult>(response);
         Assert.NotNull(result);
-        
+
         // Should only have ONE topic (the default topic with scope = null)
         Assert.Single(result.Topics);
-        
+
         // The single topic should be the default topic (null scope)
         var defaultTopic = result.Topics[0];
         Assert.Null(defaultTopic.Scope);
-        
+
         // Should contain all 3 messages
         Assert.Equal(3, defaultTopic.MessageCount);
     }
-
-    #endregion
-} 
+}

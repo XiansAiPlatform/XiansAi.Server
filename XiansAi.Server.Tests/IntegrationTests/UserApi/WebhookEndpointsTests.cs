@@ -87,7 +87,7 @@ public class WebhookEndpointsTests : IntegrationTestBase
         // Should get past authentication - Temporal errors are expected in test environment
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         // May return BadRequest or InternalServerError due to Temporal not being configured
-        Assert.True(response.StatusCode == HttpStatusCode.BadRequest || 
+        Assert.True(response.StatusCode == HttpStatusCode.BadRequest ||
                    response.StatusCode == HttpStatusCode.InternalServerError ||
                    response.StatusCode == HttpStatusCode.OK);
     }
@@ -215,4 +215,3 @@ public class WebhookEndpointsTests : IntegrationTestBase
         }
     }
 }
-

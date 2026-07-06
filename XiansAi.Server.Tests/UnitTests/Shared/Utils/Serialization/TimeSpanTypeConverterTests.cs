@@ -9,17 +9,17 @@ namespace Tests.UnitTests.Shared.Utils.Serialization;
 public class TimeSpanTypeConverterTests
 {
     private readonly TimeSpanTypeConverter _converter = new();
-    
+
     private readonly ISerializer _serializer = new SerializerBuilder()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .WithTypeConverter(new TimeSpanTypeConverter())
         .Build();
-    
+
     private readonly IDeserializer _deserializer = new DeserializerBuilder()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .WithTypeConverter(new TimeSpanTypeConverter())
         .Build();
-    
+
     public static IEnumerable<object[]> ValidTimeSpanData => new List<object[]>
     {
         new object[] { "30d", TimeSpan.FromDays(30) },
@@ -78,7 +78,7 @@ public class TimeSpanTypeConverterTests
         var yaml = _serializer.Serialize(new Foo<TimeSpan> { TimeToLive = input }).Trim();
         Assert.Equal(expectedYaml, yaml);
     }
-    
+
     [Fact]
     public void WriteYaml_NullTimeSpan_SerializesToNull()
     {
@@ -103,7 +103,7 @@ public class TimeSpanTypeConverterTests
         parser.Consume<StreamEnd>();
         return result;
     }
-    
+
     private class Foo<T>
     {
         public T TimeToLive { get; init; } = default!;
@@ -135,4 +135,4 @@ public class TimeSpanTypeConverterTests
 
         Assert.Equal(TimeSpan.Zero, result.TimeToLive);
     }
-} 
+}

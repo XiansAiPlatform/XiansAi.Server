@@ -45,11 +45,11 @@ public class ActivityHistoryTests : IntegrationTestBase, IClassFixture<MongoDbFi
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var responseContent = await response.Content.ReadAsStringAsync();
         Assert.Contains("Activity history creation queued", responseContent);
-        
+
         // Wait for background tasks to complete before test ends
         // This prevents MongoDB connection errors when the test fixture is disposed
         var backgroundTaskService = _factory.Services.GetRequiredService<IBackgroundTaskService>();
-        
+
         // Wait for background tasks to complete with a reasonable timeout
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
     }

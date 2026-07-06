@@ -137,4 +137,3 @@ public class UrlValidatorTests
         Assert.NotEmpty(errorMessage);
     }
 }
-

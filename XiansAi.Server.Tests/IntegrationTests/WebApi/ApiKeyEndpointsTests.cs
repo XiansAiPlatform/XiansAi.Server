@@ -169,7 +169,7 @@ public class ApiKeyEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         // Should return error for empty name - may return OK if validation is lenient
-        Assert.True(response.StatusCode == HttpStatusCode.BadRequest || 
+        Assert.True(response.StatusCode == HttpStatusCode.BadRequest ||
                    response.StatusCode == HttpStatusCode.InternalServerError ||
                    response.StatusCode == HttpStatusCode.OK);
     }
@@ -221,4 +221,3 @@ public class ApiKeyMetadata
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime? LastRotatedAt { get; set; }
 }
-

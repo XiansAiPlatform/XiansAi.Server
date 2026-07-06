@@ -17,7 +17,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
     {
         // Arrange - Create a unique name for this test run
         string testInstructionName = $"test-instruction-{Guid.NewGuid()}";
-        
+
         // Insert multiple instructions with the same name but different timestamps
         var knowledge = new List<Knowledge>
         {
@@ -68,7 +68,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await response.Content.ReadFromJsonAsync<Knowledge>();
         Assert.NotNull(result);
         Assert.Equal(testInstructionName, result.Name);
@@ -88,4 +88,4 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
-} 
+}

@@ -29,7 +29,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
         var workflowRunId = ObjectId.GenerateNewId().ToString();
         var log1 = await CreateTestLogAsync(workflowRunId: workflowRunId, message: "First log");
         var log2 = await CreateTestLogAsync(workflowRunId: workflowRunId, message: "Second log");
-        
+
         // Create a log with different workflow run ID to ensure filtering
         await CreateTestLogAsync(workflowRunId: ObjectId.GenerateNewId().ToString(), message: "Different workflow");
 
@@ -38,7 +38,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var logs = await ReadAsJsonAsync<List<Log>>(response);
         Assert.NotNull(logs);
         Assert.Equal(2, logs.Count);
@@ -50,7 +50,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
     {
         // Arrange
         var workflowRunId = ObjectId.GenerateNewId().ToString();
-        
+
         // Create 5 logs for the same workflow run
         for (int i = 0; i < 5; i++)
         {
@@ -62,7 +62,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var logs = await ReadAsJsonAsync<List<Log>>(response);
         Assert.NotNull(logs);
         Assert.Equal(3, logs.Count);
@@ -82,7 +82,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var logs = await ReadAsJsonAsync<List<Log>>(response);
         Assert.NotNull(logs);
         Assert.Single(logs);
@@ -100,7 +100,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var logs = await ReadAsJsonAsync<List<Log>>(response);
         Assert.NotNull(logs);
         Assert.Empty(logs);
@@ -128,7 +128,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var logs = await ReadAsJsonAsync<List<Log>>(response);
         Assert.NotNull(logs);
         Assert.Empty(logs);
@@ -148,7 +148,7 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var logs = await ReadAsJsonAsync<List<Log>>(response);
         Assert.NotNull(logs);
         Assert.Equal(3, logs.Count);
@@ -188,4 +188,4 @@ public class LogsEndpointsTests : WebApiIntegrationTestBase, IClassFixture<Mongo
 
         return log;
     }
-} 
+}

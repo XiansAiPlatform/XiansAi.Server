@@ -42,4 +42,4 @@ public class TenantEndpointsTests : WebApiIntegrationTestBase
         // Assert - invalid data (empty TenantId) must be rejected
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
-} 
+}

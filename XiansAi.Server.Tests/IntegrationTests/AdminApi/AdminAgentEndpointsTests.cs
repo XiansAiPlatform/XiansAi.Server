@@ -22,7 +22,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent1 = await CreateTestAgentAsync($"agent-1-{Guid.NewGuid()}", tenantId);
         var agent2 = await CreateTestAgentAsync($"agent-2-{Guid.NewGuid()}", tenantId);
 
@@ -31,12 +31,12 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<AgentListResult>(response);
         Assert.NotNull(result);
         Assert.NotNull(result.Agents);
         Assert.True(result.Agents.Count >= 2);
-        
+
         var agentNames = result.Agents.Select(a => a.Name).ToList();
         Assert.Contains(agent1.Name, agentNames);
         Assert.Contains(agent2.Name, agentNames);
@@ -49,7 +49,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         // Create multiple agents
         for (int i = 0; i < 5; i++)
         {
@@ -61,7 +61,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<AgentListResult>(response);
         Assert.NotNull(result);
         Assert.NotNull(result.Pagination);
@@ -75,7 +75,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
 
         // Act
@@ -98,7 +98,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
@@ -115,9 +115,9 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
-        
+
         var updateRequest = new UpdateAgentRequest
         {
             Name = $"updated-agent-{Guid.NewGuid()}",
@@ -130,7 +130,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<Agent>(response);
         Assert.NotNull(result);
         Assert.Equal(updateRequest.Name, result.Name);
@@ -144,7 +144,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var invalidId = ObjectId.GenerateNewId().ToString();
         var updateRequest = new UpdateAgentRequest
         {
@@ -165,7 +165,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
 
         // Act
@@ -173,7 +173,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         // Verify deletion
         var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -186,7 +186,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
@@ -218,9 +218,9 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
-        
+
         // Create an activation for the agent
         var activation = await CreateTestActivationAsync(agent.Name, tenantId);
 
@@ -229,16 +229,14 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert - Should fail with Conflict
         Assert.Equal(HttpStatusCode.Conflict, deleteResponse.StatusCode);
-        
+
         var errorContent = await deleteResponse.Content.ReadAsStringAsync();
         Assert.Contains("activation", errorContent, StringComparison.OrdinalIgnoreCase);
-        
+
         // Cleanup - Delete the activation first, then the agent should be deletable
         await DeleteTestActivationAsync(activation.Id);
-        
+
         var deleteAfterCleanup = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
         Assert.Equal(HttpStatusCode.OK, deleteAfterCleanup.StatusCode);
     }
 }
-
-

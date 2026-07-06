@@ -17,7 +17,7 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var request = new
         {
             workflowType = "test-workflow",
@@ -41,7 +41,7 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var workflowId = $"workflow-{Guid.NewGuid()}";
 
         // Act
@@ -66,7 +66,7 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
     }
@@ -78,7 +78,7 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var workflowId = $"workflow-{Guid.NewGuid()}";
 
         // Act
@@ -97,7 +97,7 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var workflowId = $"workflow-{Guid.NewGuid()}";
 
         // Act
@@ -109,5 +109,3 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }
-
-

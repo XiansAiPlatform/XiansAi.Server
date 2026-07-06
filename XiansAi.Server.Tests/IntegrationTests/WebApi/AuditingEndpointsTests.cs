@@ -35,16 +35,16 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         var jsonDoc = JsonDocument.Parse(content);
-        
+
         Assert.True(jsonDoc.RootElement.TryGetProperty("totalCount", out var totalCountElement));
         Assert.True(jsonDoc.RootElement.TryGetProperty("participants", out var participantsElement));
-        
+
         var totalCount = totalCountElement.GetInt64();
         var participants = participantsElement.EnumerateArray().Select(p => p.GetString()).ToList();
-        
+
         Assert.True(totalCount >= 2);
         Assert.Contains("participant-1", participants);
         Assert.Contains("participant-2", participants);
@@ -65,14 +65,14 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         var jsonDoc = JsonDocument.Parse(content);
-        
+
         Assert.True(jsonDoc.RootElement.TryGetProperty("page", out var pageElement));
         Assert.True(jsonDoc.RootElement.TryGetProperty("pageSize", out var pageSizeElement));
         Assert.True(jsonDoc.RootElement.TryGetProperty("totalPages", out var totalPagesElement));
-        
+
         Assert.Equal(2, pageElement.GetInt32());
         Assert.Equal(10, pageSizeElement.GetInt32());
         Assert.True(totalPagesElement.GetInt32() >= 3);
@@ -91,10 +91,10 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         var workflowTypes = JsonSerializer.Deserialize<string[]>(content);
-        
+
         Assert.NotNull(workflowTypes);
         Assert.Contains("WorkflowType1", workflowTypes);
         Assert.Contains("WorkflowType2", workflowTypes);
@@ -114,10 +114,10 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         var workflowIds = JsonSerializer.Deserialize<string[]>(content);
-        
+
         Assert.NotNull(workflowIds);
         Assert.Contains("workflow-1", workflowIds);
         Assert.Contains("workflow-2", workflowIds);
@@ -136,16 +136,16 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         var jsonDoc = JsonDocument.Parse(content);
-        
+
         Assert.True(jsonDoc.RootElement.TryGetProperty("totalCount", out var totalCountElement));
         Assert.True(jsonDoc.RootElement.TryGetProperty("logs", out var logsElement));
-        
+
         var totalCount = totalCountElement.GetInt64();
         var logs = logsElement.EnumerateArray().ToList();
-        
+
         Assert.True(totalCount >= 2);
         Assert.True(logs.Count >= 2);
     }
@@ -163,14 +163,14 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         var jsonDoc = JsonDocument.Parse(content);
-        
+
         Assert.True(jsonDoc.RootElement.TryGetProperty("logs", out var logsElement));
-        
+
         var logs = logsElement.EnumerateArray().ToList();
-        
+
         foreach (var log in logs)
         {
             if (log.TryGetProperty("participantId", out var participantIdElement))
@@ -196,7 +196,7 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
         // Arrange
         await CreateTestAgentAsync("critical-agent-1");
         await CreateTestAgentAsync("critical-agent-2");
-        
+
         await CreateTestLogAsync("critical-agent-1", "participant-1", logLevel: LogLevel.Critical);
         await CreateTestLogAsync("critical-agent-2", "participant-2", logLevel: LogLevel.Critical);
 
@@ -205,10 +205,10 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         var criticalGroups = JsonSerializer.Deserialize<AgentCriticalGroup[]>(content);
-        
+
         Assert.NotNull(criticalGroups);
         Assert.True(criticalGroups.Length >= 2);
     }
@@ -217,7 +217,7 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
     {
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var agent = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -235,15 +235,15 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
     }
 
     private async Task CreateTestLogAsync(
-        string agentName, 
-        string participantId = "test-participant", 
+        string agentName,
+        string participantId = "test-participant",
         string workflowType = "TestWorkflow",
         string workflowId = "test-workflow-id",
         LogLevel logLevel = LogLevel.Information)
     {
         using var scope = _factory.Services.CreateScope();
         var logRepository = scope.ServiceProvider.GetRequiredService<ILogRepository>();
-        
+
         var log = new Log
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -264,4 +264,4 @@ public class AuditingEndpointsTests : WebApiIntegrationTestBase
         var collection = mongoDatabase.GetCollection<Log>("logs");
         await collection.InsertOneAsync(log);
     }
-} 
+}

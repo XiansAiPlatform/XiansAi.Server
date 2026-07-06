@@ -21,11 +21,11 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         // Create a system-scoped agent (template)
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var template = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -42,7 +42,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
     }
@@ -54,11 +54,11 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         // Create a system-scoped agent (template)
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var template = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -75,7 +75,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<Agent>(response);
         Assert.NotNull(result);
         Assert.Equal(template.Id, result.Id);
@@ -88,7 +88,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
@@ -105,11 +105,11 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         // Create a system-scoped agent (template)
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var template = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -120,7 +120,7 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
             CreatedAt = DateTime.UtcNow
         };
         await agentRepository.CreateAsync(template);
-        
+
         var request = new
         {
             description = "Updated description",
@@ -141,11 +141,11 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         // Create a system-scoped agent (template)
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var template = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -171,11 +171,11 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         // Create a system-scoped agent (template)
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var template = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -196,4 +196,3 @@ public class AdminTemplateEndpointsTests : AdminApiIntegrationTestBase
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }
-
