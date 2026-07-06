@@ -25,6 +25,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" Version="10.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
+    <!-- Microsoft.OpenApi 2.7.5 fixes GHSA-v5pm-xwqc-g5wc (CVE-2026-49451), transitive via Microsoft.AspNetCore.OpenApi -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.1.2" />
     <PackageReference Include="Microsoft.Extensions.Logging.AzureAppServices" Version="10.0.5" />

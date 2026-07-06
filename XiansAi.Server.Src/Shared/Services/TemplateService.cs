@@ -365,25 +365,28 @@ public class TemplateService : ITemplateService
     /// <returns>A service result containing the newly created template agent.</returns>
     public async Task<ServiceResult<Agent>> PromoteAgentToTemplateAsync(string agentName, string tenantId, string createdBy)
     {
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            return ServiceResult<Agent>.BadRequest("Agent name is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            return ServiceResult<Agent>.BadRequest("Tenant ID is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(createdBy))
+        {
+            return ServiceResult<Agent>.BadRequest("Created by user ID is required");
+        }
+
+        // Tracks the persisted template so a failure mid-operation can be compensated
+        Agent? createdTemplate = null;
+
         try
         {
             _logger.LogInformation("Promoting agent {AgentName} in tenant {TenantId} to a system template, requested by {CreatedBy}",
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
-
-            if (string.IsNullOrWhiteSpace(agentName))
-            {
-                return ServiceResult<Agent>.BadRequest("Agent name is required");
-            }
-
-            if (string.IsNullOrWhiteSpace(tenantId))
-            {
-                return ServiceResult<Agent>.BadRequest("Tenant ID is required");
-            }
-
-            if (string.IsNullOrWhiteSpace(createdBy))
-            {
-                return ServiceResult<Agent>.BadRequest("Created by user ID is required");
-            }
 
             // Find the source tenant-scoped agent
             var sourceAgent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
@@ -430,6 +433,7 @@ public class TemplateService : ITemplateService
             newTemplate.GrantOwnerAccess(createdBy);
 
             await _agentRepository.CreateAsync(newTemplate);
+            createdTemplate = newTemplate;
             _logger.LogInformation("Created template agent {AgentName} with ID {AgentId} from tenant {TenantId} by user {CreatedBy}",
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(newTemplate.Id), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(createdBy));
 
@@ -467,7 +471,7 @@ public class TemplateService : ITemplateService
             }
 
             _logger.LogInformation("Successfully promoted agent {AgentName} from tenant {TenantId} to a system template with {DefinitionsCount} flow definitions by user {CreatedBy}",
-                agentName, tenantId, clonedDefinitionsCount, createdBy);
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
 
             return ServiceResult<Agent>.Success(newTemplate);
         }
@@ -475,8 +479,47 @@ public class TemplateService : ITemplateService
         {
             _logger.LogError(ex, "Error promoting agent {AgentName} in tenant {TenantId} to a system template",
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+
+            // Compensate: remove the partially-created template (and any cloned flow
+            // definitions) so the promotion can be retried without a manual cleanup.
+            await TryDeletePartiallyCreatedTemplateAsync(createdTemplate);
+
             return ServiceResult<Agent>.InternalServerError(
                 "An error occurred while promoting the agent to a template");
+        }
+    }
+
+    /// <summary>
+    /// Best-effort cleanup of a template that was persisted before a promotion failure.
+    /// Deleting the agent also removes its system-scoped flow definitions.
+    /// </summary>
+    private async Task<bool> TryDeletePartiallyCreatedTemplateAsync(Agent? createdTemplate)
+    {
+        if (createdTemplate?.Id == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var deleted = await _agentRepository.DeleteAsync(createdTemplate.Id, _tenantContext.LoggedInUser, _tenantContext.UserRoles.ToArray());
+            if (deleted)
+            {
+                _logger.LogInformation("Rolled back partially-created template {AgentName} with ID {AgentId}",
+                    LogSanitizer.Sanitize(createdTemplate.Name), LogSanitizer.Sanitize(createdTemplate.Id));
+            }
+            else
+            {
+                _logger.LogWarning("Failed to roll back partially-created template {AgentName} with ID {AgentId}; manual cleanup may be required",
+                    LogSanitizer.Sanitize(createdTemplate.Name), LogSanitizer.Sanitize(createdTemplate.Id));
+            }
+            return deleted;
+        }
+        catch (Exception cleanupEx)
+        {
+            _logger.LogError(cleanupEx, "Error rolling back partially-created template {AgentName} with ID {AgentId}; manual cleanup may be required",
+                LogSanitizer.Sanitize(createdTemplate.Name), LogSanitizer.Sanitize(createdTemplate.Id));
+            return false;
         }
     }
 

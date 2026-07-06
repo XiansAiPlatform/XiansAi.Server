@@ -51,6 +51,7 @@ public static class AdminGlobalUserEndpoints
             [FromQuery] string? search,
             [FromQuery] bool? isSysAdmin,
             [FromQuery] bool? isEnabled,
+            [FromQuery] string? role,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IGlobalUserAdminService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -65,6 +66,7 @@ public static class AdminGlobalUserEndpoints
                 Search = search,
                 IsSysAdmin = isSysAdmin,
                 IsEnabled = isEnabled,
+                Role = role,
             };
             var result = await service.ListUsersAsync(filter);
             return result.ToHttpResult();

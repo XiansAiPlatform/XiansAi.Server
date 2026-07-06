@@ -51,7 +51,7 @@ public class PagedParticipantResult
 /// </summary>
 public interface ITenantParticipantUserService
 {
-    Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search);
+    Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search, string? role = null);
     Task<ServiceResult<TenantParticipantUser>> GetAsync(string tenantId, string userId);
     Task<ServiceResult<TenantParticipantUser>> CreateAsync(string tenantId, string email, string name, string role);
     Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
@@ -89,10 +89,19 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         _logger = logger;
     }
 
-    public async Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search)
+    public async Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search, string? role = null)
     {
         try
         {
+            string? normalizedRole = null;
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                normalizedRole = NormalizeTenantRole(role);
+                if (normalizedRole == null)
+                    return ServiceResult<PagedParticipantResult>.BadRequest(
+                        $"Role must be one of: {string.Join(", ", AllowedTenantRoles)}");
+            }
+
             var filter = new UserFilter
             {
                 Page = page > 0 ? page : 1,
@@ -100,6 +109,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                 Type = UserTypeFilter.ALL,
                 Tenant = tenantId,
                 Search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+                Role = normalizedRole,
             };
 
             var paged = await _userRepository.GetAllUsersByTenantAsync(filter);

@@ -93,6 +93,13 @@ public static class AdminAgentDeploymentEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
+            if (string.IsNullOrWhiteSpace(tenantContext.LoggedInUser))
+            {
+                return Results.Json(
+                    new { message = "Authenticated user context is required" },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var result = await templateService.PromoteAgentToTemplateAsync(agentName, tenantId, tenantContext.LoggedInUser);
             return result.ToHttpResult();
         })
