@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using MongoDB.Bson;
 using Microsoft.Extensions.Logging;
 using Tests.TestUtils;
@@ -11,6 +13,14 @@ namespace Tests.IntegrationTests.AgentApi;
 
 public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
+    // The API serializes the LogLevel enum as its string name, so the response reader must
+    // opt into string-based enum conversion.
+    private static readonly JsonSerializerOptions JsonReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     //dotnet test --filter "FullyQualifiedName~LogsEndpointTests"
     public LogsEndpointTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
@@ -36,7 +46,7 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         
-        var result = await response.Content.ReadFromJsonAsync<Log>();
+        var result = await response.Content.ReadFromJsonAsync<Log>(JsonReadOptions);
         Assert.NotNull(result);
         Assert.Equal(logRequest.Message, result.Message);
         Assert.Equal(logRequest.Level, result.Level);
@@ -76,7 +86,7 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         
-        var results = await response.Content.ReadFromJsonAsync<Log[]>();
+        var results = await response.Content.ReadFromJsonAsync<Log[]>(JsonReadOptions);
         Assert.NotNull(results);
         Assert.Equal(2, results.Length);
         

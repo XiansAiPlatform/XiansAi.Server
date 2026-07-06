@@ -86,7 +86,9 @@ public static class OpenApiExtensions
             c.EnableFilter(); // Enable filtering by tag
             c.EnableTryItOutByDefault(); // Enable TryItOut by default
         });
-        
+
+        app.MapGet("/", () => Results.Redirect("/api-docs/index.html"));
+
         return app;
     }
 }

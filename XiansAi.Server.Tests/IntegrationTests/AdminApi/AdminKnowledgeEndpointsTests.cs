@@ -25,7 +25,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         await CreateTestKnowledgeAsync("knowledge-2", agent.Name, "Content 2", tenantId);
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/knowledge?agentName={agent.Name}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -48,7 +48,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var knowledge = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Test content", tenantId);
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge/{knowledge.Id}");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -71,7 +71,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var invalidId = ObjectId.GenerateNewId().ToString();
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge/{invalidId}");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/{invalidId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -95,7 +95,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         };
 
         // Act
-        var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge", request);
+        var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/knowledge?agentName={agent.Name}", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -124,7 +124,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         };
 
         // Act
-        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge/{knowledge.Id}", request);
+        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -146,13 +146,13 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var knowledge = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Test content", tenantId);
 
         // Act
-        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge/{knowledge.Id}");
+        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         
         // Verify deletion
-        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge/{knowledge.Id}");
+        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
@@ -170,7 +170,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Version 3", tenantId);
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge/test-knowledge/versions");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/test-knowledge/versions?agentName={agent.Name}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -192,8 +192,8 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var knowledge1 = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Version 1", tenantId);
         var knowledge2 = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Version 2", tenantId);
 
-        // Act
-        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agents/{agent.Id}/knowledge/test-knowledge/versions");
+        // Act - delete all versions at the tenant scope level
+        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/test-knowledge/tenant/versions?agentName={agent.Name}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

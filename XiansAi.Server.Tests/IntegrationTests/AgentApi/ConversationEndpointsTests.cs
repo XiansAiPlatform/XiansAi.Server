@@ -56,7 +56,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -122,7 +122,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Filter by billing scope
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}&scope=billing");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}&scope=billing");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -160,7 +160,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Filter by null scope (empty string)
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}&scope=");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}&scope=");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -213,7 +213,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -229,11 +229,12 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
     {
         // Arrange
         var workflowType = $"test-workflow-{Guid.NewGuid()}";
+        var workflowId = $"{TestTenantId}:{workflowType}";
         var participantId = $"test-participant-{Guid.NewGuid()}";
 
         // Act
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -250,14 +251,14 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         // Arrange
         var participantId = $"test-participant-{Guid.NewGuid()}";
 
-        // Act - Missing both workflowType and workflowId
+        // Act - Missing workflowId
         var response = await _client.GetAsync(
             $"/api/agent/conversation/last-task-id?participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("WorkflowType or WorkflowId is required", content);
+        Assert.Contains("WorkflowId is required", content);
     }
 
     /*
@@ -311,7 +312,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Get task id for participant 1
         var response1 = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participant1}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participant1}");
 
         // Assert participant 1
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
@@ -320,7 +321,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Get task id for participant 2
         var response2 = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participant2}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participant2}");
 
         // Assert participant 2
         Assert.Equal(HttpStatusCode.OK, response2.StatusCode);

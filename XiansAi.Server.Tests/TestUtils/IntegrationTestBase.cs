@@ -142,34 +142,4 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
 
         return response;
     }
-}
-
-/// <summary>
-/// Base class for integration tests that run with Production environment configuration
-/// </summary>
-public abstract class ProductionIntegrationTestBase : IntegrationTestBase
-{
-    protected ProductionIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture, "Production")
-    {
-    }
-}
-
-/// <summary>
-/// Base class for integration tests that run with Staging environment configuration
-/// </summary>
-public abstract class StagingIntegrationTestBase : IntegrationTestBase
-{
-    protected StagingIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture, "Staging")
-    {
-    }
-}
-
-/// <summary>
-/// Base class for integration tests that run with Development environment configuration
-/// </summary>
-public abstract class DevelopmentIntegrationTestBase : IntegrationTestBase
-{
-    protected DevelopmentIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture, "Development")
-    {
-    }
 } 

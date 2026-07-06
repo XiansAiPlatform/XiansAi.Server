@@ -11,6 +11,7 @@ using System.IO;
 using Shared.Utils.Services;
 using Shared.Providers.Auth;
 using Shared.Utils;
+using Shared.Utils.Temporal;
 using Shared.Data.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -38,13 +39,17 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((context, config) =>
         {
             config.Sources.Clear();
-            
-            // Add the test configuration file
-            var testConfigPath = Path.Combine(Directory.GetCurrentDirectory(), "XiansAi.Server.Tests", "appsettings.Tests.json");
-            if (File.Exists(testConfigPath))
+
+            // Add the test configuration file. Resolve it from the test assembly's output
+            // directory (where the csproj copies it) rather than the process working directory,
+            // which varies depending on how the tests are launched.
+            var testConfigPath = ResolveTestConfigPath();
+            if (testConfigPath == null)
             {
-                config.AddJsonFile(testConfigPath, optional: false, reloadOnChange: false);
+                throw new FileNotFoundException(
+                    "appsettings.Tests.json could not be located. Ensure it is copied to the test output directory.");
             }
+            config.AddJsonFile(testConfigPath, optional: false, reloadOnChange: false);
 
             // Override the MongoDB connection string with the live test fixture's address.
             // EncryptionKeys:BaseSecret is intentionally NOT overridden here — it is sourced
@@ -76,18 +81,17 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             RemoveService<IEmailService>(services);
             services.AddSingleton(mockEmailService.Object);
 
-            var mockLlmService = new Mock<ILlmService>();
-            mockLlmService.Setup(x => x.GetApiKey())
-                .Returns("test-api-key");
-            mockLlmService.Setup(x => x.GetLlmProvider())
-                .Returns("test-provider");
-            RemoveService<ILlmService>(services);
-            services.AddSingleton(mockLlmService.Object);
-
             // Mock background task service
             var mockBackgroundTaskService = new Mock<IBackgroundTaskService>();
             RemoveService<IBackgroundTaskService>(services);
             services.AddSingleton(mockBackgroundTaskService.Object);
+
+            // Mock the Temporal client service so tests never reach out to a live Temporal
+            // server. Workflow-dependent endpoints surface a handled error instead of hanging
+            // on a connection attempt; the startup validation also succeeds against this mock.
+            var mockTemporalClientService = new Mock<ITemporalClientService>();
+            RemoveService<ITemporalClientService>(services);
+            services.AddSingleton(mockTemporalClientService.Object);
 
             // Mock IUserTenantService to always return the test tenant for the test user
             var mockUserTenantService = new Mock<IUserTenantService>();
@@ -223,6 +227,22 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             mockAuthProviderFactory.Setup(x => x.GetProvider()).Returns(mockAuthProvider.Object);
             services.AddSingleton<IAuthProviderFactory>(mockAuthProviderFactory.Object);
         });
+    }
+
+    /// <summary>
+    /// Locates appsettings.Tests.json by checking the test assembly output directory first
+    /// (where the csproj copies it) and then a couple of source-relative fallbacks.
+    /// </summary>
+    private static string? ResolveTestConfigPath()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "appsettings.Tests.json"),
+            Path.Combine(Directory.GetCurrentDirectory(), "appsettings.Tests.json"),
+            Path.Combine(Directory.GetCurrentDirectory(), "XiansAi.Server.Tests", "appsettings.Tests.json")
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static void RemoveService<T>(IServiceCollection services)

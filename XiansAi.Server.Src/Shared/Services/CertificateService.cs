@@ -1,6 +1,7 @@
 using System.Security.Cryptography.X509Certificates;
 using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
+using Shared.Data.Models;
 using Features.AgentApi.Repositories;
 using Features.AgentApi.Models;
 using Shared.Utils;
@@ -13,11 +14,6 @@ public class FlowServerSettings
     public required string FlowServerNamespace { get; set; }
     public string? FlowServerCertBase64 { get; set; }
     public string? FlowServerPrivateKeyBase64 { get; set; }
-    public required string ApiKey { get; set; }
-    public required string? ProviderName { get; set; }
-    public required string ModelName { get; set; }
-    public Dictionary<string, string>? AdditionalConfig { get; set; }
-    public required string? BaseUrl { get; set; }
 }
 
 public class CertificateService
@@ -26,20 +22,20 @@ public class CertificateService
     private readonly ITenantContext _tenantContext;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
-    private readonly ILlmService _llmService;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
 
     public CertificateService(
         ILogger<CertificateService> logger,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        ILlmService llmService)
+        IWebhookEventPublisher webhookEventPublisher)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
-        _llmService = llmService;
+        _webhookEventPublisher = webhookEventPublisher;
     }
 
     public FlowServerSettings GetFlowServerSettings()
@@ -50,12 +46,7 @@ public class CertificateService
             FlowServerUrl = _tenantContext.GetTemporalConfig().FlowServerUrlExternal ?? _tenantContext.GetTemporalConfig().FlowServerUrl ?? throw new Exception($"FlowServerUrl not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerNamespace = _tenantContext.GetTemporalConfig().FlowServerNamespace ?? throw new Exception($"FlowServerNamespace not found for Tenant:{_tenantContext.TenantId}"),
             FlowServerCertBase64 = GetFlowServerCertBase64(),
-            FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64(),
-            ApiKey = _llmService.GetApiKey(),
-            ProviderName = _llmService.GetLlmProvider(),
-            ModelName = _llmService.GetModel(),
-            AdditionalConfig = _llmService.GetAdditionalConfig(),
-            BaseUrl = _llmService.GetBaseUrl()
+            FlowServerPrivateKeyBase64 = GetFlowServerPrivateKeyBase64()
         };
     }
 
@@ -173,7 +164,17 @@ public class CertificateService
             return false;
         }
 
-        return await _certificateRepository.DeleteByThumbprintAsync(thumbprint);
+        var revoked = await _certificateRepository.DeleteByThumbprintAsync(thumbprint);
+
+        if (revoked)
+        {
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.CertificateRevoked,
+                new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason },
+                cert.TenantId);
+        }
+
+        return revoked;
     }
 
     /// <summary>
@@ -208,6 +209,11 @@ public class CertificateService
             var cert = await GenerateAndStoreCertificate(certName, targetUserId, revokePrevious, friendlyName);
             var certBytes = cert.Export(X509ContentType.Cert);
             var base64String = Convert.ToBase64String(certBytes);
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.CertificateCreated,
+                new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName },
+                _tenantContext.TenantId);
 
             return Results.Ok(new { certificate = base64String });
         }

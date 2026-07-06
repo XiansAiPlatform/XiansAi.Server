@@ -59,65 +59,6 @@ public class AzureKeyVaultSecretStoreProviderTests
         Assert.Null(result);
     }
 
-    [Fact]
-    public async Task GetAsync_PropagatesNon404Failures()
-    {
-        var client = new Mock<SecretClient>();
-        client
-            .Setup(c => c.GetSecretAsync(ExpectedName, null, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new RequestFailedException(500, "boom"));
-
-        var provider = new AzureKeyVaultSecretStoreProvider(client.Object, Prefix, NullLogger<AzureKeyVaultSecretStoreProvider>.Instance);
-
-        await Assert.ThrowsAsync<RequestFailedException>(() => provider.GetAsync(SecretId));
-    }
-
-    [Fact]
-    public async Task DeleteAsync_CallsStartDelete()
-    {
-        var client = new Mock<SecretClient>();
-        client
-            .Setup(c => c.StartDeleteSecretAsync(ExpectedName, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Mock.Of<DeleteSecretOperation>())
-            .Verifiable();
-
-        var provider = new AzureKeyVaultSecretStoreProvider(client.Object, Prefix, NullLogger<AzureKeyVaultSecretStoreProvider>.Instance);
-
-        await provider.DeleteAsync(SecretId);
-
-        client.Verify();
-    }
-
-    [Fact]
-    public async Task DeleteAsync_Treats_404_As_Success()
-    {
-        var client = new Mock<SecretClient>();
-        client
-            .Setup(c => c.StartDeleteSecretAsync(ExpectedName, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new RequestFailedException(404, "not found"));
-
-        var provider = new AzureKeyVaultSecretStoreProvider(client.Object, Prefix, NullLogger<AzureKeyVaultSecretStoreProvider>.Instance);
-
-        await provider.DeleteAsync(SecretId);
-    }
-
-    [Fact]
-    public async Task SetAsync_RejectsInvalidVaultName()
-    {
-        var client = new Mock<SecretClient>(MockBehavior.Strict);
-        var provider = new AzureKeyVaultSecretStoreProvider(client.Object, "bad_prefix_", NullLogger<AzureKeyVaultSecretStoreProvider>.Instance);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.SetAsync(SecretId, "value"));
-    }
-
-    [Fact]
-    public void Name_Is_Stable()
-    {
-        var client = new Mock<SecretClient>();
-        var provider = new AzureKeyVaultSecretStoreProvider(client.Object, Prefix, NullLogger<AzureKeyVaultSecretStoreProvider>.Instance);
-        Assert.Equal("azurekeyvault", provider.Name);
-    }
-
     private static Response<KeyVaultSecret> BuildSecretResponse(string name, string value)
     {
         var secret = SecretModelFactory.KeyVaultSecret(

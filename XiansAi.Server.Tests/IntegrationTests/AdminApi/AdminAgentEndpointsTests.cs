@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using MongoDB.Bson;
 using Shared.Data.Models;
+using Shared.Repositories;
 using Shared.Services;
 using Xunit;
 using Tests.TestUtils;
@@ -78,15 +79,16 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
 
         // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var result = await ReadAsJsonAsync<Agent>(response);
+
+        // The endpoint returns an AgentWithDefinitions wrapper: { agent, definitions }.
+        var result = await ReadAsJsonAsync<AgentWithDefinitions>(response);
         Assert.NotNull(result);
-        Assert.Equal(agent.Id, result.Id);
-        Assert.Equal(agent.Name, result.Name);
+        Assert.Equal(agent.Id, result.Agent.Id);
+        Assert.Equal(agent.Name, result.Agent.Name);
     }
 
     [Fact]
@@ -124,7 +126,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         };
 
         // Act
-        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}", updateRequest);
+        var response = await PatchAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}", updateRequest);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -167,13 +169,13 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
 
         // Act
-        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
+        var response = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         
         // Verify deletion
-        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
+        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
@@ -223,7 +225,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         var activation = await CreateTestActivationAsync(agent.Name, tenantId);
 
         // Act - Try to delete the agent deployment
-        var deleteResponse = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
+        var deleteResponse = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
 
         // Assert - Should fail with Conflict
         Assert.Equal(HttpStatusCode.Conflict, deleteResponse.StatusCode);
@@ -234,7 +236,7 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
         // Cleanup - Delete the activation first, then the agent should be deletable
         await DeleteTestActivationAsync(activation.Id);
         
-        var deleteAfterCleanup = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Id}");
+        var deleteAfterCleanup = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
         Assert.Equal(HttpStatusCode.OK, deleteAfterCleanup.StatusCode);
     }
 }

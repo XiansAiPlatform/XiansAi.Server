@@ -253,6 +253,17 @@ message_feedback:
       tenant_id: asc
       message_id: asc
     unique: true
+  - name: tenant_id_1_submitted_at_-1
+    keys:
+      tenant_id: asc
+      submitted_at: desc
+    background: true
+  - name: tenant_id_1_star_rating_1_submitted_at_-1
+    keys:
+      tenant_id: asc
+      star_rating: asc
+      submitted_at: desc
+    background: true
 
 api_keys:
   - name: tenant_name_unique
@@ -517,3 +528,23 @@ app_integrations:
       activation_name: asc
       name: asc
     unique: true
+
+webhook_deliveries:
+  # Drives the dispatcher's atomic claim query (status + due time).
+  - name: webhook_delivery_claim
+    keys:
+      status: asc
+      next_attempt_at: asc
+    background: true
+  # Audit lookups: "what did this user trigger, most recent first".
+  - name: webhook_delivery_actor
+    keys:
+      actor_user_id: asc
+      created_at: desc
+    background: true
+  # TTL cleanup: remove delivery rows 15 days after creation.
+  - name: webhook_delivery_ttl
+    keys:
+      created_at: asc
+    expire_after: 15d
+    background: true

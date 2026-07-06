@@ -30,16 +30,18 @@ namespace Shared.Services
         private readonly IApiKeyRepository _apiKeyRepository;
         private readonly ILogger<ApiKeyService> _logger;
         private readonly IMemoryCache _cache;
+        private readonly IWebhookEventPublisher _webhookEventPublisher;
         
         // Cache configuration
         private static readonly TimeSpan ApiKeyCacheExpiration = TimeSpan.FromMinutes(15);
         private static readonly string CacheKeyPrefix = "apikey:";
 
-        public ApiKeyService(IApiKeyRepository apiKeyRepository, ILogger<ApiKeyService> logger, IMemoryCache cache)
+        public ApiKeyService(IApiKeyRepository apiKeyRepository, ILogger<ApiKeyService> logger, IMemoryCache cache, IWebhookEventPublisher webhookEventPublisher)
         {
             _apiKeyRepository = apiKeyRepository;
             _logger = logger;
             _cache = cache;
+            _webhookEventPublisher = webhookEventPublisher;
         }
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
@@ -48,6 +50,12 @@ namespace Shared.Services
             try
             {
                 var result = await _apiKeyRepository.CreateAsync(tenantId, name, createdBy, agentName, activationName, type, workflowName, participantId, timeoutInSeconds, webhookName);
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.ApiKeyCreated,
+                    new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy },
+                    tenantId);
+
                 return ServiceResult<(string, ApiKey)>.Success(result);
             }
             catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
@@ -81,7 +89,12 @@ namespace Shared.Services
                     _cache.Remove(cacheKey);
                     _logger.LogDebug("Invalidated cache for revoked API key {ApiKeyId} in tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 }
-                
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.ApiKeyRevoked,
+                    new { tenantId, apiKeyId = id, name = existingKey?.Name },
+                    tenantId);
+
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception ex)
@@ -150,7 +163,12 @@ namespace Shared.Services
                 }
                 
                 // The new key will be cached on first use by GetApiKeyByRawKeyAsync
-                
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.ApiKeyRotated,
+                    new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name },
+                    tenantId);
+
                 return ServiceResult<(string, ApiKey)?>.Success(rotated);
             }
             catch (Exception ex)

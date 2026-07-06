@@ -49,13 +49,15 @@ public class AdminAgentService : IAdminAgentService
     private readonly IAgentDeletionService _agentDeletionService;
     private readonly ILogger<AdminAgentService> _logger;
     private readonly ITenantContext _tenantContext;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
 
     public AdminAgentService(
         IAgentRepository agentRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
         IAgentDeletionService agentDeletionService,
         ILogger<AdminAgentService> logger,
-        ITenantContext tenantContext
+        ITenantContext tenantContext,
+        IWebhookEventPublisher webhookEventPublisher
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -63,6 +65,7 @@ public class AdminAgentService : IAdminAgentService
         _agentDeletionService = agentDeletionService ?? throw new ArgumentNullException(nameof(agentDeletionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
     }
 
     /// <summary>
@@ -223,6 +226,12 @@ public class AdminAgentService : IAdminAgentService
             }
 
             _logger.LogInformation("Successfully updated agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.AgentDeploymentUpdated,
+                new { tenantId, agentId = agent.Id, agentName = agent.Name },
+                tenantId);
+
             return ServiceResult<Agent>.Success(agent);
         }
         catch (Exception ex)
