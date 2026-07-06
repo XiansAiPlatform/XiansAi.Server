@@ -95,6 +95,14 @@ public class GlobalUserAdminService : IGlobalUserAdminService
     private const int MaxPageSize = 100;
     private const int DefaultPageSize = 20;
 
+    private static readonly string[] AllowedTenantRoles =
+    {
+        SystemRoles.TenantAdmin,
+        SystemRoles.TenantUser,
+        SystemRoles.TenantParticipantAdmin,
+        SystemRoles.TenantParticipant,
+    };
+
     private readonly IUserRepository _userRepository;
     private readonly ITenantCacheService _tenantCacheService;
     private readonly IRoleCacheService _roleCacheService;
@@ -122,14 +130,35 @@ public class GlobalUserAdminService : IGlobalUserAdminService
     {
         try
         {
+            // role=SysAdmin is a global flag rather than a tenant role, so it maps to IsSysAdmin.
+            string? normalizedRole = null;
+            var isSysAdmin = filter.IsSysAdmin;
+            if (!string.IsNullOrWhiteSpace(filter.Role))
+            {
+                var trimmed = filter.Role.Trim();
+                if (string.Equals(trimmed, SystemRoles.SysAdmin, StringComparison.OrdinalIgnoreCase))
+                {
+                    isSysAdmin = true;
+                }
+                else
+                {
+                    normalizedRole = AllowedTenantRoles.FirstOrDefault(
+                        r => string.Equals(r, trimmed, StringComparison.OrdinalIgnoreCase));
+                    if (normalizedRole == null)
+                        return ServiceResult<GlobalUserListResult>.BadRequest(
+                            $"Role must be one of: {SystemRoles.SysAdmin}, {string.Join(", ", AllowedTenantRoles)}");
+                }
+            }
+
             var normalized = new UserFilter
             {
                 Page = filter.Page > 0 ? filter.Page : 1,
                 PageSize = Math.Min(filter.PageSize > 0 ? filter.PageSize : DefaultPageSize, MaxPageSize),
                 Type = UserTypeFilter.ALL,
                 Search = string.IsNullOrWhiteSpace(filter.Search) ? null : filter.Search.Trim(),
-                IsSysAdmin = filter.IsSysAdmin,
+                IsSysAdmin = isSysAdmin,
                 IsEnabled = filter.IsEnabled,
+                Role = normalizedRole,
             };
 
             var paged = await _userRepository.GetAllUsersAsync(normalized);

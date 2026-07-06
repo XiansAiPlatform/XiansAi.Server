@@ -76,10 +76,22 @@ public class UserRepository : IUserRepository
                     break;
             }
 
-            // Filter by tenant
-            if (!string.IsNullOrWhiteSpace(filter.Tenant))
+            // Filter by tenant and/or tenant role. Combined into a single ElemMatch so both
+            // conditions must hold on the same membership.
+            if (!string.IsNullOrWhiteSpace(filter.Tenant) && !string.IsNullOrWhiteSpace(filter.Role))
+            {
+                var role = filter.Role;
+                filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                    tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(role)));
+            }
+            else if (!string.IsNullOrWhiteSpace(filter.Tenant))
             {
                 filters.Add(builder.ElemMatch(u => u.TenantRoles, tr => tr.Tenant == filter.Tenant));
+            }
+            else if (!string.IsNullOrWhiteSpace(filter.Role))
+            {
+                var role = filter.Role;
+                filters.Add(builder.ElemMatch(u => u.TenantRoles, tr => tr.Roles.Contains(role)));
             }
 
             // Filter by explicit IsSysAdmin value (overrides UserTypeFilter.ADMIN/NON_ADMIN if both set)
@@ -174,6 +186,14 @@ public class UserRepository : IUserRepository
                 filters.Add(builder.ElemMatch(u => u.TenantRoles,
                     tr => tr.Tenant == filter.Tenant));
                 break;
+        }
+
+        // Filter by a specific tenant role within the tenant (in addition to the type filter).
+        if (!string.IsNullOrWhiteSpace(filter.Role))
+        {
+            var role = filter.Role;
+            filters.Add(builder.ElemMatch(u => u.TenantRoles,
+                tr => tr.Tenant == filter.Tenant && tr.Roles.Contains(role)));
         }
 
         // Search by name or email (case-insensitive, partial match)

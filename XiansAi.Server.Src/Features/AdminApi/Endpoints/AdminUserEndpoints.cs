@@ -59,6 +59,7 @@ public static class AdminUserEndpoints
             [FromQuery] int page,
             [FromQuery] int pageSize,
             [FromQuery] string? search,
+            [FromQuery] string? role,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantParticipantUserService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -66,7 +67,7 @@ public static class AdminUserEndpoints
             if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
                 return forbid;
 
-            var result = await service.ListAsync(tenantId, page, pageSize, search);
+            var result = await service.ListAsync(tenantId, page, pageSize, search, role);
             return result.ToHttpResult();
         })
         .WithName("AdminListTenantParticipantUsers");
