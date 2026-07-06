@@ -110,7 +110,7 @@ public class UserManagementEndpointsTests : WebApiIntegrationTestBase
         var response = await PutAsJsonAsync("/api/users/update", updateDto);
 
         // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.NotFound || 
+        Assert.True(response.StatusCode == HttpStatusCode.NotFound ||
                    response.StatusCode == HttpStatusCode.BadRequest ||
                    response.StatusCode == HttpStatusCode.InternalServerError);
     }
@@ -198,4 +198,3 @@ public class UserInfo
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
 }
-

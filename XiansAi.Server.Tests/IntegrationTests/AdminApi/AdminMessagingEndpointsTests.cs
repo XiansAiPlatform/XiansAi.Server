@@ -18,7 +18,7 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var request = new
         {
             threadId = $"thread-{Guid.NewGuid()}",
@@ -42,7 +42,7 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var request = new
         {
             threadId = $"thread-{Guid.NewGuid()}",
@@ -59,5 +59,3 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }
-
-

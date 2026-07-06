@@ -45,7 +45,7 @@ public class RetryHttpClient : IAsyncDisposable
             }
 
             response = await _innerClient.SendAsync(requestClone, cancellationToken);
-            
+
             if (response.StatusCode != HttpStatusCode.Unauthorized || retryCount == _maxRetries)
             {
                 return response;
@@ -99,4 +99,4 @@ public class RetryHttpClient : IAsyncDisposable
         _innerClient.Dispose();
         await ValueTask.CompletedTask;
     }
-} 
+}

@@ -19,7 +19,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         await CreateTestKnowledgeAsync("knowledge-1", agent.Name, "Content 1", tenantId);
         await CreateTestKnowledgeAsync("knowledge-2", agent.Name, "Content 2", tenantId);
@@ -29,7 +29,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
         Assert.Contains("knowledge-1", content);
@@ -43,7 +43,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         var knowledge = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Test content", tenantId);
 
@@ -52,7 +52,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<Knowledge>(response);
         Assert.NotNull(result);
         Assert.Equal(knowledge.Id, result.Id);
@@ -66,7 +66,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         var invalidId = ObjectId.GenerateNewId().ToString();
 
@@ -84,9 +84,9 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
-        
+
         var request = new
         {
             name = "new-knowledge",
@@ -99,7 +99,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<Knowledge>(response);
         Assert.NotNull(result);
         Assert.Equal("new-knowledge", result.Name);
@@ -113,10 +113,10 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         var knowledge = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Original content", tenantId);
-        
+
         var request = new
         {
             content = "Updated content",
@@ -128,7 +128,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<Knowledge>(response);
         Assert.NotNull(result);
         Assert.Equal("Updated content", result.Content);
@@ -141,7 +141,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         var knowledge = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Test content", tenantId);
 
@@ -150,7 +150,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         // Verify deletion
         var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -163,7 +163,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Version 1", tenantId, createdAt: DateTime.UtcNow.AddHours(-2));
         await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Version 2", tenantId, createdAt: DateTime.UtcNow.AddHours(-1));
@@ -174,7 +174,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
         Assert.Contains("test-knowledge", content);
@@ -187,7 +187,7 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         var knowledge1 = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Version 1", tenantId);
         var knowledge2 = await CreateTestKnowledgeAsync("test-knowledge", agent.Name, "Version 2", tenantId);
@@ -199,5 +199,3 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }
-
-

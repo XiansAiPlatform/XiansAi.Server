@@ -230,4 +230,3 @@ public class UserPermissionDto
     public string UserId { get; set; } = string.Empty;
     public string PermissionLevel { get; set; } = string.Empty;
 }
-

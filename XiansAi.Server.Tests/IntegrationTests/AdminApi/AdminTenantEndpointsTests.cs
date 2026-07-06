@@ -23,7 +23,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
-        
+
         await CreateTestTenantAsync(tenantId);
         await CreateTestTenantAsync($"tenant-2-{Guid.NewGuid()}");
 
@@ -32,7 +32,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
     }
@@ -43,7 +43,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
-        
+
         var tenant = await CreateTestTenantAsync(tenantId);
 
         // Act
@@ -51,7 +51,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<Tenant>(response);
         Assert.NotNull(result);
         Assert.Equal(tenant.TenantId, result.TenantId);
@@ -127,7 +127,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
-        
+
         var invalidTenantId = $"non-existent-{Guid.NewGuid()}";
 
         // Act
@@ -171,9 +171,9 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
-        
+
         var tenant = await CreateTestTenantAsync(tenantId);
-        
+
         var request = new
         {
             name = "Updated Tenant Name",
@@ -185,7 +185,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await ReadAsJsonAsync<Tenant>(response);
         Assert.NotNull(result);
         Assert.Equal(request.name, result.Name);
@@ -197,7 +197,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
-        
+
         var tenant = await CreateTestTenantAsync(tenantId);
 
         // Act
@@ -205,7 +205,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.True(response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.NoContent);
-        
+
         // Verify deletion
         var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -217,7 +217,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
-        
+
         var invalidTenantId = $"non-existent-{Guid.NewGuid()}";
 
         // Act
@@ -227,5 +227,3 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
-
-

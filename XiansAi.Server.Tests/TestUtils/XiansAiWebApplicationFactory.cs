@@ -112,7 +112,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             {
                 var logger = sp.GetRequiredService<ILogger<CertificateGenerator>>();
                 var env = sp.GetRequiredService<IWebHostEnvironment>();
-                
+
                 // Create a test configuration with dummy certificate data
                 var testConfig = new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>
@@ -121,7 +121,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                         ["Certificates:AppServerCertPassword"] = "test-password"
                     })
                     .Build();
-                    
+
                 return new CertificateGenerator(testConfig, logger, env);
             });
 
@@ -188,14 +188,14 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                     policy.AuthenticationSchemes.Add("Test");
                     policy.RequireAuthenticatedUser();
                 });
-                
+
                 options.AddPolicy("RequireTenantAuth", policy =>
                 {
-                    policy.AuthenticationSchemes.Clear(); 
+                    policy.AuthenticationSchemes.Clear();
                     policy.AuthenticationSchemes.Add("Test");
                     policy.RequireAuthenticatedUser();
                 });
-                
+
                 options.AddPolicy("RequireTenantAuthWithoutConfig", policy =>
                 {
                     policy.AuthenticationSchemes.Clear();
@@ -264,4 +264,4 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
         }
         base.Dispose(disposing);
     }
-} 
+}

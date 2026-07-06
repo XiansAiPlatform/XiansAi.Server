@@ -59,4 +59,4 @@ public abstract class WebApiIntegrationTestBase : IntegrationTestBase
         PropertyNameCaseInsensitive = true,
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
     };
-} 
+}

@@ -11,20 +11,12 @@ using Shared.Services;
 
 namespace Tests.IntegrationTests.AgentApi;
 
-
 public class ActivityHistoryTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
-    
-    /*
-    dotnet test --filter "FullyQualifiedName~ActivityHistoryTests"
-    */
     public ActivityHistoryTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ActivityHistoryTests.CreateActivityHistory_WithValidData_ReturnsOk"
-    */
     [Fact]
     public async Task CreateActivityHistory_WithValidData_ReturnsOk()
     {
@@ -53,15 +45,12 @@ public class ActivityHistoryTests : IntegrationTestBase, IClassFixture<MongoDbFi
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var responseContent = await response.Content.ReadAsStringAsync();
         Assert.Contains("Activity history creation queued", responseContent);
-        
+
         // Wait for background tasks to complete before test ends
         // This prevents MongoDB connection errors when the test fixture is disposed
         var backgroundTaskService = _factory.Services.GetRequiredService<IBackgroundTaskService>();
-        
+
         // Wait for background tasks to complete with a reasonable timeout
         await backgroundTaskService.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
     }
-    
-    // Removed: CreateActivityHistory_WithInvalidData_ReturnsBadRequest
-    // Removed: CreateActivityHistory_VerifyDataInsertedIntoMongoDB
-} 
+}

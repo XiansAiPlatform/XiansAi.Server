@@ -14,31 +14,31 @@ public static class TestCertificateHelper
     private static string? _rootCertificate;
     private static string? _rootPrivateKey;
     private static X509Certificate2? _testCertificate;
-    
+
     public static void Initialize(string envPath = ".env")
     {
         // Double-check locking pattern for thread safety
         if (_isInitialized) return;
-        
+
         lock (_lock)
         {
             if (_isInitialized) return;
-            
+
             try
             {
                 // Get an absolute path to the .env file in the test project root
                 string testProjectDirectory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../"));
                 string fullEnvPath = Path.Combine(testProjectDirectory, envPath);
-                
+
                 if (!File.Exists(fullEnvPath))
                 {
                     // Create a default .env file if it doesn't exist
                     File.WriteAllText(fullEnvPath, "APP_SERVER_API_KEY=test-api-key");
                 }
-                
+
                 // Load environment variables
                 Env.Load(fullEnvPath);
-                
+
                 // Cache the API key
                 _apiKey = Environment.GetEnvironmentVariable("APP_SERVER_API_KEY");
                 if (string.IsNullOrEmpty(_apiKey))
@@ -52,7 +52,7 @@ public static class TestCertificateHelper
                 {
                     GenerateTestCertificates();
                 }
-                
+
                 _isInitialized = true;
             }
             catch (Exception ex)
@@ -67,7 +67,7 @@ public static class TestCertificateHelper
             }
         }
     }
-    
+
     public static string LoadApiKeyFromEnv()
     {
         // Ensure initialization before accessing the API key
@@ -75,13 +75,13 @@ public static class TestCertificateHelper
         {
             Initialize();
         }
-        
+
         // Double-check that we have a valid API key
         if (string.IsNullOrEmpty(_apiKey))
         {
             throw new InvalidOperationException("API key is null or empty after initialization.");
         }
-        
+
         return _apiKey;
     }
 
@@ -92,7 +92,7 @@ public static class TestCertificateHelper
         {
             Initialize();
         }
-        
+
         return _rootCertificate ?? Convert.ToBase64String(_testCertificate!.RawData);
     }
 
@@ -103,7 +103,7 @@ public static class TestCertificateHelper
         {
             Initialize();
         }
-        
+
         return _rootPrivateKey ?? Convert.ToBase64String(_testCertificate!.GetRSAPrivateKey()!.ExportRSAPrivateKey());
     }
 
@@ -138,4 +138,4 @@ public static class TestCertificateHelper
         _rootCertificate = Convert.ToBase64String(cert.RawData);
         _rootPrivateKey = Convert.ToBase64String(cert.GetRSAPrivateKey()!.ExportRSAPrivateKey());
     }
-} 
+}

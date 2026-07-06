@@ -32,9 +32,9 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var agentNames = await response.Content.ReadFromJsonAsync<List<string>>();
-        
+
         Assert.NotNull(agentNames);
         Assert.Contains("test-agent-1", agentNames);
         Assert.Contains("test-agent-2", agentNames);
@@ -48,9 +48,9 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var agentNames = await response.Content.ReadFromJsonAsync<List<string>>();
-        
+
         Assert.NotNull(agentNames);
         // Note: May contain agents from other tests running in parallel, so we just check it's a valid response
         Assert.True(agentNames.Count >= 0);
@@ -69,11 +69,11 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var groupedDefinitions = await response.Content.ReadFromJsonAsync<List<AgentWithDefinitions>>();
-        
+
         Assert.NotNull(groupedDefinitions);
-        
+
         // Find our specific agent in the results (may contain agents from other tests)
         var targetAgent = groupedDefinitions.FirstOrDefault(a => a.Agent.Name == "grouped-test-agent");
         Assert.NotNull(targetAgent);
@@ -93,17 +93,17 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var groupedDefinitions = await response.Content.ReadFromJsonAsync<List<AgentWithDefinitions>>();
-        
+
         Assert.NotNull(groupedDefinitions);
-        
+
         // Find our specific agent in the results (may contain agents from other tests)
         var targetAgent = groupedDefinitions.FirstOrDefault(a => a.Agent.Name == "basic-test-agent");
         Assert.NotNull(targetAgent);
         Assert.Equal("basic-test-agent", targetAgent.Agent.Name);
         Assert.Single(targetAgent.Definitions);
-        
+
         var definition = targetAgent.Definitions.First();
         Assert.Equal("TestWorkflow", definition.WorkflowType);
         // Basic data should not include full source code
@@ -122,9 +122,9 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var definitions = await response.Content.ReadFromJsonAsync<List<FlowDefinition>>();
-        
+
         Assert.NotNull(definitions);
         Assert.Single(definitions);
         Assert.Equal("TestWorkflow", definitions.First().WorkflowType);
@@ -201,9 +201,9 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var deleteResult = await response.Content.ReadFromJsonAsync<AgentDeleteResult>();
-        
+
         Assert.NotNull(deleteResult);
         Assert.Equal("Agent and its associated flow definitions deleted successfully", deleteResult.Message);
 
@@ -248,7 +248,7 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
     {
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var agent = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -269,7 +269,7 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
     {
         using var scope = _factory.Services.CreateScope();
         var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
-        
+
         var agent = new Agent
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -290,7 +290,7 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
     {
         using var scope = _factory.Services.CreateScope();
         var flowDefinitionRepository = scope.ServiceProvider.GetRequiredService<IFlowDefinitionRepository>();
-        
+
         var flowDefinition = new FlowDefinition
         {
             Id = ObjectId.GenerateNewId().ToString(),
@@ -325,4 +325,4 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
         await flowDefinitionRepository.CreateAsync(flowDefinition);
         return flowDefinition;
     }
-} 
+}

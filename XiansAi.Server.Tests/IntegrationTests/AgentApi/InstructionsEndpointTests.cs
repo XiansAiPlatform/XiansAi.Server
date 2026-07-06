@@ -8,22 +8,16 @@ namespace Tests.IntegrationTests.AgentApi;
 
 public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
-    /*
-    dotnet test --filter "FullyQualifiedName~InstructionsEndpointTests"
-    */
     public InstructionsEndpointTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_ReturnsLatestInstruction"
-    */
     [Fact]
     public async Task GetLatestInstruction_ReturnsLatestInstruction()
     {
         // Arrange - Create a unique name for this test run
         string testInstructionName = $"test-instruction-{Guid.NewGuid()}";
-        
+
         // Insert multiple instructions with the same name but different timestamps
         var knowledge = new List<Knowledge>
         {
@@ -74,7 +68,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var result = await response.Content.ReadFromJsonAsync<Knowledge>();
         Assert.NotNull(result);
         Assert.Equal(testInstructionName, result.Name);
@@ -82,9 +76,6 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         Assert.Equal("v3", result.Version);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.InstructionsEndpointTests.GetLatestInstruction_WithNonExistentName_ReturnsNotFound"
-    */
     [Fact]
     public async Task GetLatestInstruction_WithNonExistentName_ReturnsNotFound()
     {
@@ -97,4 +88,4 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
-} 
+}

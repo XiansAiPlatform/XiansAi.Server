@@ -17,7 +17,7 @@ public class AdminOwnershipEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
 
         // Act
@@ -25,7 +25,7 @@ public class AdminOwnershipEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
         Assert.Contains("ownerAccess", content);
@@ -40,7 +40,7 @@ public class AdminOwnershipEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var invalidId = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
 
         // Act
@@ -57,11 +57,11 @@ public class AdminOwnershipEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
         var newAdminUserId = $"new-admin-{Guid.NewGuid()}";
         await CreateTestUserWithRoleAsync(newAdminUserId, tenantId, SystemRoles.TenantAdmin);
-        
+
         var request = new
         {
             newAdminId = newAdminUserId
@@ -72,7 +72,7 @@ public class AdminOwnershipEndpointsTests : AdminApiIntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         var content = await response.Content.ReadAsStringAsync();
         Assert.NotNull(content);
         Assert.Contains(newAdminUserId, content);
@@ -85,9 +85,9 @@ public class AdminOwnershipEndpointsTests : AdminApiIntegrationTestBase
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
-        
+
         var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
-        
+
         var request = new
         {
             newAdminId = "non-existent-user"
@@ -100,5 +100,3 @@ public class AdminOwnershipEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }
-
-
