@@ -75,7 +75,7 @@ public interface IAdminTaskService
         DateTime? endDate,
         string? participantId);
     Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft);
-    Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment);
+    Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment, Dictionary<string, object>? metadata = null);
 }
 
 /// <summary>
@@ -693,7 +693,11 @@ public class AdminTaskService : IAdminTaskService
     /// <summary>
     /// Performs an action on a task with an optional comment.
     /// </summary>
-    public async Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment)
+    public async Task<ServiceResult<object>> PerformAction(
+        string workflowId,
+        string action,
+        string? comment,
+        Dictionary<string, object>? metadata = null)
     {
         if (string.IsNullOrWhiteSpace(workflowId))
         {
@@ -709,14 +713,18 @@ public class AdminTaskService : IAdminTaskService
 
         try
         {
-            _logger.LogInformation("Performing action '{Action}' on task {WorkflowId} with comment: {Comment}", 
-                LogSanitizer.Sanitize(action), LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(comment ?? "(none)"));
+            _logger.LogInformation(
+                "Performing action '{Action}' on task {WorkflowId} with comment: {Comment}, metadata keys: {MetadataKeyCount}",
+                LogSanitizer.Sanitize(action),
+                LogSanitizer.Sanitize(workflowId),
+                LogSanitizer.Sanitize(comment ?? "(none)"),
+                metadata?.Count ?? 0);
             var client = await _clientFactory.GetClientAsync();
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 
             // Send PerformAction signal with TaskActionRequest payload
-            var actionRequest = new { Action = action, Comment = comment };
+            var actionRequest = new { Action = action, Comment = comment, Metadata = metadata };
             await workflowHandle.SignalAsync("PerformAction", new object[] { actionRequest });
 
             _logger.LogInformation("Successfully performed action '{Action}' on task {WorkflowId}", LogSanitizer.Sanitize(action), LogSanitizer.Sanitize(workflowId));

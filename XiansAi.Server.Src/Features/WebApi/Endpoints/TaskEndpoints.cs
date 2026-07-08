@@ -66,12 +66,12 @@ public static class TaskEndpoints
             [FromBody] PerformActionRequest request,
             [FromServices] ITaskService taskService) => 
         {
-            var result = await taskService.PerformAction(workflowId, request.Action, request.Comment);
+            var result = await taskService.PerformAction(workflowId, request.Action, request.Comment, request.Metadata);
             return result.ToHttpResult();
         })
         .WithName("Perform Task Action")
         
         .WithSummary("Perform an action on a task")
-        .WithDescription("Performs an action on a task (e.g., approve, reject, hold). The action should be one of the task's available actions. An optional comment can be provided.");
+        .WithDescription("Performs an action on a task (e.g., approve, reject, hold). The action should be one of the task's available actions. An optional comment and metadata can be provided; metadata is merged into the task's metadata.");
     }
 }

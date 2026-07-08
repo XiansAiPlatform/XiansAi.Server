@@ -119,7 +119,7 @@ public static class AdminTaskEndpoints
                 return ownershipError;
             }
 
-            var result = await taskService.PerformAction(taskId, request.Action, request.Comment);
+            var result = await taskService.PerformAction(taskId, request.Action, request.Comment, request.Metadata);
             return result.ToHttpResult();
         })
         .Produces<object>()

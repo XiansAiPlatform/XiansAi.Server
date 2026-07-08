@@ -57,6 +57,11 @@ public class PerformActionRequest
     /// Optional comment for the action.
     /// </summary>
     public string? Comment { get; set; }
+
+    /// <summary>
+    /// Optional metadata merged into the task's metadata when the action is performed.
+    /// </summary>
+    public Dictionary<string, object>? Metadata { get; set; }
 }
 
 /// <summary>
