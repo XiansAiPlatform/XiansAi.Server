@@ -13,7 +13,8 @@ public interface ITaskService
 {
     Task<ServiceResult<TaskInfoResponse>> GetTaskById(string workflowId);
     Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft);
-    Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment);
+    Task<ServiceResult<object>> UpdateMetadata(string workflowId, Dictionary<string, object> metadata);
+    Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment, Dictionary<string, object>? metadata = null);
     Task<ServiceResult<PaginatedTasksResponse>> GetTasks(int? pageSize, string? pageToken, string? agent, string? participantId, string? status);
 }
 
@@ -102,12 +103,25 @@ public class TaskService : ITaskService
     }
 
     /// <summary>
+    /// Merges metadata into a task without completing it.
+    /// Delegates to the shared AdminTaskService implementation.
+    /// </summary>
+    public async Task<ServiceResult<object>> UpdateMetadata(string workflowId, Dictionary<string, object> metadata)
+    {
+        return await _adminTaskService.UpdateMetadata(workflowId, metadata);
+    }
+
+    /// <summary>
     /// Performs an action on a task with an optional comment.
     /// Delegates to the shared AdminTaskService implementation.
     /// </summary>
-    public async Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment)
+    public async Task<ServiceResult<object>> PerformAction(
+        string workflowId,
+        string action,
+        string? comment,
+        Dictionary<string, object>? metadata = null)
     {
-        return await _adminTaskService.PerformAction(workflowId, action, comment);
+        return await _adminTaskService.PerformAction(workflowId, action, comment, metadata);
     }
 
     /// <summary>

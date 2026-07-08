@@ -61,17 +61,31 @@ public static class TaskEndpoints
         .WithSummary("Update task draft")
         .WithDescription("Updates the draft work content for a task (pass workflowId as query parameter). This is typically used when a human is working on a task and wants to save their progress.");
 
+        taskGroup.MapPut("/metadata", async (
+            [FromQuery] string workflowId,
+            [FromBody] UpdateMetadataRequest request,
+            [FromServices] ITaskService taskService) => 
+        {
+            var result = await taskService.UpdateMetadata(workflowId, request.Metadata);
+            
+            return result.ToHttpResult();
+        })
+        .WithName("Update Task Metadata")
+        
+        .WithSummary("Update task metadata")
+        .WithDescription("Merges metadata into a running task without completing it. Existing keys are overwritten; new keys are added.");
+
         taskGroup.MapPost("/action", async (
             [FromQuery] string workflowId,
             [FromBody] PerformActionRequest request,
             [FromServices] ITaskService taskService) => 
         {
-            var result = await taskService.PerformAction(workflowId, request.Action, request.Comment);
+            var result = await taskService.PerformAction(workflowId, request.Action, request.Comment, request.Metadata);
             return result.ToHttpResult();
         })
         .WithName("Perform Task Action")
         
         .WithSummary("Perform an action on a task")
-        .WithDescription("Performs an action on a task (e.g., approve, reject, hold). The action should be one of the task's available actions. An optional comment can be provided.");
+        .WithDescription("Performs an action on a task (e.g., approve, reject, hold). The action should be one of the task's available actions. An optional comment and metadata can be provided; metadata is merged into the task's metadata.");
     }
 }
