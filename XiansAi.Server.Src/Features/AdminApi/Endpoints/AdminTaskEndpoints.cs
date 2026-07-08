@@ -96,13 +96,27 @@ public static class AdminTaskEndpoints
         .WithName("UpdateTaskDraft")
         ;
 
+        // Merge metadata for a task
+        taskGroup.MapPut("/metadata", async (
+            [FromQuery] string taskId,
+            [FromBody] UpdateMetadataRequest request,
+            [FromServices] IAdminTaskService taskService) =>
+        {
+            var result = await taskService.UpdateMetadata(taskId, request.Metadata);
+            return result.ToHttpResult();
+        })
+        .Produces<object>()
+        .Produces(StatusCodes.Status400BadRequest)
+        .WithName("UpdateTaskMetadata")
+        ;
+
         // Perform action on a task
         taskGroup.MapPost("/actions", async (
             [FromQuery] string taskId,
             [FromBody] PerformActionRequest request,
             [FromServices] IAdminTaskService taskService) =>
         {
-            var result = await taskService.PerformAction(taskId, request.Action, request.Comment);
+            var result = await taskService.PerformAction(taskId, request.Action, request.Comment, request.Metadata);
             return result.ToHttpResult();
         })
         .Produces<object>()
