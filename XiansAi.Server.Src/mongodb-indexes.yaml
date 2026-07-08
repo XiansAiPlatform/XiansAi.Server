@@ -253,6 +253,17 @@ message_feedback:
       tenant_id: asc
       message_id: asc
     unique: true
+  - name: tenant_id_1_submitted_at_-1
+    keys:
+      tenant_id: asc
+      submitted_at: desc
+    background: true
+  - name: tenant_id_1_star_rating_1_submitted_at_-1
+    keys:
+      tenant_id: asc
+      star_rating: asc
+      submitted_at: desc
+    background: true
 
 api_keys:
   - name: tenant_name_unique

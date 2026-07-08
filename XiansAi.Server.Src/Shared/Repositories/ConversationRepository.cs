@@ -220,6 +220,12 @@ public interface IConversationRepository
     Task<string> SaveMessageAsync(ConversationMessage message);
     Task<ConversationMessage?> GetMessageByIdAsync(string messageId, string tenantId);
     Task<List<ConversationMessage>> GetMessagesByThreadIdAsync(string tenantId, string threadId, int? page = null, int? pageSize = null, string? scope = null, bool chatOnly = false);
+    /// <summary>
+    /// Returns up to <paramref name="contextBefore"/> messages immediately before and
+    /// <paramref name="contextAfter"/> messages immediately after the anchor message, plus the anchor
+    /// message itself. Results are ordered chronologically (oldest first).
+    /// </summary>
+    Task<List<ConversationMessage>> GetThreadContextAroundMessageAsync(string tenantId, string threadId, string messageId, int contextBefore, int contextAfter, bool chatOnly = false);
     Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null, string sortOrder = "desc");
     Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
     Task<bool> DeleteMessagesByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope);
@@ -615,6 +621,82 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, LogSanitizer.Sanitize(threadId));
             return messages;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessagesByThreadId");
+    }
+
+    public async Task<List<ConversationMessage>> GetThreadContextAroundMessageAsync(
+        string tenantId, string threadId, string messageId, int contextBefore, int contextAfter, bool chatOnly = false)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var projection = BuildMessageProjection();
+            var filterBuilder = Builders<ConversationMessage>.Filter;
+
+            var anchor = await _messagesCollection
+                .Find(filterBuilder.And(
+                    filterBuilder.Eq(x => x.Id, messageId),
+                    filterBuilder.Eq(x => x.TenantId, tenantId),
+                    filterBuilder.Eq(x => x.ThreadId, threadId)))
+                .Project<ConversationMessage>(projection)
+                .FirstOrDefaultAsync();
+
+            if (anchor == null)
+            {
+                _logger.LogWarning(
+                    "Anchor message {MessageId} not found in thread {ThreadId} for tenant {TenantId}",
+                    LogSanitizer.Sanitize(messageId), LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(tenantId));
+                return new List<ConversationMessage>();
+            }
+
+            var baseFilter = filterBuilder.And(
+                filterBuilder.Eq(x => x.TenantId, tenantId),
+                filterBuilder.Eq(x => x.ThreadId, threadId));
+
+            if (chatOnly)
+            {
+                baseFilter = filterBuilder.And(baseFilter,
+                    filterBuilder.Eq(x => x.MessageType, MessageType.Chat));
+            }
+
+            var beforeMessages = new List<ConversationMessage>();
+            if (contextBefore > 0)
+            {
+                beforeMessages = await _messagesCollection
+                    .Find(filterBuilder.And(baseFilter, filterBuilder.Lt(x => x.CreatedAt, anchor.CreatedAt)))
+                    .Project<ConversationMessage>(projection)
+                    .Sort(Builders<ConversationMessage>.Sort.Descending(x => x.CreatedAt))
+                    .Limit(contextBefore)
+                    .ToListAsync();
+                beforeMessages.Reverse();
+            }
+
+            var afterMessages = new List<ConversationMessage>();
+            if (contextAfter > 0)
+            {
+                afterMessages = await _messagesCollection
+                    .Find(filterBuilder.And(baseFilter, filterBuilder.Gt(x => x.CreatedAt, anchor.CreatedAt)))
+                    .Project<ConversationMessage>(projection)
+                    .Sort(Builders<ConversationMessage>.Sort.Ascending(x => x.CreatedAt))
+                    .Limit(contextAfter)
+                    .ToListAsync();
+            }
+
+            var result = new List<ConversationMessage>(beforeMessages.Count + 1 + afterMessages.Count);
+            result.AddRange(beforeMessages);
+            result.Add(anchor);
+            result.AddRange(afterMessages);
+
+            foreach (var message in result)
+            {
+                ConvertBsonDataToObject(message);
+                DecryptMessageText(message);
+            }
+
+            _logger.LogDebug(
+                "Built thread context of {Count} messages around message {MessageId} in thread {ThreadId}",
+                result.Count, LogSanitizer.Sanitize(messageId), LogSanitizer.Sanitize(threadId));
+
+            return result;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetThreadContextAroundMessage");
     }
 
     public async Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(
@@ -1132,6 +1214,30 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     #endregion
 
     #region Private Helper Methods
+
+    private static ProjectionDefinition<ConversationMessage> BuildMessageProjection()
+    {
+        return Builders<ConversationMessage>.Projection
+            .Include(x => x.Id)
+            .Include(x => x.ThreadId)
+            .Include(x => x.TenantId)
+            .Include(x => x.ParticipantId)
+            .Include(x => x.WorkflowId)
+            .Include(x => x.WorkflowType)
+            .Include(x => x.CreatedAt)
+            .Include(x => x.UpdatedAt)
+            .Include(x => x.CreatedBy)
+            .Include(x => x.Direction)
+            .Include(x => x.MessageType)
+            .Include(x => x.Text)
+            .Include(x => x.Data)
+            .Include(x => x.Status)
+            .Include(x => x.Hint)
+            .Include(x => x.TaskId)
+            .Include(x => x.Scope)
+            .Include(x => x.RequestId)
+            .Include(x => x.Origin);
+    }
 
     private async Task<ConversationThread?> GetByCompositeKeyAsync(string tenantId, string workflowId, string participantId)
     {
