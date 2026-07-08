@@ -61,6 +61,20 @@ public static class TaskEndpoints
         .WithSummary("Update task draft")
         .WithDescription("Updates the draft work content for a task (pass workflowId as query parameter). This is typically used when a human is working on a task and wants to save their progress.");
 
+        taskGroup.MapPut("/metadata", async (
+            [FromQuery] string workflowId,
+            [FromBody] UpdateMetadataRequest request,
+            [FromServices] ITaskService taskService) => 
+        {
+            var result = await taskService.UpdateMetadata(workflowId, request.Metadata);
+            
+            return result.ToHttpResult();
+        })
+        .WithName("Update Task Metadata")
+        
+        .WithSummary("Update task metadata")
+        .WithDescription("Merges metadata into a running task without completing it. Existing keys are overwritten; new keys are added.");
+
         taskGroup.MapPost("/action", async (
             [FromQuery] string workflowId,
             [FromBody] PerformActionRequest request,

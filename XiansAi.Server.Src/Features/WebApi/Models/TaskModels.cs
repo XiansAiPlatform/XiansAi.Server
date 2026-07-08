@@ -44,6 +44,17 @@ public class UpdateDraftRequest
 }
 
 /// <summary>
+/// Request model for merging metadata into a task.
+/// </summary>
+public class UpdateMetadataRequest
+{
+    /// <summary>
+    /// Metadata entries merged into the task's metadata without completing it.
+    /// </summary>
+    public required Dictionary<string, object> Metadata { get; set; }
+}
+
+/// <summary>
 /// Request model for performing an action on a task.
 /// </summary>
 public class PerformActionRequest

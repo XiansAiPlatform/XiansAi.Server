@@ -75,6 +75,7 @@ public interface IAdminTaskService
         DateTime? endDate,
         string? participantId);
     Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft);
+    Task<ServiceResult<object>> UpdateMetadata(string workflowId, Dictionary<string, object> metadata);
     Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment, Dictionary<string, object>? metadata = null);
 }
 
@@ -687,6 +688,45 @@ public class AdminTaskService : IAdminTaskService
             _logger.LogError(ex, "Failed to update draft for task {WorkflowId}. Error: {ErrorMessage}",
                 LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<object>.BadRequest($"Failed to update draft: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Merges metadata into a task without completing it.
+    /// </summary>
+    public async Task<ServiceResult<object>> UpdateMetadata(string workflowId, Dictionary<string, object> metadata)
+    {
+        if (string.IsNullOrWhiteSpace(workflowId))
+        {
+            _logger.LogWarning("Attempt to update metadata with empty workflowId");
+            return ServiceResult<object>.BadRequest("WorkflowId cannot be empty");
+        }
+
+        if (metadata == null || metadata.Count == 0)
+        {
+            _logger.LogWarning("Attempt to update metadata with empty metadata for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
+            return ServiceResult<object>.BadRequest("Metadata must contain at least one entry");
+        }
+
+        try
+        {
+            _logger.LogInformation(
+                "Updating metadata for task {WorkflowId} with {MetadataKeyCount} keys",
+                LogSanitizer.Sanitize(workflowId),
+                metadata.Count);
+            var client = await _clientFactory.GetClientAsync();
+
+            var workflowHandle = client.GetWorkflowHandle(workflowId);
+            await workflowHandle.SignalAsync("UpdateMetadata", new object[] { metadata });
+
+            _logger.LogInformation("Successfully updated metadata for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
+            return ServiceResult<object>.Success(new { message = "Metadata updated successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update metadata for task {WorkflowId}. Error: {ErrorMessage}",
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<object>.BadRequest($"Failed to update metadata: {ex.Message}");
         }
     }
 
