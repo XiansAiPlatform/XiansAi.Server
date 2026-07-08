@@ -7,6 +7,7 @@ using System.ComponentModel.DataAnnotations;
 using MongoDB.Driver;
 using Shared.Repositories;
 using Features.WebApi.Services;
+using Shared.Utils.Temporal;
 
 namespace Shared.Services;
 
@@ -69,20 +70,23 @@ public class TenantService : ITenantService
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IRoleManagementService _roleManagementService;
-
+    private readonly ITemporalClientService _temporalClientService;
 
     public TenantService(
         ITenantRepository tenantRepository,
         ITenantCacheService tenantCacheService,
         ILogger<TenantService> logger,
         ITenantContext tenantContext,
-        IRoleManagementService roleManagementService)
+        IRoleManagementService roleManagementService,
+        ITemporalClientService temporalClientService,
+        ITenantTemporalConfigService tenantTemporalConfigService)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
+        _temporalClientService = temporalClientService ?? throw new ArgumentNullException(nameof(temporalClientService));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -225,7 +229,7 @@ public class TenantService : ITenantService
     {
         try
         {
-            if(_tenantContext.TenantId == null)
+            if (_tenantContext.TenantId == null)
             {
                 _logger.LogWarning("Tenant ID is not set in tenant context");
                 return ServiceResult<Tenant>.BadRequest("Tenant ID is not set in the context");
@@ -307,7 +311,7 @@ public class TenantService : ITenantService
     {
         try
         {
-            _logger.LogInformation("CreateTenant request received - CreatedBy: {RequestCreatedBy}, Method param CreatedBy: {MethodCreatedBy}, LoggedInUser: {LoggedInUser}", 
+            _logger.LogInformation("CreateTenant request received - CreatedBy: {RequestCreatedBy}, Method param CreatedBy: {MethodCreatedBy}, LoggedInUser: {LoggedInUser}",
                 LogSanitizer.Sanitize(request.CreatedBy), LogSanitizer.Sanitize(createdBy), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
 
             var finalCreatedBy = request.CreatedBy ?? createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
@@ -330,10 +334,15 @@ public class TenantService : ITenantService
                 UpdatedAt = DateTime.UtcNow
             };
             _logger.LogInformation("Tenant object created with CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(tenant.CreatedBy));
-            
+
             var validatedTenant = tenant.SanitizeAndValidate();
             _logger.LogInformation("After sanitization, CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
+            if (request.UseSpecificTemporalNamespace)
+            {
+                _logger.LogInformation("Provisioning dedicated Temporal namespace for tenant {TenantId}", LogSanitizer.Sanitize(request.TenantId));
+                await _temporalClientService.ProvisionTenantNamespaceAsync(request.TenantId, finalCreatedBy);
+            }
 
             await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
