@@ -35,17 +35,40 @@ paths:
       tags:
         - Tenant Management
       summary: List All Tenants
-      description: Retrieve all tenants in the system. Requires admin permissions.
+      description: Retrieve a paginated list of tenants in the system. Requires system admin permissions.
       operationId: listTenants
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: Number of tenants per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
       responses:
         '200':
-          description: List of tenants retrieved successfully
+          description: Paginated list of tenants retrieved successfully
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TenantResponse'
+                type: object
+                properties:
+                  tenants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TenantResponse'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -308,6 +331,28 @@ components:
       description: API key for authentication
 
   schemas:
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        totalPages:
+          type: integer
+          example: 5
+        totalItems:
+          type: integer
+          example: 100
+        hasNext:
+          type: boolean
+          example: true
+        hasPrevious:
+          type: boolean
+          example: false
+
     CreateTenantRequest:
       type: object
       required:

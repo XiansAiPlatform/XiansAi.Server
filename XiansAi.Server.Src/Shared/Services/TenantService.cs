@@ -45,6 +45,16 @@ public class TenantCreatedResult
     public string Location { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// A single page of tenants together with pagination metadata.
+/// Reuses <see cref="PaginationInfo"/> so the shape matches other paginated AdminApi responses.
+/// </summary>
+public class TenantListResult
+{
+    public List<Tenant> Tenants { get; set; } = new();
+    public PaginationInfo Pagination { get; set; } = new();
+}
+
 public interface ITenantService
 {
     Task<ServiceResult<Tenant>> GetTenantById(string id);
@@ -52,6 +62,7 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false);
     Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default);
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
+    Task<ServiceResult<TenantListResult>> GetAllTenants(int? page, int? pageSize, string? search = null);
     Task<ServiceResult<List<string>>> GetTenantIdList();
     Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null);
     Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
@@ -280,6 +291,69 @@ public class TenantService : ITenantService
         {
             _logger.LogError(ex, "Error retrieving all tenants");
             return ServiceResult<List<Tenant>>.InternalServerError("An error occurred while retrieving tenants.");
+        }
+    }
+
+    /// <summary>
+    /// Retrieves a single page of tenants, optionally filtered by a search term
+    /// (case-insensitive match on tenantId, name, domain or description). SysAdmin only.
+    /// Pagination and filtering are applied at the database level for scalability. Invalid
+    /// page/pageSize values fall back to sensible defaults (page 1, pageSize 20) and
+    /// pageSize is capped at 100.
+    /// </summary>
+    public async Task<ServiceResult<TenantListResult>> GetAllTenants(int? page, int? pageSize, string? search = null)
+    {
+        try
+        {
+            // Only SysAdmin can list all tenants
+            if (!_tenantContext.UserRoles.Contains(SystemRoles.SysAdmin))
+            {
+                _logger.LogWarning("Unauthorized attempt to get all tenants by user {UserId}", LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
+                return ServiceResult<TenantListResult>.Forbidden("Access denied: Only system administrators can retrieve all tenants");
+            }
+
+            const int defaultPageSize = 20;
+            const int maxPageSize = 100;
+
+            var pageNum = page.GetValueOrDefault(1);
+            if (pageNum < 1)
+            {
+                pageNum = 1;
+            }
+
+            var pageSizeNum = pageSize.GetValueOrDefault(defaultPageSize);
+            if (pageSizeNum < 1)
+            {
+                pageSizeNum = defaultPageSize;
+            }
+            pageSizeNum = Math.Min(pageSizeNum, maxPageSize);
+
+            var skip = (pageNum - 1) * pageSizeNum;
+            var searchTerm = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+
+            var totalItems = (int)await _tenantRepository.CountAsync(searchTerm);
+            var tenants = await _tenantRepository.GetPagedAsync(skip, pageSizeNum, searchTerm);
+
+            var result = new TenantListResult
+            {
+                Tenants = tenants,
+                Pagination = new PaginationInfo
+                {
+                    Page = pageNum,
+                    PageSize = pageSizeNum,
+                    TotalPages = (int)Math.Ceiling(totalItems / (double)pageSizeNum),
+                    TotalItems = totalItems,
+                    HasNext = skip + pageSizeNum < totalItems,
+                    HasPrevious = pageNum > 1
+                }
+            };
+
+            return ServiceResult<TenantListResult>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving paginated tenants");
+            return ServiceResult<TenantListResult>.InternalServerError("An error occurred while retrieving tenants.");
         }
     }
 
