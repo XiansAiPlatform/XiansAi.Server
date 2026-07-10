@@ -18,7 +18,7 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task ListTenants_WithValidRequest_ReturnsTenantList()
+    public async Task ListTenants_WithValidRequest_ReturnsPaginatedTenantList()
     {
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
@@ -34,7 +34,46 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var content = await response.Content.ReadAsStringAsync();
-        Assert.NotNull(content);
+        using var json = JsonDocument.Parse(content);
+        var root = json.RootElement;
+
+        // Response is a paginated envelope: { tenants: [...], pagination: {...} }
+        Assert.Equal(JsonValueKind.Array, root.GetProperty("tenants").ValueKind);
+        var pagination = root.GetProperty("pagination");
+        Assert.Equal(1, pagination.GetProperty("page").GetInt32());
+        Assert.Equal(20, pagination.GetProperty("pageSize").GetInt32());
+        Assert.True(pagination.GetProperty("totalItems").GetInt32() >= 2);
+    }
+
+    [Fact]
+    public async Task ListTenants_WithPageSize_LimitsResultsAndReportsPagination()
+    {
+        // Arrange
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        await CreateTestTenantAsync(tenantId);
+        await CreateTestTenantAsync($"tenant-2-{Guid.NewGuid()}");
+        await CreateTestTenantAsync($"tenant-3-{Guid.NewGuid()}");
+
+        // Act - request a single item per page
+        var response = await GetAsync("/api/v1/admin/tenants?page=1&pageSize=1");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+        var root = json.RootElement;
+
+        Assert.Equal(1, root.GetProperty("tenants").GetArrayLength());
+
+        var pagination = root.GetProperty("pagination");
+        Assert.Equal(1, pagination.GetProperty("page").GetInt32());
+        Assert.Equal(1, pagination.GetProperty("pageSize").GetInt32());
+        Assert.True(pagination.GetProperty("totalItems").GetInt32() >= 3);
+        Assert.True(pagination.GetProperty("hasNext").GetBoolean());
+        Assert.False(pagination.GetProperty("hasPrevious").GetBoolean());
     }
 
     [Fact]

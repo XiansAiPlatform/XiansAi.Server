@@ -33,11 +33,13 @@
 ### Tenant Management (No X-Tenant-Id required)
 ### ============================================
 
-### 1. List All Tenants
-# Get all tenants in the system
+### 1. List All Tenants (paginated)
+# Get a paginated list of tenants in the system.
+# Supports optional "page" (default 1) and "pageSize" (default 20, max 100) query params.
+# Response shape: { "tenants": [...], "pagination": { page, pageSize, totalPages, totalItems, hasNext, hasPrevious } }
 # Note: No X-Tenant-Id header required for this endpoint
 # API key authentication via Authorization header (preferred method)
-GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants
+GET {{baseUrl}}/api/{{apiVersion}}/admin/tenants?page=1&pageSize=20
 Authorization: Bearer {{apiKey}}
 Accept: application/json
 

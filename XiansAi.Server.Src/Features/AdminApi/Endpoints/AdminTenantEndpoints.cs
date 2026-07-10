@@ -27,9 +27,15 @@ public static class AdminTenantEndpoints
             .WithTags("AdminAPI - Tenant Management")
             .RequireAuthorization("AdminEndpointAuthPolicy");
 
-        // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants)
+        // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants).
+        // Supports pagination via optional "page" (default 1) and "pageSize" (default 20, max 100)
+        // query params, plus an optional "search" term matched case-insensitively against
+        // tenantId, name, domain and description.
         adminTenantGroup.MapGet("", async (
             HttpContext httpContext,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
+            [FromQuery] string? search,
             [FromServices] LinkGenerator linkGenerator,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
@@ -42,10 +48,11 @@ public static class AdminTenantEndpoints
                     new { message = "Access denied: Only system administrators can list all tenants" },
                     statusCode: StatusCodes.Status403Forbidden);
             }
-            var result = await tenantService.GetAllTenants();
+
+            var result = await tenantService.GetAllTenants(page, pageSize, search);
             if (result.IsSuccess && result.Data != null)
             {
-                foreach (var tenant in result.Data)
+                foreach (var tenant in result.Data.Tenants)
                 {
                     TenantLogoHelper.ApplyLogoUrl(tenant, httpContext, linkGenerator);
                 }
