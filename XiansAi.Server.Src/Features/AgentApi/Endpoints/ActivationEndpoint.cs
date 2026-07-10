@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Auth;
 using Shared.Repositories;
+using Shared.Services;
 using Shared.Utils;
+using Shared.Utils.Services;
 
 namespace Features.AgentApi.Endpoints;
 
@@ -101,5 +103,35 @@ public static class ActivationEndpoints
         
         .WithSummary("Get workflow input parameters for an activation")
         .WithDescription("Returns the ordered list of input values configured for a specific workflow type ");
+
+        activationGroup.MapGet("/exists", async (
+            [FromQuery] string activationName,
+            [FromQuery] string agentName,
+            [FromServices] IActivationValidationService activationValidationService,
+            [FromServices] ITenantContext tenantContext) =>
+        {
+            var tenantId = tenantContext.TenantId;
+
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                _logger.LogWarning("TenantId could not be resolved from certificate context");
+                return Results.Problem("TenantId could not be resolved", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            _logger.LogInformation(
+                "Checking activation existence: activationName={ActivationName}, agentName={AgentName}, tenantId={TenantId}",
+                LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+
+            var result = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName);
+            return result.ToHttpResult();
+        })
+        .WithName("Check Activation Exists")
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict)
+        .ProducesProblem(StatusCodes.Status500InternalServerError)
+        .WithSummary("Check whether an activation exists and is active")
+        .WithDescription("Returns 200 when the activation exists and is active for the agent in the current tenant; 404 when not found; 409 when deactivated.");
     }
 }
