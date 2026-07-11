@@ -21,6 +21,7 @@ public class CreateTenantRequest
     public Logo? Logo { get; set; }
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
+    public List<TenantMetadata>? Metadata { get; set; }
 }
 
 public class UpdateTenantRequest
@@ -32,6 +33,13 @@ public class UpdateTenantRequest
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
     public bool? Enabled { get; set; }
+    public List<TenantMetadata>? Metadata { get; set; }
+}
+
+public class UpsertTenantMetadataRequest
+{
+    public required string Value { get; set; }
+    public MetadataType Type { get; set; } = MetadataType.PlainText;
 }
 
 public class TenantCreatedResult
@@ -45,6 +53,10 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetTenantById(string id);
     Task<ServiceResult<Tenant>> GetTenantByDomain(string domain);
     Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false);
+    Task<ServiceResult<List<TenantMetadata>>> GetTenantMetadata(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false);
+    Task<ServiceResult<TenantMetadata>> GetTenantMetadataByKey(string tenantId, string key, CancellationToken cancellationToken = default, bool bypassCache = false);
+    Task<ServiceResult<TenantMetadata>> UpsertTenantMetadata(string tenantId, string key, UpsertTenantMetadataRequest request);
+    Task<ServiceResult<bool>> DeleteTenantMetadata(string tenantId, string key);
     Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default);
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
     Task<ServiceResult<List<string>>> GetTenantIdList();
@@ -60,6 +72,7 @@ public class TenantService : ITenantService
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IRoleManagementService _roleManagementService;
+    private readonly ITenantMetadataProtector _metadataProtector;
 
 
     public TenantService(
@@ -67,13 +80,15 @@ public class TenantService : ITenantService
         ITenantCacheService tenantCacheService,
         ILogger<TenantService> logger,
         ITenantContext tenantContext,
-        IRoleManagementService roleManagementService)
+        IRoleManagementService roleManagementService,
+        ITenantMetadataProtector metadataProtector)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
+        _metadataProtector = metadataProtector ?? throw new ArgumentNullException(nameof(metadataProtector));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -212,6 +227,219 @@ public class TenantService : ITenantService
         }
     }
 
+    /// <summary>
+    /// Returns the tenant's metadata with Secret values decrypted. This is the only
+    /// place decrypted metadata is exposed; all other tenant reads return the stored
+    /// (encrypted) form so secrets never travel with general tenant payloads.
+    /// </summary>
+    public async Task<ServiceResult<List<TenantMetadata>>> GetTenantMetadata(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false)
+    {
+        try
+        {
+            tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessibleTenantId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt to metadata of tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<List<TenantMetadata>>.Forbidden("Access denied: insufficient permissions");
+            }
+
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken, bypassCache);
+            if (tenant == null)
+            {
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<List<TenantMetadata>>.NotFound("Tenant not found");
+            }
+
+            var metadata = _metadataProtector.Unprotect(tenant.Metadata, tenant.TenantId) ?? new List<TenantMetadata>();
+            return ServiceResult<List<TenantMetadata>>.Success(metadata);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant metadata: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<List<TenantMetadata>>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving metadata for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<List<TenantMetadata>>.InternalServerError("An error occurred while retrieving the tenant metadata.");
+        }
+    }
+
+    /// <summary>
+    /// Returns a single tenant metadata entry by key (case-insensitive), with the value
+    /// decrypted when the entry is of type Secret. Only the requested entry is decrypted.
+    /// </summary>
+    public async Task<ServiceResult<TenantMetadata>> GetTenantMetadataByKey(string tenantId, string key, CancellationToken cancellationToken = default, bool bypassCache = false)
+    {
+        try
+        {
+            tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return ServiceResult<TenantMetadata>.BadRequest("Metadata key is required");
+            }
+
+            var accessibleTenantId = _tenantContext.AuthorizedTenantIds?.FirstOrDefault(t => t == tenantId);
+            if (accessibleTenantId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt to metadata of tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<TenantMetadata>.Forbidden("Access denied: insufficient permissions");
+            }
+
+            var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken, bypassCache);
+            if (tenant == null)
+            {
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found", LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<TenantMetadata>.NotFound("Tenant not found");
+            }
+
+            var entry = tenant.Metadata?.FirstOrDefault(m => string.Equals(m.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+            {
+                _logger.LogWarning("Metadata key {Key} not found for tenant {TenantId}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<TenantMetadata>.NotFound("Metadata key not found");
+            }
+
+            var decrypted = _metadataProtector.Unprotect(new List<TenantMetadata> { entry }, tenant.TenantId)!.Single();
+            return ServiceResult<TenantMetadata>.Success(decrypted);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while retrieving tenant metadata by key: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<TenantMetadata>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving metadata key {Key} for tenant {TenantId}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<TenantMetadata>.InternalServerError("An error occurred while retrieving the tenant metadata.");
+        }
+    }
+
+    /// <summary>
+    /// Adds a metadata entry, or updates value/type when the key (case-insensitive) already
+    /// exists. Secret values are encrypted before persisting; the response echoes the entry
+    /// as provided by the caller.
+    /// </summary>
+    public async Task<ServiceResult<TenantMetadata>> UpsertTenantMetadata(string tenantId, string key, UpsertTenantMetadataRequest request)
+    {
+        try
+        {
+            tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+
+            var existingTenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            if (existingTenant == null)
+            {
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found for metadata upsert", LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<TenantMetadata>.NotFound("Tenant not found");
+            }
+
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
+
+            var entry = new TenantMetadata
+            {
+                Key = key,
+                Value = request.Value,
+                Type = request.Type
+            };
+            var validatedEntry = entry.SanitizeAndValidate();
+
+            var protectedEntry = _metadataProtector.Protect([validatedEntry], existingTenant.TenantId)!.Single();
+
+            var metadata = existingTenant.Metadata ?? [];
+            var index = metadata.FindIndex(m => string.Equals(m.Key, validatedEntry.Key, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+            {
+                metadata[index] = protectedEntry;
+            }
+            else
+            {
+                metadata.Add(protectedEntry);
+            }
+            existingTenant.Metadata = metadata;
+
+            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id);
+            if (!persistResult.IsSuccess)
+            {
+                return ServiceResult<TenantMetadata>.BadRequest(
+                    persistResult.ErrorMessage ?? "Failed to update tenant metadata.", persistResult.StatusCode);
+            }
+
+            return ServiceResult<TenantMetadata>.Success(validatedEntry);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while upserting tenant metadata: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<TenantMetadata>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Access denied: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<TenantMetadata>.Forbidden("Access denied: insufficient permissions");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error upserting metadata key {Key} for tenant {TenantId}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<TenantMetadata>.InternalServerError("An error occurred while updating the tenant metadata.");
+        }
+    }
+
+    /// <summary>
+    /// Removes a single metadata entry by key (case-insensitive).
+    /// </summary>
+    public async Task<ServiceResult<bool>> DeleteTenantMetadata(string tenantId, string key)
+    {
+        try
+        {
+            tenantId = Tenant.SanitizeAndValidateTenantId(tenantId);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return ServiceResult<bool>.BadRequest("Metadata key is required");
+            }
+
+            var existingTenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+            if (existingTenant == null)
+            {
+                _logger.LogWarning("Tenant with tenant ID {TenantId} not found for metadata delete", LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<bool>.NotFound("Tenant not found");
+            }
+
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
+
+            var removed = existingTenant.Metadata?.RemoveAll(
+                m => string.Equals(m.Key, key, StringComparison.OrdinalIgnoreCase)) ?? 0;
+            if (removed == 0)
+            {
+                _logger.LogWarning("Metadata key {Key} not found for tenant {TenantId}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<bool>.NotFound("Metadata key not found");
+            }
+
+            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id);
+            if (!persistResult.IsSuccess)
+            {
+                return ServiceResult<bool>.BadRequest(
+                    persistResult.ErrorMessage ?? "Failed to update tenant metadata.", persistResult.StatusCode);
+            }
+
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while deleting tenant metadata: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<bool>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Access denied: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<bool>.Forbidden("Access denied: insufficient permissions");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting metadata key {Key} for tenant {TenantId}", LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the tenant metadata.");
+        }
+    }
+
     public async Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default)
     {
         try
@@ -317,13 +545,16 @@ public class TenantService : ITenantService
                 Enabled = false,
                 CreatedBy = finalCreatedBy,
                 CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
+                Metadata = request.Metadata
             };
             _logger.LogInformation("Tenant object created with CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(tenant.CreatedBy));
-            
+
             var validatedTenant = tenant.SanitizeAndValidate();
             _logger.LogInformation("After sanitization, CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
+            // Persist with Secret metadata values encrypted.
+            validatedTenant.Metadata = _metadataProtector.Protect(validatedTenant.Metadata, validatedTenant.TenantId);
 
             await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
@@ -389,24 +620,16 @@ public class TenantService : ITenantService
             if (request.Timezone != null)
                 existingTenant.Timezone = request.Timezone;
 
-            existingTenant.UpdatedAt = DateTime.UtcNow;
-            var validatedTenant = existingTenant.SanitizeAndValidate();
+            if (request.Metadata != null)
+                existingTenant.Metadata = _metadataProtector.Protect(request.Metadata, existingTenant.TenantId);
 
-            var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
-            if (success)
+            var persistResult = await PersistTenantUpdate(existingTenant, id);
+            if (!persistResult.IsSuccess)
             {
-                if (!string.IsNullOrEmpty(existingTenant.TenantId))
-                    _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
-                else
-                    _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
-                _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
-                return ServiceResult<Tenant>.Success(validatedTenant);
+                return persistResult;
             }
-            else
-            {
-                _logger.LogError("Failed to update tenant with ID {Id}", LogSanitizer.Sanitize(id));
-                return ServiceResult<Tenant>.BadRequest("Failed to update tenant.");
-            }
+
+            return ServiceResult<Tenant>.Success(persistResult.Data!);
         }
         catch (ValidationException ex)
         {
@@ -469,6 +692,27 @@ public class TenantService : ITenantService
             _logger.LogError(ex, "Error deleting tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the tenant.");
         }
+    }
+
+    private async Task<ServiceResult<Tenant>> PersistTenantUpdate(Tenant existingTenant, string id)
+    {
+        existingTenant.UpdatedAt = DateTime.UtcNow;
+        var validatedTenant = existingTenant.SanitizeAndValidate();
+
+        var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
+        if (!success)
+        {
+            _logger.LogError("Failed to update tenant with ID {Id}", LogSanitizer.Sanitize(id));
+            return ServiceResult<Tenant>.BadRequest("Failed to update tenant.");
+        }
+
+        if (!string.IsNullOrEmpty(existingTenant.TenantId))
+            _tenantCacheService.InvalidateTenant(existingTenant.TenantId);
+        else
+            _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
+
+        _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
+        return ServiceResult<Tenant>.Success(validatedTenant);
     }
 
 }
