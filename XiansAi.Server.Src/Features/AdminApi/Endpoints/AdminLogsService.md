@@ -132,7 +132,8 @@ Lists distinct log streams (a stream = a unique `workflow_id`) for a tenant, sor
       "firstLogAt": "2025-01-25T10:00:00Z",
       "logCount": 42,
       "lastLogLevel": "Information",
-      "lastLogMessage": "Task processing completed"
+      "lastLogMessage": "Task processing completed",
+      "errorCount": 3
     }
   ],
   "totalCount": 35,
@@ -141,6 +142,13 @@ Lists distinct log streams (a stream = a unique `workflow_id`) for a tenant, sor
   "totalPages": 2
 }
 ```
+
+**Stream Object Fields:**
+- `workflowId`, `workflowType`, `workflowRunId`, `agent`, `activation`, `participantId`: Identity of the stream (taken from the most recent log in the group).
+- `lastLogAt` / `firstLogAt`: Time range covered by the stream.
+- `logCount`: Total number of logs in the stream (after filters are applied).
+- `lastLogLevel` / `lastLogMessage`: Level and message of the most recent log.
+- `errorCount`: Number of `Error` + `Critical` level logs in the stream. Lets clients flag streams that contain errors anywhere in their history, even when the latest log is not an error. `0` means the stream has no errors.
 
 ### Implementation Details
 
