@@ -1,19 +1,23 @@
-// Features/AgentApi/Auth/CertificateAuthenticationHandler.cs
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Encodings.Web;
+using Features.AgentApi.Repositories;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
-using Features.AgentApi.Repositories;
-using System.Security.Cryptography;
 using Shared.Auth;
-using Shared.Utils;
 using Shared.Repositories;
+using Shared.Utils;
 
 namespace Features.AgentApi.Auth;
 
 public class CertificateAuthenticationHandler : AuthenticationHandler<CertificateAuthenticationOptions>
 {
+    private const string AgentApiPathPrefix = "/api/agent/";
+    private const string BearerPrefix = "Bearer ";
+    private const string TenantIdHeader = "X-Tenant-Id";
+    private const string ClientAuthenticationOid = "1.3.6.1.5.5.7.3.2";
+
     private readonly ILogger<CertificateAuthenticationHandler> _logger;
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
@@ -21,6 +25,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     private readonly ICertificateValidationCache _certValidationCache;
     private readonly ITenantRepository _tenantRepository;
     private readonly IUserRepository _userRepository;
+
     public CertificateAuthenticationHandler(
         IOptionsMonitor<CertificateAuthenticationOptions> options,
         ILoggerFactory logger,
@@ -30,7 +35,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         ITenantContext tenantContext,
         ICertificateValidationCache certValidationCache,
         IUserRepository userRepository,
-        ITenantRepository tenantRepository) 
+        ITenantRepository tenantRepository)
         : base(options, logger, encoder)
     {
         _logger = logger.CreateLogger<CertificateAuthenticationHandler>();
@@ -46,17 +51,15 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     {
         try
         {
-            // Only handle authentication for AgentApi endpoints
-            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
-            if (!path.StartsWith("/api/agent/"))
+            if (!IsAgentApiRequest())
             {
                 _logger.LogDebug("Skipping certificate authentication for non-AgentApi path: {Path}", LogSanitizer.Sanitize(Request.Path));
-                return AuthenticateResult.NoResult(); // Let other handlers process this request
+                return AuthenticateResult.NoResult();
             }
 
             _logger.LogDebug("Handling certificate authentication for {Path}", LogSanitizer.Sanitize(Request.Path));
 
-            var certHeader = await ExtractCertificateFromHeader();
+            var certHeader = ExtractCertificateFromHeader();
             if (certHeader == null)
             {
                 return AuthenticateResult.Fail("No valid certificate found in request");
@@ -65,31 +68,29 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             var certBytes = Convert.FromBase64String(certHeader);
             using var cert = X509CertificateLoader.LoadCertificate(certBytes);
 
-            // Check validation cache (only successful validations are cached)
             var (found, validation) = _certValidationCache.GetValidation(cert.Thumbprint);
             if (found && validation?.IsValid == true)
             {
-                return await CreateAuthenticationTicket(cert, validation);
+                return CreateAuthenticationTicket(validation);
             }
 
-            // Cache miss or invalid - perform full validation
             var validationResult = await ValidateCertificateAsync(cert);
             if (!validationResult.IsValid)
             {
-                _logger.LogWarning("Certificate validation failed for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
-                // Note: Invalid results are not cached to prevent cache pollution
+                _logger.LogWarning(
+                    "Certificate validation failed for subject {Subject}",
+                    LogSanitizer.Sanitize(cert.Subject));
                 return AuthenticateResult.Fail(string.Join(", ", validationResult.Errors));
             }
 
-            // Build cached validation payload (includes user + roles) to avoid DB on future hits
             var cacheBuildResult = await BuildCachedValidationAsync(cert);
-            if (!cacheBuildResult.success)
+            if (!cacheBuildResult.Success)
             {
-                return AuthenticateResult.Fail(cacheBuildResult.error ?? "Certificate validation cache build failed");
+                return AuthenticateResult.Fail(cacheBuildResult.Error ?? "Certificate validation cache build failed");
             }
 
-            _certValidationCache.CacheValidation(cert.Thumbprint, cacheBuildResult.validation);
-            return await CreateAuthenticationTicket(cert, cacheBuildResult.validation);
+            _certValidationCache.CacheValidation(cert.Thumbprint, cacheBuildResult.Validation);
+            return CreateAuthenticationTicket(cacheBuildResult.Validation);
         }
         catch (Exception ex)
         {
@@ -98,30 +99,29 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         }
     }
 
-    private Task<string?> ExtractCertificateFromHeader()
+    private bool IsAgentApiRequest()
     {
-        if (!Request.Headers.TryGetValue("Authorization", out var authHeader) || 
+        var path = Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
+        return path.StartsWith(AgentApiPathPrefix, StringComparison.Ordinal);
+    }
+
+    private string? ExtractCertificateFromHeader()
+    {
+        if (!Request.Headers.TryGetValue("Authorization", out var authHeader) ||
             string.IsNullOrEmpty(authHeader))
         {
             _logger.LogDebug("No authorization header found");
-            return Task.FromResult<string?>(null);
+            return null;
         }
 
         var authHeaderValue = authHeader.ToString();
-        if (!authHeaderValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        if (!authHeaderValue.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogDebug("Authorization header is not in Bearer format");
-            return Task.FromResult<string?>(null);
+            return null;
         }
 
-        return Task.FromResult<string?>(authHeaderValue["Bearer ".Length..].Trim());
-    }
-
-    private string? GetSubjectValue(string subject, string key)
-    {
-        return subject.Split(',')
-            .FirstOrDefault(x => x.Trim().StartsWith($"{key}="))
-            ?.Split('=')[1];
+        return authHeaderValue[BearerPrefix.Length..].Trim();
     }
 
     private async Task<CertificateValidationResult> ValidateCertificateAsync(X509Certificate2 cert)
@@ -130,76 +130,41 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
 
         try
         {
-            // Check if certificate is revoked
             if (await _certificateRepository.IsRevokedAsync(cert.Thumbprint))
             {
-                _logger.LogWarning("Certificate has been revoked for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
+                _logger.LogWarning(
+                    "Certificate has been revoked for subject {Subject}",
+                    LogSanitizer.Sanitize(cert.Subject));
                 result.AddError("Certificate has been revoked");
                 return result;
             }
 
-            // Get root certificate
-            var rootCert = _certificateGenerator.GetRootCertificate();
-            
-            // Create chain
-            using var chain = new X509Chain();
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck; // Disable CRL checking for now
-            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-            chain.ChainPolicy.ExtraStore.Add(rootCert);
-            
-            var isValid = chain.Build(cert);
-            
-            if (!isValid)
+            var chainResult = ValidateCertificateChain(cert);
+            if (!chainResult.IsValid)
             {
-                _logger.LogWarning("Certificate validation chain failed for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
-                var errors = chain.ChainStatus
-                    .Select(s => $"Chain validation error: {s.StatusInformation}")
-                    .ToList();
-                result.Errors.AddRange(errors);
-                return result;
+                return chainResult;
             }
 
-            // Verify the chain terminates with our root certificate
-            var chainRoot = chain.ChainElements[chain.ChainElements.Count - 1].Certificate;
-            if (!chainRoot.Thumbprint.Equals(rootCert.Thumbprint, StringComparison.OrdinalIgnoreCase))
+            if (!HasClientAuthenticationPurpose(cert))
             {
-                _logger.LogWarning("Certificate is not signed by the expected root CA for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
-                result.AddError("Certificate is not signed by the expected root CA");
-                return result;
-            }
-
-            // Validate certificate purpose
-            var enhancedKeyUsage = cert.Extensions
-                .OfType<X509EnhancedKeyUsageExtension>()
-                .FirstOrDefault();
-                
-            if (enhancedKeyUsage == null || !HasClientAuthenticationPurpose(enhancedKeyUsage))
-            {
-                _logger.LogWarning("Certificate does not have client authentication purpose for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
+                _logger.LogWarning(
+                    "Certificate does not have client authentication purpose for subject {Subject}",
+                    LogSanitizer.Sanitize(cert.Subject));
                 result.AddError("Certificate does not have client authentication purpose");
                 return result;
             }
 
-            // Validate tenant
-            var tenantId = GetSubjectValue(cert.Subject, "O");
-            if (string.IsNullOrEmpty(tenantId))
+            var subject = CertificateSubject.Parse(cert.Subject);
+            if (string.IsNullOrEmpty(subject.TenantId))
             {
-                _logger.LogWarning("Invalid tenant: No tenant ID found in certificate for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
+                _logger.LogWarning(
+                    "No tenant ID found in certificate subject {Subject}",
+                    LogSanitizer.Sanitize(cert.Subject));
                 result.AddError("Invalid tenant: No tenant ID found in certificate");
                 return result;
             }
-            _logger.LogInformation("Getting tenant by tenant ID {TenantId}", LogSanitizer.Sanitize(tenantId));
-            var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
-            _logger.LogInformation("Tenant result: {TenantResult}", tenant);
-            if (tenant == null)
-            {
-                _logger.LogWarning("Invalid tenant: {TenantId} not found", LogSanitizer.Sanitize(tenantId));
-                result.AddError($"Invalid tenant: {tenantId}.");
-                return result;
-            }
 
-            result.IsValid = true;
-            return result;
+            return await ValidateTenantExistsAsync(subject.TenantId);
         }
         catch (Exception ex)
         {
@@ -209,114 +174,196 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         }
     }
 
-    private bool HasClientAuthenticationPurpose(X509EnhancedKeyUsageExtension extension)
+    private CertificateValidationResult ValidateCertificateChain(X509Certificate2 cert)
     {
-        return extension.EnhancedKeyUsages.Cast<Oid>()
-            .Any(oid => oid.Value == "1.3.6.1.5.5.7.3.2"); // Client Authentication OID
+        var result = new CertificateValidationResult();
+        var rootCert = _certificateGenerator.GetRootCertificate();
+
+        using var chain = new X509Chain();
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+        chain.ChainPolicy.ExtraStore.Add(rootCert);
+
+        if (!chain.Build(cert))
+        {
+            _logger.LogWarning(
+                "Certificate validation chain failed for subject {Subject}",
+                LogSanitizer.Sanitize(cert.Subject));
+            result.Errors.AddRange(
+                chain.ChainStatus.Select(s => $"Chain validation error: {s.StatusInformation}"));
+            return result;
+        }
+
+        var chainRoot = chain.ChainElements[^1].Certificate;
+        if (!chainRoot.Thumbprint.Equals(rootCert.Thumbprint, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Certificate is not signed by the expected root CA for subject {Subject}",
+                LogSanitizer.Sanitize(cert.Subject));
+            result.AddError("Certificate is not signed by the expected root CA");
+            return result;
+        }
+
+        result.IsValid = true;
+        return result;
     }
 
-    private async Task<(bool success, string? error, CachedCertificateValidation validation)> BuildCachedValidationAsync(X509Certificate2 cert)
+    private static bool HasClientAuthenticationPurpose(X509Certificate2 cert)
     {
-        var tenantId = GetSubjectValue(cert.Subject, "O");
-        var subjectUser = GetSubjectValue(cert.Subject, "OU");
+        var enhancedKeyUsage = cert.Extensions
+            .OfType<X509EnhancedKeyUsageExtension>()
+            .FirstOrDefault();
 
-        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(subjectUser))
+        return enhancedKeyUsage != null &&
+               enhancedKeyUsage.EnhancedKeyUsages.Cast<Oid>()
+                   .Any(oid => oid.Value == ClientAuthenticationOid);
+    }
+
+    private async Task<CertificateValidationResult> ValidateTenantExistsAsync(string tenantId)
+    {
+        var result = new CertificateValidationResult();
+
+        _logger.LogDebug("Validating tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+        var tenant = await _tenantRepository.GetByTenantIdAsync(tenantId);
+        if (tenant == null)
         {
-            return (false, "Invalid certificate subject format", new CachedCertificateValidation { IsValid = false });
+            _logger.LogWarning("Invalid tenant: {TenantId} not found", LogSanitizer.Sanitize(tenantId));
+            result.AddError($"Invalid tenant: {tenantId}.");
+            return result;
+        }
+
+        result.IsValid = true;
+        return result;
+    }
+
+    private async Task<CachedValidationBuildResult> BuildCachedValidationAsync(X509Certificate2 cert)
+    {
+        var subject = CertificateSubject.Parse(cert.Subject);
+        if (!subject.IsComplete)
+        {
+            return CachedValidationBuildResult.Failed("Invalid certificate subject format");
         }
 
         // The certificate's OU may carry either the canonical user id or the user's email,
         // depending on which UI issued the certificate. Resolve by user id first, then
         // fall back to email so certificates issued by either path authenticate correctly.
-        var user = await _userRepository.GetByUserIdAsync(subjectUser)
-            ?? await _userRepository.GetByUserEmailAsync(subjectUser);
+        var user = await _userRepository.GetByUserIdAsync(subject.UserIdentifier!)
+            ?? await _userRepository.GetByUserEmailAsync(subject.UserIdentifier!);
         if (user == null)
         {
-            return (false, "Invalid user ID", new CachedCertificateValidation { IsValid = false });
+            return CachedValidationBuildResult.Failed("Invalid user ID");
         }
 
         // Always use the canonical user id for the authenticated context, regardless of
         // whether the certificate identified the user by id or by email.
-        var userId = string.IsNullOrEmpty(user.UserId) ? subjectUser : user.UserId;
+        var userId = string.IsNullOrEmpty(user.UserId) ? subject.UserIdentifier! : user.UserId;
 
         var roles = user.TenantRoles
-            .FirstOrDefault(tr => tr.Tenant == tenantId)?.Roles?.ToList() ?? new List<string>();
+            .FirstOrDefault(tr => tr.Tenant == subject.TenantId)?.Roles?.ToList() ?? [];
 
         if (user.IsSysAdmin && !roles.Contains(SystemRoles.SysAdmin))
         {
             roles.Add(SystemRoles.SysAdmin);
         }
 
-        var validation = new CachedCertificateValidation
+        return CachedValidationBuildResult.Succeeded(new CachedCertificateValidation
         {
             IsValid = true,
-            TenantId = tenantId,
+            TenantId = subject.TenantId!,
             UserId = userId,
-            Roles = roles.ToArray(), // Use array for immutability (matches default Array.Empty<string>())
+            Roles = roles.ToArray(),
             IsSysAdmin = user.IsSysAdmin
-        };
-
-        return (true, null, validation);
+        });
     }
 
-    private Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert, CachedCertificateValidation validation)
+    private AuthenticateResult CreateAuthenticationTicket(CachedCertificateValidation validation)
     {
         var tenantId = validation.TenantId;
         var userId = validation.UserId;
-        var roles = validation.Roles ?? Array.Empty<string>();
+        var roles = validation.Roles?.ToArray() ?? Array.Empty<string>();
 
-        // Note: SysAdmin role is already included in cached validation.Roles if user.IsSysAdmin
-
-        // Handle X-Tenant-Id header
-        if (Request.Headers.TryGetValue("X-Tenant-Id", out var requestedTenantId) && 
+        if (Request.Headers.TryGetValue(TenantIdHeader, out var requestedTenantId) &&
             !string.IsNullOrWhiteSpace(requestedTenantId))
         {
             var requestedTenantIdStr = requestedTenantId.ToString();
-            
+
             if (validation.IsSysAdmin)
             {
-                // Sys admin can impersonate any tenant
-                _logger.LogInformation("Sys admin {UserId} impersonating tenant {ImpersonatedTenantId} (original tenant: {OriginalTenantId})", 
-                    LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(requestedTenantIdStr), LogSanitizer.Sanitize(tenantId));
+                _logger.LogInformation(
+                    "Sys admin {UserId} impersonating tenant {ImpersonatedTenantId} (original tenant: {OriginalTenantId})",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(requestedTenantIdStr),
+                    LogSanitizer.Sanitize(tenantId));
                 tenantId = requestedTenantIdStr;
+            }
+            else if (!tenantId.Equals(requestedTenantIdStr, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "Non admin user {UserId} attempted to access tenant {RequestedTenantId} but certificate is for tenant {CertTenantId}",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(requestedTenantIdStr),
+                    LogSanitizer.Sanitize(tenantId));
+                return AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID");
             }
             else
             {
-                // Non-admin users must match their certificate's tenant ID
-                if (!tenantId.Equals(requestedTenantIdStr, StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogWarning("Non admin User `{UserId}` attempted to access tenant `{RequestedTenantId}` but certificate is for tenant `{CertTenantId}`", 
-                        LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(requestedTenantIdStr), LogSanitizer.Sanitize(tenantId));
-                    return Task.FromResult(AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID"));
-                }
-                _logger.LogDebug("User {UserId} X-Tenant-Id header matches certificate tenant {TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
+                _logger.LogDebug(
+                    "User {UserId} X-Tenant-Id header matches certificate tenant {TenantId}",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(tenantId));
             }
         }
 
-        // Set up TenantContext (roles is already an array from cached validation)
         _tenantContext.TenantId = tenantId;
         _tenantContext.UserType = UserType.AgentApiKey;
         _tenantContext.LoggedInUser = userId;
-        _tenantContext.UserRoles = roles is string[] rolesArray ? rolesArray : roles.ToArray();
-        _tenantContext.AuthorizedTenantIds = new[] { tenantId }; // Agents can only access their own tenant
+        _tenantContext.UserRoles = roles;
+        _tenantContext.AuthorizedTenantIds = [tenantId];
 
-        // Build claims list with all user roles
-        var claimsList = new List<Claim>
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.Name, userId),
-            new Claim("Tenant", tenantId)
+            new(ClaimTypes.Name, userId),
+            new("Tenant", tenantId)
         };
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
 
-        // Add all roles as separate role claims for authorization to work
-        foreach (var role in roles)
+        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name);
+        return AuthenticateResult.Success(ticket);
+    }
+
+    private readonly record struct CertificateSubject(string? TenantId, string? UserIdentifier)
+    {
+        public bool IsComplete =>
+            !string.IsNullOrEmpty(TenantId) && !string.IsNullOrEmpty(UserIdentifier);
+
+        public static CertificateSubject Parse(string subject) =>
+            new(GetSubjectValue(subject, "O"), GetSubjectValue(subject, "OU"));
+
+        private static string? GetSubjectValue(string subject, string key)
         {
-            claimsList.Add(new Claim(ClaimTypes.Role, role));
+            foreach (var part in subject.Split(','))
+            {
+                var trimmed = part.Trim();
+                if (trimmed.StartsWith($"{key}=", StringComparison.Ordinal))
+                {
+                    return trimmed[(key.Length + 1)..];
+                }
+            }
+
+            return null;
         }
+    }
 
-        var identity = new ClaimsIdentity(claimsList, Scheme.Name);
-        var principal = new ClaimsPrincipal(identity);
-        var ticket = new AuthenticationTicket(principal, Scheme.Name);
+    private readonly record struct CachedValidationBuildResult(
+        bool Success,
+        string? Error,
+        CachedCertificateValidation Validation)
+    {
+        public static CachedValidationBuildResult Failed(string error) =>
+            new(false, error, new CachedCertificateValidation { IsValid = false });
 
-        return Task.FromResult(AuthenticateResult.Success(ticket));
+        public static CachedValidationBuildResult Succeeded(CachedCertificateValidation validation) =>
+            new(true, null, validation);
     }
 }
