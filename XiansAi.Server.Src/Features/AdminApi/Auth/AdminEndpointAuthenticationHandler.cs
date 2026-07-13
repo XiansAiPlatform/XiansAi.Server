@@ -1,197 +1,204 @@
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Exceptions;
 using Shared.Services;
-using System.Security.Claims;
-using System.Text.Encodings.Web;
-using Shared.Data.Models;
 using Shared.Utils;
 
-namespace Features.AdminApi.Auth
+namespace Features.AdminApi.Auth;
+
+public class AdminEndpointAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public class AdminEndpointAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+    /// <summary>
+    /// HttpContext.Items key used to surface the specific authentication failure reason
+    /// to the authorization result handler, so the 401 response carries a meaningful
+    /// message instead of a generic one.
+    /// </summary>
+    public const string FailureReasonItemKey = "AdminApi.AuthFailureReason";
+
+    private const string BearerPrefix = "Bearer ";
+    private const string ApiKeyPrefix = "sk-Xnai-";
+    private const string TenantIdHeader = "X-Tenant-Id";
+
+    private readonly ITenantContext _tenantContext;
+    private readonly ILogger<AdminEndpointAuthenticationHandler> _logger;
+    private readonly IApiKeyService _apiKeyService;
+    private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
+
+    public AdminEndpointAuthenticationHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder,
+        ITenantContext tenantContext,
+        IApiKeyService apiKeyService,
+        IAdminRoleTenantResolver adminRoleTenantResolver)
+        : base(options, logger, encoder)
     {
-        /// <summary>
-        /// HttpContext.Items key used to surface the specific authentication failure reason
-        /// to the authorization result handler, so the 401 response carries a meaningful
-        /// message instead of a generic one.
-        /// </summary>
-        public const string FailureReasonItemKey = "AdminApi.AuthFailureReason";
+        _logger = logger.CreateLogger<AdminEndpointAuthenticationHandler>();
+        _tenantContext = tenantContext;
+        _apiKeyService = apiKeyService;
+        _adminRoleTenantResolver = adminRoleTenantResolver;
+    }
 
-        private readonly ITenantContext _tenantContext;
-        private readonly ILogger<AdminEndpointAuthenticationHandler> _logger;
-        private readonly IApiKeyService _apiKeyService;
-        private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
-
-        private AuthenticateResult FailWithReason(string reason)
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        if (!IsAdminApiRequest())
         {
-            Context.Items[FailureReasonItemKey] = reason;
-            return AuthenticateResult.Fail(reason);
+            _logger.LogDebug(
+                "Skipping admin endpoint authentication for non-AdminApi path: {Path}",
+                LogSanitizer.Sanitize(Request.Path));
+            return AuthenticateResult.NoResult();
         }
 
-        public AdminEndpointAuthenticationHandler(
-            IOptionsMonitor<AuthenticationSchemeOptions> options,
-            ILoggerFactory logger,
-            UrlEncoder encoder,
-            ITenantContext tenantContext,
-            IApiKeyService apiKeyService,
-            IAdminRoleTenantResolver adminRoleTenantResolver)
-            : base(options, logger, encoder)
+        _logger.LogDebug(
+            "Processing AdminApi endpoint request: {Path}",
+            LogSanitizer.Sanitize(Request.Path));
+
+        var accessToken = ExtractBearerToken();
+        if (string.IsNullOrEmpty(accessToken))
         {
-            _logger = logger.CreateLogger<AdminEndpointAuthenticationHandler>();
-            _tenantContext = tenantContext;
-            _apiKeyService = apiKeyService;
-            _adminRoleTenantResolver = adminRoleTenantResolver;
+            _logger.LogWarning("No access token found for AdminApi Endpoint connection");
+            return FailWithReason("No access token found for AdminApi Endpoint connection");
         }
 
-        protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+        try
         {
-            // Only handle authentication for AdminApi endpoints
-            // Check if path matches /api/{version}/admin pattern (supports v1, v2, etc.)
-            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
-            var adminApiPattern = "/api/";
-            var adminSuffix = "/admin";
-            
-            _logger.LogDebug("AdminEndpointAuthenticationHandler: Evaluating path '{Path}'", LogSanitizer.Sanitize(Request.Path));
-            
-            // Check if path matches AdminApi pattern: /api/{version}/admin
-            if (!path.StartsWith(adminApiPattern) || !path.Contains(adminSuffix))
-            {
-                _logger.LogDebug("Skipping admin endpoint authentication for non-AdminApi path: {Path}", LogSanitizer.Sanitize(Request.Path));
-                return AuthenticateResult.NoResult(); // Let other handlers process this request
-            }
-            
-            // Verify it's actually an AdminApi path (not just any /api/... path)
-            var pathParts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (pathParts.Length < 3 || pathParts[0] != "api" || pathParts[2] != "admin")
-            {
-                _logger.LogDebug("Skipping admin endpoint authentication for non-AdminApi path: {Path}", LogSanitizer.Sanitize(Request.Path));
-                return AuthenticateResult.NoResult(); // Let other handlers process this request
-            }
+            return await AuthenticateWithApiKeyAsync(accessToken, ExtractTenantId());
+        }
+        catch (TenantNotFoundException)
+        {
+            // Re-throw so global exception handler can return 404 (not 401)
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing access token for AdminApi Endpoint connection");
+            return FailWithReason("Error processing access token for AdminApi Endpoint connection");
+        }
+    }
 
-            _logger.LogDebug("Processing AdminApi endpoint request: {Path}", LogSanitizer.Sanitize(Request.Path));
-
-            // Extract API key from Authorization header only.
-            // Query parameter (?apikey=) is not supported: it can leak into reverse-proxy logs, CDN logs, and browser history.
-            var accessToken = string.Empty;
-            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            {
-                accessToken = authHeader.Substring("Bearer ".Length).Trim();
-            }
-            
-            // Extract tenantId from multiple sources in priority order:
-            // 1. Query parameter (tenantId=)
-            // 2. Route parameter (e.g., /tenants/{tenantId})
-            // 3. X-Tenant-Id header
-            var tenantId = Request.Query["tenantId"].ToString();
-            if (string.IsNullOrEmpty(tenantId))
-            {
-                // Try route parameter
-                if (Request.RouteValues.TryGetValue("tenantId", out var routeTenantId) && routeTenantId != null)
-                {
-                    tenantId = routeTenantId.ToString() ?? string.Empty;
-                }
-            }
-            if (string.IsNullOrEmpty(tenantId))
-            {
-                // Try X-Tenant-Id header
-                tenantId = Request.Headers["X-Tenant-Id"].FirstOrDefault() ?? string.Empty;
-            }
-            
-            // Preserve the original tenantId from request for validation
-            var originalTenantIdFromRequest = tenantId;
-            
-            // Note: tenantId is now optional. If not provided, it will be derived from the API key.
-            // This prevents IDOR vulnerabilities by ensuring the tenant matches the authenticated credential.
-
-            _logger.LogDebug("Processing AdminApi Endpoint request: {Path}", LogSanitizer.Sanitize(Request.Path));
-            if (_tenantContext != null)
-            {
-
-                if (!string.IsNullOrEmpty(accessToken))
-                {
-                    try
-                    {
-                        // Only API keys starting with "sk-Xnai-" are supported
-                        if (!accessToken.StartsWith("sk-Xnai-"))
-                        {
-                            _logger.LogWarning("Invalid API key format. API key must start with 'sk-Xnai-'");
-                            return FailWithReason("Invalid API key format");
-                        }
-
-                        // Look up API key
-                        ApiKey? apiKey;
-                        
-                        // Always look up API key by token first to establish identity
-                        // This allows SysAdmins (Tenant=System) to access other tenants (Tenant=Target)
-                        apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken);
-
-                        if (apiKey == null)
-                        {
-                            _logger.LogWarning("Invalid API key submitted");
-                            return FailWithReason("Invalid API key");
-                        }
-
-                        var resolutionResult = await _adminRoleTenantResolver.ResolveAsync(
-                            apiKey.CreatedBy, apiKey, originalTenantIdFromRequest);
-
-                        if (!resolutionResult.Success)
-                        {
-                            return FailWithReason(resolutionResult.ErrorMessage ?? "Authorization failed");
-                        }
-
-                        var finalTenantId = resolutionResult.FinalTenantId!;
-                        var userRoles = resolutionResult.UserRoles!;
-
-                        _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}", 
-                            apiKey.CreatedBy, UserType.UserApiKey, string.Join(", ", userRoles));
-                        _tenantContext.LoggedInUser = apiKey.CreatedBy;
-                        _tenantContext.UserType = UserType.UserApiKey;
-                        _tenantContext.TenantId = finalTenantId;
-                        _tenantContext.UserRoles = userRoles.ToArray();
-                        _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
-                        _tenantContext.Authorization = accessToken;
-
-                        var claims = new List<Claim>
-                        {
-                            new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                            new Claim("TenantId", finalTenantId)
-                        };
-
-                        var identity = new ClaimsIdentity(claims, Scheme.Name);
-                        var principal = new ClaimsPrincipal(identity);
-                        var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                        _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 
-                            LogSanitizer.Sanitize(apiKey.CreatedBy), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
-
-                        return AuthenticateResult.Success(ticket);
-                    }
-                    catch (TenantNotFoundException)
-                    {
-                        // Re-throw so global exception handler can return 404 (not 401)
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error processing access token for AdminApi Endpoint connection");
-                        return FailWithReason("Error processing access token for AdminApi Endpoint connection");
-                    }
-                }
-                else
-                {
-                    _logger.LogWarning("No access token found for AdminApi Endpoint connection");
-                    return FailWithReason("No access token found for AdminApi Endpoint connection");
-                }
-            }
-            else
-            {
-                _logger.LogError("Failed to resolve ITenantContext from request scope");
-                return FailWithReason("Failed to resolve ITenantContext from request scope");
-            }
+    private bool IsAdminApiRequest()
+    {
+        var path = Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
+        if (!path.StartsWith("/api/", StringComparison.Ordinal) || !path.Contains("/admin", StringComparison.Ordinal))
+        {
+            return false;
         }
 
+        // Match /api/{version}/admin/... (e.g. /api/v1/admin)
+        var pathParts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return pathParts.Length >= 3
+            && pathParts[0] == "api"
+            && pathParts[2] == "admin";
+    }
+
+    private string? ExtractBearerToken()
+    {
+        var authHeader = Request.Headers.Authorization.FirstOrDefault();
+        if (string.IsNullOrEmpty(authHeader) ||
+            !authHeader.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return authHeader[BearerPrefix.Length..].Trim();
+    }
+
+    /// <summary>
+    /// Tenant ID sources in priority order:
+    /// 1. Query parameter (tenantId=)
+    /// 2. Route parameter (e.g. /tenants/{tenantId})
+    /// 3. X-Tenant-Id header
+    /// Optional — when omitted, derived from the API key to avoid IDOR.
+    /// </summary>
+    private string ExtractTenantId()
+    {
+        var tenantId = Request.Query["tenantId"].ToString();
+        if (!string.IsNullOrEmpty(tenantId))
+        {
+            return tenantId;
+        }
+
+        if (Request.RouteValues.TryGetValue("tenantId", out var routeTenantId) && routeTenantId != null)
+        {
+            return routeTenantId.ToString() ?? string.Empty;
+        }
+
+        return Request.Headers[TenantIdHeader].FirstOrDefault() ?? string.Empty;
+    }
+
+    private async Task<AuthenticateResult> AuthenticateWithApiKeyAsync(string accessToken, string tenantIdFromRequest)
+    {
+        if (!accessToken.StartsWith(ApiKeyPrefix, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("Invalid API key format. API key must start with '{ApiKeyPrefix}'", ApiKeyPrefix);
+            return FailWithReason("Invalid API key format");
+        }
+
+        // Look up by token first so SysAdmins (Tenant=System) can access other tenants.
+        var apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken);
+        if (apiKey == null)
+        {
+            _logger.LogWarning("Invalid API key submitted");
+            return FailWithReason("Invalid API key");
+        }
+
+        var resolutionResult = await _adminRoleTenantResolver.ResolveAsync(
+            apiKey.CreatedBy, apiKey, tenantIdFromRequest);
+
+        if (!resolutionResult.Success)
+        {
+            return FailWithReason(resolutionResult.ErrorMessage ?? "Authorization failed");
+        }
+
+        return CreateSuccessTicket(apiKey, accessToken, resolutionResult);
+    }
+
+    private AuthenticateResult CreateSuccessTicket(
+        ApiKey apiKey,
+        string accessToken,
+        AdminRoleTenantResolutionResult resolutionResult)
+    {
+        var finalTenantId = resolutionResult.FinalTenantId!;
+        var userRoles = resolutionResult.UserRoles!;
+
+        _logger.LogDebug(
+            "Setting tenant context with user ID: {UserId}, user type: {UserType}, and roles: {Roles}",
+            apiKey.CreatedBy,
+            UserType.UserApiKey,
+            string.Join(", ", userRoles));
+
+        _tenantContext.LoggedInUser = apiKey.CreatedBy;
+        _tenantContext.UserType = UserType.UserApiKey;
+        _tenantContext.TenantId = finalTenantId;
+        _tenantContext.UserRoles = userRoles.ToArray();
+        _tenantContext.AuthorizedTenantIds = [finalTenantId];
+        _tenantContext.Authorization = accessToken;
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
+            new("TenantId", finalTenantId)
+        };
+
+        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name);
+
+        _logger.LogInformation(
+            "Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}",
+            LogSanitizer.Sanitize(apiKey.CreatedBy),
+            LogSanitizer.Sanitize(finalTenantId),
+            LogSanitizer.Sanitize(string.Join(", ", userRoles)));
+
+        return AuthenticateResult.Success(ticket);
+    }
+
+    private AuthenticateResult FailWithReason(string reason)
+    {
+        Context.Items[FailureReasonItemKey] = reason;
+        return AuthenticateResult.Fail(reason);
     }
 }
-
