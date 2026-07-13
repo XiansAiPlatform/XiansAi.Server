@@ -1,4 +1,5 @@
 // Features/AgentApi/Auth/CertificateAuthenticationHandler.cs
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Encodings.Web;
@@ -7,6 +8,8 @@ using Microsoft.Extensions.Options;
 using Features.AgentApi.Repositories;
 using System.Security.Cryptography;
 using Shared.Auth;
+using Shared.Data.Models;
+using Shared.Services;
 using Shared.Utils;
 using Shared.Repositories;
 
@@ -20,6 +23,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
     private readonly ITenantContext _tenantContext;
     private readonly ICertificateValidationCache _certValidationCache;
     private readonly ITenantRepository _tenantRepository;
+    private readonly ITenantCacheService _tenantCacheService;
     private readonly IUserRepository _userRepository;
     public CertificateAuthenticationHandler(
         IOptionsMonitor<CertificateAuthenticationOptions> options,
@@ -30,7 +34,8 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         ITenantContext tenantContext,
         ICertificateValidationCache certValidationCache,
         IUserRepository userRepository,
-        ITenantRepository tenantRepository) 
+        ITenantRepository tenantRepository,
+        ITenantCacheService tenantCacheService) 
         : base(options, logger, encoder)
     {
         _logger = logger.CreateLogger<CertificateAuthenticationHandler>();
@@ -39,6 +44,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         _tenantContext = tenantContext;
         _certValidationCache = certValidationCache;
         _tenantRepository = tenantRepository;
+        _tenantCacheService = tenantCacheService;
         _userRepository = userRepository;
     }
 
@@ -117,11 +123,48 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         return Task.FromResult<string?>(authHeaderValue["Bearer ".Length..].Trim());
     }
 
-    private string? GetSubjectValue(string subject, string key)
+    /// <summary>
+    /// Extracts a single-valued RDN attribute from a distinguished name using
+    /// RFC 4514-compliant parsing via <see cref="X500DistinguishedName"/>.
+    /// </summary>
+    /// <param name="subjectName">Certificate subject DN.</param>
+    /// <param name="key">Short attribute name: "O" (organization) or "OU" (organizational unit).</param>
+    private string? GetSubjectValue(X500DistinguishedName subjectName, string key)
     {
-        return subject.Split(',')
-            .FirstOrDefault(x => x.Trim().StartsWith($"{key}="))
-            ?.Split('=')[1];
+        var oidValue = key switch
+        {
+            "O" => "2.5.4.10",  // organizationName
+            "OU" => "2.5.4.11", // organizationalUnitName
+            _ => null
+        };
+
+        if (oidValue == null)
+        {
+            _logger.LogWarning("Unsupported DN attribute key requested: {Key}", key);
+            return null;
+        }
+
+        foreach (var rdn in subjectName.EnumerateRelativeDistinguishedNames())
+        {
+            try
+            {
+                var type = rdn.GetSingleElementType();
+                if (type.Value == oidValue)
+                {
+                    return rdn.GetSingleElementValue();
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Multi-valued RDNs are ambiguous for our use case; skip them.
+                _logger.LogWarning(
+                    "Skipping multi-valued RDN while looking for attribute {Key} in subject {Subject}",
+                    key,
+                    LogSanitizer.Sanitize(subjectName.Name));
+            }
+        }
+
+        return null;
     }
 
     private async Task<CertificateValidationResult> ValidateCertificateAsync(X509Certificate2 cert)
@@ -181,7 +224,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             }
 
             // Validate tenant
-            var tenantId = GetSubjectValue(cert.Subject, "O");
+            var tenantId = GetSubjectValue(cert.SubjectName, "O");
             if (string.IsNullOrEmpty(tenantId))
             {
                 _logger.LogWarning("Invalid tenant: No tenant ID found in certificate for tenant ID {TenantId}", LogSanitizer.Sanitize(cert.Subject));
@@ -217,8 +260,8 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
 
     private async Task<(bool success, string? error, CachedCertificateValidation validation)> BuildCachedValidationAsync(X509Certificate2 cert)
     {
-        var tenantId = GetSubjectValue(cert.Subject, "O");
-        var subjectUser = GetSubjectValue(cert.Subject, "OU");
+        var tenantId = GetSubjectValue(cert.SubjectName, "O");
+        var subjectUser = GetSubjectValue(cert.SubjectName, "OU");
 
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(subjectUser))
         {
@@ -259,7 +302,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         return (true, null, validation);
     }
 
-    private Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert, CachedCertificateValidation validation)
+    private async Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert, CachedCertificateValidation validation)
     {
         var tenantId = validation.TenantId;
         var userId = validation.UserId;
@@ -275,10 +318,38 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
             
             if (validation.IsSysAdmin)
             {
-                // Sys admin can impersonate any tenant
-                _logger.LogInformation("Sys admin {UserId} impersonating tenant {ImpersonatedTenantId} (original tenant: {OriginalTenantId})", 
-                    LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(requestedTenantIdStr), LogSanitizer.Sanitize(tenantId));
-                tenantId = requestedTenantIdStr;
+                // Sys admin can impersonate any existing tenant — validate via tenant cache
+                // (same pattern as AdminRoleTenantResolver) to avoid per-request DB hits.
+                Tenant? impersonatedTenant;
+                try
+                {
+                    impersonatedTenant = await _tenantCacheService.GetByTenantIdAsync(requestedTenantIdStr);
+                }
+                catch (ValidationException ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Sys admin {UserId} attempted to impersonate tenant with invalid ID {RequestedTenantId}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(requestedTenantIdStr));
+                    return AuthenticateResult.Fail("Requested tenant does not exist");
+                }
+
+                if (impersonatedTenant == null)
+                {
+                    _logger.LogWarning(
+                        "Sys admin {UserId} attempted to impersonate non-existent tenant {RequestedTenantId}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(requestedTenantIdStr));
+                    return AuthenticateResult.Fail("Requested tenant does not exist");
+                }
+
+                _logger.LogInformation(
+                    "Sys admin {UserId} impersonating tenant {ImpersonatedTenantId} (original tenant: {OriginalTenantId})",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(impersonatedTenant.TenantId),
+                    LogSanitizer.Sanitize(tenantId));
+                tenantId = impersonatedTenant.TenantId;
             }
             else
             {
@@ -287,7 +358,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
                 {
                     _logger.LogWarning("Non admin User `{UserId}` attempted to access tenant `{RequestedTenantId}` but certificate is for tenant `{CertTenantId}`", 
                         LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(requestedTenantIdStr), LogSanitizer.Sanitize(tenantId));
-                    return Task.FromResult(AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID"));
+                    return AuthenticateResult.Fail("X-Tenant-Id header does not match certificate tenant ID");
                 }
                 _logger.LogDebug("User {UserId} X-Tenant-Id header matches certificate tenant {TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
             }
@@ -317,6 +388,6 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
-        return Task.FromResult(AuthenticateResult.Success(ticket));
+        return AuthenticateResult.Success(ticket);
     }
 }
