@@ -1,5 +1,8 @@
 # AppsApi Architecture - Proxy Apps for Agent Integration
 
+> **Note:** This document describes the AppsApi feature implementation. For repository-wide architectural constraints and patterns, see [Architecture Constraints](../../../docs/architecture/constraints.md).
+
+
 ## Overview
 
 The **AppsApi** provides a framework for building proxy applications that enable bidirectional messaging between external platforms (Slack, MS Teams, Outlook, etc.) and XiansAi agent activations. These proxy apps act as middleware, translating platform-specific protocols into the XiansAi messaging system.
