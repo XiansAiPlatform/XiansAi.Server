@@ -1,11 +1,11 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
-using Features.AppsApi.Models;
 using Shared.Data;
+using Shared.Data.Models;
 using Shared.Utils;
 using Shared.Services;
 
-namespace Features.AppsApi.Repositories;
+namespace Shared.Repositories;
 
 public interface IAppIntegrationRepository
 {

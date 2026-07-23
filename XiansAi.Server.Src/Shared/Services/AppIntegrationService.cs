@@ -1,14 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Features.AppsApi.Models;
-using Features.AppsApi.Repositories;
 using Shared.Data.Models;
+using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.Services;
 using Shared.Utils;
 
-namespace Features.AppsApi.Services;
+namespace Shared.Services;
 
 public interface IAppIntegrationService
 {

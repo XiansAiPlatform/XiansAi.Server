@@ -5,7 +5,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data.Models.Validation;
 
-namespace Features.AppsApi.Models;
+namespace Shared.Data.Models;
 
 /// <summary>
 /// Represents an app integration that connects an external platform (Slack, Teams, etc.) 
