@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Features.AppsApi.Models;
-using Features.AppsApi.Services;
+using Shared.Data.Models;
 using Shared.Services;
 using Shared.Repositories;
 

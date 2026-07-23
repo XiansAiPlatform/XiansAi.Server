@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Features.AppsApi.Models;
+namespace Shared.Data.Models;
 
 /// <summary>
 /// Contains all sensitive/secret values for an app integration.

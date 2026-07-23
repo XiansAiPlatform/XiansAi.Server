@@ -4,8 +4,6 @@ using Features.AdminApi.Services;
 using Features.AdminApi.Auth;
 using Features.AdminApi.Utils;
 using Features.AgentApi.Repositories;
-using Features.AppsApi.Repositories;
-using Features.AppsApi.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -35,10 +33,9 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IAdminMetricsService, AdminMetricsService>();
         builder.Services.AddScoped<IAdminDataService, AdminDataService>();
         builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
-        
-        // Register App Integration services
-        builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
-        builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
+
+        // Note: IAppIntegrationRepository and IAppIntegrationService are registered
+        // centrally in SharedConfiguration (shared across AppsApi, AdminApi, AgentApi).
 
         // Register Admin API key service
         builder.Services.AddScoped<IAdminApiKeyService, AdminApiKeyService>();

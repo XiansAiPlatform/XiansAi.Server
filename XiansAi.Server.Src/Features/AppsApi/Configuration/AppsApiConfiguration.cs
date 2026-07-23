@@ -1,5 +1,4 @@
 using Features.AppsApi.Endpoints;
-using Features.AppsApi.Repositories;
 using Features.AppsApi.Services;
 using Features.AppsApi.Handlers;
 
@@ -16,12 +15,9 @@ public static class AppsApiConfiguration
     /// </summary>
     public static WebApplicationBuilder AddAppsApiServices(this WebApplicationBuilder builder)
     {
-        // Register AppsApi repositories
-        builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
-        
-        // Register AppsApi services
-        builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
-        
+        // Note: IAppIntegrationRepository and IAppIntegrationService are registered
+        // centrally in SharedConfiguration (shared across AppsApi, AdminApi, AgentApi).
+
         // Register platform-specific webhook handlers
         builder.Services.AddScoped<ISlackWebhookHandler, SlackWebhookHandler>();
         builder.Services.AddScoped<ITeamsWebhookHandler, TeamsWebhookHandler>();
