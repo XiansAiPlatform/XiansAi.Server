@@ -74,6 +74,13 @@ public class LogStreamSummary
     public required long LogCount { get; set; }
     public required LogLevel LastLogLevel { get; set; }
     public required string LastLogMessage { get; set; }
+
+    /// <summary>
+    /// Number of Error/Critical level logs in this stream. Lets the UI flag streams
+    /// that contain errors anywhere in their history - not only when the latest log
+    /// happens to be an error.
+    /// </summary>
+    public required long ErrorCount { get; set; }
 }
 
 public class LogRepository : ILogRepository
@@ -418,7 +425,10 @@ public class LogRepository : ILogRepository
                 FirstLogAt = g.Last().CreatedAt,
                 LogCount = g.LongCount(),
                 LastLogLevel = g.First().Level,
-                LastLogMessage = g.First().Message
+                LastLogMessage = g.First().Message,
+                // Count Error + Critical logs so streams with any errors can be flagged
+                // for attention, independent of what the most recent log level is.
+                ErrorCount = g.Sum(x => x.Level == LogLevel.Error || x.Level == LogLevel.Critical ? 1L : 0L)
             });
 
         // Count distinct streams for pagination metadata before applying skip/limit.
