@@ -161,11 +161,3 @@ public static class AdminAgentActivationEndpoints
         ;
     }
 }
-
-/// <summary>
-/// Request model for activating an agent with optional workflow configuration
-/// </summary>
-public class ActivateAgentRequest
-{
-    public ActivationWorkflowConfiguration? WorkflowConfiguration { get; set; }
-}

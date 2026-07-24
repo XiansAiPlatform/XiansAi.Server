@@ -96,6 +96,7 @@ public static class AgentApiConfiguration
         UsageEventEndpoints.MapUsageEventEndpoints(app);
         SecretVaultEndpoints.MapSecretVaultEndpoints(app);
         ActivationEndpoints.MapActivationEndpoints(app, loggerFactory);
+        AgentEndpoints.MapAgentEndpoints(app, loggerFactory);
         WebhookEndpoints.MapWebhookEndpoints(app);
         
         return app;
