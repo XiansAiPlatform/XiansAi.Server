@@ -93,6 +93,14 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             RemoveService<ITemporalClientService>(services);
             services.AddSingleton(mockTemporalClientService.Object);
 
+            // Mock activation cleanup so deactivate endpoints can succeed without Temporal.
+            var mockActivationCleanupService = new Mock<IActivationCleanupService>();
+            mockActivationCleanupService
+                .Setup(x => x.CleanupActivationResourcesAsync(It.IsAny<AgentActivation>()))
+                .ReturnsAsync(ServiceResult<ActivationCleanupResult>.Success(new ActivationCleanupResult()));
+            RemoveService<IActivationCleanupService>(services);
+            services.AddSingleton(mockActivationCleanupService.Object);
+
             // Mock IUserTenantService to always return the test tenant for the test user
             var mockUserTenantService = new Mock<IUserTenantService>();
             // Authorize the test user for both tenants
