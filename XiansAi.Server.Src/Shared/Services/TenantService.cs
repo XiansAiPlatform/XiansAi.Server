@@ -7,7 +7,6 @@ using System.ComponentModel.DataAnnotations;
 using MongoDB.Driver;
 using Shared.Repositories;
 using Features.WebApi.Services;
-using Shared.Utils.Temporal;
 
 namespace Shared.Services;
 
@@ -23,6 +22,10 @@ public class CreateTenantRequest
     public string? Theme { get; set; }
     public string? Timezone { get; set; }
     public bool UseSpecificTemporalNamespace { get; set; } = false;
+    public string? TemporalHost { get; set; }
+    public string? TemporalNamespace { get; set; }
+    public string? TemporalCertificate { get; set; }
+    public string? TemporalCertificateKey { get; set; }
 }
 
 public class UpdateTenantRequest
@@ -70,7 +73,7 @@ public class TenantService : ITenantService
     private readonly ILogger<TenantService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IRoleManagementService _roleManagementService;
-    private readonly ITemporalClientService _temporalClientService;
+    private readonly ITenantTemporalConfigService _tenantTemporalConfigService;
 
     public TenantService(
         ITenantRepository tenantRepository,
@@ -78,7 +81,6 @@ public class TenantService : ITenantService
         ILogger<TenantService> logger,
         ITenantContext tenantContext,
         IRoleManagementService roleManagementService,
-        ITemporalClientService temporalClientService,
         ITenantTemporalConfigService tenantTemporalConfigService)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
@@ -86,7 +88,7 @@ public class TenantService : ITenantService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
-        _temporalClientService = temporalClientService ?? throw new ArgumentNullException(nameof(temporalClientService));
+        _tenantTemporalConfigService = tenantTemporalConfigService ?? throw new ArgumentNullException(nameof(tenantTemporalConfigService));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -340,8 +342,29 @@ public class TenantService : ITenantService
 
             if (request.UseSpecificTemporalNamespace)
             {
-                _logger.LogInformation("Provisioning dedicated Temporal namespace for tenant {TenantId}", LogSanitizer.Sanitize(request.TenantId));
-                await _temporalClientService.ProvisionTenantNamespaceAsync(request.TenantId, finalCreatedBy);
+                if (string.IsNullOrWhiteSpace(request.TemporalHost) ||
+                    string.IsNullOrWhiteSpace(request.TemporalNamespace))
+                {
+                    return ServiceResult<TenantCreatedResult>.BadRequest(
+                        "Temporal host and namespace are required when using a specific Temporal namespace.");
+                }
+
+                var hasCertificate = !string.IsNullOrWhiteSpace(request.TemporalCertificate);
+                var hasCertificateKey = !string.IsNullOrWhiteSpace(request.TemporalCertificateKey);
+                if (hasCertificate != hasCertificateKey)
+                {
+                    return ServiceResult<TenantCreatedResult>.BadRequest(
+                        "Temporal certificate and certificate key must be provided together.");
+                }
+
+                _logger.LogInformation("Saving dedicated Temporal connection for tenant {TenantId}", LogSanitizer.Sanitize(request.TenantId));
+                await _tenantTemporalConfigService.SaveAsync(
+                    request.TenantId,
+                    request.TemporalHost,
+                    request.TemporalNamespace,
+                    hasCertificate ? request.TemporalCertificate : null,
+                    hasCertificateKey ? request.TemporalCertificateKey : null,
+                    finalCreatedBy);
             }
 
             await _tenantRepository.CreateAsync(validatedTenant);

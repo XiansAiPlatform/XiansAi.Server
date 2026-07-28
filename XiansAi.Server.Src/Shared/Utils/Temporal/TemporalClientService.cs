@@ -2,13 +2,9 @@ using Temporalio.Client;
 using Temporalio.Api.OperatorService.V1;
 using Temporalio.Extensions.OpenTelemetry;
 using System.Collections.Concurrent;
+using System.Text;
 using Shared.Utils;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using Shared.Services;
-using Temporalio.Api.WorkflowService.V1;
-using Google.Protobuf.WellKnownTypes;
-using Temporalio.Exceptions;
 
 namespace Shared.Utils.Temporal;
 
@@ -16,8 +12,6 @@ public interface ITemporalClientService
 {
     Task<ITemporalClient> GetClientAsync(string tenantId);
     ITemporalClient GetClient(string tenantId);
-    Task ProvisionTenantNamespaceAsync(string tenantId, string createdBy);
-
 }
 
 public class TemporalClientService : ITemporalClientService, IDisposable, IAsyncDisposable
@@ -32,8 +26,6 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
     private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
     private volatile bool _disposed = false;
     private readonly object _disposeLock = new object();
-    private const int CaValidityDays = 825;
-    private const int LeafValidityDays = 825;
 
     public TemporalClientService(
         ILogger<TemporalClientService> logger,
@@ -73,7 +65,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
                 return existingClient;
             }
 
-            var config = GetTemporalConfig(tenantId);
+            var config = await GetTemporalConfigAsync(tenantId);
 
             return await GetClientAsync(tenantId, config);
         }
@@ -110,6 +102,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             var client = await TemporalClient.ConnectAsync(options);
             _clients.TryAdd(tenantId, client);
 
+                    Console.WriteLine($"BEFORE ENSURE***************************************: {config.FlowServerUrl}");
             await EnsureSearchAttributesRegisteredAsync(client, config.FlowServerNamespace!);
 
             _logger.LogInformation("Successfully connected to Temporal server for tenant {TenantId}", tenantId);
@@ -124,92 +117,30 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         }
     }
 
-    public async Task ProvisionTenantNamespaceAsync(string tenantId, string createdBy)
-    {
-        if (string.IsNullOrWhiteSpace(tenantId))
-            throw new ArgumentException("tenantId is required", nameof(tenantId));
-
-        string namespaceName = $"tenant-{tenantId}";
-        using var tenantCaKey = RSA.Create(4096);
-        var caRequest = new CertificateRequest(
-            $"CN=tenant-ca-{tenantId}",
-            tenantCaKey,
-            HashAlgorithmName.SHA256,
-            RSASignaturePadding.Pkcs1);
-        caRequest.CertificateExtensions.Add(
-            new X509BasicConstraintsExtension(certificateAuthority: true, hasPathLengthConstraint: false, pathLengthConstraint: 0, critical: true));
-        caRequest.CertificateExtensions.Add(
-            new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign | X509KeyUsageFlags.DigitalSignature, critical: true));
-        var caNotBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var caNotAfter = DateTimeOffset.UtcNow.AddDays(CaValidityDays);
-        using var tenantCaCert = caRequest.CreateSelfSigned(caNotBefore, caNotAfter);
-
-        string rootCertificate = tenantCaCert.ExportCertificatePem();
-        string rootCertificateKey = tenantCaKey.ExportPkcs8PrivateKeyPem();
-
-        using var leafKey = RSA.Create(2048);
-        var leafRequest = new CertificateRequest(
-            $"CN={namespaceName}",
-            leafKey,
-            HashAlgorithmName.SHA256,
-            RSASignaturePadding.Pkcs1);
-        leafRequest.CertificateExtensions.Add(
-            new X509BasicConstraintsExtension(certificateAuthority: false, hasPathLengthConstraint: false, pathLengthConstraint: 0, critical: true));
-        leafRequest.CertificateExtensions.Add(
-            new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, critical: true));
-        leafRequest.CertificateExtensions.Add(
-            new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") /* clientAuth */ }, critical: false));
-
-        var leafNotBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var leafNotAfter = DateTimeOffset.UtcNow.AddDays(LeafValidityDays);
-        if (leafNotAfter > tenantCaCert.NotAfter)
-        {
-            leafNotAfter = tenantCaCert.NotAfter;
-        }
-        using var signedLeaf = leafRequest.Create(tenantCaCert, leafNotBefore, leafNotAfter, RandomNumberGenerator.GetBytes(16));
-
-        string leafCertificate = signedLeaf.ExportCertificatePem();
-        string leafCertificateKey = leafKey.ExportPkcs8PrivateKeyPem();
-
-        await _tenantTemporalConfigService.CreateAsync(tenantId, rootCertificate, rootCertificateKey, leafCertificate, leafCertificateKey, createdBy);
-
-
-        var createReq = new RegisterNamespaceRequest
-        {
-            Namespace = namespaceName,
-            Description = $"programmatically provisioning a separate, dedicated namespace for each tenant {tenantId}.",
-            WorkflowExecutionRetentionPeriod = Duration.FromTimeSpan(TimeSpan.FromDays(1)),
-        };
-        TemporalConfig? defaultTemporalConfig = _configuration.GetSection("Temporal").Get<TemporalConfig>();
-        if (defaultTemporalConfig == null)
-            throw new InvalidOperationException($"Temporal configuration for tenant {tenantId} not found");
-
-        if (defaultTemporalConfig.FlowServerUrl == null)
-            throw new InvalidOperationException($"FlowServerUrl is required for tenant {tenantId}");
-
-        ITemporalClient client = await GetClientAsync(tenantId, defaultTemporalConfig);
-        try
-        {
-            await client.WorkflowService.RegisterNamespaceAsync(createReq, default);
-            _logger.LogInformation("Temporal namespace {Namespace} registered for tenant {TenantId}", namespaceName, tenantId);
-        }
-        catch (RpcException ex) when (ex.Code == RpcException.StatusCode.AlreadyExists)
-        {
-            throw new InvalidOperationException($"Temporal namespace {namespaceName} already exists for tenant {tenantId}");
-        }
-    }
-    
-    private TemporalConfig GetTemporalConfig(string tenantId)
+    private async Task<TemporalConfig> GetTemporalConfigAsync(string tenantId)
     {
         if (string.IsNullOrEmpty(tenantId))
             throw new InvalidOperationException("TenantId is required");
 
-        // First try to get tenant-specific temporal config
+        // A tenant that opted into "use a specific Temporal namespace" has its connection
+        // details persisted in Mongo - prefer that over static configuration.
+        var tenantConnection = await _tenantTemporalConfigService.GetForTenantAsync(tenantId);
+        if (tenantConnection != null)
+        {
+            return new TemporalConfig
+            {
+                FlowServerUrl = tenantConnection.Host,
+                FlowServerNamespace = tenantConnection.Namespace,
+                CertificateBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
+                PrivateKeyBase64 = tenantConnection.CertificateKey == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.CertificateKey))
+            };
+        }
+
+        // Fall back to tenant-specific config in IConfiguration, then the root default config
         var temporalConfig = _configuration.GetSection($"Tenants:{tenantId}:Temporal").Get<TemporalConfig>();
 
         if (temporalConfig == null)
         {
-            // Fallback to the root temporal config
             temporalConfig = _configuration.GetSection("Temporal").Get<TemporalConfig>();
         }
 
@@ -232,8 +163,6 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
     /// </summary>
     private async Task EnsureSearchAttributesRegisteredAsync(ITemporalClient client, string namespaceName)
     {
-        if (_searchAttributesRegistered.TryGetValue(namespaceName, out var registered) && registered)
-            return;
 
         try
         {

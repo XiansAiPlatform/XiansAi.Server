@@ -3,6 +3,12 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace Shared.Data.Models;
 
+/// <summary>
+/// Stores the dedicated Temporal connection details a tenant admin supplied when
+/// enabling "Use a specific Temporal namespace for this tenant". Certificate and
+/// key are optional but must be provided together (mTLS); omit both to connect
+/// without TLS client auth.
+/// </summary>
 public class TenantTemporalConfig
 {
     [BsonId]
@@ -11,18 +17,18 @@ public class TenantTemporalConfig
 
     [BsonElement("tenant_id")]
     public required string TenantId { get; set; }
-    
-    [BsonElement("leaf_certificate")]
-    public required string LeafCertificate { get; set; }
-        
-    [BsonElement("leaf_certificate_key")]
-    public required string LeafCertificateKey { get; set; }
 
-    [BsonElement("root_certificate")]
-    public required string RootCertificate { get; set; }
+    [BsonElement("host")]
+    public required string Host { get; set; }
 
-    [BsonElement("root_certificate_key")]
-    public required string RootCertificateKey { get; set; }
+    [BsonElement("namespace")]
+    public required string Namespace { get; set; }
+
+    [BsonElement("certificate")]
+    public string? Certificate { get; set; }
+
+    [BsonElement("certificate_key")]
+    public string? CertificateKey { get; set; }
 
     [BsonElement("created_at")]
     public required DateTime CreatedAt { get; set; }
