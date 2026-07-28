@@ -33,6 +33,12 @@ public class AdminLogStream
     public required long LogCount { get; set; }
     public required LogLevel LastLogLevel { get; set; }
     public required string LastLogMessage { get; set; }
+
+    /// <summary>
+    /// Number of Error/Critical level logs in this stream. Allows clients to mark
+    /// streams that contain errors for attention, even when the latest log is not an error.
+    /// </summary>
+    public required long ErrorCount { get; set; }
 }
 
 /// <summary>
@@ -291,6 +297,7 @@ public class AdminLogsService : IAdminLogsService
         FirstLogAt = s.FirstLogAt,
         LogCount = s.LogCount,
         LastLogLevel = s.LastLogLevel,
-        LastLogMessage = s.LastLogMessage
+        LastLogMessage = s.LastLogMessage,
+        ErrorCount = s.ErrorCount
     };
 }

@@ -86,4 +86,4 @@ public class TestAuthHandler : AuthenticationHandler<TestAuthenticationOptions>
             return Task.FromResult(AuthenticateResult.Fail("Authentication failed"));
         }
     }
-} 
+}

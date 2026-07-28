@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Features.AppsApi.Models;
-using Features.AppsApi.Services;
-using Features.AppsApi.Endpoints;
+using Shared.Data.Models;
+using Shared.Services;
 using Shared.Auth;
 using Shared.Utils.Services;
 using Features.AdminApi.Auth;

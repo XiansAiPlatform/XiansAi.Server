@@ -46,9 +46,17 @@ public abstract class WebApiIntegrationTestBase : IntegrationTestBase
     protected async Task<T?> ReadAsJsonAsync<T>(HttpResponseMessage response)
     {
         var content = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        return JsonSerializer.Deserialize<T>(content, JsonReadOptions);
     }
-} 
+
+    /// <summary>
+    /// Deserialization options that mirror the server's JSON output: case-insensitive
+    /// property matching plus string-based enum handling (the API serializes enums such as
+    /// <c>LogLevel</c> and <c>ConversationThreadStatus</c> as their string names).
+    /// </summary>
+    protected static readonly JsonSerializerOptions JsonReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+    };
+}

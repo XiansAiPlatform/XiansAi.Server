@@ -92,9 +92,12 @@ public static class AgentApiConfiguration
         LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
         SettingsEndpoints.MapSettingsEndpoints(app);
         DocumentEndpoints.MapDocumentEndpoints(app, loggerFactory);
+        FileEndpoints.MapFileEndpoints(app, loggerFactory);
         UsageEventEndpoints.MapUsageEventEndpoints(app);
         SecretVaultEndpoints.MapSecretVaultEndpoints(app);
         ActivationEndpoints.MapActivationEndpoints(app, loggerFactory);
+        AgentEndpoints.MapAgentEndpoints(app, loggerFactory);
+        WebhookEndpoints.MapWebhookEndpoints(app);
         
         return app;
     }

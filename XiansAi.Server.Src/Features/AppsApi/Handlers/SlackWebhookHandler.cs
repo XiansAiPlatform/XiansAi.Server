@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Features.AppsApi.Models;
+using Shared.Data.Models;
 using Shared.Services;
 using Shared.Repositories;
 using Shared.Auth;

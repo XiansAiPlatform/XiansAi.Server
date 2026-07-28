@@ -93,6 +93,13 @@ public class UserFilter
     /// <summary>When set, restricts results to enabled (true) or disabled (false) accounts.</summary>
     [JsonPropertyName("isEnabled")]
     public bool? IsEnabled { get; set; }
+    /// <summary>
+    /// When set, restricts results to users holding this tenant role
+    /// (within <see cref="Tenant"/> when it is also set, otherwise in any tenant).
+    /// Expects a canonical role name, e.g. TenantAdmin.
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string? Role { get; set; }
 }
 
 public class PagedUserResult

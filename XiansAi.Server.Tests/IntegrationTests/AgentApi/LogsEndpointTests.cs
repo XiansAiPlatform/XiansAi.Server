@@ -1,17 +1,25 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using MongoDB.Bson;
 using Microsoft.Extensions.Logging;
 using Tests.TestUtils;
 using Features.AgentApi.Models;
 using Features.AgentApi.Services.Lib;
 
-
 namespace Tests.IntegrationTests.AgentApi;
 
 public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
-    //dotnet test --filter "FullyQualifiedName~LogsEndpointTests"
+    // The API serializes the LogLevel enum as its string name, so the response reader must
+    // opt into string-based enum conversion.
+    private static readonly JsonSerializerOptions JsonReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     public LogsEndpointTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
     }
@@ -35,8 +43,8 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var result = await response.Content.ReadFromJsonAsync<Log>();
+
+        var result = await response.Content.ReadFromJsonAsync<Log>(JsonReadOptions);
         Assert.NotNull(result);
         Assert.Equal(logRequest.Message, result.Message);
         Assert.Equal(logRequest.Level, result.Level);
@@ -53,7 +61,7 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
             new LogRequest
             {
                 Message = "First log message",
-                Level = Microsoft.Extensions.Logging.LogLevel.Information,
+                Level = LogLevel.Information,
                 WorkflowId = ObjectId.GenerateNewId().ToString(),
                 WorkflowRunId = ObjectId.GenerateNewId().ToString(),
                 WorkflowType = "TestWorkflowType1",
@@ -62,7 +70,7 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
             new LogRequest
             {
                 Message = "Second log message",
-                Level = Microsoft.Extensions.Logging.LogLevel.Warning,
+                Level = LogLevel.Warning,
                 WorkflowId = ObjectId.GenerateNewId().ToString(),
                 WorkflowRunId = ObjectId.GenerateNewId().ToString(),
                 WorkflowType = "TestWorkflowType2",
@@ -75,16 +83,16 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
-        var results = await response.Content.ReadFromJsonAsync<Log[]>();
+
+        var results = await response.Content.ReadFromJsonAsync<Log[]>(JsonReadOptions);
         Assert.NotNull(results);
         Assert.Equal(2, results.Length);
-        
+
         Assert.Equal(logRequests[0].Message, results[0].Message);
         Assert.Equal(logRequests[0].Level, results[0].Level);
         Assert.Equal(logRequests[0].WorkflowId, results[0].WorkflowId);
         Assert.Equal(logRequests[0].WorkflowRunId, results[0].WorkflowRunId);
-        
+
         Assert.Equal(logRequests[1].Message, results[1].Message);
         Assert.Equal(logRequests[1].Level, results[1].Level);
         Assert.Equal(logRequests[1].WorkflowId, results[1].WorkflowId);
@@ -98,7 +106,7 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         var logRequest = new LogRequest
         {
             Message = "Test log message",
-            Level = Microsoft.Extensions.Logging.LogLevel.Information,
+            Level = LogLevel.Information,
             WorkflowId = null!, // This should trigger validation
             WorkflowRunId = ObjectId.GenerateNewId().ToString(),
             WorkflowType = "TestWorkflowType",
@@ -111,4 +119,4 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
-} 
+}

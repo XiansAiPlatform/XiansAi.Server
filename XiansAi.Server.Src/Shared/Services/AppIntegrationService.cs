@@ -1,0 +1,1082 @@
+using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Shared.Data.Models;
+using Shared.Repositories;
+using Shared.Services;
+using Shared.Utils.Services;
+using Shared.Utils;
+
+namespace Shared.Services;
+
+public interface IAppIntegrationService
+{
+    /// <summary>
+    /// Get all integrations for a tenant
+    /// </summary>
+    Task<ServiceResult<List<AppIntegrationResponse>>> GetIntegrationsAsync(
+        string tenantId, 
+        string? platformId = null,
+        string? agentName = null,
+        string? activationName = null);
+
+    /// <summary>
+    /// Get an integration by ID
+    /// </summary>
+    Task<ServiceResult<AppIntegrationResponse>> GetIntegrationByIdAsync(string id, string tenantId);
+
+    /// <summary>
+    /// Create a new integration
+    /// </summary>
+    Task<ServiceResult<AppIntegrationResponse>> CreateIntegrationAsync(
+        CreateAppIntegrationRequest request, 
+        string tenantId, 
+        string createdBy);
+
+    /// <summary>
+    /// Update an existing integration
+    /// </summary>
+    Task<ServiceResult<AppIntegrationResponse>> UpdateIntegrationAsync(
+        string id, 
+        UpdateAppIntegrationRequest request, 
+        string tenantId,
+        string updatedBy);
+
+    /// <summary>
+    /// Delete an integration
+    /// </summary>
+    Task<ServiceResult<bool>> DeleteIntegrationAsync(string id, string tenantId);
+
+    /// <summary>
+    /// Enable an integration
+    /// </summary>
+    Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(string id, string tenantId, string updatedBy);
+
+    /// <summary>
+    /// Disable an integration
+    /// </summary>
+    Task<ServiceResult<AppIntegrationResponse>> DisableIntegrationAsync(string id, string tenantId, string updatedBy);
+
+    /// <summary>
+    /// Get the raw integration entity (for internal use by proxies)
+    /// </summary>
+    Task<AppIntegration?> GetIntegrationEntityByIdAsync(string id);
+
+    /// <summary>
+    /// Test the integration configuration (validate credentials)
+    /// </summary>
+    Task<ServiceResult<IntegrationTestResult>> TestIntegrationAsync(string id, string tenantId);
+
+    /// <summary>
+    /// Create a builtin webhook integration (creates API key + app integration).
+    /// </summary>
+    Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy);
+
+    /// <summary>
+    /// Get builtin webhook integrations for a tenant.
+    /// </summary>
+    Task<ServiceResult<List<AppIntegrationResponse>>> GetBuiltinWebhooksAsync(string tenantId, string? activationName = null, string? agentName = null);
+
+    /// <summary>
+    /// Delete a builtin webhook integration (revokes API key + deletes integration).
+    /// </summary>
+    Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId);
+}
+
+/// <summary>
+/// Result of testing an integration
+/// </summary>
+public class IntegrationTestResult
+{
+    public bool IsSuccessful { get; set; }
+    public string? Message { get; set; }
+    public Dictionary<string, object>? Details { get; set; }
+}
+
+public class AppIntegrationService : IAppIntegrationService
+{
+    private readonly IAppIntegrationRepository _repository;
+    private readonly IApiKeyService _apiKeyService;
+    private readonly IActivationValidationService _activationValidationService;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly ILogger<AppIntegrationService> _logger;
+
+    public AppIntegrationService(
+        IAppIntegrationRepository repository,
+        IApiKeyService apiKeyService,
+        IActivationValidationService activationValidationService,
+        IWebhookEventPublisher webhookEventPublisher,
+        ILogger<AppIntegrationService> logger)
+    {
+        _repository = repository;
+        _apiKeyService = apiKeyService;
+        _activationValidationService = activationValidationService;
+        _webhookEventPublisher = webhookEventPublisher;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Converts configuration dictionary to handle JsonElement objects from API deserialization
+    /// </summary>
+    private Dictionary<string, object> ConvertConfiguration(Dictionary<string, object> config)
+    {
+        var converted = new Dictionary<string, object>();
+        
+        foreach (var kvp in config)
+        {
+            if (kvp.Value is JsonElement jsonElement)
+            {
+                // Convert JsonElement to appropriate type
+                converted[kvp.Key] = jsonElement.ValueKind switch
+                {
+                    JsonValueKind.String => jsonElement.GetString() ?? string.Empty,
+                    JsonValueKind.Number => jsonElement.TryGetInt32(out var intValue) ? intValue : jsonElement.GetDouble(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.Null => null!,
+                    JsonValueKind.Object => jsonElement.GetRawText(),
+                    JsonValueKind.Array => jsonElement.GetRawText(),
+                    _ => kvp.Value
+                };
+            }
+            else
+            {
+                converted[kvp.Key] = kvp.Value;
+            }
+        }
+        
+        return converted;
+    }
+
+
+    private string GenerateWebhookPath(string platformId, string integrationId, string webhookSecret)
+    {
+        // Generate relative webhook path based on platform (includes webhook secret for security)
+        return platformId.ToLowerInvariant() switch
+        {
+            "slack" => $"/api/apps/slack/events/{integrationId}/{webhookSecret}",
+            "msteams" => $"/api/apps/msteams/events/{integrationId}/{webhookSecret}",
+            "webhook" => $"/api/apps/webhook/events/{integrationId}/{webhookSecret}",
+            "outlook" => $"/api/apps/outlook/events/{integrationId}/{webhookSecret}",
+            _ => throw new InvalidOperationException($"Unsupported platform: {platformId}")
+        };
+    }
+
+    private static string GenerateSecureRandomString(int length)
+    {
+        // Generate cryptographically secure random string for webhook secrets
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        var randomBytes = new byte[length];
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(randomBytes);
+        }
+        return new string(randomBytes.Select(b => chars[b % chars.Length]).ToArray());
+    }
+
+    public async Task<ServiceResult<List<AppIntegrationResponse>>> GetIntegrationsAsync(
+        string tenantId,
+        string? platformId = null,
+        string? agentName = null,
+        string? activationName = null)
+    {
+        try
+        {
+            _logger.LogInformation("Getting integrations for tenant {TenantId}, platform={Platform}, agent={Agent}, activation={Activation}",
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(platformId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+
+            List<AppIntegration> integrations;
+
+            if (!string.IsNullOrEmpty(agentName) && !string.IsNullOrEmpty(activationName))
+            {
+                integrations = await _repository.GetByAgentActivationAsync(tenantId, agentName, activationName);
+            }
+            else if (!string.IsNullOrEmpty(platformId))
+            {
+                integrations = await _repository.GetByTenantAndPlatformAsync(tenantId, platformId);
+            }
+            else
+            {
+                integrations = await _repository.GetByTenantIdAsync(tenantId);
+            }
+
+            // Apply additional filters if partial criteria provided
+            if (!string.IsNullOrEmpty(agentName) && string.IsNullOrEmpty(activationName))
+            {
+                integrations = integrations.Where(i => i.AgentName == agentName).ToList();
+            }
+
+            // Migrate old integrations that haven't been updated yet
+            foreach (var integration in integrations)
+            {
+                await EnsureIntegrationMigrated(integration);
+            }
+
+            var responses = integrations
+                .Select(i => AppIntegrationResponse.FromEntity(i))
+                .ToList();
+
+            _logger.LogInformation("Found {Count} integrations for tenant {TenantId}", responses.Count, LogSanitizer.Sanitize(tenantId));
+
+            return ServiceResult<List<AppIntegrationResponse>>.Success(responses);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting integrations for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<List<AppIntegrationResponse>>.InternalServerError(
+                "An error occurred while retrieving integrations");
+        }
+    }
+
+    public async Task<ServiceResult<AppIntegrationResponse>> GetIntegrationByIdAsync(string id, string tenantId)
+    {
+        try
+        {
+            _logger.LogInformation("Getting integration {IntegrationId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
+
+            var integration = await _repository.GetByIdAsync(id);
+
+            if (integration == null)
+            {
+                return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
+            }
+
+            if (integration.TenantId != tenantId)
+            {
+                _logger.LogWarning("Tenant {TenantId} attempted to access integration {IntegrationId} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(integration.TenantId));
+                return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
+            }
+
+            // Migrate old integrations that have secrets in Configuration
+            await EnsureIntegrationMigrated(integration);
+
+            var response = AppIntegrationResponse.FromEntity(integration);
+
+            return ServiceResult<AppIntegrationResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting integration {IntegrationId}", LogSanitizer.Sanitize(id));
+            return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                "An error occurred while retrieving the integration");
+        }
+    }
+
+    public async Task<ServiceResult<AppIntegrationResponse>> CreateIntegrationAsync(
+        CreateAppIntegrationRequest request,
+        string tenantId,
+        string createdBy)
+    {
+        try
+        {
+            _logger.LogInformation("Creating integration {Name} for tenant {TenantId}, platform {Platform}",
+                LogSanitizer.Sanitize(request.Name), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.PlatformId));
+
+            // Check if name already exists for this agent/activation combination
+            if (await _repository.ExistsByNameAsync(tenantId, request.AgentName, request.ActivationName, request.Name))
+            {
+                return ServiceResult<AppIntegrationResponse>.BadRequest(
+                    $"An integration with name '{request.Name}' already exists for agent '{request.AgentName}' and activation '{request.ActivationName}'");
+            }
+
+            // Validate platform-specific configuration
+            var configuration = ConvertConfiguration(request.Configuration ?? new Dictionary<string, object>());
+            try
+            {
+                PlatformConfigurationRequirements.ValidateConfiguration(request.PlatformId, configuration);
+            }
+            catch (ValidationException ex)
+            {
+                return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
+            }
+
+            // Generate webhook secret for URL security
+            var webhookSecret = GenerateSecureRandomString(32);
+
+            // Create the integration entity
+            var integration = new AppIntegration
+            {
+                TenantId = tenantId,
+                PlatformId = request.PlatformId.ToLowerInvariant(),
+                Name = request.Name,
+                Description = request.Description,
+                AgentName = request.AgentName,
+                ActivationName = request.ActivationName,
+                Configuration = configuration,
+                Secrets = request.Secrets?.ToSecrets(webhookSecret) ?? new AppIntegrationSecrets { WebhookSecret = webhookSecret },
+                MappingConfig = request.MappingConfig ?? new AppIntegrationMappingConfig(),
+                IsEnabled = request.IsEnabled,
+                CreatedBy = createdBy,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            // Migrate secrets from Configuration to Secrets for backward compatibility
+            MigrateSecretsFromConfiguration(integration);
+
+            // Validate and sanitize
+            try
+            {
+                integration = integration.SanitizeAndValidate();
+            }
+            catch (ValidationException ex)
+            {
+                return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
+            }
+
+            // Create in database
+            var id = await _repository.CreateAsync(integration);
+            integration.Id = id;
+
+            // Don't mask webhook URL in create response - user needs it to configure platform
+            var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
+
+            _logger.LogInformation("Created integration {IntegrationId} with webhook URL {WebhookUrl}",
+                LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(response.WebhookUrl));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationCreated,
+                new { tenantId, integrationId = id, name = integration.Name, platformId = integration.PlatformId, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
+                tenantId);
+
+            return ServiceResult<AppIntegrationResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating integration for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                "An error occurred while creating the integration");
+        }
+    }
+
+    public async Task<ServiceResult<AppIntegrationResponse>> UpdateIntegrationAsync(
+        string id,
+        UpdateAppIntegrationRequest request,
+        string tenantId,
+        string updatedBy)
+    {
+        try
+        {
+            _logger.LogInformation("Updating integration {IntegrationId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
+
+            var existing = await _repository.GetByIdAsync(id);
+
+            if (existing == null)
+            {
+                return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
+            }
+
+            if (existing.TenantId != tenantId)
+            {
+                return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
+            }
+
+            // Check name uniqueness if name is being changed
+            if (!string.IsNullOrEmpty(request.Name) && request.Name != existing.Name)
+            {
+                if (await _repository.ExistsByNameAsync(tenantId, existing.AgentName, existing.ActivationName, request.Name, id))
+                {
+                    return ServiceResult<AppIntegrationResponse>.BadRequest(
+                        $"An integration with name '{request.Name}' already exists for agent '{existing.AgentName}' and activation '{existing.ActivationName}'");
+                }
+                existing.Name = request.Name;
+            }
+
+            // Update fields if provided
+            if (request.Description != null)
+            {
+                existing.Description = request.Description;
+            }
+
+            if (request.Configuration != null)
+            {
+                // Convert and merge configuration - allow partial updates
+                var convertedConfig = ConvertConfiguration(request.Configuration);
+                foreach (var kvp in convertedConfig)
+                {
+                    existing.Configuration[kvp.Key] = kvp.Value;
+                }
+
+                // Validate the merged configuration
+                try
+                {
+                    PlatformConfigurationRequirements.ValidateConfiguration(existing.PlatformId, existing.Configuration);
+                }
+                catch (ValidationException ex)
+                {
+                    return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
+                }
+            }
+
+            if (request.MappingConfig != null)
+            {
+                existing.MappingConfig = request.MappingConfig;
+            }
+
+            if (request.IsEnabled.HasValue)
+            {
+                existing.IsEnabled = request.IsEnabled.Value;
+            }
+
+            // Update secrets if provided
+            if (request.Secrets != null)
+            {
+                // Preserve existing webhook secret if not being updated
+                var webhookSecret = existing.Secrets?.WebhookSecret ?? GenerateSecureRandomString(32);
+                
+                // Merge secrets - update only provided values
+                if (existing.Secrets == null)
+                {
+                    existing.Secrets = new AppIntegrationSecrets { WebhookSecret = webhookSecret };
+                }
+
+                if (request.Secrets.SlackSigningSecret != null)
+                    existing.Secrets.SlackSigningSecret = request.Secrets.SlackSigningSecret;
+                if (request.Secrets.SlackBotToken != null)
+                    existing.Secrets.SlackBotToken = request.Secrets.SlackBotToken;
+                if (request.Secrets.SlackIncomingWebhookUrl != null)
+                    existing.Secrets.SlackIncomingWebhookUrl = request.Secrets.SlackIncomingWebhookUrl;
+                if (request.Secrets.TeamsAppPassword != null)
+                    existing.Secrets.TeamsAppPassword = request.Secrets.TeamsAppPassword;
+                if (request.Secrets.OutlookClientSecret != null)
+                    existing.Secrets.OutlookClientSecret = request.Secrets.OutlookClientSecret;
+                if (request.Secrets.GenericWebhookSecret != null)
+                    existing.Secrets.GenericWebhookSecret = request.Secrets.GenericWebhookSecret;
+            }
+
+            // Migrate secrets from Configuration to Secrets for backward compatibility
+            MigrateSecretsFromConfiguration(existing);
+
+            // Ensure webhook secret exists (for backward compatibility)
+            if (existing.Secrets == null || string.IsNullOrEmpty(existing.Secrets.WebhookSecret))
+            {
+                if (existing.Secrets == null)
+                    existing.Secrets = new AppIntegrationSecrets();
+                existing.Secrets.WebhookSecret = GenerateSecureRandomString(32);
+            }
+
+            existing.UpdatedBy = updatedBy;
+
+            // Validate
+            try
+            {
+                existing = existing.SanitizeAndValidate();
+            }
+            catch (ValidationException ex)
+            {
+                return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
+            }
+
+            // Update in database
+            var success = await _repository.UpdateAsync(id, existing);
+
+            if (!success)
+            {
+                return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                    "Failed to update integration");
+            }
+
+            var response = AppIntegrationResponse.FromEntity(existing);
+
+            _logger.LogInformation("Updated integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationUpdated,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
+                tenantId);
+
+            return ServiceResult<AppIntegrationResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating integration {IntegrationId}", LogSanitizer.Sanitize(id));
+            return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                "An error occurred while updating the integration");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteIntegrationAsync(string id, string tenantId)
+    {
+        try
+        {
+            _logger.LogInformation("Deleting integration {IntegrationId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
+
+            var existing = await _repository.GetByIdAsync(id);
+
+            if (existing == null)
+            {
+                return ServiceResult<bool>.NotFound("Integration not found");
+            }
+
+            if (existing.TenantId != tenantId)
+            {
+                return ServiceResult<bool>.NotFound("Integration not found");
+            }
+
+            var success = await _repository.DeleteAsync(id, tenantId);
+
+            if (!success)
+            {
+                return ServiceResult<bool>.InternalServerError("Failed to delete integration");
+            }
+
+            _logger.LogInformation("Deleted integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationDeleted,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId },
+                tenantId);
+
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting integration {IntegrationId}", LogSanitizer.Sanitize(id));
+            return ServiceResult<bool>.InternalServerError(
+                "An error occurred while deleting the integration");
+        }
+    }
+
+    public async Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy)
+    {
+        try
+        {
+            var workflowName = string.IsNullOrWhiteSpace(request.WorkflowName) ? "Integrator Workflow" : request.WorkflowName.Trim();
+            var participantId = string.IsNullOrWhiteSpace(request.ParticipantId) ? "webhook" : request.ParticipantId.Trim().ToLowerInvariant();
+            var timeoutInSeconds = request.TimeoutInSeconds ?? 30;
+            var webhookName = string.IsNullOrWhiteSpace(request.WebhookName) ? "Default" : request.WebhookName.Trim();
+            var integrationName = string.IsNullOrWhiteSpace(request.Name) ? $"Webhook-{webhookName}-{request.ActivationName}" : request.Name.Trim();
+
+            if (timeoutInSeconds <= 0 || timeoutInSeconds > 300)
+                return ServiceResult<AppIntegrationResponse>.BadRequest("timeoutInSeconds must be between 1 and 300");
+
+            var validationResult = await _activationValidationService.ValidateActivationAsync(tenantId, request.AgentName, request.ActivationName, workflowName);
+            if (!validationResult.IsSuccess)
+            {
+                return validationResult.StatusCode switch
+                {
+                    StatusCode.NotFound => ServiceResult<AppIntegrationResponse>.NotFound(validationResult.ErrorMessage ?? "Activation not found"),
+                    StatusCode.Conflict => ServiceResult<AppIntegrationResponse>.Conflict(validationResult.ErrorMessage ?? "Conflict"),
+                    _ => ServiceResult<AppIntegrationResponse>.BadRequest(validationResult.ErrorMessage ?? "Validation failed")
+                };
+            }
+
+            if (await _repository.ExistsByNameAsync(tenantId, request.AgentName, request.ActivationName, integrationName))
+                return ServiceResult<AppIntegrationResponse>.BadRequest($"An integration with name '{integrationName}' already exists for this agent and activation");
+
+            string apiKeyId;
+            if (!string.IsNullOrWhiteSpace(request.ApiKey))
+            {
+                var existingKey = await _apiKeyService.GetApiKeyByRawKeyAsync(request.ApiKey, tenantId);
+                if (existingKey == null)
+                    return ServiceResult<AppIntegrationResponse>.BadRequest("The provided apiKey is invalid or does not belong to this tenant");
+                apiKeyId = existingKey.Id;
+            }
+            else
+            {
+                var existingKeys = await _apiKeyService.GetWebhookApiKeysAsync(tenantId, request.ActivationName, request.AgentName);
+                var matchingKey = existingKeys
+                    .Where(k => k.RevokedAt == null
+                        && (k.WorkflowName ?? "Integrator Workflow") == workflowName
+                        && (k.ParticipantId ?? "webhook") == participantId
+                        && (k.WebhookName ?? "Default") == webhookName
+                        && (k.TimeoutInSeconds ?? 30) == timeoutInSeconds)
+                    .FirstOrDefault();
+
+                if (matchingKey != null)
+                {
+                    apiKeyId = matchingKey.Id;
+                }
+                else
+                {
+                    var shortId = Guid.NewGuid().ToString("N")[..8];
+                    var prefix = $"Webhook-{webhookName}-";
+                    var suffix = $"-{shortId}";
+                    var maxActivationLen = Math.Max(0, 60 - prefix.Length - suffix.Length);
+                    var activationPart = request.ActivationName.Length <= maxActivationLen
+                        ? request.ActivationName
+                        : request.ActivationName[..maxActivationLen];
+                    var keyName = $"{prefix}{activationPart}{suffix}";
+                    var createKeyResult = await _apiKeyService.CreateApiKeyAsync(tenantId, keyName, createdBy,
+                        agentName: request.AgentName,
+                        activationName: request.ActivationName,
+                        type: "webhook",
+                        workflowName: workflowName,
+                        participantId: participantId,
+                        timeoutInSeconds: timeoutInSeconds,
+                        webhookName: webhookName);
+                    if (!createKeyResult.IsSuccess)
+                    {
+                        return createKeyResult.StatusCode switch
+                        {
+                            StatusCode.Conflict => ServiceResult<AppIntegrationResponse>.Conflict(createKeyResult.ErrorMessage ?? "API key conflict"),
+                            _ => ServiceResult<AppIntegrationResponse>.InternalServerError(createKeyResult.ErrorMessage ?? "Failed to create API key")
+                        };
+                    }
+                    apiKeyId = createKeyResult.Data!.meta.Id;
+                }
+            }
+
+            var queryParams = new List<string>
+            {
+                $"apikeyId={Uri.EscapeDataString(apiKeyId)}",
+                $"timeoutSeconds={timeoutInSeconds}",
+                $"agentName={Uri.EscapeDataString(request.AgentName)}",
+                $"workflowName={Uri.EscapeDataString(workflowName)}",
+                $"webhookName={Uri.EscapeDataString(webhookName)}",
+                $"activationName={Uri.EscapeDataString(request.ActivationName)}"
+            };
+            if (participantId != "webhook")
+                queryParams.Add($"participantId={Uri.EscapeDataString(participantId)}");
+            var webhookUrl = $"/api/user/webhooks/builtin?{string.Join("&", queryParams)}";
+
+            var configuration = new Dictionary<string, object>
+            {
+                ["webhookUrl"] = webhookUrl,
+                ["apiKeyId"] = apiKeyId,
+                ["workflowName"] = workflowName,
+                ["participantId"] = participantId,
+                ["timeoutInSeconds"] = timeoutInSeconds,
+                ["webhookName"] = webhookName
+            };
+
+            var workflowId = $"{tenantId}:{request.AgentName}:{workflowName}:{request.ActivationName}";
+            var integration = new AppIntegration
+            {
+                TenantId = tenantId,
+                PlatformId = "builtin_webhook",
+                Name = integrationName,
+                AgentName = request.AgentName,
+                ActivationName = request.ActivationName,
+                WorkflowId = workflowId,
+                Configuration = configuration,
+                Secrets = new AppIntegrationSecrets(),
+                MappingConfig = new AppIntegrationMappingConfig(),
+                IsEnabled = true,
+                CreatedBy = createdBy,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            integration.GenerateWorkflowId();
+            integration.WorkflowId = workflowId;
+
+            var id = await _repository.CreateAsync(integration);
+            integration.Id = id;
+
+            var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
+            _logger.LogInformation("Created builtin webhook integration {IntegrationId} with webhook URL", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationWebhookCreated,
+                new { tenantId, integrationId = id, name = integration.Name, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
+                tenantId);
+
+            return ServiceResult<AppIntegrationResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating builtin webhook for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<AppIntegrationResponse>.InternalServerError("An error occurred while creating the builtin webhook");
+        }
+    }
+
+    public async Task<ServiceResult<List<AppIntegrationResponse>>> GetBuiltinWebhooksAsync(string tenantId, string? activationName = null, string? agentName = null)
+    {
+        var result = await GetIntegrationsAsync(tenantId, "builtin_webhook", agentName, activationName);
+        return result;
+    }
+
+    public async Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId)
+    {
+        var existing = await _repository.GetByIdAsync(integrationId);
+        if (existing == null || existing.TenantId != tenantId)
+            return ServiceResult<bool>.NotFound("Integration not found");
+
+        if (!existing.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
+            return ServiceResult<bool>.BadRequest("Not a builtin webhook integration");
+
+        if (existing.Configuration.TryGetValue("apiKeyId", out var apiKeyIdVal) && apiKeyIdVal != null)
+        {
+            var apiKeyId = apiKeyIdVal.ToString();
+            if (!string.IsNullOrEmpty(apiKeyId))
+            {
+                var revokeResult = await _apiKeyService.RevokeApiKeyAsync(apiKeyId, tenantId);
+                if (!revokeResult.IsSuccess)
+                    _logger.LogWarning("Failed to revoke API key {ApiKeyId} when deleting builtin webhook: {Error}", LogSanitizer.Sanitize(apiKeyId), LogSanitizer.Sanitize(revokeResult.ErrorMessage));
+            }
+        }
+
+        return await DeleteIntegrationAsync(integrationId, tenantId);
+    }
+
+    public async Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(
+        string id, 
+        string tenantId, 
+        string updatedBy)
+    {
+        try
+        {
+            _logger.LogInformation("Enabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            var existing = await _repository.GetByIdAsync(id);
+
+            if (existing == null || existing.TenantId != tenantId)
+            {
+                return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
+            }
+
+            if (existing.IsEnabled)
+            {
+                return ServiceResult<AppIntegrationResponse>.Success(
+                    AppIntegrationResponse.FromEntity(existing));
+            }
+
+            existing.IsEnabled = true;
+            existing.UpdatedBy = updatedBy;
+
+            var success = await _repository.UpdateAsync(id, existing);
+
+            if (!success)
+            {
+                return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                    "Failed to enable integration");
+            }
+
+            var response = AppIntegrationResponse.FromEntity(existing);
+
+            _logger.LogInformation("Enabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationEnabled,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
+                tenantId);
+
+            return ServiceResult<AppIntegrationResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error enabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
+            return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                "An error occurred while enabling the integration");
+        }
+    }
+
+    public async Task<ServiceResult<AppIntegrationResponse>> DisableIntegrationAsync(
+        string id, 
+        string tenantId, 
+        string updatedBy)
+    {
+        try
+        {
+            _logger.LogInformation("Disabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            var existing = await _repository.GetByIdAsync(id);
+
+            if (existing == null || existing.TenantId != tenantId)
+            {
+                return ServiceResult<AppIntegrationResponse>.NotFound("Integration not found");
+            }
+
+            if (!existing.IsEnabled)
+            {
+                return ServiceResult<AppIntegrationResponse>.Success(
+                    AppIntegrationResponse.FromEntity(existing));
+            }
+
+            existing.IsEnabled = false;
+            existing.UpdatedBy = updatedBy;
+
+            var success = await _repository.UpdateAsync(id, existing);
+
+            if (!success)
+            {
+                return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                    "Failed to disable integration");
+            }
+
+            var response = AppIntegrationResponse.FromEntity(existing);
+
+            _logger.LogInformation("Disabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.IntegrationDisabled,
+                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
+                tenantId);
+
+            return ServiceResult<AppIntegrationResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error disabling integration {IntegrationId}", LogSanitizer.Sanitize(id));
+            return ServiceResult<AppIntegrationResponse>.InternalServerError(
+                "An error occurred while disabling the integration");
+        }
+    }
+
+    public async Task<AppIntegration?> GetIntegrationEntityByIdAsync(string id)
+    {
+        return await _repository.GetByIdAsync(id);
+    }
+
+    public async Task<ServiceResult<IntegrationTestResult>> TestIntegrationAsync(string id, string tenantId)
+    {
+        try
+        {
+            _logger.LogInformation("Testing integration {IntegrationId}", LogSanitizer.Sanitize(id));
+
+            var integration = await _repository.GetByIdAsync(id);
+
+            if (integration == null || integration.TenantId != tenantId)
+            {
+                return ServiceResult<IntegrationTestResult>.NotFound("Integration not found");
+            }
+
+            // Platform-specific test logic
+            var result = integration.PlatformId.ToLowerInvariant() switch
+            {
+                "slack" => await TestSlackIntegrationAsync(integration),
+                "msteams" => await TestTeamsIntegrationAsync(integration),
+                "outlook" => await TestOutlookIntegrationAsync(integration),
+                _ => new IntegrationTestResult
+                {
+                    IsSuccessful = true,
+                    Message = "Configuration validation passed (no live test available for this platform)"
+                }
+            };
+
+            return ServiceResult<IntegrationTestResult>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error testing integration {IntegrationId}", LogSanitizer.Sanitize(id));
+            return ServiceResult<IntegrationTestResult>.InternalServerError(
+                "An error occurred while testing the integration");
+        }
+    }
+
+    private Task<IntegrationTestResult> TestSlackIntegrationAsync(AppIntegration integration)
+    {
+        // For Slack, we can test by sending a test message if incomingWebhookUrl is configured
+        var hasWebhook = integration.Configuration.TryGetValue("incomingWebhookUrl", out var webhookUrl) 
+            && !string.IsNullOrEmpty(webhookUrl?.ToString());
+        var hasSigningSecret = integration.Configuration.TryGetValue("signingSecret", out var secret) 
+            && !string.IsNullOrEmpty(secret?.ToString());
+
+        var details = new Dictionary<string, object>
+        {
+            ["hasIncomingWebhookUrl"] = hasWebhook,
+            ["hasSigningSecret"] = hasSigningSecret,
+            ["hasBotToken"] = integration.Configuration.ContainsKey("botToken")
+        };
+
+        if (!hasSigningSecret)
+        {
+            return Task.FromResult(new IntegrationTestResult
+            {
+                IsSuccessful = false,
+                Message = "Signing secret is required for Slack integration",
+                Details = details
+            });
+        }
+
+        return Task.FromResult(new IntegrationTestResult
+        {
+            IsSuccessful = true,
+            Message = "Slack configuration is valid. Configure the webhook URL in your Slack app settings.",
+            Details = details
+        });
+    }
+
+    private Task<IntegrationTestResult> TestTeamsIntegrationAsync(AppIntegration integration)
+    {
+        var hasAppId = integration.Configuration.ContainsKey("appId");
+        var hasAppPassword = integration.Configuration.ContainsKey("appPassword");
+
+        var details = new Dictionary<string, object>
+        {
+            ["hasAppId"] = hasAppId,
+            ["hasAppPassword"] = hasAppPassword
+        };
+
+        if (!hasAppId || !hasAppPassword)
+        {
+            return Task.FromResult(new IntegrationTestResult
+            {
+                IsSuccessful = false,
+                Message = "App ID and App Password are required for Teams integration",
+                Details = details
+            });
+        }
+
+        return Task.FromResult(new IntegrationTestResult
+        {
+            IsSuccessful = true,
+            Message = "Teams configuration is valid",
+            Details = details
+        });
+    }
+
+    private Task<IntegrationTestResult> TestOutlookIntegrationAsync(AppIntegration integration)
+    {
+        var hasClientId = integration.Configuration.ContainsKey("clientId");
+        var hasClientSecret = integration.Configuration.ContainsKey("clientSecret");
+        var hasTenantId = integration.Configuration.ContainsKey("tenantId");
+
+        var details = new Dictionary<string, object>
+        {
+            ["hasClientId"] = hasClientId,
+            ["hasClientSecret"] = hasClientSecret,
+            ["hasTenantId"] = hasTenantId
+        };
+
+        if (!hasClientId || !hasClientSecret || !hasTenantId)
+        {
+            return Task.FromResult(new IntegrationTestResult
+            {
+                IsSuccessful = false,
+                Message = "Client ID, Client Secret, and Tenant ID are required for Outlook integration",
+                Details = details
+            });
+        }
+
+        return Task.FromResult(new IntegrationTestResult
+        {
+            IsSuccessful = true,
+            Message = "Outlook configuration is valid",
+            Details = details
+        });
+    }
+
+    /// <summary>
+    /// Ensures an old integration is migrated to the new encrypted secrets format.
+    /// Migrates secrets from Configuration to Secrets and updates in database if needed.
+    /// </summary>
+    private async Task EnsureIntegrationMigrated(AppIntegration integration)
+    {
+        // Check if migration is needed
+        var hasSecretsInConfig = HasSecretsInConfiguration(integration);
+        var needsWebhookSecret = string.IsNullOrEmpty(integration.Secrets?.WebhookSecret);
+
+        if (!hasSecretsInConfig && !needsWebhookSecret)
+        {
+            return; // Already migrated
+        }
+
+        _logger.LogInformation("Migrating old integration {IntegrationId} to encrypted secrets format", LogSanitizer.Sanitize(integration.Id));
+
+        // Migrate secrets from Configuration
+        MigrateSecretsFromConfiguration(integration);
+
+        // Ensure webhook secret exists
+        if (string.IsNullOrEmpty(integration.Secrets?.WebhookSecret))
+        {
+            if (integration.Secrets == null)
+                integration.Secrets = new AppIntegrationSecrets();
+            integration.Secrets.WebhookSecret = GenerateSecureRandomString(32);
+        }
+
+        // Update in database
+        integration.UpdatedAt = DateTime.UtcNow;
+        integration.UpdatedBy = "system-migration";
+        await _repository.UpdateAsync(integration.Id, integration);
+
+        _logger.LogInformation("Successfully migrated integration {IntegrationId}", LogSanitizer.Sanitize(integration.Id));
+    }
+
+    /// <summary>
+    /// Checks if an integration has any secrets in the Configuration dictionary (old format)
+    /// </summary>
+    private static bool HasSecretsInConfiguration(AppIntegration integration)
+    {
+        var secretKeys = new[] { "signingSecret", "botToken", "incomingWebhookUrl", "incomingWekhookUrl", 
+                                 "appPassword", "clientSecret", "secret" };
+        return integration.Configuration.Keys.Any(k => 
+            secretKeys.Any(sk => k.Equals(sk, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
+    /// Migrates secrets from Configuration to Secrets for backward compatibility.
+    /// Removes them from Configuration after migration.
+    /// </summary>
+    private static void MigrateSecretsFromConfiguration(AppIntegration integration)
+    {
+        var configToRemove = new List<string>();
+
+        // Migrate platform-specific secrets based on platformId
+        switch (integration.PlatformId.ToLowerInvariant())
+        {
+            case "slack":
+                // Migrate Slack secrets
+                if (TryGetAndRemove(integration.Configuration, "signingSecret", out var slackSigningSecret))
+                {
+                    integration.Secrets.SlackSigningSecret = slackSigningSecret;
+                    configToRemove.Add("signingSecret");
+                }
+                if (TryGetAndRemove(integration.Configuration, "botToken", out var slackBotToken))
+                {
+                    integration.Secrets.SlackBotToken = slackBotToken;
+                    configToRemove.Add("botToken");
+                }
+                // Support both spellings
+                if (TryGetAndRemove(integration.Configuration, "incomingWebhookUrl", out var slackWebhook) ||
+                    TryGetAndRemove(integration.Configuration, "incomingWekhookUrl", out slackWebhook))
+                {
+                    integration.Secrets.SlackIncomingWebhookUrl = slackWebhook;
+                    configToRemove.Add("incomingWebhookUrl");
+                    configToRemove.Add("incomingWekhookUrl");
+                }
+                break;
+
+            case "msteams":
+                // Migrate Teams secrets
+                if (TryGetAndRemove(integration.Configuration, "appPassword", out var teamsPassword))
+                {
+                    integration.Secrets.TeamsAppPassword = teamsPassword;
+                    configToRemove.Add("appPassword");
+                }
+                break;
+
+            case "outlook":
+                // Migrate Outlook secrets
+                if (TryGetAndRemove(integration.Configuration, "clientSecret", out var outlookSecret))
+                {
+                    integration.Secrets.OutlookClientSecret = outlookSecret;
+                    configToRemove.Add("clientSecret");
+                }
+                break;
+
+            case "webhook":
+                // Migrate generic webhook secrets
+                if (TryGetAndRemove(integration.Configuration, "secret", out var webhookSecret))
+                {
+                    integration.Secrets.GenericWebhookSecret = webhookSecret;
+                    configToRemove.Add("secret");
+                }
+                break;
+        }
+
+        // Remove migrated secrets from Configuration
+        foreach (var key in configToRemove.Distinct())
+        {
+            integration.Configuration.Remove(key);
+        }
+
+        // Remove redundant outgoingWebhookUrl from configuration (webhookUrl is in response)
+        integration.Configuration.Remove("outgoingWebhookUrl");
+    }
+
+    /// <summary>
+    /// Tries to get a string value from configuration dictionary
+    /// </summary>
+    private static bool TryGetAndRemove(Dictionary<string, object> config, string key, out string? value)
+    {
+        if (config.TryGetValue(key, out var obj) && obj?.ToString() is string strValue && !string.IsNullOrEmpty(strValue))
+        {
+            value = strValue;
+            return true;
+        }
+        value = null;
+        return false;
+    }
+}

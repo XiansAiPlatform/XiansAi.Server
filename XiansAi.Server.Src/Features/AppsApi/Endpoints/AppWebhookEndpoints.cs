@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.AppsApi.Models;
 using Features.AppsApi.Services;
 using Features.AppsApi.Handlers;
+using Shared.Data.Models;
 using Shared.Services;
 using Shared.Repositories;
 

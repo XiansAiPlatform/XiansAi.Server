@@ -10,10 +10,13 @@ public interface ITenantRepository
 {
     Task<Tenant> GetByIdAsync(string id, CancellationToken cancellationToken = default);
     Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<Tenant> GetByTenantIdCaseInsensitiveAsync(string tenantId, CancellationToken cancellationToken = default);
     Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetByDomainListAsync(string domain, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<List<Tenant>> GetPagedAsync(int skip, int limit, string? searchTerm = null, CancellationToken cancellationToken = default);
+    Task<long> CountAsync(string? searchTerm = null, CancellationToken cancellationToken = default);
     Task<List<string>> GetAllTenantIdsAsync(CancellationToken cancellationToken = default);
     Task CreateAsync(Tenant tenant);
     Task<bool> UpdateAsync(string id, Tenant tenant);
@@ -58,6 +61,24 @@ public class TenantRepository : ITenantRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantId");
     }
 
+    /// <summary>
+    /// Finds a tenant whose tenant_id matches the given value ignoring case
+    /// (e.g. "MyTenant" matches an existing "mytenant"). Used to enforce
+    /// case-insensitive uniqueness of tenant ids at creation time.
+    /// </summary>
+    public async Task<Tenant> GetByTenantIdCaseInsensitiveAsync(string tenantId, CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<Tenant>.Filter.Eq(t => t.TenantId, tenantId);
+            var options = new FindOptions
+            {
+                Collation = new Collation("en", strength: CollationStrength.Secondary)
+            };
+            return await _collection.Find(filter, options).FirstOrDefaultAsync(cancellationToken);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantIdCaseInsensitive");
+    }
+
     public async Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
@@ -94,6 +115,49 @@ public class TenantRepository : ITenantRepository
         {
             return await _collection.Find(_ => true).ToListAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAllTenants");
+    }
+
+    public async Task<List<Tenant>> GetPagedAsync(int skip, int limit, string? searchTerm = null, CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            // Sort by name for a stable, deterministic order across pages.
+            return await _collection.Find(BuildSearchFilter(searchTerm))
+                .SortBy(t => t.Name)
+                .Skip(skip)
+                .Limit(limit)
+                .ToListAsync(cancellationToken);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetPagedTenants");
+    }
+
+    public async Task<long> CountAsync(string? searchTerm = null, CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            return await _collection.CountDocumentsAsync(BuildSearchFilter(searchTerm), cancellationToken: cancellationToken);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CountTenants");
+    }
+
+    /// <summary>
+    /// Builds the filter used by the paginated list: everything when no search term is
+    /// given, otherwise a case-insensitive match on tenantId, name, domain or description.
+    /// Shared by GetPagedAsync and CountAsync so page items and totals always agree.
+    /// </summary>
+    private static FilterDefinition<Tenant> BuildSearchFilter(string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return Builders<Tenant>.Filter.Empty;
+        }
+
+        var escapedTerm = System.Text.RegularExpressions.Regex.Escape(searchTerm.Trim());
+        var regex = new BsonRegularExpression(escapedTerm, "i");
+        return Builders<Tenant>.Filter.Or(
+            Builders<Tenant>.Filter.Regex(x => x.TenantId, regex),
+            Builders<Tenant>.Filter.Regex(x => x.Name, regex),
+            Builders<Tenant>.Filter.Regex(x => x.Domain, regex),
+            Builders<Tenant>.Filter.Regex(x => x.Description, regex)
+        );
     }
 
     public async Task<List<string>> GetAllTenantIdsAsync(CancellationToken cancellationToken = default)

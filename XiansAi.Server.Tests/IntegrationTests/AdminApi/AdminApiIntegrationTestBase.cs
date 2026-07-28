@@ -76,7 +76,7 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
 
         // Create API key - the repository automatically generates keys with sk-Xnai- prefix
         var (apiKey, apiKeyMeta) = await apiKeyRepository.CreateAsync(tenantId, $"test-admin-key-{Guid.NewGuid()}", userId);
-        
+
         // Ensure the user has the required role
         await CreateTestUserWithRoleAsync(userId, tenantId, role);
 
@@ -333,5 +333,3 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
         await activationRepository.DeleteAsync(activationId);
     }
 }
-
-

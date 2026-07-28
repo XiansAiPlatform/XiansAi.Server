@@ -38,6 +38,14 @@ public class UpdateActivationRequest
 }
 
 /// <summary>
+/// Request model for activating an agent with optional workflow configuration.
+/// </summary>
+public class ActivateAgentRequest
+{
+    public ActivationWorkflowConfiguration? WorkflowConfiguration { get; set; }
+}
+
+/// <summary>
 /// Service for managing agent activations.
 /// Activating and deactivating agents uses the Temporal client.
 /// Creating and deleting activations uses the database repository.
@@ -50,6 +58,7 @@ public class ActivationService : IActivationService
     private readonly IWorkflowStarterService _workflowStarterService;
     private readonly IActivationCleanupService _cleanupService;
     private readonly IActivationValidationService _activationValidationService;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -60,6 +69,7 @@ public class ActivationService : IActivationService
         ITemporalClientService temporalClientService,
         IActivationCleanupService cleanupService,
         IActivationValidationService activationValidationService,
+        IWebhookEventPublisher webhookEventPublisher,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -68,6 +78,7 @@ public class ActivationService : IActivationService
         _workflowStarterService = workflowStarterService ?? throw new ArgumentNullException(nameof(workflowStarterService));
         _cleanupService = cleanupService ?? throw new ArgumentNullException(nameof(cleanupService));
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -102,11 +113,14 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
             }
 
-            // Verify the agent belongs to the correct tenant
-            if (agent.Tenant != tenantId)
+            // Defense-in-depth: GetByNameInternalAsync already scopes by tenant, but never
+            // return Forbidden for a mismatch — that would confirm the agent exists elsewhere.
+            if (!string.Equals(agent.Tenant, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Agent {AgentName} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Agent does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to create activation for agent {AgentName} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(agent.Tenant));
+                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
             }
 
             var activation = new AgentActivation
@@ -136,6 +150,12 @@ public class ActivationService : IActivationService
             await _activationRepository.CreateAsync(activation);
 
             _logger.LogInformation("Successfully created activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationCreated,
+                new { tenantId, activationId = activation.Id, name = activation.Name, agentName = request.AgentName },
+                tenantId);
+
             return ServiceResult<AgentActivation>.Success(activation);
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000)
@@ -180,10 +200,12 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
-            if (activation.TenantId != tenantId)
+            if (!string.Equals(activation.TenantId, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Activation {ActivationId} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to update activation {ActivationId} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(activation.TenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
             // Check if activation is currently active (has running workflows)
@@ -265,6 +287,12 @@ public class ActivationService : IActivationService
             await _activationRepository.UpdateAsync(activationId, activation);
 
             _logger.LogInformation("Successfully updated activation {ActivationId}", LogSanitizer.Sanitize(activationId));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationUpdated,
+                new { tenantId, activationId = activation.Id, name = activation.Name },
+                tenantId);
+
             return ServiceResult<AgentActivation>.Success(activation);
         }
         catch (MongoDB.Driver.MongoWriteException ex) when (ex.WriteError?.Code == 11000)
@@ -361,10 +389,12 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
-            if (activation.TenantId != tenantId)
+            if (!string.Equals(activation.TenantId, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Activation {ActivationId} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to activate activation {ActivationId} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(activation.TenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
             // If workflow configuration is provided in the request, update the activation with it
@@ -504,8 +534,13 @@ public class ActivationService : IActivationService
                 _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
                 _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}", 
-                    startedCount, flowDefinitions.Count, activationId);
-                
+                    startedCount, flowDefinitions.Count, LogSanitizer.Sanitize(activationId));
+
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.ActivationActivated,
+                    new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds },
+                    tenantId);
+
                 return ServiceResult<AgentActivation>.Success(activation);
             }
             catch (Exception ex)
@@ -546,10 +581,12 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
-            if (activation.TenantId != tenantId)
+            if (!string.Equals(activation.TenantId, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Activation {ActivationId} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to deactivate activation {ActivationId} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(activation.TenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
             // Perform comprehensive cleanup of all workflows and schedules associated with this activation
@@ -612,7 +649,12 @@ public class ActivationService : IActivationService
                 LogSanitizer.Sanitize(activationId),
                 cleanup.WorkflowCleanup.TotalWorkflows,
                 cleanup.ScheduleCleanup.TotalSchedules);
-            
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationDeactivated,
+                new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName },
+                activation.TenantId);
+
             return ServiceResult<AgentActivation>.Success(activation);
         }
         catch (Exception ex)
@@ -661,6 +703,12 @@ public class ActivationService : IActivationService
             }
 
             _logger.LogInformation("Successfully deleted activation {ActivationId}", LogSanitizer.Sanitize(activationId));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.ActivationDeleted,
+                new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName },
+                activation.TenantId);
+
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)

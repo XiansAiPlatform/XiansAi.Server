@@ -106,6 +106,28 @@ public static class AdminTaskEndpoints
         .WithName("UpdateTaskDraft")
         ;
 
+        // Merge metadata for a task
+        taskGroup.MapPut("/metadata", async Task<IResult> (
+            string tenantId,
+            [FromQuery] string taskId,
+            [FromBody] UpdateMetadataRequest request,
+            [FromServices] IAdminTaskService taskService) =>
+        {
+            var ownershipError = await EnsureTaskInTenant(taskService, taskId, tenantId);
+            if (ownershipError != null)
+            {
+                return ownershipError;
+            }
+
+            var result = await taskService.UpdateMetadata(taskId, request.Metadata);
+            return result.ToHttpResult();
+        })
+        .Produces<object>()
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .WithName("UpdateTaskMetadata")
+        ;
+
         // Perform action on a task
         taskGroup.MapPost("/actions", async Task<IResult> (
             string tenantId,
@@ -119,7 +141,7 @@ public static class AdminTaskEndpoints
                 return ownershipError;
             }
 
-            var result = await taskService.PerformAction(taskId, request.Action, request.Comment);
+            var result = await taskService.PerformAction(taskId, request.Action, request.Comment, request.Metadata);
             return result.ToHttpResult();
         })
         .Produces<object>()

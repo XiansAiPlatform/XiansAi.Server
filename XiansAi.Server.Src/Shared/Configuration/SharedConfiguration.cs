@@ -205,20 +205,24 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ISecretVaultRepository, SecretVaultRepository>();
         builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
         builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
+        builder.Services.AddScoped<IWebhookDeliveryRepository, WebhookDeliveryRepository>();
+        builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
         builder.Services.AddSingleton<IAsyncResultCache, AsyncResultCache>();
         builder.Services.AddScoped<IActivationValidationService, ActivationValidationService>();
 
         // Register Utility services
-        builder.Services.AddScoped<IMarkdownService, MarkdownService>();
         builder.Services.AddScoped<IJwtClaimsExtractor, JwtClaimsExtractor>();
 
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
+        builder.Services.AddScoped<IMessageFileStorage, MessageFileStorage>();
         builder.Services.AddScoped<IFeedbackService, FeedbackService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
         builder.Services.AddScoped<IUsageEventService, UsageEventService>();
+        builder.Services.AddScoped<IWebhookEventPublisher, WebhookEventPublisher>();
+        builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
@@ -231,6 +235,7 @@ public static class SharedConfiguration
         builder.Services.AddSingleton<ITenantTemporalConfigService, TenantTemporalConfigService>();
         builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
+        builder.Services.AddSingleton<ITenantMetadataProtector, TenantMetadataProtector>();
 
         // Configure JSON serialization options for minimal APIs
         // This ensures enums are serialized as strings instead of numeric values

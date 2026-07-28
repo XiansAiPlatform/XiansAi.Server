@@ -12,18 +12,12 @@ namespace Tests.IntegrationTests.AgentApi;
 
 public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<MongoDbFixture>
 {
-    /*
-    dotnet test --filter "FullyQualifiedName~ConversationEndpointsTests"
-    */
     private const string TestUserId = "test-user-id";
 
     public ConversationEndpointsTests(MongoDbFixture mongoFixture) : base(mongoFixture)
     {
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithTaskIdInHistory_ReturnsLastTaskId"
-    */
     [Fact]
     public async Task GetLastTaskId_WithTaskIdInHistory_ReturnsLastTaskId()
     {
@@ -56,7 +50,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -64,9 +58,6 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.Equal("\"latest-task-id\"", taskId); // JSON string is quoted
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithWorkflowId_ReturnsLastTaskId"
-    */
     [Fact]
     public async Task GetLastTaskId_WithWorkflowId_ReturnsLastTaskId()
     {
@@ -92,9 +83,6 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.Equal("\"task-id-from-workflow\"", taskId);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithScope_ReturnsLastTaskIdForScope"
-    */
     [Fact]
     public async Task GetLastTaskId_WithScope_ReturnsLastTaskIdForScope()
     {
@@ -122,7 +110,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Filter by billing scope
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}&scope=billing");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}&scope=billing");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -130,9 +118,6 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.Equal("\"billing-task-id\"", taskId);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithNullScope_ReturnsLastTaskIdForNullScope"
-    */
     [Fact]
     public async Task GetLastTaskId_WithNullScope_ReturnsLastTaskIdForNullScope()
     {
@@ -160,7 +145,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Filter by null scope (empty string)
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}&scope=");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}&scope=");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -168,9 +153,6 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.Equal("\"default-task-id\"", taskId);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithMessagesWithoutTaskId_IgnoresMessagesWithoutTaskId"
-    */
     [Fact]
     public async Task GetLastTaskId_WithMessagesWithoutTaskId_IgnoresMessagesWithoutTaskId()
     {
@@ -213,7 +195,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -221,19 +203,17 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.Equal("\"latest-valid-task-id\"", taskId);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithNoTaskIdsInHistory_ReturnsNull"
-    */
     [Fact]
     public async Task GetLastTaskId_WithNoTaskIdsInHistory_ReturnsNull()
     {
         // Arrange
         var workflowType = $"test-workflow-{Guid.NewGuid()}";
+        var workflowId = $"{TestTenantId}:{workflowType}";
         var participantId = $"test-participant-{Guid.NewGuid()}";
 
         // Act
         var response = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participantId}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -241,28 +221,22 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.True(content == "null" || content == "", "Expected JSON null or empty string when no task id found");
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithMissingWorkflowTypeAndId_ReturnsBadRequest"
-    */
     [Fact]
     public async Task GetLastTaskId_WithMissingWorkflowTypeAndId_ReturnsBadRequest()
     {
         // Arrange
         var participantId = $"test-participant-{Guid.NewGuid()}";
 
-        // Act - Missing both workflowType and workflowId
+        // Act - Missing workflowId
         var response = await _client.GetAsync(
             $"/api/agent/conversation/last-task-id?participantId={participantId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("WorkflowType or WorkflowId is required", content);
+        Assert.Contains("WorkflowId is required", content);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithMissingParticipantId_ReturnsBadRequest"
-    */
     [Fact]
     public async Task GetLastTaskId_WithMissingParticipantId_ReturnsBadRequest()
     {
@@ -282,9 +256,6 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         }
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastTaskId_WithDifferentParticipant_ReturnsCorrectTaskId"
-    */
     [Fact]
     public async Task GetLastTaskId_WithDifferentParticipant_ReturnsCorrectTaskId()
     {
@@ -311,7 +282,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Get task id for participant 1
         var response1 = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participant1}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participant1}");
 
         // Assert participant 1
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
@@ -320,7 +291,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
 
         // Act - Get task id for participant 2
         var response2 = await _client.GetAsync(
-            $"/api/agent/conversation/last-task-id?workflowType={workflowType}&participantId={participant2}");
+            $"/api/agent/conversation/last-task-id?workflowId={workflowId}&participantId={participant2}");
 
         // Assert participant 2
         Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
@@ -328,9 +299,6 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         Assert.Equal("\"task-id-participant-2\"", taskId2);
     }
 
-    /*
-    dotnet test --filter "FullyQualifiedName=Tests.IntegrationTests.AgentApi.ConversationEndpointsTests.GetLastIncomingOrigin_WithScopeFilter_ReturnsCorrectOrigin"
-    */
     [Fact]
     public async Task GetLastIncomingOrigin_WithScopeFilter_ReturnsCorrectOrigin()
     {
@@ -347,8 +315,8 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         // Message 3: default scope (null), newest - should be returned when scope is null
         await CreateTestMessageAsync(workflowId, workflowType, participantId, scope: null, origin: "origin-default-new", createdAt: DateTime.UtcNow, threadId: threadId);
 
-        using var scope2 = _factory.Services.CreateScope();
-        var repo = scope2.ServiceProvider.GetRequiredService<IConversationRepository>();
+        using var serviceScope = _factory.Services.CreateScope();
+        var repo = serviceScope.ServiceProvider.GetRequiredService<IConversationRepository>();
 
         var resultNullScope = await repo.GetLastIncomingOriginAsync(threadId, TestTenantId, null);
         Assert.Equal("origin-default-new", resultNullScope);
@@ -370,8 +338,8 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         string? origin = null,
         string? threadId = null)
     {
-        using var scope2 = _factory.Services.CreateScope();
-        var databaseService = scope2.ServiceProvider.GetRequiredService<IDatabaseService>();
+        using var serviceScope = _factory.Services.CreateScope();
+        var databaseService = serviceScope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
         var message = new ConversationMessage
         {
@@ -402,4 +370,3 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
         return message;
     }
 }
-

@@ -51,7 +51,7 @@ public class PagedParticipantResult
 /// </summary>
 public interface ITenantParticipantUserService
 {
-    Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search);
+    Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search, string? role = null);
     Task<ServiceResult<TenantParticipantUser>> GetAsync(string tenantId, string userId);
     Task<ServiceResult<TenantParticipantUser>> CreateAsync(string tenantId, string email, string name, string role);
     Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
@@ -73,6 +73,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
     private readonly IUserTenantService _userTenantService;
     private readonly IRoleCacheService _roleCacheService;
     private readonly ITokenValidationCache _tokenCache;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<TenantParticipantUserService> _logger;
 
     public TenantParticipantUserService(
@@ -80,19 +81,30 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         IUserTenantService userTenantService,
         IRoleCacheService roleCacheService,
         ITokenValidationCache tokenCache,
+        IWebhookEventPublisher webhookEventPublisher,
         ILogger<TenantParticipantUserService> logger)
     {
         _userRepository = userRepository;
         _userTenantService = userTenantService;
         _roleCacheService = roleCacheService;
         _tokenCache = tokenCache;
+        _webhookEventPublisher = webhookEventPublisher;
         _logger = logger;
     }
 
-    public async Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search)
+    public async Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search, string? role = null)
     {
         try
         {
+            string? normalizedRole = null;
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                normalizedRole = NormalizeTenantRole(role);
+                if (normalizedRole == null)
+                    return ServiceResult<PagedParticipantResult>.BadRequest(
+                        $"Role must be one of: {string.Join(", ", AllowedTenantRoles)}");
+            }
+
             var filter = new UserFilter
             {
                 Page = page > 0 ? page : 1,
@@ -100,6 +112,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                 Type = UserTypeFilter.ALL,
                 Tenant = tenantId,
                 Search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+                Role = normalizedRole,
             };
 
             var paged = await _userRepository.GetAllUsersByTenantAsync(filter);
@@ -180,6 +193,19 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
         var created = result.Data;
         var tenantRole = created.TenantRoles.FirstOrDefault(t => t.Tenant == tenantId);
+
+        await _webhookEventPublisher.PublishAsync(
+            WebhookEventTypes.UserCreated,
+            new
+            {
+                userId = created.UserId,
+                email = created.Email,
+                name = created.Name,
+                tenantId,
+                role = normalizedRole,
+            },
+            tenantId);
+
         return ServiceResult<TenantParticipantUser>.Success(new TenantParticipantUser
         {
             UserId = created.UserId,
@@ -222,6 +248,18 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         _logger.LogInformation("Existing user {UserId} added to tenant {TenantId} with role {Role}",
             LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(tenantId), normalizedRole);
 
+        await _webhookEventPublisher.PublishAsync(
+            WebhookEventTypes.UserTenantAdded,
+            new
+            {
+                userId = user.UserId,
+                email = user.Email,
+                name = user.Name,
+                tenantId,
+                role = normalizedRole,
+            },
+            tenantId);
+
         return ServiceResult<TenantParticipantUser>.Success(new TenantParticipantUser
         {
             UserId = user.UserId,
@@ -252,12 +290,16 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             if (tr == null)
                 return ServiceResult<TenantParticipantUser>.NotFound("User not found in this tenant");
 
+            var wasApproved = tr.IsApproved;
+            var profileChanged = false;
+
             if (name != null)
             {
                 var sanitized = ValidationHelpers.SanitizeString(name);
                 if (string.IsNullOrWhiteSpace(sanitized))
                     return ServiceResult<TenantParticipantUser>.BadRequest("Name cannot be empty");
                 user.Name = sanitized;
+                profileChanged = true;
             }
 
             if (email != null)
@@ -270,6 +312,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                 if (other != null && !string.Equals(other.UserId, userId, StringComparison.Ordinal))
                     return ServiceResult<TenantParticipantUser>.Conflict("Another user already uses this email");
                 user.Email = sanitizedEmail;
+                profileChanged = true;
             }
 
             if (isApproved.HasValue)
@@ -279,6 +322,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                 tr.IsApproved = isApproved.Value;
             }
 
+            string? addedRole = null;
             if (role != null)
             {
                 var normalizedRole = NormalizeTenantRole(role);
@@ -287,7 +331,10 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                         $"Role must be one of: {string.Join(", ", AllowedTenantRoles)}");
 
                 if (!tr.Roles.Contains(normalizedRole))
+                {
                     tr.Roles.Add(normalizedRole);
+                    addedRole = normalizedRole;
+                }
             }
 
             var updated = await _userRepository.UpdateAsync(userId, user);
@@ -295,6 +342,37 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                 return ServiceResult<TenantParticipantUser>.InternalServerError("Update failed");
 
             await InvalidateCachesAsync(userId, tenantId);
+
+            if (profileChanged)
+            {
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.UserUpdated,
+                    new { userId = user.UserId, email = user.Email, name = user.Name, tenantId },
+                    tenantId);
+            }
+
+            if (isApproved.HasValue && isApproved.Value != wasApproved)
+            {
+                await _webhookEventPublisher.PublishAsync(
+                    isApproved.Value ? WebhookEventTypes.UserApproved : WebhookEventTypes.UserUnapproved,
+                    new { userId = user.UserId, email = user.Email, tenantId },
+                    tenantId);
+            }
+
+            if (addedRole != null)
+            {
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.UserRoleChanged,
+                    new
+                    {
+                        userId = user.UserId,
+                        email = user.Email,
+                        tenantId,
+                        role = addedRole,
+                        roles = tr.Roles,
+                    },
+                    tenantId);
+            }
 
             var mapped = MapToTenantUser(user, tenantId);
             if (mapped == null)
@@ -335,6 +413,12 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                 return ServiceResult<bool>.InternalServerError("Failed to remove tenant membership");
 
             await InvalidateCachesAsync(userId, tenantId);
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.UserTenantRemoved,
+                new { userId = user.UserId, email = user.Email, name = user.Name, tenantId },
+                tenantId);
+
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -374,7 +458,8 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
             tr.Roles.Remove(normalizedRole);
 
-            if (tr.Roles.Count == 0)
+            var membershipRemoved = tr.Roles.Count == 0;
+            if (membershipRemoved)
                 user.TenantRoles.RemoveAll(t => t.Tenant == tenantId);
 
             var ok = await _userRepository.UpdateAsync(userId, user);
@@ -385,6 +470,19 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
             _logger.LogInformation("Role {Role} removed from user {UserId} in tenant {TenantId}",
                 normalizedRole, LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.UserRoleRemoved,
+                new { userId = user.UserId, email = user.Email, tenantId, role = normalizedRole },
+                tenantId);
+
+            if (membershipRemoved)
+            {
+                await _webhookEventPublisher.PublishAsync(
+                    WebhookEventTypes.UserTenantRemoved,
+                    new { userId = user.UserId, email = user.Email, name = user.Name, tenantId },
+                    tenantId);
+            }
 
             return ServiceResult<bool>.Success(true);
         }

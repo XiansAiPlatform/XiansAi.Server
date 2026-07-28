@@ -27,9 +27,15 @@ public static class AdminTenantEndpoints
             .WithTags("AdminAPI - Tenant Management")
             .RequireAuthorization("AdminEndpointAuthPolicy");
 
-        // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants)
+        // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants).
+        // Supports pagination via optional "page" (default 1) and "pageSize" (default 20, max 100)
+        // query params, plus an optional "search" term matched case-insensitively against
+        // tenantId, name, domain and description.
         adminTenantGroup.MapGet("", async (
             HttpContext httpContext,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
+            [FromQuery] string? search,
             [FromServices] LinkGenerator linkGenerator,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
@@ -42,10 +48,11 @@ public static class AdminTenantEndpoints
                     new { message = "Access denied: Only system administrators can list all tenants" },
                     statusCode: StatusCodes.Status403Forbidden);
             }
-            var result = await tenantService.GetAllTenants();
+
+            var result = await tenantService.GetAllTenants(page, pageSize, search);
             if (result.IsSuccess && result.Data != null)
             {
-                foreach (var tenant in result.Data)
+                foreach (var tenant in result.Data.Tenants)
                 {
                     TenantLogoHelper.ApplyLogoUrl(tenant, httpContext, linkGenerator);
                 }
@@ -84,6 +91,111 @@ public static class AdminTenantEndpoints
         })
         .WithName("GetTenantByTenantId")
         .Produces(StatusCodes.Status403Forbidden)
+        ;
+
+        // Get Tenant Metadata - SysAdmin only. This is the only endpoint that returns
+        // metadata with Secret values decrypted; tenant payloads elsewhere carry the
+        // stored (encrypted) form.
+        adminTenantGroup.MapGet("/{tenantId}/metadata", async (
+            string tenantId,
+            HttpContext httpContext,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Get tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can retrieve tenant metadata" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var bypassCache = httpContext.Request.IsNoCacheRequested();
+            var result = await tenantService.GetTenantMetadata(tenantId, httpContext.RequestAborted, bypassCache);
+            return result.ToHttpResult();
+        })
+        .WithName("GetTenantMetadata")
+        .Produces(StatusCodes.Status403Forbidden)
+        ;
+
+        // Get a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only.
+        // Returns the entry with its value decrypted when the type is Secret.
+        adminTenantGroup.MapGet("/{tenantId}/metadata/{key}", async (
+            string tenantId,
+            string key,
+            HttpContext httpContext,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Get tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can retrieve tenant metadata" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var bypassCache = httpContext.Request.IsNoCacheRequested();
+            var result = await tenantService.GetTenantMetadataByKey(tenantId, key, httpContext.RequestAborted, bypassCache);
+            return result.ToHttpResult();
+        })
+        .WithName("GetTenantMetadataByKey")
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound)
+        ;
+
+        // Upsert a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only.
+        // Adds the entry when the key does not exist, otherwise replaces its value/type.
+        // Secret values are encrypted before persisting.
+        adminTenantGroup.MapPut("/{tenantId}/metadata/{key}", async (
+            string tenantId,
+            string key,
+            [FromBody] UpsertTenantMetadataRequest request,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Upsert tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can modify tenant metadata" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var result = await tenantService.UpsertTenantMetadata(tenantId, key, request);
+            return result.ToHttpResult();
+        })
+        .WithName("UpsertTenantMetadata")
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound)
+        ;
+
+        // Delete a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only.
+        adminTenantGroup.MapDelete("/{tenantId}/metadata/{key}", async (
+            string tenantId,
+            string key,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
+            {
+                logger.LogWarning("Access denied: Delete tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
+                return Results.Json(
+                    new { message = "Access denied: Only system administrators can modify tenant metadata" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var result = await tenantService.DeleteTenantMetadata(tenantId, key);
+            return result.ToHttpResult();
+        })
+        .WithName("DeleteTenantMetadata")
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound)
         ;
 
         // Get Tenant Logo - serves the image so the (potentially large) base64 payload

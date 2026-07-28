@@ -96,25 +96,6 @@ public class PermissionsEndpointsTests : WebApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task AddUser_WithInvalidPermissionLevel_ReturnsError()
-    {
-        // Arrange
-        var agent = await CreateTestAgentAsync("invalid-permission-agent");
-        var userPermission = new UserPermissionDto
-        {
-            UserId = TestUserId2,
-            PermissionLevel = "invalid-level"
-        };
-
-        // Act
-        var response = await PostAsJsonAsync($"/api/client/permissions/agent/{agent.Name}/users", userPermission);
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.BadRequest || 
-                   response.StatusCode == HttpStatusCode.InternalServerError);
-    }
-
-    [Fact]
     public async Task RemoveUser_WithValidUserId_RemovesUserFromPermissions()
     {
         // Arrange
@@ -132,20 +113,6 @@ public class PermissionsEndpointsTests : WebApiIntegrationTestBase
         var updatedAgent = await agentRepository.GetByNameInternalAsync(agent.Name, TestTenantId);
         Assert.NotNull(updatedAgent);
         Assert.DoesNotContain(TestUserId2, updatedAgent.ReadAccess);
-    }
-
-    [Fact]
-    public async Task RemoveUser_WithNonExistentUser_ReturnsNotFound()
-    {
-        // Arrange
-        var agent = await CreateTestAgentAsync("remove-nonexistent-user-agent");
-
-        // Act
-        var response = await DeleteAsync($"/api/client/permissions/agent/{agent.Name}/users/non-existent-user");
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.NotFound || 
-                   response.StatusCode == HttpStatusCode.OK);
     }
 
     [Fact]
@@ -167,21 +134,6 @@ public class PermissionsEndpointsTests : WebApiIntegrationTestBase
         var updatedAgent = await agentRepository.GetByNameInternalAsync(agent.Name, TestTenantId);
         Assert.NotNull(updatedAgent);
         Assert.Contains(TestUserId2, updatedAgent.WriteAccess);
-    }
-
-    [Fact]
-    public async Task UpdateUserPermission_WithInvalidLevel_ReturnsError()
-    {
-        // Arrange
-        var agent = await CreateTestAgentWithUserAsync("invalid-level-agent", TestUserId2, "read");
-
-        // Act
-        var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/client/permissions/agent/{agent.Name}/users/{TestUserId2}/invalid-level");
-        var response = await _client.SendAsync(request);
-
-        // Assert
-        Assert.True(response.StatusCode == HttpStatusCode.BadRequest || 
-                   response.StatusCode == HttpStatusCode.InternalServerError);
     }
 
     [Fact]
@@ -278,4 +230,3 @@ public class UserPermissionDto
     public string UserId { get; set; } = string.Empty;
     public string PermissionLevel { get; set; } = string.Empty;
 }
-

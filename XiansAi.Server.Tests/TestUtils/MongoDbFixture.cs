@@ -43,33 +43,33 @@ public class MongoDbFixture : IDisposable
         {
             // Create a null logger for testing
             _logger = new NullLogger<MongoDbClientService>();
-            
+
             // Start MongoDB instance with replica set
-        _runner = MongoDbRunner.Start(singleNodeReplSet: true);
-            
+            _runner = MongoDbRunner.Start(singleNodeReplSet: true);
+
             // Wait for replica set to be ready
             WaitForReplicaSet();
-        
-        // Create client and database
+
+            // Create client and database
             var settings = MongoClientSettings.FromConnectionString(_runner.ConnectionString);
             settings.ServerSelectionTimeout = TimeSpan.FromSeconds(10);
             settings.ConnectTimeout = TimeSpan.FromSeconds(10);
             _client = new MongoClient(settings);
-        _database = _client.GetDatabase(_databaseName);
+            _database = _client.GetDatabase(_databaseName);
 
-        // Configure MongoDB settings
-        MongoConfig = new MongoDBConfig
-        {
-            ConnectionString = _runner.ConnectionString,
-            DatabaseName = _databaseName
-        };
+            // Configure MongoDB settings
+            MongoConfig = new MongoDBConfig
+            {
+                ConnectionString = _runner.ConnectionString,
+                DatabaseName = _databaseName
+            };
 
-        // Create client service
-        var emptyConfig = new ConfigurationBuilder().Build();
-        _mongoClientService = new MongoDbClientService(new TestMongoDbContext(MongoConfig), _logger, emptyConfig);
+            // Create client service
+            var emptyConfig = new ConfigurationBuilder().Build();
+            _mongoClientService = new MongoDbClientService(new TestMongoDbContext(MongoConfig), _logger, emptyConfig);
 
-        // Initialize collections and indexes
-        InitializeCollections();
+            // Initialize collections and indexes
+            InitializeCollections();
 
             // Verify database is accessible
             var ping = _database.RunCommand<BsonDocument>(new BsonDocument("ping", 1));
@@ -77,7 +77,6 @@ public class MongoDbFixture : IDisposable
             {
                 throw new Exception("Failed to connect to MongoDB test instance");
             }
-            
         }
         catch (Exception ex)
         {
@@ -102,8 +101,8 @@ public class MongoDbFixture : IDisposable
             {
                 var db = tempClient.GetDatabase("admin");
                 var result = db.RunCommand<BsonDocument>(new BsonDocument("replSetGetStatus", 1));
-                
-                if (result["ok"].AsDouble == 1.0 && 
+
+                if (result["ok"].AsDouble == 1.0 &&
                     result["members"].AsBsonArray.Any(m => m["stateStr"].AsString == "PRIMARY"))
                 {
                     return;
@@ -124,102 +123,102 @@ public class MongoDbFixture : IDisposable
     private void InitializeCollections()
     {
         try
-    {
-        // Create collections with required indexes
-        var collections = new[]
         {
-            "agents",
-            "conversations",
-            "messages",
-            "logs",
-            "tenants",
-            "users",
-            "webhooks",
-            "activity_history",
-            "flow_definitions",
-                "instructions",
-                "knowledge"  // Added missing collection
-        };
-
-        foreach (var collectionName in collections)
-        {
-            if (!CollectionExists(collectionName))
+            // Create collections with required indexes
+            var collections = new[]
             {
-                _database.CreateCollection(collectionName);
-            }
-        }
+                "agents",
+                "conversations",
+                "messages",
+                "logs",
+                "tenants",
+                "users",
+                "webhooks",
+                "activity_history",
+                "flow_definitions",
+                "instructions",
+                "knowledge"
+            };
 
-        // Create indexes
-        var messagesCollection = _database.GetCollection<BsonDocument>("messages");
-        var conversationsCollection = _database.GetCollection<BsonDocument>("conversations");
-        var logsCollection = _database.GetCollection<BsonDocument>("logs");
-        var tenantsCollection = _database.GetCollection<BsonDocument>("tenants");
-        var usersCollection = _database.GetCollection<BsonDocument>("users");
+            foreach (var collectionName in collections)
+            {
+                if (!CollectionExists(collectionName))
+                {
+                    _database.CreateCollection(collectionName);
+                }
+            }
+
+            // Create indexes
+            var messagesCollection = _database.GetCollection<BsonDocument>("messages");
+            var conversationsCollection = _database.GetCollection<BsonDocument>("conversations");
+            var logsCollection = _database.GetCollection<BsonDocument>("logs");
+            var tenantsCollection = _database.GetCollection<BsonDocument>("tenants");
+            var usersCollection = _database.GetCollection<BsonDocument>("users");
             var webhooksCollection = _database.GetCollection<BsonDocument>("webhooks");
             var knowledgeCollection = _database.GetCollection<BsonDocument>("knowledge");
 
-        // Messages indexes
-        messagesCollection.Indexes.CreateMany(new[]
-        {
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("thread_id")
-                    .Ascending("created_at")),
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("tenant_id"))
-        });
+            // Messages indexes
+            messagesCollection.Indexes.CreateMany(new[]
+            {
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("thread_id")
+                        .Ascending("created_at")),
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("tenant_id"))
+            });
 
-        // Conversations indexes
-        conversationsCollection.Indexes.CreateMany(new[]
-        {
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("tenant_id")),
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("created_at"))
-        });
+            // Conversations indexes
+            conversationsCollection.Indexes.CreateMany(new[]
+            {
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("tenant_id")),
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("created_at"))
+            });
 
-        // Logs indexes
-        logsCollection.Indexes.CreateMany(new[]
-        {
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("tenant_id")),
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
+            // Logs indexes
+            logsCollection.Indexes.CreateMany(new[]
+            {
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("tenant_id")),
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
                         .Ascending("created_at")),
                 new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
                         .Ascending("workflow_run_id"))
-        });
-        
-        // Tenants indexes
-        tenantsCollection.Indexes.CreateMany(new[]
-        {
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("tenant_id"),
-                new CreateIndexOptions { Unique = true }),
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("domain"),
-                new CreateIndexOptions { Unique = true })
-        });
+            });
 
-        // Users indexes
-        usersCollection.Indexes.CreateMany(new[]
-        {
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("user_id"),
-                new CreateIndexOptions { Unique = true }),
-            new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys
-                    .Ascending("email"),
-                new CreateIndexOptions { Unique = true })
-        });
+            // Tenants indexes
+            tenantsCollection.Indexes.CreateMany(new[]
+            {
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("tenant_id"),
+                    new CreateIndexOptions { Unique = true }),
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("domain"),
+                    new CreateIndexOptions { Unique = true })
+            });
+
+            // Users indexes
+            usersCollection.Indexes.CreateMany(new[]
+            {
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("user_id"),
+                    new CreateIndexOptions { Unique = true }),
+                new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending("email"),
+                    new CreateIndexOptions { Unique = true })
+            });
 
             // Webhooks indexes
             webhooksCollection.Indexes.CreateMany(new[]
@@ -262,12 +261,12 @@ public class MongoDbFixture : IDisposable
     public void Dispose()
     {
         try
-    {
-        _runner?.Dispose();
+        {
+            _runner?.Dispose();
         }
         catch
         {
             // Ignore disposal errors
         }
     }
-} 
+}
