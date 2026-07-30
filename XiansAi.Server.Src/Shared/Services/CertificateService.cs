@@ -23,23 +23,42 @@ public class CertificateService
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly ITenantTemporalConfigService _tenantTemporalConfigService;
 
     public CertificateService(
         ILogger<CertificateService> logger,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        IWebhookEventPublisher webhookEventPublisher)
+        IWebhookEventPublisher webhookEventPublisher,
+        ITenantTemporalConfigService tenantTemporalConfigService)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
         _webhookEventPublisher = webhookEventPublisher;
+        _tenantTemporalConfigService = tenantTemporalConfigService;
     }
 
-    public FlowServerSettings GetFlowServerSettings()
+    public async Task<FlowServerSettings> GetFlowServerSettings()
     {
+        // A tenant that opted into "use a specific Temporal namespace" has its connection
+        // details persisted in Mongo (tenant_temporal_config) - prefer that over static
+        // configuration, mirroring TemporalClientService.GetTemporalConfigAsync.
+        var tenantConnection = await _tenantTemporalConfigService.GetForTenantAsync(_tenantContext.TenantId);
+        if (tenantConnection != null)
+        {
+            _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{tenantConnection.Host} FlowServerNamespace:{tenantConnection.Namespace}");
+            return new FlowServerSettings
+            {
+                FlowServerUrl = tenantConnection.Host,
+                FlowServerNamespace = tenantConnection.Namespace,
+                FlowServerCertBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
+                FlowServerPrivateKeyBase64 = tenantConnection.CertificateKey == null ? null : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(tenantConnection.CertificateKey))
+            };
+        }
+
         _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{_tenantContext.GetTemporalConfig().FlowServerUrl} FlowServerNamespace:{_tenantContext.GetTemporalConfig().FlowServerNamespace}");
         return new FlowServerSettings
         {
