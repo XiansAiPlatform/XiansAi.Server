@@ -101,8 +101,6 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         {
             var client = await TemporalClient.ConnectAsync(options);
             _clients.TryAdd(tenantId, client);
-
-                    Console.WriteLine($"BEFORE ENSURE***************************************: {config.FlowServerUrl}");
             await EnsureSearchAttributesRegisteredAsync(client, config.FlowServerNamespace!);
 
             _logger.LogInformation("Successfully connected to Temporal server for tenant {TenantId}", tenantId);
