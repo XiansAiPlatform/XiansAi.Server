@@ -27,6 +27,7 @@ public class TenantServiceMetadataTests
     private readonly Mock<ITenantCacheService> _cache = new();
     private readonly Mock<ITenantContext> _context = new();
     private readonly Mock<IRoleManagementService> _roles = new();
+    private readonly Mock<ITenantTemporalConfigService> _temporalConfigs = new();
     private readonly Mock<IWebhookEventPublisher> _webhooks = new();
     private readonly TenantMetadataProtector _protector;
     private readonly TenantService _service;
@@ -58,6 +59,7 @@ public class TenantServiceMetadataTests
             NullLogger<TenantService>.Instance,
             _context.Object,
             _roles.Object,
+            _temporalConfigs.Object,
             _webhooks.Object,
             _protector);
     }
