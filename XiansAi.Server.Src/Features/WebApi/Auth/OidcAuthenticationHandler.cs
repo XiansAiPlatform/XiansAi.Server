@@ -51,12 +51,13 @@ public class OidcAuthenticationHandler : AuthenticationHandler<AuthenticationSch
 
             // Validate token using DynamicOidcValidator (uses "webapi" as pseudo-tenant)
             _logger.LogDebug("Validating JWT token using Generic OIDC");
-            var (success, canonicalUserId, error) = await _oidcValidator.ValidateAsync("webapi", token);
+            var validation = await _oidcValidator.ValidateAsync("webapi", token);
+            var canonicalUserId = validation.CanonicalUserId;
 
-            if (!success)
+            if (!validation.Success)
             {
-                _logger.LogWarning("OIDC token validation failed: {Error}", error);
-                return AuthenticateResult.Fail(error ?? "Token validation failed");
+                _logger.LogWarning("OIDC token validation failed: {Error}", validation.Error);
+                return AuthenticateResult.Fail(validation.Error ?? "Token validation failed");
             }
 
             if (string.IsNullOrWhiteSpace(canonicalUserId))

@@ -11,9 +11,46 @@ using Shared.Auth;
 
 namespace Shared.Auth;
 
+/// <summary>
+/// Outcome of validating a JWT against a tenant's OIDC rules.
+/// </summary>
+public class OidcValidationResult
+{
+    public bool Success { get; init; }
+
+    /// <summary>Provider-prefixed id (`provider|subject`), used for claims and display.</summary>
+    public string? CanonicalUserId { get; init; }
+
+    /// <summary>
+    /// The raw provider subject. This is the form the users collection is keyed on, so it is the
+    /// only value usable for looking up or provisioning the user record.
+    /// </summary>
+    public string? ProviderUserId { get; init; }
+
+    public string? Email { get; init; }
+    public string? Name { get; init; }
+    public string? Error { get; init; }
+
+    public static OidcValidationResult Fail(string error) =>
+        new() { Success = false, Error = error };
+
+    public static OidcValidationResult Ok(string canonicalUserId, string providerUserId, string? email, string? name) =>
+        new()
+        {
+            Success = true,
+            CanonicalUserId = canonicalUserId,
+            ProviderUserId = providerUserId,
+            Email = email,
+            Name = name
+        };
+}
+
 public interface IDynamicOidcValidator
 {
-    Task<(bool success, string? canonicalUserId, string? error)> ValidateAsync(string tenantId, string token);
+    /// <summary>
+    /// Validates a JWT against the OIDC rules configured for <paramref name="tenantId"/>.
+    /// </summary>
+    Task<OidcValidationResult> ValidateAsync(string tenantId, string token);
 }
 
 public class DynamicOidcValidator : IDynamicOidcValidator
@@ -33,13 +70,13 @@ public class DynamicOidcValidator : IDynamicOidcValidator
         _tenantContext = tenantContext;
     }
 
-    public async Task<(bool success, string? canonicalUserId, string? error)> ValidateAsync(string tenantId, string token)
+    public async Task<OidcValidationResult> ValidateAsync(string tenantId, string token)
     {
         try
         {
             // Minimal structural checks
             if (string.IsNullOrWhiteSpace(token) || token.Count(c => c == '.') != 2)
-                return (false, null, "Invalid token format");
+                return OidcValidationResult.Fail("Invalid token format");
 
             // Read header payload to get iss and kid
             var handler = new JsonWebTokenHandler();
@@ -47,14 +84,14 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             var issuer = jwt?.Issuer;
             if (string.IsNullOrWhiteSpace(issuer))
             {
-                return (false, null, "Missing issuer");
+                return OidcValidationResult.Fail("Missing issuer");
             }
 
             var configResult = await _configService.GetForTenantAsync(tenantId);
             TenantOidcRules? rules = configResult.Data;
             if (rules == null)
             {
-                return (false, null, "no auth config has set for jwt validation");
+                return OidcValidationResult.Fail("no auth config has set for jwt validation");
             }
 
             // Select provider rule based on tenant configuration
@@ -83,17 +120,17 @@ public class DynamicOidcValidator : IDynamicOidcValidator
 
                 if (providerRule == null && rules.AllowedProviders != null && rules.AllowedProviders.Any())
                 {
-                    return (false, null, "Provider not allowed for tenant");
+                    return OidcValidationResult.Fail("Provider not allowed for tenant");
                 }
             }
             else
             {
-                return (false, null, "No OIDC providers configured for tenant");
+                return OidcValidationResult.Fail("No OIDC providers configured for tenant");
             }
 
             if (providerRule == null)
             {
-                return (false, null, "No matching OIDC provider configured for tenant");
+                return OidcValidationResult.Fail("No matching OIDC provider configured for tenant");
             }
 
             // Discovery + configuration via OpenID Connect configuration manager
@@ -133,7 +170,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             {
                 if (allowedAlgs != null && allowedAlgs.Any() && !allowedAlgs.Contains(jwtToken.Header.Alg, StringComparer.OrdinalIgnoreCase))
                 {
-                    return (false, null, "Signing algorithm not allowed");
+                    return OidcValidationResult.Fail("Signing algorithm not allowed");
                 }
             }
 
@@ -144,7 +181,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 principal.Claims.FirstOrDefault(c => c.Type == "scp")?.Value;
                 if (string.IsNullOrWhiteSpace(tokenScope))
                 {
-                    return (false, null, "Missing scope claim");
+                    return OidcValidationResult.Fail("Missing scope claim");
                 }
                 var requiredScopes = providerRule.Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 var tokenScopes = tokenScope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
@@ -152,7 +189,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 {
                     if (!tokenScopes.Contains(req))
                     {
-                        return (false, null, $"Required scope missing: {req}");
+                        return OidcValidationResult.Fail($"Required scope missing: {req}");
                     }
                 }
             }
@@ -165,7 +202,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                     var value = principal.Claims.FirstOrDefault(c => c.Type == check.Claim)?.Value;
                     if (!EvaluateClaim(value, check))
                     {
-                        return (false, null, $"Claim check failed: {check.Claim}");
+                        return OidcValidationResult.Fail($"Claim check failed: {check.Claim}");
                     }
                 }
             }
@@ -175,7 +212,7 @@ public class DynamicOidcValidator : IDynamicOidcValidator
 
             if (string.IsNullOrWhiteSpace(userId))
             {
-                return (false, null, "Missing subject claim");
+                return OidcValidationResult.Fail("Missing subject claim");
             }
             else if(_tenantContext.UserType != UserType.UserApiKey)
             {
@@ -189,18 +226,43 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             }
 
             var canonical = (providerName ?? issuer) + "|" + userId;
-            return (true, canonical, null);
+            return OidcValidationResult.Ok(canonical, userId, GetEmail(principal), GetName(principal));
         }
         catch (SecurityTokenException ex)
         {
             _logger.LogWarning(ex, "Token validation failed");
-            return (false, null, ex.Message);
+            return OidcValidationResult.Fail(ex.Message);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during OIDC validation");
-            return (false, null, "Internal error");
+            return OidcValidationResult.Fail("Internal error");
         }
+    }
+
+    private static string? GetEmail(ClaimsPrincipal principal)
+    {
+        return FirstClaimValue(principal, "email", ClaimTypes.Email, "preferred_username", "upn");
+    }
+
+    private static string? GetName(ClaimsPrincipal principal)
+    {
+        return FirstClaimValue(principal, "name", ClaimTypes.Name, "preferred_username");
+    }
+
+    private static string? FirstClaimValue(ClaimsPrincipal principal, params string[] claimTypes)
+    {
+        foreach (var claimType in claimTypes)
+        {
+            var value = principal.Claims
+                .FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.OrdinalIgnoreCase))?.Value;
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     private static string? GetUserId(OidcProviderRule providerRule, ClaimsPrincipal principal)

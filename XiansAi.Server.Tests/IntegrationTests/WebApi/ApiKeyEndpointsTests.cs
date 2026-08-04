@@ -91,7 +91,7 @@ public class ApiKeyEndpointsTests : WebApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task RevokeApiKey_WithValidKey_RevokesKey()
+    public async Task RevokeApiKey_WithValidKey_DeletesKeyAndFreesName()
     {
         // Arrange
         var request = new CreateApiKeyRequestDto { Name = "revoke-test-key" };
@@ -105,12 +105,15 @@ public class ApiKeyEndpointsTests : WebApiIntegrationTestBase
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // Verify key is revoked
+        // Verify key is hard-deleted
         using var scope = _factory.Services.CreateScope();
         var apiKeyRepository = scope.ServiceProvider.GetRequiredService<IApiKeyRepository>();
         var revokedKey = await apiKeyRepository.GetByIdAsync(created.Id, TestTenantId);
-        Assert.NotNull(revokedKey);
-        Assert.NotNull(revokedKey.RevokedAt);
+        Assert.Null(revokedKey);
+
+        // Name can be reused after revoke
+        var recreateResponse = await PostAsJsonAsync("/api/client/apikeys/create", request);
+        Assert.Equal(HttpStatusCode.OK, recreateResponse.StatusCode);
     }
 
     [Fact]

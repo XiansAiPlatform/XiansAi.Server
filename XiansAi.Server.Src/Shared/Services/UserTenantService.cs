@@ -43,6 +43,8 @@ public interface IUserTenantService
     Task<ServiceResult<List<TenantInfoDto>>> GetCurrentUserTenants(string token);
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser();
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForUser(string userId);
+    Task<ServiceResult<List<TenantInfoDto>>> GetApprovedTenantsForUserId(string userId);
+    Task<ServiceResult<List<TenantInfoDto>>> EnsureUserAndGetApprovedTenants(string userId, string? email, string? name);
     Task<ServiceResult<List<User>>> GetUnapprovedUsers();
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
@@ -116,11 +118,64 @@ public class UserTenantService : IUserTenantService
         return await GetTenantsForCurrentUser();
     }
 
-    public async Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser()
+    public Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser()
+    {
+        return GetApprovedTenantsForUserId(_tenantContext.LoggedInUser);
+    }
+
+    /// <summary>
+    /// Creates the user record if this is their first sign-in, then returns the tenants they are an
+    /// approved member of. Mirrors what the WebAPI login path does, so a first-time user becomes
+    /// visible to tenant admins for approval instead of being rejected without a trace. A brand new
+    /// user has no approved tenant roles, so this still returns an empty list until an admin acts.
+    /// Identity comes from an already-validated token; the token is not re-parsed here.
+    /// </summary>
+    public async Task<ServiceResult<List<TenantInfoDto>>> EnsureUserAndGetApprovedTenants(string userId, string? email, string? name)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return ServiceResult<List<TenantInfoDto>>.Unauthorized("User not authenticated");
+
+        try
+        {
+            var existingUser = await _userRepository.GetByUserIdAsync(userId);
+            if (existingUser == null)
+            {
+                var created = await _userManagementService.CreateNewUser(new UserDto
+                {
+                    UserId = userId,
+                    Email = email ?? string.Empty,
+                    Name = name ?? string.Empty
+                });
+
+                // A Conflict means another concurrent request created it first, which is fine.
+                if (!created.IsSuccess && created.StatusCode != StatusCode.Conflict)
+                {
+                    _logger.LogError("Failed to provision user {UserId}: {Error}",
+                        LogSanitizer.RedactEmail(userId), LogSanitizer.Sanitize(created.ErrorMessage));
+                    return ServiceResult<List<TenantInfoDto>>.InternalServerError("Failed to provision user");
+                }
+
+                _logger.LogInformation("Provisioned user {UserId} on first sign-in", LogSanitizer.RedactEmail(userId));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error provisioning user {UserId}", LogSanitizer.RedactEmail(userId));
+            return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error provisioning user");
+        }
+
+        return await GetApprovedTenantsForUserId(userId);
+    }
+
+    /// <summary>
+    /// Returns the enabled tenants the given user is an approved member of, without requiring the
+    /// caller to already have a tenant context. Authentication handlers use this to verify that a
+    /// caller-supplied tenant id actually belongs to the authenticated user.
+    /// </summary>
+    public async Task<ServiceResult<List<TenantInfoDto>>> GetApprovedTenantsForUserId(string userId)
     {
         try
         {
-            var userId = _tenantContext.LoggedInUser;
             if (string.IsNullOrEmpty(userId))
                 return ServiceResult<List<TenantInfoDto>>.Unauthorized("User not authenticated");
 
@@ -142,8 +197,8 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenants for current user");
-            return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error getting tenants for current user");
+            _logger.LogError(ex, "Error getting tenants for user {UserId}", LogSanitizer.Sanitize(userId));
+            return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error getting tenants for user");
         }
     }
 

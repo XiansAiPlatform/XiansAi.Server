@@ -211,22 +211,24 @@ namespace Features.UserApi.Auth
                             }
                             
                             var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
-                            if (!validation.success || string.IsNullOrEmpty(validation.canonicalUserId))
+                            if (!validation.Success || string.IsNullOrEmpty(validation.CanonicalUserId))
                             {
-                                _logger.LogWarning("JWT validation failed: {Error}", LogSanitizer.Sanitize(validation.error));
-                                return AuthenticateResult.Fail(validation.error ?? "JWT validation failed");
+                                _logger.LogWarning("JWT validation failed: {Error}", LogSanitizer.Sanitize(validation.Error));
+                                return AuthenticateResult.Fail(validation.Error ?? "JWT validation failed");
                             }
-                            var userId = validation.canonicalUserId;
+                            var userId = validation.CanonicalUserId;
                             _tenantContext.LoggedInUser = userId;
                             _tenantContext.UserType = UserType.UserToken;
 
-                            var tenantIds = new List<string>();
-                            tenantIds.Add(tenantId);
-
-                            if (string.IsNullOrEmpty(tenantId) || !tenantIds.Contains(tenantId))
+                            // A valid token proves who the caller is, not which tenant they may act as.
+                            // tenantId arrives from the query string, so it must be checked against the
+                            // tenants this user is actually an approved member of — otherwise anyone whose
+                            // token validates under another tenant's OIDC rules could act as that tenant.
+                            var tenantIds = await ResolveAuthorizedTenantIdsAsync(validation);
+                            if (!tenantIds.Contains(tenantId))
                             {
-                                _logger.LogWarning("JWT authentication failed, tenant mismatch");
-                                return AuthenticateResult.Fail("JWT authentication failed, tenant mismatch");
+                                _logger.LogWarning("Tenant {TenantId} is not authorized for the authenticated user", LogSanitizer.Sanitize(tenantId));
+                                return AuthenticateResult.Fail($"Tenant {tenantId} is not authorized for this token holder");
                             }
 
                             _tenantContext.TenantId = tenantId;
@@ -276,6 +278,32 @@ namespace Features.UserApi.Auth
                 _logger.LogError("Failed to resolve ITenantContext from request scope");
                 return AuthenticateResult.Fail("Failed to resolve ITenantContext from request scope");
             }
+        }
+
+        /// <summary>
+        /// Provisions the user on first sign-in and returns the tenants they are an approved member
+        /// of. The lookup is keyed on the raw provider subject rather than the canonical
+        /// `provider|subject` id, because that is the form stored in the users collection. Any
+        /// failure yields an empty list so that authentication fails closed.
+        /// </summary>
+        private async Task<List<string>> ResolveAuthorizedTenantIdsAsync(OidcValidationResult validation)
+        {
+            if (string.IsNullOrEmpty(validation.ProviderUserId))
+            {
+                _logger.LogWarning("Token validation returned no provider subject; denying tenant access");
+                return new List<string>();
+            }
+
+            var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
+                validation.ProviderUserId, validation.Email, validation.Name);
+
+            if (!result.IsSuccess || result.Data == null)
+            {
+                _logger.LogWarning("Could not resolve tenants for authenticated user: {Error}", LogSanitizer.Sanitize(result.ErrorMessage));
+                return new List<string>();
+            }
+
+            return result.Data.Select(t => t.TenantId).ToList();
         }
 
         // Logs a one-line deprecation warning when callers authenticate via a query-string

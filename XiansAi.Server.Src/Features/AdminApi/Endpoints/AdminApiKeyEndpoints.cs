@@ -259,7 +259,7 @@ public static class AdminApiKeyEndpoints
         })
         .WithName("AdminApiKey_Revoke")
         .WithSummary("Revoke an admin API key")
-        .WithDescription("Permanently revokes an admin API key. Only keys created by the specified user can be revoked.");
+        .WithDescription("Permanently deletes an admin API key. The name becomes available for reuse. Only keys created by the specified user can be revoked.");
 
         // POST /tenants/{tenantId}/admin-apikeys/{id}/rotate?userId=
         group.MapPost("/{id}/rotate", async (

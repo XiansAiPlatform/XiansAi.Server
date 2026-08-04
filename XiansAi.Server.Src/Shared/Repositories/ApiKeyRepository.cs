@@ -80,10 +80,10 @@ namespace Shared.Repositories
             {
                 try
                 {
-                    var update = Builders<ApiKey>.Update.Set(x => x.RevokedAt, DateTime.UtcNow);
-                    var result = await _collection.UpdateOneAsync(
-                        x => x.Id == id && x.TenantId == tenantId && x.RevokedAt == null, update);
-                    return result.ModifiedCount > 0;
+                    // Hard-delete so the (tenant_id, name) unique index frees the name for reuse.
+                    var result = await _collection.DeleteOneAsync(
+                        x => x.Id == id && x.TenantId == tenantId);
+                    return result.DeletedCount > 0;
                 }
                 catch (Exception ex)
                 {
