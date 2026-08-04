@@ -190,6 +190,14 @@ public class DefinitionsService : IDefinitionsService
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 
+        // Reject new system agents whose name already exists in any tenant
+        if (request.SystemScoped)
+        {
+            var nameConflict = await GetSystemAgentTenantNameConflictAsync(request.Agent, currentUser);
+            if (nameConflict != null)
+                return nameConflict;
+        }
+
         // Ensure agent exists using thread-safe upsert operation
         await _agentRepository.UpsertAgentAsync(
             request.Agent, 
@@ -305,6 +313,14 @@ public class DefinitionsService : IDefinitionsService
                 statusCode: StatusCodes.Status409Conflict);
         }
 
+        // Reject new system agents whose name already exists in any tenant
+        if (request.SystemScoped)
+        {
+            var nameConflict = await GetSystemAgentTenantNameConflictAsync(request.AgentName, currentUser);
+            if (nameConflict != null)
+                return nameConflict;
+        }
+
         // Determine whether this is a brand-new agent (so we only publish agent.registered once,
         // rather than on every worker restart which re-upserts the same agent).
         var existingAgent = await _agentRepository.GetByNameInternalAsync(
@@ -349,6 +365,41 @@ public class DefinitionsService : IDefinitionsService
         });
     }
 
+
+    /// <summary>
+    /// Blocks creating a new system-scoped agent when any tenant already has an agent with the same name.
+    /// Re-uploads of an existing system agent are allowed (including when tenants have deployments).
+    /// </summary>
+    private async Task<IResult?> GetSystemAgentTenantNameConflictAsync(string agentName, string currentUser)
+    {
+        if (await _agentRepository.IsSystemAgent(agentName))
+            return null;
+
+        var deployments = await _agentRepository.GetDeployedInstancesByNameAsync(agentName);
+        if (deployments.Count == 0)
+            return null;
+
+        var conflictingTenants = string.Join(", ",
+            deployments
+                .Select(d => d.Tenant)
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
+        _logger.LogError(
+            "User {UserId} attempted to create system agent {AgentName} but tenant-scoped agent(s) with the same name already exist in tenant(s): {Tenants}",
+            LogSanitizer.Sanitize(currentUser),
+            LogSanitizer.Sanitize(agentName),
+            LogSanitizer.Sanitize(conflictingTenants));
+
+        var tenantDetail = string.IsNullOrEmpty(conflictingTenants)
+            ? string.Empty
+            : $" Conflicting tenant(s): {conflictingTenants}.";
+
+        return Results.Problem(
+            title: "Conflict",
+            detail: $"Cannot create system agent '{agentName}' because an agent with the same name already exists in one or more tenants.{tenantDetail}",
+            statusCode: StatusCodes.Status409Conflict);
+    }
 
     private FlowDefinition CreateFlowDefinitionFromRequest(FlowDefinitionRequest request, FlowDefinition? existingDefinition = null, bool systemScoped = false)
     {
