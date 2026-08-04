@@ -32,6 +32,7 @@ namespace Features.UserApi.Configuration
             builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
             // ISecureEncryptionService is registered as Singleton in SharedConfiguration
             builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
+            builder.Services.AddScoped<IAuthorizedTenantResolver, AuthorizedTenantResolver>();
 
             // Add Webhook service
             builder.Services.AddScoped<IWebhookReceiverService, WebhookReceiverService>();

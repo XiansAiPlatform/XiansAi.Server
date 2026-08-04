@@ -16,6 +16,16 @@ namespace Shared.Auth;
         UserType UserType { get; set; }
         string TenantId { get; set; }   
         string LoggedInUser { get; set; }
+
+        /// <summary>
+        /// Identifies the caller as a conversation participant, which is the key conversation
+        /// threads are stored under. This is deliberately separate from <see cref="LoggedInUser"/>:
+        /// the UserApi JWT paths set the latter to the canonical `provider|subject` id for claims
+        /// and display, while threads are keyed on the raw provider subject. Defaults to
+        /// <see cref="LoggedInUser"/> for the flows where the two are the same.
+        /// </summary>
+        string ParticipantId { get; set; }
+
         string[] UserRoles { get; set; }
         IEnumerable<string> AuthorizedTenantIds { get; set; }
         
@@ -27,9 +37,18 @@ namespace Shared.Auth;
     public class TenantContext : ITenantContext
     {
         private readonly IConfiguration _configuration;
+        private string? _participantId;
+
         public UserType UserType { get; set; } = UserType.Unknown;
         public required string TenantId { get; set; }
         public required string LoggedInUser { get; set; }
+
+        public string ParticipantId
+        {
+            get => _participantId ?? LoggedInUser;
+            set => _participantId = value;
+        }
+
         public required string[] UserRoles { get; set; } = Array.Empty<string>();
         public IEnumerable<string> AuthorizedTenantIds { get; set; } = new List<string>();
         public string? Authorization { get; set; }

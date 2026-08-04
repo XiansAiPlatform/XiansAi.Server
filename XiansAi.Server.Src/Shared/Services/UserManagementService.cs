@@ -129,7 +129,12 @@ public interface IUserManagementService
     Task<ServiceResult<bool>> IsUserLockedOutAsync(string userId);
     Task<ServiceResult<PagedUserResult>> GetAllUsersAsync(UserFilter filter);
     Task<ServiceResult<User>> GetUserAsync(string userId);
-    Task<ServiceResult<bool>> CreateNewUser(UserDto user);
+    /// <summary>
+    /// Creates a user record. When <paramref name="allowFirstUserSysAdminBootstrap"/> is false the
+    /// new user is never promoted to SysAdmin, even on an empty deployment. Pass false from paths
+    /// that provision users implicitly rather than from a deliberate operator sign-in.
+    /// </summary>
+    Task<ServiceResult<bool>> CreateNewUser(UserDto user, bool allowFirstUserSysAdminBootstrap = true);
     Task<ServiceResult<bool>> UpdateUser(EditUserDto user);
     Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite);
     Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync(string tenantId);
@@ -270,7 +275,7 @@ public class UserManagementService : IUserManagementService
         }
     }
 
-    public async Task<ServiceResult<bool>> CreateNewUser(UserDto userDto)
+    public async Task<ServiceResult<bool>> CreateNewUser(UserDto userDto, bool allowFirstUserSysAdminBootstrap = true)
     {
         try
         {
@@ -279,15 +284,19 @@ public class UserManagementService : IUserManagementService
             {
                 return ServiceResult<bool>.Conflict("User already exists");
             }
-            // to assign first user as SysAdmin
-            var anyUser = await _userRepository.GetAnyUserAsync();
+            // The very first user record ever created becomes the global SysAdmin, which bootstraps
+            // a fresh deployment. Callers that provision users implicitly rather than from an
+            // operator sign-in opt out, so that a token holder cannot claim SysAdmin simply by
+            // being the first through the door.
+            var isFirstUserBootstrap = allowFirstUserSysAdminBootstrap
+                && (await _userRepository.GetAnyUserAsync()) == null;
 
             var newUser = new User
             {
                 UserId = userDto.UserId,
                 Email = userDto.Email,
                 Name = userDto.Name,
-                IsSysAdmin = anyUser == null,
+                IsSysAdmin = isFirstUserBootstrap,
                 IsLockedOut = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,

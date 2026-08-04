@@ -16,8 +16,8 @@ namespace Features.UserApi.Auth
         private readonly ILogger<EndpointAuthenticationHandler> _logger;
         private readonly IApiKeyService _apiKeyService;
         private readonly ITokenServiceFactory _tokenServiceFactory;
-        private readonly IUserTenantService _userTenantService;
         private readonly IDynamicOidcValidator _dynamicOidcValidator;
+        private readonly IAuthorizedTenantResolver _authorizedTenantResolver;
 
         public EndpointAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -26,16 +26,16 @@ namespace Features.UserApi.Auth
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
             ITokenServiceFactory tokenServiceFactory,
-            IUserTenantService userTenantService,
-            IDynamicOidcValidator dynamicOidcValidator)
+            IDynamicOidcValidator dynamicOidcValidator,
+            IAuthorizedTenantResolver authorizedTenantResolver)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<EndpointAuthenticationHandler>();
             _tenantContext = tenantContext;
             _apiKeyService = apiKeyService;
             _tokenServiceFactory = tokenServiceFactory;
-            _userTenantService = userTenantService;
             _dynamicOidcValidator = dynamicOidcValidator;
+            _authorizedTenantResolver = authorizedTenantResolver;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -130,7 +130,8 @@ namespace Features.UserApi.Auth
                             var claims = new List<Claim>
                             {
                                 new Claim(ClaimTypes.NameIdentifier, apiKeyById.CreatedBy),
-                                new Claim("TenantId", apiKeyById.TenantId)
+                                new Claim("TenantId", apiKeyById.TenantId),
+                                new Claim(UserApiClaimTypes.UserType, nameof(UserType.UserApiKey))
                             };
 
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
@@ -189,7 +190,8 @@ namespace Features.UserApi.Auth
                             var claims = new List<Claim>
                             {
                                 new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                                new Claim("TenantId", apiKey.TenantId)
+                                new Claim("TenantId", apiKey.TenantId),
+                                new Claim(UserApiClaimTypes.UserType, nameof(UserType.UserApiKey))
                             };
 
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
@@ -211,7 +213,7 @@ namespace Features.UserApi.Auth
                             }
                             
                             var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
-                            if (!validation.Success || string.IsNullOrEmpty(validation.CanonicalUserId))
+                            if (!validation.Success || string.IsNullOrEmpty(validation.CanonicalUserId) || string.IsNullOrEmpty(validation.ProviderUserId))
                             {
                                 _logger.LogWarning("JWT validation failed: {Error}", LogSanitizer.Sanitize(validation.Error));
                                 return AuthenticateResult.Fail(validation.Error ?? "JWT validation failed");
@@ -220,25 +222,34 @@ namespace Features.UserApi.Auth
                             _tenantContext.LoggedInUser = userId;
                             _tenantContext.UserType = UserType.UserToken;
 
-                            // A valid token proves who the caller is, not which tenant they may act as.
-                            // tenantId arrives from the query string, so it must be checked against the
-                            // tenants this user is actually an approved member of — otherwise anyone whose
-                            // token validates under another tenant's OIDC rules could act as that tenant.
-                            var tenantIds = await ResolveAuthorizedTenantIdsAsync(validation);
-                            if (!tenantIds.Contains(tenantId))
+                            // Conversation threads are keyed on the raw provider subject, not on the
+                            // canonical `provider|subject` id used for claims and display.
+                            var participantId = validation.ProviderUserId;
+                            _tenantContext.ParticipantId = participantId;
+
+                            // A valid token proves who the caller is, not which tenant they may act as,
+                            // so the query-string tenantId is checked against the tenants this user is
+                            // actually an approved member of.
+                            var resolution = await _authorizedTenantResolver.ResolveAsync(validation, tenantId);
+                            if (!resolution.IsAuthorized)
                             {
                                 _logger.LogWarning("Tenant {TenantId} is not authorized for the authenticated user", LogSanitizer.Sanitize(tenantId));
                                 return AuthenticateResult.Fail($"Tenant {tenantId} is not authorized for this token holder");
                             }
 
-                            _tenantContext.TenantId = tenantId;
+                            var resolvedTenantId = resolution.MatchedTenantId!;
+                            var tenantIds = resolution.AuthorizedTenantIds;
+
+                            _tenantContext.TenantId = resolvedTenantId;
                             _tenantContext.AuthorizedTenantIds = tenantIds;
                             _logger.LogDebug("UserID-{Id}", LogSanitizer.Sanitize(userId));
                             
                             var claims = new List<Claim>
                             {
                                 new Claim(ClaimTypes.NameIdentifier, userId),
-                                new Claim("TenantId", tenantId)
+                                new Claim("TenantId", resolvedTenantId),
+                                new Claim(UserApiClaimTypes.ParticipantId, participantId),
+                                new Claim(UserApiClaimTypes.UserType, nameof(UserType.UserToken))
                             };
                             
                             foreach (var tId in tenantIds)
@@ -250,7 +261,7 @@ namespace Features.UserApi.Auth
                             var identity = new ClaimsIdentity(claims, Scheme.Name);
                             var principal = new ClaimsPrincipal(identity);
                             var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogInformation("Successfully authenticated Endpoint JWT: User={UserId}, Tenant={TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
+                            _logger.LogInformation("Successfully authenticated Endpoint JWT: User={UserId}, Tenant={TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(resolvedTenantId));
                             
                             return AuthenticateResult.Success(ticket);
                         }
@@ -278,32 +289,6 @@ namespace Features.UserApi.Auth
                 _logger.LogError("Failed to resolve ITenantContext from request scope");
                 return AuthenticateResult.Fail("Failed to resolve ITenantContext from request scope");
             }
-        }
-
-        /// <summary>
-        /// Provisions the user on first sign-in and returns the tenants they are an approved member
-        /// of. The lookup is keyed on the raw provider subject rather than the canonical
-        /// `provider|subject` id, because that is the form stored in the users collection. Any
-        /// failure yields an empty list so that authentication fails closed.
-        /// </summary>
-        private async Task<List<string>> ResolveAuthorizedTenantIdsAsync(OidcValidationResult validation)
-        {
-            if (string.IsNullOrEmpty(validation.ProviderUserId))
-            {
-                _logger.LogWarning("Token validation returned no provider subject; denying tenant access");
-                return new List<string>();
-            }
-
-            var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
-                validation.ProviderUserId, validation.Email, validation.Name);
-
-            if (!result.IsSuccess || result.Data == null)
-            {
-                _logger.LogWarning("Could not resolve tenants for authenticated user: {Error}", LogSanitizer.Sanitize(result.ErrorMessage));
-                return new List<string>();
-            }
-
-            return result.Data.Select(t => t.TenantId).ToList();
         }
 
         // Logs a one-line deprecation warning when callers authenticate via a query-string

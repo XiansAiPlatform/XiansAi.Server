@@ -140,12 +140,17 @@ public class UserTenantService : IUserTenantService
             var existingUser = await _userRepository.GetByUserIdAsync(userId);
             if (existingUser == null)
             {
-                var created = await _userManagementService.CreateNewUser(new UserDto
-                {
-                    UserId = userId,
-                    Email = email ?? string.Empty,
-                    Name = name ?? string.Empty
-                });
+                // This path is reachable by anyone holding a token that validates against some
+                // tenant's OIDC rules, so it must not be able to claim the first-user SysAdmin
+                // bootstrap. That promotion stays reserved for the WebAPI operator sign-in flow.
+                var created = await _userManagementService.CreateNewUser(
+                    new UserDto
+                    {
+                        UserId = userId,
+                        Email = email ?? string.Empty,
+                        Name = name ?? string.Empty
+                    },
+                    allowFirstUserSysAdminBootstrap: false);
 
                 // A Conflict means another concurrent request created it first, which is fine.
                 if (!created.IsSuccess && created.StatusCode != StatusCode.Conflict)

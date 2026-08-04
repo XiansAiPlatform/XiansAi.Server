@@ -12,7 +12,7 @@ public class WorkflowIdentifier
 
     public string AgentName { get; set; }
 
-    public WorkflowIdentifier(string identifier, ITenantContext tenantContext)
+    public WorkflowIdentifier(string? identifier, ITenantContext tenantContext)
     {
         if (string.IsNullOrWhiteSpace(identifier))
         {

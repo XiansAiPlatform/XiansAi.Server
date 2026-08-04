@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
+using Features.UserApi.Utils;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
@@ -62,22 +63,7 @@ namespace Features.UserApi.Websocket
         }
 
         private bool IsValidUser(string participantId, ITenantContext tenantContext) {
-
-            // if the user type is UserApiKey, then we simply trust the participantId
-            if (tenantContext.UserType == UserType.UserApiKey) {
-                return true;
-            }
-            // if the user type is UserToken, then we need to check if the participantId is the same as the logged in user
-            if (tenantContext.LoggedInUser != null) {
-                //split the userId by |
-                var userIdParts = tenantContext.LoggedInUser.Split('|');
-                if (userIdParts.Length > 1) {
-                    return userIdParts[1].Equals(participantId, StringComparison.OrdinalIgnoreCase);
-                } else if (userIdParts.Length == 1) {
-                    return userIdParts[0].Equals(participantId, StringComparison.OrdinalIgnoreCase);
-                }
-            }
-            return false;
+            return ParticipantIdResolver.CanActAs(participantId, tenantContext);
         }
 
         private ITenantContext GetScopedTenantContext()

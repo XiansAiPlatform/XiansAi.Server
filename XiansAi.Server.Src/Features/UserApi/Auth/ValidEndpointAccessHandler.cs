@@ -24,6 +24,8 @@ namespace Features.UserApi.Auth
         {
             var loggedInUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var tenantId = context.User.FindFirst("TenantId")?.Value;
+            var participantId = context.User.FindFirst(UserApiClaimTypes.ParticipantId)?.Value;
+            var userType = UserApiClaimTypes.ReadUserType(context.User);
 
             if (_tenantContext == null)
             {
@@ -51,9 +53,16 @@ namespace Features.UserApi.Auth
                 try
                 {
                     _tenantContext.LoggedInUser = loggedInUser;
-                    _tenantContext.UserType = UserType.UserToken;
+                    _tenantContext.UserType = userType;
                     _tenantContext.TenantId = tenantId;
                     _tenantContext.AuthorizedTenantIds = new[] { tenantId };
+
+                    // Absent for credentials where the participant is the logged-in user, in which
+                    // case the tenant context already falls back to it.
+                    if (!string.IsNullOrEmpty(participantId))
+                    {
+                        _tenantContext.ParticipantId = participantId;
+                    }
 
                     _logger.LogInformation("Successfully authenticated Endpoint Connection");
                     context.Succeed(requirement);
