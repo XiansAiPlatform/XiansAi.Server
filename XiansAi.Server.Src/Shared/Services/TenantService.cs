@@ -656,8 +656,9 @@ public class TenantService : ITenantService
                 return ServiceResult<TenantCreatedResult>.BadRequest("A tenant with this ID already exists.");
             }
 
-            // Persist with Secret metadata values encrypted.
-            validatedTenant.Metadata = _metadataProtector.Protect(validatedTenant.Metadata, validatedTenant.TenantId);
+            // Validate Temporal fields up front (no writes yet) so a bad request fails before any persistence.
+            var hasCertificate = !string.IsNullOrWhiteSpace(request.TemporalCertificate);
+            var hasCertificateKey = !string.IsNullOrWhiteSpace(request.TemporalCertificateKey);
             if (request.UseSpecificTemporalNamespace)
             {
                 if (string.IsNullOrWhiteSpace(request.TemporalHost) ||
@@ -667,26 +668,40 @@ public class TenantService : ITenantService
                         "Temporal host and namespace are required when using a specific Temporal namespace.");
                 }
 
-                var hasCertificate = !string.IsNullOrWhiteSpace(request.TemporalCertificate);
-                var hasCertificateKey = !string.IsNullOrWhiteSpace(request.TemporalCertificateKey);
                 if (hasCertificate != hasCertificateKey)
                 {
                     return ServiceResult<TenantCreatedResult>.BadRequest(
                         "Temporal certificate and certificate key must be provided together.");
                 }
-
-                _logger.LogInformation("Saving dedicated Temporal connection for tenant {TenantId}", LogSanitizer.Sanitize(request.TenantId));
-                await _tenantTemporalConfigService.SaveAsync(
-                    request.TenantId,
-                    request.TemporalHost,
-                    request.TemporalNamespace,
-                    hasCertificate ? request.TemporalCertificate : null,
-                    hasCertificateKey ? request.TemporalCertificateKey : null,
-                    finalCreatedBy);
             }
+
+            // Persist with Secret metadata values encrypted.
+            validatedTenant.Metadata = _metadataProtector.Protect(validatedTenant.Metadata, validatedTenant.TenantId);
 
             await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
+
+            if (request.UseSpecificTemporalNamespace)
+            {
+                _logger.LogInformation("Saving dedicated Temporal connection for tenant {TenantId}", LogSanitizer.Sanitize(request.TenantId));
+                try
+                {
+                    await _tenantTemporalConfigService.SaveAsync(
+                        request.TenantId,
+                        request.TemporalHost!,
+                        request.TemporalNamespace!,
+                        hasCertificate ? request.TemporalCertificate : null,
+                        hasCertificateKey ? request.TemporalCertificateKey : null,
+                        finalCreatedBy);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to save Temporal config for tenant {TenantId}; rolling back tenant creation", LogSanitizer.Sanitize(request.TenantId));
+                    await _tenantRepository.DeleteAsync(validatedTenant.Id);
+                    return ServiceResult<TenantCreatedResult>.InternalServerError(
+                        "Failed to save the tenant's Temporal configuration. Tenant creation was rolled back.");
+                }
+            }
 
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.TenantCreated,
