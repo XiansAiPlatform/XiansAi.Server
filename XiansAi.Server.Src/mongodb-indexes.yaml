@@ -548,3 +548,11 @@ webhook_deliveries:
       created_at: asc
     expire_after: 15d
     background: true
+
+tenant_temporal_config:
+  # One dedicated Temporal connection config per tenant; also the sole lookup
+  # path used by TenantTemporalConfigRepository.GetByTenantIdAsync/UpsertAsync.
+  - name: tenant_id_1
+    keys:
+      tenant_id: asc
+    unique: true
