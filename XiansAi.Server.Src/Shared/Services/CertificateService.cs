@@ -55,7 +55,9 @@ public class CertificateService
             var tenantConnection = await _tenantTemporalConfigService.GetForTenantAsync(_tenantContext.TenantId);
             if (tenantConnection != null)
             {
-                _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{tenantConnection.Host} FlowServerNamespace:{tenantConnection.Namespace}");
+                _logger.LogInformation(
+                    "GetFlowServerSettings for Tenant: {TenantId}, FlowServerUrl: {FlowServerUrl}, FlowServerNamespace: {FlowServerNamespace}",
+                    LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.Sanitize(tenantConnection.Host), LogSanitizer.Sanitize(tenantConnection.Namespace));
                 return new FlowServerSettings
                 {
                     FlowServerUrl = tenantConnection.Host,
@@ -66,7 +68,9 @@ public class CertificateService
             }
         }
 
-        _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{_tenantContext.GetTemporalConfig().FlowServerUrl} FlowServerNamespace:{_tenantContext.GetTemporalConfig().FlowServerNamespace}");
+        _logger.LogInformation(
+            "GetFlowServerSettings for Tenant: {TenantId}, FlowServerUrl: {FlowServerUrl}, FlowServerNamespace: {FlowServerNamespace}",
+            LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.Sanitize(_tenantContext.GetTemporalConfig().FlowServerUrl), LogSanitizer.Sanitize(_tenantContext.GetTemporalConfig().FlowServerNamespace));
         return new FlowServerSettings
         {
             FlowServerUrl = _tenantContext.GetTemporalConfig().FlowServerUrlExternal ?? _tenantContext.GetTemporalConfig().FlowServerUrl ?? throw new Exception($"FlowServerUrl not found for Tenant:{_tenantContext.TenantId}"),
