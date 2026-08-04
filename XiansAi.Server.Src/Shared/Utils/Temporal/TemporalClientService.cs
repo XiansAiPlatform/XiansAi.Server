@@ -161,6 +161,10 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
     /// </summary>
     private async Task EnsureSearchAttributesRegisteredAsync(ITemporalClient client, string namespaceName)
     {
+        if (_searchAttributesRegistered.TryGetValue(namespaceName, out var registered) && registered)
+        {
+            return;
+        }
 
         try
         {
