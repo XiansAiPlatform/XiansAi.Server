@@ -19,7 +19,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
     private readonly ConcurrentDictionary<string, ITemporalClient> _clients = new();
     private readonly ConcurrentDictionary<string, CloudService> _serviceClients = new();
     private readonly ConcurrentDictionary<string, bool> _searchAttributesRegistered = new();
-    // private readonly ITenantCacheService _tenantCacheService;
+    private readonly ITenantCacheService _tenantCacheService;
     private readonly ITenantTemporalConfigService _tenantTemporalConfigService;
     private readonly ILogger<TemporalClientService> _logger;
     private readonly IConfiguration _configuration;
@@ -30,12 +30,12 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
     public TemporalClientService(
         ILogger<TemporalClientService> logger,
         IConfiguration configuration,
-        // ITenantCacheService tenantCacheService,
+        ITenantCacheService tenantCacheService,
         ITenantTemporalConfigService tenantTemporalConfigService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-        // _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
+        _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
         _tenantTemporalConfigService = tenantTemporalConfigService ?? throw new ArgumentNullException(nameof(tenantTemporalConfigService));
     }
 
@@ -122,16 +122,20 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
 
         // A tenant that opted into "use a specific Temporal namespace" has its connection
         // details persisted in Mongo - prefer that over static configuration.
-        var tenantConnection = await _tenantTemporalConfigService.GetForTenantAsync(tenantId);
-        if (tenantConnection != null)
+        var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantId);
+        if (tenant != null && tenant.UseSpecificTemporalNamespace)
         {
-            return new TemporalConfig
+            var tenantConnection = await _tenantTemporalConfigService.GetForTenantAsync(tenantId);
+            if (tenantConnection != null)
             {
-                FlowServerUrl = tenantConnection.Host,
-                FlowServerNamespace = tenantConnection.Namespace,
-                CertificateBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
-                PrivateKeyBase64 = tenantConnection.CertificateKey == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.CertificateKey))
-            };
+                return new TemporalConfig
+                {
+                    FlowServerUrl = tenantConnection.Host,
+                    FlowServerNamespace = tenantConnection.Namespace,
+                    CertificateBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
+                    PrivateKeyBase64 = tenantConnection.CertificateKey == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.CertificateKey))
+                };
+            }
         }
 
         // Fall back to tenant-specific config in IConfiguration, then the root default config
