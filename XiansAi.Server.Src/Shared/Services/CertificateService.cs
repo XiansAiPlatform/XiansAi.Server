@@ -24,6 +24,7 @@ public class CertificateService
     private readonly ICertificateRepository _certificateRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ITenantTemporalConfigService _tenantTemporalConfigService;
+    private readonly ITenantCacheService _tenantCacheService;
 
     public CertificateService(
         ILogger<CertificateService> logger,
@@ -31,7 +32,8 @@ public class CertificateService
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
         IWebhookEventPublisher webhookEventPublisher,
-        ITenantTemporalConfigService tenantTemporalConfigService)
+        ITenantTemporalConfigService tenantTemporalConfigService,
+        ITenantCacheService tenantCacheService)
     {
         _logger = logger;
         _tenantContext = tenantContext;
@@ -39,6 +41,7 @@ public class CertificateService
         _certificateRepository = certificateRepository;
         _webhookEventPublisher = webhookEventPublisher;
         _tenantTemporalConfigService = tenantTemporalConfigService;
+        _tenantCacheService = tenantCacheService;
     }
 
     public async Task<FlowServerSettings> GetFlowServerSettings()
@@ -46,17 +49,21 @@ public class CertificateService
         // A tenant that opted into "use a specific Temporal namespace" has its connection
         // details persisted in Mongo (tenant_temporal_config) - prefer that over static
         // configuration, mirroring TemporalClientService.GetTemporalConfigAsync.
-        var tenantConnection = await _tenantTemporalConfigService.GetForTenantAsync(_tenantContext.TenantId);
-        if (tenantConnection != null)
+        var tenant = await _tenantCacheService.GetByTenantIdAsync(_tenantContext.TenantId);
+        if (tenant != null && tenant.UseSpecificTemporalNamespace)
         {
-            _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{tenantConnection.Host} FlowServerNamespace:{tenantConnection.Namespace}");
-            return new FlowServerSettings
+            var tenantConnection = await _tenantTemporalConfigService.GetForTenantAsync(_tenantContext.TenantId);
+            if (tenantConnection != null)
             {
-                FlowServerUrl = tenantConnection.Host,
-                FlowServerNamespace = tenantConnection.Namespace,
-                FlowServerCertBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
-                FlowServerPrivateKeyBase64 = tenantConnection.CertificateKey == null ? null : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(tenantConnection.CertificateKey))
-            };
+                _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{tenantConnection.Host} FlowServerNamespace:{tenantConnection.Namespace}");
+                return new FlowServerSettings
+                {
+                    FlowServerUrl = tenantConnection.Host,
+                    FlowServerNamespace = tenantConnection.Namespace,
+                    FlowServerCertBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
+                    FlowServerPrivateKeyBase64 = tenantConnection.CertificateKey == null ? null : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(tenantConnection.CertificateKey))
+                };
+            }
         }
 
         _logger.LogInformation($"GetFlowServerSettings for Tenant:{_tenantContext.TenantId} FlowServerUrl:{_tenantContext.GetTemporalConfig().FlowServerUrl} FlowServerNamespace:{_tenantContext.GetTemporalConfig().FlowServerNamespace}");
