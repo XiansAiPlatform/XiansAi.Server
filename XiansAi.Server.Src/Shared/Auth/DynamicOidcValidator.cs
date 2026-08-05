@@ -27,6 +27,16 @@ public class OidcValidationResult
     /// </summary>
     public string? ProviderUserId { get; init; }
 
+    /// <summary>
+    /// Normalized OIDC authority the signing keys were fetched from, which is what
+    /// <see cref="ProviderUserId"/> is only unique within. Used to pin a user record to one
+    /// provider so a second provider cannot claim the same subject.
+    ///
+    /// Not the `iss` claim: the expected issuer is tenant-configurable and can name any string,
+    /// while the authority has to actually serve the discovery document that yielded the keys.
+    /// </summary>
+    public string? ProviderAuthority { get; init; }
+
     public string? Email { get; init; }
     public string? Name { get; init; }
     public string? Error { get; init; }
@@ -34,12 +44,18 @@ public class OidcValidationResult
     public static OidcValidationResult Fail(string error) =>
         new() { Success = false, Error = error };
 
-    public static OidcValidationResult Ok(string canonicalUserId, string providerUserId, string? email, string? name) =>
+    public static OidcValidationResult Ok(
+        string canonicalUserId,
+        string providerUserId,
+        string? providerAuthority,
+        string? email,
+        string? name) =>
         new()
         {
             Success = true,
             CanonicalUserId = canonicalUserId,
             ProviderUserId = providerUserId,
+            ProviderAuthority = providerAuthority,
             Email = email,
             Name = name
         };
@@ -226,7 +242,8 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             }
 
             var canonical = (providerName ?? issuer) + "|" + userId;
-            return OidcValidationResult.Ok(canonical, userId, GetEmail(principal), GetName(principal));
+            return OidcValidationResult.Ok(
+                canonical, userId, NormalizeUrl(authority), GetEmail(principal), GetName(principal));
         }
         catch (SecurityTokenException ex)
         {

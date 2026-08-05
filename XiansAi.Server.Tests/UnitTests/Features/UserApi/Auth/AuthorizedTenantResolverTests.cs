@@ -13,6 +13,7 @@ public class AuthorizedTenantResolverTests
 {
     private const string ProviderUserId = "provider-subject-abc123";
     private const string CanonicalUserId = "keycloak|provider-subject-abc123";
+    private const string ProviderAuthority = "https://login.example.com";
 
     private readonly Mock<IUserTenantService> _userTenantService = new();
 
@@ -28,13 +29,19 @@ public class AuthorizedTenantResolverTests
     }
 
     private static OidcValidationResult ValidToken() =>
-        OidcValidationResult.Ok(CanonicalUserId, ProviderUserId, "user@example.com", "Test User");
+        OidcValidationResult.Ok(CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User");
 
     private void SetupApprovedTenants(params string[] tenantIds)
     {
+        SetupApprovedTenantsFor(ProviderUserId, ProviderAuthority, tenantIds);
+    }
+
+    private void SetupApprovedTenantsFor(string providerUserId, string providerAuthority, params string[] tenantIds)
+    {
         var tenants = tenantIds.Select(t => new TenantInfoDto { TenantId = t, Name = t }).ToList();
         _userTenantService
-            .Setup(x => x.EnsureUserAndGetApprovedTenants(ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>()))
+            .Setup(x => x.EnsureUserAndGetApprovedTenants(
+                providerUserId, It.IsAny<string?>(), It.IsAny<string?>(), providerAuthority))
             .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.Success(tenants));
     }
 
@@ -96,30 +103,41 @@ public class AuthorizedTenantResolverTests
         var resolution = await resolver.ResolveAsync(ValidToken(), string.Empty);
 
         Assert.False(resolution.IsAuthorized);
-        _userTenantService.Verify(
-            x => x.EnsureUserAndGetApprovedTenants(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()),
-            Times.Never);
+        VerifyNoLookup();
     }
 
     [Fact]
     public async Task ResolveAsync_Denies_WhenTokenCarriesNoProviderSubject()
     {
         var resolver = BuildResolver();
-        var validation = OidcValidationResult.Ok(CanonicalUserId, string.Empty, null, null);
+        var validation = OidcValidationResult.Ok(CanonicalUserId, string.Empty, ProviderAuthority, null, null);
 
         var resolution = await resolver.ResolveAsync(validation, "tenant-a");
 
         Assert.False(resolution.IsAuthorized);
-        _userTenantService.Verify(
-            x => x.EnsureUserAndGetApprovedTenants(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()),
-            Times.Never);
+        VerifyNoLookup();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Denies_WhenTokenCarriesNoProviderAuthority()
+    {
+        // Without it the subject cannot be tied to one provider, so it cannot be trusted to identify
+        // the stored user.
+        var resolver = BuildResolver();
+        var validation = OidcValidationResult.Ok(CanonicalUserId, ProviderUserId, null, null, null);
+
+        var resolution = await resolver.ResolveAsync(validation, "tenant-a");
+
+        Assert.False(resolution.IsAuthorized);
+        VerifyNoLookup();
     }
 
     [Fact]
     public async Task ResolveAsync_Denies_WhenTenantLookupFails()
     {
         _userTenantService
-            .Setup(x => x.EnsureUserAndGetApprovedTenants(ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>()))
+            .Setup(x => x.EnsureUserAndGetApprovedTenants(
+                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority))
             .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.InternalServerError("boom"));
         var resolver = BuildResolver();
 
@@ -138,7 +156,8 @@ public class AuthorizedTenantResolverTests
         await resolver.ResolveAsync(ValidToken(), "tenant-a");
 
         _userTenantService.Verify(
-            x => x.EnsureUserAndGetApprovedTenants(ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>()),
+            x => x.EnsureUserAndGetApprovedTenants(
+                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority),
             Times.Once);
     }
 
@@ -146,7 +165,8 @@ public class AuthorizedTenantResolverTests
     public async Task ResolveAsync_DoesNotCacheFailures_SoATransientErrorDoesNotLockTheUserOut()
     {
         _userTenantService
-            .SetupSequence(x => x.EnsureUserAndGetApprovedTenants(ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>()))
+            .SetupSequence(x => x.EnsureUserAndGetApprovedTenants(
+                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority))
             .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.InternalServerError("transient"))
             .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.Success(
                 new List<TenantInfoDto> { new() { TenantId = "tenant-a", Name = "tenant-a" } }));
@@ -164,16 +184,42 @@ public class AuthorizedTenantResolverTests
     {
         var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
         SetupApprovedTenants("tenant-a");
-        _userTenantService
-            .Setup(x => x.EnsureUserAndGetApprovedTenants("other-subject", It.IsAny<string?>(), It.IsAny<string?>()))
-            .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.Success(new List<TenantInfoDto>()));
+        SetupApprovedTenantsFor("other-subject", ProviderAuthority);
         var resolver = BuildResolver(cache);
 
         var approved = await resolver.ResolveAsync(ValidToken(), "tenant-a");
         var otherUser = await resolver.ResolveAsync(
-            OidcValidationResult.Ok("keycloak|other-subject", "other-subject", null, null), "tenant-a");
+            OidcValidationResult.Ok("keycloak|other-subject", "other-subject", ProviderAuthority, null, null),
+            "tenant-a");
 
         Assert.True(approved.IsAuthorized);
         Assert.False(otherUser.IsAuthorized);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DoesNotServeOneProvidersCachedTenants_ToAnotherProviderWithTheSameSubject()
+    {
+        // A subject is only unique within an issuer, so the cache must not let a second provider
+        // asserting the same subject skip the lookup that checks which provider the user belongs to.
+        var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        SetupApprovedTenants("tenant-a");
+        SetupApprovedTenantsFor(ProviderUserId, "https://evil.example");
+        var resolver = BuildResolver(cache);
+
+        var genuine = await resolver.ResolveAsync(ValidToken(), "tenant-a");
+        var impostor = await resolver.ResolveAsync(
+            OidcValidationResult.Ok(CanonicalUserId, ProviderUserId, "https://evil.example", null, null),
+            "tenant-a");
+
+        Assert.True(genuine.IsAuthorized);
+        Assert.False(impostor.IsAuthorized);
+    }
+
+    private void VerifyNoLookup()
+    {
+        _userTenantService.Verify(
+            x => x.EnsureUserAndGetApprovedTenants(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never);
     }
 }

@@ -18,6 +18,14 @@ public class UserDto
     public string Email { get; set; } = string.Empty;
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// OIDC authority the subject was authenticated by, pinned onto the new record. Null for
+    /// provisioning paths that do not authenticate against a specific provider, such as operator
+    /// bootstrap and admin-created users; those records are pinned on first sign-in instead.
+    /// </summary>
+    [JsonPropertyName("providerAuthority")]
+    public string? ProviderAuthority { get; set; }
 }
 
 public class EditUserDto
@@ -296,6 +304,7 @@ public class UserManagementService : IUserManagementService
                 UserId = userDto.UserId,
                 Email = userDto.Email,
                 Name = userDto.Name,
+                ProviderAuthority = userDto.ProviderAuthority,
                 IsSysAdmin = isFirstUserBootstrap,
                 IsLockedOut = false,
                 CreatedAt = DateTime.UtcNow,

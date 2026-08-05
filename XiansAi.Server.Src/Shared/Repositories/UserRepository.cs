@@ -27,6 +27,7 @@ public interface IUserRepository
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
     Task<bool> IsSysAdmin(string userId);
+    Task<string?> PinProviderAuthorityIfUnsetAsync(string userId, string providerAuthority);
     Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin);
     Task<bool> DeleteUser(string userId, string? tenantId = null);
     Task<List<User>> SearchUsersAsync(string query, string? tenantId = null);
@@ -449,6 +450,48 @@ public class UserRepository : IUserRepository
                 .FirstOrDefaultAsync();
             return user?.IsSysAdmin ?? false;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "IsSysAdmin");
+    }
+
+    /// <summary>
+    /// Pins the user to <paramref name="providerAuthority"/> if they are not pinned yet, and returns
+    /// the authority they are pinned to afterwards (null when the user does not exist).
+    ///
+    /// The set is conditional on the field still being empty so that two concurrent first sign-ins
+    /// from different providers cannot both believe they won; the loser sees the winner's value and
+    /// is rejected by the caller.
+    /// </summary>
+    public async Task<string?> PinProviderAuthorityIfUnsetAsync(string userId, string providerAuthority)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var unpinned = Builders<User>.Filter.And(
+                Builders<User>.Filter.Eq(u => u.UserId, userId),
+                Builders<User>.Filter.Or(
+                    Builders<User>.Filter.Exists(u => u.ProviderAuthority, false),
+                    Builders<User>.Filter.Eq(u => u.ProviderAuthority, null),
+                    Builders<User>.Filter.Eq(u => u.ProviderAuthority, string.Empty)));
+
+            var update = Builders<User>.Update
+                .Set(u => u.ProviderAuthority, providerAuthority)
+                .Set(u => u.UpdatedAt, DateTime.UtcNow);
+
+            var pinned = await _users.FindOneAndUpdateAsync(
+                unpinned,
+                update,
+                new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
+
+            if (pinned != null)
+            {
+                return pinned.ProviderAuthority;
+            }
+
+            // No match: either already pinned, or the user does not exist.
+            var existing = await _users.Find(u => u.UserId == userId)
+                .Project(u => new { u.ProviderAuthority })
+                .FirstOrDefaultAsync();
+
+            return existing?.ProviderAuthority;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "PinProviderAuthorityIfUnset");
     }
 
     public async Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin)

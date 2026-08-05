@@ -44,7 +44,8 @@ public interface IUserTenantService
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser();
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForUser(string userId);
     Task<ServiceResult<List<TenantInfoDto>>> GetApprovedTenantsForUserId(string userId);
-    Task<ServiceResult<List<TenantInfoDto>>> EnsureUserAndGetApprovedTenants(string userId, string? email, string? name);
+    Task<ServiceResult<List<TenantInfoDto>>> EnsureUserAndGetApprovedTenants(
+        string userId, string? email, string? name, string? providerAuthority);
     Task<ServiceResult<List<User>>> GetUnapprovedUsers();
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
@@ -129,11 +130,23 @@ public class UserTenantService : IUserTenantService
     /// visible to tenant admins for approval instead of being rejected without a trace. A brand new
     /// user has no approved tenant roles, so this still returns an empty list until an admin acts.
     /// Identity comes from an already-validated token; the token is not re-parsed here.
+    ///
+    /// <paramref name="providerAuthority"/> ties the subject to the provider that authenticated it.
+    /// A subject is only unique within one issuer, so without this a provider could assert another
+    /// provider's subject and resolve that person's record.
     /// </summary>
-    public async Task<ServiceResult<List<TenantInfoDto>>> EnsureUserAndGetApprovedTenants(string userId, string? email, string? name)
+    public async Task<ServiceResult<List<TenantInfoDto>>> EnsureUserAndGetApprovedTenants(
+        string userId, string? email, string? name, string? providerAuthority)
     {
         if (string.IsNullOrEmpty(userId))
             return ServiceResult<List<TenantInfoDto>>.Unauthorized("User not authenticated");
+
+        if (string.IsNullOrEmpty(providerAuthority))
+        {
+            _logger.LogWarning("No provider authority for user {UserId}; cannot establish which provider " +
+                "asserted this subject, so denying", LogSanitizer.RedactEmail(userId));
+            return ServiceResult<List<TenantInfoDto>>.Unauthorized("Identity provider could not be determined");
+        }
 
         try
         {
@@ -148,19 +161,37 @@ public class UserTenantService : IUserTenantService
                     {
                         UserId = userId,
                         Email = email ?? string.Empty,
-                        Name = name ?? string.Empty
+                        Name = name ?? string.Empty,
+                        ProviderAuthority = providerAuthority
                     },
                     allowFirstUserSysAdminBootstrap: false);
 
-                // A Conflict means another concurrent request created it first, which is fine.
-                if (!created.IsSuccess && created.StatusCode != StatusCode.Conflict)
+                if (created.IsSuccess)
+                {
+                    _logger.LogInformation("Provisioned user {UserId} on first sign-in", LogSanitizer.RedactEmail(userId));
+                    return await GetApprovedTenantsForUserId(userId);
+                }
+
+                if (created.StatusCode != StatusCode.Conflict)
                 {
                     _logger.LogError("Failed to provision user {UserId}: {Error}",
                         LogSanitizer.RedactEmail(userId), LogSanitizer.Sanitize(created.ErrorMessage));
                     return ServiceResult<List<TenantInfoDto>>.InternalServerError("Failed to provision user");
                 }
 
-                _logger.LogInformation("Provisioned user {UserId} on first sign-in", LogSanitizer.RedactEmail(userId));
+                // A concurrent request created it first, so re-read and hold it to the same check
+                // as any other existing record.
+                existingUser = await _userRepository.GetByUserIdAsync(userId);
+                if (existingUser == null)
+                {
+                    return ServiceResult<List<TenantInfoDto>>.InternalServerError("Failed to provision user");
+                }
+            }
+
+            if (!await IsSameProviderAsync(existingUser, providerAuthority))
+            {
+                return ServiceResult<List<TenantInfoDto>>.Unauthorized(
+                    "This subject is registered to a different identity provider");
             }
         }
         catch (Exception ex)
@@ -170,6 +201,55 @@ public class UserTenantService : IUserTenantService
         }
 
         return await GetApprovedTenantsForUserId(userId);
+    }
+
+    /// <summary>
+    /// Whether the provider that authenticated this request is the one the stored record belongs to.
+    ///
+    /// Records that predate pinning carry no authority, so the first sign-in to reach one claims it.
+    /// Existing clients therefore keep working untouched, and the record is protected from every
+    /// later provider. A SysAdmin adopting a pin is logged as a warning rather than refused: there is
+    /// no sign-in path that pins them ahead of time, so refusing would lock them out with no way back
+    /// in, and the log is what makes an unexpected one visible.
+    /// </summary>
+    private async Task<bool> IsSameProviderAsync(User user, string providerAuthority)
+    {
+        if (!string.IsNullOrEmpty(user.ProviderAuthority))
+        {
+            if (string.Equals(user.ProviderAuthority, providerAuthority, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            _logger.LogWarning(
+                "Rejecting token for {UserId}: subject is pinned to provider {Pinned} but was asserted by {Presented}",
+                LogSanitizer.RedactEmail(user.UserId),
+                LogSanitizer.Sanitize(user.ProviderAuthority),
+                LogSanitizer.Sanitize(providerAuthority));
+            return false;
+        }
+
+        var pinned = await _userRepository.PinProviderAuthorityIfUnsetAsync(user.UserId, providerAuthority);
+        if (!string.Equals(pinned, providerAuthority, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Rejecting token for {UserId}: a concurrent sign-in pinned the subject to provider {Pinned}",
+                LogSanitizer.RedactEmail(user.UserId), LogSanitizer.Sanitize(pinned));
+            return false;
+        }
+
+        if (user.IsSysAdmin)
+        {
+            _logger.LogWarning("Pinned SysAdmin {UserId} to provider {Authority} on first use",
+                LogSanitizer.RedactEmail(user.UserId), LogSanitizer.Sanitize(providerAuthority));
+        }
+        else
+        {
+            _logger.LogInformation("Pinned user {UserId} to provider {Authority} on first use",
+                LogSanitizer.RedactEmail(user.UserId), LogSanitizer.Sanitize(providerAuthority));
+        }
+
+        return true;
     }
 
     /// <summary>

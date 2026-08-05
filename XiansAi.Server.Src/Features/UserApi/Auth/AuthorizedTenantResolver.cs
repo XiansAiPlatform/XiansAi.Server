@@ -105,6 +105,8 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
     /// Returns the tenants the user is an approved member of, keyed on the raw provider subject
     /// rather than the canonical `provider|subject` id, because that is the form stored in the users
     /// collection (see UnifiedAuthRequirement, which provisions users from the same raw subject).
+    /// The authority that authenticated the subject is passed through so the user record can be
+    /// pinned to one provider.
     /// </summary>
     private async Task<IReadOnlyList<string>> GetApprovedTenantIdsAsync(OidcValidationResult validation)
     {
@@ -115,14 +117,24 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
             return Array.Empty<string>();
         }
 
-        var cacheKey = CacheKeyPrefix + providerUserId;
+        var providerAuthority = validation.ProviderAuthority;
+        if (string.IsNullOrEmpty(providerAuthority))
+        {
+            _logger.LogWarning("Token validation returned no provider authority; denying tenant access");
+            return Array.Empty<string>();
+        }
+
+        // Keyed on the provider as well as the subject: a subject is only unique within one issuer,
+        // so caching on the subject alone would let another provider's identical subject read this
+        // entry and skip the provider check that produced it.
+        var cacheKey = CacheKeyPrefix + providerAuthority + "|" + providerUserId;
         if (_cache.TryGetValue(cacheKey, out IReadOnlyList<string>? cachedTenantIds) && cachedTenantIds != null)
         {
             return cachedTenantIds;
         }
 
         var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
-            providerUserId, validation.Email, validation.Name);
+            providerUserId, validation.Email, validation.Name, providerAuthority);
 
         if (!result.IsSuccess || result.Data == null)
         {
