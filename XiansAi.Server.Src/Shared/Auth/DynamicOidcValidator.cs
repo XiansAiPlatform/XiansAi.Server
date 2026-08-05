@@ -1,249 +1,173 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
+using Shared.Data.Models.Validation;
 using Shared.Services;
-using System.Security.Claims;
-using System.Text.Json;
-using Shared.Auth;
+using Shared.Utils;
 
 namespace Shared.Auth;
 
 /// <summary>
-/// Outcome of validating a JWT against a tenant's OIDC rules.
+/// Validates JWTs against the OIDC rules a tenant has configured.
+///
+/// This class only establishes who the caller is. It deliberately has no side effects on the
+/// request's tenant context: a token proves an identity, not an authorization, and the two were
+/// previously entangled here. Callers decide what the validated identity means for their transport.
+///
+/// The rules come from tenant administrators, so <see cref="OidcValidationPolicy"/> gets the final
+/// say on anything that would weaken validation.
 /// </summary>
-public class OidcValidationResult
-{
-    public bool Success { get; init; }
-
-    /// <summary>Provider-prefixed id (`provider|subject`), used for claims and display.</summary>
-    public string? CanonicalUserId { get; init; }
-
-    /// <summary>
-    /// The raw provider subject. This is the form the users collection is keyed on, so it is the
-    /// only value usable for looking up or provisioning the user record.
-    /// </summary>
-    public string? ProviderUserId { get; init; }
-
-    /// <summary>
-    /// Normalized OIDC authority the signing keys were fetched from, which is what
-    /// <see cref="ProviderUserId"/> is only unique within. Used to pin a user record to one
-    /// provider so a second provider cannot claim the same subject.
-    ///
-    /// Not the `iss` claim: the expected issuer is tenant-configurable and can name any string,
-    /// while the authority has to actually serve the discovery document that yielded the keys.
-    /// </summary>
-    public string? ProviderAuthority { get; init; }
-
-    public string? Email { get; init; }
-    public string? Name { get; init; }
-    public string? Error { get; init; }
-
-    public static OidcValidationResult Fail(string error) =>
-        new() { Success = false, Error = error };
-
-    public static OidcValidationResult Ok(
-        string canonicalUserId,
-        string providerUserId,
-        string? providerAuthority,
-        string? email,
-        string? name) =>
-        new()
-        {
-            Success = true,
-            CanonicalUserId = canonicalUserId,
-            ProviderUserId = providerUserId,
-            ProviderAuthority = providerAuthority,
-            Email = email,
-            Name = name
-        };
-}
-
-public interface IDynamicOidcValidator
-{
-    /// <summary>
-    /// Validates a JWT against the OIDC rules configured for <paramref name="tenantId"/>.
-    /// </summary>
-    Task<OidcValidationResult> ValidateAsync(string tenantId, string token);
-}
-
 public class DynamicOidcValidator : IDynamicOidcValidator
 {
-    private readonly ITenantOidcConfigService _configService;
-    private readonly ILogger<DynamicOidcValidator> _logger;
-    private readonly ITenantContext _tenantContext;
+    private const string ValidationCacheKeyPrefix = "oidc_validation:";
+
+    /// <summary>
+    /// Caps how many distinct providers we will hold discovery state for. Authorities are
+    /// tenant-supplied, so without a ceiling this static map grows with whatever gets configured.
+    /// </summary>
+    private const int MaxConfigurationManagers = 500;
+
+    /// <summary>Reusable and thread-safe; the handler holds no per-request state.</summary>
+    private static readonly JsonWebTokenHandler TokenHandler = new();
+
     private static readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _oidcManagers = new();
 
+    private readonly ITenantOidcConfigService _configService;
+    private readonly OidcValidationPolicy _policy;
+    private readonly IMemoryCache _cache;
+    private readonly ILogger<DynamicOidcValidator> _logger;
+
     public DynamicOidcValidator(
-        ITenantOidcConfigService configService, 
-        ILogger<DynamicOidcValidator> logger,
-        ITenantContext tenantContext)
+        ITenantOidcConfigService configService,
+        OidcValidationPolicy policy,
+        IMemoryCache cache,
+        ILogger<DynamicOidcValidator> logger)
     {
         _configService = configService;
+        _policy = policy;
+        _cache = cache;
         _logger = logger;
-        _tenantContext = tenantContext;
     }
 
     public async Task<OidcValidationResult> ValidateAsync(string tenantId, string token)
     {
+        if (string.IsNullOrWhiteSpace(token) || CountDots(token) != 2)
+        {
+            return OidcValidationResult.Fail("Invalid token format");
+        }
+
+        // Validated before it reaches the configuration lookup, which is keyed and cached on this
+        // value: without the check, a caller could mint an unbounded number of distinct cache
+        // entries just by varying the parameter.
+        if (!ValidationHelpers.IsValidPattern(tenantId, ValidationHelpers.Patterns.SafeTenantId))
+        {
+            _logger.LogWarning("Rejecting malformed tenant id in token validation request");
+            return OidcValidationResult.Fail("Invalid tenant");
+        }
+
+        var cached = TryGetCachedValidation(tenantId, token);
+        if (cached != null)
+        {
+            return cached;
+        }
+
+        var result = await ValidateUncachedAsync(tenantId, token);
+        if (result.Success)
+        {
+            CacheValidation(tenantId, token, result);
+        }
+
+        return result;
+    }
+
+    private async Task<OidcValidationResult> ValidateUncachedAsync(string tenantId, string token)
+    {
         try
         {
-            // Minimal structural checks
-            if (string.IsNullOrWhiteSpace(token) || token.Count(c => c == '.') != 2)
-                return OidcValidationResult.Fail("Invalid token format");
-
-            // Read header payload to get iss and kid
-            var handler = new JsonWebTokenHandler();
-            var jwt = handler.ReadJsonWebToken(token);
+            var jwt = TokenHandler.ReadJsonWebToken(token);
             var issuer = jwt?.Issuer;
-            if (string.IsNullOrWhiteSpace(issuer))
+            if (jwt == null || string.IsNullOrWhiteSpace(issuer))
             {
                 return OidcValidationResult.Fail("Missing issuer");
             }
 
             var configResult = await _configService.GetForTenantAsync(tenantId);
-            TenantOidcRules? rules = configResult.Data;
+            var rules = configResult.Data;
             if (rules == null)
             {
-                return OidcValidationResult.Fail("no auth config has set for jwt validation");
+                return OidcValidationResult.Fail("No auth config has been set for jwt validation");
             }
 
-            // Select provider rule based on tenant configuration
-            OidcProviderRule? providerRule = null;
-            string? providerName = null;
-            if (rules?.Providers != null && rules.Providers.Count > 0)
-            {
-                IEnumerable<KeyValuePair<string, OidcProviderRule>> candidates = rules.Providers;
-                if (rules.AllowedProviders != null && rules.AllowedProviders.Any())
-                {
-                    candidates = candidates.Where(kv => rules.AllowedProviders.Any(ap => string.Equals(ap, kv.Key, StringComparison.OrdinalIgnoreCase)));
-                }
-
-                var normIssuer = NormalizeUrl(issuer);
-                foreach (var kv in candidates)
-                {
-                    var pr = kv.Value;
-                    if ((!string.IsNullOrEmpty(pr.Issuer) && string.Equals(NormalizeUrl(pr.Issuer), normIssuer, StringComparison.OrdinalIgnoreCase)) ||
-                        (!string.IsNullOrEmpty(pr.Authority) && (normIssuer.StartsWith(NormalizeUrl(pr.Authority), StringComparison.OrdinalIgnoreCase) || NormalizeUrl(pr.Authority).StartsWith(normIssuer, StringComparison.OrdinalIgnoreCase))))
-                    {
-                        providerRule = pr;
-                        providerName = kv.Key;
-                        break;
-                    }
-                }
-
-                if (providerRule == null && rules.AllowedProviders != null && rules.AllowedProviders.Any())
-                {
-                    return OidcValidationResult.Fail("Provider not allowed for tenant");
-                }
-            }
-            else
+            if (rules.Providers == null || rules.Providers.Count == 0)
             {
                 return OidcValidationResult.Fail("No OIDC providers configured for tenant");
             }
 
+            var (providerName, providerRule) = SelectProvider(rules, issuer);
             if (providerRule == null)
             {
-                return OidcValidationResult.Fail("No matching OIDC provider configured for tenant");
+                return OidcValidationResult.Fail(rules.AllowedProviders is { Count: > 0 }
+                    ? "Provider not allowed for tenant"
+                    : "No matching OIDC provider configured for tenant");
             }
 
-            // Discovery + configuration via OpenID Connect configuration manager
+            var providerLabel = tenantId + "/" + providerName;
             var authority = providerRule.Authority ?? providerRule.Issuer ?? issuer;
-            var metadataAddress = CombineUrl(authority, ".well-known/openid-configuration");
-            var manager = GetOrCreateConfigurationManager(metadataAddress, providerRule.RequireHttpsMetadata != false);
-            var oidcConfig = await manager.GetConfigurationAsync(CancellationToken.None);
 
-            // Build validation parameters
-            var tokenValidationParameters = new TokenValidationParameters
+            var unsafeAuthority = _policy.DescribeUnsafeAuthority(authority);
+            if (unsafeAuthority != null)
             {
-                ValidateIssuerSigningKey = providerRule.RequireSignedTokens ?? true,
-                ValidateIssuer = true,
-                ValidIssuer = providerRule.Issuer ?? oidcConfig.Issuer ?? issuer,
-                ValidateAudience = providerRule.ExpectedAudience != null && providerRule.ExpectedAudience.Any(),
-                ValidAudiences = providerRule.ExpectedAudience,
-                ValidateLifetime = true,
-                RequireExpirationTime = true,
-                RequireSignedTokens = providerRule.RequireSignedTokens ?? true,
-                IssuerSigningKeys = oidcConfig.SigningKeys ?? Enumerable.Empty<SecurityKey>()
-            };
-
-            // Algorithms restriction
-            var allowedAlgs = providerRule.AcceptedAlgorithms ?? oidcConfig.IdTokenSigningAlgValuesSupported?.ToList();
-
-            var tokenHandler = new JwtSecurityTokenHandler();
-            tokenHandler.MapInboundClaims = false;
-            tokenHandler.InboundClaimTypeMap.Clear();
-            tokenHandler.OutboundClaimTypeMap.Clear();
-
-
-            SecurityToken validatedToken;
-            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out validatedToken);
-
-            // Check alg
-            if (validatedToken is JwtSecurityToken jwtToken)
-            {
-                if (allowedAlgs != null && allowedAlgs.Any() && !allowedAlgs.Contains(jwtToken.Header.Alg, StringComparer.OrdinalIgnoreCase))
-                {
-                    return OidcValidationResult.Fail("Signing algorithm not allowed");
-                }
+                _logger.LogError("Refusing OIDC discovery for {Provider}: {Reason}",
+                    LogSanitizer.Sanitize(providerLabel), LogSanitizer.Sanitize(unsafeAuthority));
+                return OidcValidationResult.Fail("Provider authority is not permitted");
             }
 
-            // Scope check if configured
-            if (!string.IsNullOrWhiteSpace(providerRule.Scope))
+            var oidcConfig = await GetOpenIdConfigurationAsync(authority, providerLabel);
+            if (oidcConfig == null)
             {
-                var tokenScope = principal.Claims.FirstOrDefault(c => c.Type == "scope")?.Value ??
-                principal.Claims.FirstOrDefault(c => c.Type == "scp")?.Value;
-                if (string.IsNullOrWhiteSpace(tokenScope))
-                {
-                    return OidcValidationResult.Fail("Missing scope claim");
-                }
-                var requiredScopes = providerRule.Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                var tokenScopes = tokenScope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
-                foreach (var req in requiredScopes)
-                {
-                    if (!tokenScopes.Contains(req))
-                    {
-                        return OidcValidationResult.Fail($"Required scope missing: {req}");
-                    }
-                }
+                return OidcValidationResult.Fail("Provider metadata is unavailable");
             }
 
-            // Additional custom claims checks
-            if (providerRule.AdditionalClaims != null)
+            var parameters = BuildValidationParameters(providerRule, providerLabel, oidcConfig, issuer);
+            if (parameters == null)
             {
-                foreach (var check in providerRule.AdditionalClaims)
-                {
-                    var value = principal.Claims.FirstOrDefault(c => c.Type == check.Claim)?.Value;
-                    if (!EvaluateClaim(value, check))
-                    {
-                        return OidcValidationResult.Fail($"Claim check failed: {check.Claim}");
-                    }
-                }
+                return OidcValidationResult.Fail("Provider configuration is not permitted");
             }
 
-            // Canonical user id: iss|<id>. Prefer 'sub', then 'oid', then configured/user-friendly fallbacks
-            var userId = GetUserId(providerRule, principal);
+            var validation = await TokenHandler.ValidateTokenAsync(jwt, parameters);
+            if (!validation.IsValid)
+            {
+                _logger.LogWarning(validation.Exception, "Token validation failed for {Provider}",
+                    LogSanitizer.Sanitize(providerLabel));
+                return OidcValidationResult.Fail(validation.Exception?.Message ?? "Token validation failed");
+            }
 
-            if (string.IsNullOrWhiteSpace(userId))
+            var ruleFailure = OidcTokenInspector.DescribeMissingScope(providerRule, jwt)
+                ?? OidcTokenInspector.DescribeFailedClaimCheck(providerRule, jwt);
+            if (ruleFailure != null)
+            {
+                return OidcValidationResult.Fail(ruleFailure);
+            }
+
+            var subject = ResolveSubject(providerRule, providerLabel, jwt);
+            if (string.IsNullOrWhiteSpace(subject.Value))
             {
                 return OidcValidationResult.Fail("Missing subject claim");
             }
-            else if(_tenantContext.UserType != UserType.UserApiKey)
-            {
-                // Set tenant context
-                _tenantContext.LoggedInUser = userId;
-                _tenantContext.UserType = UserType.UserToken;
-                _tenantContext.Authorization = token;
-                _tenantContext.TenantId = tenantId;
-                _tenantContext.AuthorizedTenantIds = new[] { tenantId };
-                _logger.LogDebug("User Authenticated with user ID: {userId}", userId);
-            }
 
-            var canonical = (providerName ?? issuer) + "|" + userId;
+            var canonical = (providerName ?? issuer) + "|" + subject.Value;
             return OidcValidationResult.Ok(
-                canonical, userId, NormalizeUrl(authority), GetEmail(principal), GetName(principal));
+                canonical,
+                subject.Value,
+                NormalizeUrl(authority),
+                OidcTokenInspector.GetEmail(jwt),
+                OidcTokenInspector.GetName(jwt),
+                OidcTokenInspector.ExpiresAt(jwt));
         }
         catch (SecurityTokenException ex)
         {
@@ -257,81 +181,256 @@ public class DynamicOidcValidator : IDynamicOidcValidator
         }
     }
 
-    private static string? GetEmail(ClaimsPrincipal principal)
+    /// <summary>
+    /// Builds the validation rules, overriding anything in the tenant's configuration that would
+    /// weaken them. Returns null when the configuration cannot be made safe at all.
+    /// </summary>
+    private TokenValidationParameters? BuildValidationParameters(
+        OidcProviderRule providerRule,
+        string providerLabel,
+        OpenIdConnectConfiguration oidcConfig,
+        string issuer)
     {
-        return FirstClaimValue(principal, "email", ClaimTypes.Email, "preferred_username", "upn");
-    }
-
-    private static string? GetName(ClaimsPrincipal principal)
-    {
-        return FirstClaimValue(principal, "name", ClaimTypes.Name, "preferred_username");
-    }
-
-    private static string? FirstClaimValue(ClaimsPrincipal principal, params string[] claimTypes)
-    {
-        foreach (var claimType in claimTypes)
+        // Signature verification is not negotiable. A provider that turns it off is accepting
+        // tokens anyone can mint, so the setting is overridden rather than honoured.
+        if (providerRule.RequireSignedTokens == false)
         {
-            var value = principal.Claims
-                .FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.OrdinalIgnoreCase))?.Value;
-            if (!string.IsNullOrWhiteSpace(value))
+            _policy.WarnAboutConfiguration("signing:" + providerLabel,
+                "OIDC provider {Provider} sets requireSignedTokens=false. Ignoring it: tokens are " +
+                "always signature-verified. Remove the setting from the tenant configuration.",
+                LogSanitizer.Sanitize(providerLabel));
+        }
+
+        var hasAudience = providerRule.ExpectedAudience is { Count: > 0 };
+        if (!hasAudience)
+        {
+            if (_policy.RequireAudience)
             {
-                return value;
+                _logger.LogError("OIDC provider {Provider} declares no expectedAudience and audience " +
+                    "enforcement is on, so no token from it can be accepted.",
+                    LogSanitizer.Sanitize(providerLabel));
+                return null;
+            }
+
+            _policy.WarnAboutConfiguration("audience:" + providerLabel,
+                "OIDC provider {Provider} declares no expectedAudience, so any token this issuer " +
+                "signed is accepted — including tokens minted for a different application. Set " +
+                "expectedAudience, then enable Auth:RequireOidcAudience.",
+                LogSanitizer.Sanitize(providerLabel));
+        }
+
+        return new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            ValidateIssuer = true,
+            ValidIssuer = providerRule.Issuer ?? oidcConfig.Issuer ?? issuer,
+            ValidateAudience = hasAudience,
+            ValidAudiences = providerRule.ExpectedAudience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+
+            // Restricting algorithms here rather than checking after the fact means an algorithm
+            // the provider does not accept never gets as far as a signature comparison.
+            ValidAlgorithms = OidcValidationPolicy.ResolveAllowedAlgorithms(
+                providerRule.AcceptedAlgorithms, oidcConfig.IdTokenSigningAlgValuesSupported),
+            IssuerSigningKeys = oidcConfig.SigningKeys ?? Enumerable.Empty<SecurityKey>()
+        };
+    }
+
+    /// <summary>
+    /// Reads the subject, warning when it came from a claim the user may be able to change at their
+    /// identity provider — which would let them resolve to somebody else's record.
+    /// </summary>
+    private ResolvedSubject ResolveSubject(OidcProviderRule providerRule, string providerLabel, JsonWebToken jwt)
+    {
+        var subject = OidcTokenInspector.ResolveSubject(
+            providerRule, jwt, allowFallbackClaims: !_policy.RequireStandardSubjectClaim);
+
+        if (!subject.IsStableClaim && subject.Value != null)
+        {
+            _policy.WarnAboutConfiguration("subject:" + providerLabel + ":" + subject.ClaimType,
+                "OIDC provider {Provider} has no 'sub' or 'oid' claim, so identity fell back to " +
+                "'{ClaimType}', which users can often change at their provider. Set userIdClaim on " +
+                "the provider to name a stable claim, then enable Auth:StrictSubjectClaim.",
+                LogSanitizer.Sanitize(providerLabel), LogSanitizer.Sanitize(subject.ClaimType));
+        }
+
+        return subject;
+    }
+
+    /// <summary>
+    /// Picks the configured provider whose issuer or authority the token's issuer corresponds to.
+    /// When the tenant restricts itself to a subset of providers, only that subset is considered.
+    /// </summary>
+    private static (string? Name, OidcProviderRule? Rule) SelectProvider(TenantOidcRules rules, string issuer)
+    {
+        var normalizedIssuer = NormalizeUrl(issuer);
+        var allowedProviders = rules.AllowedProviders;
+        var restricted = allowedProviders is { Count: > 0 };
+
+        foreach (var (name, rule) in rules.Providers!)
+        {
+            if (restricted &&
+                !allowedProviders!.Any(allowed => string.Equals(allowed, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (MatchesIssuer(rule, normalizedIssuer))
+            {
+                return (name, rule);
             }
         }
 
-        return null;
+        return (null, null);
     }
 
-    private static string? GetUserId(OidcProviderRule providerRule, ClaimsPrincipal principal)
+    private static bool MatchesIssuer(OidcProviderRule rule, string normalizedIssuer)
     {
-        string? userId = null;
-
-        // Allow provider configuration to specify preferred claim(s)
-        IEnumerable<string> configuredClaims = Enumerable.Empty<string>();
-        if (providerRule.ProviderSpecificSettings != null)
+        if (!string.IsNullOrEmpty(rule.Issuer) &&
+            string.Equals(NormalizeUrl(rule.Issuer), normalizedIssuer, StringComparison.OrdinalIgnoreCase))
         {
-            if (providerRule.ProviderSpecificSettings.TryGetValue("userIdClaim", out var single))
+            return true;
+        }
+
+        if (string.IsNullOrEmpty(rule.Authority))
+        {
+            return false;
+        }
+
+        var normalizedAuthority = NormalizeUrl(rule.Authority);
+        return normalizedIssuer.StartsWith(normalizedAuthority, StringComparison.OrdinalIgnoreCase) ||
+               normalizedAuthority.StartsWith(normalizedIssuer, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Fetches the provider's discovery document, under a timeout so that an unresponsive identity
+    /// provider cannot hold an authentication request open for the HTTP client's default timeout.
+    /// </summary>
+    private async Task<OpenIdConnectConfiguration?> GetOpenIdConfigurationAsync(string authority, string providerLabel)
+    {
+        var metadataAddress = CombineUrl(authority, ".well-known/openid-configuration");
+
+        var manager = GetOrCreateConfigurationManager(metadataAddress, !_policy.AllowInsecureAuthority);
+        if (manager == null)
+        {
+            _logger.LogError("Refusing OIDC discovery for {Provider}: tracking more than {Limit} providers",
+                LogSanitizer.Sanitize(providerLabel), MaxConfigurationManagers);
+            return null;
+        }
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(_policy.DiscoveryTimeout);
+            return await manager.GetConfigurationAsync(timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not fetch OIDC metadata for {Provider}", LogSanitizer.Sanitize(providerLabel));
+            return null;
+        }
+    }
+
+    private OidcValidationResult? TryGetCachedValidation(string tenantId, string token)
+    {
+        if (_policy.ValidationCacheDuration <= TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        return _cache.TryGetValue(BuildCacheKey(tenantId, token), out OidcValidationResult? cached)
+            ? cached
+            : null;
+    }
+
+    /// <summary>
+    /// Caches a successful validation so that repeat requests carrying the same token — a chatty
+    /// REST client, an SSE reconnect loop — do not re-verify the signature and re-read the tenant's
+    /// OIDC rules every time.
+    ///
+    /// The entry never outlives the token: an expiry beyond the token's own would let an expired
+    /// token keep working, which is the one thing caching here must not do.
+    /// </summary>
+    private void CacheValidation(string tenantId, string token, OidcValidationResult result)
+    {
+        if (_policy.ValidationCacheDuration <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var expiresAt = DateTimeOffset.UtcNow.Add(_policy.ValidationCacheDuration);
+        if (result.TokenExpiresAt is { } tokenExpiry && tokenExpiry < expiresAt)
+        {
+            expiresAt = tokenExpiry;
+        }
+
+        if (expiresAt <= DateTimeOffset.UtcNow)
+        {
+            return;
+        }
+
+        var options = new MemoryCacheEntryOptions()
+            .SetAbsoluteExpiration(expiresAt)
+            .SetSize(1);
+        _cache.Set(BuildCacheKey(tenantId, token), result, options);
+    }
+
+    /// <summary>
+    /// Keyed on the tenant as well as the token, because the same token validates against different
+    /// rules per tenant and may legitimately be accepted by one and refused by another. The token
+    /// is hashed so that a credential never appears in a cache key.
+    /// </summary>
+    private static string BuildCacheKey(string tenantId, string token)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return ValidationCacheKeyPrefix + tenantId + ":" + Convert.ToBase64String(hash);
+    }
+
+    /// <summary>A compact JWS has exactly two dots. Counted directly to avoid a LINQ pass per request.</summary>
+    private static int CountDots(string token)
+    {
+        var dots = 0;
+        foreach (var c in token)
+        {
+            if (c == '.')
             {
-                var s = single?.ToString();
-                if (!string.IsNullOrWhiteSpace(s)) configuredClaims = new[] { s! };
-            }
-            else if (providerRule.ProviderSpecificSettings.TryGetValue("userIdClaims", out var list))
-            {
-                var s = list?.ToString();
-                if (!string.IsNullOrWhiteSpace(s))
-                {
-                    configuredClaims = s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                }
+                dots++;
             }
         }
 
-        var fallbackClaims = configuredClaims.Any()
-            ? configuredClaims
-            : ["sub", "oid", ClaimTypes.NameIdentifier, "preferred_username", "email", "upn", "nameid", "name" ];
-
-        foreach (var claimType in fallbackClaims)
-        {
-            var val = principal.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.OrdinalIgnoreCase))?.Value;
-            if (!string.IsNullOrWhiteSpace(val))
-            {
-                userId = val;
-                break;
-            }
-        }
-
-        return userId;
+        return dots;
     }
 
     private static string CombineUrl(string baseUrl, string path)
     {
-        if (!baseUrl.EndsWith("/")) baseUrl += "/";
+        if (!baseUrl.EndsWith('/')) baseUrl += "/";
         return baseUrl + path;
     }
 
     private static string NormalizeUrl(string url) => url?.TrimEnd('/') ?? string.Empty;
 
-    private static ConfigurationManager<OpenIdConnectConfiguration> GetOrCreateConfigurationManager(string metadataAddress, bool requireHttps)
+    /// <summary>
+    /// Returns the shared discovery client for an address, or null once the cap is reached.
+    ///
+    /// <paramref name="requireHttps"/> restates the scheme rule the authority was already checked
+    /// against, so that a redirect cannot walk the fetch down to plaintext. It comes from the
+    /// deployment's environment and so is the same for every address here.
+    /// </summary>
+    private static ConfigurationManager<OpenIdConnectConfiguration>? GetOrCreateConfigurationManager(
+        string metadataAddress,
+        bool requireHttps)
     {
+        if (_oidcManagers.TryGetValue(metadataAddress, out var existing))
+        {
+            return existing;
+        }
+
+        if (_oidcManagers.Count >= MaxConfigurationManagers)
+        {
+            return null;
+        }
+
         return _oidcManagers.GetOrAdd(metadataAddress, address =>
         {
             var retriever = new HttpDocumentRetriever { RequireHttps = requireHttps };
@@ -342,69 +441,4 @@ public class DynamicOidcValidator : IDynamicOidcValidator
             };
         });
     }
-
-    private static bool EvaluateClaim(string? claimValue, CustomClaimCheck check)
-    {
-        if (claimValue == null) return false;
-
-        // Support multi-type values (string, number, bool, arrays) coming from JSON as JsonElement
-        // Normalize expected value(s) to string(s) for comparison
-        var op = check.Op?.ToLowerInvariant();
-
-        if (check.Value is JsonElement je && je.ValueKind == JsonValueKind.Array)
-        {
-            var expectedValues = new List<string>();
-            foreach (var item in je.EnumerateArray())
-            {
-                var s = JsonElementToComparableString(item);
-                if (s != null) expectedValues.Add(s);
-            }
-
-            return op switch
-            {
-                "equals" => expectedValues.Any(v => string.Equals(claimValue, v, StringComparison.Ordinal)),
-                "not_equals" => expectedValues.All(v => !string.Equals(claimValue, v, StringComparison.Ordinal)),
-                "contains" => expectedValues.Any(v => claimValue.Contains(v, StringComparison.Ordinal)),
-                _ => false
-            };
-        }
-
-        var expected = ToComparableString(check.Value);
-
-        return op switch
-        {
-            "equals" => string.Equals(claimValue, expected, StringComparison.Ordinal),
-            "not_equals" => !string.Equals(claimValue, expected, StringComparison.Ordinal),
-            "contains" => expected != null && claimValue.Contains(expected, StringComparison.Ordinal),
-            _ => false
-        };
-    }
-
-    private static string? ToComparableString(object? value)
-    {
-        if (value == null) return null;
-        if (value is string s) return s;
-        if (value is bool b) return b ? "true" : "false";
-        if (value is JsonElement je) return JsonElementToComparableString(je);
-        return value.ToString();
-    }
-
-    private static string? JsonElementToComparableString(JsonElement je)
-    {
-        return je.ValueKind switch
-        {
-            JsonValueKind.String => je.GetString(),
-            JsonValueKind.Number => je.GetRawText(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            JsonValueKind.Null => null,
-            JsonValueKind.Undefined => null,
-            // For objects/arrays, use raw text to allow exact matching if needed
-            JsonValueKind.Object => je.GetRawText(),
-            JsonValueKind.Array => je.GetRawText(),
-            _ => je.GetRawText()
-        };
-    }
 }
-
-

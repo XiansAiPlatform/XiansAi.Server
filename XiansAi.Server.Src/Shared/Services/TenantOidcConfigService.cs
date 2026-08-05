@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -13,8 +14,19 @@ public class OidcProviderRule
     public string? Issuer { get; set; }
     public List<string>? ExpectedAudience { get; set; }
     public string? Scope { get; set; }
+    /// <summary>
+    /// Accepted for backward compatibility but no longer read: tokens are always
+    /// signature-verified, and saving this as false is rejected.
+    /// </summary>
     public bool? RequireSignedTokens { get; set; }
+
     public List<string>? AcceptedAlgorithms { get; set; }
+
+    /// <summary>
+    /// Accepted for backward compatibility but no longer read. Whether a provider may use a
+    /// plaintext or private-network authority is decided by the hosting environment, not by the
+    /// tenant — see <see cref="Shared.Auth.OidcValidationPolicy.AllowInsecureAuthority"/>.
+    /// </summary>
     public bool? RequireHttpsMetadata { get; set; }
     public List<CustomClaimCheck>? AdditionalClaims { get; set; }
     public Dictionary<string, object>? ProviderSpecificSettings { get; set; }
@@ -50,19 +62,21 @@ public class TenantOidcConfigService : ITenantOidcConfigService
     private readonly ILogger<TenantOidcConfigService> _logger;
     private readonly ObjectCache _cache;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly OidcValidationPolicy _policy;
     private readonly string _uniqueSecret;
     
     // Cache configuration
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromHours(1);
     private static readonly string CacheKeyPrefix = "tenant_oidc_config:";
 
-    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration, ObjectCache cache, IWebhookEventPublisher webhookEventPublisher)
+    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration, ObjectCache cache, IWebhookEventPublisher webhookEventPublisher, OidcValidationPolicy policy)
     {
         _repository = repository;
         _encryption = encryption;
         _logger = logger;
         _cache = cache;
         _webhookEventPublisher = webhookEventPublisher;
+        _policy = policy;
         _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:TenantOidcSecretKey"] ?? string.Empty;
         if (string.IsNullOrWhiteSpace(_uniqueSecret))
         {
@@ -205,6 +219,12 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                 return ServiceResult<bool>.BadRequest($"Issuer is required for providers: {list}");
             }
 
+            var rejection = DescribeUnacceptableProviders(tenantId, rules);
+            if (rejection != null)
+            {
+                return ServiceResult<bool>.BadRequest(rejection);
+            }
+
             var encrypted = _encryption.Encrypt(jsonConfig, _uniqueSecret);
             var existing = await _repository.GetByTenantIdAsync(tenantId);
             var now = DateTime.UtcNow;
@@ -299,6 +319,45 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             _logger.LogError(ex, "Error listing all OIDC configs");
             return ServiceResult<List<(string tenantId, TenantOidcRules? rules)>>.InternalServerError("Failed to list configs");
         }
+    }
+
+    /// <summary>
+    /// Rejects a configuration the validator would refuse or silently override at runtime, so that
+    /// the administrator finds out while saving rather than when their users cannot sign in.
+    ///
+    /// A missing audience is only warned about: existing configurations were never required to
+    /// declare one, and refusing here would block those tenants from making unrelated edits. It
+    /// becomes a hard failure at validation time once Auth:RequireOidcAudience is enabled.
+    /// </summary>
+    private string? DescribeUnacceptableProviders(string tenantId, TenantOidcRules rules)
+    {
+        foreach (var (name, provider) in rules.Providers!)
+        {
+            if (provider.RequireSignedTokens == false)
+            {
+                return $"Provider '{name}' sets requireSignedTokens=false, which would accept " +
+                       "unsigned tokens from anyone. Remove the setting; tokens are always " +
+                       "signature-verified.";
+            }
+
+            var authority = provider.Authority ?? provider.Issuer;
+            var unsafeAuthority = _policy.DescribeUnsafeAuthority(authority);
+            if (unsafeAuthority != null)
+            {
+                return $"Provider '{name}' cannot be used: {unsafeAuthority}.";
+            }
+
+            if (provider.ExpectedAudience is not { Count: > 0 })
+            {
+                _logger.LogWarning(
+                    "OIDC provider '{Provider}' for tenant {TenantId} was saved without an " +
+                    "expectedAudience, so it will accept any token its issuer signed — including " +
+                    "tokens minted for a different application.",
+                    LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(tenantId));
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -76,6 +76,11 @@ public static class SharedConfiguration
             options.SizeLimit = cacheSizeLimit;
         });
 
+        // Deployment-wide OIDC rules that a tenant's own configuration cannot weaken. Registered
+        // here because both the validator and the configuration write path depend on it, and it is
+        // derived from configuration and the hosting environment rather than per request.
+        builder.Services.AddSingleton<global::Shared.Auth.OidcValidationPolicy>();
+
         // Register HttpClient for token services
         builder.Services.AddHttpClient();
 

@@ -9,6 +9,15 @@ namespace Features.UserApi.Auth;
 /// </summary>
 public static class UserApiClaimTypes
 {
+    /// <summary>The tenant the caller is acting as, in the casing the tenant is stored under.</summary>
+    public const string TenantId = "TenantId";
+
+    /// <summary>
+    /// Emitted once per tenant the caller is an approved member of, so that authorization can
+    /// restore the full set rather than assuming it is just <see cref="TenantId"/>.
+    /// </summary>
+    public const string AuthorizedTenantId = "AuthorizedTenantId";
+
     /// <summary>
     /// The caller's conversation participant id. Carried as a claim because it can differ from
     /// <see cref="System.Security.Claims.ClaimTypes.NameIdentifier"/>, which holds the canonical

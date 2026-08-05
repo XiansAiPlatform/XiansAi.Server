@@ -13,17 +13,26 @@ namespace Features.WebApi.Auth;
 /// </summary>
 public class OidcAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
+    /// <summary>
+    /// WebAPI has no per-tenant OIDC configuration, so it validates against a single static
+    /// provider registered under this pseudo-tenant.
+    /// </summary>
+    private const string WebApiPseudoTenant = "webapi";
+
     private readonly IDynamicOidcValidator _oidcValidator;
+    private readonly ITenantContext _tenantContext;
     private readonly ILogger<OidcAuthenticationHandler> _logger;
 
     public OidcAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
-        IDynamicOidcValidator oidcValidator)
+        IDynamicOidcValidator oidcValidator,
+        ITenantContext tenantContext)
         : base(options, logger, encoder)
     {
         _oidcValidator = oidcValidator;
+        _tenantContext = tenantContext;
         _logger = logger.CreateLogger<OidcAuthenticationHandler>();
     }
 
@@ -49,22 +58,29 @@ public class OidcAuthenticationHandler : AuthenticationHandler<AuthenticationSch
                 return AuthenticateResult.Fail("Invalid Authorization header format. Expected 'Bearer <token>'");
             }
 
-            // Validate token using DynamicOidcValidator (uses "webapi" as pseudo-tenant)
             _logger.LogDebug("Validating JWT token using Generic OIDC");
-            var validation = await _oidcValidator.ValidateAsync("webapi", token);
+            var validation = await _oidcValidator.ValidateAsync(WebApiPseudoTenant, token);
             var canonicalUserId = validation.CanonicalUserId;
 
             if (!validation.Success)
             {
-                _logger.LogWarning("OIDC token validation failed: {Error}", validation.Error);
-                return AuthenticateResult.Fail(validation.Error ?? "Token validation failed");
+                _logger.LogWarning("OIDC token validation failed: {Error}", LogSanitizer.Sanitize(validation.Error));
+                return AuthenticateResult.Fail("Invalid credentials");
             }
 
             if (string.IsNullOrWhiteSpace(canonicalUserId))
             {
                 _logger.LogWarning("Token validation succeeded but no user identifier was extracted");
-                return AuthenticateResult.Fail("No user identifier found in token");
+                return AuthenticateResult.Fail("Invalid credentials");
             }
+
+            // The validator establishes identity only, so the request's tenant context is populated
+            // here. AuthRequirementHandler re-derives the user and the tenants they may act as
+            // during authorization; the bearer token is what has to survive from this point, since
+            // it is forwarded to agents that call back on the caller's behalf.
+            _tenantContext.LoggedInUser = validation.ProviderUserId!;
+            _tenantContext.UserType = UserType.UserToken;
+            _tenantContext.Authorization = token;
 
             // Build claims principal
             var claims = new List<Claim>

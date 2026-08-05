@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Features.UserApi.Auth;
 using Shared.Auth;
 using Features.UserApi.Services;
@@ -33,6 +34,7 @@ namespace Features.UserApi.Configuration
             // ISecureEncryptionService is registered as Singleton in SharedConfiguration
             builder.Services.AddScoped<IDynamicOidcValidator, DynamicOidcValidator>();
             builder.Services.AddScoped<IAuthorizedTenantResolver, AuthorizedTenantResolver>();
+            builder.Services.AddScoped<IUserApiCredentialAuthenticator, UserApiCredentialAuthenticator>();
 
             // Add Webhook service
             builder.Services.AddScoped<IWebhookReceiverService, WebhookReceiverService>();

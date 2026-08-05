@@ -1,234 +1,98 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
-using Shared.Auth;
-using Shared.Services;
-using System.Security.Claims;
-using System.Text.Encodings.Web;
-using Shared.Utils;
 using Shared.Data.Models;
+using Shared.Utils;
+using System.Text.Encodings.Web;
 
 namespace Features.UserApi.Auth
 {
+    /// <summary>
+    /// Authenticates SignalR/WebSocket handshakes for the UserApi (<c>/ws/...</c>).
+    ///
+    /// This handler owns only what is specific to the WebSocket transport — the feature switch, the
+    /// endpoints that refuse JWTs, and where a caller is allowed to put their credential.
+    /// Validating the credential is delegated to <see cref="IUserApiCredentialAuthenticator"/>,
+    /// which the HTTP handler shares.
+    /// </summary>
     public class WebsocketAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
-        private readonly ITenantContext _tenantContext;
-        private readonly ILogger<WebsocketAuthenticationHandler> _logger;
-        private readonly IConfiguration _configuration;
-        private readonly IApiKeyService _apiKeyService;
-        private readonly IDynamicOidcValidator _dynamicOidcValidator;
-        private readonly IAuthorizedTenantResolver _authorizedTenantResolver;
+        private const string WebsocketPathPrefix = "/ws/";
+        private const string TenantChatPath = "/ws/tenant/chat";
 
+        /// <summary>
+        /// Query parameters are looked at first, unlike the HTTP handler. Browser WebSocket and
+        /// SignalR clients cannot set request headers on the handshake, so the query string is the
+        /// primary channel here and reordering would break existing clients that send both.
+        /// </summary>
+        private static readonly CredentialSource[] LookupOrder =
+        [
+            CredentialSource.ApiKeyQueryParameter,
+            CredentialSource.AccessTokenQueryParameter,
+            CredentialSource.AuthorizationHeader
+        ];
+
+        private readonly IUserApiCredentialAuthenticator _authenticator;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<WebsocketAuthenticationHandler> _logger;
 
         public WebsocketAuthenticationHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
             ILoggerFactory logger,
             UrlEncoder encoder,
             IConfiguration configuration,
-            ITenantContext tenantContext,
-            IApiKeyService apiKeyService,
-            IDynamicOidcValidator dynamicOidcValidator,
-            IAuthorizedTenantResolver authorizedTenantResolver)
+            IUserApiCredentialAuthenticator authenticator)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<WebsocketAuthenticationHandler>();
-            _tenantContext = tenantContext;
             _configuration = configuration;
-            _apiKeyService = apiKeyService;
-            _dynamicOidcValidator = dynamicOidcValidator;
-            _authorizedTenantResolver = authorizedTenantResolver;
+            _authenticator = authenticator;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            // Only handle authentication for specific websocket/SignalR endpoints
-            var path = Request.Path.Value?.ToLowerInvariant() ?? "";
-            var isWebsocketEndpoint = path.StartsWith("/ws/");
-            
-            _logger.LogDebug("WebsocketAuthenticationHandler: Evaluating path '{Path}' - IsWebsocketEndpoint: {IsWebsocketEndpoint}", Request.Path, isWebsocketEndpoint);
-            
-            if (!isWebsocketEndpoint)
+            var path = Request.Path.Value ?? string.Empty;
+            if (!path.StartsWith(WebsocketPathPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                return AuthenticateResult.NoResult(); // Let other handlers process this request
+                // Let the handlers for the other feature areas process this request.
+                return AuthenticateResult.NoResult();
             }
 
-            _logger.LogDebug("Processing SignalR/Websocket request: {Path}", LogSanitizer.Sanitize(Request.Path));
+            if (!_configuration.GetSection("WebSockets").GetValue<bool>("Enabled"))
+            {
+                _logger.LogWarning("WebSockets are not enabled in configuration");
+                return AuthenticateResult.Fail("WebSockets are not enabled");
+            }
 
-            // Check for access token in multiple locations: apikey query param, access_token query param, or Authorization header
-            var accessToken = Request.Query["apikey"].ToString();
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug("Processing SignalR/WebSocket request: {Path}", LogSanitizer.Sanitize(path));
+            }
+
+            var credential = UserApiCredentialReader.Read(Request, LookupOrder, _logger);
+            if (credential == null)
+            {
+                _logger.LogWarning("No access token found for WebSocket connection");
+                return AuthenticateResult.Fail("Invalid credentials");
+            }
+
+            // The tenant chat hub is an operator-facing feature reached with a tenant-scoped API
+            // key; end-user tokens must not open it.
+            var isApiKey = credential.Value.AccessToken.StartsWith(ApiKey.KeyPrefix, StringComparison.Ordinal);
+            if (!isApiKey && path.StartsWith(TenantChatPath, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Rejecting non-API-key credential on the tenant chat endpoint");
+                return AuthenticateResult.Fail("Invalid credentials");
+            }
+
             var tenantId = Request.Query["tenantId"].ToString();
-            
-            // Note: tenantId is now optional for API keys. If not provided, it will be derived from the API key.
-            // For JWT tokens, tenantId is still required.
+            return await _authenticator.AuthenticateAsync(credential.Value, tenantId, Scheme.Name);
+        }
 
-            if (_tenantContext != null)
-            {
-                // Check if WebSockets are enabled in configuration
-                var websocketConfig = _configuration.GetSection("WebSockets");
-                if (!websocketConfig.GetValue<bool>("Enabled"))
-                {
-                    _logger.LogWarning("WebSockets are not enabled in configuration");
-                    return AuthenticateResult.Fail("WebSockets are not enabled in configuration");
-                }
-
-                // Check for token in different locations based on authentication method
-                if (string.IsNullOrEmpty(accessToken))
-                {
-                    // Check for access_token query parameter (used for JWT and as fallback for API keys)
-                    accessToken = Request.Query["access_token"].ToString();
-                }
-
-                if (string.IsNullOrEmpty(accessToken))
-                {
-                    // Check for Authorization header (preferred method for JWT)
-                    var authHeader = Request.Headers["Authorization"].FirstOrDefault();
-                    var (tokenExtracted, token) = AuthorizationHeaderHelper.ExtractBearerToken(authHeader);
-                    
-                    if (tokenExtracted && token != null)
-                    {
-                        accessToken = token;
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(accessToken))
-                {
-                    try
-                    {
-                        if (accessToken.StartsWith("sk-Xnai-"))
-                        {
-                            // Treat as API key
-                            ApiKey? apiKey;
-                            
-                            if (string.IsNullOrEmpty(tenantId))
-                            {
-                                // No tenantId provided - look up API key without tenant scoping
-                                // This prevents IDOR by deriving tenant from the authenticated credential
-                                apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken);
-                                if (apiKey == null)
-                                {
-                                    _logger.LogWarning("Invalid API key submitted for WebSocket");
-                                    return AuthenticateResult.Fail("Invalid API key");
-                                }
-                            }
-                            else
-                            {
-                                // tenantId provided (legacy support) - validate it matches the API key
-                                apiKey = await _apiKeyService.GetApiKeyByRawKeyAsync(accessToken, tenantId);
-                                if (apiKey == null || apiKey.TenantId != tenantId)
-                                {
-                                    _logger.LogWarning("API key does not match provided tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
-                                    return AuthenticateResult.Fail("Invalid API key or Tenant ID");
-                                }
-                            }
-
-                            _tenantContext.LoggedInUser = apiKey.CreatedBy;
-                            _tenantContext.UserType = UserType.UserApiKey;
-                            _tenantContext.TenantId = apiKey.TenantId;
-                            _tenantContext.AuthorizedTenantIds = new[] { apiKey.TenantId };
-
-                            var claims = new List<Claim>
-                            {
-                                new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
-                                new Claim("TenantId", apiKey.TenantId),
-                                new Claim(UserApiClaimTypes.UserType, nameof(UserType.UserApiKey))
-                            };
-
-                            var identity = new ClaimsIdentity(claims, Scheme.Name);
-                            var principal = new ClaimsPrincipal(identity);
-                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogInformation("Successfully authenticated WebSocket connection: User={UserId}, Tenant={TenantId}", LogSanitizer.Sanitize(apiKey.CreatedBy), LogSanitizer.Sanitize(apiKey.TenantId));
-
-                            return AuthenticateResult.Success(ticket);
-                        }
-                        else if (accessToken.Count(c => c == '.') == 2)
-                        {
-                            if (Request.Path.HasValue && Request.Path.Value.Contains("/ws/tenant/chat", StringComparison.OrdinalIgnoreCase))
-                            {
-                                _logger.LogInformation("Skipping JWT validation for /ws/tenant/chat endpoint");
-                                return AuthenticateResult.Fail("/ws/tenant/chat endpoint does not support JWT validation");
-                            }
-                            
-                            // Treat as JWT - validate using dynamic OIDC per-tenant rules
-                            // For JWT, tenantId is required to determine which OIDC configuration to use
-                            if (string.IsNullOrEmpty(tenantId))
-                            {
-                                _logger.LogWarning("JWT authentication requires tenantId parameter for WebSocket");
-                                return AuthenticateResult.Fail("tenantId query parameter is required for JWT authentication");
-                            }
-                            
-                            var validation = await _dynamicOidcValidator.ValidateAsync(tenantId, accessToken);
-                            if (!validation.Success || string.IsNullOrEmpty(validation.CanonicalUserId) || string.IsNullOrEmpty(validation.ProviderUserId))
-                            {
-                                _logger.LogWarning("JWT validation failed: {Error}", LogSanitizer.Sanitize(validation.Error));
-                                return AuthenticateResult.Fail(validation.Error ?? "JWT validation failed");
-                            }
-                            var userId = validation.CanonicalUserId;
-                            _tenantContext.LoggedInUser = userId;
-                            _tenantContext.UserType = UserType.UserToken;
-
-                            // Conversation threads are keyed on the raw provider subject, not on the
-                            // canonical `provider|subject` id used for claims and display.
-                            var participantId = validation.ProviderUserId;
-                            _tenantContext.ParticipantId = participantId;
-
-                            // A valid token proves who the caller is, not which tenant they may act as,
-                            // so the query-string tenantId is checked against the tenants this user is
-                            // actually an approved member of.
-                            var resolution = await _authorizedTenantResolver.ResolveAsync(validation, tenantId);
-                            if (!resolution.IsAuthorized)
-                            {
-                                _logger.LogWarning("Tenant {TenantId} is not authorized for the authenticated user", LogSanitizer.Sanitize(tenantId));
-                                return AuthenticateResult.Fail($"Tenant {tenantId} is not authorized for this token holder");
-                            }
-
-                            var resolvedTenantId = resolution.MatchedTenantId!;
-                            var tenantIds = resolution.AuthorizedTenantIds;
-
-                            _tenantContext.TenantId = resolvedTenantId;
-                            _tenantContext.AuthorizedTenantIds = tenantIds;
-                            _logger.LogDebug("UserID-{Id}", LogSanitizer.Sanitize(userId));
-                            var claims = new List<Claim>
-                            {
-                                new Claim(ClaimTypes.NameIdentifier, userId),
-                                new Claim("TenantId", resolvedTenantId),
-                                new Claim(UserApiClaimTypes.ParticipantId, participantId),
-                                new Claim(UserApiClaimTypes.UserType, nameof(UserType.UserToken))
-                            };
-                            foreach (var tId in tenantIds)
-                            {
-                                _logger.LogDebug("tenantIds-{tId}: ", LogSanitizer.Sanitize(tId));
-                                claims.Add(new Claim("AuthorizedTenantId", tId));
-                            }
-
-                            var identity = new ClaimsIdentity(claims, Scheme.Name);
-                            var principal = new ClaimsPrincipal(identity);
-                            var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                            _logger.LogDebug("Successfully authenticated Websocket JWT: User={UserId}, Tenant={TenantId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(resolvedTenantId));
-                            return AuthenticateResult.Success(ticket);
-                        }
-                        else
-                        {
-                            _logger.LogWarning("Invalid token format");
-                            return AuthenticateResult.Fail("Invalid token format");
-                        }
-
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error processing access token for Websocket connection");
-                        return AuthenticateResult.Fail("Error processing access token for Websocket connection");
-                    }
-                }
-                else
-                {
-                    _logger.LogWarning("No access token found for Websocket connection");
-                    return AuthenticateResult.Fail("No access token found for Websocket connection");
-                }
-            }
-            else
-            {
-                _logger.LogError("Failed to resolve ITenantContext from request scope");
-                return AuthenticateResult.Fail("Failed to resolve ITenantContext from request scope");
-            }
+        protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return Task.CompletedTask;
         }
     }
 }

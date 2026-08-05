@@ -250,7 +250,7 @@ namespace Shared.Repositories
             var bytes = new byte[32];
             using var rng = RandomNumberGenerator.Create();
             rng.GetBytes(bytes);
-            return "sk-Xnai-"+Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
+            return ApiKey.KeyPrefix + Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
         }
 
         private static string HashApiKey(string apiKey)

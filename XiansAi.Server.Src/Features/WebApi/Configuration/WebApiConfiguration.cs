@@ -4,6 +4,7 @@ using Features.WebApi.Services;
 using Features.WebApi.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shared.Auth;
 using Shared.Services;
 
