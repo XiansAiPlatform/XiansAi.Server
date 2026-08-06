@@ -167,7 +167,8 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 NormalizeUrl(authority),
                 OidcTokenInspector.GetEmail(jwt),
                 OidcTokenInspector.GetName(jwt),
-                OidcTokenInspector.ExpiresAt(jwt));
+                OidcTokenInspector.ExpiresAt(jwt),
+                OidcTokenInspector.IsEmailVerified(jwt));
         }
         catch (SecurityTokenException ex)
         {

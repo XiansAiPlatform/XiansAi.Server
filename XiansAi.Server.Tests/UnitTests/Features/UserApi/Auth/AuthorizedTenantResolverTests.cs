@@ -41,8 +41,9 @@ public class AuthorizedTenantResolverTests
         var tenants = tenantIds.Select(t => new TenantInfoDto { TenantId = t, Name = t }).ToList();
         _userTenantService
             .Setup(x => x.EnsureUserAndGetApprovedTenants(
-                providerUserId, It.IsAny<string?>(), It.IsAny<string?>(), providerAuthority))
-            .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.Success(tenants));
+                providerUserId, It.IsAny<string?>(), It.IsAny<string?>(), providerAuthority, It.IsAny<string?>()))
+            .ReturnsAsync(ServiceResult<ResolvedUserAccess>.Success(
+                new ResolvedUserAccess { UserId = providerUserId, Tenants = tenants }));
     }
 
     [Fact]
@@ -137,8 +138,8 @@ public class AuthorizedTenantResolverTests
     {
         _userTenantService
             .Setup(x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority))
-            .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.InternalServerError("boom"));
+                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, It.IsAny<string?>()))
+            .ReturnsAsync(ServiceResult<ResolvedUserAccess>.InternalServerError("boom"));
         var resolver = BuildResolver();
 
         var resolution = await resolver.ResolveAsync(ValidToken(), "tenant-a");
@@ -157,7 +158,23 @@ public class AuthorizedTenantResolverTests
 
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority),
+                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_PassesTheRequestedTenantThrough_SoADeniedUserBecomesVisibleToItsAdmins()
+    {
+        // A user who is not a member is refused either way, but the tenant they were trying to reach
+        // is what lets them be registered as pending there instead of vanishing.
+        SetupApprovedTenants();
+        var resolver = BuildResolver();
+
+        await resolver.ResolveAsync(ValidToken(), "tenant-a");
+
+        _userTenantService.Verify(
+            x => x.EnsureUserAndGetApprovedTenants(
+                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, "tenant-a"),
             Times.Once);
     }
 
@@ -166,10 +183,13 @@ public class AuthorizedTenantResolverTests
     {
         _userTenantService
             .SetupSequence(x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority))
-            .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.InternalServerError("transient"))
-            .ReturnsAsync(ServiceResult<List<TenantInfoDto>>.Success(
-                new List<TenantInfoDto> { new() { TenantId = "tenant-a", Name = "tenant-a" } }));
+                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, It.IsAny<string?>()))
+            .ReturnsAsync(ServiceResult<ResolvedUserAccess>.InternalServerError("transient"))
+            .ReturnsAsync(ServiceResult<ResolvedUserAccess>.Success(new ResolvedUserAccess
+            {
+                UserId = ProviderUserId,
+                Tenants = new List<TenantInfoDto> { new() { TenantId = "tenant-a", Name = "tenant-a" } }
+            }));
         var resolver = BuildResolver();
 
         var firstAttempt = await resolver.ResolveAsync(ValidToken(), "tenant-a");
@@ -219,7 +239,7 @@ public class AuthorizedTenantResolverTests
     {
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
-                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()),
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()),
             Times.Never);
     }
 }

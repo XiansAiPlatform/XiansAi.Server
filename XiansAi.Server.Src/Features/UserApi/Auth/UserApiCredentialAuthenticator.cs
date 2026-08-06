@@ -292,13 +292,24 @@ public class UserApiCredentialAuthenticator : IUserApiCredentialAuthenticator
             return AuthenticateResult.Fail(GenericFailureReason);
         }
 
-        var canonicalUserId = validation.CanonicalUserId;
         var resolvedTenantId = resolution.MatchedTenantId!;
         var authorizedTenantIds = resolution.AuthorizedTenantIds;
 
+        // An administrator may have linked this subject to an account stored under a different id.
+        // Where that happened the request has to act as that account throughout, or it would be
+        // authorized by the account's memberships while writing under the subject — which is the
+        // detached second identity linking exists to prevent.
+        var linkedAccountUserId = string.Equals(resolution.AccountUserId, validation.ProviderUserId, StringComparison.Ordinal)
+            ? null
+            : resolution.AccountUserId;
+
+        // Left as the canonical `provider|subject` id for an unlinked caller, which is what records
+        // written by this path are already attributed to.
+        var canonicalUserId = linkedAccountUserId ?? validation.CanonicalUserId;
+
         // Conversation threads are keyed on the raw provider subject, not on the canonical
         // `provider|subject` id used for claims and display.
-        var participantId = validation.ProviderUserId;
+        var participantId = linkedAccountUserId ?? validation.ProviderUserId;
 
         _tenantContext.LoggedInUser = canonicalUserId;
         _tenantContext.UserType = UserType.UserToken;

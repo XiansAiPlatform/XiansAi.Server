@@ -81,6 +81,10 @@ public static class SharedConfiguration
         // derived from configuration and the hosting environment rather than per request.
         builder.Services.AddSingleton<global::Shared.Auth.OidcValidationPolicy>();
 
+        // Which providers may have a sign-in attached to an existing account on a verified email
+        // alone. Deployment configuration only, so a tenant cannot nominate its own provider.
+        builder.Services.AddSingleton<global::Shared.Auth.IdentityAutoLinkPolicy>();
+
         // Register HttpClient for token services
         builder.Services.AddHttpClient();
 

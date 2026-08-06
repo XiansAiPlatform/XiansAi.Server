@@ -59,6 +59,23 @@ public class GlobalUserDetail
     public required bool IsEnabled { get; init; }
     [JsonPropertyName("memberships")]
     public required List<GlobalUserMembership> Memberships { get; init; }
+    [JsonPropertyName("linkedIdentities")]
+    public required List<GlobalUserLinkedIdentity> LinkedIdentities { get; init; }
+}
+
+/// <summary>
+/// A provider identity attached to an account, as shown to an administrator.
+/// </summary>
+public class GlobalUserLinkedIdentity
+{
+    [JsonPropertyName("subject")]
+    public required string Subject { get; init; }
+    [JsonPropertyName("authority")]
+    public required string Authority { get; init; }
+    [JsonPropertyName("linkedAt")]
+    public required DateTime LinkedAt { get; init; }
+    [JsonPropertyName("linkedBy")]
+    public required string LinkedBy { get; init; }
 }
 
 /// <summary>
@@ -88,6 +105,8 @@ public interface IGlobalUserAdminService
     Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email);
     Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin);
     Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId);
+    Task<ServiceResult<GlobalUserDetail>> LinkIdentityAsync(string userId, string subject, string authority, string actingUserId);
+    Task<ServiceResult<GlobalUserDetail>> UnlinkIdentityAsync(string userId, string subject, string authority);
 }
 
 public class GlobalUserAdminService : IGlobalUserAdminService
@@ -326,6 +345,126 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
+    /// <summary>
+    /// Attaches a provider identity to an existing account, so that signing in with it acts as that
+    /// account rather than provisioning a second one.
+    ///
+    /// This is the only way the two are ever joined. Sign-in refuses to merge on its own, because a
+    /// token proves only what its provider asserts about the holder, and the account being joined
+    /// may carry far more access than they have. Asserting that the two identities are the same
+    /// person is a judgement, and it is recorded against the administrator who made it.
+    /// </summary>
+    public async Task<ServiceResult<GlobalUserDetail>> LinkIdentityAsync(
+        string userId, string subject, string authority, string actingUserId)
+    {
+        try
+        {
+            var sanitizedSubject = ValidationHelpers.SanitizeString(subject);
+            if (string.IsNullOrWhiteSpace(sanitizedSubject))
+                return ServiceResult<GlobalUserDetail>.BadRequest("Subject is required");
+
+            var normalizedAuthority = LinkedIdentityKey.NormalizeAuthority(authority);
+            if (!IsUsableAuthority(normalizedAuthority))
+                return ServiceResult<GlobalUserDetail>.BadRequest(
+                    "Authority must be the absolute https URL of the identity provider");
+
+            var user = await _userRepository.GetByUserIdAsync(userId);
+            if (user == null)
+                return ServiceResult<GlobalUserDetail>.NotFound("User not found");
+
+            // A subject that already owns an account is never looked up as a link, because sign-in
+            // matches its own id first. Accepting one would store a link that can never resolve.
+            var subjectOwnsAccount = await _userRepository.GetByUserIdAsync(sanitizedSubject);
+            if (subjectOwnsAccount != null)
+            {
+                return ServiceResult<GlobalUserDetail>.Conflict(
+                    "That subject is already an account of its own and cannot be linked");
+            }
+
+            var outcome = await _userRepository.AddLinkedIdentityAsync(userId, new LinkedIdentity
+            {
+                Subject = sanitizedSubject,
+                Authority = normalizedAuthority,
+                LinkedBy = actingUserId,
+                LinkedAt = DateTime.UtcNow,
+            });
+
+            if (outcome == LinkIdentityOutcome.TakenByAnotherUser)
+            {
+                return ServiceResult<GlobalUserDetail>.Conflict(
+                    "That identity is already linked to a different account");
+            }
+
+            if (outcome == LinkIdentityOutcome.Added)
+            {
+                _logger.LogInformation(
+                    "Administrator {ActingUserId} linked a {Authority} identity to user {UserId}",
+                    LogSanitizer.RedactUserId(actingUserId), LogSanitizer.Sanitize(normalizedAuthority),
+                    LogSanitizer.RedactUserId(userId));
+            }
+
+            // Re-read so the response reflects the stored links rather than the pre-update copy.
+            var updated = await _userRepository.GetByUserIdAsync(userId) ?? user;
+            await InvalidateCachesAsync(updated);
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.UserUpdated,
+                new { userId = updated.UserId, email = updated.Email, name = updated.Name });
+
+            return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(updated));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error linking identity to user {UserId}", LogSanitizer.Sanitize(userId));
+            return ServiceResult<GlobalUserDetail>.InternalServerError("An error occurred while linking the identity");
+        }
+    }
+
+    /// <summary>
+    /// Detaches a provider identity, which stops it resolving to this account on the next sign-in.
+    /// </summary>
+    public async Task<ServiceResult<GlobalUserDetail>> UnlinkIdentityAsync(
+        string userId, string subject, string authority)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(subject))
+                return ServiceResult<GlobalUserDetail>.BadRequest("Subject is required");
+
+            var user = await _userRepository.GetByUserIdAsync(userId);
+            if (user == null)
+                return ServiceResult<GlobalUserDetail>.NotFound("User not found");
+
+            var removed = await _userRepository.RemoveLinkedIdentityAsync(userId, subject, authority);
+            if (!removed)
+                return ServiceResult<GlobalUserDetail>.NotFound("That identity is not linked to this user");
+
+            _logger.LogInformation("Unlinked a {Authority} identity from user {UserId}",
+                LogSanitizer.Sanitize(LinkedIdentityKey.NormalizeAuthority(authority)),
+                LogSanitizer.RedactUserId(userId));
+
+            var updated = await _userRepository.GetByUserIdAsync(userId) ?? user;
+            await InvalidateCachesAsync(updated);
+
+            return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(updated));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error unlinking identity from user {UserId}", LogSanitizer.Sanitize(userId));
+            return ServiceResult<GlobalUserDetail>.InternalServerError("An error occurred while unlinking the identity");
+        }
+    }
+
+    /// <summary>
+    /// Whether an authority is one a token could actually have been validated against. Anything a
+    /// sign-in can never produce is rejected at entry rather than stored as a link that never matches.
+    /// </summary>
+    private static bool IsUsableAuthority(string authority)
+    {
+        return Uri.TryCreate(authority, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
+    }
+
     private static GlobalUserSummary ToSummary(User user)
     {
         return new GlobalUserSummary
@@ -354,6 +493,16 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             });
         }
 
+        var linkedIdentities = (user.LinkedIdentities ?? new List<LinkedIdentity>())
+            .Select(li => new GlobalUserLinkedIdentity
+            {
+                Subject = li.Subject,
+                Authority = li.Authority,
+                LinkedAt = li.LinkedAt,
+                LinkedBy = li.LinkedBy,
+            })
+            .ToList();
+
         return new GlobalUserDetail
         {
             UserId = user.UserId,
@@ -362,6 +511,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             IsSysAdmin = user.IsSysAdmin,
             IsEnabled = !user.IsLockedOut,
             Memberships = memberships,
+            LinkedIdentities = linkedIdentities,
         };
     }
 

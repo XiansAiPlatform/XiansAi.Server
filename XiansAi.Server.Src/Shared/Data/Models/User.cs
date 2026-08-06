@@ -51,6 +51,26 @@ public class User
     [JsonPropertyName("providerAuthority")]
     public string? ProviderAuthority { get; set; }
 
+    /// <summary>
+    /// Additional provider identities that resolve to this account, beyond the one in
+    /// <see cref="UserId"/>. Exists because <see cref="UserId"/> is the key the rest of the system
+    /// stores against — threads, agents, keys, audit trails — so a person who acquires a second
+    /// identity (a new provider, or a migration off email-shaped ids) cannot be given a second
+    /// record without detaching all of it. Linking maps the new identity onto the existing account
+    /// instead.
+    ///
+    /// Only an administrator may add an entry. A token asserting an unknown subject proves only what
+    /// its provider claims; deciding that it belongs to an account already holding access is a
+    /// judgement about two identities being the same person, which no token can establish.
+    ///
+    /// Null rather than empty when there are none, so that records without links stay out of the
+    /// unique index on subject and authority.
+    /// </summary>
+    [BsonElement("linked_identities")]
+    [BsonIgnoreIfNull]
+    [JsonPropertyName("linkedIdentities")]
+    public List<LinkedIdentity>? LinkedIdentities { get; set; }
+
     [BsonElement("is_sys_admin")]
     [JsonPropertyName("isSysAdmin")]
     public bool IsSysAdmin { get; set; }
@@ -78,6 +98,50 @@ public class User
     [BsonElement("updated_at")]
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// A provider identity that an administrator has attached to an existing account. The pair of
+/// subject and authority is what a token presents, and both are needed to match one: a subject is
+/// only unique within the issuer that minted it.
+/// </summary>
+public class LinkedIdentity
+{
+    /// <summary>The `sub` (or provider-nominated equivalent) claim carried by the token.</summary>
+    [BsonElement("subject")]
+    [JsonPropertyName("subject")]
+    public string Subject { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Normalized authority that authenticated the subject, stored in the same form as
+    /// <see cref="User.ProviderAuthority"/> so the two are comparable.
+    /// </summary>
+    [BsonElement("authority")]
+    [JsonPropertyName("authority")]
+    public string Authority { get; set; } = string.Empty;
+
+    [BsonElement("linked_at")]
+    [JsonPropertyName("linkedAt")]
+    public DateTime LinkedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>The administrator who made the link, kept so the decision is attributable.</summary>
+    [BsonElement("linked_by")]
+    [JsonPropertyName("linkedBy")]
+    public string LinkedBy { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Puts an authority into the one form stored on a <see cref="LinkedIdentity"/>.
+///
+/// A link is matched by exact equality, both in queries and by the unique index, so the two spellings
+/// the rest of the code treats as equal — a trailing slash, and differing case — have to be resolved
+/// before storage. Without this, the same provider written two ways would link twice and match
+/// neither reliably.
+/// </summary>
+public static class LinkedIdentityKey
+{
+    public static string NormalizeAuthority(string? authority) =>
+        authority?.Trim().TrimEnd('/').ToLowerInvariant() ?? string.Empty;
 }
 
 public class TenantRole

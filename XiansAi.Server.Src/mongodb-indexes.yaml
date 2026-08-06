@@ -293,6 +293,14 @@ users:
     keys:
       "tenant_roles.tenant": asc
       "tenant_roles.is_approved": asc
+  # A provider identity may resolve to at most one account. Sparse because the field is absent on
+  # records with no links, which would otherwise all collide on the same missing key.
+  - name: linked_identities_subject_authority_unique
+    keys:
+      "linked_identities.subject": asc
+      "linked_identities.authority": asc
+    unique: true
+    sparse: true
 
 user_invitations:
   - name: tenant_id_1

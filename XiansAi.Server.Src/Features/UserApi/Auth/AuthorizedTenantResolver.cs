@@ -22,14 +22,22 @@ public class AuthorizedTenantResolution
     /// <summary>All tenants the user is an approved member of. Empty when nothing is authorized.</summary>
     public List<string> AuthorizedTenantIds { get; private init; } = new();
 
+    /// <summary>
+    /// The account the token acts as, which is the token's subject unless an administrator linked
+    /// that subject to an existing account. Null when the tenant is not authorized.
+    /// </summary>
+    public string? AccountUserId { get; private init; }
+
     public static AuthorizedTenantResolution Denied() => new();
 
-    public static AuthorizedTenantResolution Authorized(string matchedTenantId, List<string> authorizedTenantIds) =>
+    public static AuthorizedTenantResolution Authorized(
+        string matchedTenantId, List<string> authorizedTenantIds, string accountUserId) =>
         new()
         {
             IsAuthorized = true,
             MatchedTenantId = matchedTenantId,
-            AuthorizedTenantIds = authorizedTenantIds
+            AuthorizedTenantIds = authorizedTenantIds,
+            AccountUserId = accountUserId
         };
 }
 
@@ -85,11 +93,15 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
             return AuthorizedTenantResolution.Denied();
         }
 
-        var authorizedTenantIds = await GetApprovedTenantIdsAsync(validation);
+        var access = await GetApprovedAccessAsync(validation, requestedTenantId);
+        if (access == null)
+        {
+            return AuthorizedTenantResolution.Denied();
+        }
 
         // Tenant ids are unique case-insensitively, so match that way and carry the stored casing
         // forward — the caller's casing must not leak into the tenant context.
-        var matchedTenantId = authorizedTenantIds
+        var matchedTenantId = access.TenantIds
             .FirstOrDefault(t => string.Equals(t, requestedTenantId, StringComparison.OrdinalIgnoreCase));
 
         if (matchedTenantId == null)
@@ -98,59 +110,79 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         }
 
         // Copied because the source list may be a shared cache entry.
-        return AuthorizedTenantResolution.Authorized(matchedTenantId, authorizedTenantIds.ToList());
+        return AuthorizedTenantResolution.Authorized(
+            matchedTenantId, access.TenantIds.ToList(), access.AccountUserId);
+    }
+
+    /// <summary>The account a token resolves to and the tenants it is approved for.</summary>
+    private sealed class ApprovedAccess
+    {
+        public required string AccountUserId { get; init; }
+        public required IReadOnlyList<string> TenantIds { get; init; }
     }
 
     /// <summary>
-    /// Returns the tenants the user is an approved member of, keyed on the raw provider subject
-    /// rather than the canonical `provider|subject` id, because that is the form stored in the users
-    /// collection (see UnifiedAuthRequirement, which provisions users from the same raw subject).
-    /// The authority that authenticated the subject is passed through so the user record can be
-    /// pinned to one provider.
+    /// Returns the account the token acts as and the tenants it is an approved member of, looked up
+    /// from the raw provider subject rather than the canonical `provider|subject` id, because that is
+    /// the form stored in the users collection (see UnifiedAuthRequirement, which provisions users
+    /// from the same raw subject). The authority that authenticated the subject is passed through so
+    /// the user record can be pinned to one provider.
+    ///
+    /// Null when nothing could be resolved, which denies the request.
     /// </summary>
-    private async Task<IReadOnlyList<string>> GetApprovedTenantIdsAsync(OidcValidationResult validation)
+    private async Task<ApprovedAccess?> GetApprovedAccessAsync(
+        OidcValidationResult validation,
+        string requestedTenantId)
     {
         var providerUserId = validation.ProviderUserId;
         if (string.IsNullOrEmpty(providerUserId))
         {
             _logger.LogWarning("Token validation returned no provider subject; denying tenant access");
-            return Array.Empty<string>();
+            return null;
         }
 
         var providerAuthority = validation.ProviderAuthority;
         if (string.IsNullOrEmpty(providerAuthority))
         {
             _logger.LogWarning("Token validation returned no provider authority; denying tenant access");
-            return Array.Empty<string>();
+            return null;
         }
 
         // Keyed on the provider as well as the subject: a subject is only unique within one issuer,
         // so caching on the subject alone would let another provider's identical subject read this
         // entry and skip the provider check that produced it.
         var cacheKey = CacheKeyPrefix + providerAuthority + "|" + providerUserId;
-        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<string>? cachedTenantIds) && cachedTenantIds != null)
+        if (_cache.TryGetValue(cacheKey, out ApprovedAccess? cachedAccess) && cachedAccess != null)
         {
-            return cachedTenantIds;
+            return cachedAccess;
         }
 
+        // The requested tenant is passed through so a user who is not a member of it is registered
+        // as pending there and becomes visible to its admins. It does not widen what comes back:
+        // the result is still only the tenants they are approved for.
         var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
-            providerUserId, validation.Email, validation.Name, providerAuthority);
+            providerUserId, validation.Email, validation.Name, providerAuthority, requestedTenantId,
+            emailVerified: validation.EmailVerified);
 
         if (!result.IsSuccess || result.Data == null)
         {
             // Not cached: a transient failure must not lock the user out for the cache duration.
             _logger.LogWarning("Could not resolve tenants for authenticated user: {Error}",
                 LogSanitizer.Sanitize(result.ErrorMessage));
-            return Array.Empty<string>();
+            return null;
         }
 
-        IReadOnlyList<string> tenantIds = result.Data.Select(t => t.TenantId).ToArray();
+        var access = new ApprovedAccess
+        {
+            AccountUserId = result.Data.UserId,
+            TenantIds = result.Data.Tenants.Select(t => t.TenantId).ToArray()
+        };
 
         var cacheOptions = new MemoryCacheEntryOptions()
             .SetAbsoluteExpiration(_cacheDuration)
             .SetSize(1);
-        _cache.Set(cacheKey, tenantIds, cacheOptions);
+        _cache.Set(cacheKey, access, cacheOptions);
 
-        return tenantIds;
+        return access;
     }
 }

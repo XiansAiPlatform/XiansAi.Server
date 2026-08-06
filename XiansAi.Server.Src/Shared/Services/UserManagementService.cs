@@ -292,6 +292,26 @@ public class UserManagementService : IUserManagementService
             {
                 return ServiceResult<bool>.Conflict("User already exists");
             }
+
+            // Email is unique across the system. Several lookups resolve a person by email and take
+            // the first match — certificate authentication and ownership transfer both accept an
+            // email in place of a user id — so a second record sharing one makes those resolve to
+            // an arbitrary record. Every deliberate creation path already refuses this; enforcing it
+            // here means an implicit path cannot quietly reopen the hole.
+            //
+            // Records with no email cannot collide and are not compared, or they would all match
+            // each other.
+            if (!string.IsNullOrWhiteSpace(userDto.Email))
+            {
+                var emailOwner = await _userRepository.GetByUserEmailAsync(userDto.Email);
+                if (emailOwner != null)
+                {
+                    _logger.LogWarning(
+                        "Refusing to create {UserId}: its email already belongs to {ExistingUserId}",
+                        LogSanitizer.RedactUserId(userDto.UserId), LogSanitizer.RedactUserId(emailOwner.UserId));
+                    return ServiceResult<bool>.Conflict("A user with this email already exists");
+                }
+            }
             // The very first user record ever created becomes the global SysAdmin, which bootstraps
             // a fresh deployment. Callers that provision users implicitly rather than from an
             // operator sign-in opt out, so that a token holder cannot claim SysAdmin simply by
@@ -321,23 +341,23 @@ public class UserManagementService : IUserManagementService
                     existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                     if (existingUser != null)
                     {
-                        _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.RedactEmail(userDto.UserId));
+                        _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.RedactUserId(userDto.UserId));
                         return ServiceResult<bool>.Conflict("User already exists");
                     }
                     return ServiceResult<bool>.InternalServerError("Failed to create new user");
                 }
-                _logger.LogInformation("New user created: {UserId}", LogSanitizer.RedactEmail(userDto.UserId));
+                _logger.LogInformation("New user created: {UserId}", LogSanitizer.RedactUserId(userDto.UserId));
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception createEx)
             {
-                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", LogSanitizer.RedactEmail(userDto.UserId));
+                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", LogSanitizer.RedactUserId(userDto.UserId));
 
                 // Check if user was created by another process
                 existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                 if (existingUser != null)
                 {
-                    _logger.LogInformation("User {UserId} already exists after creation failure", LogSanitizer.RedactEmail(userDto.UserId));
+                    _logger.LogInformation("User {UserId} already exists after creation failure", LogSanitizer.RedactUserId(userDto.UserId));
                     return ServiceResult<bool>.Conflict("User already exists");
                 }
 
@@ -346,7 +366,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating new user {UserId}", LogSanitizer.RedactEmail(userDto.UserId));
+            _logger.LogError(ex, "Error creating new user {UserId}", LogSanitizer.RedactUserId(userDto.UserId));
             return ServiceResult<bool>.InternalServerError("An error occurred while creating the new user");
         }
     }

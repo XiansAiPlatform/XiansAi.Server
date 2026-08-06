@@ -38,6 +38,17 @@ public static class AdminGlobalUserEndpoints
         public string? Reason { get; init; }
     }
 
+    public sealed class LinkIdentityRequest
+    {
+        /// <summary>The `sub` claim the provider puts in this person's tokens.</summary>
+        [JsonPropertyName("subject")]
+        public required string Subject { get; init; }
+
+        /// <summary>The provider's issuer URL, as configured in the tenant's OIDC rules.</summary>
+        [JsonPropertyName("authority")]
+        public required string Authority { get; init; }
+    }
+
     public static void MapAdminGlobalUserEndpoints(this RouteGroupBuilder adminApiGroup)
     {
         var group = adminApiGroup.MapGroup("/users")
@@ -136,6 +147,41 @@ public static class AdminGlobalUserEndpoints
             return result.ToHttpResult();
         })
         .WithName("AdminSetGlobalUserStatus");
+
+        // POST /api/v1/admin/users/{userId}/identities — let another provider identity sign in as
+        // this account, instead of being provisioned as a second one
+        group.MapPost("/{userId}/identities", async (
+            string userId,
+            [FromBody] LinkIdentityRequest body,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] IGlobalUserAdminService service,
+            [FromServices] ILoggerFactory loggerFactory) =>
+        {
+            if (!IsSysAdminCaller(tenantContext, loggerFactory, "link user identity", out var forbid))
+                return forbid;
+
+            var actingUserId = tenantContext.LoggedInUser ?? "system";
+            var result = await service.LinkIdentityAsync(userId, body.Subject, body.Authority, actingUserId);
+            return result.ToHttpResult();
+        })
+        .WithName("AdminLinkGlobalUserIdentity");
+
+        // DELETE /api/v1/admin/users/{userId}/identities — undo a link
+        group.MapDelete("/{userId}/identities", async (
+            string userId,
+            [FromQuery] string subject,
+            [FromQuery] string authority,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] IGlobalUserAdminService service,
+            [FromServices] ILoggerFactory loggerFactory) =>
+        {
+            if (!IsSysAdminCaller(tenantContext, loggerFactory, "unlink user identity", out var forbid))
+                return forbid;
+
+            var result = await service.UnlinkIdentityAsync(userId, subject, authority);
+            return result.ToHttpResult();
+        })
+        .WithName("AdminUnlinkGlobalUserIdentity");
     }
 
     /// <summary>

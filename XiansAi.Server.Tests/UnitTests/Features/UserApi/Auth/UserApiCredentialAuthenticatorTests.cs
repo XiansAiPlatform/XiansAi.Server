@@ -129,7 +129,7 @@ public class UserApiCredentialAuthenticatorTests
         SetupValidJwt();
         _tenantResolver
             .Setup(x => x.ResolveAsync(It.IsAny<OidcValidationResult>(), "Tenant-A"))
-            .ReturnsAsync(AuthorizedTenantResolution.Authorized("tenant-a", ["tenant-a", "tenant-b"]));
+            .ReturnsAsync(AuthorizedTenantResolution.Authorized("tenant-a", ["tenant-a", "tenant-b"], ProviderUserId));
 
         var result = await BuildAuthenticator().AuthenticateAsync(FromHeader(Jwt), "Tenant-A", SchemeName);
 

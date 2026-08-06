@@ -252,6 +252,49 @@ watch the logs for the warning it emits, fix each tenant it names, then set the 
 | `Auth__RequireOidcAudience` | Provider declares no `expectedAudience` | Set `expectedAudience` on the provider. Until then, any token that issuer signed is accepted — including one minted for an unrelated application at the same identity provider. |
 | `Auth__StrictSubjectClaim` | Identity fell back to a claim users can change | Set `userIdClaim` on the provider to name a stable claim. Note that this changes the user id of anyone currently signing in through a fallback claim, orphaning their existing record — naming the claim they already resolve to keeps them on it. |
 
+### Linking a Second Identity to an Existing Account
+
+A user record is keyed on the provider subject that created it, and everything else — threads,
+agents, keys, audit trails — is stored against that key. So when the same person arrives with a
+different subject (a new identity provider, or a record created before subjects were used), a second
+account would detach them from all of it. Sign-in therefore refuses to create one when the email
+already belongs to somebody, and the two identities are joined by a link instead.
+
+**Automatically, on a verified email:**
+
+```bash
+# Providers whose verified email addresses may attach a sign-in to the account already holding
+# that address (default: https://accounts.google.com)
+Auth__AutoLinkTrustedProviders__0=https://accounts.google.com
+```
+
+A sign-in is attached automatically only when the token carries an `email` claim, the provider says
+the holder owns it (`email_verified`, or `xms_edov` for Entra), and the provider is named in this
+list. Otherwise the sign-in is refused and an administrator has to link it.
+
+The list is deployment configuration, and deliberately not part of tenant OIDC config. Tenant
+administrators configure their own tenant's providers, so a tenant-nominated provider could assert
+any address it liked and be merged into the matching account — including a SysAdmin's.
+
+Trusting a provider asserts that it verifies address ownership and that no third party can make it
+say otherwise. That holds for Google. It does **not** hold for a multi-tenant Microsoft endpoint
+(`/common`, `/organizations`, `/consumers`), where any directory in the world can issue tokens and
+its administrators choose their users' email addresses — this is the nOAuth account-takeover
+pattern, and such entries are refused at startup with an error in the log. A single Entra tenant
+(`https://login.microsoftonline.com/<tenant-id>/v2.0`) may be trusted, since that names one
+directory whose administrators you have decided to rely on.
+
+**Manually, as a System Admin:**
+
+```bash
+POST   /api/v1/admin/users/{userId}/identities   { "subject": "...", "authority": "https://..." }
+DELETE /api/v1/admin/users/{userId}/identities?subject=...&authority=...
+```
+
+The subject is the `sub` claim from the person's token; the authority is the provider's issuer URL.
+Linking is recorded against the administrator who did it. A subject that already owns an account
+cannot be linked, because sign-in matches its own id first and the link would never resolve.
+
 ### Certificate Validation Caching (Agent API)
 
 The Agent API uses certificate-based authentication and caches validation results for performance:

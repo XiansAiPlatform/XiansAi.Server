@@ -32,6 +32,15 @@ public abstract class UserApiTenantContextHandler<TRequirement> : AuthorizationH
         AuthorizationHandlerContext context,
         TRequirement requirement)
     {
+        // Authorization still runs when authentication failed, and the principal is then simply
+        // anonymous. That is not an anomaly worth reporting — authentication has already logged why
+        // it refused — so fail quietly and leave that log line as the single explanation.
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            context.Fail();
+            return Task.CompletedTask;
+        }
+
         var loggedInUser = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(loggedInUser))
         {
