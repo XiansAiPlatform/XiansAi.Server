@@ -207,6 +207,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IAgentPermissionRepository, AgentPermissionRepository>();
         builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
+        builder.Services.AddScoped<IUserLinkedIdentityRepository, UserLinkedIdentityRepository>();
         builder.Services.AddScoped<IInvitationRepository, InvitationRepository>();
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();

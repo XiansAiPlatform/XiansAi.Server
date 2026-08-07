@@ -16,6 +16,7 @@ public class UserTenantServiceApprovedTenantsTests
     private const string Authority = "https://login.example.com";
 
     private readonly Mock<IUserRepository> _userRepo = new();
+    private readonly Mock<IUserLinkedIdentityRepository> _linkedIdentityRepo = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
     private readonly Mock<IAuthMgtConnect> _authMgtConnect = new();
     private readonly Mock<IUserManagementService> _userManagementService = new();
@@ -26,6 +27,7 @@ public class UserTenantServiceApprovedTenantsTests
     {
         return new UserTenantService(
             _userRepo.Object,
+            _linkedIdentityRepo.Object,
             NullLogger<UserTenantService>.Instance,
             _tenantContext.Object,
             _authMgtConnect.Object,
@@ -295,7 +297,8 @@ public class UserTenantServiceApprovedTenantsTests
         _userRepo.Setup(x => x.IsSysAdmin(owner.UserId)).ReturnsAsync(owner.IsSysAdmin);
         _userRepo.Setup(x => x.GetUserTenantsAsync(owner.UserId))
             .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "acme", Name = "Acme" } });
-        _userRepo.Setup(x => x.AddLinkedIdentityAsync(owner.UserId, It.IsAny<LinkedIdentity>()))
+        _linkedIdentityRepo
+            .Setup(x => x.AddAsync(It.Is<UserLinkedIdentity>(li => li.UserId == owner.UserId)))
             .ReturnsAsync(LinkIdentityOutcome.Added);
         _userManagementService
             .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
@@ -325,9 +328,9 @@ public class UserTenantServiceApprovedTenantsTests
         Assert.True(result.IsSuccess);
         Assert.Equal(owner.UserId, result.Data!.UserId);
         Assert.Equal("acme", Assert.Single(result.Data.Tenants).TenantId);
-        _userRepo.Verify(
-            x => x.AddLinkedIdentityAsync(
-                owner.UserId, It.Is<LinkedIdentity>(li => li.Subject == UserId && li.Authority == Authority)),
+        _linkedIdentityRepo.Verify(
+            x => x.AddAsync(It.Is<UserLinkedIdentity>(li =>
+                li.UserId == owner.UserId && li.Subject == UserId && li.Authority == Authority)),
             Times.Once);
     }
 
@@ -343,7 +346,7 @@ public class UserTenantServiceApprovedTenantsTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
-        _userRepo.Verify(x => x.AddLinkedIdentityAsync(It.IsAny<string>(), It.IsAny<LinkedIdentity>()), Times.Never);
+        _linkedIdentityRepo.Verify(x => x.AddAsync(It.IsAny<UserLinkedIdentity>()), Times.Never);
     }
 
     [Fact]
@@ -358,7 +361,7 @@ public class UserTenantServiceApprovedTenantsTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
-        _userRepo.Verify(x => x.AddLinkedIdentityAsync(It.IsAny<string>(), It.IsAny<LinkedIdentity>()), Times.Never);
+        _linkedIdentityRepo.Verify(x => x.AddAsync(It.IsAny<UserLinkedIdentity>()), Times.Never);
     }
 
     [Fact]
@@ -381,7 +384,8 @@ public class UserTenantServiceApprovedTenantsTests
     {
         var owner = OwnerOf("taken@example.com");
         ArrangeEmailCollisionWith(owner);
-        _userRepo.Setup(x => x.AddLinkedIdentityAsync(owner.UserId, It.IsAny<LinkedIdentity>()))
+        _linkedIdentityRepo
+            .Setup(x => x.AddAsync(It.Is<UserLinkedIdentity>(li => li.UserId == owner.UserId)))
             .ReturnsAsync(LinkIdentityOutcome.TakenByAnotherUser);
 
         var result = await BuildService(Authority).EnsureUserAndGetApprovedTenants(
@@ -397,7 +401,9 @@ public class UserTenantServiceApprovedTenantsTests
         // The link already exists, so this sign-in never reaches provisioning at all.
         var owner = OwnerOf("taken@example.com");
         _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync((User?)null);
-        _userRepo.Setup(x => x.GetByLinkedIdentityAsync(UserId, Authority)).ReturnsAsync(owner);
+        _linkedIdentityRepo
+            .Setup(x => x.GetAsync(UserId, Authority))
+            .ReturnsAsync(new UserLinkedIdentity { Subject = UserId, Authority = Authority, UserId = owner.UserId });
         _userRepo.Setup(x => x.IsSysAdmin(owner.UserId)).ReturnsAsync(false);
         _userRepo.Setup(x => x.GetUserTenantsAsync(owner.UserId))
             .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "acme", Name = "Acme" } });

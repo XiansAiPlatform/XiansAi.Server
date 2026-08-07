@@ -123,6 +123,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
     };
 
     private readonly IUserRepository _userRepository;
+    private readonly IUserLinkedIdentityRepository _linkedIdentityRepository;
     private readonly ITenantCacheService _tenantCacheService;
     private readonly IRoleCacheService _roleCacheService;
     private readonly ITokenValidationCache _tokenCache;
@@ -131,6 +132,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
 
     public GlobalUserAdminService(
         IUserRepository userRepository,
+        IUserLinkedIdentityRepository linkedIdentityRepository,
         ITenantCacheService tenantCacheService,
         IRoleCacheService roleCacheService,
         ITokenValidationCache tokenCache,
@@ -138,6 +140,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         ILogger<GlobalUserAdminService> logger)
     {
         _userRepository = userRepository;
+        _linkedIdentityRepository = linkedIdentityRepository;
         _tenantCacheService = tenantCacheService;
         _roleCacheService = roleCacheService;
         _tokenCache = tokenCache;
@@ -381,10 +384,11 @@ public class GlobalUserAdminService : IGlobalUserAdminService
                     "That subject is already an account of its own and cannot be linked");
             }
 
-            var outcome = await _userRepository.AddLinkedIdentityAsync(userId, new LinkedIdentity
+            var outcome = await _linkedIdentityRepository.AddAsync(new UserLinkedIdentity
             {
                 Subject = sanitizedSubject,
                 Authority = normalizedAuthority,
+                UserId = userId,
                 LinkedBy = actingUserId,
                 LinkedAt = DateTime.UtcNow,
             });
@@ -435,7 +439,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             if (user == null)
                 return ServiceResult<GlobalUserDetail>.NotFound("User not found");
 
-            var removed = await _userRepository.RemoveLinkedIdentityAsync(userId, subject, authority);
+            var removed = await _linkedIdentityRepository.RemoveAsync(userId, subject, authority);
             if (!removed)
                 return ServiceResult<GlobalUserDetail>.NotFound("That identity is not linked to this user");
 
@@ -493,7 +497,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             });
         }
 
-        var linkedIdentities = (user.LinkedIdentities ?? new List<LinkedIdentity>())
+        var linkedIdentities = (await _linkedIdentityRepository.GetForUserAsync(user.UserId))
             .Select(li => new GlobalUserLinkedIdentity
             {
                 Subject = li.Subject,

@@ -295,6 +295,19 @@ The subject is the `sub` claim from the person's token; the authority is the pro
 Linking is recorded against the administrator who did it. A subject that already owns an account
 cannot be linked, because sign-in matches its own id first and the link would never resolve.
 
+**Where links are stored:**
+
+Links live in their own `user_linked_identities` collection, one document per link, with a unique
+index over `(subject, authority)` that is what actually prevents an identity resolving to two
+accounts. They are deliberately not embedded in the user document: most users have no links, and an
+index that had to skip those documents would depend on `sparse`, which Azure Cosmos DB does not
+implement — it counts a missing field as null toward the unique constraint, so only one user could
+ever exist without a link and every subsequent sign-up would fail to provision.
+
+Links were stored on the user document before v3.36.0. A Cosmos DB deployment upgrading from an
+earlier build has to drop the old index by hand, or it will persist and reject every new user — see
+[v3.36.0 — Cosmos DB Migration](migrations/v3.36.0-cosmos.md).
+
 ### Certificate Validation Caching (Agent API)
 
 The Agent API uses certificate-based authentication and caches validation results for performance:

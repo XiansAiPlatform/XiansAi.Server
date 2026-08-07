@@ -7,17 +7,6 @@ using Shared.Utils;
 
 namespace Shared.Repositories;
 
-/// <summary>
-/// Result of attaching a provider identity to an account. An identity resolves to exactly one
-/// account, so an attempt to attach one that is spoken for has to be distinguishable from success.
-/// </summary>
-public enum LinkIdentityOutcome
-{
-    Added,
-    AlreadyLinkedToThisUser,
-    TakenByAnotherUser
-}
-
 public interface IUserRepository
 {
     Task<PagedUserResult> GetAllUsersAsync(UserFilter filter);
@@ -40,9 +29,6 @@ public interface IUserRepository
     Task<bool> IsSysAdmin(string userId);
     Task<string?> PinProviderAuthorityIfUnsetAsync(string userId, string providerAuthority);
     Task<bool> AddPendingTenantRoleIfAbsentAsync(string userId, string tenantId);
-    Task<User?> GetByLinkedIdentityAsync(string subject, string authority);
-    Task<LinkIdentityOutcome> AddLinkedIdentityAsync(string userId, LinkedIdentity identity);
-    Task<bool> RemoveLinkedIdentityAsync(string userId, string subject, string authority);
     Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin);
     Task<bool> DeleteUser(string userId, string? tenantId = null);
     Task<List<User>> SearchUsersAsync(string query, string? tenantId = null);
@@ -539,92 +525,6 @@ public class UserRepository : IUserRepository
             var result = await _users.UpdateOneAsync(withoutTenant, update);
             return result.ModifiedCount > 0;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddPendingTenantRoleIfAbsent");
-    }
-
-    /// <summary>
-    /// Finds the account an administrator has attached this provider identity to, or null when the
-    /// identity is not linked anywhere.
-    ///
-    /// Both halves of the pair are matched within a single entry: a subject is unique only within
-    /// the issuer that minted it, so matching the two independently would let one provider's subject
-    /// pair with another provider's authority and resolve an account neither identity belongs to.
-    /// </summary>
-    public async Task<User?> GetByLinkedIdentityAsync(string subject, string authority)
-    {
-        var normalizedAuthority = LinkedIdentityKey.NormalizeAuthority(authority);
-
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<User>.Filter.ElemMatch(
-                u => u.LinkedIdentities,
-                li => li.Subject == subject && li.Authority == normalizedAuthority);
-
-            return await _users.Find(filter).FirstOrDefaultAsync();
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByLinkedIdentity");
-    }
-
-    /// <summary>
-    /// Attaches a provider identity to an account.
-    ///
-    /// Re-adding to the same account is filtered out here; an identity already held by a *different*
-    /// account is left to the unique index. Checking for that case first would only narrow the race,
-    /// not close it, and the index closes it outright.
-    /// </summary>
-    public async Task<LinkIdentityOutcome> AddLinkedIdentityAsync(string userId, LinkedIdentity identity)
-    {
-        identity.Authority = LinkedIdentityKey.NormalizeAuthority(identity.Authority);
-
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var withoutIdentity = Builders<User>.Filter.And(
-                Builders<User>.Filter.Eq(u => u.UserId, userId),
-                Builders<User>.Filter.Not(
-                    Builders<User>.Filter.ElemMatch(
-                        u => u.LinkedIdentities,
-                        li => li.Subject == identity.Subject && li.Authority == identity.Authority)));
-
-            var update = Builders<User>.Update
-                .Push(u => u.LinkedIdentities, identity)
-                .Set(u => u.UpdatedAt, DateTime.UtcNow);
-
-            try
-            {
-                var result = await _users.UpdateOneAsync(withoutIdentity, update);
-                return result.ModifiedCount > 0
-                    ? LinkIdentityOutcome.Added
-                    : LinkIdentityOutcome.AlreadyLinkedToThisUser;
-            }
-            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
-            {
-                _logger.LogWarning(
-                    "Cannot link subject to {UserId}: it is already linked to another account",
-                    LogSanitizer.RedactUserId(userId));
-                return LinkIdentityOutcome.TakenByAnotherUser;
-            }
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddLinkedIdentity");
-    }
-
-    /// <summary>
-    /// Detaches a provider identity from an account, so that a mistaken link can be undone.
-    /// </summary>
-    /// <returns>True when this call removed a link.</returns>
-    public async Task<bool> RemoveLinkedIdentityAsync(string userId, string subject, string authority)
-    {
-        var normalizedAuthority = LinkedIdentityKey.NormalizeAuthority(authority);
-
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var update = Builders<User>.Update
-                .PullFilter(
-                    u => u.LinkedIdentities,
-                    Builders<LinkedIdentity>.Filter.And(
-                        Builders<LinkedIdentity>.Filter.Eq(li => li.Subject, subject),
-                        Builders<LinkedIdentity>.Filter.Eq(li => li.Authority, normalizedAuthority)))
-                .Set(u => u.UpdatedAt, DateTime.UtcNow);
-
-            var result = await _users.UpdateOneAsync(u => u.UserId == userId, update);
-            return result.ModifiedCount > 0;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "RemoveLinkedIdentity");
     }
 
     public async Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin)

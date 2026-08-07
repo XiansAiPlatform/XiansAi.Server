@@ -79,6 +79,7 @@ public interface IUserTenantService
 public class UserTenantService : IUserTenantService
 {
     private readonly IUserRepository _userRepository;
+    private readonly IUserLinkedIdentityRepository _linkedIdentityRepository;
     private readonly ITenantRepository _tenantRepository;
     private readonly ILogger<UserTenantService> _logger;
     private readonly ITenantContext _tenantContext;
@@ -92,6 +93,7 @@ public class UserTenantService : IUserTenantService
     private const string AutoLinkActor = "auto:verified-email";
 
     public UserTenantService(IUserRepository userRepository,
+        IUserLinkedIdentityRepository linkedIdentityRepository,
         ILogger<UserTenantService> logger,
         ITenantContext tenantContext,
         IAuthMgtConnect authMgtConnect,
@@ -103,6 +105,7 @@ public class UserTenantService : IUserTenantService
     {
         _autoLinkPolicy = autoLinkPolicy;
         _userRepository = userRepository;
+        _linkedIdentityRepository = linkedIdentityRepository;
         _logger = logger;
         _tenantRepository = tenantRepository;
         _tenantContext = tenantContext;
@@ -186,13 +189,13 @@ public class UserTenantService : IUserTenantService
             var existingUser = await _userRepository.GetByUserIdAsync(userId);
             if (existingUser == null)
             {
-                var linkedUser = await _userRepository.GetByLinkedIdentityAsync(userId, providerAuthority);
-                if (linkedUser != null)
+                var linkedIdentity = await _linkedIdentityRepository.GetAsync(userId, providerAuthority);
+                if (linkedIdentity != null)
                 {
                     // The provider check the pin performs below is already satisfied: a link matches
                     // subject and authority together, so reaching this record means this provider is
                     // the one the administrator attached the subject to.
-                    accountUserId = linkedUser.UserId;
+                    accountUserId = linkedIdentity.UserId;
                     _logger.LogInformation(
                         "Subject {Subject} from {Authority} resolved to linked account {UserId}",
                         LogSanitizer.RedactUserId(userId), LogSanitizer.Sanitize(providerAuthority),
@@ -302,10 +305,11 @@ public class UserTenantService : IUserTenantService
             return null;
         }
 
-        var outcome = await _userRepository.AddLinkedIdentityAsync(owner.UserId, new LinkedIdentity
+        var outcome = await _linkedIdentityRepository.AddAsync(new UserLinkedIdentity
         {
             Subject = subject,
             Authority = providerAuthority,
+            UserId = owner.UserId,
             LinkedAt = DateTime.UtcNow,
             LinkedBy = AutoLinkActor
         });

@@ -50,6 +50,7 @@ public class UserTenantServiceSyncSysAdminTests
 
         return new UserTenantService(
             _userRepo.Object,
+            new Mock<IUserLinkedIdentityRepository>().Object,
             NullLogger<UserTenantService>.Instance,
             _tenantContext.Object,
             _authMgtConnect.Object,
