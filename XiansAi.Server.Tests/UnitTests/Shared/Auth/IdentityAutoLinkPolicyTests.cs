@@ -17,6 +17,17 @@ public class IdentityAutoLinkPolicyTests
         return new IdentityAutoLinkPolicy(configuration, NullLogger<IdentityAutoLinkPolicy>.Instance);
     }
 
+    private static IdentityAutoLinkPolicy BuildPolicyVouchingFor(params string[] authorities)
+    {
+        var settings = authorities
+            .Select((authority, index) => new KeyValuePair<string, string?>(
+                $"Auth:AutoLinkProvidersWithoutVerifiedEmailClaim:{index}", authority))
+            .ToList();
+
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        return new IdentityAutoLinkPolicy(configuration, NullLogger<IdentityAutoLinkPolicy>.Instance);
+    }
+
     [Fact]
     public void Google_IsTrustedWithoutConfiguration()
     {
@@ -101,5 +112,68 @@ public class IdentityAutoLinkPolicyTests
 
         Assert.False(policy.IsTrusted(null));
         Assert.False(policy.IsTrusted(""));
+    }
+
+    [Fact]
+    public void NoProvider_IsVouchedForWithoutConfiguration()
+    {
+        // Standing in for a provider's verification claim is never the default. An operator has to
+        // say they know how their directory admits addresses.
+        var policy = BuildPolicy();
+
+        Assert.False(policy.VouchesForUnverifiedEmail("https://accounts.google.com"));
+        Assert.False(policy.VouchesForUnverifiedEmail("https://contoso.b2clogin.com/contoso.onmicrosoft.com/v2.0"));
+    }
+
+    [Fact]
+    public void MerelyTrustingAProvider_DoesNotVouchForItsUnverifiedEmails()
+    {
+        // The two lists say different things: trusting Google means believing what it verifies, not
+        // accepting an address it declined to verify.
+        var policy = BuildPolicy("https://accounts.google.com");
+
+        Assert.True(policy.IsTrusted("https://accounts.google.com"));
+        Assert.False(policy.VouchesForUnverifiedEmail("https://accounts.google.com"));
+    }
+
+    [Fact]
+    public void AVouchedProvider_IsTrustedWithoutBeingNamedTwice()
+    {
+        // Vouching is the stronger statement, so requiring the authority in both lists would only
+        // create a way to configure something that silently does nothing.
+        var authority = "https://contoso.b2clogin.com/contoso.onmicrosoft.com/v2.0";
+        var policy = BuildPolicyVouchingFor(authority);
+
+        Assert.True(policy.VouchesForUnverifiedEmail(authority));
+        Assert.True(policy.IsTrusted(authority));
+    }
+
+    [Fact]
+    public void AVouchedProvider_DoesNotDisplaceTheTrustedDefault()
+    {
+        var policy = BuildPolicyVouchingFor("https://contoso.b2clogin.com/contoso.onmicrosoft.com/v2.0");
+
+        Assert.True(policy.IsTrusted("https://accounts.google.com"));
+    }
+
+    [Fact]
+    public void AMultiTenantMicrosoftEndpoint_CannotBeVouchedForEither()
+    {
+        // The weaker list refuses these, so the stronger one must too — otherwise it would be a way
+        // around the check rather than an extension of it.
+        var authority = "https://login.microsoftonline.com/common/v2.0";
+        var policy = BuildPolicyVouchingFor(authority);
+
+        Assert.False(policy.VouchesForUnverifiedEmail(authority));
+        Assert.False(policy.IsTrusted(authority));
+    }
+
+    [Fact]
+    public void NoAuthority_IsNeverVouchedFor()
+    {
+        var policy = BuildPolicyVouchingFor("https://contoso.b2clogin.com/contoso.onmicrosoft.com/v2.0");
+
+        Assert.False(policy.VouchesForUnverifiedEmail(null));
+        Assert.False(policy.VouchesForUnverifiedEmail(""));
     }
 }

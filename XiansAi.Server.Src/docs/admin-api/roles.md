@@ -193,10 +193,10 @@ configuration** — the rules that govern which external OIDC-issued tokens are 
 tenant's User API interactions (consumed by `DynamicOidcValidator`). These mirror the WebApi
 `OidcConfigEndpoints` but are tenant-scoped via the route.
 
-Like the branding endpoints these are **tenant-scoped, not SysAdmin-only**. They are nested
-under `/tenants/{tenantId}/oidc-config` and protected by the **`TenantRouteScopeFilter`**, so a
-`TenantAdmin` may only manage their own tenant while a `SysAdmin` may target any tenant they have
-resolved. All routes are relative to `/api/v{version}/admin`.
+These endpoints are **SysAdmin-only** (OIDC provider acceptance is a platform-level security
+control). They are nested under `/tenants/{tenantId}/oidc-config` and protected by both
+**`SysAdminOnlyFilter`** and **`TenantRouteScopeFilter`**. All routes are relative to
+`/api/v{version}/admin`.
 
 | Method | Route | Description |
 |--------|-------|-------------|

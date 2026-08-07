@@ -142,6 +142,28 @@ public class OidcTokenInspectorTests
     }
 
     [Fact]
+    public void EmailIsReadFromTheB2CEmailsArray()
+    {
+        // Azure AD B2C issues no email, upn or preferred_username. Missing this claim leaves the
+        // record with no address, which cannot be matched to an existing account and so quietly
+        // becomes a second one for the same person.
+        var jwt = TokenWith(("sub", "user-1"), ("emails", new[] { "a@b.com" }));
+
+        Assert.Equal("a@b.com", OidcTokenInspector.GetEmail(jwt));
+    }
+
+    [Fact]
+    public void TheB2CEmailsArrayIsNotTreatedAsVerified()
+    {
+        // B2C states nothing about ownership of the address, and it may have come from a social
+        // account the directory never checked. Treating it as verified would let a sign-in attach
+        // itself to an existing account on that basis alone.
+        var jwt = TokenWith(("sub", "user-1"), ("emails", new[] { "a@b.com" }));
+
+        Assert.False(OidcTokenInspector.IsEmailVerified(jwt));
+    }
+
+    [Fact]
     public void NoScopeRequirementAcceptsAnyToken()
     {
         Assert.Null(OidcTokenInspector.DescribeMissingScope(new OidcProviderRule(), TokenWith(("sub", "u"))));

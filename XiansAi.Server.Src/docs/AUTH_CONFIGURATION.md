@@ -210,10 +210,11 @@ Auth__OidcDiscoveryTimeoutSeconds=30
 
 ### OIDC Hardening
 
-Tenant OIDC rules are supplied by tenant administrators, so a few of them are not taken at face
-value. Some settings are simply overridden; the two that would change who can sign in are behind
-switches that start off, warn about every affected tenant, and can be turned on once the warnings
-stop.
+Tenant OIDC rules are per-tenant records edited at runtime through an API. Writing them requires
+SysAdmin, but they are still records rather than reviewed deployment configuration, so a few of them
+are not taken at face value. Some settings are simply overridden; the two that would change who can
+sign in are behind switches that start off, warn about every affected tenant, and can be turned on
+once the warnings stop.
 
 ```bash
 # Refuse a provider that does not declare the audiences it accepts (default: false)
@@ -272,9 +273,13 @@ A sign-in is attached automatically only when the token carries an `email` claim
 the holder owns it (`email_verified`, or `xms_edov` for Entra), and the provider is named in this
 list. Otherwise the sign-in is refused and an administrator has to link it.
 
-The list is deployment configuration, and deliberately not part of tenant OIDC config. Tenant
-administrators configure their own tenant's providers, so a tenant-nominated provider could assert
-any address it liked and be merged into the matching account — including a SysAdmin's.
+The list is deployment configuration, and deliberately not part of tenant OIDC config, even though
+only a SysAdmin may now write either. Configuring a provider is a separate decision from believing
+what it says about identity: adding a partner's directory so their staff can sign in says nothing
+about whether an address it emits that matches an existing account is the same person. The scopes
+differ too — OIDC config governs one tenant, while the account an auto-link attaches to may be in
+any tenant or be a SysAdmin's — and keeping this out of the API means a stolen SysAdmin token cannot
+widen it.
 
 Trusting a provider asserts that it verifies address ownership and that no third party can make it
 say otherwise. That holds for Google. It does **not** hold for a multi-tenant Microsoft endpoint
@@ -283,6 +288,29 @@ its administrators choose their users' email addresses — this is the nOAuth ac
 pattern, and such entries are refused at startup with an error in the log. A single Entra tenant
 (`https://login.microsoftonline.com/<tenant-id>/v2.0`) may be trusted, since that names one
 directory whose administrators you have decided to rely on.
+
+**Providers that verify addresses but do not say so (Azure AD B2C):**
+
+```bash
+# Providers whose email is accepted with no verification claim in the token, because you know the
+# directory verifies addresses itself (default: none)
+Auth__AutoLinkProvidersWithoutVerifiedEmailClaim__0=https://contoso.b2clogin.com/contoso.onmicrosoft.com/v2.0
+```
+
+B2C issues its address as `emails` and sends no verification claim at all, so the trusted list alone
+can never match one of its sign-ins however it is set — every returning user would need an
+administrator. Naming a provider here supplies your assertion in place of the provider's. It also
+trusts the provider, so it does not need to appear in both lists, and the same startup checks apply.
+
+Only assert this where every address in the directory got there under control you can account for:
+an invite-only or admin-provisioned directory, or one whose sign-up proves the person owns the
+address (B2C local accounts verify by one-time passcode). It is **not** safe where a person can
+bring an address in from elsewhere unchecked — self-service sign-up federated to social providers is
+the case to watch, since the address comes from Google or Facebook and B2C may not re-verify it.
+Where that is possible, whoever supplies an address takes over the account already holding it.
+
+Links made this way are logged as attached "on an email match this deployment vouches for without a
+verification claim", so an audit can tell them apart from ones a provider verified.
 
 **Manually, as a System Admin:**
 
@@ -293,7 +321,21 @@ DELETE /api/v1/admin/users/{userId}/identities?subject=...&authority=...
 
 The subject is the `sub` claim from the person's token; the authority is the provider's issuer URL.
 Linking is recorded against the administrator who did it. A subject that already owns an account
-cannot be linked, because sign-in matches its own id first and the link would never resolve.
+cannot be linked, because sign-in matches its own id first and the link would never resolve. If that
+subject has an account you want to retire, delete it first, then link.
+
+**What a link does and does not move:**
+
+| Follows the linked account | Stays on the token's own subject |
+| --- | --- |
+| Tenant memberships and roles, so access is decided by one record | The conversation participant id |
+| `LoggedInUser`, so records are attributed to that account | |
+
+Conversation identity is deliberately left behind. Threads are keyed on
+`(tenant, workflow, participant)`, and clients pass the participant id explicitly and may only name
+their own — so moving it would both strand every existing thread and get the caller's next request
+refused. The consequence is that a person with two linked subjects keeps two conversation histories,
+while still being a single account everywhere access is concerned.
 
 **Where links are stored:**
 

@@ -62,6 +62,40 @@ public static class AdminTenantScopeGuard
     /// </summary>
     public static IResult TenantScopeMismatch() =>
         Results.Json(new { message = "Tenant scope mismatch" }, statusCode: StatusCodes.Status403Forbidden);
+
+    /// <summary>
+    /// Standard 403 response used when a SysAdmin-only endpoint is called without that role.
+    /// </summary>
+    public static IResult SysAdminRequired() =>
+        Results.Json(
+            new { message = "Access denied: Only system administrators can perform this operation" },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+/// <summary>
+/// Endpoint filter that requires the caller to hold <see cref="SystemRoles.SysAdmin"/>.
+/// Apply on AdminApi route groups that must never be reachable by TenantAdmin API keys.
+/// </summary>
+public sealed class SysAdminOnlyFilter : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var httpContext = context.HttpContext;
+        var tenantContext = httpContext.RequestServices.GetRequiredService<ITenantContext>();
+
+        if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext))
+        {
+            var logger = httpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("AdminSysAdminScope");
+            logger.LogWarning(
+                "Access denied: SysAdmin role required. Caller: {UserId}",
+                LogSanitizer.Sanitize(tenantContext.LoggedInUser));
+            return AdminTenantScopeGuard.SysAdminRequired();
+        }
+
+        return await next(context);
+    }
 }
 
 /// <summary>

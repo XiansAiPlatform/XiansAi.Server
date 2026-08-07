@@ -289,11 +289,19 @@ public class UserTenantService : IUserTenantService
     /// the provider must be trusted by the deployment rather than by a tenant — a tenant
     /// administrator configures their own OIDC providers, so a provider they nominate can assert
     /// whatever it likes about whoever it likes.
+    ///
+    /// The first condition may be met by the operator instead of the provider, for a directory whose
+    /// addresses are verified somewhere the token does not record — see
+    /// <see cref="IdentityAutoLinkPolicy.VouchesForUnverifiedEmail"/>. The second is never waived.
     /// </summary>
     private async Task<ServiceResult<ResolvedUserAccess>?> TryAutoLinkVerifiedEmailAsync(
         string subject, string? email, bool emailVerified, string providerAuthority, string? requestedTenantId)
     {
-        if (string.IsNullOrWhiteSpace(email) || !emailVerified || !_autoLinkPolicy.IsTrusted(providerAuthority))
+        var vouchedByOperator = !emailVerified && _autoLinkPolicy.VouchesForUnverifiedEmail(providerAuthority);
+
+        if (string.IsNullOrWhiteSpace(email)
+            || (!emailVerified && !vouchedByOperator)
+            || !_autoLinkPolicy.IsTrusted(providerAuthority))
         {
             return null;
         }
@@ -320,19 +328,25 @@ public class UserTenantService : IUserTenantService
             return null;
         }
 
+        // Which of the two bases was used decides who is answerable for the link, so an audit of
+        // these lines should not have to infer it from configuration as it stood at the time.
+        var basis = vouchedByOperator
+            ? "an email match this deployment vouches for without a verification claim"
+            : "a verified email match";
+
         // Logged at warning for a privileged account: the link is legitimate, but silently widening
         // the ways into a SysAdmin account is worth seeing in a log without going looking for it.
         if (owner.IsSysAdmin)
         {
             _logger.LogWarning(
-                "Attached a {Authority} sign-in to SysAdmin account {UserId} on a verified email match",
-                LogSanitizer.Sanitize(providerAuthority), LogSanitizer.RedactUserId(owner.UserId));
+                "Attached a {Authority} sign-in to SysAdmin account {UserId} on {Basis}",
+                LogSanitizer.Sanitize(providerAuthority), LogSanitizer.RedactUserId(owner.UserId), basis);
         }
         else
         {
             _logger.LogInformation(
-                "Attached a {Authority} sign-in to account {UserId} on a verified email match",
-                LogSanitizer.Sanitize(providerAuthority), LogSanitizer.RedactUserId(owner.UserId));
+                "Attached a {Authority} sign-in to account {UserId} on {Basis}",
+                LogSanitizer.Sanitize(providerAuthority), LogSanitizer.RedactUserId(owner.UserId), basis);
         }
 
         await RegisterAsPendingMemberAsync(owner.UserId, requestedTenantId);

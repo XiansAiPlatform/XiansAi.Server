@@ -7,11 +7,13 @@ namespace Shared.Auth;
 /// <summary>
 /// The rules a tenant's own OIDC configuration is not allowed to weaken.
 ///
-/// Tenant OIDC settings are supplied by tenant administrators and stored per tenant, so treating
-/// every one of them as authoritative would let a tenant turn off its own authentication. This
-/// class is where the deployment draws the line: some settings are simply overridden, and the ones
-/// that need a migration before they can be enforced are gated behind a switch that starts off,
-/// warns about every affected tenant, and can be turned on once the warnings stop.
+/// Tenant OIDC settings are stored per tenant and edited at runtime through an API. Writing them
+/// requires SysAdmin, but they are still records rather than reviewed deployment configuration —
+/// they can be wrong, stale, or inherited from a looser era — and treating every one as
+/// authoritative would let a single record turn off its tenant's authentication. This class is
+/// where the deployment draws the line: some settings are simply overridden, and the ones that need
+/// a migration before they can be enforced are gated behind a switch that starts off, warns about
+/// every affected tenant, and can be turned on once the warnings stop.
 /// </summary>
 public class OidcValidationPolicy
 {

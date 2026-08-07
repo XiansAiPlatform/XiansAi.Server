@@ -19,16 +19,17 @@ namespace Shared.Auth;
 /// request's tenant context: a token proves an identity, not an authorization, and the two were
 /// previously entangled here. Callers decide what the validated identity means for their transport.
 ///
-/// The rules come from tenant administrators, so <see cref="OidcValidationPolicy"/> gets the final
-/// say on anything that would weaken validation.
+/// The rules are per-tenant records edited at runtime rather than reviewed deployment
+/// configuration, so <see cref="OidcValidationPolicy"/> gets the final say on anything that would
+/// weaken validation.
 /// </summary>
 public class DynamicOidcValidator : IDynamicOidcValidator
 {
     private const string ValidationCacheKeyPrefix = "oidc_validation:";
 
     /// <summary>
-    /// Caps how many distinct providers we will hold discovery state for. Authorities are
-    /// tenant-supplied, so without a ceiling this static map grows with whatever gets configured.
+    /// Caps how many distinct providers we will hold discovery state for. Authorities come from
+    /// tenant records, so without a ceiling this static map grows with whatever gets configured.
     /// </summary>
     private const int MaxConfigurationManagers = 500;
 

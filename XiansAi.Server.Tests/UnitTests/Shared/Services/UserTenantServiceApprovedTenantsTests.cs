@@ -23,7 +23,26 @@ public class UserTenantServiceApprovedTenantsTests
     private readonly Mock<ITenantRepository> _tenantRepo = new();
     private readonly Mock<IJwtClaimsExtractor> _jwtExtractor = new();
 
-    private UserTenantService BuildService(params string[] autoLinkTrustedProviders)
+    private UserTenantService BuildService(params string[] autoLinkTrustedProviders) =>
+        BuildServiceWith(BuildAutoLinkPolicy(autoLinkTrustedProviders));
+
+    /// <summary>
+    /// A service whose policy accepts <paramref name="authority"/>'s email with no verification
+    /// claim in the token, as an operator does for a directory they know verifies addresses itself.
+    /// </summary>
+    private UserTenantService BuildServiceVouchingFor(string authority)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([
+                new KeyValuePair<string, string?>("Auth:AutoLinkProvidersWithoutVerifiedEmailClaim:0", authority)
+            ])
+            .Build();
+
+        return BuildServiceWith(new IdentityAutoLinkPolicy(
+            configuration, NullLogger<IdentityAutoLinkPolicy>.Instance));
+    }
+
+    private UserTenantService BuildServiceWith(IdentityAutoLinkPolicy autoLinkPolicy)
     {
         return new UserTenantService(
             _userRepo.Object,
@@ -35,7 +54,7 @@ public class UserTenantServiceApprovedTenantsTests
             _userManagementService.Object,
             _tenantRepo.Object,
             _jwtExtractor.Object,
-            BuildAutoLinkPolicy(autoLinkTrustedProviders));
+            autoLinkPolicy);
     }
 
     /// <summary>
@@ -343,6 +362,41 @@ public class UserTenantServiceApprovedTenantsTests
 
         var result = await BuildService(Authority).EnsureUserAndGetApprovedTenants(
             UserId, "taken@example.com", "Test User", Authority, "acme", emailVerified: false);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
+        _linkedIdentityRepo.Verify(x => x.AddAsync(It.IsAny<UserLinkedIdentity>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_AttachesAnUnverifiedEmail_WhenTheDeploymentVouchesForTheProvider()
+    {
+        // Azure AD B2C is the case: it sends no verification claim at all, so the ordinary trusted
+        // list can never match one of its sign-ins and every returning user would need an admin.
+        var owner = OwnerOf("taken@example.com");
+        ArrangeEmailCollisionWith(owner);
+
+        var result = await BuildServiceVouchingFor(Authority).EnsureUserAndGetApprovedTenants(
+            UserId, owner.Email, "Test User", Authority, "acme", emailVerified: false);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(owner.UserId, result.Data!.UserId);
+        _linkedIdentityRepo.Verify(
+            x => x.AddAsync(It.Is<UserLinkedIdentity>(li =>
+                li.UserId == owner.UserId && li.Subject == UserId && li.Authority == Authority)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_VouchingForOneProvider_DoesNotAttachUnverifiedEmailsFromAnother()
+    {
+        // The assertion is about one named directory, and must not become a general relaxation:
+        // every other provider a tenant configures still has to produce a verification claim.
+        ArrangeEmailCollisionWith(OwnerOf("taken@example.com"));
+
+        var result = await BuildServiceVouchingFor("https://someone-else.example.com")
+            .EnsureUserAndGetApprovedTenants(
+                UserId, "taken@example.com", "Test User", Authority, "acme", emailVerified: false);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
