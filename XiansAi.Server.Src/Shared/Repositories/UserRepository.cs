@@ -368,16 +368,19 @@ public class UserRepository : IUserRepository
                 await _users.InsertOneAsync(user);
                 return true;
             }
-            catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
             {
-                _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", LogSanitizer.RedactUserId(user.UserId));
+                // The server names the violated index, and it is not always user_id: a unique index
+                // left behind by an earlier schema version collides here too, and Cosmos DB never
+                // drops unused indexes. Without the detail this reads as a harmless creation race.
+                _logger.LogWarning(ex, "Could not create user {UserId} - duplicate key: {WriteError}",
+                    LogSanitizer.RedactUserId(user.UserId), LogSanitizer.Sanitize(ex.WriteError?.Message));
                 return false;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating user {UserId}", LogSanitizer.RedactUserId(user.UserId));
-                return false;
-            }
+            // Anything else is left to propagate, as every other method here does. Catching it would
+            // sit inside the retry wrapper and convert the errors it exists to handle — Cosmos DB
+            // throttling above all — into a flat "could not create", unretried and indistinguishable
+            // from a real conflict.
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateUser");
     }
 

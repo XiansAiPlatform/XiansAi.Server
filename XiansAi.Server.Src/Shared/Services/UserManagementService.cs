@@ -344,6 +344,15 @@ public class UserManagementService : IUserManagementService
                         _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.RedactUserId(userDto.UserId));
                         return ServiceResult<bool>.Conflict("User already exists");
                     }
+                    // The insert was rejected and the record still is not there, so this is not a
+                    // creation race. On a deployment that has carried more than one schema version
+                    // the usual cause is a unique index no longer in mongodb-indexes.yaml — Cosmos DB
+                    // does not drop unused indexes, so an old one keeps rejecting writes forever.
+                    _logger.LogError(
+                        "Could not create user {UserId} and it is still absent afterwards. Check the " +
+                        "preceding UserRepository entry for the rejected write, and compare " +
+                        "db.users.getIndexes() against mongodb-indexes.yaml for stale unique indexes",
+                        LogSanitizer.RedactUserId(userDto.UserId));
                     return ServiceResult<bool>.InternalServerError("Failed to create new user");
                 }
                 _logger.LogInformation("New user created: {UserId}", LogSanitizer.RedactUserId(userDto.UserId));
