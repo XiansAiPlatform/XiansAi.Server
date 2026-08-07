@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -130,6 +131,8 @@ public class MessageService : IMessageService
     private readonly IWorkflowSignalService _workflowSignalService;
     private readonly IFeedbackService _feedbackService;
     private readonly IMessageFileStorage _fileStorage;
+    private readonly IActivationValidationService _activationValidationService;
+    private readonly bool _validateActivation;
 
         public MessageService(
         ILogger<MessageService> logger,
@@ -137,7 +140,9 @@ public class MessageService : IMessageService
         IConversationRepository conversationRepository,
         IWorkflowSignalService workflowSignalService,
         IFeedbackService feedbackService,
-        IMessageFileStorage fileStorage
+        IMessageFileStorage fileStorage,
+        IActivationValidationService activationValidationService,
+        IConfiguration configuration
         )
     {
         _logger = logger;
@@ -146,6 +151,8 @@ public class MessageService : IMessageService
         _workflowSignalService = workflowSignalService;
         _feedbackService = feedbackService;
         _fileStorage = fileStorage;
+        _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _validateActivation = configuration.GetValue("Messaging:ValidateActivation", defaultValue: true);
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -197,7 +204,7 @@ public class MessageService : IMessageService
 
             messageRequest.Text = request.Text;
 
-            await ProcessIncomingMessage(new ChatOrDataRequest
+            var inboundResult = await ProcessIncomingMessage(new ChatOrDataRequest
             {
                 ParticipantId = request.ParticipantId,
                 WorkflowId = request.TargetWorkflowId,
@@ -207,6 +214,16 @@ public class MessageService : IMessageService
                 Scope = request.Scope,
                 Authorization = request.Authorization
             }, MessageType.Chat);
+
+            if (!inboundResult.IsSuccess)
+            {
+                _logger.LogWarning(
+                    "Handoff inbound message rejected for target workflow {WorkflowId}: {Error}",
+                    LogSanitizer.Sanitize(request.TargetWorkflowId), LogSanitizer.Sanitize(inboundResult.ErrorMessage));
+                return ServiceResult<string>.Failure(
+                    inboundResult.ErrorMessage ?? "Failed to process handoff inbound message",
+                    inboundResult.StatusCode);
+            }
 
             return ServiceResult<string>.Success(targetThreadId);
         }
@@ -359,6 +376,25 @@ public class MessageService : IMessageService
 
         _logger.LogInformation("Processing inbound message for WorkflowId `{WorkflowId}` from participant {ParticipantId}",
             LogSanitizer.Sanitize(request.WorkflowId), LogSanitizer.Sanitize(request.ParticipantId));
+
+        // Reject messages targeting unregistered agents / inactive activations before writing
+        // a thread or starting a Temporal workflow via SignalWithStart.
+        if (_validateActivation)
+        {
+            var validation = await _activationValidationService.ValidateWorkflowTargetAsync(
+                _tenantContext.TenantId, request.WorkflowId!, request.WorkflowType!);
+            if (!validation.IsSuccess)
+            {
+                _logger.LogWarning(
+                    "Inbound message rejected for WorkflowId `{WorkflowId}` from participant {ParticipantId}: {Error}",
+                    LogSanitizer.Sanitize(request.WorkflowId),
+                    LogSanitizer.Sanitize(request.ParticipantId),
+                    LogSanitizer.Sanitize(validation.ErrorMessage));
+                return ServiceResult<string>.Failure(
+                    validation.ErrorMessage ?? "Activation validation failed",
+                    validation.StatusCode);
+            }
+        }
         
         // Critical Operation: If the threadId is not provided, we need to create a new thread
         var threadId = await CreateOrGetThread(request);

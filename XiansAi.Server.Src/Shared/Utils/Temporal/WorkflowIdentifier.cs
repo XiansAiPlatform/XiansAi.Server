@@ -127,4 +127,28 @@ public class WorkflowIdentifier
     {
         return workflowType.Split(":")[0].Trim();
     }
+
+    /// <summary>
+    /// Extracts the optional id postfix (activation name / run suffix) from a fully qualified
+    /// workflow id of the form <c>tenant:Agent:Flow[:Postfix]</c>.
+    /// Returns <c>null</c> when the id has fewer than four segments (no postfix).
+    /// Multi-segment postfixes are rejoined with <c>:</c>.
+    /// </summary>
+    public static string? GetIdPostfix(string workflowId)
+    {
+        if (string.IsNullOrWhiteSpace(workflowId))
+        {
+            return null;
+        }
+
+        var parts = workflowId.Split(':');
+        // tenant:Agent:Flow requires 3 segments; postfix starts at index 3
+        if (parts.Length < 4)
+        {
+            return null;
+        }
+
+        var postfix = string.Join(':', parts.Skip(3)).Trim();
+        return string.IsNullOrEmpty(postfix) ? null : postfix;
+    }
 }

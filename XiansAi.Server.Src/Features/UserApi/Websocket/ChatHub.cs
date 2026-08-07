@@ -342,6 +342,18 @@ namespace Features.UserApi.Websocket
                 var messageService = GetScopedMessageService();
                 var inboundResult = await messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
+                if (!inboundResult.IsSuccess)
+                {
+                    _logger.LogWarning(
+                        "ProcessIncomingMessage failed with status {StatusCode} on connection {ConnectionId}: {Error}",
+                        inboundResult.StatusCode, Context.ConnectionId, inboundResult.ErrorMessage);
+                    await Clients.Caller.SendAsync(
+                        SignalRMethods.Error,
+                        inboundResult.ErrorMessage ?? "Failed to process inbound message",
+                        cancellationToken);
+                    return;
+                }
+
                 if (inboundResult.Data != null)
                 {
                     // Notify client message was received

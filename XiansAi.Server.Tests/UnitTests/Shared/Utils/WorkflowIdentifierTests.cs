@@ -98,4 +98,29 @@ public class WorkflowIdentifierTests
         Assert.Equal("acme:My Agent:Router Bot:run-42",
             WorkflowIdentifier.BuildWorkflowId(TenantId, "My Agent", "Router Bot", "run-42"));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("acme:My Agent:Router Bot")]
+    [InlineData("My Agent:Router Bot")]
+    public void GetIdPostfix_ReturnsNull_WhenThereIsNoPostfix(string? workflowId)
+    {
+        Assert.Null(WorkflowIdentifier.GetIdPostfix(workflowId!));
+    }
+
+    [Fact]
+    public void GetIdPostfix_ReturnsTheSingleSegmentPostfix()
+    {
+        Assert.Equal("run-42",
+            WorkflowIdentifier.GetIdPostfix("acme:My Agent:Router Bot:run-42"));
+    }
+
+    [Fact]
+    public void GetIdPostfix_RejoinsMultiSegmentPostfixes()
+    {
+        Assert.Equal("env:prod:v2",
+            WorkflowIdentifier.GetIdPostfix("acme:My Agent:Router Bot:env:prod:v2"));
+    }
 }

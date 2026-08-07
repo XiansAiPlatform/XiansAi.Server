@@ -138,6 +138,7 @@ public class DefinitionsService : IDefinitionsService
     private readonly ITenantContext _tenantContext;
     private readonly IAgentPermissionRepository _agentPermissionRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IActivationValidationService _activationValidationService;
     
     public DefinitionsService(
         Repositories.IFlowDefinitionRepository flowDefinitionRepository,
@@ -145,7 +146,8 @@ public class DefinitionsService : IDefinitionsService
         ILogger<DefinitionsService> logger,
         ITenantContext tenantContext,
         IAgentPermissionRepository agentPermissionRepository,
-        IWebhookEventPublisher webhookEventPublisher
+        IWebhookEventPublisher webhookEventPublisher,
+        IActivationValidationService activationValidationService
     )
     {
         _flowDefinitionRepository = flowDefinitionRepository;
@@ -154,6 +156,7 @@ public class DefinitionsService : IDefinitionsService
         _tenantContext = tenantContext;
         _agentPermissionRepository = agentPermissionRepository;
         _webhookEventPublisher = webhookEventPublisher;
+        _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
     }
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
@@ -239,6 +242,7 @@ public class DefinitionsService : IDefinitionsService
                 // Create new definition with fresh ID
                 definition.Id = ObjectId.GenerateNewId().ToString();
                 await _flowDefinitionRepository.CreateAsync(definition);
+                _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
                 await _webhookEventPublisher.PublishAsync(
                     WebhookEventTypes.FlowDefinitionUpdated,
@@ -253,6 +257,7 @@ public class DefinitionsService : IDefinitionsService
 
         _logger.LogInformation("Creating new definition {WorkflowType}", LogSanitizer.Sanitize(definition.WorkflowType));
         await _flowDefinitionRepository.CreateAsync(definition);
+        _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
         await _webhookEventPublisher.PublishAsync(
             WebhookEventTypes.FlowDefinitionCreated,

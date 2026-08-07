@@ -116,6 +116,17 @@ namespace Features.UserApi.Websocket
                 // Step 1: Process inbound
                 var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
 
+                if (!inboundResult.IsSuccess)
+                {
+                    _logger.LogWarning(
+                        "ProcessIncomingMessage failed with status {StatusCode}: {Error}",
+                        inboundResult.StatusCode, inboundResult.ErrorMessage);
+                    await Clients.Caller.SendAsync(
+                        "Error",
+                        inboundResult.ErrorMessage ?? "Failed to process inbound message");
+                    return;
+                }
+
                 if (inboundResult.Data != null)
                 {
                     // Notify client message was received
