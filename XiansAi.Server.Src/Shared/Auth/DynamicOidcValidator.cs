@@ -243,6 +243,10 @@ public class DynamicOidcValidator : IDynamicOidcValidator
     /// <summary>
     /// Reads the subject, warning when it came from a claim the user may be able to change at their
     /// identity provider — which would let them resolve to somebody else's record.
+    ///
+    /// A configured claim always reports <see cref="ResolvedSubject.IsStableClaim"/> as true
+    /// (the nomination is deliberate), so a mutable <c>userIdClaim</c> would otherwise be silent.
+    /// That case gets its own throttled warning under a distinct key.
     /// </summary>
     private ResolvedSubject ResolveSubject(OidcProviderRule providerRule, string providerLabel, JsonWebToken jwt)
     {
@@ -256,6 +260,22 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 "'{ClaimType}', which users can often change at their provider. Set userIdClaim on " +
                 "the provider to name a stable claim, then enable Auth:StrictSubjectClaim.",
                 LogSanitizer.Sanitize(providerLabel), LogSanitizer.Sanitize(subject.ClaimType));
+        }
+        else if (subject.IsStableClaim && subject.ClaimType != null)
+        {
+            // Configured claims are treated as deliberate by ResolveSubject, so a mutable
+            // userIdClaim would otherwise never surface. Tenants already grandfathered past the
+            // upsert refusal still need to be visible in the log.
+            var mutableReason = OidcTokenInspector.DescribeMutableSubjectClaim(subject.ClaimType);
+            if (mutableReason != null)
+            {
+                _policy.WarnAboutConfiguration(
+                    "mutable-useridclaim:" + providerLabel + ":" + subject.ClaimType,
+                    "OIDC provider {Provider} nominates mutable userIdClaim '{ClaimType}'. {Reason}",
+                    LogSanitizer.Sanitize(providerLabel),
+                    LogSanitizer.Sanitize(subject.ClaimType),
+                    mutableReason);
+            }
         }
 
         return subject;
