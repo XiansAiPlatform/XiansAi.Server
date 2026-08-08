@@ -219,7 +219,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                 return ServiceResult<bool>.BadRequest($"Issuer is required for providers: {list}");
             }
 
-            var rejection = DescribeUnacceptableProviders(tenantId, rules);
+            // Needed so an unchanged mutable userIdClaim can be grandfathered rather than locking
+            // the tenant out of every other edit until they change the claim — which would move
+            // every ParticipantId.
+            var existingRulesResult = await GetForTenantAsync(tenantId);
+            var existingRules = existingRulesResult.IsSuccess ? existingRulesResult.Data : null;
+
+            var rejection = DescribeUnacceptableProviders(tenantId, rules, existingRules);
             if (rejection != null)
             {
                 return ServiceResult<bool>.BadRequest(rejection);
@@ -328,8 +334,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
     /// A missing audience is only warned about: existing configurations were never required to
     /// declare one, and refusing here would block those tenants from making unrelated edits. It
     /// becomes a hard failure at validation time once Auth:RequireOidcAudience is enabled.
+    ///
+    /// A mutable <c>userIdClaim</c> is refused when newly introduced or changed. An unchanged
+    /// pre-existing value is grandfathered with a warning so tenants already configured that way
+    /// can still edit unrelated settings without stranding conversation history.
     /// </summary>
-    private string? DescribeUnacceptableProviders(string tenantId, TenantOidcRules rules)
+    private string? DescribeUnacceptableProviders(
+        string tenantId, TenantOidcRules rules, TenantOidcRules? existingRules)
     {
         foreach (var (name, provider) in rules.Providers!)
         {
@@ -347,6 +358,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                 return $"Provider '{name}' cannot be used: {unsafeAuthority}.";
             }
 
+            var mutableSubjectRejection = DescribeUnacceptableSubjectClaims(
+                tenantId, name, provider, existingRules);
+            if (mutableSubjectRejection != null)
+            {
+                return mutableSubjectRejection;
+            }
+
             if (provider.ExpectedAudience is not { Count: > 0 })
             {
                 _logger.LogWarning(
@@ -358,6 +376,77 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Refuses a mutable subject claim that is being introduced or changed; warns and allows when
+    /// the same provider already carries the same claim list unchanged.
+    /// </summary>
+    private string? DescribeUnacceptableSubjectClaims(
+        string tenantId, string providerName, OidcProviderRule provider, TenantOidcRules? existingRules)
+    {
+        var configuredClaims = OidcTokenInspector.GetConfiguredSubjectClaims(provider);
+        if (configuredClaims.Count == 0)
+        {
+            return null;
+        }
+
+        string? firstMutableReason = null;
+        foreach (var claim in configuredClaims)
+        {
+            var reason = OidcTokenInspector.DescribeMutableSubjectClaim(claim);
+            if (reason != null)
+            {
+                firstMutableReason = reason;
+                break;
+            }
+        }
+
+        if (firstMutableReason == null)
+        {
+            return null;
+        }
+
+        var existingProvider = existingRules?.Providers != null
+            && existingRules.Providers.TryGetValue(providerName, out var prior)
+                ? prior
+                : null;
+
+        if (existingProvider != null
+            && ConfiguredSubjectClaimsMatch(configuredClaims, OidcTokenInspector.GetConfiguredSubjectClaims(existingProvider)))
+        {
+            _logger.LogWarning(
+                "OIDC provider '{Provider}' for tenant {TenantId} still nominates a mutable " +
+                "userIdClaim ({Claims}). The save was accepted because the value is unchanged; " +
+                "new configurations cannot use these claims. {Reason}",
+                LogSanitizer.Sanitize(providerName),
+                LogSanitizer.Sanitize(tenantId),
+                LogSanitizer.Sanitize(string.Join(", ", configuredClaims)),
+                firstMutableReason);
+            return null;
+        }
+
+        return $"Provider '{providerName}' nominates a mutable subject claim: {firstMutableReason}. " +
+               "Remove userIdClaim (or set it to sub/oid) so UserApi identity matches the portal.";
+    }
+
+    private static bool ConfiguredSubjectClaimsMatch(
+        IReadOnlyList<string> left, IReadOnlyList<string> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (!string.Equals(left[i], right[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

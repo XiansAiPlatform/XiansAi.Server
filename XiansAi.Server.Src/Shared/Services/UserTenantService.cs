@@ -134,8 +134,12 @@ public class UserTenantService : IUserTenantService
             var userDto = await createUserFromToken(token);
             if (userDto == null)
             {
-                _logger.LogError("Failed to create user from token {Token}", LogSanitizer.Sanitize(token));
-                return ServiceResult<List<TenantInfoDto>>.InternalServerError("Failed to create user from token");
+                // createUserFromToken returns null only for an email collision — no record exists
+                // under this user id, and creating one would detach the person from the account
+                // that already holds their address. Same wording as the UserApi path so both doors
+                // agree.
+                return ServiceResult<List<TenantInfoDto>>.Unauthorized(
+                    "This email is already registered to a different account");
             }
             _logger.LogInformation("User {UserId} created from token", LogSanitizer.Sanitize(userDto.UserId));
         }
@@ -966,10 +970,13 @@ public class UserTenantService : IUserTenantService
     }
 
     /// <summary>
-    /// Creates a user from a JWT token with proper validation using the centralized JWT utility
+    /// Creates a user from a JWT token with proper validation using the centralized JWT utility.
+    /// Returns null when the email already belongs to a different account — there is no record
+    /// under this user id, so treating that conflict as success would leave the caller acting as
+    /// an identity that was never written.
     /// SECURITY: Uses centralized JWT validation with JWKS before processing claims
     /// </summary>
-    private async Task<UserDto> createUserFromToken(string token)
+    private async Task<UserDto?> createUserFromToken(string token)
     {
         // Validate and extract user information using the centralized JWT utility
         var jwtResult = await _jwtClaimsExtractor.ValidateAndExtractClaimsAsync(token);
@@ -991,8 +998,20 @@ public class UserTenantService : IUserTenantService
 
         if (!createdUser.IsSuccess && createdUser.StatusCode == StatusCode.Conflict)
         {
-            _logger.LogInformation("User {UserId} already exists, returning existing user", LogSanitizer.Sanitize(jwtResult.UserId));
-            return newUser;
+            // "User already exists" is a genuine race — the record is there under this id.
+            // "A user with this email already exists" is not: no record exists under this user id.
+            var existingById = await _userRepository.GetByUserIdAsync(jwtResult.UserId);
+            if (existingById != null)
+            {
+                _logger.LogInformation("User {UserId} already exists, returning existing user",
+                    LogSanitizer.RedactUserId(jwtResult.UserId));
+                return newUser;
+            }
+
+            _logger.LogWarning(
+                "Refusing to provision portal user {UserId}: its email is already registered to a different account",
+                LogSanitizer.RedactUserId(jwtResult.UserId));
+            return null;
         }
 
         return createdUser.IsSuccess

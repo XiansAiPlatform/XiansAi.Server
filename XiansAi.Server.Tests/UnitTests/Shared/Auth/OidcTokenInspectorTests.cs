@@ -85,13 +85,47 @@ public class OidcTokenInspectorTests
     [Fact]
     public void StrictModeStillAcceptsAProviderNominatedClaim()
     {
-        // Naming the claim explicitly is the escape hatch: a tenant that has always identified users
-        // by email can keep doing so under strict mode by saying so, rather than by accident.
+        // A configured claim still resolves at runtime so grandfathered tenants keep signing in.
+        // New configurations that nominate a mutable claim are refused at upsert instead.
         var subject = OidcTokenInspector.ResolveSubject(
             RuleWith(("userIdClaim", "email")), TokenWith(("email", "a@b.com")), allowFallbackClaims: false);
 
         Assert.Equal("a@b.com", subject.Value);
         Assert.True(subject.IsStableClaim);
+    }
+
+    [Theory]
+    [InlineData("email")]
+    [InlineData("emails")]
+    [InlineData("preferred_username")]
+    [InlineData("upn")]
+    [InlineData("name")]
+    [InlineData("nameid")]
+    [InlineData("unique_name")]
+    [InlineData("EMAIL")]
+    public void DescribeMutableSubjectClaim_RefusesKnownMutableNames(string claim)
+    {
+        Assert.NotNull(OidcTokenInspector.DescribeMutableSubjectClaim(claim));
+    }
+
+    [Theory]
+    [InlineData("sub")]
+    [InlineData("oid")]
+    [InlineData("employee_id")]
+    [InlineData("extension_ImmutableId")]
+    public void DescribeMutableSubjectClaim_AllowsStableAndUnknownClaims(string claim)
+    {
+        // Unknown names are allowed so a directory's genuine immutable custom claim is not blocked.
+        Assert.Null(OidcTokenInspector.DescribeMutableSubjectClaim(claim));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void DescribeMutableSubjectClaim_IgnoresEmpty(string? claim)
+    {
+        Assert.Null(OidcTokenInspector.DescribeMutableSubjectClaim(claim));
     }
 
     [Fact]

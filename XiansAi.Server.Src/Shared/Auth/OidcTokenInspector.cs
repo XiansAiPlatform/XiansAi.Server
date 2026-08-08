@@ -35,6 +35,26 @@ public static class OidcTokenInspector
         [ClaimTypes.NameIdentifier, "preferred_username", "email", "upn", "nameid", "name"];
 
     /// <summary>
+    /// Claim names that must not be nominated as <c>userIdClaim</c>. Distinct from
+    /// <see cref="FallbackSubjectClaims"/> only in that it also names B2C's <c>emails</c> and
+    /// Entra's <c>unique_name</c>, which are not historical fallbacks but are equally mutable and
+    /// equally unsuitable as a stable user id.
+    /// </summary>
+    private static readonly HashSet<string> MutableSubjectClaims = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "email",
+        ClaimTypes.Email,
+        "emails",
+        "preferred_username",
+        "upn",
+        "name",
+        ClaimTypes.Name,
+        "nameid",
+        "unique_name",
+        ClaimTypes.NameIdentifier
+    };
+
+    /// <summary>
     /// Resolves the subject. A claim the provider nominates explicitly always wins and is treated
     /// as deliberate; otherwise the stable claims are tried first, and the mutable fallbacks only
     /// when <paramref name="allowFallbackClaims"/> permits.
@@ -64,6 +84,61 @@ public static class OidcTokenInspector
 
         var fallback = FirstPresent(jwt, FallbackSubjectClaims);
         return new ResolvedSubject(fallback.Value, fallback.ClaimType, IsStableClaim: false);
+    }
+
+    /// <summary>
+    /// Why <paramref name="claimName"/> must not be used as a subject claim, or null when it may.
+    ///
+    /// Only known-mutable names are refused. An unknown name is allowed so a directory's genuine
+    /// immutable custom claim is not blocked; the refusal is about addresses and display names,
+    /// not about every claim that is not <c>sub</c> or <c>oid</c>.
+    /// </summary>
+    public static string? DescribeMutableSubjectClaim(string? claimName)
+    {
+        if (string.IsNullOrWhiteSpace(claimName))
+        {
+            return null;
+        }
+
+        if (!MutableSubjectClaims.Contains(claimName.Trim()))
+        {
+            return null;
+        }
+
+        return $"'{claimName.Trim()}' is mutable at many identity providers — the stored user id " +
+               "becomes that value, which will not match the portal's stable subject (sub/oid), " +
+               "and changing the claim later strands conversation history keyed on the previous id";
+    }
+
+    /// <summary>
+    /// The claim(s) a provider nominates for the subject, via either <c>userIdClaim</c> for a
+    /// single name or <c>userIdClaims</c> for a comma-separated preference order. Empty when the
+    /// provider relies on the default stable-then-fallback resolution.
+    /// </summary>
+    public static IReadOnlyList<string> GetConfiguredSubjectClaims(OidcProviderRule providerRule)
+    {
+        var settings = providerRule.ProviderSpecificSettings;
+        if (settings == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (settings.TryGetValue("userIdClaim", out var single))
+        {
+            var value = single?.ToString();
+            return string.IsNullOrWhiteSpace(value) ? Array.Empty<string>() : new[] { value };
+        }
+
+        if (settings.TryGetValue("userIdClaims", out var list))
+        {
+            var value = list?.ToString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+        }
+
+        return Array.Empty<string>();
     }
 
     /// <summary>
@@ -175,36 +250,6 @@ public static class OidcTokenInspector
         jwt.ValidTo == DateTime.MinValue
             ? null
             : new DateTimeOffset(DateTime.SpecifyKind(jwt.ValidTo, DateTimeKind.Utc));
-
-    /// <summary>
-    /// The claim(s) a provider nominates for the subject, via either <c>userIdClaim</c> for a
-    /// single name or <c>userIdClaims</c> for a comma-separated preference order.
-    /// </summary>
-    private static IReadOnlyList<string> GetConfiguredSubjectClaims(OidcProviderRule providerRule)
-    {
-        var settings = providerRule.ProviderSpecificSettings;
-        if (settings == null)
-        {
-            return Array.Empty<string>();
-        }
-
-        if (settings.TryGetValue("userIdClaim", out var single))
-        {
-            var value = single?.ToString();
-            return string.IsNullOrWhiteSpace(value) ? Array.Empty<string>() : new[] { value };
-        }
-
-        if (settings.TryGetValue("userIdClaims", out var list))
-        {
-            var value = list?.ToString();
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            }
-        }
-
-        return Array.Empty<string>();
-    }
 
     private static (string? Value, string? ClaimType) FirstPresent(JsonWebToken jwt, IReadOnlyList<string> claimTypes)
     {

@@ -312,6 +312,18 @@ public class UserManagementService : IUserManagementService
                     return ServiceResult<bool>.Conflict("A user with this email already exists");
                 }
             }
+            else
+            {
+                // Without an address the record cannot be matched to an existing account on a later
+                // sign-in through a different door, so it silently becomes a second identity for
+                // the same person. The creation proceeds — blank emails are not unique — but the
+                // gap is worth seeing without going looking for it.
+                _logger.LogWarning(
+                    "Provisioning {UserId} with no email from {Authority}; the record cannot be " +
+                    "matched to an existing account and may become a duplicate",
+                    LogSanitizer.RedactUserId(userDto.UserId),
+                    LogSanitizer.Sanitize(userDto.ProviderAuthority ?? "(unknown)"));
+            }
             // The very first user record ever created becomes the global SysAdmin, which bootstraps
             // a fresh deployment. Callers that provision users implicitly rather than from an
             // operator sign-in opt out, so that a token holder cannot claim SysAdmin simply by
