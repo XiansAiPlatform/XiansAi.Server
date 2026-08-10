@@ -30,7 +30,10 @@ public class MongoDBConfig: IMongoDBConfig
     public required string ConnectionString { get; set; }
     public required string DatabaseName { get; set; }
     
-    // Connection Pool Settings - Default values optimized for Cosmos DB
+    // Connection Pool Settings - Default values optimized for Cosmos DB.
+    // MinConnectionPoolSize keeps sockets ready so requests after an idle gap skip the handshake.
+    // MaxConnectionIdleTime is only applied when set explicitly here; otherwise the connection
+    // string value (Azure ships maxIdleTimeMS) is honoured. See MongoDbClientService.
     public int MaxConnectionPoolSize { get; set; } = 100;
     public int MinConnectionPoolSize { get; set; } = 5;
     public TimeSpan MaxConnectionIdleTime { get; set; } = TimeSpan.FromMinutes(10);

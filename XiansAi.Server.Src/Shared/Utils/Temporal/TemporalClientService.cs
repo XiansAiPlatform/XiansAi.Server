@@ -2,7 +2,6 @@ using Temporalio.Client;
 using Temporalio.Api.OperatorService.V1;
 using Temporalio.Extensions.OpenTelemetry;
 using System.Collections.Concurrent;
-using Shared.Utils;
 
 namespace Shared.Utils.Temporal;
 
