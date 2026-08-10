@@ -38,6 +38,14 @@ public class UpdateActivationRequest
 }
 
 /// <summary>
+/// Request model for activating an agent with optional workflow configuration.
+/// </summary>
+public class ActivateAgentRequest
+{
+    public ActivationWorkflowConfiguration? WorkflowConfiguration { get; set; }
+}
+
+/// <summary>
 /// Service for managing agent activations.
 /// Activating and deactivating agents uses the Temporal client.
 /// Creating and deleting activations uses the database repository.
@@ -105,11 +113,14 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
             }
 
-            // Verify the agent belongs to the correct tenant
-            if (agent.Tenant != tenantId)
+            // Defense-in-depth: GetByNameInternalAsync already scopes by tenant, but never
+            // return Forbidden for a mismatch — that would confirm the agent exists elsewhere.
+            if (!string.Equals(agent.Tenant, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Agent {AgentName} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Agent does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to create activation for agent {AgentName} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(agent.Tenant));
+                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
             }
 
             var activation = new AgentActivation
@@ -189,10 +200,12 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
-            if (activation.TenantId != tenantId)
+            if (!string.Equals(activation.TenantId, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Activation {ActivationId} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to update activation {ActivationId} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(activation.TenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
             // Check if activation is currently active (has running workflows)
@@ -227,6 +240,9 @@ public class ActivationService : IActivationService
                     "Allowing description-only update for active activation {ActivationId} with {Count} running workflows",
                     LogSanitizer.Sanitize(activationId), activation.WorkflowIds!.Count);
             }
+
+            // Capture the previous name so a rename can invalidate the old cache entry.
+            var previousName = activation.Name;
 
             // Update only the fields that are provided
             if (isUpdatingName)
@@ -272,6 +288,13 @@ public class ActivationService : IActivationService
             }
 
             await _activationRepository.UpdateAsync(activationId, activation);
+
+            // Invalidate validation cache for the (possibly new) name, and the old name on rename.
+            _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
+            if (isUpdatingName && !string.Equals(previousName, activation.Name, StringComparison.Ordinal))
+            {
+                _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, previousName);
+            }
 
             _logger.LogInformation("Successfully updated activation {ActivationId}", LogSanitizer.Sanitize(activationId));
 
@@ -376,10 +399,12 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
-            if (activation.TenantId != tenantId)
+            if (!string.Equals(activation.TenantId, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Activation {ActivationId} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to activate activation {ActivationId} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(activation.TenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
             // If workflow configuration is provided in the request, update the activation with it
@@ -566,10 +591,12 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
-            if (activation.TenantId != tenantId)
+            if (!string.Equals(activation.TenantId, tenantId, StringComparison.Ordinal))
             {
-                _logger.LogWarning("Activation {ActivationId} does not belong to tenant {TenantId}", LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.Forbidden("Activation does not belong to this tenant");
+                _logger.LogWarning(
+                    "Tenant {TenantId} attempted to deactivate activation {ActivationId} belonging to tenant {OwnerTenant}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(activation.TenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Activation with ID '{activationId}' not found");
             }
 
             // Perform comprehensive cleanup of all workflows and schedules associated with this activation
@@ -684,6 +711,8 @@ public class ActivationService : IActivationService
                 _logger.LogWarning("Failed to delete activation {ActivationId}", LogSanitizer.Sanitize(activationId));
                 return ServiceResult<bool>.InternalServerError("Failed to delete the activation");
             }
+
+            _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
             _logger.LogInformation("Successfully deleted activation {ActivationId}", LogSanitizer.Sanitize(activationId));
 

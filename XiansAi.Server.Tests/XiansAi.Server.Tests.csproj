@@ -13,6 +13,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The system under test is an ASP.NET Core app, so target the same shared framework.
+         Without this, ASP.NET Core packages arriving transitively from XiansAi.Server are
+         resolved from NuGet instead of being pruned in favour of the framework assemblies. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

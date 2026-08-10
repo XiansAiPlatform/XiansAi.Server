@@ -76,6 +76,11 @@ public static class SharedConfiguration
             options.SizeLimit = cacheSizeLimit;
         });
 
+        // Deployment-wide OIDC rules that a tenant's own configuration cannot weaken. Registered
+        // here because both the validator and the configuration write path depend on it, and it is
+        // derived from configuration and the hosting environment rather than per request.
+        builder.Services.AddSingleton<global::Shared.Auth.OidcValidationPolicy>();
+
         // Register HttpClient for token services
         builder.Services.AddHttpClient();
 
@@ -215,6 +220,9 @@ public static class SharedConfiguration
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
+        // Singleton to match the IMemoryCache lifetime: it tracks per-thread eviction state that
+        // must be shared by the message service writing entries and the repository invalidating them.
+        builder.Services.AddSingleton<IIncomingOriginCache, IncomingOriginCache>();
         builder.Services.AddScoped<IMessageFileStorage, MessageFileStorage>();
         builder.Services.AddScoped<IFeedbackService, FeedbackService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();

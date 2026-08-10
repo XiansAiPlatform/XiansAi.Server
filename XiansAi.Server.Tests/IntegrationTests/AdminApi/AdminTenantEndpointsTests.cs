@@ -208,6 +208,39 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task CreateTenant_WithSameTenantIdInDifferentCase_ReturnsBadRequest()
+    {
+        // Arrange
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId); // Required: X-Tenant-Id header must reference an existing tenant for auth validation
+
+        var newTenantId = $"new-tenant-{Guid.NewGuid()}";
+        var createRequest = new
+        {
+            tenantId = newTenantId,
+            name = "Original Tenant",
+            domain = $"{newTenantId}.test.com"
+        };
+        var createResponse = await PostAsJsonAsync("/api/v1/admin/tenants", createRequest);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+
+        // Act - attempt to create the same tenant id with different casing
+        var duplicateRequest = new
+        {
+            tenantId = newTenantId.ToUpperInvariant(),
+            name = "Duplicate Tenant",
+            domain = $"other-{Guid.NewGuid()}.test.com"
+        };
+        var duplicateResponse = await PostAsJsonAsync("/api/v1/admin/tenants", duplicateRequest);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, duplicateResponse.StatusCode);
+        var content = await duplicateResponse.Content.ReadAsStringAsync();
+        Assert.Contains("already exists", content);
+    }
+
+    [Fact]
     public async Task UpdateTenant_WithValidRequest_UpdatesTenant()
     {
         // Arrange

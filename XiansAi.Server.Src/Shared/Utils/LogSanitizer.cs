@@ -41,4 +41,21 @@ public static class LogSanitizer
         var domain = email[(atIndex + 1)..].Replace('\r', ' ').Replace('\n', ' ');
         return "***@" + domain;
     }
+
+    /// <summary>
+    /// Renders a user id for logging. A user id is an email on records created by paths that used
+    /// one as the subject, and an opaque provider subject otherwise, so the two are distinguished:
+    /// an email is redacted as in <see cref="RedactEmail"/>, while a subject is written out.
+    ///
+    /// A subject is pseudonymous — it identifies the account without disclosing who holds it — and
+    /// naming it is what makes a warning about that account actionable. Passing one to
+    /// <see cref="RedactEmail"/> instead yields "***@[no-domain]", which identifies nothing.
+    /// </summary>
+    public static string RedactUserId(string? userId)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return "[empty]";
+
+        return userId.Contains('@') ? RedactEmail(userId) : Sanitize(userId)!;
+    }
 }

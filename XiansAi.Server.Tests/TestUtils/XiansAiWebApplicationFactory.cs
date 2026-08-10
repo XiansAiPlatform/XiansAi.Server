@@ -93,6 +93,14 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             RemoveService<ITemporalClientService>(services);
             services.AddSingleton(mockTemporalClientService.Object);
 
+            // Mock activation cleanup so deactivate endpoints can succeed without Temporal.
+            var mockActivationCleanupService = new Mock<IActivationCleanupService>();
+            mockActivationCleanupService
+                .Setup(x => x.CleanupActivationResourcesAsync(It.IsAny<AgentActivation>()))
+                .ReturnsAsync(ServiceResult<ActivationCleanupResult>.Success(new ActivationCleanupResult()));
+            RemoveService<IActivationCleanupService>(services);
+            services.AddSingleton(mockActivationCleanupService.Object);
+
             // Mock IUserTenantService to always return the test tenant for the test user
             var mockUserTenantService = new Mock<IUserTenantService>();
             // Authorize the test user for both tenants
@@ -129,6 +137,10 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             var mockTenantContext = new Mock<ITenantContext>();
             mockTenantContext.SetupProperty<string>(x => x.TenantId, TestTenantId);
             mockTenantContext.SetupProperty<string>(x => x.LoggedInUser, "test-user");
+            mockTenantContext.SetupProperty<string>(x => x.ParticipantId, "test-user");
+            // Settable so the auth handlers' value survives, and defaulted to the credential the
+            // integration tests actually authenticate with.
+            mockTenantContext.SetupProperty(x => x.UserType, UserType.UserApiKey);
             mockTenantContext.SetupProperty<IEnumerable<string>>(x => x.AuthorizedTenantIds, new List<string> { TestTenantId, "99x.io" });
             mockTenantContext.SetupProperty<string[]>(x => x.UserRoles, new[] { "SysAdmin", "TenantAdmin", "TenantUser" });
             RemoveService<ITenantContext>(services);

@@ -13,7 +13,7 @@ public static class OidcConfigEndpoints
         var group = app.MapGroup("/api/client/oidc-config")
             .WithTags("WebAPI - OIDC Config");
 
-        // Unified tenant-scoped endpoints (TenantAdmin and SysAdmin), tenant from tenant context
+        // Tenant-scoped OIDC config management — SysAdmin only (platform-level security control).
         group.MapPost("/", async (
             [FromBody] object jsonConfig,
             [FromServices] ITenantOidcConfigService service,
@@ -28,8 +28,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpsertOidcConfigCreate")
-        
-        .RequiresValidTenantAdmin();
+        .RequiresValidSysAdmin();
 
         group.MapPut("/", async (
             [FromBody] object jsonConfig,
@@ -45,8 +44,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpsertOidcConfigUpdate")
-        
-        .RequiresValidTenantAdmin();
+        .RequiresValidSysAdmin();
 
         group.MapDelete("/", async (
             [FromServices] ITenantOidcConfigService service,
@@ -58,8 +56,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteOidcConfig")
-        
-        .RequiresValidTenantAdmin();
+        .RequiresValidSysAdmin();
 
         // SysAdmin list all tenant configs
         group.MapGet("/admin", async (
@@ -69,7 +66,6 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("AdminListAllOidcConfigs")
-        
         .RequiresValidSysAdmin();
         
         group.MapGet("/", async (
@@ -82,8 +78,7 @@ public static class OidcConfigEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetOidcConfig")
-        
-        .RequiresValidTenantAdmin();
+        .RequiresValidSysAdmin();
     }
 }
 

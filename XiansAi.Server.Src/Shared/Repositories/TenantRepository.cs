@@ -9,7 +9,8 @@ namespace Shared.Repositories;
 public interface ITenantRepository
 {
     Task<Tenant> GetByIdAsync(string id, CancellationToken cancellationToken = default);
-    Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<Tenant> GetByTenantIdCaseInsensitiveAsync(string tenantId, CancellationToken cancellationToken = default);
     Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetByDomainListAsync(string domain, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds, CancellationToken cancellationToken = default);
@@ -52,12 +53,30 @@ public class TenantRepository : ITenantRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantById");
     }
 
-    public async Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
+    public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             return await _collection.Find(tenant => tenant.TenantId == tenantId).FirstOrDefaultAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantId");
+    }
+
+    /// <summary>
+    /// Finds a tenant whose tenant_id matches the given value ignoring case
+    /// (e.g. "MyTenant" matches an existing "mytenant"). Used to enforce
+    /// case-insensitive uniqueness of tenant ids at creation time.
+    /// </summary>
+    public async Task<Tenant> GetByTenantIdCaseInsensitiveAsync(string tenantId, CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<Tenant>.Filter.Eq(t => t.TenantId, tenantId);
+            var options = new FindOptions
+            {
+                Collation = new Collation("en", strength: CollationStrength.Secondary)
+            };
+            return await _collection.Find(filter, options).FirstOrDefaultAsync(cancellationToken);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantIdCaseInsensitive");
     }
 
     public async Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default)

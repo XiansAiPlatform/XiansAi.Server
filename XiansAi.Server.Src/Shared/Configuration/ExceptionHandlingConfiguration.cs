@@ -45,6 +45,18 @@ public static class ExceptionHandlingConfiguration
                         });
                         break;
 
+                    case InvalidWorkflowIdentifierException workflowEx:
+                        // Caller mistake rather than a server fault, so the full explanation is
+                        // safe and useful to return.
+                        logger.LogInformation("Invalid workflow identifier: {Message}", LogSanitizer.Sanitize(workflowEx.Message));
+                        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            error = "Invalid workflow identifier",
+                            message = workflowEx.Message
+                        });
+                        break;
+
                     case TenantNotFoundException tenantEx:
                         logger.LogInformation("Tenant not found: {TenantId}", tenantEx.TenantId);
                         context.Response.StatusCode = StatusCodes.Status404NotFound;

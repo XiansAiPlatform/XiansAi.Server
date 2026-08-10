@@ -637,6 +637,16 @@ public class TenantService : ITenantService
             var validatedTenant = tenant.SanitizeAndValidate();
             _logger.LogInformation("After sanitization, CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
+            // Tenant ids are unique ignoring case: reject "MyTenant" when "mytenant" already exists.
+            // The unique index on tenant_id remains the backstop for exact-case duplicates under races.
+            var duplicateTenant = await _tenantRepository.GetByTenantIdCaseInsensitiveAsync(validatedTenant.TenantId);
+            if (duplicateTenant != null)
+            {
+                _logger.LogWarning("Tenant ID {TenantId} already exists (case-insensitive match with {ExistingTenantId})",
+                    LogSanitizer.Sanitize(validatedTenant.TenantId), LogSanitizer.Sanitize(duplicateTenant.TenantId));
+                return ServiceResult<TenantCreatedResult>.BadRequest("A tenant with this ID already exists.");
+            }
+
             // Persist with Secret metadata values encrypted.
             validatedTenant.Metadata = _metadataProtector.Protect(validatedTenant.Metadata, validatedTenant.TenantId);
 
