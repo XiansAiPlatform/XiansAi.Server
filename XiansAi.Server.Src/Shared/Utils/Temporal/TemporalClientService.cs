@@ -2,6 +2,8 @@ using Temporalio.Client;
 using Temporalio.Api.OperatorService.V1;
 using Temporalio.Extensions.OpenTelemetry;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Shared.Utils.Temporal;
 
@@ -59,16 +61,16 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             }
 
             var config = GetTemporalConfig(tenantId);
-            var endpointKey = BuildEndpointKey(config.FlowServerUrl!, config.FlowServerNamespace!);
+            var endpointKey = BuildEndpointKey(config);
 
-            // Reuse an already-connected client for the same Temporal URL/namespace.
+            // Reuse an already-connected client only when the URL, namespace and TLS credentials all match.
             // Startup often warms "default" while requests use the real tenant id with the same root config.
             if (_clientsByEndpoint.TryGetValue(endpointKey, out var sharedClient))
             {
                 _clients.TryAdd(tenantId, sharedClient);
                 _logger.LogInformation(
-                    "Reusing existing Temporal client for tenant {TenantId} (endpoint {EndpointKey})",
-                    tenantId, endpointKey);
+                    "Reusing existing Temporal client for tenant {TenantId} ({Url}, namespace: {Namespace})",
+                    tenantId, config.FlowServerUrl, config.FlowServerNamespace);
                 return sharedClient;
             }
             
@@ -118,9 +120,28 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         }
     }
 
-    private static string BuildEndpointKey(string flowServerUrl, string flowServerNamespace)
+    /// <summary>
+    /// Builds the cache key used to share a connected client between tenants.
+    /// The TLS credential fingerprint is part of the key so tenants that point at the same
+    /// server/namespace with different client certificates never reuse each other's connection.
+    /// </summary>
+    private static string BuildEndpointKey(TemporalConfig config)
     {
-        return $"{flowServerUrl}|{flowServerNamespace}";
+        return $"{config.FlowServerUrl}|{config.FlowServerNamespace}|{BuildCredentialFingerprint(config)}";
+    }
+
+    private static string BuildCredentialFingerprint(TemporalConfig config)
+    {
+        if (string.IsNullOrEmpty(config.CertificateBase64) && string.IsNullOrEmpty(config.PrivateKeyBase64))
+        {
+            return "no-tls";
+        }
+
+        // Hash the encoded material directly: no decoding means malformed base64 is reported
+        // later by the connect path instead of failing here with a confusing error.
+        var material = $"{config.CertificateBase64}|{config.PrivateKeyBase64}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+        return Convert.ToHexString(hash);
     }
 
     private TemporalConfig GetTemporalConfig(string tenantId)
@@ -286,8 +307,8 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         
         try
         {
-            // Dispose all cached clients with timeout
-            var disposeTasks = _clients.Values.Select(async client =>
+            // A single client can be cached under several tenant ids, so dispose each instance once.
+            var disposeTasks = _clients.Values.Distinct().Select(async client =>
             {
                 try
                 {

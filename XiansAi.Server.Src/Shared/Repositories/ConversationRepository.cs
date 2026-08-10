@@ -291,6 +291,7 @@ public class ConversationRepository : IConversationRepository
     private readonly string _uniqueSecret;
     private readonly IBackgroundTaskService _backgroundTaskService;
     private readonly IMemoryCache _memoryCache;
+    private readonly IIncomingOriginCache _incomingOriginCache;
 
     public ConversationRepository(
         IDatabaseService databaseService, 
@@ -299,13 +300,15 @@ public class ConversationRepository : IConversationRepository
         ISecureEncryptionService encryptionService,
         IConfiguration configuration,
         IBackgroundTaskService backgroundTaskService,
-        IMemoryCache memoryCache)
+        IMemoryCache memoryCache,
+        IIncomingOriginCache incomingOriginCache)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         _backgroundTaskService = backgroundTaskService ?? throw new ArgumentNullException(nameof(backgroundTaskService));
         _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
+        _incomingOriginCache = incomingOriginCache ?? throw new ArgumentNullException(nameof(incomingOriginCache));
         
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _database = database;
@@ -457,6 +460,7 @@ public class ConversationRepository : IConversationRepository
                 if (result)
                 {
                     InvalidateThreadIdCache(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+                    _incomingOriginCache.InvalidateThread(id);
                 }
 
                 return result;
@@ -824,6 +828,9 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 _logger,
                 operationName: "DeleteMessagesByThreadId");
 
+            // The auto-populated reply origin is derived from these messages, so it is now stale.
+            _incomingOriginCache.InvalidateThread(threadId);
+
             _logger.LogInformation("Deleted {DeletedCount} messages for thread {ThreadId}", 
                 result.DeletedCount, LogSanitizer.Sanitize(threadId));
             
@@ -928,6 +935,9 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 async () => await _messagesCollection.DeleteManyAsync(filter),
                 _logger,
                 operationName: "DeleteMessagesByWorkflowParticipantAndScope");
+
+            // Only this scope lost its messages, so only its auto-populated reply origin is stale.
+            _incomingOriginCache.InvalidateScope(tenantId, threadId, scope);
 
             _logger.LogInformation("Deleted {DeletedCount} messages for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
                 result.DeletedCount, LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"));

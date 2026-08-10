@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Shared.Auth;
 using Shared.Data.Models;
@@ -125,9 +124,6 @@ public interface IMessageService
 
 public class MessageService : IMessageService
 {
-    private const string IncomingOriginCacheKeyPrefix = "msg:last-incoming-origin:";
-    private static readonly TimeSpan IncomingOriginCacheDuration = TimeSpan.FromMinutes(10);
-
     private readonly ILogger<MessageService> _logger;
     private readonly ITenantContext _tenantContext;
 
@@ -136,7 +132,7 @@ public class MessageService : IMessageService
     private readonly IFeedbackService _feedbackService;
     private readonly IMessageFileStorage _fileStorage;
     private readonly IActivationValidationService _activationValidationService;
-    private readonly IMemoryCache _memoryCache;
+    private readonly IIncomingOriginCache _incomingOriginCache;
     private readonly bool _validateActivation;
 
     public MessageService(
@@ -148,7 +144,7 @@ public class MessageService : IMessageService
         IMessageFileStorage fileStorage,
         IActivationValidationService activationValidationService,
         IConfiguration configuration,
-        IMemoryCache memoryCache)
+        IIncomingOriginCache incomingOriginCache)
     {
         _logger = logger;
         _tenantContext = tenantContext;
@@ -157,7 +153,7 @@ public class MessageService : IMessageService
         _feedbackService = feedbackService;
         _fileStorage = fileStorage;
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
-        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
+        _incomingOriginCache = incomingOriginCache ?? throw new ArgumentNullException(nameof(incomingOriginCache));
         _validateActivation = configuration.GetValue("Messaging:ValidateActivation", defaultValue: true);
     }
 
@@ -495,29 +491,19 @@ public class MessageService : IMessageService
         }
     }
 
-    private static string BuildIncomingOriginCacheKey(string tenantId, string threadId, string? scope)
-    {
-        var normalizedScope = string.IsNullOrWhiteSpace(scope) ? "__default__" : scope.Trim();
-        return $"{IncomingOriginCacheKeyPrefix}{tenantId}:{threadId}:{normalizedScope}";
-    }
-
     private void CacheIncomingOriginAndData(string threadId, ChatOrDataRequest request)
     {
-        var normalizedScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
-        var cacheKey = BuildIncomingOriginCacheKey(_tenantContext.TenantId, threadId, normalizedScope);
-        var entry = new IncomingOriginCacheEntry(request.Origin, request.Data);
-        _memoryCache.Set(
-            cacheKey,
-            entry,
-            new MemoryCacheEntryOptions()
-                .SetAbsoluteExpiration(IncomingOriginCacheDuration)
-                .SetSize(1));
+        _incomingOriginCache.Set(
+            _tenantContext.TenantId,
+            threadId,
+            request.Scope,
+            new IncomingOriginData(request.Origin, request.Data));
     }
 
     private async Task<(string? Origin, object? Data)> GetLastIncomingOriginAndDataCachedAsync(string threadId, string? scope)
     {
-        var cacheKey = BuildIncomingOriginCacheKey(_tenantContext.TenantId, threadId, scope);
-        if (_memoryCache.TryGetValue(cacheKey, out IncomingOriginCacheEntry? cached) && cached != null)
+        var cached = _incomingOriginCache.Get(_tenantContext.TenantId, threadId, scope);
+        if (cached != null)
         {
             return (cached.Origin, cached.Data);
         }
@@ -525,17 +511,10 @@ public class MessageService : IMessageService
         var (origin, data) = await _conversationRepository.GetLastIncomingOriginAndDataAsync(
             threadId, _tenantContext.TenantId, scope);
 
-        _memoryCache.Set(
-            cacheKey,
-            new IncomingOriginCacheEntry(origin, data),
-            new MemoryCacheEntryOptions()
-                .SetAbsoluteExpiration(IncomingOriginCacheDuration)
-                .SetSize(1));
+        _incomingOriginCache.Set(_tenantContext.TenantId, threadId, scope, new IncomingOriginData(origin, data));
 
         return (origin, data);
     }
-
-    private sealed record IncomingOriginCacheEntry(string? Origin, object? Data);
 
     private async Task SignalWorkflowAsync(string threadId,ChatOrDataRequest request, MessageType messageType)
     {
