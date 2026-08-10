@@ -51,26 +51,38 @@ public class ActivationValidationService : IActivationValidationService
     private const string CacheKeyPrefix = "activation:validation:";
     // Per-agent list of registered workflow types (invalidatable by agent alone).
     private const string AgentWorkflowTypesCacheKeyPrefix = "activation:agent-workflow-types:";
-    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(2);
-    // Flow definitions are rarely changed at runtime — cache for 5 minutes to reduce DB load
-    // on every inbound message and adminapi /send, /listen, /history, /topics call.
-    private static readonly TimeSpan WorkflowTypeCacheDuration = TimeSpan.FromMinutes(5);
+    private const double DefaultCacheMinutes = 5;
+    private const double DefaultWorkflowTypeCacheMinutes = 15;
 
     private readonly IActivationRepository _activationRepository;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IAsyncResultCache _cache;
     private readonly ILogger<ActivationValidationService> _logger;
 
+    // Activation state and flow definitions change rarely and every mutation path invalidates the
+    // relevant key explicitly, so these durations only bound staleness for server instances that
+    // did not handle the mutation. Configurable so deployments can trade freshness for latency.
+    private readonly TimeSpan _cacheDuration;
+    private readonly TimeSpan _workflowTypeCacheDuration;
+
     public ActivationValidationService(
         IActivationRepository activationRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
         IAsyncResultCache cache,
-        ILogger<ActivationValidationService> logger)
+        ILogger<ActivationValidationService> logger,
+        IConfiguration configuration)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+
+        _cacheDuration = TimeSpan.FromMinutes(
+            configuration.GetValue("Messaging:ActivationCacheMinutes", DefaultCacheMinutes));
+        _workflowTypeCacheDuration = TimeSpan.FromMinutes(
+            configuration.GetValue("Messaging:WorkflowTypeCacheMinutes", DefaultWorkflowTypeCacheMinutes));
     }
 
     public async Task<ServiceResult> ValidateActivationAsync(string tenantId, string agentName, string activationName, string? workflowType = null)
@@ -86,7 +98,7 @@ public class ActivationValidationService : IActivationValidationService
         var result = await _cache.GetOrAddAsync(
             cacheKey,
             _ => ValidateFromRepositoryAsync(tenantId, agentName, activationName),
-            CacheDuration,
+            _cacheDuration,
             size: 1);
         if (!result.IsSuccess)
             return result;
@@ -180,7 +192,7 @@ public class ActivationValidationService : IActivationValidationService
             var registeredTypes = await _cache.GetOrAddAsync(
                 cacheKey,
                 _ => LoadRegisteredWorkflowTypesAsync(tenantId, agentName),
-                WorkflowTypeCacheDuration,
+                _workflowTypeCacheDuration,
                 size: 1);
 
             if (registeredTypes.Count == 0)

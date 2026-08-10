@@ -9,7 +9,7 @@ namespace Shared.Repositories;
 public interface ITenantRepository
 {
     Task<Tenant> GetByIdAsync(string id, CancellationToken cancellationToken = default);
-    Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
     Task<Tenant> GetByTenantIdCaseInsensitiveAsync(string tenantId, CancellationToken cancellationToken = default);
     Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetByDomainListAsync(string domain, CancellationToken cancellationToken = default);
@@ -53,7 +53,7 @@ public class TenantRepository : ITenantRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantById");
     }
 
-    public async Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
+    public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {

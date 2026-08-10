@@ -424,7 +424,9 @@ public class Program
     }
 
     /// <summary>
-    /// Validates Temporal connection on startup.
+    /// Validates Temporal connection on startup by preconnecting every configured tenant.
+    /// Warms clients for Tenants:{id}:Temporal sections plus the root/default tenant so the
+    /// first inbound message does not pay TLS connect + search-attribute registration cost.
     /// </summary>
     private static async Task ValidateTemporalConnection(IServiceProvider services, IConfiguration configuration)
     {
@@ -432,20 +434,69 @@ public class Program
         {
             using var scope = services.CreateScope();
             var temporalClientService = scope.ServiceProvider.GetRequiredService<Shared.Utils.Temporal.ITemporalClientService>();
-            
-            // Get default tenant ID from configuration
-            var defaultTenantId = configuration["Tenants:default:TenantId"] ?? "default";
-            
-            // Attempt to connect - this validates the connection
-            await temporalClientService.GetClientAsync(defaultTenantId);
-            
-            _logger.LogInformation("Temporal connection validated successfully for tenant {TenantId}", defaultTenantId);
+            var tenantIdsToWarm = GetTemporalTenantIdsToWarm(configuration);
+
+            foreach (var tenantId in tenantIdsToWarm)
+            {
+                try
+                {
+                    await temporalClientService.GetClientAsync(tenantId);
+                    _logger.LogInformation("Temporal connection validated successfully for tenant {TenantId}", tenantId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to validate Temporal connection during startup for tenant {TenantId}. Workflows for this tenant may fail until Temporal is available.",
+                        tenantId);
+                }
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to validate Temporal connection during startup. Workflows may fail until Temporal is available.");
             // Don't throw - allow server to start even if Temporal is temporarily unavailable
         }
+    }
+
+    /// <summary>
+    /// Collects tenant ids that should have a Temporal client warmed at process start:
+    /// every Tenants:{id} child that has a Temporal subsection (or TenantId), plus the
+    /// root-config default tenant.
+    /// </summary>
+    private static HashSet<string> GetTemporalTenantIdsToWarm(IConfiguration configuration)
+    {
+        var tenantIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var defaultTenantId = configuration["Tenants:default:TenantId"] ?? "default";
+        if (!string.IsNullOrWhiteSpace(defaultTenantId))
+        {
+            tenantIds.Add(defaultTenantId);
+        }
+
+        var tenantsSection = configuration.GetSection("Tenants");
+        foreach (var tenantSection in tenantsSection.GetChildren())
+        {
+            if (tenantSection.GetSection("Temporal").Exists())
+            {
+                var configuredTenantId = tenantSection["TenantId"];
+                tenantIds.Add(!string.IsNullOrWhiteSpace(configuredTenantId)
+                    ? configuredTenantId
+                    : tenantSection.Key);
+            }
+            else if (!string.IsNullOrWhiteSpace(tenantSection["TenantId"]))
+            {
+                tenantIds.Add(tenantSection["TenantId"]!);
+            }
+        }
+
+        // Root Temporal config is used as a fallback for tenants without Tenants:{id}:Temporal.
+        // Warming the default tenant is enough for endpoint reuse when URL/namespace match.
+        if (configuration.GetSection("Temporal").Exists() && tenantIds.Count == 0)
+        {
+            tenantIds.Add(defaultTenantId);
+        }
+
+        return tenantIds;
     }
 
     /// <summary>
