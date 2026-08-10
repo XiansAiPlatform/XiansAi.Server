@@ -1,10 +1,12 @@
+using System.Diagnostics;
+using System.Text.Json.Serialization;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
-using System.Text.Json.Serialization;
 
 namespace Shared.Services;
 
@@ -123,6 +125,8 @@ public interface IMessageService
 
 public class MessageService : IMessageService
 {
+    private const string IncomingOriginCacheKeyPrefix = "msg:last-incoming-origin:";
+    private static readonly TimeSpan IncomingOriginCacheDuration = TimeSpan.FromMinutes(10);
 
     private readonly ILogger<MessageService> _logger;
     private readonly ITenantContext _tenantContext;
@@ -132,9 +136,10 @@ public class MessageService : IMessageService
     private readonly IFeedbackService _feedbackService;
     private readonly IMessageFileStorage _fileStorage;
     private readonly IActivationValidationService _activationValidationService;
+    private readonly IMemoryCache _memoryCache;
     private readonly bool _validateActivation;
 
-        public MessageService(
+    public MessageService(
         ILogger<MessageService> logger,
         ITenantContext tenantContext,
         IConversationRepository conversationRepository,
@@ -142,8 +147,8 @@ public class MessageService : IMessageService
         IFeedbackService feedbackService,
         IMessageFileStorage fileStorage,
         IActivationValidationService activationValidationService,
-        IConfiguration configuration
-        )
+        IConfiguration configuration,
+        IMemoryCache memoryCache)
     {
         _logger = logger;
         _tenantContext = tenantContext;
@@ -152,6 +157,7 @@ public class MessageService : IMessageService
         _feedbackService = feedbackService;
         _fileStorage = fileStorage;
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
         _validateActivation = configuration.GetValue("Messaging:ValidateActivation", defaultValue: true);
     }
 
@@ -285,6 +291,11 @@ public class MessageService : IMessageService
         _logger.LogInformation("Processing outbound message from workflow {WorkflowId} to participant {ParticipantId}",
              LogSanitizer.Sanitize(request.WorkflowId), LogSanitizer.Sanitize(request.ParticipantId));
 
+        var totalStopwatch = Stopwatch.StartNew();
+        long threadMs = 0;
+        long originMs = 0;
+        long saveMs = 0;
+
         try
         {
             // Generate RequestId if not provided for request tracking and correlation
@@ -295,17 +306,21 @@ public class MessageService : IMessageService
                     request.ParticipantId);
             }
 
+            var segment = Stopwatch.StartNew();
             var threadId = await CreateOrGetThread(request);
+            threadMs = segment.ElapsedMilliseconds;
 
             // Normalize scope for topic-scoped lookups (prevents replies from being routed to wrong channel)
             var replyScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
 
             // Auto-populate origin and platform metadata from last incoming message in the SAME topic if not provided.
             // Scope filtering ensures web replies don't get routed to Slack/Teams when the last message in thread was from another topic.
-            // Use a single merged query to fetch both origin and data in one MongoDB round-trip.
+            // Prefer the in-memory cache populated on inbound save; fall back to a single MongoDB query.
             if (string.IsNullOrEmpty(request.Origin) || request.Data == null)
             {
-                var (lastOrigin, lastData) = await _conversationRepository.GetLastIncomingOriginAndDataAsync(threadId, _tenantContext.TenantId, replyScope);
+                segment.Restart();
+                var (lastOrigin, lastData) = await GetLastIncomingOriginAndDataCachedAsync(threadId, replyScope);
+                originMs = segment.ElapsedMilliseconds;
 
                 if (string.IsNullOrEmpty(request.Origin) && !string.IsNullOrEmpty(lastOrigin))
                 {
@@ -321,7 +336,13 @@ public class MessageService : IMessageService
                 }
             }
 
+            segment.Restart();
             var message = await SaveMessage(threadId, request, MessageDirection.Outgoing, messageType);
+            saveMs = segment.ElapsedMilliseconds;
+
+            _logger.LogInformation(
+                "Outbound message timing: total={TotalMs}ms thread={ThreadMs}ms originLookup={OriginMs}ms save={SaveMs}ms threadId={ThreadId}",
+                totalStopwatch.ElapsedMilliseconds, threadMs, originMs, saveMs, LogSanitizer.Sanitize(threadId));
 
             return ServiceResult<string>.Success(message.ThreadId);
         }
@@ -377,12 +398,20 @@ public class MessageService : IMessageService
         _logger.LogInformation("Processing inbound message for WorkflowId `{WorkflowId}` from participant {ParticipantId}",
             LogSanitizer.Sanitize(request.WorkflowId), LogSanitizer.Sanitize(request.ParticipantId));
 
+        var totalStopwatch = Stopwatch.StartNew();
+        long validationMs = 0;
+        long threadMs = 0;
+        long saveMs = 0;
+        long signalMs = 0;
+
         // Reject messages targeting unregistered agents / inactive activations before writing
         // a thread or starting a Temporal workflow via SignalWithStart.
         if (_validateActivation)
         {
+            var segment = Stopwatch.StartNew();
             var validation = await _activationValidationService.ValidateWorkflowTargetAsync(
                 _tenantContext.TenantId, request.WorkflowId!, request.WorkflowType!);
+            validationMs = segment.ElapsedMilliseconds;
             if (!validation.IsSuccess)
             {
                 _logger.LogWarning(
@@ -397,14 +426,30 @@ public class MessageService : IMessageService
         }
         
         // Critical Operation: If the threadId is not provided, we need to create a new thread
+        var threadSegment = Stopwatch.StartNew();
         var threadId = await CreateOrGetThread(request);
+        threadMs = threadSegment.ElapsedMilliseconds;
 
-        // Save the message
-        await SaveMessage(threadId, request, MessageDirection.Incoming, messageType);
+        // Save and signal in parallel: the Temporal payload already carries the message text,
+        // so SignalWithStart does not depend on the Mongo insert completing first.
+        var saveTask = TimedAsync(
+            () => SaveMessage(threadId, request, MessageDirection.Incoming, messageType),
+            ms => saveMs = ms);
+        var signalTask = TimedAsync(
+            () => SignalWorkflowAsync(threadId, request, messageType),
+            ms => signalMs = ms);
+        await Task.WhenAll(saveTask, signalTask);
 
-        // Signal the workflow
-        await SignalWorkflowAsync(threadId, request, messageType);
+        CacheIncomingOriginAndData(threadId, request);
 
+        _logger.LogInformation(
+            "Inbound message timing: total={TotalMs}ms validation={ValidationMs}ms thread={ThreadMs}ms save={SaveMs}ms signal={SignalMs}ms workflowId={WorkflowId}",
+            totalStopwatch.ElapsedMilliseconds,
+            validationMs,
+            threadMs,
+            saveMs,
+            signalMs,
+            LogSanitizer.Sanitize(request.WorkflowId));
         _logger.LogInformation("Successfully processed inbound message");
 
         return ServiceResult<string>.Success(threadId);
@@ -424,7 +469,73 @@ public class MessageService : IMessageService
         request.WorkflowId = $"{_tenantContext.TenantId}:{request.WorkflowType}";
     }
 
+    private static async Task TimedAsync(Func<Task> action, Action<long> setElapsedMs)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            setElapsedMs(stopwatch.ElapsedMilliseconds);
+        }
+    }
 
+    private static async Task<T> TimedAsync<T>(Func<Task<T>> action, Action<long> setElapsedMs)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            return await action();
+        }
+        finally
+        {
+            setElapsedMs(stopwatch.ElapsedMilliseconds);
+        }
+    }
+
+    private static string BuildIncomingOriginCacheKey(string tenantId, string threadId, string? scope)
+    {
+        var normalizedScope = string.IsNullOrWhiteSpace(scope) ? "__default__" : scope.Trim();
+        return $"{IncomingOriginCacheKeyPrefix}{tenantId}:{threadId}:{normalizedScope}";
+    }
+
+    private void CacheIncomingOriginAndData(string threadId, ChatOrDataRequest request)
+    {
+        var normalizedScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
+        var cacheKey = BuildIncomingOriginCacheKey(_tenantContext.TenantId, threadId, normalizedScope);
+        var entry = new IncomingOriginCacheEntry(request.Origin, request.Data);
+        _memoryCache.Set(
+            cacheKey,
+            entry,
+            new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(IncomingOriginCacheDuration)
+                .SetSize(1));
+    }
+
+    private async Task<(string? Origin, object? Data)> GetLastIncomingOriginAndDataCachedAsync(string threadId, string? scope)
+    {
+        var cacheKey = BuildIncomingOriginCacheKey(_tenantContext.TenantId, threadId, scope);
+        if (_memoryCache.TryGetValue(cacheKey, out IncomingOriginCacheEntry? cached) && cached != null)
+        {
+            return (cached.Origin, cached.Data);
+        }
+
+        var (origin, data) = await _conversationRepository.GetLastIncomingOriginAndDataAsync(
+            threadId, _tenantContext.TenantId, scope);
+
+        _memoryCache.Set(
+            cacheKey,
+            new IncomingOriginCacheEntry(origin, data),
+            new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(IncomingOriginCacheDuration)
+                .SetSize(1));
+
+        return (origin, data);
+    }
+
+    private sealed record IncomingOriginCacheEntry(string? Origin, object? Data);
 
     private async Task SignalWorkflowAsync(string threadId,ChatOrDataRequest request, MessageType messageType)
     {

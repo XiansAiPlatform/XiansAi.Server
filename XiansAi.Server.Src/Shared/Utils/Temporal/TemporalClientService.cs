@@ -16,6 +16,7 @@ public interface ITemporalClientService
 public class TemporalClientService : ITemporalClientService, IDisposable, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, ITemporalClient> _clients = new();
+    private readonly ConcurrentDictionary<string, ITemporalClient> _clientsByEndpoint = new();
     private readonly ConcurrentDictionary<string, CloudService> _serviceClients = new();
     private readonly ConcurrentDictionary<string, bool> _searchAttributesRegistered = new();
     private readonly ILogger<TemporalClientService> _logger;
@@ -59,6 +60,18 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             }
 
             var config = GetTemporalConfig(tenantId);
+            var endpointKey = BuildEndpointKey(config.FlowServerUrl!, config.FlowServerNamespace!);
+
+            // Reuse an already-connected client for the same Temporal URL/namespace.
+            // Startup often warms "default" while requests use the real tenant id with the same root config.
+            if (_clientsByEndpoint.TryGetValue(endpointKey, out var sharedClient))
+            {
+                _clients.TryAdd(tenantId, sharedClient);
+                _logger.LogInformation(
+                    "Reusing existing Temporal client for tenant {TenantId} (endpoint {EndpointKey})",
+                    tenantId, endpointKey);
+                return sharedClient;
+            }
             
             var options = new TemporalClientConnectOptions(new(config.FlowServerUrl))
             {
@@ -84,6 +97,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             {
                 var client = await TemporalClient.ConnectAsync(options);
                 _clients.TryAdd(tenantId, client);
+                _clientsByEndpoint.TryAdd(endpointKey, client);
 
                 await EnsureSearchAttributesRegisteredAsync(client, config.FlowServerNamespace!);
 
@@ -95,6 +109,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
                 _logger.LogError(ex, "Failed to connect to Temporal server for tenant {TenantId} at {Url}. Error: {ErrorMessage}",
                     tenantId, config.FlowServerUrl, ex.Message);
                 _clients.TryRemove(tenantId, out _);
+                _clientsByEndpoint.TryRemove(endpointKey, out _);
                 throw;
             }
         }
@@ -102,6 +117,11 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         {
             _connectionSemaphore.Release();
         }
+    }
+
+    private static string BuildEndpointKey(string flowServerUrl, string flowServerNamespace)
+    {
+        return $"{flowServerUrl}|{flowServerNamespace}";
     }
 
     private TemporalConfig GetTemporalConfig(string tenantId)
@@ -291,6 +311,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             await Task.WhenAll(disposeTasks).WaitAsync(cancellationTokenSource.Token);
             
             _clients.Clear();
+            _clientsByEndpoint.Clear();
             _serviceClients.Clear();
             
             _logger.LogInformation("Temporal client service disposed successfully");

@@ -58,7 +58,8 @@ public static class RestEndpoints
                 request,
                 text,
                 requestId,
-                tenantContext.Authorization);
+                origin: null,
+                authorization: tenantContext.Authorization);
 
             var result = await messageService.ProcessIncomingMessage(message, messageType);
             return result.ToHttpResult();
@@ -115,7 +116,8 @@ public static class RestEndpoints
                 request,
                 text,
                 requestId,
-                tenantContext.Authorization);
+                origin: null,
+                authorization: tenantContext.Authorization);
 
             // Use the sync message handler to process the complex flow
             var syncHandler = new SyncMessageHandler(messageService, pendingRequestService, logger);
