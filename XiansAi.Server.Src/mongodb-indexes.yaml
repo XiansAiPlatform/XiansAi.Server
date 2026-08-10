@@ -293,19 +293,6 @@ users:
     keys:
       "tenant_roles.tenant": asc
       "tenant_roles.is_approved": asc
-user_linked_identities:
-  # A provider identity may resolve to at most one account. Safe to make unique without a sparse or
-  # partial filter because every document in this collection carries both fields; Cosmos DB counts a
-  # missing field as null toward a unique constraint, so an index that had to exclude documents
-  # would admit only one of them.
-  - name: subject_authority_unique
-    keys:
-      subject: asc
-      authority: asc
-    unique: true
-  - name: user_id_1
-    keys:
-      user_id: asc
 
 user_invitations:
   - name: tenant_id_1

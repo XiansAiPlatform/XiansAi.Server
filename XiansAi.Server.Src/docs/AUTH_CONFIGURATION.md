@@ -261,102 +261,15 @@ watch the logs for the warning it emits, fix each tenant it names, then set the 
 | `Auth__RequireOidcAudience` | Provider declares no `expectedAudience` | Set `expectedAudience` on the provider. Until then, any token that issuer signed is accepted — including one minted for an unrelated application at the same identity provider. |
 | `Auth__StrictSubjectClaim` | Identity fell back to a claim users can change | Leave `userIdClaim` unset (defaults to `sub`/`oid`), or set it to a stable claim. Note that this changes the user id of anyone currently signing in through a fallback claim, orphaning their existing record — naming the claim they already resolve to keeps them on it. Do not set it to a mutable claim; that is refused at save time for new configurations. |
 
-### Linking a Second Identity to an Existing Account
+### Email collisions at sign-in
 
-A user record is keyed on the provider subject that created it, and everything else — threads,
-agents, keys, audit trails — is stored against that key. So when the same person arrives with a
-different subject (a new identity provider, or a record created before subjects were used), a second
-account would detach them from all of it. Sign-in therefore refuses to create one when the email
-already belongs to somebody, and the two identities are joined by a link instead.
+A user record is keyed on the provider subject (`sub` / `oid`, or the configured `userIdClaim`).
+Sign-in refuses to provision a second account when the token's email already belongs to a different
+subject — merging on email alone would hand over that account's access. Leave `userIdClaim` unset
+(or set it to a stable claim) so the same person keeps the same account across sessions.
 
-**Automatically, on a verified email:**
-
-```bash
-# Providers whose verified email addresses may attach a sign-in to the account already holding
-# that address (default: https://accounts.google.com)
-Auth__AutoLinkTrustedProviders__0=https://accounts.google.com
-```
-
-A sign-in is attached automatically only when the token carries an `email` claim, the provider says
-the holder owns it (`email_verified`, or `xms_edov` for Entra), and the provider is named in this
-list. Otherwise the sign-in is refused and an administrator has to link it.
-
-The list is deployment configuration, and deliberately not part of tenant OIDC config, even though
-only a SysAdmin may now write either. Configuring a provider is a separate decision from believing
-what it says about identity: adding a partner's directory so their staff can sign in says nothing
-about whether an address it emits that matches an existing account is the same person. The scopes
-differ too — OIDC config governs one tenant, while the account an auto-link attaches to may be in
-any tenant or be a SysAdmin's — and keeping this out of the API means a stolen SysAdmin token cannot
-widen it.
-
-Trusting a provider asserts that it verifies address ownership and that no third party can make it
-say otherwise. That holds for Google. It does **not** hold for a multi-tenant Microsoft endpoint
-(`/common`, `/organizations`, `/consumers`), where any directory in the world can issue tokens and
-its administrators choose their users' email addresses — this is the nOAuth account-takeover
-pattern, and such entries are refused at startup with an error in the log. A single Entra tenant
-(`https://login.microsoftonline.com/<tenant-id>/v2.0`) may be trusted, since that names one
-directory whose administrators you have decided to rely on.
-
-**Providers that verify addresses but do not say so (Azure AD B2C):**
-
-```bash
-# Providers whose email is accepted with no verification claim in the token, because you know the
-# directory verifies addresses itself (default: none)
-Auth__AutoLinkProvidersWithoutVerifiedEmailClaim__0=https://contoso.b2clogin.com/contoso.onmicrosoft.com/v2.0
-```
-
-B2C issues its address as `emails` and sends no verification claim at all, so the trusted list alone
-can never match one of its sign-ins however it is set — every returning user would need an
-administrator. Naming a provider here supplies your assertion in place of the provider's. It also
-trusts the provider, so it does not need to appear in both lists, and the same startup checks apply.
-
-Only assert this where every address in the directory got there under control you can account for:
-an invite-only or admin-provisioned directory, or one whose sign-up proves the person owns the
-address (B2C local accounts verify by one-time passcode). It is **not** safe where a person can
-bring an address in from elsewhere unchecked — self-service sign-up federated to social providers is
-the case to watch, since the address comes from Google or Facebook and B2C may not re-verify it.
-Where that is possible, whoever supplies an address takes over the account already holding it.
-
-Links made this way are logged as attached "on an email match this deployment vouches for without a
-verification claim", so an audit can tell them apart from ones a provider verified.
-
-**Manually, as a System Admin:**
-
-```bash
-POST   /api/v1/admin/users/{userId}/identities   { "subject": "...", "authority": "https://..." }
-DELETE /api/v1/admin/users/{userId}/identities?subject=...&authority=...
-```
-
-The subject is the `sub` claim from the person's token; the authority is the provider's issuer URL.
-Linking is recorded against the administrator who did it. A subject that already owns an account
-cannot be linked, because sign-in matches its own id first and the link would never resolve. If that
-subject has an account you want to retire, delete it first, then link.
-
-**What a link does and does not move:**
-
-| Follows the linked account | Stays on the token's own subject |
-| --- | --- |
-| Tenant memberships and roles, so access is decided by one record | The conversation participant id |
-| `LoggedInUser`, so records are attributed to that account | |
-
-Conversation identity is deliberately left behind. Threads are keyed on
-`(tenant, workflow, participant)`, and clients pass the participant id explicitly and may only name
-their own — so moving it would both strand every existing thread and get the caller's next request
-refused. The consequence is that a person with two linked subjects keeps two conversation histories,
-while still being a single account everywhere access is concerned.
-
-**Where links are stored:**
-
-Links live in their own `user_linked_identities` collection, one document per link, with a unique
-index over `(subject, authority)` that is what actually prevents an identity resolving to two
-accounts. They are deliberately not embedded in the user document: most users have no links, and an
-index that had to skip those documents would depend on `sparse`, which Azure Cosmos DB does not
-implement — it counts a missing field as null toward the unique constraint, so only one user could
-ever exist without a link and every subsequent sign-up would fail to provision.
-
-Links were stored on the user document before v3.36.0. A Cosmos DB deployment upgrading from an
-earlier build has to drop the old index by hand, or it will persist and reject every new user — see
-[v3.36.0 — Cosmos DB Migration](migrations/v3.36.0-cosmos.md).
+Conversation threads may still be keyed by email: the User API accepts the account's stored email as
+`participantId` even when the account id is the provider subject.
 
 ### Certificate Validation Caching (Agent API)
 

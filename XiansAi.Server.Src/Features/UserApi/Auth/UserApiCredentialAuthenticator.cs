@@ -295,34 +295,24 @@ public class UserApiCredentialAuthenticator : IUserApiCredentialAuthenticator
         var resolvedTenantId = resolution.MatchedTenantId!;
         var authorizedTenantIds = resolution.AuthorizedTenantIds;
 
-        // An administrator may have linked this subject to an account stored under a different id.
-        // Where that happened the request is authorized by that account's memberships, so it must be
-        // attributed to that account too — otherwise it would borrow the account's access while
-        // writing under the subject, which is the detached second identity linking exists to prevent.
-        var linkedAccountUserId = string.Equals(resolution.AccountUserId, validation.ProviderUserId, StringComparison.Ordinal)
+        // Records written by this path are attributed to the canonical `provider|subject` id.
+        var canonicalUserId = validation.CanonicalUserId!;
+
+        // Conversation identity prefers the account's stored email when present so clients that
+        // still pass email as participantId (and historical threads keyed by email) keep working
+        // while the account remains the provider subject. Falls back to the token subject when the
+        // account has no email.
+        var accountEmail = string.IsNullOrWhiteSpace(resolution.Email)
             ? null
-            : resolution.AccountUserId;
-
-        // Left as the canonical `provider|subject` id for an unlinked caller, which is what records
-        // written by this path are already attributed to.
-        var canonicalUserId = linkedAccountUserId ?? validation.CanonicalUserId;
-
-        // Conversation identity deliberately does *not* follow the link, and stays on the subject the
-        // token actually presented.
-        //
-        // Threads are keyed on (tenant, workflow, participant), so moving a linked caller onto the
-        // account id would strand every thread they already have. Worse, clients pass the participant
-        // id explicitly and may only name their own, so the id changing under them turns into a
-        // refusal on the next request rather than a quietly empty history.
-        //
-        // The trade-off is that two linked subjects for the same person keep separate conversations.
-        // That is contained: the account they act as, and therefore everything access is decided on,
-        // is still a single record.
-        var participantId = validation.ProviderUserId;
+            : resolution.Email.Trim().ToLowerInvariant();
+        var providerSubject = validation.ProviderUserId;
+        var participantId = accountEmail ?? providerSubject;
 
         _tenantContext.LoggedInUser = canonicalUserId;
         _tenantContext.UserType = UserType.UserToken;
         _tenantContext.ParticipantId = participantId;
+        _tenantContext.Email = accountEmail;
+        _tenantContext.ProviderSubject = providerSubject;
         _tenantContext.TenantId = resolvedTenantId;
         _tenantContext.AuthorizedTenantIds = authorizedTenantIds;
 
@@ -332,13 +322,19 @@ public class UserApiCredentialAuthenticator : IUserApiCredentialAuthenticator
         // send it in the query string.
         _tenantContext.Authorization = token;
 
-        var claims = new List<Claim>(4 + authorizedTenantIds.Count)
+        var claims = new List<Claim>(6 + authorizedTenantIds.Count)
         {
             new(ClaimTypes.NameIdentifier, canonicalUserId),
             new(UserApiClaimTypes.TenantId, resolvedTenantId),
             new(UserApiClaimTypes.ParticipantId, participantId),
-            new(UserApiClaimTypes.UserType, nameof(UserType.UserToken))
+            new(UserApiClaimTypes.UserType, nameof(UserType.UserToken)),
+            new(UserApiClaimTypes.ProviderSubject, providerSubject)
         };
+
+        if (accountEmail != null)
+        {
+            claims.Add(new Claim(UserApiClaimTypes.Email, accountEmail));
+        }
 
         foreach (var tenantId in authorizedTenantIds)
         {

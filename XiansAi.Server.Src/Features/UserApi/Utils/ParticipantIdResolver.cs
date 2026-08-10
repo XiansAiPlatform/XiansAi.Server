@@ -74,8 +74,8 @@ public static class ParticipantIdResolver
     ///
     /// API keys are tenant-scoped service credentials held by trusted callers that legitimately act
     /// on behalf of many end users, so they may name any participant. A token holder may only name
-    /// themselves, under either their participant id or their canonical login id — clients passing
-    /// their own canonical id predate the two being split apart and must keep working.
+    /// themselves: their conversation participant id, canonical login id, account email, or raw
+    /// provider subject — clients pass any of these depending on era and client code.
     /// </summary>
     public static bool CanActAs(string? participantId, ITenantContext tenantContext)
     {
@@ -90,7 +90,9 @@ public static class ParticipantIdResolver
         }
 
         return MatchesOwnId(participantId, tenantContext.ParticipantId) ||
-               MatchesOwnId(participantId, tenantContext.LoggedInUser);
+               MatchesOwnId(participantId, tenantContext.LoggedInUser) ||
+               MatchesOwnId(participantId, tenantContext.Email) ||
+               MatchesOwnId(participantId, tenantContext.ProviderSubject);
     }
 
     private static bool MatchesOwnId(string participantId, string? ownId)

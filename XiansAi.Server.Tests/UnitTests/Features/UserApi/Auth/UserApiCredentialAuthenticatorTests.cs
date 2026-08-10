@@ -26,6 +26,8 @@ public class UserApiCredentialAuthenticatorTests
         _tenantContext.SetupProperty(x => x.LoggedInUser, string.Empty);
         _tenantContext.SetupProperty(x => x.TenantId, string.Empty);
         _tenantContext.SetupProperty(x => x.ParticipantId, string.Empty);
+        _tenantContext.SetupProperty(x => x.Email, (string?)null);
+        _tenantContext.SetupProperty(x => x.ProviderSubject, (string?)null);
         _tenantContext.SetupProperty(x => x.UserType, UserType.Unknown);
         _tenantContext.SetupProperty(x => x.Authorization, (string?)null);
         _tenantContext.SetupProperty<IEnumerable<string>>(x => x.AuthorizedTenantIds, Array.Empty<string>());
@@ -139,6 +141,8 @@ public class UserApiCredentialAuthenticatorTests
         Assert.Equal("tenant-a", result.Principal!.FindFirst(UserApiClaimTypes.TenantId)?.Value);
         Assert.Equal(CanonicalUserId, result.Principal.FindFirst(ClaimTypes.NameIdentifier)?.Value);
         Assert.Equal(ProviderUserId, result.Principal.FindFirst(UserApiClaimTypes.ParticipantId)?.Value);
+        Assert.Equal(ProviderUserId, result.Principal.FindFirst(UserApiClaimTypes.ProviderSubject)?.Value);
+        Assert.Null(result.Principal.FindFirst(UserApiClaimTypes.Email));
         Assert.Equal(nameof(UserType.UserToken), result.Principal.FindFirst(UserApiClaimTypes.UserType)?.Value);
         Assert.Equal(
             new[] { "tenant-a", "tenant-b" },
@@ -146,27 +150,25 @@ public class UserApiCredentialAuthenticatorTests
     }
 
     [Fact]
-    public async Task Jwt_ActsAsTheLinkedAccount_ButKeepsConversingUnderItsOwnSubject()
+    public async Task Jwt_PrefersAccountEmailAsParticipantId_WhenTheResolvedAccountHasOne()
     {
-        // The two ids move independently on purpose. Access follows the linked account, so the
-        // caller gets that account's memberships and is attributed to it. Conversation identity
-        // stays on the subject the token presented, because threads are keyed on the participant
-        // and clients pass it explicitly — moving it would strand existing threads and get the
-        // caller's next request refused for naming a participant that is no longer theirs.
-        const string linkedAccountId = "9d9db4a7-20df-4900-8a25-fea7907774cc";
+        const string accountEmail = "user@example.com";
 
         SetupValidJwt();
         _tenantResolver
             .Setup(x => x.ResolveAsync(It.IsAny<OidcValidationResult>(), "tenant-a"))
-            .ReturnsAsync(AuthorizedTenantResolution.Authorized("tenant-a", ["tenant-a"], linkedAccountId));
+            .ReturnsAsync(AuthorizedTenantResolution.Authorized(
+                "tenant-a", ["tenant-a"], ProviderUserId, accountEmail));
 
         var result = await BuildAuthenticator().AuthenticateAsync(FromHeader(Jwt), "tenant-a", SchemeName);
 
         Assert.True(result.Succeeded);
-        Assert.Equal(linkedAccountId, result.Principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-        Assert.Equal(linkedAccountId, _tenantContext.Object.LoggedInUser);
-        Assert.Equal(ProviderUserId, result.Principal.FindFirst(UserApiClaimTypes.ParticipantId)?.Value);
-        Assert.Equal(ProviderUserId, _tenantContext.Object.ParticipantId);
+        Assert.Equal(accountEmail, result.Principal!.FindFirst(UserApiClaimTypes.ParticipantId)?.Value);
+        Assert.Equal(accountEmail, result.Principal.FindFirst(UserApiClaimTypes.Email)?.Value);
+        Assert.Equal(ProviderUserId, result.Principal.FindFirst(UserApiClaimTypes.ProviderSubject)?.Value);
+        Assert.Equal(accountEmail, _tenantContext.Object.ParticipantId);
+        Assert.Equal(accountEmail, _tenantContext.Object.Email);
+        Assert.Equal(ProviderUserId, _tenantContext.Object.ProviderSubject);
     }
 
     [Fact]

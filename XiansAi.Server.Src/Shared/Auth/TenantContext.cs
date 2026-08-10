@@ -21,10 +21,23 @@ namespace Shared.Auth;
         /// Identifies the caller as a conversation participant, which is the key conversation
         /// threads are stored under. This is deliberately separate from <see cref="LoggedInUser"/>:
         /// the UserApi JWT paths set the latter to the canonical `provider|subject` id for claims
-        /// and display, while threads are keyed on the raw provider subject. Defaults to
+        /// and display, while threads are keyed on the raw provider subject (or the account email
+        /// when that is preferred for conversation continuity). Defaults to
         /// <see cref="LoggedInUser"/> for the flows where the two are the same.
         /// </summary>
         string ParticipantId { get; set; }
+
+        /// <summary>
+        /// The account's stored email when known. A token holder may name this as
+        /// <see cref="ParticipantId"/> even when the account is keyed by a provider subject.
+        /// </summary>
+        string? Email { get; set; }
+
+        /// <summary>
+        /// The raw provider subject from the token. Kept so clients that pass the JWT <c>sub</c> as
+        /// participant id remain authorized when conversation identity prefers email.
+        /// </summary>
+        string? ProviderSubject { get; set; }
 
         string[] UserRoles { get; set; }
         IEnumerable<string> AuthorizedTenantIds { get; set; }
@@ -48,6 +61,9 @@ namespace Shared.Auth;
             get => _participantId ?? LoggedInUser;
             set => _participantId = value;
         }
+
+        public string? Email { get; set; }
+        public string? ProviderSubject { get; set; }
 
         public required string[] UserRoles { get; set; } = Array.Empty<string>();
         public IEnumerable<string> AuthorizedTenantIds { get; set; } = new List<string>();

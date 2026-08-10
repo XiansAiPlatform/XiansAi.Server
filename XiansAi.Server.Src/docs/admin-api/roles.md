@@ -22,6 +22,10 @@ single source of truth for who may call the Admin API.
 > **Key rule:** Only callers whose API key owner holds the **`SysAdmin`** or **`TenantAdmin`**
 > role can use the Admin API. Access is granted by an *explicit* role assignment only —
 > email-domain matching is intentionally **not** used to grant admin access.
+>
+> API key `CreatedBy` may be either the user's GUID (`user_id`) or their email. Resolution
+> looks up by `user_id` first, then by email for legacy keys, and always sets
+> `LoggedInUser` to the canonical GUID.
 
 ## System Roles
 

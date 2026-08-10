@@ -44,16 +44,19 @@ public class CreateNewUserDto
 public class ResolvedUserAccess
 {
     /// <summary>
-    /// The account the token resolves to. This is the token's own subject in the ordinary case, but
-    /// an administrator may have linked that subject to an account stored under a different id — a
-    /// person who changed provider, or a record predating provider subjects. Callers must carry this
-    /// forward instead of the subject they passed in, because it is the id everything else in the
-    /// system is stored against.
+    /// The account the token resolves to — the provider subject that keys the users collection.
     /// </summary>
     public required string UserId { get; init; }
 
     /// <summary>Enabled tenants the account is an approved member of. Empty grants nothing.</summary>
     public required List<TenantInfoDto> Tenants { get; init; }
+
+    /// <summary>
+    /// The account's stored email, when present. Used as an alternate conversation participant id so
+    /// clients may keep naming the person by email while the account remains keyed by the provider
+    /// subject.
+    /// </summary>
+    public string? Email { get; init; }
 }
 
 public interface IUserTenantService
@@ -63,8 +66,7 @@ public interface IUserTenantService
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForUser(string userId);
     Task<ServiceResult<List<TenantInfoDto>>> GetApprovedTenantsForUserId(string userId);
     Task<ServiceResult<ResolvedUserAccess>> EnsureUserAndGetApprovedTenants(
-        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null,
-        bool emailVerified = false);
+        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null);
     Task<ServiceResult<List<User>>> GetUnapprovedUsers();
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
@@ -79,7 +81,6 @@ public interface IUserTenantService
 public class UserTenantService : IUserTenantService
 {
     private readonly IUserRepository _userRepository;
-    private readonly IUserLinkedIdentityRepository _linkedIdentityRepository;
     private readonly ITenantRepository _tenantRepository;
     private readonly ILogger<UserTenantService> _logger;
     private readonly ITenantContext _tenantContext;
@@ -87,25 +88,17 @@ public class UserTenantService : IUserTenantService
     private readonly IConfiguration _configuration;
     private readonly IUserManagementService _userManagementService;
     private readonly IJwtClaimsExtractor _jwtClaimsExtractor;
-    private readonly IdentityAutoLinkPolicy _autoLinkPolicy;
-
-    /// <summary>Recorded as the author of a link the sign-in path made rather than an administrator.</summary>
-    private const string AutoLinkActor = "auto:verified-email";
 
     public UserTenantService(IUserRepository userRepository,
-        IUserLinkedIdentityRepository linkedIdentityRepository,
         ILogger<UserTenantService> logger,
         ITenantContext tenantContext,
         IAuthMgtConnect authMgtConnect,
         IConfiguration configuration,
         IUserManagementService userManagementService,
         ITenantRepository tenantRepository,
-        IJwtClaimsExtractor jwtClaimsExtractor,
-        IdentityAutoLinkPolicy autoLinkPolicy)
+        IJwtClaimsExtractor jwtClaimsExtractor)
     {
-        _autoLinkPolicy = autoLinkPolicy;
         _userRepository = userRepository;
-        _linkedIdentityRepository = linkedIdentityRepository;
         _logger = logger;
         _tenantRepository = tenantRepository;
         _tenantContext = tenantContext;
@@ -171,8 +164,7 @@ public class UserTenantService : IUserTenantService
     /// admins; without it a rejected first-time user leaves no trace anyone can act on.
     /// </summary>
     public async Task<ServiceResult<ResolvedUserAccess>> EnsureUserAndGetApprovedTenants(
-        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null,
-        bool emailVerified = false)
+        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null)
     {
         if (string.IsNullOrEmpty(userId))
             return ServiceResult<ResolvedUserAccess>.Unauthorized("User not authenticated");
@@ -184,31 +176,11 @@ public class UserTenantService : IUserTenantService
             return ServiceResult<ResolvedUserAccess>.Unauthorized("Identity provider could not be determined");
         }
 
-        // The account this token acts as. It differs from the subject only when an administrator has
-        // linked the subject to an existing account.
-        var accountUserId = userId;
-
         try
         {
             var existingUser = await _userRepository.GetByUserIdAsync(userId);
             if (existingUser == null)
             {
-                var linkedIdentity = await _linkedIdentityRepository.GetAsync(userId, providerAuthority);
-                if (linkedIdentity != null)
-                {
-                    // The provider check the pin performs below is already satisfied: a link matches
-                    // subject and authority together, so reaching this record means this provider is
-                    // the one the administrator attached the subject to.
-                    accountUserId = linkedIdentity.UserId;
-                    _logger.LogInformation(
-                        "Subject {Subject} from {Authority} resolved to linked account {UserId}",
-                        LogSanitizer.RedactUserId(userId), LogSanitizer.Sanitize(providerAuthority),
-                        LogSanitizer.RedactUserId(accountUserId));
-
-                    await RegisterAsPendingMemberAsync(accountUserId, requestedTenantId);
-                    return await GetAccessForUserId(accountUserId);
-                }
-
                 // This path is reachable by anyone holding a token that validates against some
                 // tenant's OIDC rules, so it must not be able to claim the first-user SysAdmin
                 // bootstrap. That promotion stays reserved for the WebAPI operator sign-in flow.
@@ -242,23 +214,11 @@ public class UserTenantService : IUserTenantService
                 if (existingUser == null)
                 {
                     // ...or the conflict was on the email, which already belongs to a different
-                    // subject. A provider the operator trusts to verify addresses can settle that on
-                    // its own; otherwise the token only proves that this provider *says* this
-                    // person's email is that string, and the record it would join may hold far more
-                    // access than they have.
-                    var autoLinked = await TryAutoLinkVerifiedEmailAsync(
-                        userId, email, emailVerified, providerAuthority, requestedTenantId);
-                    if (autoLinked != null)
-                    {
-                        return autoLinked;
-                    }
-
-                    // An administrator who knows the two are the same person links this subject to
-                    // that account, and this branch stops being reached.
+                    // subject. The token only proves that this provider *says* this person's email
+                    // is that string; merging into the existing account would hand over its access.
                     _logger.LogWarning(
                         "Refusing to provision {UserId} from {Authority}: the email in this token is " +
-                        "already registered to a different account. Link this subject to that account " +
-                        "to let it sign in.",
+                        "already registered to a different account.",
                         LogSanitizer.RedactUserId(userId), LogSanitizer.Sanitize(providerAuthority));
                     return ServiceResult<ResolvedUserAccess>.Unauthorized(
                         "This email is already registered to a different account");
@@ -281,85 +241,11 @@ public class UserTenantService : IUserTenantService
             return ServiceResult<ResolvedUserAccess>.InternalServerError("Error provisioning user");
         }
 
-        return await GetAccessForUserId(accountUserId);
+        return await GetAccessForUserId(userId);
     }
 
     /// <summary>
-    /// Attaches this subject to the account that already holds its email address, when the provider
-    /// is one the operator has designated as authoritative for the addresses it verifies. Returns
-    /// null when the conditions are not met, leaving the caller to refuse.
-    ///
-    /// Both conditions carry weight. The address must be one the provider says the holder owns, and
-    /// the provider must be trusted by the deployment rather than by a tenant — a tenant
-    /// administrator configures their own OIDC providers, so a provider they nominate can assert
-    /// whatever it likes about whoever it likes.
-    ///
-    /// The first condition may be met by the operator instead of the provider, for a directory whose
-    /// addresses are verified somewhere the token does not record — see
-    /// <see cref="IdentityAutoLinkPolicy.VouchesForUnverifiedEmail"/>. The second is never waived.
-    /// </summary>
-    private async Task<ServiceResult<ResolvedUserAccess>?> TryAutoLinkVerifiedEmailAsync(
-        string subject, string? email, bool emailVerified, string providerAuthority, string? requestedTenantId)
-    {
-        var vouchedByOperator = !emailVerified && _autoLinkPolicy.VouchesForUnverifiedEmail(providerAuthority);
-
-        if (string.IsNullOrWhiteSpace(email)
-            || (!emailVerified && !vouchedByOperator)
-            || !_autoLinkPolicy.IsTrusted(providerAuthority))
-        {
-            return null;
-        }
-
-        var owner = await _userRepository.GetByUserEmailAsync(email);
-        if (owner == null)
-        {
-            // The provisioning conflict was not about the email after all.
-            return null;
-        }
-
-        var outcome = await _linkedIdentityRepository.AddAsync(new UserLinkedIdentity
-        {
-            Subject = subject,
-            Authority = providerAuthority,
-            UserId = owner.UserId,
-            LinkedAt = DateTime.UtcNow,
-            LinkedBy = AutoLinkActor
-        });
-
-        if (outcome == LinkIdentityOutcome.TakenByAnotherUser)
-        {
-            // Another account claimed this subject between the lookup and the write.
-            return null;
-        }
-
-        // Which of the two bases was used decides who is answerable for the link, so an audit of
-        // these lines should not have to infer it from configuration as it stood at the time.
-        var basis = vouchedByOperator
-            ? "an email match this deployment vouches for without a verification claim"
-            : "a verified email match";
-
-        // Logged at warning for a privileged account: the link is legitimate, but silently widening
-        // the ways into a SysAdmin account is worth seeing in a log without going looking for it.
-        if (owner.IsSysAdmin)
-        {
-            _logger.LogWarning(
-                "Attached a {Authority} sign-in to SysAdmin account {UserId} on {Basis}",
-                LogSanitizer.Sanitize(providerAuthority), LogSanitizer.RedactUserId(owner.UserId), basis);
-        }
-        else
-        {
-            _logger.LogInformation(
-                "Attached a {Authority} sign-in to account {UserId} on {Basis}",
-                LogSanitizer.Sanitize(providerAuthority), LogSanitizer.RedactUserId(owner.UserId), basis);
-        }
-
-        await RegisterAsPendingMemberAsync(owner.UserId, requestedTenantId);
-        return await GetAccessForUserId(owner.UserId);
-    }
-
-    /// <summary>
-    /// Pairs the account id with the tenants it is approved for, so that callers receive both from a
-    /// single result and cannot accidentally keep using the subject they started from.
+    /// Pairs the account id with the tenants it is approved for.
     /// </summary>
     private async Task<ServiceResult<ResolvedUserAccess>> GetAccessForUserId(string userId)
     {
@@ -370,8 +256,15 @@ public class UserTenantService : IUserTenantService
                 tenants.ErrorMessage ?? "Error getting tenants for user");
         }
 
+        var user = await _userRepository.GetByUserIdAsync(userId);
+        string? email = null;
+        if (!string.IsNullOrWhiteSpace(user?.Email))
+        {
+            email = user.Email.Trim().ToLowerInvariant();
+        }
+
         return ServiceResult<ResolvedUserAccess>.Success(
-            new ResolvedUserAccess { UserId = userId, Tenants = tenants.Data });
+            new ResolvedUserAccess { UserId = userId, Tenants = tenants.Data, Email = email });
     }
 
     /// <summary>

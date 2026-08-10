@@ -23,21 +23,29 @@ public class AuthorizedTenantResolution
     public List<string> AuthorizedTenantIds { get; private init; } = new();
 
     /// <summary>
-    /// The account the token acts as, which is the token's subject unless an administrator linked
-    /// that subject to an existing account. Null when the tenant is not authorized.
+    /// The account the token acts as (the provider subject). Null when the tenant is not authorized.
     /// </summary>
     public string? AccountUserId { get; private init; }
+
+    /// <summary>
+    /// The account's stored email when present. Null when unauthorized or the account has no email.
+    /// </summary>
+    public string? Email { get; private init; }
 
     public static AuthorizedTenantResolution Denied() => new();
 
     public static AuthorizedTenantResolution Authorized(
-        string matchedTenantId, List<string> authorizedTenantIds, string accountUserId) =>
+        string matchedTenantId,
+        List<string> authorizedTenantIds,
+        string accountUserId,
+        string? email = null) =>
         new()
         {
             IsAuthorized = true,
             MatchedTenantId = matchedTenantId,
             AuthorizedTenantIds = authorizedTenantIds,
-            AccountUserId = accountUserId
+            AccountUserId = accountUserId,
+            Email = email
         };
 }
 
@@ -106,12 +114,17 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
 
         if (matchedTenantId == null)
         {
+            _logger.LogWarning(
+                "Authenticated user {UserId} is not an approved member of tenant {TenantId}. Approved tenants: [{Tenants}]",
+                LogSanitizer.Sanitize(access.AccountUserId),
+                LogSanitizer.Sanitize(requestedTenantId),
+                LogSanitizer.Sanitize(string.Join(", ", access.TenantIds)));
             return AuthorizedTenantResolution.Denied();
         }
 
         // Copied because the source list may be a shared cache entry.
         return AuthorizedTenantResolution.Authorized(
-            matchedTenantId, access.TenantIds.ToList(), access.AccountUserId);
+            matchedTenantId, access.TenantIds.ToList(), access.AccountUserId, access.Email);
     }
 
     /// <summary>The account a token resolves to and the tenants it is approved for.</summary>
@@ -119,6 +132,7 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
     {
         public required string AccountUserId { get; init; }
         public required IReadOnlyList<string> TenantIds { get; init; }
+        public string? Email { get; init; }
     }
 
     /// <summary>
@@ -161,8 +175,7 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         // as pending there and becomes visible to its admins. It does not widen what comes back:
         // the result is still only the tenants they are approved for.
         var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
-            providerUserId, validation.Email, validation.Name, providerAuthority, requestedTenantId,
-            emailVerified: validation.EmailVerified);
+            providerUserId, validation.Email, validation.Name, providerAuthority, requestedTenantId);
 
         if (!result.IsSuccess || result.Data == null)
         {
@@ -175,7 +188,8 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         var access = new ApprovedAccess
         {
             AccountUserId = result.Data.UserId,
-            TenantIds = result.Data.Tenants.Select(t => t.TenantId).ToArray()
+            TenantIds = result.Data.Tenants.Select(t => t.TenantId).ToArray(),
+            Email = result.Data.Email
         };
 
         var cacheOptions = new MemoryCacheEntryOptions()

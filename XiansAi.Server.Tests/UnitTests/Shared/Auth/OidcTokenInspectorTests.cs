@@ -187,6 +187,15 @@ public class OidcTokenInspectorTests
     }
 
     [Fact]
+    public void EmailIsReadFromB2CEmailAddressClaim()
+    {
+        // Some B2C custom policies issue a single emailAddress string instead of the emails array.
+        var jwt = TokenWith(("sub", "user-1"), ("emailAddress", "a@b.com"));
+
+        Assert.Equal("a@b.com", OidcTokenInspector.GetEmail(jwt));
+    }
+
+    [Fact]
     public void TheB2CEmailsArrayIsNotTreatedAsVerified()
     {
         // B2C states nothing about ownership of the address, and it may have come from a social

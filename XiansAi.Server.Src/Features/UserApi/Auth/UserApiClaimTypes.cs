@@ -26,6 +26,18 @@ public static class UserApiClaimTypes
     public const string ParticipantId = "ParticipantId";
 
     /// <summary>
+    /// The account's stored email when present. Restored so participant ownership can accept an
+    /// email-shaped participant id without re-reading the user document.
+    /// </summary>
+    public const string Email = "Email";
+
+    /// <summary>
+    /// The raw provider subject from the JWT. Restored so clients that pass <c>sub</c> as
+    /// participant id remain authorized when <see cref="ParticipantId"/> prefers email.
+    /// </summary>
+    public const string ProviderSubject = "ProviderSubject";
+
+    /// <summary>
     /// The kind of credential the caller authenticated with, as a <see cref="CredentialType"/> name.
     /// Carried as a claim so authorization handlers can restore what authentication determined
     /// instead of assuming a credential kind.

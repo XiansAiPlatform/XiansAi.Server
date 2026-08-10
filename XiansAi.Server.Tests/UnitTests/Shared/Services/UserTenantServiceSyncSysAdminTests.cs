@@ -21,10 +21,6 @@ public class UserTenantServiceSyncSysAdminTests
     private readonly Mock<ITenantRepository> _tenantRepo = new();
     private readonly Mock<IJwtClaimsExtractor> _jwtExtractor = new();
 
-    // These tests never reach the auto-link path, so the policy only has to exist.
-    private readonly IdentityAutoLinkPolicy _autoLinkPolicy =
-        new(new ConfigurationBuilder().Build(), NullLogger<IdentityAutoLinkPolicy>.Instance);
-
     private const string UserId = "user-oid-abc123";
     private const string AdminGroupId1 = "aaaaaaaa-0000-0000-0000-000000000001";
     private const string AdminGroupId2 = "bbbbbbbb-0000-0000-0000-000000000002";
@@ -50,15 +46,13 @@ public class UserTenantServiceSyncSysAdminTests
 
         return new UserTenantService(
             _userRepo.Object,
-            new Mock<IUserLinkedIdentityRepository>().Object,
             NullLogger<UserTenantService>.Instance,
             _tenantContext.Object,
             _authMgtConnect.Object,
             config,
             _userManagementService.Object,
             _tenantRepo.Object,
-            _jwtExtractor.Object,
-            _autoLinkPolicy);
+            _jwtExtractor.Object);
     }
 
     [Fact]

@@ -12,12 +12,16 @@ public class ParticipantIdResolverTests
     private static ITenantContext TenantContext(
         string loggedInUser,
         string participantId,
-        UserType userType = UserType.UserToken)
+        UserType userType = UserType.UserToken,
+        string? email = null,
+        string? providerSubject = null)
     {
         var context = new Mock<ITenantContext>();
         context.Setup(x => x.LoggedInUser).Returns(loggedInUser);
         context.Setup(x => x.ParticipantId).Returns(participantId);
         context.Setup(x => x.UserType).Returns(userType);
+        context.Setup(x => x.Email).Returns(email);
+        context.Setup(x => x.ProviderSubject).Returns(providerSubject);
         return context.Object;
     }
 
@@ -123,11 +127,50 @@ public class ParticipantIdResolverTests
         Assert.True(allowed);
     }
 
+    [Theory]
+    [InlineData("user@example.com")]
+    [InlineData("User@Example.COM")]
+    public void TryResolve_AllowsATokenHolderToNameTheirAccountEmail(string requested)
+    {
+        var allowed = ParticipantIdResolver.TryResolve(
+            requested,
+            TenantContext(CanonicalUserId, ProviderUserId, email: "user@example.com", providerSubject: ProviderUserId),
+            out _);
+
+        Assert.True(allowed);
+    }
+
+    [Fact]
+    public void TryResolve_AllowsATokenHolderToNameTheirProviderSubject_WhenParticipantPrefersEmail()
+    {
+        var allowed = ParticipantIdResolver.TryResolve(
+            ProviderUserId,
+            TenantContext(
+                CanonicalUserId,
+                participantId: "user@example.com",
+                email: "user@example.com",
+                providerSubject: ProviderUserId),
+            out _);
+
+        Assert.True(allowed);
+    }
+
     [Fact]
     public void TryResolve_RejectsATokenHolderNamingSomeoneElse()
     {
         var allowed = ParticipantIdResolver.TryResolve(
             "someone-else", TenantContext(CanonicalUserId, ProviderUserId), out _);
+
+        Assert.False(allowed);
+    }
+
+    [Fact]
+    public void TryResolve_RejectsATokenHolderNamingAnotherEmail()
+    {
+        var allowed = ParticipantIdResolver.TryResolve(
+            "other@example.com",
+            TenantContext(CanonicalUserId, ProviderUserId, email: "user@example.com"),
+            out _);
 
         Assert.False(allowed);
     }

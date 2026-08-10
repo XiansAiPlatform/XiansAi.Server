@@ -17,6 +17,11 @@ public interface IUserRepository
     Task<User?> GetByUserIdAsync(string userId);
     Task<User?> GetByIdAsync(string id);
     Task<User?> GetByUserEmailAsync(string email);
+    /// <summary>
+    /// Resolves a user by <see cref="User.UserId"/> first, then by email when the value looks like an email.
+    /// Used for legacy API keys whose <c>CreatedBy</c> may be either a GUID or an email address.
+    /// </summary>
+    Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail);
     Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId);
     Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
     Task<User?> GetAnyUserAsync();
@@ -288,6 +293,22 @@ public class UserRepository : IUserRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserEmail");
     }
 
+    public async Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail)
+    {
+        if (string.IsNullOrWhiteSpace(userIdOrEmail))
+            return null;
+
+        var user = await GetByUserIdAsync(userIdOrEmail);
+        if (user != null)
+            return user;
+
+        // Legacy API keys may store email in CreatedBy instead of the GUID user_id.
+        if (userIdOrEmail.Contains('@'))
+            return await GetByUserEmailAsync(userIdOrEmail);
+
+        return null;
+    }
+
     public async Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId)
     {
         var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
@@ -337,11 +358,8 @@ public class UserRepository : IUserRepository
 
     public async Task<List<string>> GetUserRolesAsync(string userId, string tenantId)
     {
-        var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
-
-        var user = await _users
-            .Find(filter)
-            .FirstOrDefaultAsync();
+        // Accept either GUID user_id or email (legacy API-key CreatedBy values).
+        var user = await GetByUserIdOrEmailAsync(userId);
 
         if (user == null)
             return new List<string>();

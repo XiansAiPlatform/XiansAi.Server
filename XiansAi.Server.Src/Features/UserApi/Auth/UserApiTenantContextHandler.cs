@@ -74,6 +74,9 @@ public abstract class UserApiTenantContextHandler<TRequirement> : AuthorizationH
             _tenantContext.ParticipantId = participantId;
         }
 
+        _tenantContext.Email = context.User.FindFirst(UserApiClaimTypes.Email)?.Value;
+        _tenantContext.ProviderSubject = context.User.FindFirst(UserApiClaimTypes.ProviderSubject)?.Value;
+
         if (_logger.IsEnabled(LogLevel.Debug))
         {
             _logger.LogDebug("Restored tenant context for user {UserId} on tenant {TenantId}",

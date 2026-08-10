@@ -16,68 +16,22 @@ public class UserTenantServiceApprovedTenantsTests
     private const string Authority = "https://login.example.com";
 
     private readonly Mock<IUserRepository> _userRepo = new();
-    private readonly Mock<IUserLinkedIdentityRepository> _linkedIdentityRepo = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
     private readonly Mock<IAuthMgtConnect> _authMgtConnect = new();
     private readonly Mock<IUserManagementService> _userManagementService = new();
     private readonly Mock<ITenantRepository> _tenantRepo = new();
     private readonly Mock<IJwtClaimsExtractor> _jwtExtractor = new();
 
-    private UserTenantService BuildService(params string[] autoLinkTrustedProviders) =>
-        BuildServiceWith(BuildAutoLinkPolicy(autoLinkTrustedProviders));
-
-    /// <summary>
-    /// A service whose policy accepts <paramref name="authority"/>'s email with no verification
-    /// claim in the token, as an operator does for a directory they know verifies addresses itself.
-    /// </summary>
-    private UserTenantService BuildServiceVouchingFor(string authority)
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection([
-                new KeyValuePair<string, string?>("Auth:AutoLinkProvidersWithoutVerifiedEmailClaim:0", authority)
-            ])
-            .Build();
-
-        return BuildServiceWith(new IdentityAutoLinkPolicy(
-            configuration, NullLogger<IdentityAutoLinkPolicy>.Instance));
-    }
-
-    private UserTenantService BuildServiceWith(IdentityAutoLinkPolicy autoLinkPolicy)
-    {
-        return new UserTenantService(
+    private UserTenantService BuildService() =>
+        new(
             _userRepo.Object,
-            _linkedIdentityRepo.Object,
             NullLogger<UserTenantService>.Instance,
             _tenantContext.Object,
             _authMgtConnect.Object,
             new ConfigurationBuilder().Build(),
             _userManagementService.Object,
             _tenantRepo.Object,
-            _jwtExtractor.Object,
-            autoLinkPolicy);
-    }
-
-    /// <summary>
-    /// An auto-link policy trusting exactly the given providers, and nothing when none are given —
-    /// which is what keeps the default-configuration tests from depending on the built-in list.
-    /// </summary>
-    private static IdentityAutoLinkPolicy BuildAutoLinkPolicy(params string[] trustedProviders)
-    {
-        var settings = trustedProviders
-            .Select((authority, index) =>
-                new KeyValuePair<string, string?>($"Auth:AutoLinkTrustedProviders:{index}", authority))
-            .ToList();
-
-        // An empty section reads back as null, which would fall through to the defaults, so an
-        // explicitly untrusted policy is expressed as a single entry that is never a real authority.
-        if (settings.Count == 0)
-        {
-            settings.Add(new KeyValuePair<string, string?>("Auth:AutoLinkTrustedProviders:0", "https://trusted.invalid"));
-        }
-
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        return new IdentityAutoLinkPolicy(configuration, NullLogger<IdentityAutoLinkPolicy>.Instance);
-    }
+            _jwtExtractor.Object);
 
     private static Tenant BuildTenant(string id, string tenantId, string name, bool enabled) =>
         new()
@@ -291,7 +245,7 @@ public class UserTenantServiceApprovedTenantsTests
     {
         // The token proves the provider says this person's email is that string. It does not prove
         // they are the account already holding it, and that account may carry far more access —
-        // so this is refused for an administrator to reconcile, never merged.
+        // so this is refused, never merged.
         _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync((User?)null);
         _userManagementService
             .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
@@ -305,180 +259,16 @@ public class UserTenantServiceApprovedTenantsTests
         _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
-    /// <summary>
-    /// A subject whose email is already held by <paramref name="owner"/>, with provisioning refused
-    /// for that reason — the situation automatic linking either resolves or leaves refused.
-    /// </summary>
-    private void ArrangeEmailCollisionWith(User owner)
-    {
-        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync((User?)null);
-        _userRepo.Setup(x => x.GetByUserEmailAsync(owner.Email)).ReturnsAsync(owner);
-        _userRepo.Setup(x => x.IsSysAdmin(owner.UserId)).ReturnsAsync(owner.IsSysAdmin);
-        _userRepo.Setup(x => x.GetUserTenantsAsync(owner.UserId))
-            .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "acme", Name = "Acme" } });
-        _linkedIdentityRepo
-            .Setup(x => x.AddAsync(It.Is<UserLinkedIdentity>(li => li.UserId == owner.UserId)))
-            .ReturnsAsync(LinkIdentityOutcome.Added);
-        _userManagementService
-            .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
-            .ReturnsAsync(ServiceResult<bool>.Conflict("A user with this email already exists"));
-        _tenantRepo.Setup(x => x.GetByTenantIdAsync("acme"))
-            .ReturnsAsync(BuildTenant("id-1", "acme", "Acme", true));
-
-        // A SysAdmin's tenants come from the full list rather than their own memberships.
-        _tenantRepo.Setup(x => x.GetAllAsync())
-            .ReturnsAsync(new List<Tenant> { BuildTenant("id-1", "acme", "Acme", true) });
-    }
-
-    private static User OwnerOf(string email, bool isSysAdmin = false) =>
-        new() { UserId = "legacy-account", Email = email, IsSysAdmin = isSysAdmin };
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_AttachesAVerifiedEmailFromATrustedProviderToTheAccountHoldingIt()
-    {
-        // The point of the whole feature: the person signs in with a new provider and lands on the
-        // account that already holds their history, instead of being refused or given a second one.
-        var owner = OwnerOf("taken@example.com");
-        ArrangeEmailCollisionWith(owner);
-
-        var result = await BuildService(Authority).EnsureUserAndGetApprovedTenants(
-            UserId, owner.Email, "Test User", Authority, "acme", emailVerified: true);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(owner.UserId, result.Data!.UserId);
-        Assert.Equal("acme", Assert.Single(result.Data.Tenants).TenantId);
-        _linkedIdentityRepo.Verify(
-            x => x.AddAsync(It.Is<UserLinkedIdentity>(li =>
-                li.UserId == owner.UserId && li.Subject == UserId && li.Authority == Authority)),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_RefusesToAttachAnUnverifiedEmail()
-    {
-        // Without the provider vouching for the address, the claim is just a string the token
-        // carries, and matching on it would hand over the account to whoever put it there.
-        ArrangeEmailCollisionWith(OwnerOf("taken@example.com"));
-
-        var result = await BuildService(Authority).EnsureUserAndGetApprovedTenants(
-            UserId, "taken@example.com", "Test User", Authority, "acme", emailVerified: false);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
-        _linkedIdentityRepo.Verify(x => x.AddAsync(It.IsAny<UserLinkedIdentity>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_AttachesAnUnverifiedEmail_WhenTheDeploymentVouchesForTheProvider()
-    {
-        // Azure AD B2C is the case: it sends no verification claim at all, so the ordinary trusted
-        // list can never match one of its sign-ins and every returning user would need an admin.
-        var owner = OwnerOf("taken@example.com");
-        ArrangeEmailCollisionWith(owner);
-
-        var result = await BuildServiceVouchingFor(Authority).EnsureUserAndGetApprovedTenants(
-            UserId, owner.Email, "Test User", Authority, "acme", emailVerified: false);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(owner.UserId, result.Data!.UserId);
-        _linkedIdentityRepo.Verify(
-            x => x.AddAsync(It.Is<UserLinkedIdentity>(li =>
-                li.UserId == owner.UserId && li.Subject == UserId && li.Authority == Authority)),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_VouchingForOneProvider_DoesNotAttachUnverifiedEmailsFromAnother()
-    {
-        // The assertion is about one named directory, and must not become a general relaxation:
-        // every other provider a tenant configures still has to produce a verification claim.
-        ArrangeEmailCollisionWith(OwnerOf("taken@example.com"));
-
-        var result = await BuildServiceVouchingFor("https://someone-else.example.com")
-            .EnsureUserAndGetApprovedTenants(
-                UserId, "taken@example.com", "Test User", Authority, "acme", emailVerified: false);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
-        _linkedIdentityRepo.Verify(x => x.AddAsync(It.IsAny<UserLinkedIdentity>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_RefusesToAttachAVerifiedEmailFromAnUntrustedProvider()
-    {
-        // Tenant admins configure their own tenant's providers, so a provider the deployment has not
-        // vouched for could assert any address it liked and be merged into the matching account.
-        ArrangeEmailCollisionWith(OwnerOf("taken@example.com"));
-
-        var result = await BuildService("https://someone-else.example.com").EnsureUserAndGetApprovedTenants(
-            UserId, "taken@example.com", "Test User", Authority, "acme", emailVerified: true);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
-        _linkedIdentityRepo.Verify(x => x.AddAsync(It.IsAny<UserLinkedIdentity>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_AttachesToASysAdminAccount_WhenTheProviderIsTrusted()
-    {
-        // Deliberate: the trusted provider has stated the holder owns the address, and refusing here
-        // would leave the one account that cannot be recovered by an admin permanently locked out.
-        var owner = OwnerOf("taken@example.com", isSysAdmin: true);
-        ArrangeEmailCollisionWith(owner);
-
-        var result = await BuildService(Authority).EnsureUserAndGetApprovedTenants(
-            UserId, owner.Email, "Test User", Authority, "acme", emailVerified: true);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(owner.UserId, result.Data!.UserId);
-    }
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_RefusesWhenTheSubjectWasLinkedElsewhereConcurrently()
-    {
-        var owner = OwnerOf("taken@example.com");
-        ArrangeEmailCollisionWith(owner);
-        _linkedIdentityRepo
-            .Setup(x => x.AddAsync(It.Is<UserLinkedIdentity>(li => li.UserId == owner.UserId)))
-            .ReturnsAsync(LinkIdentityOutcome.TakenByAnotherUser);
-
-        var result = await BuildService(Authority).EnsureUserAndGetApprovedTenants(
-            UserId, owner.Email, "Test User", Authority, "acme", emailVerified: true);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
-    }
-
-    [Fact]
-    public async Task EnsureUserAndGetApprovedTenants_ResolvesASubjectAnAdministratorLinkedEarlier()
-    {
-        // The link already exists, so this sign-in never reaches provisioning at all.
-        var owner = OwnerOf("taken@example.com");
-        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync((User?)null);
-        _linkedIdentityRepo
-            .Setup(x => x.GetAsync(UserId, Authority))
-            .ReturnsAsync(new UserLinkedIdentity { Subject = UserId, Authority = Authority, UserId = owner.UserId });
-        _userRepo.Setup(x => x.IsSysAdmin(owner.UserId)).ReturnsAsync(false);
-        _userRepo.Setup(x => x.GetUserTenantsAsync(owner.UserId))
-            .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "acme", Name = "Acme" } });
-
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, owner.Email, "Test User", Authority, "acme");
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(owner.UserId, result.Data!.UserId);
-        _userManagementService.Verify(
-            x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()), Times.Never);
-    }
-
     [Fact]
     public async Task EnsureUserAndGetApprovedTenants_StillHandlesALostRaceToCreateTheSameSubject()
     {
         // Same Conflict from the creator, but here the record really is this subject's, so the
         // sign-in continues rather than being mistaken for an email collision.
+        var racedUser = new User { UserId = UserId, ProviderAuthority = Authority, Email = "user@example.com" };
         _userRepo.SetupSequence(x => x.GetByUserIdAsync(UserId))
             .ReturnsAsync((User?)null)
-            .ReturnsAsync(new User { UserId = UserId, ProviderAuthority = Authority });
+            .ReturnsAsync(racedUser)
+            .ReturnsAsync(racedUser);
         _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
         _userRepo.Setup(x => x.GetUserTenantsAsync(UserId))
             .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "acme", Name = "Acme" } });
@@ -493,6 +283,7 @@ public class UserTenantServiceApprovedTenantsTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal("acme", Assert.Single(result.Data!.Tenants).TenantId);
+        Assert.Equal("user@example.com", result.Data.Email);
     }
 
     [Fact]
@@ -547,9 +338,11 @@ public class UserTenantServiceApprovedTenantsTests
     [Fact]
     public async Task EnsureUserAndGetApprovedTenants_ToleratesAConcurrentProvisioningConflict()
     {
+        var racedUser = new User { UserId = UserId, ProviderAuthority = Authority };
         _userRepo.SetupSequence(x => x.GetByUserIdAsync(UserId))
             .ReturnsAsync((User?)null)
-            .ReturnsAsync(new User { UserId = UserId, ProviderAuthority = Authority });
+            .ReturnsAsync(racedUser)
+            .ReturnsAsync(racedUser);
         _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
         _userRepo.Setup(x => x.GetUserTenantsAsync(UserId))
             .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "tenant-a", Name = "Tenant A" } });

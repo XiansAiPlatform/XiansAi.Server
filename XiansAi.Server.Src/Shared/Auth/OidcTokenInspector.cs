@@ -45,6 +45,7 @@ public static class OidcTokenInspector
         "email",
         ClaimTypes.Email,
         "emails",
+        "emailAddress",
         "preferred_username",
         "upn",
         "name",
@@ -145,14 +146,15 @@ public static class OidcTokenInspector
     /// The address to record for display and contact, which is a looser question than who the caller
     /// is — see <see cref="IsEmailVerified"/> for that.
     ///
-    /// <c>emails</c> is Azure AD B2C's spelling. It issues no <c>email</c>, <c>upn</c> or
-    /// <c>preferred_username</c>, so without it a B2C sign-in produces a user record with no address
-    /// at all — which cannot be matched to an existing account and so silently becomes a second one.
-    /// The claim is a JSON array; the parsed token exposes each entry separately and the first is
-    /// taken, matching B2C's own treatment of it as the sign-in address.
+    /// <c>emails</c> is Azure AD B2C's array spelling. Some B2C user flows (including custom
+    /// policies) instead issue a single <c>emailAddress</c> string — without that spelling a B2C
+    /// sign-in produces a user record with no address at all, which cannot be matched to an existing
+    /// account and so silently becomes a second one.
+    /// The <c>emails</c> claim is a JSON array; the parsed token exposes each entry separately and the
+    /// first is taken, matching B2C's own treatment of it as the sign-in address.
     /// </summary>
     public static string? GetEmail(JsonWebToken jwt) =>
-        FirstPresent(jwt, ["email", ClaimTypes.Email, "emails", "preferred_username", "upn"]).Value;
+        FirstPresent(jwt, ["email", ClaimTypes.Email, "emails", "emailAddress", "preferred_username", "upn"]).Value;
 
     public static string? GetName(JsonWebToken jwt) =>
         FirstPresent(jwt, ["name", ClaimTypes.Name, "preferred_username"]).Value;
@@ -167,9 +169,7 @@ public static class OidcTokenInspector
     /// editable by the user at many providers, and to B2C's <c>emails</c>, which carries no
     /// verification signal — a B2C address may come from a social account the directory never
     /// checked. Only a genuine <c>email</c> claim backed by one of the verification claims below
-    /// counts here, so a B2C sign-in is never verified on the token's own evidence; an operator who
-    /// knows how their directory admits addresses may still vouch for it in configuration, via
-    /// <see cref="IdentityAutoLinkPolicy.VouchesForUnverifiedEmail"/>.
+    /// counts here, so a B2C sign-in is never verified on the token's own evidence.
     ///
     /// <c>xms_edov</c> is accepted alongside the standard <c>email_verified</c> because Entra ID does
     /// not issue the latter — it publishes <c>xms_edov</c> to say the email's domain was verified by

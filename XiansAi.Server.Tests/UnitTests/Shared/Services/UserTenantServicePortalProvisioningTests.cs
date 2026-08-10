@@ -34,17 +34,13 @@ public class UserTenantServicePortalProvisioningTests
 
         return new UserTenantService(
             _userRepo.Object,
-            new Mock<IUserLinkedIdentityRepository>().Object,
             NullLogger<UserTenantService>.Instance,
             _tenantContext.Object,
             new Mock<IAuthMgtConnect>().Object,
             new ConfigurationBuilder().Build(),
             _userManagementService.Object,
             new Mock<ITenantRepository>().Object,
-            _jwtExtractor.Object,
-            new IdentityAutoLinkPolicy(
-                new ConfigurationBuilder().Build(),
-                NullLogger<IdentityAutoLinkPolicy>.Instance));
+            _jwtExtractor.Object);
     }
 
     private void ArrangeFirstSignIn(string email)
