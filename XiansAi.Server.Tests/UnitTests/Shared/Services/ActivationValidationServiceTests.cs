@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Data.Models;
@@ -27,7 +28,8 @@ public class ActivationValidationServiceTests
             _activationRepository.Object,
             _flowDefinitionRepository.Object,
             _cache,
-            NullLogger<ActivationValidationService>.Instance);
+            NullLogger<ActivationValidationService>.Instance,
+            new ConfigurationBuilder().Build());
     }
 
     [Fact]
