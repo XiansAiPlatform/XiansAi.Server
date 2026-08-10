@@ -151,7 +151,7 @@ public static class AdminAppIntegrationEndpoints
             string activationId,
             [FromServices] IAppIntegrationService integrationService) =>
         {
-            var result = await integrationService.DeleteBuiltinWebhooksByActivationAsync(tenantId, agentName, activationId);
+            var result = await integrationService.DeleteBuiltinWebhooksByAgentAndActivationAsync(tenantId, agentName, activationId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();

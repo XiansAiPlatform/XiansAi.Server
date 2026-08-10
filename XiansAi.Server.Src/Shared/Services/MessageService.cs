@@ -118,6 +118,7 @@ public interface IMessageService
     Task<ServiceResult<bool>> DeleteMessagesByTopicAsync(string workflowId, string participantId, string? topic);
     Task<ServiceResult<string?>> GetLastTaskIdAsync(string workflowId, string participantId, string? scope = null);
     Task<ServiceResult<TopicsResult>> GetTopicsByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize);
+    Task<ServiceResult<int>> DeleteMessagesByActivationAsync(string tenantId, string agentName, string activationName);
 }
 
 public class MessageService : IMessageService
@@ -535,9 +536,53 @@ public class MessageService : IMessageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}", 
+            _logger.LogError(ex, "Error deleting thread for workflowId {WorkflowId}, participant {ParticipantId}",
                 LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the thread");
+        }
+    }
+
+    public async Task<ServiceResult<int>> DeleteMessagesByActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+        }
+
+        return await DeleteMessagesAsync(() => _conversationRepository.GetByTenantAgentAndActivationAsync(tenantId, agentName, activationName));
+    }
+
+    private async Task<ServiceResult<int>> DeleteMessagesAsync(Func<Task<List<ConversationThread>>> fetchCandidates)
+    {
+        try
+        {
+            var threads = await fetchCandidates();
+            var deletedCount = 0;
+            foreach (var thread in threads)
+            {
+                var deleted = await _conversationRepository.DeleteThreadAsync(thread.Id, thread.TenantId);
+                if (deleted)
+                {
+                    deletedCount++;
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Failed to delete thread {ThreadId} for agent {AgentName}",
+                        LogSanitizer.Sanitize(thread.Id), LogSanitizer.Sanitize(thread.Agent));
+                }
+            }
+
+            _logger.LogInformation(
+                "Deleted {DeletedCount} of {TotalCount} thread(s)",
+                deletedCount, threads.Count);
+
+            return ServiceResult<int>.Success(deletedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting threads.");
+            return ServiceResult<int>.InternalServerError("An error occurred while deleting threads");
         }
     }
 

@@ -83,10 +83,22 @@ public interface IAppIntegrationService
     Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId);
 
     /// <summary>
-    /// Delete all builtin webhook integrations for a given agent activation
+    /// Delete all builtin webhook integrations for a specific agent activation
     /// (revokes each associated API key + deletes each integration).
     /// </summary>
-    Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationAsync(string tenantId, string agentName, string activationName);
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName);
+
+    /// <summary>
+    /// Delete all builtin webhook integrations for an agent, across every activation
+    /// (revokes each associated API key + deletes each integration).
+    /// </summary>
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName);
+
+    /// <summary>
+    /// Delete all builtin webhook integrations matching an activation name, across every agent
+    /// (revokes each associated API key + deletes each integration).
+    /// </summary>
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName);
 }
 
 /// <summary>
@@ -715,33 +727,47 @@ public class AppIntegrationService : IAppIntegrationService
 
         return await DeleteIntegrationAsync(integrationId, tenantId);
     }
-    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationAsync(string tenantId, string agentName, string activationName)
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+        }
+
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentActivationAsync(tenantId, agentName, activationName));
+    }
+
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId and AgentName are required");
+        }
+
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentAsync(tenantId, agentName));
+    }
+
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId and ActivationName are required");
+        }
+
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByActivationAsync(tenantId, activationName));
+    }
+
+
+    private async Task<ServiceResult<int>> DeleteBuiltinWebhooksAsync(Func<Task<List<AppIntegration>>> fetchCandidates)
     {
         try
         {
-            List<AppIntegration> toDelete;
-
-            if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(agentName) && !string.IsNullOrEmpty(activationName))
-            {
-                toDelete = await _repository.GetByAgentActivationAsync(tenantId, agentName, activationName);
-            } else if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(agentName))
-            {
-                toDelete = await _repository.GetByActivationAsync(tenantId, agentName);
-            } else if (!string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(activationName))
-            {
-                toDelete = await _repository.GetByAgentAsync(agentName);
-            }
-            else
-            {
-                return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
-            }
-
-
+            var toDelete = await fetchCandidates();
             var deletedCount = 0;
 
             foreach (var webhook in toDelete)
             {
-                var deleteResult = await DeleteBuiltinWebhookAsync(webhook.Id, tenantId);
+                var deleteResult = await DeleteBuiltinWebhookAsync(webhook.Id, webhook.TenantId);
                 if (deleteResult.IsSuccess)
                 {
                     deletedCount++;
@@ -750,7 +776,7 @@ public class AppIntegrationService : IAppIntegrationService
                 {
                     _logger.LogWarning(
                         "Failed to delete webhook {IntegrationId} for agent {AgentName}, activation {ActivationName}: {Error}",
-                        LogSanitizer.Sanitize(webhook.Id), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName), LogSanitizer.Sanitize(deleteResult.ErrorMessage));
+                        LogSanitizer.Sanitize(webhook.Id), LogSanitizer.Sanitize(webhook.AgentName ?? "any"), LogSanitizer.Sanitize(webhook.ActivationName ?? "any"), LogSanitizer.Sanitize(deleteResult.ErrorMessage));
                 }
             }
 
@@ -758,8 +784,7 @@ public class AppIntegrationService : IAppIntegrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting webhooks for tenant {TenantId}, agent {AgentName}, activation {ActivationName}",
-                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+            _logger.LogError(ex, "Error deleting webhooks.");
             return ServiceResult<int>.InternalServerError("An error occurred while deleting webhooks");
         }
     }

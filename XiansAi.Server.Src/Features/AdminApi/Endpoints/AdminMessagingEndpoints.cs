@@ -666,6 +666,27 @@ public static class AdminMessagingEndpoints
         })
         .WithName("DeleteMessagesByTopicForAdminApi")
         ;
+
+        // Delete all messages (across every participant) for a given agent activation.
+        // Note: "activationId" here is the activation's name (matching the workflow id's
+        // suffix), not the AgentActivation record's id.
+        adminMessagingGroup.MapDelete("/agents/{agentName}/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IMessageService messageService) =>
+        {
+            var result = await messageService.DeleteMessagesByActivationAsync(tenantId, agentName, activationId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = $"Deleted {result.Data} thread(s)", deletedCount = result.Data });
+        })
+        .WithName("DeleteMessagesByActivationForAdminApi")
+
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
     }
 }
 

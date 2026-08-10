@@ -25,9 +25,9 @@ public interface IAppIntegrationRepository
     Task<List<AppIntegration>> GetByTenantAndPlatformAsync(string tenantId, string platformId);
 
     /// <summary>
-    /// Get integrations for a specific agent activation
+    /// Get integrations for a specific agent, across every activation
     /// </summary>
-    Task<List<AppIntegration>> GetByAgentAsync(string agentName);
+    Task<List<AppIntegration>> GetByAgentAsync(string tenantId, string agentName);
 
     /// <summary>
     /// Get integrations for a specific agent activation
@@ -185,12 +185,12 @@ public class AppIntegrationRepository : IAppIntegrationRepository
 
 
 
-    public async Task<List<AppIntegration>> GetByAgentAsync(string agentName)
+    public async Task<List<AppIntegration>> GetByAgentAsync(string tenantId, string agentName)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var integrations = await _integrations
-                .Find(x => x.AgentName == agentName)
+                .Find(x => x.TenantId == tenantId && x.AgentName == agentName)
                 .SortByDescending(x => x.CreatedAt)
                 .ToListAsync();
             DecryptSecretsList(integrations);
