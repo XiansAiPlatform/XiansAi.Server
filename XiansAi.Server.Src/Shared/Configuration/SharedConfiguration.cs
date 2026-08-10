@@ -220,6 +220,9 @@ public static class SharedConfiguration
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
+        // Singleton to match the IMemoryCache lifetime: it tracks per-thread eviction state that
+        // must be shared by the message service writing entries and the repository invalidating them.
+        builder.Services.AddSingleton<IIncomingOriginCache, IncomingOriginCache>();
         builder.Services.AddScoped<IMessageFileStorage, MessageFileStorage>();
         builder.Services.AddScoped<IFeedbackService, FeedbackService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
