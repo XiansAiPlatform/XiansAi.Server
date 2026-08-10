@@ -1389,7 +1389,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 // Not a valid Base64 string - this is plain text
                 _logger.LogDebug("Message {MessageId} is not encrypted (invalid Base64), treating as plain text", LogSanitizer.Sanitize(message.Id));
                 // Leave message.Text as-is
-            }
+            }   
             catch (System.Security.Cryptography.AuthenticationTagMismatchException)
             {
                 // This might be Base64 data that wasn't encrypted by our system
