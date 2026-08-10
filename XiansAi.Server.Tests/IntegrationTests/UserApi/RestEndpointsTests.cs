@@ -21,7 +21,7 @@ public class RestEndpointsTests : IntegrationTestBase
     [Fact]
     public async Task Send_WithoutApiKey_ReturnsUnauthorized()
     {
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var url = "/api/user/rest/send?workflow=test-workflow&type=Chat&participantId=user-1";
 
         var client = _factory.CreateClient();
@@ -34,7 +34,7 @@ public class RestEndpointsTests : IntegrationTestBase
     public async Task Send_WithInvalidMessageType_ReturnsBadRequest()
     {
         var apiKey = await CreateTestApiKeyAsync();
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var url = $"/api/user/rest/send?workflow=test-workflow&type=NotAType&participantId=user-1&apikey={apiKey}";
 
         var client = _factory.CreateClient();
@@ -47,7 +47,7 @@ public class RestEndpointsTests : IntegrationTestBase
     public async Task Send_WithUnregisteredWorkflowType_ReturnsBadRequest()
     {
         var apiKey = await CreateTestApiKeyAsync();
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var workflow = Uri.EscapeDataString("Unknown Agent:Supervisor Workflow");
         var url = $"/api/user/rest/send?workflow={workflow}&type=Chat&participantId=user-1&apikey={apiKey}&text=hello";
 
@@ -66,7 +66,7 @@ public class RestEndpointsTests : IntegrationTestBase
         await CreateTestFlowDefinitionAsync(agentName, "Supervisor Workflow");
 
         var apiKey = await CreateTestApiKeyAsync();
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         // Full workflow id with an activation postfix that does not exist.
         var workflow = Uri.EscapeDataString($"{TestTenantId}:{agentName}:Supervisor Workflow:missing-activation");
         var url = $"/api/user/rest/send?workflow={workflow}&type=Chat&participantId=user-1&apikey={apiKey}&text=hello";
@@ -88,7 +88,7 @@ public class RestEndpointsTests : IntegrationTestBase
         await CreateTestActivationAsync(agentName, activationName, active: false);
 
         var apiKey = await CreateTestApiKeyAsync();
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var workflow = Uri.EscapeDataString($"{TestTenantId}:{agentName}:Supervisor Workflow:{activationName}");
         var url = $"/api/user/rest/send?workflow={workflow}&type=Chat&participantId=user-1&apikey={apiKey}&text=hello";
 

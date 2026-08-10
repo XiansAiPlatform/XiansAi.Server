@@ -140,8 +140,8 @@ namespace Features.AdminApi.Auth
                 var userRoles = resolutionResult.UserRoles!;
                 var resolvedUserId = resolutionResult.ResolvedUserId ?? loggedInUser;
 
-                _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}", 
-                    resolvedUserId, UserType.UserApiKey, string.Join(", ", userRoles));
+                _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}",
+                    LogSanitizer.RedactUserId(resolvedUserId), UserType.UserApiKey, string.Join(", ", userRoles));
                 _tenantContext.LoggedInUser = resolvedUserId;
                 _tenantContext.UserType = UserType.UserApiKey;
                 _tenantContext.TenantId = finalTenantId;
@@ -149,8 +149,8 @@ namespace Features.AdminApi.Auth
                 _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
                 _tenantContext.Authorization = accessToken;
 
-                _logger.LogInformation("Successfully authorized AdminApi Endpoint Connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 
-                    LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
+                _logger.LogInformation("Successfully authorized AdminApi Endpoint Connection: User={UserId}, Tenant={TenantId}, Roles={Roles}",
+                    LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
                 context.Succeed(requirement);
             }
             catch (TenantNotFoundException)

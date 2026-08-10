@@ -87,7 +87,7 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
         {
             _logger.LogWarning(
                 "User {UserId} does not have SysAdmin or TenantAdmin role. Roles: {Roles}",
-                LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
+                LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
             return new AdminRoleTenantResolutionResult(
                 Success: false,
                 null, null,
@@ -105,20 +105,20 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
                 {
                     _logger.LogWarning(
                         "SysAdmin user {UserId} requested non-existent tenant: {TenantId}",
-                        LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(tenantIdFromRequest));
+                        LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(tenantIdFromRequest));
                     throw new TenantNotFoundException(tenantIdFromRequest);
                 }
                 finalTenantId = tenantIdFromRequest;
                 _logger.LogDebug(
                     "SysAdmin user {UserId} using provided tenantId: {TenantId}",
-                    LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
+                    LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
             }
             else
             {
                 finalTenantId = apiKey.TenantId;
                 _logger.LogDebug(
                     "SysAdmin user {UserId} using API key tenantId: {TenantId}",
-                    LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
+                    LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
             }
         }
         else
@@ -129,7 +129,7 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
                 {
                     _logger.LogWarning(
                         "TenantAdmin user {UserId} provided tenantId {ProvidedTenantId} that does not match API key tenantId {ApiKeyTenantId}",
-                        LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(tenantIdFromRequest), LogSanitizer.Sanitize(apiKey.TenantId));
+                        LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(tenantIdFromRequest), LogSanitizer.Sanitize(apiKey.TenantId));
                     return new AdminRoleTenantResolutionResult(
                         Success: false,
                         null, null,
@@ -139,14 +139,14 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
                 finalTenantId = tenantIdFromRequest;
                 _logger.LogDebug(
                     "TenantAdmin user {UserId} validated tenantId: {TenantId}",
-                    LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
+                    LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
             }
             else
             {
                 finalTenantId = apiKey.TenantId;
                 _logger.LogDebug(
                     "TenantAdmin user {UserId} using API key tenantId: {TenantId}",
-                    LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
+                    LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId));
             }
         }
 

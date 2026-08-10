@@ -57,9 +57,10 @@ public class UserApiCredentialReaderTests
         var credential = Read(request, HeaderFirst);
 
         Assert.NotNull(credential);
-        Assert.Equal("header-token", credential!.Value.AccessToken);
-        Assert.Equal(CredentialSource.AuthorizationHeader, credential.Value.Source);
-        Assert.True(credential.Value.IsFromAuthorizationHeader);
+        var presented = credential.Value;
+        Assert.Equal("header-token", presented.AccessToken);
+        Assert.Equal(CredentialSource.AuthorizationHeader, presented.Source);
+        Assert.True(presented.IsFromAuthorizationHeader);
     }
 
     [Fact]
@@ -71,9 +72,10 @@ public class UserApiCredentialReaderTests
         var credential = Read(request, QueryFirst);
 
         Assert.NotNull(credential);
-        Assert.Equal("query-key", credential!.Value.AccessToken);
-        Assert.Equal(CredentialSource.ApiKeyQueryParameter, credential.Value.Source);
-        Assert.False(credential.Value.IsFromAuthorizationHeader);
+        var presented = credential.Value;
+        Assert.Equal("query-key", presented.AccessToken);
+        Assert.Equal(CredentialSource.ApiKeyQueryParameter, presented.Source);
+        Assert.False(presented.IsFromAuthorizationHeader);
     }
 
     [Fact]
@@ -84,8 +86,9 @@ public class UserApiCredentialReaderTests
         var credential = Read(request, HeaderFirst);
 
         Assert.NotNull(credential);
-        Assert.Equal("jwt-token", credential!.Value.AccessToken);
-        Assert.Equal(CredentialSource.AccessTokenQueryParameter, credential.Value.Source);
+        var presented = credential.Value;
+        Assert.Equal("jwt-token", presented.AccessToken);
+        Assert.Equal(CredentialSource.AccessTokenQueryParameter, presented.Source);
     }
 
     [Theory]
@@ -99,6 +102,6 @@ public class UserApiCredentialReaderTests
         var credential = Read(request, HeaderFirst);
 
         Assert.NotNull(credential);
-        Assert.Equal("query-key", credential!.Value.AccessToken);
+        Assert.Equal("query-key", credential.Value.AccessToken);
     }
 }
