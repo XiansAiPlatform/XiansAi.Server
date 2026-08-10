@@ -1220,6 +1220,31 @@ Result: Deletes only the prod activation version, keeps tenant-level and other a
 - ✅ System-scoped knowledge is never deleted by this endpoint (only tenant/activation)
 - ⚠️ This operation cannot be undone
 - ✅ Returns count of deleted versions for confirmation");
+
+        // Delete all knowledge entries (every name/version) for a given agent activation.
+        // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
+        adminKnowledgeGroup.MapDelete("/agents/{agentName}/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IKnowledgeService knowledgeService) =>
+        {
+            try
+            {
+                var deletedCount = await knowledgeService.DeleteAllByAgentAndActivationForTenantAsync(tenantId, agentName, activationId);
+                return Results.Ok(new { message = $"Deleted {deletedCount} knowledge item(s)", deletedCount });
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(
+                    new { error = "Internal server error", message = ex.Message },
+                    statusCode: 500);
+            }
+        })
+        .WithName("DeleteKnowledgeByActivation")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status500InternalServerError)
+        ;
     }
 }
 

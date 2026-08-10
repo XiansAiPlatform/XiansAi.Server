@@ -120,6 +120,7 @@ public interface IKnowledgeService
     Task<List<Knowledge>> GetVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
     Task<bool> DeleteByIdForTenantAsync(string id, string tenantId);
     Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
+    Task<long> DeleteAllByAgentAndActivationForTenantAsync(string tenantId, string agentName, string activationName);
     Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false, string? description = null, bool visible = true);
     Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, string? version = null, string? description = null, bool? visible = null);
 }
@@ -709,6 +710,11 @@ public class KnowledgeService : IKnowledgeService
     public async Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null)
     {
         return await _knowledgeRepository.DeleteAllVersionsAsync<Knowledge>(name, agentName, tenantId);
+    }
+
+    public async Task<long> DeleteAllByAgentAndActivationForTenantAsync(string tenantId, string agentName, string activationName)
+    {
+        return await _knowledgeRepository.DeleteAllByAgentAndActivationAsync<Knowledge>(agentName, tenantId, activationName);
     }
 
     public async Task<Knowledge> CreateForTenantAsync(
