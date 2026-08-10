@@ -179,6 +179,42 @@ public class AuthorizedTenantResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_DoesNotPassAnUnverifiedEmail_ForAccountLinking()
+    {
+        // Email uniqueness and ParticipantId treat the address as identity. An unverified claim
+        // must not be written onto the user record or an attacker can claim a victim's address.
+        SetupApprovedTenants("tenant-a");
+        var resolver = BuildResolver();
+        var validation = OidcValidationResult.Ok(
+            CanonicalUserId, ProviderUserId, ProviderAuthority, "victim@example.com", "Test User",
+            emailVerified: false);
+
+        await resolver.ResolveAsync(validation, "tenant-a");
+
+        _userTenantService.Verify(
+            x => x.EnsureUserAndGetApprovedTenants(
+                ProviderUserId, null, "Test User", ProviderAuthority, "tenant-a"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_PassesAVerifiedEmail_ForAccountLinking()
+    {
+        SetupApprovedTenants("tenant-a");
+        var resolver = BuildResolver();
+        var validation = OidcValidationResult.Ok(
+            CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User",
+            emailVerified: true);
+
+        await resolver.ResolveAsync(validation, "tenant-a");
+
+        _userTenantService.Verify(
+            x => x.EnsureUserAndGetApprovedTenants(
+                ProviderUserId, "user@example.com", "Test User", ProviderAuthority, "tenant-a"),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ResolveAsync_DoesNotCacheFailures_SoATransientErrorDoesNotLockTheUserOut()
     {
         _userTenantService

@@ -74,9 +74,15 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
         string tenantIdFromRequest,
         CancellationToken cancellationToken = default)
     {
-        // Normalize legacy email CreatedBy values to the canonical GUID user_id.
-        var user = await _userRepository.GetByUserIdOrEmailAsync(userIdOrEmail);
-        var resolvedUserId = user?.UserId ?? userIdOrEmail;
+        // Modern keys already store the canonical user id; only legacy email CreatedBy values
+        // need a DB round-trip. This runs on every Admin API auth and authorization pass, so
+        // skipping the GUID path avoids two uncached lookups per request.
+        var resolvedUserId = userIdOrEmail;
+        if (userIdOrEmail.Contains('@'))
+        {
+            var user = await _userRepository.GetByUserEmailAsync(userIdOrEmail);
+            resolvedUserId = user?.UserId ?? userIdOrEmail;
+        }
 
         var userRoles = await _roleCacheService.GetUserRolesAsync(resolvedUserId, apiKey.TenantId);
 

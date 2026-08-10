@@ -174,8 +174,14 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         // The requested tenant is passed through so a user who is not a member of it is registered
         // as pending there and becomes visible to its admins. It does not widen what comes back:
         // the result is still only the tenants they are approved for.
+        //
+        // Email is unique and used to decide account identity (CreateNewUser, ParticipantId, email
+        // lookups). An unverified claim must not participate in that — only display/contact — or an
+        // attacker who can assert an arbitrary email at their IdP can claim a victim's address
+        // (provisioning lockout / conversation-namespace squatting). See OidcTokenInspector.IsEmailVerified.
+        var emailForLinking = validation.EmailVerified ? validation.Email : null;
         var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
-            providerUserId, validation.Email, validation.Name, providerAuthority, requestedTenantId);
+            providerUserId, emailForLinking, validation.Name, providerAuthority, requestedTenantId);
 
         if (!result.IsSuccess || result.Data == null)
         {
