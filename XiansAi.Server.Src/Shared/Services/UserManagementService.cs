@@ -18,6 +18,14 @@ public class UserDto
     public string Email { get; set; } = string.Empty;
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// OIDC authority the subject was authenticated by, pinned onto the new record. Null for
+    /// provisioning paths that do not authenticate against a specific provider, such as operator
+    /// bootstrap and admin-created users; those records are pinned on first sign-in instead.
+    /// </summary>
+    [JsonPropertyName("providerAuthority")]
+    public string? ProviderAuthority { get; set; }
 }
 
 public class EditUserDto
@@ -129,7 +137,12 @@ public interface IUserManagementService
     Task<ServiceResult<bool>> IsUserLockedOutAsync(string userId);
     Task<ServiceResult<PagedUserResult>> GetAllUsersAsync(UserFilter filter);
     Task<ServiceResult<User>> GetUserAsync(string userId);
-    Task<ServiceResult<bool>> CreateNewUser(UserDto user);
+    /// <summary>
+    /// Creates a user record. When <paramref name="allowFirstUserSysAdminBootstrap"/> is false the
+    /// new user is never promoted to SysAdmin, even on an empty deployment. Pass false from paths
+    /// that provision users implicitly rather than from a deliberate operator sign-in.
+    /// </summary>
+    Task<ServiceResult<bool>> CreateNewUser(UserDto user, bool allowFirstUserSysAdminBootstrap = true);
     Task<ServiceResult<bool>> UpdateUser(EditUserDto user);
     Task<ServiceResult<string>> InviteUserAsync(InviteUserDto invite);
     Task<ServiceResult<List<InviteDto>>> GetAllInvitationsAsync(string tenantId);
@@ -270,7 +283,7 @@ public class UserManagementService : IUserManagementService
         }
     }
 
-    public async Task<ServiceResult<bool>> CreateNewUser(UserDto userDto)
+    public async Task<ServiceResult<bool>> CreateNewUser(UserDto userDto, bool allowFirstUserSysAdminBootstrap = true)
     {
         try
         {
@@ -279,15 +292,52 @@ public class UserManagementService : IUserManagementService
             {
                 return ServiceResult<bool>.Conflict("User already exists");
             }
-            // to assign first user as SysAdmin
-            var anyUser = await _userRepository.GetAnyUserAsync();
+
+            // Email is unique across the system. Several lookups resolve a person by email and take
+            // the first match — certificate authentication and ownership transfer both accept an
+            // email in place of a user id — so a second record sharing one makes those resolve to
+            // an arbitrary record. Every deliberate creation path already refuses this; enforcing it
+            // here means an implicit path cannot quietly reopen the hole.
+            //
+            // Records with no email cannot collide and are not compared, or they would all match
+            // each other.
+            if (!string.IsNullOrWhiteSpace(userDto.Email))
+            {
+                var emailOwner = await _userRepository.GetByUserEmailAsync(userDto.Email);
+                if (emailOwner != null)
+                {
+                    _logger.LogWarning(
+                        "Refusing to create {UserId}: its email already belongs to {ExistingUserId}",
+                        LogSanitizer.RedactUserId(userDto.UserId), LogSanitizer.RedactUserId(emailOwner.UserId));
+                    return ServiceResult<bool>.Conflict("A user with this email already exists");
+                }
+            }
+            else
+            {
+                // Without an address the record cannot be matched to an existing account on a later
+                // sign-in through a different door, so it silently becomes a second identity for
+                // the same person. The creation proceeds — blank emails are not unique — but the
+                // gap is worth seeing without going looking for it.
+                _logger.LogWarning(
+                    "Provisioning {UserId} with no email from {Authority}; the record cannot be " +
+                    "matched to an existing account and may become a duplicate",
+                    LogSanitizer.RedactUserId(userDto.UserId),
+                    LogSanitizer.Sanitize(userDto.ProviderAuthority ?? "(unknown)"));
+            }
+            // The very first user record ever created becomes the global SysAdmin, which bootstraps
+            // a fresh deployment. Callers that provision users implicitly rather than from an
+            // operator sign-in opt out, so that a token holder cannot claim SysAdmin simply by
+            // being the first through the door.
+            var isFirstUserBootstrap = allowFirstUserSysAdminBootstrap
+                && (await _userRepository.GetAnyUserAsync()) == null;
 
             var newUser = new User
             {
                 UserId = userDto.UserId,
                 Email = userDto.Email,
                 Name = userDto.Name,
-                IsSysAdmin = anyUser == null,
+                ProviderAuthority = userDto.ProviderAuthority,
+                IsSysAdmin = isFirstUserBootstrap,
                 IsLockedOut = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -303,23 +353,32 @@ public class UserManagementService : IUserManagementService
                     existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                     if (existingUser != null)
                     {
-                        _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.RedactEmail(userDto.UserId));
+                        _logger.LogInformation("User {UserId} already exists, creation was redundant", LogSanitizer.RedactUserId(userDto.UserId));
                         return ServiceResult<bool>.Conflict("User already exists");
                     }
+                    // The insert was rejected and the record still is not there, so this is not a
+                    // creation race. On a deployment that has carried more than one schema version
+                    // the usual cause is a unique index no longer in mongodb-indexes.yaml — Cosmos DB
+                    // does not drop unused indexes, so an old one keeps rejecting writes forever.
+                    _logger.LogError(
+                        "Could not create user {UserId} and it is still absent afterwards. Check the " +
+                        "preceding UserRepository entry for the rejected write, and compare " +
+                        "db.users.getIndexes() against mongodb-indexes.yaml for stale unique indexes",
+                        LogSanitizer.RedactUserId(userDto.UserId));
                     return ServiceResult<bool>.InternalServerError("Failed to create new user");
                 }
-                _logger.LogInformation("New user created: {UserId}", LogSanitizer.RedactEmail(userDto.UserId));
+                _logger.LogInformation("New user created: {UserId}", LogSanitizer.RedactUserId(userDto.UserId));
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception createEx)
             {
-                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", LogSanitizer.RedactEmail(userDto.UserId));
+                _logger.LogWarning(createEx, "User creation failed for {UserId}, checking if user already exists", LogSanitizer.RedactUserId(userDto.UserId));
 
                 // Check if user was created by another process
                 existingUser = await _userRepository.GetByUserIdAsync(userDto.UserId);
                 if (existingUser != null)
                 {
-                    _logger.LogInformation("User {UserId} already exists after creation failure", LogSanitizer.RedactEmail(userDto.UserId));
+                    _logger.LogInformation("User {UserId} already exists after creation failure", LogSanitizer.RedactUserId(userDto.UserId));
                     return ServiceResult<bool>.Conflict("User already exists");
                 }
 
@@ -328,7 +387,7 @@ public class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating new user {UserId}", LogSanitizer.RedactEmail(userDto.UserId));
+            _logger.LogError(ex, "Error creating new user {UserId}", LogSanitizer.RedactUserId(userDto.UserId));
             return ServiceResult<bool>.InternalServerError("An error occurred while creating the new user");
         }
     }

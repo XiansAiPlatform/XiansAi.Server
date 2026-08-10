@@ -241,6 +241,9 @@ public class ActivationService : IActivationService
                     LogSanitizer.Sanitize(activationId), activation.WorkflowIds!.Count);
             }
 
+            // Capture the previous name so a rename can invalidate the old cache entry.
+            var previousName = activation.Name;
+
             // Update only the fields that are provided
             if (isUpdatingName)
             {
@@ -285,6 +288,13 @@ public class ActivationService : IActivationService
             }
 
             await _activationRepository.UpdateAsync(activationId, activation);
+
+            // Invalidate validation cache for the (possibly new) name, and the old name on rename.
+            _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
+            if (isUpdatingName && !string.Equals(previousName, activation.Name, StringComparison.Ordinal))
+            {
+                _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, previousName);
+            }
 
             _logger.LogInformation("Successfully updated activation {ActivationId}", LogSanitizer.Sanitize(activationId));
 
@@ -701,6 +711,8 @@ public class ActivationService : IActivationService
                 _logger.LogWarning("Failed to delete activation {ActivationId}", LogSanitizer.Sanitize(activationId));
                 return ServiceResult<bool>.InternalServerError("Failed to delete the activation");
             }
+
+            _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
             _logger.LogInformation("Successfully deleted activation {ActivationId}", LogSanitizer.Sanitize(activationId));
 

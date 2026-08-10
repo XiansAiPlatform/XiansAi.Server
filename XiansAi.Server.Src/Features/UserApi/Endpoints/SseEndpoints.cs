@@ -38,8 +38,12 @@ public static class SseEndpoints
             // Create logger from factory
             var logger = loggerFactory.CreateLogger<SseEndpointsLogger>();
 
-            // Normalize participant ID to lowercase for consistency
-            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
+            if (!ParticipantIdResolver.TryResolve(participantId, tenantContext, out var participant))
+            {
+                return ParticipantAccessDenied.ToResult("StreamMessageEvents", participantId, logger);
+            }
+
+            var resolvedParticipantId = participant.ParticipantId;
 
             // Use the SSE stream handler to manage the entire connection lifecycle
             var streamHandler = new SSEStreamHandler(

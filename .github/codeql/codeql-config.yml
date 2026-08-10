@@ -1,8 +1,9 @@
 name: "XiansAi Server CodeQL Configuration"
 
 # NOTE: The local model pack in .github/codeql-models (which declares
-# LogSanitizer.Sanitize / LogSanitizer.RedactEmail as taint barriers for
-# cs/log-forging (CWE-117) and cs/exposure-of-sensitive-information (CWE-359))
+# LogSanitizer.Sanitize / LogSanitizer.RedactEmail / LogSanitizer.RedactUserId
+# as taint barriers for cs/log-forging (CWE-117) and
+# cs/exposure-of-sensitive-information (CWE-359))
 # is NOT loaded from here.
 #
 # GitHub code scanning only honours `packs:` / `model-packs:` entries that point

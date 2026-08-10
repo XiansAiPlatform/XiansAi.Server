@@ -45,6 +45,7 @@ public class AgentDeletionService : IAgentDeletionService
     private readonly IDatabaseService _databaseService;
     private readonly IActivationRepository _activationRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IActivationValidationService _activationValidationService;
     private readonly ILogger<AgentService> _logger;
 
     private IMongoCollection<BsonDocument> LogsCollection => _databaseService.GetDatabaseAsync().Result.GetCollection<BsonDocument>("logs");
@@ -62,6 +63,7 @@ public class AgentDeletionService : IAgentDeletionService
         IDatabaseService databaseService,
         IActivationRepository activationRepository,
         IWebhookEventPublisher webhookEventPublisher,
+        IActivationValidationService activationValidationService,
         ILogger<AgentService> logger)
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -75,6 +77,7 @@ public class AgentDeletionService : IAgentDeletionService
         _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -168,6 +171,14 @@ public class AgentDeletionService : IAgentDeletionService
 
             // Delete flow definitions
             result.DeletedFlowDefinitions = (int)await _flowDefinitionRepository.DeleteByAgentAsync(agentName, tenantId);
+            if (result.DeletedFlowDefinitions > 0)
+            {
+                var cacheTenantId = tenantId ?? _tenantContext.TenantId;
+                if (!string.IsNullOrEmpty(cacheTenantId))
+                {
+                    _activationValidationService.InvalidateAgentWorkflowTypesCache(cacheTenantId, agentName);
+                }
+            }
 
             // Delete documents tied to agent id
             result.DeletedDocuments = await DeleteDocumentsByAgentAsync(agent.Id, tenantId);
