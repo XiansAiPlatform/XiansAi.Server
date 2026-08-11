@@ -50,10 +50,6 @@ public interface IFeedbackService
 {
     Task<ServiceResult<string>> SubmitFeedbackAsync(SubmitMessageFeedbackRequest request);
     Task<List<ConversationMessageDto>> BuildMessagesWithFeedbackAsync(IReadOnlyList<ConversationMessage> messages, string tenantId);
-
-    /// <summary>
-    /// Delete all feedback for a given agent activation.
-    /// </summary>
     Task<ServiceResult<int>> DeleteFeedbackByActivationAsync(string tenantId, string agentName, string activationName);
 }
 
