@@ -17,6 +17,11 @@ public interface IUserRepository
     Task<User?> GetByUserIdAsync(string userId);
     Task<User?> GetByIdAsync(string id);
     Task<User?> GetByUserEmailAsync(string email);
+    /// <summary>
+    /// Resolves a user by <see cref="User.UserId"/> first, then by email when the value looks like an email.
+    /// Used for legacy API keys whose <c>CreatedBy</c> may be either a GUID or an email address.
+    /// </summary>
+    Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail);
     Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId);
     Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
     Task<User?> GetAnyUserAsync();
@@ -27,6 +32,8 @@ public interface IUserRepository
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
     Task<bool> IsSysAdmin(string userId);
+    Task<string?> PinProviderAuthorityIfUnsetAsync(string userId, string providerAuthority);
+    Task<bool> AddPendingTenantRoleIfAbsentAsync(string userId, string tenantId);
     Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin);
     Task<bool> DeleteUser(string userId, string? tenantId = null);
     Task<List<User>> SearchUsersAsync(string query, string? tenantId = null);
@@ -286,6 +293,22 @@ public class UserRepository : IUserRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserEmail");
     }
 
+    public async Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail)
+    {
+        if (string.IsNullOrWhiteSpace(userIdOrEmail))
+            return null;
+
+        var user = await GetByUserIdAsync(userIdOrEmail);
+        if (user != null)
+            return user;
+
+        // Legacy API keys may store email in CreatedBy instead of the GUID user_id.
+        if (userIdOrEmail.Contains('@'))
+            return await GetByUserEmailAsync(userIdOrEmail);
+
+        return null;
+    }
+
     public async Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId)
     {
         var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
@@ -335,11 +358,8 @@ public class UserRepository : IUserRepository
 
     public async Task<List<string>> GetUserRolesAsync(string userId, string tenantId)
     {
-        var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
-
-        var user = await _users
-            .Find(filter)
-            .FirstOrDefaultAsync();
+        // Accept either GUID user_id or email (legacy API-key CreatedBy values).
+        var user = await GetByUserIdOrEmailAsync(userId);
 
         if (user == null)
             return new List<string>();
@@ -366,16 +386,19 @@ public class UserRepository : IUserRepository
                 await _users.InsertOneAsync(user);
                 return true;
             }
-            catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
             {
-                _logger.LogWarning(ex, "User {UserId} already exists - duplicate key error", LogSanitizer.RedactEmail(user.UserId));
+                // The server names the violated index, and it is not always user_id: a unique index
+                // left behind by an earlier schema version collides here too, and Cosmos DB never
+                // drops unused indexes. Without the detail this reads as a harmless creation race.
+                _logger.LogWarning(ex, "Could not create user {UserId} - duplicate key: {WriteError}",
+                    LogSanitizer.RedactUserId(user.UserId), LogSanitizer.Sanitize(ex.WriteError?.Message));
                 return false;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating user {UserId}", LogSanitizer.RedactEmail(user.UserId));
-                return false;
-            }
+            // Anything else is left to propagate, as every other method here does. Catching it would
+            // sit inside the retry wrapper and convert the errors it exists to handle — Cosmos DB
+            // throttling above all — into a flat "could not create", unretried and indistinguishable
+            // from a real conflict.
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateUser");
     }
 
@@ -449,6 +472,80 @@ public class UserRepository : IUserRepository
                 .FirstOrDefaultAsync();
             return user?.IsSysAdmin ?? false;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "IsSysAdmin");
+    }
+
+    /// <summary>
+    /// Pins the user to <paramref name="providerAuthority"/> if they are not pinned yet, and returns
+    /// the authority they are pinned to afterwards (null when the user does not exist).
+    ///
+    /// The set is conditional on the field still being empty so that two concurrent first sign-ins
+    /// from different providers cannot both believe they won; the loser sees the winner's value and
+    /// is rejected by the caller.
+    /// </summary>
+    public async Task<string?> PinProviderAuthorityIfUnsetAsync(string userId, string providerAuthority)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var unpinned = Builders<User>.Filter.And(
+                Builders<User>.Filter.Eq(u => u.UserId, userId),
+                Builders<User>.Filter.Or(
+                    Builders<User>.Filter.Exists(u => u.ProviderAuthority, false),
+                    Builders<User>.Filter.Eq(u => u.ProviderAuthority, null),
+                    Builders<User>.Filter.Eq(u => u.ProviderAuthority, string.Empty)));
+
+            var update = Builders<User>.Update
+                .Set(u => u.ProviderAuthority, providerAuthority)
+                .Set(u => u.UpdatedAt, DateTime.UtcNow);
+
+            var pinned = await _users.FindOneAndUpdateAsync(
+                unpinned,
+                update,
+                new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
+
+            if (pinned != null)
+            {
+                return pinned.ProviderAuthority;
+            }
+
+            // No match: either already pinned, or the user does not exist.
+            var existing = await _users.Find(u => u.UserId == userId)
+                .Project(u => new { u.ProviderAuthority })
+                .FirstOrDefaultAsync();
+
+            return existing?.ProviderAuthority;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "PinProviderAuthorityIfUnset");
+    }
+
+    /// <summary>
+    /// Records an unapproved membership of <paramref name="tenantId"/>, unless the user already has
+    /// some membership of it. Grants nothing on its own — it exists so the user shows up in the
+    /// tenant's pending list for an admin to approve or ignore.
+    ///
+    /// Conditional on the server rather than read-then-write, because concurrent requests from the
+    /// same newly provisioned user would otherwise each append their own row.
+    /// </summary>
+    /// <returns>True when this call added the membership.</returns>
+    public async Task<bool> AddPendingTenantRoleIfAbsentAsync(string userId, string tenantId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var withoutTenant = Builders<User>.Filter.And(
+                Builders<User>.Filter.Eq(u => u.UserId, userId),
+                Builders<User>.Filter.Not(
+                    Builders<User>.Filter.ElemMatch(u => u.TenantRoles, tr => tr.Tenant == tenantId)));
+
+            var update = Builders<User>.Update
+                .Push(u => u.TenantRoles, new TenantRole
+                {
+                    Tenant = tenantId,
+                    Roles = new List<string>(),
+                    IsApproved = false
+                })
+                .Set(u => u.UpdatedAt, DateTime.UtcNow);
+
+            var result = await _users.UpdateOneAsync(withoutTenant, update);
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddPendingTenantRoleIfAbsent");
     }
 
     public async Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin)

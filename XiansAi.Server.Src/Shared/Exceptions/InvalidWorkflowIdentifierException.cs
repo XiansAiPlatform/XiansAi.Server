@@ -7,9 +7,13 @@ namespace Shared.Exceptions;
 /// </summary>
 public class InvalidWorkflowIdentifierException : Exception
 {
-    public string Identifier { get; }
+    /// <summary>
+    /// The identifier the caller supplied, echoed back for diagnostics. Null when no
+    /// identifier was supplied at all, which is itself one of the rejected cases.
+    /// </summary>
+    public string? Identifier { get; }
 
-    public InvalidWorkflowIdentifierException(string identifier, string message)
+    public InvalidWorkflowIdentifierException(string? identifier, string message)
         : base(message)
     {
         Identifier = identifier;

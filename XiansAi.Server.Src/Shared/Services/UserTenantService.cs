@@ -38,11 +38,35 @@ public class CreateNewUserDto
     public List<string> TenantRoles { get; set; } = new();
 }
 
+/// <summary>
+/// Which account a validated token acts as, and what that account may act on.
+/// </summary>
+public class ResolvedUserAccess
+{
+    /// <summary>
+    /// The account the token resolves to — the provider subject that keys the users collection.
+    /// </summary>
+    public required string UserId { get; init; }
+
+    /// <summary>Enabled tenants the account is an approved member of. Empty grants nothing.</summary>
+    public required List<TenantInfoDto> Tenants { get; init; }
+
+    /// <summary>
+    /// The account's stored email, when present. Used as an alternate conversation participant id so
+    /// clients may keep naming the person by email while the account remains keyed by the provider
+    /// subject.
+    /// </summary>
+    public string? Email { get; init; }
+}
+
 public interface IUserTenantService
 {
     Task<ServiceResult<List<TenantInfoDto>>> GetCurrentUserTenants(string token);
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser();
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForUser(string userId);
+    Task<ServiceResult<List<TenantInfoDto>>> GetApprovedTenantsForUserId(string userId);
+    Task<ServiceResult<ResolvedUserAccess>> EnsureUserAndGetApprovedTenants(
+        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null);
     Task<ServiceResult<List<User>>> GetUnapprovedUsers();
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
@@ -103,8 +127,12 @@ public class UserTenantService : IUserTenantService
             var userDto = await createUserFromToken(token);
             if (userDto == null)
             {
-                _logger.LogError("Failed to create user from token {Token}", LogSanitizer.Sanitize(token));
-                return ServiceResult<List<TenantInfoDto>>.InternalServerError("Failed to create user from token");
+                // createUserFromToken returns null only for an email collision — no record exists
+                // under this user id, and creating one would detach the person from the account
+                // that already holds their address. Same wording as the UserApi path so both doors
+                // agree.
+                return ServiceResult<List<TenantInfoDto>>.Unauthorized(
+                    "This email is already registered to a different account");
             }
             _logger.LogInformation("User {UserId} created from token", LogSanitizer.Sanitize(userDto.UserId));
         }
@@ -116,11 +144,229 @@ public class UserTenantService : IUserTenantService
         return await GetTenantsForCurrentUser();
     }
 
-    public async Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser()
+    public Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForCurrentUser()
+    {
+        return GetApprovedTenantsForUserId(_tenantContext.LoggedInUser);
+    }
+
+    /// <summary>
+    /// Creates the user record if this is their first sign-in, then returns the tenants they are an
+    /// approved member of. A brand new user is approved for nothing, so this returns an empty list
+    /// and the caller refuses the request until an admin acts. Identity comes from an
+    /// already-validated token; the token is not re-parsed here.
+    ///
+    /// <paramref name="providerAuthority"/> ties the subject to the provider that authenticated it.
+    /// A subject is only unique within one issuer, so without this a provider could assert another
+    /// provider's subject and resolve that person's record.
+    ///
+    /// <paramref name="requestedTenantId"/> is the tenant the caller was trying to reach. Supplying
+    /// it registers the user as pending on that tenant, which is what makes them visible to its
+    /// admins; without it a rejected first-time user leaves no trace anyone can act on.
+    /// </summary>
+    public async Task<ServiceResult<ResolvedUserAccess>> EnsureUserAndGetApprovedTenants(
+        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return ServiceResult<ResolvedUserAccess>.Unauthorized("User not authenticated");
+
+        if (string.IsNullOrEmpty(providerAuthority))
+        {
+            _logger.LogWarning("No provider authority for user {UserId}; cannot establish which provider " +
+                "asserted this subject, so denying", LogSanitizer.RedactUserId(userId));
+            return ServiceResult<ResolvedUserAccess>.Unauthorized("Identity provider could not be determined");
+        }
+
+        try
+        {
+            var existingUser = await _userRepository.GetByUserIdAsync(userId);
+            if (existingUser == null)
+            {
+                // This path is reachable by anyone holding a token that validates against some
+                // tenant's OIDC rules, so it must not be able to claim the first-user SysAdmin
+                // bootstrap. That promotion stays reserved for the WebAPI operator sign-in flow.
+                var created = await _userManagementService.CreateNewUser(
+                    new UserDto
+                    {
+                        UserId = userId,
+                        Email = email ?? string.Empty,
+                        Name = name ?? string.Empty,
+                        ProviderAuthority = providerAuthority
+                    },
+                    allowFirstUserSysAdminBootstrap: false);
+
+                if (created.IsSuccess)
+                {
+                    _logger.LogInformation("Provisioned user {UserId} on first sign-in", LogSanitizer.RedactUserId(userId));
+                    await RegisterAsPendingMemberAsync(userId, requestedTenantId);
+                    return await GetAccessForUserId(userId);
+                }
+
+                if (created.StatusCode != StatusCode.Conflict)
+                {
+                    _logger.LogError("Failed to provision user {UserId}: {Error}",
+                        LogSanitizer.RedactUserId(userId), LogSanitizer.Sanitize(created.ErrorMessage));
+                    return ServiceResult<ResolvedUserAccess>.InternalServerError("Failed to provision user");
+                }
+
+                // Either a concurrent request created it first, in which case re-reading finds it
+                // and it is held to the same checks as any other existing record...
+                existingUser = await _userRepository.GetByUserIdAsync(userId);
+                if (existingUser == null)
+                {
+                    // ...or the conflict was on the email, which already belongs to a different
+                    // subject. The token only proves that this provider *says* this person's email
+                    // is that string; merging into the existing account would hand over its access.
+                    _logger.LogWarning(
+                        "Refusing to provision {UserId} from {Authority}: the email in this token is " +
+                        "already registered to a different account.",
+                        LogSanitizer.RedactUserId(userId), LogSanitizer.Sanitize(providerAuthority));
+                    return ServiceResult<ResolvedUserAccess>.Unauthorized(
+                        "This email is already registered to a different account");
+                }
+            }
+
+            if (!await IsSameProviderAsync(existingUser, providerAuthority))
+            {
+                return ServiceResult<ResolvedUserAccess>.Unauthorized(
+                    "This subject is registered to a different identity provider");
+            }
+
+            // Also for an existing record: a known user reaching a tenant they have never been a
+            // member of is the same situation as a brand new one, and needs the same visibility.
+            await RegisterAsPendingMemberAsync(userId, requestedTenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error provisioning user {UserId}", LogSanitizer.RedactUserId(userId));
+            return ServiceResult<ResolvedUserAccess>.InternalServerError("Error provisioning user");
+        }
+
+        return await GetAccessForUserId(userId);
+    }
+
+    /// <summary>
+    /// Pairs the account id with the tenants it is approved for.
+    /// </summary>
+    private async Task<ServiceResult<ResolvedUserAccess>> GetAccessForUserId(string userId)
+    {
+        var tenants = await GetApprovedTenantsForUserId(userId);
+        if (!tenants.IsSuccess || tenants.Data == null)
+        {
+            return ServiceResult<ResolvedUserAccess>.InternalServerError(
+                tenants.ErrorMessage ?? "Error getting tenants for user");
+        }
+
+        var user = await _userRepository.GetByUserIdAsync(userId);
+        string? email = null;
+        if (!string.IsNullOrWhiteSpace(user?.Email))
+        {
+            email = user.Email.Trim().ToLowerInvariant();
+        }
+
+        return ServiceResult<ResolvedUserAccess>.Success(
+            new ResolvedUserAccess { UserId = userId, Tenants = tenants.Data, Email = email });
+    }
+
+    /// <summary>
+    /// Registers the user as pending on the tenant they tried to reach, so that its admins can see
+    /// and approve them. Grants no access: the membership is unapproved, and the caller still
+    /// refuses this request.
+    ///
+    /// Skipped when the tenant does not exist or is disabled. The tenant id arrives from the caller,
+    /// so without that check anyone holding a valid token could append a row to their own user
+    /// record for every name they cared to try.
+    /// </summary>
+    private async Task RegisterAsPendingMemberAsync(string userId, string? requestedTenantId)
+    {
+        if (string.IsNullOrWhiteSpace(requestedTenantId))
+        {
+            return;
+        }
+
+        try
+        {
+            var tenant = await _tenantRepository.GetByTenantIdAsync(requestedTenantId);
+            if (tenant == null || !tenant.Enabled)
+            {
+                return;
+            }
+
+            // Uses the stored casing so the membership matches how the tenant is recorded elsewhere.
+            var added = await _userRepository.AddPendingTenantRoleIfAbsentAsync(userId, tenant.TenantId);
+            if (added)
+            {
+                _logger.LogInformation(
+                    "User {UserId} requested access to tenant {TenantId} and is awaiting approval",
+                    LogSanitizer.RedactUserId(userId), LogSanitizer.Sanitize(tenant.TenantId));
+            }
+        }
+        catch (Exception ex)
+        {
+            // Visibility for admins is a convenience; failing to record it must not turn an ordinary
+            // "not a member" refusal into an error.
+            _logger.LogWarning(ex, "Could not record pending membership of {TenantId} for {UserId}",
+                LogSanitizer.Sanitize(requestedTenantId), LogSanitizer.RedactUserId(userId));
+        }
+    }
+
+    /// <summary>
+    /// Whether the provider that authenticated this request is the one the stored record belongs to.
+    ///
+    /// Records that predate pinning carry no authority, so the first sign-in to reach one claims it.
+    /// Existing clients therefore keep working untouched, and the record is protected from every
+    /// later provider. A SysAdmin adopting a pin is logged as a warning rather than refused: there is
+    /// no sign-in path that pins them ahead of time, so refusing would lock them out with no way back
+    /// in, and the log is what makes an unexpected one visible.
+    /// </summary>
+    private async Task<bool> IsSameProviderAsync(User user, string providerAuthority)
+    {
+        if (!string.IsNullOrEmpty(user.ProviderAuthority))
+        {
+            if (string.Equals(user.ProviderAuthority, providerAuthority, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            _logger.LogWarning(
+                "Rejecting token for {UserId}: subject is pinned to provider {Pinned} but was asserted by {Presented}",
+                LogSanitizer.RedactUserId(user.UserId),
+                LogSanitizer.Sanitize(user.ProviderAuthority),
+                LogSanitizer.Sanitize(providerAuthority));
+            return false;
+        }
+
+        var pinned = await _userRepository.PinProviderAuthorityIfUnsetAsync(user.UserId, providerAuthority);
+        if (!string.Equals(pinned, providerAuthority, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Rejecting token for {UserId}: a concurrent sign-in pinned the subject to provider {Pinned}",
+                LogSanitizer.RedactUserId(user.UserId), LogSanitizer.Sanitize(pinned));
+            return false;
+        }
+
+        if (user.IsSysAdmin)
+        {
+            _logger.LogWarning("Pinned SysAdmin {UserId} to provider {Authority} on first use",
+                LogSanitizer.RedactUserId(user.UserId), LogSanitizer.Sanitize(providerAuthority));
+        }
+        else
+        {
+            _logger.LogInformation("Pinned user {UserId} to provider {Authority} on first use",
+                LogSanitizer.RedactUserId(user.UserId), LogSanitizer.Sanitize(providerAuthority));
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the enabled tenants the given user is an approved member of, without requiring the
+    /// caller to already have a tenant context. Authentication handlers use this to verify that a
+    /// caller-supplied tenant id actually belongs to the authenticated user.
+    /// </summary>
+    public async Task<ServiceResult<List<TenantInfoDto>>> GetApprovedTenantsForUserId(string userId)
     {
         try
         {
-            var userId = _tenantContext.LoggedInUser;
             if (string.IsNullOrEmpty(userId))
                 return ServiceResult<List<TenantInfoDto>>.Unauthorized("User not authenticated");
 
@@ -142,8 +388,8 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenants for current user");
-            return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error getting tenants for current user");
+            _logger.LogError(ex, "Error getting tenants for user {UserId}", LogSanitizer.Sanitize(userId));
+            return ServiceResult<List<TenantInfoDto>>.InternalServerError("Error getting tenants for user");
         }
     }
 
@@ -617,10 +863,13 @@ public class UserTenantService : IUserTenantService
     }
 
     /// <summary>
-    /// Creates a user from a JWT token with proper validation using the centralized JWT utility
+    /// Creates a user from a JWT token with proper validation using the centralized JWT utility.
+    /// Returns null when the email already belongs to a different account — there is no record
+    /// under this user id, so treating that conflict as success would leave the caller acting as
+    /// an identity that was never written.
     /// SECURITY: Uses centralized JWT validation with JWKS before processing claims
     /// </summary>
-    private async Task<UserDto> createUserFromToken(string token)
+    private async Task<UserDto?> createUserFromToken(string token)
     {
         // Validate and extract user information using the centralized JWT utility
         var jwtResult = await _jwtClaimsExtractor.ValidateAndExtractClaimsAsync(token);
@@ -642,8 +891,20 @@ public class UserTenantService : IUserTenantService
 
         if (!createdUser.IsSuccess && createdUser.StatusCode == StatusCode.Conflict)
         {
-            _logger.LogInformation("User {UserId} already exists, returning existing user", LogSanitizer.Sanitize(jwtResult.UserId));
-            return newUser;
+            // "User already exists" is a genuine race — the record is there under this id.
+            // "A user with this email already exists" is not: no record exists under this user id.
+            var existingById = await _userRepository.GetByUserIdAsync(jwtResult.UserId);
+            if (existingById != null)
+            {
+                _logger.LogInformation("User {UserId} already exists, returning existing user",
+                    LogSanitizer.RedactUserId(jwtResult.UserId));
+                return newUser;
+            }
+
+            _logger.LogWarning(
+                "Refusing to provision portal user {UserId}: its email is already registered to a different account",
+                LogSanitizer.RedactUserId(jwtResult.UserId));
+            return null;
         }
 
         return createdUser.IsSuccess

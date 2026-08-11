@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Caching.Memory;
 using Shared.Data;
 using Shared.Utils;
 using Shared.Auth;
@@ -288,6 +289,9 @@ public class ConversationThreadInfo
 
 public class ConversationRepository : IConversationRepository
 {
+    private const string ThreadIdCacheKeyPrefix = "conversation:thread-id:";
+    private static readonly TimeSpan ThreadIdCacheDuration = TimeSpan.FromMinutes(10);
+
     private readonly IMongoCollection<ConversationMessage> _messagesCollection;
     private readonly IMongoCollection<ConversationThread> _threadsCollection;
     private readonly IMongoDatabase _database;
@@ -296,6 +300,8 @@ public class ConversationRepository : IConversationRepository
     private readonly ISecureEncryptionService _encryptionService;
     private readonly string _uniqueSecret;
     private readonly IBackgroundTaskService _backgroundTaskService;
+    private readonly IMemoryCache _memoryCache;
+    private readonly IIncomingOriginCache _incomingOriginCache;
 
     public ConversationRepository(
         IDatabaseService databaseService, 
@@ -303,12 +309,16 @@ public class ConversationRepository : IConversationRepository
         ITenantContext tenantContext,
         ISecureEncryptionService encryptionService,
         IConfiguration configuration,
-        IBackgroundTaskService backgroundTaskService)
+        IBackgroundTaskService backgroundTaskService,
+        IMemoryCache memoryCache,
+        IIncomingOriginCache incomingOriginCache)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         _backgroundTaskService = backgroundTaskService ?? throw new ArgumentNullException(nameof(backgroundTaskService));
+        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
+        _incomingOriginCache = incomingOriginCache ?? throw new ArgumentNullException(nameof(incomingOriginCache));
         
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _database = database;
@@ -333,7 +343,19 @@ public class ConversationRepository : IConversationRepository
 
     public async Task<string> CreateOrGetThreadIdAsync(ConversationThread thread)
     {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        var cacheKey = BuildThreadIdCacheKey(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+        if (_memoryCache.TryGetValue(cacheKey, out string? cachedThreadId) && !string.IsNullOrEmpty(cachedThreadId))
+        {
+            _logger.LogDebug(
+                "Thread id cache hit {ThreadId} for tenantId {TenantId}, workflowId {WorkflowId}, participantId {ParticipantId}",
+                LogSanitizer.Sanitize(cachedThreadId),
+                LogSanitizer.Sanitize(thread.TenantId),
+                LogSanitizer.Sanitize(thread.WorkflowId),
+                LogSanitizer.Sanitize(thread.ParticipantId));
+            return cachedThreadId;
+        }
+
+        var threadId = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var existingThread = await GetByCompositeKeyAsync(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
             if (existingThread != null)
@@ -365,6 +387,9 @@ public class ConversationRepository : IConversationRepository
                 throw;
             }
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CreateOrGetThreadId");
+
+        CacheThreadId(cacheKey, threadId);
+        return threadId;
     }
 
     public async Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null)
@@ -484,6 +509,12 @@ public class ConversationRepository : IConversationRepository
 
                     return threadDeleteResult.DeletedCount > 0;
                 });
+
+                if (result)
+                {
+                    InvalidateThreadIdCache(thread.TenantId, thread.WorkflowId, thread.ParticipantId);
+                    _incomingOriginCache.InvalidateThread(id);
+                }
 
                 return result;
             }
@@ -850,6 +881,9 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 _logger,
                 operationName: "DeleteMessagesByThreadId");
 
+            // The auto-populated reply origin is derived from these messages, so it is now stale.
+            _incomingOriginCache.InvalidateThread(threadId);
+
             _logger.LogInformation("Deleted {DeletedCount} messages for thread {ThreadId}", 
                 result.DeletedCount, LogSanitizer.Sanitize(threadId));
             
@@ -955,6 +989,9 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 _logger,
                 operationName: "DeleteMessagesByWorkflowParticipantAndScope");
 
+            // Only this scope lost its messages, so only its auto-populated reply origin is stale.
+            _incomingOriginCache.InvalidateScope(tenantId, threadId, scope);
+
             _logger.LogInformation("Deleted {DeletedCount} messages for workflowId {WorkflowId}, participant {ParticipantId}, scope {Scope}", 
                 result.DeletedCount, LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(scope ?? "null"));
             
@@ -970,6 +1007,12 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
     public async Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId)
     {
+        var cacheKey = BuildThreadIdCacheKey(tenantId, workflowId, participantId);
+        if (_memoryCache.TryGetValue(cacheKey, out string? cachedThreadId) && !string.IsNullOrEmpty(cachedThreadId))
+        {
+            return cachedThreadId;
+        }
+
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
@@ -977,6 +1020,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             {
                 throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
             }
+            CacheThreadId(cacheKey, thread.Id);
             return thread.Id;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetThreadId");
     }
@@ -1371,6 +1415,26 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         return await _threadsCollection.Find(filter).FirstOrDefaultAsync();
     }
 
+    private static string BuildThreadIdCacheKey(string tenantId, string workflowId, string participantId)
+    {
+        return $"{ThreadIdCacheKeyPrefix}{tenantId}:{workflowId}:{participantId}";
+    }
+
+    private void CacheThreadId(string cacheKey, string threadId)
+    {
+        _memoryCache.Set(
+            cacheKey,
+            threadId,
+            new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(ThreadIdCacheDuration)
+                .SetSize(1));
+    }
+
+    private void InvalidateThreadIdCache(string tenantId, string workflowId, string participantId)
+    {
+        _memoryCache.Remove(BuildThreadIdCacheKey(tenantId, workflowId, participantId));
+    }
+
     private void DecryptMessageText(ConversationMessage message)
     {
         if (!string.IsNullOrEmpty(message.Text))
@@ -1388,7 +1452,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 // Not a valid Base64 string - this is plain text
                 _logger.LogDebug("Message {MessageId} is not encrypted (invalid Base64), treating as plain text", LogSanitizer.Sanitize(message.Id));
                 // Leave message.Text as-is
-            }
+            }   
             catch (System.Security.Cryptography.AuthenticationTagMismatchException)
             {
                 // This might be Base64 data that wasn't encrypted by our system

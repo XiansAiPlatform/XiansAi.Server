@@ -18,10 +18,13 @@
 #   * log-injection      -> cs/log-forging (CWE-117)
 #   * file-content-store -> cs/exposure-of-sensitive-information (CWE-359)
 #
-# LogSanitizer.Sanitize()    strips CR/LF to prevent log injection (CWE-117).
-# LogSanitizer.RedactEmail() masks the email local-part to prevent PII
-#                            exposure (CWE-359); its output is also newline-free
-#                            so it is safe for log injection too.
+# LogSanitizer.Sanitize()     strips CR/LF to prevent log injection (CWE-117).
+# LogSanitizer.RedactEmail()  masks the email local-part to prevent PII
+#                             exposure (CWE-359); its output is also newline-free
+#                             so it is safe for log injection too.
+# LogSanitizer.RedactUserId() redacts email-shaped ids via RedactEmail, and
+#                             sanitizes opaque subjects; treat as a full barrier
+#                             for both PII exposure and log injection.
 
 extensions:
   - addsTo:
@@ -31,3 +34,5 @@ extensions:
       - ["Shared.Utils", "LogSanitizer", False, "Sanitize", "(System.String)", "", "ReturnValue", "log-injection", "manual"]
       - ["Shared.Utils", "LogSanitizer", False, "RedactEmail", "(System.String)", "", "ReturnValue", "file-content-store", "manual"]
       - ["Shared.Utils", "LogSanitizer", False, "RedactEmail", "(System.String)", "", "ReturnValue", "log-injection", "manual"]
+      - ["Shared.Utils", "LogSanitizer", False, "RedactUserId", "(System.String)", "", "ReturnValue", "file-content-store", "manual"]
+      - ["Shared.Utils", "LogSanitizer", False, "RedactUserId", "(System.String)", "", "ReturnValue", "log-injection", "manual"]

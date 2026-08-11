@@ -218,7 +218,7 @@ namespace Features.AgentApi.Endpoints
                     request.RootElement.Clone(),
                     text,
                     requestId,
-                    origin);
+                    origin: origin);
 
 
                 // Use the sync message handler to process the complex flow

@@ -56,10 +56,12 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
         var connectionString = Config.ConnectionString;
         var settings = MongoClientSettings.FromConnectionString(connectionString);
         
-        // Configure connection pool settings from configuration
+        // Configure connection pool settings from configuration.
+        // MinConnectionPoolSize is applied unconditionally: pool maintenance re-establishes pruned
+        // sockets in the background, so a request after an idle period finds a live connection
+        // instead of paying a TLS handshake to the cluster.
         settings.MaxConnectionPoolSize = Config.MaxConnectionPoolSize;
         settings.MinConnectionPoolSize = Config.MinConnectionPoolSize;
-        settings.MaxConnectionIdleTime = Config.MaxConnectionIdleTime;
         settings.WaitQueueTimeout = Config.WaitQueueTimeout;
         
         // Configure operation timeouts from configuration
@@ -70,10 +72,8 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
         // Configure heartbeat settings from configuration
         settings.HeartbeatInterval = Config.HeartbeatInterval;
         settings.HeartbeatTimeout = Config.HeartbeatTimeout;
-        
-        // Configure retry settings from configuration
-        settings.RetryWrites = Config.RetryWrites;
-        settings.RetryReads = Config.RetryReads;
+
+        ApplyClusterSpecificSettings(settings);
 
         // Register the DiagnosticsActivityEventSubscriber so the driver emits Activity spans
         // under the "MongoDB.Driver.Core.Extensions.DiagnosticSources" ActivitySource.
@@ -109,10 +109,41 @@ public class MongoDbClientService : IMongoDbClientService, IDisposable
                 }));
         }
         
-        _logger.LogDebug("Creating MongoDB client with connection pool: Max={MaxPool}, Min={MinPool}, IdleTimeout={IdleTimeout}, RetryWrites={RetryWrites}, RetryReads={RetryReads}", 
+        _logger.LogInformation("Creating MongoDB client with connection pool: Max={MaxPool}, Min={MinPool}, IdleTimeout={IdleTimeout}, RetryWrites={RetryWrites}, RetryReads={RetryReads}", 
             settings.MaxConnectionPoolSize, settings.MinConnectionPoolSize, settings.MaxConnectionIdleTime, settings.RetryWrites, settings.RetryReads);
         
         return new MongoClient(settings);
+    }
+
+    /// <summary>
+    /// Applies settings that describe how the target cluster must be used, letting the connection
+    /// string win unless the MongoDB configuration section sets the value explicitly.
+    /// Azure ships these in the Cosmos connection string (e.g. maxIdleTimeMS=120000,
+    /// retrywrites=false). Honouring maxIdleTimeMS matters for latency: Azure Load Balancer
+    /// silently drops TCP flows that idle beyond a few minutes, so pruning sockets before that
+    /// happens avoids a request stalling on a connection the network already discarded.
+    /// </summary>
+    private void ApplyClusterSpecificSettings(MongoClientSettings settings)
+    {
+        if (IsExplicitlyConfigured("MaxConnectionIdleTime"))
+        {
+            settings.MaxConnectionIdleTime = Config.MaxConnectionIdleTime;
+        }
+
+        if (IsExplicitlyConfigured("RetryWrites"))
+        {
+            settings.RetryWrites = Config.RetryWrites;
+        }
+
+        if (IsExplicitlyConfigured("RetryReads"))
+        {
+            settings.RetryReads = Config.RetryReads;
+        }
+    }
+
+    private bool IsExplicitlyConfigured(string key)
+    {
+        return _configuration.GetSection($"MongoDB:{key}").Exists();
     }
 
     private void ThrowIfDisposed()

@@ -117,6 +117,16 @@ conversation_message:
       scope: asc
       created_at: desc
     background: true
+  # perf: covers GetLastIncomingOriginAndDataAsync (tenant + thread + direction + scope + created_at)
+  # used when auto-populating Origin/Data on outbound replies and the in-memory cache misses.
+  - name: thread_incoming_origin_lookup
+    keys:
+      tenant_id: asc
+      thread_id: asc
+      direction: asc
+      scope: asc
+      created_at: desc
+    background: true
   # perf: compound index for request_id lookups used by PendingRequestService / change stream
   # to correlate outgoing messages back to their originating sync request.
   - name: outgoing_request_id_lookup

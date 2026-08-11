@@ -5,8 +5,11 @@ using Shared.Auth;
 using System.Text.Json;
 using Shared.Utils;
 using Features.Shared.Configuration;
+using Features.UserApi.Utils;
 
 namespace Features.UserApi.Endpoints;
+
+public class RestEndpointsLogger { }
 
 public static class RestEndpoints
 {
@@ -24,6 +27,7 @@ public static class RestEndpoints
             [FromBody] JsonElement? request,
             [FromServices] IMessageService messageService,
             [FromServices] ITenantContext tenantContext,
+            [FromServices] ILogger<RestEndpointsLogger> logger,
             HttpContext context,
             [FromQuery] string? requestId = null,
             [FromQuery] string? text = null) =>
@@ -38,8 +42,12 @@ public static class RestEndpoints
                 return Results.BadRequest(errorMessage);
             }
 
-            // Normalize participant ID to lowercase for consistency (especially important for emails)
-            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
+            if (!ParticipantIdResolver.TryResolve(participantId, tenantContext, out var participant))
+            {
+                return ParticipantAccessDenied.ToResult("Send", participantId, logger);
+            }
+
+            var resolvedParticipantId = participant.ParticipantId;
             var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
 
             // Create the request using the processor utility
@@ -50,7 +58,8 @@ public static class RestEndpoints
                 request,
                 text,
                 requestId,
-                tenantContext.Authorization);
+                origin: null,
+                authorization: tenantContext.Authorization);
 
             var result = await messageService.ProcessIncomingMessage(message, messageType);
             return result.ToHttpResult();
@@ -86,8 +95,12 @@ public static class RestEndpoints
                 return Results.BadRequest(errorMessage);
             }
 
-            // Normalize participant ID to lowercase for consistency (especially important for emails)
-            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
+            if (!ParticipantIdResolver.TryResolve(participantId, tenantContext, out var participant))
+            {
+                return ParticipantAccessDenied.ToResult("Converse", participantId, logger);
+            }
+
+            var resolvedParticipantId = participant.ParticipantId;
 
             // Generate unique request ID for correlation
             if (string.IsNullOrEmpty(requestId))
@@ -103,7 +116,8 @@ public static class RestEndpoints
                 request,
                 text,
                 requestId,
-                tenantContext.Authorization);
+                origin: null,
+                authorization: tenantContext.Authorization);
 
             // Use the sync message handler to process the complex flow
             var syncHandler = new SyncMessageHandler(messageService, pendingRequestService, logger);
@@ -124,14 +138,27 @@ public static class RestEndpoints
             [FromQuery] string participantId,
             [FromServices] IMessageService messageService,
             [FromServices] ITenantContext tenantContext,
+            [FromServices] ILogger<RestEndpointsLogger> logger,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50,
             [FromQuery] string? scope = null) =>
         {
-            // Normalize participant ID to lowercase for consistency
-            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
+            if (!ParticipantIdResolver.TryResolve(participantId, tenantContext, out var participant))
+            {
+                return ParticipantAccessDenied.ToResult("GetMessageHistory", participantId, logger);
+            }
+
             var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
-            var result = await messageService.GetThreadHistoryAsync(workflowId, resolvedParticipantId, page, pageSize, scope);
+            var result = await messageService.GetThreadHistoryAsync(workflowId, participant.ParticipantId, page, pageSize, scope);
+
+            // Clients that relied on the default participant id previously had their threads stored
+            // under the canonical login id, so surface those until they have history under the new id.
+            if (participant.LegacyParticipantId != null && result.IsSuccess && result.Data?.Count == 0)
+            {
+                result = await messageService.GetThreadHistoryAsync(
+                    workflowId, participant.LegacyParticipantId, page, pageSize, scope);
+            }
+
             return result.ToHttpResult();
         })
         .WithName("GetMessageHistory")
@@ -143,7 +170,8 @@ public static class RestEndpoints
             [FromQuery] string workflow,
             [FromQuery] string participantId,
             [FromServices] IMessageService messageService,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ILogger<RestEndpointsLogger> logger) =>
         {
             // Validate request parameters
             if (string.IsNullOrEmpty(workflow))
@@ -151,11 +179,22 @@ public static class RestEndpoints
                 return Results.BadRequest("Workflow is required parameter");
             }
 
-            // Normalize participant ID to lowercase for consistency (especially important for emails)
-            var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
+            if (!ParticipantIdResolver.TryResolve(participantId, tenantContext, out var participant))
+            {
+                return ParticipantAccessDenied.ToResult("DeleteThread", participantId, logger);
+            }
+
             var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
 
-            var result = await messageService.DeleteThreadAsync(workflowId, resolvedParticipantId);
+            var result = await messageService.DeleteThreadAsync(workflowId, participant.ParticipantId);
+
+            // Same transitional fallback as /history, so callers can still delete a thread created
+            // under their previous participant id.
+            if (participant.LegacyParticipantId != null && result.StatusCode == StatusCode.NotFound)
+            {
+                result = await messageService.DeleteThreadAsync(workflowId, participant.LegacyParticipantId);
+            }
+
             return result.ToHttpResult();
         })
         .WithName("DeleteThread")
