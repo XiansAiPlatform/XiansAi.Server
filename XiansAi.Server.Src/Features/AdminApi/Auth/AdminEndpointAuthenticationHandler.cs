@@ -144,10 +144,12 @@ namespace Features.AdminApi.Auth
 
                         var finalTenantId = resolutionResult.FinalTenantId!;
                         var userRoles = resolutionResult.UserRoles!;
+                        // Prefer the canonical user_id when the key owner was stored as an email.
+                        var resolvedUserId = resolutionResult.ResolvedUserId ?? apiKey.CreatedBy;
 
                         _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}", 
-                            apiKey.CreatedBy, UserType.UserApiKey, string.Join(", ", userRoles));
-                        _tenantContext.LoggedInUser = apiKey.CreatedBy;
+                            resolvedUserId, UserType.UserApiKey, string.Join(", ", userRoles));
+                        _tenantContext.LoggedInUser = resolvedUserId;
                         _tenantContext.UserType = UserType.UserApiKey;
                         _tenantContext.TenantId = finalTenantId;
                         _tenantContext.UserRoles = userRoles.ToArray();
@@ -156,7 +158,7 @@ namespace Features.AdminApi.Auth
 
                         var claims = new List<Claim>
                         {
-                            new Claim(ClaimTypes.NameIdentifier, apiKey.CreatedBy),
+                            new Claim(ClaimTypes.NameIdentifier, resolvedUserId),
                             new Claim("TenantId", finalTenantId)
                         };
 
@@ -164,7 +166,7 @@ namespace Features.AdminApi.Auth
                         var principal = new ClaimsPrincipal(identity);
                         var ticket = new AuthenticationTicket(principal, Scheme.Name);
                         _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}", 
-                            LogSanitizer.Sanitize(apiKey.CreatedBy), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
+                            LogSanitizer.Sanitize(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
 
                         return AuthenticateResult.Success(ticket);
                     }

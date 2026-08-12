@@ -134,10 +134,8 @@ public static class AdminOwnershipEndpoints
                     return Results.Forbid();
                 }
 
-                // Get new admin user to validate they exist
-                // Try by userId first, then by email
-                var newAdminUser = await userRepository.GetByUserIdAsync(request.NewAdminId) ??
-                                   await userRepository.GetByUserEmailAsync(request.NewAdminId);
+                // Get new admin user to validate they exist (by user id or email)
+                var newAdminUser = await userRepository.GetByUserIdOrEmailAsync(request.NewAdminId);
 
                 if (newAdminUser == null)
                 {

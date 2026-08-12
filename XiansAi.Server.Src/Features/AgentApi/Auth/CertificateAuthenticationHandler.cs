@@ -228,8 +228,7 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         // The certificate's OU may carry either the canonical user id or the user's email,
         // depending on which UI issued the certificate. Resolve by user id first, then
         // fall back to email so certificates issued by either path authenticate correctly.
-        var user = await _userRepository.GetByUserIdAsync(subjectUser)
-            ?? await _userRepository.GetByUserEmailAsync(subjectUser);
+        var user = await _userRepository.GetByUserIdOrEmailAsync(subjectUser);
         if (user == null)
         {
             return (false, "Invalid user ID", new CachedCertificateValidation { IsValid = false });

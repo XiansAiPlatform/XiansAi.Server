@@ -17,6 +17,12 @@ public interface IUserRepository
     Task<User?> GetByUserIdAsync(string userId);
     Task<User?> GetByIdAsync(string id);
     Task<User?> GetByUserEmailAsync(string email);
+    /// <summary>
+    /// Resolves a user by <see cref="User.UserId"/> first, then by email when the value looks like an email.
+    /// Needed because a user's identity can reach the server either as the canonical user id or as an
+    /// email address (bootstrapped users and legacy API keys store the email in place of the user id).
+    /// </summary>
+    Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail);
     Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId);
     Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
     Task<User?> GetAnyUserAsync();
@@ -286,6 +292,21 @@ public class UserRepository : IUserRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserEmail");
     }
 
+    public async Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail)
+    {
+        if (string.IsNullOrWhiteSpace(userIdOrEmail))
+            return null;
+
+        var user = await GetByUserIdAsync(userIdOrEmail);
+        if (user != null)
+            return user;
+
+        if (userIdOrEmail.Contains('@'))
+            return await GetByUserEmailAsync(userIdOrEmail);
+
+        return null;
+    }
+
     public async Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId)
     {
         var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
@@ -335,11 +356,9 @@ public class UserRepository : IUserRepository
 
     public async Task<List<string>> GetUserRolesAsync(string userId, string tenantId)
     {
-        var filter = Builders<User>.Filter.Eq(u => u.UserId, userId);
-
-        var user = await _users
-            .Find(filter)
-            .FirstOrDefaultAsync();
+        // Accept either the canonical user id or an email address, since callers such as the
+        // Admin API identify the user by whatever value was stored on their API key.
+        var user = await GetByUserIdOrEmailAsync(userId);
 
         if (user == null)
             return new List<string>();
