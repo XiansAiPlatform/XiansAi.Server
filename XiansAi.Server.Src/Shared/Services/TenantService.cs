@@ -616,10 +616,12 @@ public class TenantService : ITenantService
             var finalCreatedBy = request.CreatedBy ?? createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
             _logger.LogInformation("Final CreatedBy value determined: {FinalCreatedBy}", LogSanitizer.Sanitize(finalCreatedBy));
 
+            var newTenantId = Tenant.SanitizeAndValidateNewTenantId(request.TenantId);
+
             var tenant = new Tenant
             {
                 Id = ObjectId.GenerateNewId().ToString(),
-                TenantId = request.TenantId,
+                TenantId = newTenantId,
                 Name = request.Name,
                 Domain = request.Domain,
                 Description = request.Description,

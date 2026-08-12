@@ -240,6 +240,30 @@ public class Tenant : ModelValidatorBase<Tenant>
 
         return sanitizedTenantId;
     }
+
+    /// <summary>
+    /// Validates and sanitizes the tenant ID of a tenant that is about to be created.
+    ///
+    /// Tenant IDs are unique ignoring case, so new ones must be lowercase. The caller is rejected
+    /// rather than silently given a lowercased ID, because every tenant lookup other than creation
+    /// matches the stored ID exactly: a caller that kept using its own casing would then fail to
+    /// resolve its tenant. Tenants created before this rule keep their casing, which is why only
+    /// creation applies the stricter check.
+    /// </summary>
+    /// <exception cref="ValidationException">Thrown when the ID is invalid or not lowercase</exception>
+    public static string SanitizeAndValidateNewTenantId(string tenantId)
+    {
+        var sanitizedTenantId = SanitizeAndValidateTenantId(tenantId);
+
+        var lowercaseTenantId = sanitizedTenantId.ToLowerInvariant();
+        if (!string.Equals(sanitizedTenantId, lowercaseTenantId, StringComparison.Ordinal))
+        {
+            throw new ValidationException(
+                $"Tenant ID must be lowercase. Use '{lowercaseTenantId}' instead of '{sanitizedTenantId}'.");
+        }
+
+        return sanitizedTenantId;
+    }
 }
 
 public class Logo : ModelValidatorBase<Logo>

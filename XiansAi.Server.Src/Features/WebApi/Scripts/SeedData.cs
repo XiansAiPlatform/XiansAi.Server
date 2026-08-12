@@ -4,6 +4,7 @@ using Shared.Data;
 using Shared.Data.Models;
 using Shared.Configuration;
 using Shared.Repositories;
+using System.ComponentModel.DataAnnotations;
 
 namespace Features.WebApi.Scripts;
 
@@ -71,12 +72,25 @@ public class SeedData
             }
             
             logger.LogInformation("No tenants found, creating default tenant...");
-            
+
+            // Seeding is configuration driven, so a tenant ID that breaks the lowercase rule is
+            // reported as a misconfiguration instead of being silently normalized.
+            string defaultTenantId;
+            try
+            {
+                defaultTenantId = Tenant.SanitizeAndValidateNewTenantId(tenantSettings.TenantId);
+            }
+            catch (ValidationException ex)
+            {
+                logger.LogError(ex, "Default tenant not seeded: configured tenant ID is invalid");
+                return;
+            }
+
             // Create default tenant using configuration settings
             var defaultTenant = new Tenant
             {
                 Id = ObjectId.GenerateNewId().ToString(),
-                TenantId = tenantSettings.TenantId,
+                TenantId = defaultTenantId,
                 Name = tenantSettings.Name,
                 Domain = tenantSettings.Domain,
                 Enabled = tenantSettings.Enabled,
