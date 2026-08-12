@@ -680,14 +680,42 @@ public class TenantService : ITenantService
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
         {
-            _logger.LogWarning("Duplicate tenant ID or domain: {TenantId}", LogSanitizer.Sanitize(request.TenantId));
-            return ServiceResult<TenantCreatedResult>.BadRequest("A tenant with this ID or domain already exists.");
+            var message = DescribeDuplicateTenant(ex.WriteError?.Message, request);
+            _logger.LogWarning("Rejected duplicate tenant {TenantId}: {Message}. Write error: {WriteError}",
+                LogSanitizer.Sanitize(request.TenantId), message, LogSanitizer.Sanitize(ex.WriteError?.Message));
+            return ServiceResult<TenantCreatedResult>.BadRequest(message);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating tenant");
             return ServiceResult<TenantCreatedResult>.InternalServerError("An error occurred while creating the tenant.");
         }
+    }
+
+    /// <summary>
+    /// Explains which value collided when MongoDB rejects a tenant insert as a duplicate.
+    /// The write error names the violated index, which is the only way to tell a tenant id
+    /// clash apart from a domain clash.
+    /// </summary>
+    private static string DescribeDuplicateTenant(string? writeErrorMessage, CreateTenantRequest request)
+    {
+        var writeError = writeErrorMessage ?? string.Empty;
+
+        if (writeError.Contains("tenant_id", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"A tenant with ID '{request.TenantId}' already exists.";
+        }
+
+        if (writeError.Contains("domain", StringComparison.OrdinalIgnoreCase))
+        {
+            // A unique domain index also rejects a second tenant that leaves the domain empty,
+            // which reads as a false conflict unless the message spells it out.
+            return string.IsNullOrWhiteSpace(request.Domain)
+                ? "This database requires every tenant to have a unique domain, and another tenant already has none. Provide a domain for this tenant."
+                : $"A tenant with domain '{request.Domain}' already exists.";
+        }
+
+        return "A tenant with this ID or domain already exists.";
     }
 
     public async Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request)

@@ -8,27 +8,31 @@ namespace Features.UserApi.Utils;
 public static class MessageEventFilter
 {
     /// <summary>
-    /// Determines if a message event should be sent to a specific client
+    /// Determines if a message event should be sent to a specific client.
+    /// A client only ever receives messages for its own workflow, participant and
+    /// tenant: matching on anything broader would stream one participant's
+    /// conversation into another participant's connection.
     /// </summary>
     /// <param name="messageEvent">The message event to filter</param>
-    /// <param name="expectedGroupId">Expected group ID for the client</param>
-    /// <param name="expectedTenantGroupId">Expected tenant group ID for the client</param>
+    /// <param name="expectedGroupId">Expected participant group ID for the client</param>
     /// <param name="tenantId">Expected tenant ID</param>
     /// <param name="scope">Optional scope filter</param>
     /// <returns>True if the message should be sent to the client</returns>
     public static bool ShouldSendMessage(
-        MessageStreamEvent messageEvent, 
-        string expectedGroupId, 
-        string expectedTenantGroupId, 
-        string tenantId, 
+        MessageStreamEvent messageEvent,
+        string expectedGroupId,
+        string tenantId,
         string? scope = null)
     {
+        if (messageEvent?.Message == null)
+        {
+            return false;
+        }
+
         var message = messageEvent.Message;
 
-        // Filter messages for this specific workflow, participant, and tenant
-        var messageMatches = (messageEvent.GroupId == expectedGroupId ||
-                            messageEvent.TenantGroupId == expectedTenantGroupId) &&
-                           message.TenantId == tenantId;
+        var messageMatches = messageEvent.GroupId == expectedGroupId &&
+                             message.TenantId == tenantId;
 
         // Apply scope filter if provided
         if (!string.IsNullOrEmpty(scope))
