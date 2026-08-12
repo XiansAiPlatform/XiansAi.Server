@@ -208,35 +208,56 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task CreateTenant_WithSameTenantIdInDifferentCase_ReturnsBadRequest()
+    public async Task CreateTenant_WithUppercaseTenantId_ReturnsBadRequest()
     {
         // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId); // Required: X-Tenant-Id header must reference an existing tenant for auth validation
 
-        var newTenantId = $"new-tenant-{Guid.NewGuid()}";
-        var createRequest = new
+        var newTenantId = $"New-Tenant-{Guid.NewGuid()}";
+        var request = new
         {
             tenantId = newTenantId,
-            name = "Original Tenant",
-            domain = $"{newTenantId}.test.com"
+            name = "Uppercase Tenant",
+            domain = $"uppercase-{Guid.NewGuid()}.test.com"
         };
-        var createResponse = await PostAsJsonAsync("/api/v1/admin/tenants", createRequest);
-        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
 
-        // Act - attempt to create the same tenant id with different casing
-        var duplicateRequest = new
+        // Act
+        var response = await PostAsJsonAsync("/api/v1/admin/tenants", request);
+
+        // Assert - rejected rather than silently lowercased, and told what to send instead
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("must be lowercase", content);
+        Assert.Contains(newTenantId.ToLowerInvariant(), content);
+    }
+
+    [Fact]
+    public async Task CreateTenant_WhenAnExistingTenantDiffersOnlyByCase_ReturnsBadRequest()
+    {
+        // Arrange
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId); // Required: X-Tenant-Id header must reference an existing tenant for auth validation
+
+        // Seeded directly to represent a tenant created before new ids had to be lowercase.
+        var legacyTenantId = $"Legacy-Tenant-{Guid.NewGuid()}";
+        await CreateTestTenantAsync(legacyTenantId);
+
+        var request = new
         {
-            tenantId = newTenantId.ToUpperInvariant(),
+            tenantId = legacyTenantId.ToLowerInvariant(),
             name = "Duplicate Tenant",
             domain = $"other-{Guid.NewGuid()}.test.com"
         };
-        var duplicateResponse = await PostAsJsonAsync("/api/v1/admin/tenants", duplicateRequest);
+
+        // Act
+        var response = await PostAsJsonAsync("/api/v1/admin/tenants", request);
 
         // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, duplicateResponse.StatusCode);
-        var content = await duplicateResponse.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("already exists", content);
     }
 
