@@ -9,7 +9,8 @@ namespace Shared.Repositories;
 public interface ITenantRepository
 {
     Task<Tenant> GetByIdAsync(string id, CancellationToken cancellationToken = default);
-    Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<Tenant?> GetByTenantIdCaseInsensitiveAsync(string tenantId, CancellationToken cancellationToken = default);
     Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetByDomainListAsync(string domain, CancellationToken cancellationToken = default);
     Task<List<Tenant>> GetByTenantIdsAsync(IEnumerable<string> tenantIds, CancellationToken cancellationToken = default);
@@ -52,12 +53,55 @@ public class TenantRepository : ITenantRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetTenantById");
     }
 
-    public async Task<Tenant> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
+    public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
             return await _collection.Find(tenant => tenant.TenantId == tenantId).FirstOrDefaultAsync(cancellationToken);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantId");
+    }
+
+    /// <summary>
+    /// Finds a tenant whose tenant_id matches the given value ignoring case
+    /// (e.g. "MyTenant" matches an existing "mytenant"). Used to enforce
+    /// case-insensitive uniqueness of tenant ids at creation time.
+    ///
+    /// Matched with an anchored case-insensitive regex instead of a collation because
+    /// Azure Cosmos DB's MongoDB API rejects collation on find ("collation is not
+    /// supported in the find command yet"). The exact match is tried first so the common
+    /// case still uses the unique tenant_id index.
+    /// </summary>
+    public async Task<Tenant?> GetByTenantIdCaseInsensitiveAsync(string tenantId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            throw new ArgumentException("Tenant ID is required", nameof(tenantId));
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var exactMatch = await _collection
+                .Find(tenant => tenant.TenantId == tenantId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (exactMatch != null)
+            {
+                return exactMatch;
+            }
+
+            return await _collection
+                .Find(BuildCaseInsensitiveTenantIdFilter(tenantId))
+                .FirstOrDefaultAsync(cancellationToken);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantIdCaseInsensitive");
+    }
+
+    /// <summary>
+    /// Builds a filter that matches tenant_id in full (not as a substring) ignoring case.
+    /// The value is regex-escaped so characters such as '.' in a tenant id are matched literally.
+    /// </summary>
+    private static FilterDefinition<Tenant> BuildCaseInsensitiveTenantIdFilter(string tenantId)
+    {
+        var pattern = "^" + System.Text.RegularExpressions.Regex.Escape(tenantId) + "$";
+        return Builders<Tenant>.Filter.Regex(t => t.TenantId, new BsonRegularExpression(pattern, "i"));
     }
 
     public async Task<Tenant> GetByDomainAsync(string domain, CancellationToken cancellationToken = default)

@@ -35,6 +35,24 @@ public class User
     [JsonPropertyName("tenantRoles")]
     public List<TenantRole> TenantRoles { get; set; } = new();
 
+    /// <summary>
+    /// Normalized OIDC authority whose signing keys first authenticated this subject. Pinned
+    /// because <see cref="UserId"/> holds a provider subject, which OIDC only guarantees to be
+    /// unique within one issuer — without the pin, a second provider asserting the same subject
+    /// resolves to this same record.
+    ///
+    /// This is deliberately the authority (where the signing keys are fetched from) rather than
+    /// the token's `iss` claim: the expected issuer comes from tenant-supplied configuration and
+    /// can name any string, whereas the authority must actually serve the discovery document, so
+    /// it cannot be pointed at a provider the configurer does not control.
+    ///
+    /// Null on records created before pinning existed and on paths that do not set it; those are
+    /// pinned on first use.
+    /// </summary>
+    [BsonElement("provider_authority")]
+    [JsonPropertyName("providerAuthority")]
+    public string? ProviderAuthority { get; set; }
+
     [BsonElement("is_sys_admin")]
     [JsonPropertyName("isSysAdmin")]
     public bool IsSysAdmin { get; set; }

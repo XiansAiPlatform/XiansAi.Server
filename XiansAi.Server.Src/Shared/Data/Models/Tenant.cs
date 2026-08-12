@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data.Models.Validation;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Shared.Data.Models;
 
@@ -69,6 +70,9 @@ public class Tenant : ModelValidatorBase<Tenant>
     [BsonElement("enabled")]
     public bool Enabled { get; set; } = true;
 
+    [BsonElement("metadata")]
+    public List<TenantMetadata>? Metadata { get; set; }
+
     public override void Validate()
     {
         // Call base validation (Data Annotations)
@@ -114,6 +118,22 @@ public class Tenant : ModelValidatorBase<Tenant>
                 permission.Validate();
             }
         }
+
+        if (Metadata != null)
+        {
+            foreach (var metadata in Metadata)
+            {
+                metadata.Validate();
+            }
+
+            var duplicateKey = Metadata
+                .GroupBy(m => m.Key, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault(g => g.Count() > 1);
+            if (duplicateKey != null)
+            {
+                throw new ValidationException($"Duplicate metadata key: {duplicateKey.Key}");
+            }
+        }
     }
         /// <summary>
     /// Returns a shallow copy of this tenant. Use when returning from cache so callers cannot mutate the cached original.
@@ -135,7 +155,8 @@ public class Tenant : ModelValidatorBase<Tenant>
             CreatedAt = CreatedAt,
             CreatedBy = CreatedBy,
             UpdatedAt = UpdatedAt,
-            Enabled = Enabled
+            Enabled = Enabled,
+            Metadata = Metadata?.Select(m => m.Copy()).ToList()
         };
     }
 
@@ -157,7 +178,8 @@ public class Tenant : ModelValidatorBase<Tenant>
             Enabled = this.Enabled,
             Logo = this.Logo,
             Agents = this.Agents,
-            Permissions = this.Permissions
+            Permissions = this.Permissions,
+            Metadata = this.Metadata?.Select(m => m.SanitizeAndReturn()).ToList()
         };
 
         return sanitizedTenant;
@@ -215,6 +237,30 @@ public class Tenant : ModelValidatorBase<Tenant>
         var sanitizedTenantId = ValidationHelpers.SanitizeString(tenantId);
         if (!ValidationHelpers.IsValidPattern(sanitizedTenantId, ValidationHelpers.Patterns.SafeTenantId))
             throw new ValidationException($"Invalid Tenant ID format {tenantId}. Expected format: {ValidationHelpers.Patterns.SafeTenantId}");
+
+        return sanitizedTenantId;
+    }
+
+    /// <summary>
+    /// Validates and sanitizes the tenant ID of a tenant that is about to be created.
+    ///
+    /// Tenant IDs are unique ignoring case, so new ones must be lowercase. The caller is rejected
+    /// rather than silently given a lowercased ID, because every tenant lookup other than creation
+    /// matches the stored ID exactly: a caller that kept using its own casing would then fail to
+    /// resolve its tenant. Tenants created before this rule keep their casing, which is why only
+    /// creation applies the stricter check.
+    /// </summary>
+    /// <exception cref="ValidationException">Thrown when the ID is invalid or not lowercase</exception>
+    public static string SanitizeAndValidateNewTenantId(string tenantId)
+    {
+        var sanitizedTenantId = SanitizeAndValidateTenantId(tenantId);
+
+        var lowercaseTenantId = sanitizedTenantId.ToLowerInvariant();
+        if (!string.Equals(sanitizedTenantId, lowercaseTenantId, StringComparison.Ordinal))
+        {
+            throw new ValidationException(
+                $"Tenant ID must be lowercase. Use '{lowercaseTenantId}' instead of '{sanitizedTenantId}'.");
+        }
 
         return sanitizedTenantId;
     }
@@ -378,5 +424,71 @@ public class Flow : ModelValidatorBase<Flow>
         sanitizedFlow.Validate();
 
         return sanitizedFlow;
+    }
+}
+
+/// <summary>
+/// How a tenant metadata value is stored. Extensible: new types can be added
+/// without changing the metadata design.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum MetadataType
+{
+    PlainText,
+    Secret
+}
+
+/// <summary>
+/// A single optional key/value metadata entry on a tenant. Values of type
+/// <see cref="MetadataType.Secret"/> are encrypted at rest and decrypted before
+/// being returned to API consumers.
+/// </summary>
+public class TenantMetadata : ModelValidatorBase<TenantMetadata>
+{
+    [BsonElement("key")]
+    [Required(ErrorMessage = "Metadata key is required")]
+    [StringLength(100, MinimumLength = 1, ErrorMessage = "Metadata key must be between 1 and 100 characters")]
+    [RegularExpression(@"^[a-zA-Z0-9._-]+$", ErrorMessage = "Metadata key contains invalid characters")]
+    public required string Key { get; set; }
+
+    // No pattern/length restriction: the value may be arbitrary plaintext or ciphertext.
+    [BsonElement("value")]
+    [Required(AllowEmptyStrings = true, ErrorMessage = "Metadata value is required")]
+    public required string Value { get; set; }
+
+    [BsonElement("type")]
+    [BsonRepresentation(BsonType.String)]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MetadataType Type { get; set; } = MetadataType.PlainText;
+
+    /// <summary>
+    /// Returns a copy so callers cannot mutate the original (e.g. a cached tenant).
+    /// </summary>
+    public TenantMetadata Copy()
+    {
+        return new TenantMetadata
+        {
+            Key = Key,
+            Value = Value,
+            Type = Type
+        };
+    }
+
+    public override TenantMetadata SanitizeAndReturn()
+    {
+        return new TenantMetadata
+        {
+            Key = ValidationHelpers.SanitizeString(this.Key),
+            // Never sanitize the value: it may be ciphertext or legitimate free text.
+            Value = this.Value,
+            Type = this.Type
+        };
+    }
+
+    public override TenantMetadata SanitizeAndValidate()
+    {
+        var sanitized = this.SanitizeAndReturn();
+        sanitized.Validate();
+        return sanitized;
     }
 }

@@ -349,7 +349,7 @@ namespace Features.UserApi.Services
                     var messageSpecificSecret = $"{_uniqueSecret}";
                     var decryptedText = _encryptionService.Decrypt(message.Text, messageSpecificSecret);
                     message.Text = decryptedText;
-                    _logger.LogInformation("Successfully decrypted message {MessageId}. Decrypted text: {Text}", message.Id, decryptedText);
+                    _logger.LogTrace("Successfully decrypted message {MessageId}", message.Id);
                 }
                 catch (FormatException)
                 {

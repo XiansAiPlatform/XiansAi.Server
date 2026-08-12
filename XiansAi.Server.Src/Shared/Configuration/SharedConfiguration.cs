@@ -76,6 +76,11 @@ public static class SharedConfiguration
             options.SizeLimit = cacheSizeLimit;
         });
 
+        // Deployment-wide OIDC rules that a tenant's own configuration cannot weaken. Registered
+        // here because both the validator and the configuration write path depend on it, and it is
+        // derived from configuration and the hosting environment rather than per request.
+        builder.Services.AddSingleton<global::Shared.Auth.OidcValidationPolicy>();
+
         // Register HttpClient for token services
         builder.Services.AddHttpClient();
 
@@ -205,6 +210,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
         builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
         builder.Services.AddScoped<IWebhookDeliveryRepository, WebhookDeliveryRepository>();
+        builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
         builder.Services.AddSingleton<IAsyncResultCache, AsyncResultCache>();
         builder.Services.AddScoped<IActivationValidationService, ActivationValidationService>();
 
@@ -214,12 +220,16 @@ public static class SharedConfiguration
         // Register services
         builder.Services.AddScoped<IWorkflowSignalService, WorkflowSignalService>();
         builder.Services.AddScoped<IMessageService, MessageService>();
+        // Singleton to match the IMemoryCache lifetime: it tracks per-thread eviction state that
+        // must be shared by the message service writing entries and the repository invalidating them.
+        builder.Services.AddSingleton<IIncomingOriginCache, IncomingOriginCache>();
         builder.Services.AddScoped<IMessageFileStorage, MessageFileStorage>();
         builder.Services.AddScoped<IFeedbackService, FeedbackService>();
         builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
         builder.Services.AddScoped<IPermissionsService, PermissionsService>();
         builder.Services.AddScoped<IUsageEventService, UsageEventService>();
         builder.Services.AddScoped<IWebhookEventPublisher, WebhookEventPublisher>();
+        builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
@@ -231,6 +241,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
+        builder.Services.AddSingleton<ITenantMetadataProtector, TenantMetadataProtector>();
 
         // Configure JSON serialization options for minimal APIs
         // This ensures enums are serialized as strings instead of numeric values

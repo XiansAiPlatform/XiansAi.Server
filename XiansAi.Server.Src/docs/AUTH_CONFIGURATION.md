@@ -186,6 +186,91 @@ Auth__TokenValidationCacheEntrySize=1
 - Cache entries use normal priority to allow proper eviction under memory pressure
 - Failed validations always trigger fresh validation to prevent attacks
 
+### OIDC Validation Caching (User API)
+
+The User API validates a JWT against the calling tenant's OIDC rules on every request, which means
+verifying a signature and reading the tenant's provider configuration. Successful validations are
+cached briefly so that chatty clients and SSE reconnect loops do not repeat that work:
+
+```bash
+# How long a successful OIDC validation may be reused, in seconds (default: 60)
+# Set to 0 to validate every request from scratch.
+Auth__OidcValidationCacheDurationSeconds=60
+
+# How long to wait for a provider's discovery document, in seconds (default: 30)
+Auth__OidcDiscoveryTimeoutSeconds=30
+```
+
+**Security Notes:**
+
+- A cache entry never outlives the token itself, so caching cannot extend a token's lifetime
+- Only successful validations are cached; a rejected token is always re-validated
+- Entries are keyed on the tenant and a SHA-256 hash of the token, never the token itself
+- Tenant membership is cached separately and more briefly — see `Auth__ApprovedTenantCacheDurationSeconds`
+
+### OIDC Hardening
+
+Tenant OIDC rules are per-tenant records edited at runtime through an API. Writing them requires
+SysAdmin, but they are still records rather than reviewed deployment configuration, so a few of them
+are not taken at face value. Some settings are simply overridden; the two that would change who can
+sign in are behind switches that start off, warn about every affected tenant, and can be turned on
+once the warnings stop.
+
+```bash
+# Refuse a provider that does not declare the audiences it accepts (default: false)
+Auth__RequireOidcAudience=false
+
+# Read the subject only from claims OIDC guarantees to be stable (default: false)
+Auth__StrictSubjectClaim=false
+
+# How often a recurring misconfiguration is logged, per tenant and provider (default: 15)
+Auth__OidcWarningIntervalMinutes=15
+```
+
+**Always enforced, regardless of tenant configuration:**
+
+- Tokens are signature-verified. A provider setting `requireSignedTokens: false` is rejected when
+  saved, and ignored if an older record still has it.
+- `none` is stripped from the accepted algorithms, so an unsigned token can never be accepted.
+- In Production, a provider authority must be an `https` URL that is not loopback, private, or
+  link-local. This stops a tenant configuration from pointing the server at an internal address
+  such as the cloud instance metadata endpoint. Outside Production these are permitted, so local
+  development can run an identity provider on localhost.
+
+  This blocks addresses written directly into a configuration. It cannot stop a hostname that
+  resolves to an internal address, which needs egress control at the network layer.
+- A mutable `userIdClaim` / `userIdClaims` entry (`email`, `emails`, `preferred_username`, `upn`,
+  `name`, `nameid`, `unique_name`, and the matching claim-type URIs) is refused when newly
+  introduced or changed. The portal resolves identity from the deployment auth provider's stable
+  subject (`sub`/`oid`); nominating an address as the UserApi subject is what creates a second
+  account for the same person. An unchanged pre-existing mutable claim is grandfathered so the
+  tenant can still edit unrelated settings without moving every `ParticipantId` — those sign-ins
+  keep working and emit a throttled warning. Leave `userIdClaim` unset (or set it to `sub`/`oid`)
+  for new configurations.
+
+Two per-provider settings are consequently no longer read, though existing records keep them:
+`requireSignedTokens` (always on) and `requireHttpsMetadata` (decided by `ASPNETCORE_ENVIRONMENT`).
+
+**Rolling out the two switches:**
+
+Both default to off because turning them on changes who can authenticate. To enable either one,
+watch the logs for the warning it emits, fix each tenant it names, then set the flag.
+
+| Switch | Warning it emits | Fix before enabling |
+| --- | --- | --- |
+| `Auth__RequireOidcAudience` | Provider declares no `expectedAudience` | Set `expectedAudience` on the provider. Until then, any token that issuer signed is accepted — including one minted for an unrelated application at the same identity provider. |
+| `Auth__StrictSubjectClaim` | Identity fell back to a claim users can change | Leave `userIdClaim` unset (defaults to `sub`/`oid`), or set it to a stable claim. Note that this changes the user id of anyone currently signing in through a fallback claim, orphaning their existing record — naming the claim they already resolve to keeps them on it. Do not set it to a mutable claim; that is refused at save time for new configurations. |
+
+### Email collisions at sign-in
+
+A user record is keyed on the provider subject (`sub` / `oid`, or the configured `userIdClaim`).
+Sign-in refuses to provision a second account when the token's email already belongs to a different
+subject — merging on email alone would hand over that account's access. Leave `userIdClaim` unset
+(or set it to a stable claim) so the same person keeps the same account across sessions.
+
+Conversation threads may still be keyed by email: the User API accepts the account's stored email as
+`participantId` even when the account id is the provider subject.
+
 ### Certificate Validation Caching (Agent API)
 
 The Agent API uses certificate-based authentication and caches validation results for performance:

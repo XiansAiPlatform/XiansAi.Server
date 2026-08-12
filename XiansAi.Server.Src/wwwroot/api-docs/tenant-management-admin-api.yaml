@@ -12,6 +12,7 @@ info:
     - Tenant updates and deletions require SysAdmin role
     - Tenant queries require admin permissions (TenantAdmin or SysAdmin)
     - Tenants are created with `enabled = false` by default
+    - New tenant IDs must be lowercase; tenant IDs are unique ignoring case
   version: 1.0.0
   contact:
     name: API Support
@@ -362,8 +363,11 @@ components:
       properties:
         tenantId:
           type: string
-          description: Unique tenant identifier (business ID)
-          pattern: '^[a-zA-Z0-9._@-]+$'
+          description: |
+            Unique tenant identifier (business ID). Must be lowercase: tenant IDs are unique
+            ignoring case, and a request with uppercase characters is rejected with 400 rather
+            than being lowercased, so the ID stays exactly as the caller sends it later.
+          pattern: '^[a-z0-9._@-]+$'
           minLength: 1
           maxLength: 50
           example: "acme-corp"

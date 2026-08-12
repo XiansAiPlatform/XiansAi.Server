@@ -48,6 +48,7 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
     private readonly IMemoryCache _cache;
     private readonly ILogger<MemoryCertificateValidationCache> _logger;
     private readonly TimeSpan _cacheDuration;
+    private readonly TimeSpan _cacheMaxDuration;
     private readonly long _cacheEntrySize;
 
     public MemoryCertificateValidationCache(
@@ -58,9 +59,22 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         
-        // Default to 10 minutes if not configured
+        // Idle window: an agent that keeps calling within this window never revalidates.
         _cacheDuration = TimeSpan.FromMinutes(
             configuration.GetValue<double>("AgentApi:CertificateValidationCacheDurationMinutes", 10));
+
+        // Hard ceiling regardless of activity. Revocation and deletion evict the entry directly,
+        // so this only bounds staleness when the eviction happened on another server instance.
+        _cacheMaxDuration = TimeSpan.FromMinutes(
+            configuration.GetValue<double>("AgentApi:CertificateValidationCacheMaxDurationMinutes", 30));
+
+        if (_cacheMaxDuration < _cacheDuration)
+        {
+            _logger.LogWarning(
+                "CertificateValidationCacheMaxDurationMinutes ({MaxDuration}) is below CertificateValidationCacheDurationMinutes ({Duration}); using the idle window as the ceiling",
+                _cacheMaxDuration, _cacheDuration);
+            _cacheMaxDuration = _cacheDuration;
+        }
         
         // Default to size of 1 per entry (requires cache to be configured with size limit)
         _cacheEntrySize = configuration.GetValue<long>("AgentApi:CertificateValidationCacheEntrySize", 1);
@@ -104,10 +118,14 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
 
         var cacheKey = GetCacheKey(thumbprint);
         
+        // Sliding expiration keeps actively used agent certificates warm (a busy agent never pays
+        // the revoke check + chain build + tenant lookup), while the absolute expiration caps how
+        // long a stale entry can survive.
         // Use Normal priority to allow proper cache eviction when under memory pressure
         // Set size to enable eviction policy when cache size limit is configured
         var cacheOptions = new MemoryCacheEntryOptions()
-            .SetAbsoluteExpiration(_cacheDuration)
+            .SetSlidingExpiration(_cacheDuration)
+            .SetAbsoluteExpiration(_cacheMaxDuration)
             .SetPriority(CacheItemPriority.Normal)
             .SetSize(_cacheEntrySize);
         

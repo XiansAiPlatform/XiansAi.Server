@@ -5,6 +5,12 @@ namespace Shared.Data.Models
 {
     public class ApiKey
     {
+        /// <summary>
+        /// Prefix carried by every generated API key. Authentication handlers use it to tell an
+        /// API key apart from a JWT when both arrive through the same parameter.
+        /// </summary>
+        public const string KeyPrefix = "sk-Xnai-";
+
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; } = null!;

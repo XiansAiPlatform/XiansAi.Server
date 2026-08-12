@@ -59,6 +59,7 @@ public class TemplateService : ITemplateService
     private readonly ILogger<TemplateService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IActivationValidationService _activationValidationService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TemplateService"/> class.
@@ -69,13 +70,15 @@ public class TemplateService : ITemplateService
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     /// <param name="webhookEventPublisher">Publisher for outbound webhook events.</param>
+    /// <param name="activationValidationService">Service used to invalidate cached workflow-type lookups.</param>
     public TemplateService(
         IAgentRepository agentRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
         IKnowledgeRepository knowledgeRepository,
         ILogger<TemplateService> logger,
         ITenantContext tenantContext,
-        IWebhookEventPublisher webhookEventPublisher
+        IWebhookEventPublisher webhookEventPublisher,
+        IActivationValidationService activationValidationService
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -84,6 +87,7 @@ public class TemplateService : ITemplateService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
     }
 
     /// <summary>
@@ -205,6 +209,12 @@ public class TemplateService : ITemplateService
 
             // Delete all flow definitions associated with this agent
             var deletedDefinitionsCount = await _flowDefinitionRepository.DeleteByAgentAsync(agentName, null!);
+            // System-scoped definitions are visible to every tenant lookup; invalidate the caller's cache entry.
+            // Other tenants expire via the 5-minute TTL.
+            if (!string.IsNullOrEmpty(_tenantContext.TenantId))
+            {
+                _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, agentName);
+            }
             _logger.LogInformation("Deleted {Count} flow definitions for system-scoped agent {AgentName}", 
                 deletedDefinitionsCount, agentName);
 
@@ -348,6 +358,11 @@ public class TemplateService : ITemplateService
                     LogSanitizer.Sanitize(templateDefinition.WorkflowType), LogSanitizer.Sanitize(agentName));
             }
 
+            if (clonedDefinitionsCount > 0)
+            {
+                _activationValidationService.InvalidateAgentWorkflowTypesCache(tenantId, agentName);
+            }
+
             _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions by user {CreatedBy}", 
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
 
@@ -481,6 +496,12 @@ public class TemplateService : ITemplateService
 
                 _logger.LogDebug("Cloned flow definition {WorkflowType} for template agent {AgentName}",
                     LogSanitizer.Sanitize(sourceDefinition.WorkflowType), LogSanitizer.Sanitize(agentName));
+            }
+
+            // System-scoped definitions are included in every tenant's agent lookup; clear the caller's cache.
+            if (clonedDefinitionsCount > 0 && !string.IsNullOrEmpty(_tenantContext.TenantId))
+            {
+                _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, agentName);
             }
 
             _logger.LogInformation("Successfully promoted agent {AgentName} from tenant {TenantId} to a system template with {DefinitionsCount} flow definitions by user {CreatedBy}",

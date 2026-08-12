@@ -1,6 +1,6 @@
 using Features.AppsApi.Models;
-using Features.AppsApi.Repositories;
 using Features.AppsApi.Handlers;
+using Shared.Data.Models;
 using Features.UserApi.Services;
 using Shared.Repositories;
 using Shared.Auth;

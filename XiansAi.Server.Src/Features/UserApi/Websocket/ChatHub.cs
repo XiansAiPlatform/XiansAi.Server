@@ -63,22 +63,7 @@ namespace Features.UserApi.Websocket
         }
 
         private bool IsValidUser(string participantId, ITenantContext tenantContext) {
-
-            // if the user type is UserApiKey, then we simply trust the participantId
-            if (tenantContext.UserType == UserType.UserApiKey) {
-                return true;
-            }
-            // if the user type is UserToken, then we need to check if the participantId is the same as the logged in user
-            if (tenantContext.LoggedInUser != null) {
-                //split the userId by |
-                var userIdParts = tenantContext.LoggedInUser.Split('|');
-                if (userIdParts.Length > 1) {
-                    return userIdParts[1].Equals(participantId, StringComparison.OrdinalIgnoreCase);
-                } else if (userIdParts.Length == 1) {
-                    return userIdParts[0].Equals(participantId, StringComparison.OrdinalIgnoreCase);
-                }
-            }
-            return false;
+            return ParticipantIdResolver.CanActAs(participantId, tenantContext);
         }
 
         private ITenantContext GetScopedTenantContext()
@@ -356,6 +341,18 @@ namespace Features.UserApi.Websocket
                 // Step 1: Process inbound
                 var messageService = GetScopedMessageService();
                 var inboundResult = await messageService.ProcessIncomingMessage(request, messageTypeEnum);
+
+                if (!inboundResult.IsSuccess)
+                {
+                    _logger.LogWarning(
+                        "ProcessIncomingMessage failed with status {StatusCode} on connection {ConnectionId}: {Error}",
+                        inboundResult.StatusCode, Context.ConnectionId, inboundResult.ErrorMessage);
+                    await Clients.Caller.SendAsync(
+                        SignalRMethods.Error,
+                        inboundResult.ErrorMessage ?? "Failed to process inbound message",
+                        cancellationToken);
+                    return;
+                }
 
                 if (inboundResult.Data != null)
                 {

@@ -77,6 +77,7 @@ namespace Features.UserApi.Websocket
             _tempTenantContext.UserRoles = _tenantContext.UserRoles;
             _tempTenantContext.TenantId = _tenantContext.TenantId;
             _tempTenantContext.LoggedInUser = _tenantContext.LoggedInUser;
+            _tempTenantContext.ParticipantId = _tenantContext.ParticipantId;
             _tempTenantContext.UserType = _tenantContext.UserType;
             _tempTenantContext.AuthorizedTenantIds = _tenantContext.AuthorizedTenantIds;
 
@@ -115,6 +116,17 @@ namespace Features.UserApi.Websocket
                 var messageTypeEnum = Enum.Parse<MessageType>(messageType);
                 // Step 1: Process inbound
                 var inboundResult = await _messageService.ProcessIncomingMessage(request, messageTypeEnum);
+
+                if (!inboundResult.IsSuccess)
+                {
+                    _logger.LogWarning(
+                        "ProcessIncomingMessage failed with status {StatusCode}: {Error}",
+                        inboundResult.StatusCode, inboundResult.ErrorMessage);
+                    await Clients.Caller.SendAsync(
+                        "Error",
+                        inboundResult.ErrorMessage ?? "Failed to process inbound message");
+                    return;
+                }
 
                 if (inboundResult.Data != null)
                 {

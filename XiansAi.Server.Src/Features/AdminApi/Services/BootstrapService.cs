@@ -94,11 +94,14 @@ public class BootstrapService : IBootstrapService
 
             // 4. Ensure an enabled tenant exists
             var tenantResult = await EnsureEnabledTenantAsync(resolvedTenantId, email);
-            if (!tenantResult.IsSuccess)
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
             {
                 return ServiceResult<BootstrapResponse>.Failure(
                     tenantResult.ErrorMessage ?? "Failed to ensure tenant", tenantResult.StatusCode);
             }
+
+            // Use the stored tenant id: an existing tenant may match the requested id with different casing.
+            resolvedTenantId = tenantResult.Data.TenantId;
 
             // 5. Create the SysAdmin user (CreateNewUser sets IsSysAdmin = true because no users exist)
             var createUserResult = await _userManagementService.CreateNewUser(new UserDto
@@ -175,7 +178,9 @@ public class BootstrapService : IBootstrapService
                 return ServiceResult<Tenant>.BadRequest(ex.Message);
             }
 
-            var existingTenant = await _tenantRepository.GetByTenantIdAsync(sanitizedTenantId);
+            // Case-insensitive lookup so bootstrap reuses e.g. "default" when asked for "Default"
+            // instead of creating a duplicate tenant that differs only in case.
+            var existingTenant = await _tenantRepository.GetByTenantIdCaseInsensitiveAsync(sanitizedTenantId);
             if (existingTenant != null)
             {
                 if (!existingTenant.Enabled)
@@ -186,11 +191,15 @@ public class BootstrapService : IBootstrapService
                 return ServiceResult<Tenant>.Success(existingTenant);
             }
 
+            // Only newly created ids have to be lowercase; the lookup above still finds tenants
+            // created before that rule whatever their casing.
+            var newTenantId = Tenant.SanitizeAndValidateNewTenantId(sanitizedTenantId);
+
             var tenant = new Tenant
             {
                 Id = ObjectId.GenerateNewId().ToString(),
-                TenantId = sanitizedTenantId,
-                Name = sanitizedTenantId,
+                TenantId = newTenantId,
+                Name = newTenantId,
                 Enabled = true,
                 CreatedBy = SystemCreator,
                 CreatedAt = DateTime.UtcNow,
