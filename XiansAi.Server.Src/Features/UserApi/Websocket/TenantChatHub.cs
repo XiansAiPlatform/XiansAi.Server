@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
+using Features.UserApi.Utils;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
@@ -141,7 +142,7 @@ namespace Features.UserApi.Websocket
                 workflowId = _tenantContext.TenantId + ":" + workflow;
             }
 
-            await Groups.AddToGroupAsync(Context.ConnectionId, workflowId + TenantId);
+            await Groups.AddToGroupAsync(Context.ConnectionId, MessageGroupKey.ForTenant(workflowId, TenantId));
         }
 
         public async Task UnsubscribeFromAgent(string workflow, string TenantId)
@@ -152,7 +153,7 @@ namespace Features.UserApi.Websocket
                 workflowId = _tenantContext.TenantId + ":" + workflow;
             }
 
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, workflowId + TenantId);
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, MessageGroupKey.ForTenant(workflowId, TenantId));
         }
     }
 }

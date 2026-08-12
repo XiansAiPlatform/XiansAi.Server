@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
+using Features.UserApi.Utils;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Services;
@@ -548,7 +549,7 @@ namespace Features.UserApi.Websocket
                     workflowId = tenantContext.TenantId + ":" + workflow;
                 }
                 
-                var groupName = workflowId + participantId + tenantId;
+                var groupName = MessageGroupKey.ForParticipant(workflowId, participantId, tenantId);
                 await Groups.AddToGroupAsync(Context.ConnectionId, groupName, cancellationToken);
                 
                 _logger.LogInformation("User {UserId} subscribed to group {GroupName} on connection {ConnectionId}",
@@ -623,7 +624,7 @@ namespace Features.UserApi.Websocket
                     workflowId = tenantContext.TenantId + ":" + workflow;
                 }
 
-                var groupName = workflowId + participantId + tenantId;
+                var groupName = MessageGroupKey.ForParticipant(workflowId, participantId, tenantId);
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName, cancellationToken);
                 
                 _logger.LogInformation("User {UserId} unsubscribed from group {GroupName} on connection {ConnectionId}",

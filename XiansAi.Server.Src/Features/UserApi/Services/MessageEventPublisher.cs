@@ -9,8 +9,14 @@ namespace Features.UserApi.Services;
 public class MessageStreamEvent
 {
     public required ConversationMessage Message { get; set; }
+
+    /// <summary>
+    /// Participant-scoped routing key built by <see cref="Features.UserApi.Utils.MessageGroupKey.ForParticipant"/>.
+    /// Deliberately the only routing key carried here: a tenant-wide key would let any
+    /// subscriber on the same workflow receive every participant's messages.
+    /// </summary>
     public required string GroupId { get; set; }
-    public required string TenantGroupId { get; set; }
+
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }
 

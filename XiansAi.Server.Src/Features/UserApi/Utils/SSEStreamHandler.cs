@@ -20,7 +20,6 @@ public class SSEStreamHandler
     private readonly TimeSpan _heartbeatInterval;
 
     private readonly string _expectedGroupId;
-    private readonly string _expectedTenantGroupId;
     private Timer? _heartbeatTimer;
     private TaskCompletionSource<bool>? _completionSource;
 
@@ -46,8 +45,7 @@ public class SSEStreamHandler
         _cancellationToken = cancellationToken != default ? cancellationToken : httpContext.RequestAborted;
         _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(30);
 
-        _expectedGroupId = _workflowId + _participantId + _tenantId;
-        _expectedTenantGroupId = _workflowId + _tenantId;
+        _expectedGroupId = MessageGroupKey.ForParticipant(_workflowId, _participantId, _tenantId);
     }
 
     /// <summary>
@@ -95,7 +93,7 @@ public class SSEStreamHandler
             var message = messageEvent.Message;
 
             // Filter messages for this specific client
-            if (!MessageEventFilter.ShouldSendMessage(messageEvent, _expectedGroupId, _expectedTenantGroupId, _tenantId, _scope))
+            if (!MessageEventFilter.ShouldSendMessage(messageEvent, _expectedGroupId, _tenantId, _scope))
             {
                 return;
             }
