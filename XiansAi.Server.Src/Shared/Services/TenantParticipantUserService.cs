@@ -23,9 +23,28 @@ public class TenantParticipantUser
     /// <summary>Preferred participant role when both are present.</summary>
     [JsonPropertyName("role")]
     public required string Role { get; init; }
+    /// <summary>All roles the user holds in this tenant.</summary>
+    [JsonPropertyName("roles")]
+    public List<string> Roles { get; init; } = new();
     /// <summary>True only when the tenant role is approved and the user is not locked out.</summary>
     [JsonPropertyName("isApproved")]
     public required bool IsApproved { get; init; }
+    [JsonPropertyName("isSysAdmin")]
+    public bool IsSysAdmin { get; init; }
+    [JsonPropertyName("providerAuthority")]
+    public string? ProviderAuthority { get; init; }
+    [JsonPropertyName("isLockedOut")]
+    public bool IsLockedOut { get; init; }
+    [JsonPropertyName("lockedOutReason")]
+    public string? LockedOutReason { get; init; }
+    [JsonPropertyName("lockedOutAt")]
+    public DateTime? LockedOutAt { get; init; }
+    [JsonPropertyName("lockedOutBy")]
+    public string? LockedOutBy { get; init; }
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; init; }
+    [JsonPropertyName("updatedAt")]
+    public DateTime UpdatedAt { get; init; }
 }
 
 /// <summary>
@@ -206,14 +225,13 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             },
             tenantId);
 
-        return ServiceResult<TenantParticipantUser>.Success(new TenantParticipantUser
-        {
-            UserId = created.UserId,
-            Email = created.Email,
-            Name = created.Name,
-            Role = normalizedRole,
-            IsApproved = !created.IsLockedOut && (tenantRole?.IsApproved ?? true),
-        }, StatusCode.Created);
+        return ServiceResult<TenantParticipantUser>.Success(
+            ToTenantUserDto(
+                created,
+                normalizedRole,
+                !created.IsLockedOut && (tenantRole?.IsApproved ?? true),
+                tenantRole?.Roles ?? new List<string> { normalizedRole }),
+            StatusCode.Created);
     }
 
     private async Task<ServiceResult<TenantParticipantUser>> AddTenantToExistingUserAsync(
@@ -260,14 +278,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             },
             tenantId);
 
-        return ServiceResult<TenantParticipantUser>.Success(new TenantParticipantUser
-        {
-            UserId = user.UserId,
-            Email = user.Email,
-            Name = user.Name,
-            Role = normalizedRole,
-            IsApproved = !user.IsLockedOut,
-        }, StatusCode.Created);
+        return ServiceResult<TenantParticipantUser>.Success(MapToTenantUser(user, tenantId)!, StatusCode.Created);
     }
 
     public async Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
@@ -555,13 +566,35 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         if (tr == null)
             return null;
 
+        return ToTenantUserDto(
+            user,
+            PrimaryRole(tr.Roles),
+            !user.IsLockedOut && tr.IsApproved,
+            tr.Roles);
+    }
+
+    private static TenantParticipantUser ToTenantUserDto(
+        User user,
+        string role,
+        bool isApproved,
+        List<string> roles)
+    {
         return new TenantParticipantUser
         {
             UserId = user.UserId,
             Email = user.Email,
             Name = user.Name,
-            Role = PrimaryRole(tr.Roles),
-            IsApproved = !user.IsLockedOut && tr.IsApproved,
+            Role = role,
+            Roles = roles,
+            IsApproved = isApproved,
+            IsSysAdmin = user.IsSysAdmin,
+            ProviderAuthority = user.ProviderAuthority,
+            IsLockedOut = user.IsLockedOut,
+            LockedOutReason = user.LockedOutReason,
+            LockedOutAt = user.LockedOutAt,
+            LockedOutBy = user.LockedOutBy,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt,
         };
     }
 

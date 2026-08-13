@@ -25,6 +25,20 @@ public class GlobalUserSummary
     public required bool IsEnabled { get; init; }
     [JsonPropertyName("tenantCount")]
     public required int TenantCount { get; init; }
+    [JsonPropertyName("providerAuthority")]
+    public string? ProviderAuthority { get; init; }
+    [JsonPropertyName("isLockedOut")]
+    public bool IsLockedOut { get; init; }
+    [JsonPropertyName("lockedOutReason")]
+    public string? LockedOutReason { get; init; }
+    [JsonPropertyName("lockedOutAt")]
+    public DateTime? LockedOutAt { get; init; }
+    [JsonPropertyName("lockedOutBy")]
+    public string? LockedOutBy { get; init; }
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; init; }
+    [JsonPropertyName("updatedAt")]
+    public DateTime UpdatedAt { get; init; }
 }
 
 /// <summary>
@@ -64,6 +78,20 @@ public class GlobalUserDetail
     /// </summary>
     [JsonPropertyName("disabledReason")]
     public string? DisabledReason { get; init; }
+    [JsonPropertyName("providerAuthority")]
+    public string? ProviderAuthority { get; init; }
+    [JsonPropertyName("isLockedOut")]
+    public bool IsLockedOut { get; init; }
+    [JsonPropertyName("lockedOutReason")]
+    public string? LockedOutReason { get; init; }
+    [JsonPropertyName("lockedOutAt")]
+    public DateTime? LockedOutAt { get; init; }
+    [JsonPropertyName("lockedOutBy")]
+    public string? LockedOutBy { get; init; }
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; init; }
+    [JsonPropertyName("updatedAt")]
+    public DateTime UpdatedAt { get; init; }
     [JsonPropertyName("memberships")]
     public required List<GlobalUserMembership> Memberships { get; init; }
 }
@@ -392,6 +420,13 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             IsSysAdmin = user.IsSysAdmin,
             IsEnabled = !user.IsLockedOut,
             TenantCount = user.TenantRoles.Count,
+            ProviderAuthority = user.ProviderAuthority,
+            IsLockedOut = user.IsLockedOut,
+            LockedOutReason = user.LockedOutReason,
+            LockedOutAt = user.LockedOutAt,
+            LockedOutBy = user.LockedOutBy,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt,
         };
     }
 
@@ -418,6 +453,13 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             IsSysAdmin = user.IsSysAdmin,
             IsEnabled = !user.IsLockedOut,
             DisabledReason = user.IsLockedOut ? user.LockedOutReason : null,
+            ProviderAuthority = user.ProviderAuthority,
+            IsLockedOut = user.IsLockedOut,
+            LockedOutReason = user.LockedOutReason,
+            LockedOutAt = user.LockedOutAt,
+            LockedOutBy = user.LockedOutBy,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt,
             Memberships = memberships,
         };
     }
