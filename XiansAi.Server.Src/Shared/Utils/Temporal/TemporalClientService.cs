@@ -4,6 +4,8 @@ using Temporalio.Extensions.OpenTelemetry;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using Shared.Services;
+using Shared.Repositories;
 
 namespace Shared.Utils.Temporal;
 
@@ -11,7 +13,7 @@ public interface ITemporalClientService
 {
     Task<ITemporalClient> GetClientAsync(string tenantId);
     ITemporalClient GetClient(string tenantId);
-
+    Task RemoveClient(string tenantId);
 }
 
 public class TemporalClientService : ITemporalClientService, IDisposable, IAsyncDisposable
@@ -21,17 +23,21 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
     private readonly ConcurrentDictionary<string, CloudService> _serviceClients = new();
     private readonly ConcurrentDictionary<string, bool> _searchAttributesRegistered = new();
     private readonly ILogger<TemporalClientService> _logger;
+    private readonly IServiceScopeFactory _serviceFactory;
     private readonly IConfiguration _configuration;
     private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
     private volatile bool _disposed = false;
     private readonly object _disposeLock = new object();
 
     public TemporalClientService(
+        IServiceScopeFactory serviceFactory,
         ILogger<TemporalClientService> logger,
         IConfiguration configuration)
     {
+        _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+
     }
 
     public ITemporalClient GetClient(string tenantId)
@@ -41,10 +47,19 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         return GetClientAsync(tenantId).GetAwaiter().GetResult();
     }
 
+    public Task RemoveClient(string tenantId)
+    {
+        if (_clients.TryRemove(tenantId, out _))
+        {
+            _logger.LogInformation("Removed cached Temporal client for tenant {TenantId}", tenantId);
+        }
+        return Task.CompletedTask;
+    }
+
     public async Task<ITemporalClient> GetClientAsync(string tenantId)
     {
         ThrowIfDisposed();
-        
+
         if (_clients.TryGetValue(tenantId, out var existingClient))
         {
             return existingClient;
@@ -60,7 +75,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
                 return existingClient;
             }
 
-            var config = GetTemporalConfig(tenantId);
+            var config = await GetTemporalConfig(tenantId);
             var endpointKey = BuildEndpointKey(config);
 
             // Reuse an already-connected client only when the URL, namespace and TLS credentials all match.
@@ -73,7 +88,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
                     tenantId, config.FlowServerUrl, config.FlowServerNamespace);
                 return sharedClient;
             }
-            
+
             var options = new TemporalClientConnectOptions(new(config.FlowServerUrl))
             {
                 Namespace = config.FlowServerNamespace!,
@@ -81,8 +96,8 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
                 // No-op when no TracerProvider is configured (safe to keep always enabled).
                 Interceptors = [new TracingInterceptor()]
             };
-            
-            if (config.CertificateBase64 != null && config.PrivateKeyBase64 != null) 
+
+            if (config.CertificateBase64 != null && config.PrivateKeyBase64 != null)
             {
                 options.Tls = new TlsOptions()
                 {
@@ -90,7 +105,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
                     ClientPrivateKey = GetPrivateKey(config),
                 };
             }
-            
+
             _logger.LogInformation("Connecting to temporal server for tenant {TenantId}: {Url}, namespace: {Namespace}",
                 tenantId, config.FlowServerUrl, config.FlowServerNamespace);
 
@@ -144,10 +159,25 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         return Convert.ToHexString(hash);
     }
 
-    private TemporalConfig GetTemporalConfig(string tenantId)
+    private async Task<TemporalConfig> GetTemporalConfig(string tenantId)
     {
         if (string.IsNullOrEmpty(tenantId))
             throw new InvalidOperationException("TenantId is required");
+
+
+        using var scope = _serviceFactory.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
+        var tenantConnection = await repository.GetByTenantIdAsync(tenantId);
+        if (tenantConnection != null)
+        {
+            return new TemporalConfig
+            {
+                FlowServerUrl = tenantConnection.ServerUrl,
+                FlowServerNamespace = tenantConnection.Namespace,
+                CertificateBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
+                PrivateKeyBase64 = tenantConnection.PrivateKey == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.PrivateKey))
+            };
+        }
 
         // First try to get tenant-specific temporal config
         var temporalConfig = _configuration.GetSection($"Tenants:{tenantId}:Temporal").Get<TemporalConfig>();
@@ -221,7 +251,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
 
     private byte[]? GetCertificate(TemporalConfig config)
     {
-        if (config.CertificateBase64 == null) 
+        if (config.CertificateBase64 == null)
         {
             return null;
         }
@@ -230,7 +260,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
 
     private byte[]? GetPrivateKey(TemporalConfig config)
     {
-        if (config.PrivateKeyBase64 == null) 
+        if (config.PrivateKeyBase64 == null)
         {
             return null;
         }
@@ -265,9 +295,9 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             lock (_disposeLock)
             {
                 if (_disposed) return;
-                
+
                 _logger.LogInformation("Disposing Temporal client service synchronously");
-                
+
                 try
                 {
                     // Use a timeout to prevent hanging during shutdown
@@ -293,7 +323,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
     protected virtual async ValueTask DisposeAsyncCore()
     {
         if (_disposed) return;
-        
+
         lock (_disposeLock)
         {
             if (_disposed) return;
@@ -301,10 +331,10 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         }
 
         _logger.LogInformation("Disposing Temporal client service asynchronously");
-        
+
         var disposeTimeout = TimeSpan.FromSeconds(10);
         var cancellationTokenSource = new CancellationTokenSource(disposeTimeout);
-        
+
         try
         {
             // A single client can be cached under several tenant ids, so dispose each instance once.
@@ -329,11 +359,11 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
 
             // Wait for all disposals to complete with timeout
             await Task.WhenAll(disposeTasks).WaitAsync(cancellationTokenSource.Token);
-            
+
             _clients.Clear();
             _clientsByEndpoint.Clear();
             _serviceClients.Clear();
-            
+
             _logger.LogInformation("Temporal client service disposed successfully");
         }
         catch (OperationCanceledException)

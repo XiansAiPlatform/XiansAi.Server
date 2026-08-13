@@ -50,8 +50,13 @@ public class TenantTemporalConfigRepository : ITenantTemporalConfigRepository
         try
         {
             var doc = await _collection.Find(x => x.TenantId == tenantId && !x.IsReverted).FirstOrDefaultAsync();
+            if (doc != null)
+            {
+                doc.Certificate = doc.Certificate == null ? null : _encryption.Decrypt(doc.Certificate, _uniqueSecret);
+                doc.PrivateKey = doc.PrivateKey == null ? null : _encryption.Decrypt(doc.PrivateKey, _uniqueSecret);
+            }
 
-            return doc == null ? null : Decrypt(doc);
+            return doc;
         }
         catch (Exception ex)
         {

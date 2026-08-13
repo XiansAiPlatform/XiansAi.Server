@@ -2,6 +2,7 @@ using Google.Protobuf.WellKnownTypes;
 using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
+using Shared.Utils.Temporal;
 using Temporalio.Api.OperatorService.V1;
 using Temporalio.Api.WorkflowService.V1;
 using Temporalio.Client;
@@ -27,14 +28,14 @@ public interface ITenantTemporalConfigService
 
 public class TenantTemporalConfigService : ITenantTemporalConfigService
 {
-    private readonly ITenantTemporalConfigRepository _repository;
+    private readonly IServiceScopeFactory _serviceFactory;
     private readonly ILogger<TenantTemporalConfigService> _logger;
 
     public TenantTemporalConfigService(
-        ITenantTemporalConfigRepository repository,
+        IServiceScopeFactory serviceFactory,
         ILogger<TenantTemporalConfigService> logger)
     {
-        _repository = repository;
+        _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _logger = logger;
     }
 
@@ -45,8 +46,10 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         try
         {
+            using var scope = _serviceFactory.CreateScope();
+            var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
             // Repository only returns the active (non-deleted) row, already decrypted.
-            var doc = await _repository.GetByTenantIdAsync(tenantId);
+            var doc = await repository.GetByTenantIdAsync(tenantId);
             if (doc == null) return ServiceResult<UpsertTenantTemporalConfigRequest?>.Success(null);
 
             var config = new UpsertTenantTemporalConfigRequest
@@ -73,13 +76,15 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         try
         {
+            using var scope = _serviceFactory.CreateScope();
+            var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
             var connectivityResult = await CheckConnectivityAsync(serverUrl, @namespace, certificate, privateKey);
             if (!connectivityResult.IsSuccess)
             {
                 return connectivityResult;
             }
 
-            await _repository.UpsertAsync(tenantId, serverUrl, @namespace, certificate, privateKey, actor);
+            await repository.UpsertAsync(tenantId, serverUrl, @namespace, certificate, privateKey, actor);
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -96,9 +101,11 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         try
         {
-            // The row is kept, only flagged. See TenantTemporalConfigRepository.RevertAsync.
-            var reverted = await _repository.RevertAsync(tenantId, actor);
-
+            using var scope = _serviceFactory.CreateScope();
+            var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
+            var temporalClientService = scope.ServiceProvider.GetRequiredService<ITemporalClientService>();
+            var reverted = await repository.RevertAsync(tenantId, actor);
+            await temporalClientService.RemoveClient(tenantId);
             return reverted ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");
         }
         catch (Exception ex)
@@ -120,9 +127,12 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         TemporalClient? client = null;
         try
         {
+            using var scope = _serviceFactory.CreateScope();
+            var temporalClientService = scope.ServiceProvider.GetRequiredService<ITemporalClientService>();
             client = await ConnectWithoutNamespaceAsync(serverUrl, certificate, privateKey);
             await EnsureNamespaceExistsAsync(client, serverUrl, @namespace);
             await EnsureSearchAttributesExistAsync(client, @namespace);
+            await temporalClientService.RemoveClient(serverUrl);
             return ServiceResult<bool>.Success(true);
         }
         catch (FormatException ex)
@@ -176,7 +186,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
             });
         }
     }
-    
+
     private async Task EnsureSearchAttributesExistAsync(TemporalClient client, string @namespace)
     {
         try
