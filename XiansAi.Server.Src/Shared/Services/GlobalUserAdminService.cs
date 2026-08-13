@@ -123,6 +123,7 @@ public interface IGlobalUserAdminService
     Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email);
     Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin);
     Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId);
+    Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId);
 }
 
 public class GlobalUserAdminService : IGlobalUserAdminService
@@ -378,6 +379,80 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogError(ex, "Error setting status for user {UserId}", LogSanitizer.Sanitize(userId));
             return ServiceResult<GlobalUserDetail>.InternalServerError("An error occurred while updating the user");
         }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+                return ServiceResult<bool>.BadRequest("User id is required");
+
+            var user = await _userRepository.GetByUserIdAsync(userId);
+            if (user == null)
+                return ServiceResult<bool>.NotFound("User not found");
+
+            var selfDelete = RejectIfSelfDelete(userId, actingUserId);
+            if (selfDelete != null)
+                return selfDelete;
+
+            var lastSysAdmin = await RejectIfLastEnabledSysAdminAsync(user);
+            if (lastSysAdmin != null)
+                return lastSysAdmin;
+
+            var deleted = await _userRepository.DeleteUser(userId, tenantId: null);
+            if (!deleted)
+                return ServiceResult<bool>.InternalServerError("Failed to delete user");
+
+            await InvalidateCachesAsync(user);
+            _logger.LogInformation(
+                "Global user {UserId} deleted by {ActingUserId}",
+                LogSanitizer.Sanitize(userId),
+                LogSanitizer.Sanitize(actingUserId));
+
+            await _webhookEventPublisher.PublishAsync(
+                WebhookEventTypes.UserDeleted,
+                new { userId = user.UserId, email = user.Email, name = user.Name, actingUserId });
+
+            return ServiceResult<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting global user {UserId}", LogSanitizer.Sanitize(userId));
+            return ServiceResult<bool>.InternalServerError("An error occurred while deleting the user");
+        }
+    }
+
+    private ServiceResult<bool>? RejectIfSelfDelete(string userId, string actingUserId)
+    {
+        if (string.IsNullOrEmpty(actingUserId) ||
+            !string.Equals(actingUserId, userId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        _logger.LogWarning(
+            "User {UserId} attempted to delete their own account",
+            LogSanitizer.Sanitize(userId));
+        return ServiceResult<bool>.Forbidden("Cannot delete your own account");
+    }
+
+    private async Task<ServiceResult<bool>?> RejectIfLastEnabledSysAdminAsync(User user)
+    {
+        if (!user.IsSysAdmin)
+            return null;
+
+        var sysAdmins = await _userRepository.GetSystemAdminAsync();
+        var remainingEnabled = sysAdmins.Count(admin =>
+            !string.Equals(admin.UserId, user.UserId, StringComparison.Ordinal) && !admin.IsLockedOut);
+
+        if (remainingEnabled > 0)
+            return null;
+
+        _logger.LogWarning(
+            "Refusing to delete last enabled SysAdmin {UserId}",
+            LogSanitizer.Sanitize(user.UserId));
+        return ServiceResult<bool>.BadRequest("Cannot delete the last enabled system administrator");
     }
 
     /// <summary>
