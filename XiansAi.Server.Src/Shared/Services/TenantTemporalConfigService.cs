@@ -1,11 +1,16 @@
+using Google.Protobuf.WellKnownTypes;
 using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
+using Temporalio.Api.OperatorService.V1;
+using Temporalio.Api.WorkflowService.V1;
+using Temporalio.Client;
+using Temporalio.Exceptions;
 
 namespace Shared.Services;
 
 public class UpsertTenantTemporalConfigRequest
-{   
+{
     public required string TenantId { get; set; }
     public required string ServerUrl { get; set; }
     public required string Namespace { get; set; }
@@ -65,24 +70,15 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             return ServiceResult<bool>.BadRequest("tenantId is required");
-        if (string.IsNullOrWhiteSpace(serverUrl))
-            return ServiceResult<bool>.BadRequest("serverUrl is required");
-        if (string.IsNullOrWhiteSpace(@namespace))
-            return ServiceResult<bool>.BadRequest("namespace is required");
-        if (string.IsNullOrEmpty(certificate) != string.IsNullOrEmpty(privateKey))
-            return ServiceResult<bool>.BadRequest("certificate and privateKey must be provided together");
-
-        if (!TryDecodeBase64(certificate, out var certError))
-            return ServiceResult<bool>.BadRequest($"certificate is not valid base64: {certError}");
-        if (!TryDecodeBase64(privateKey, out var keyError))
-            return ServiceResult<bool>.BadRequest($"privateKey is not valid base64: {keyError}");
 
         try
         {
-            // to check tempolral connectivity
-            // create namespace if it does not exist
-            // also create the serch parameters for temporal.
-            
+            var connectivityResult = await CheckConnectivityAsync(serverUrl, @namespace, certificate, privateKey);
+            if (!connectivityResult.IsSuccess)
+            {
+                return connectivityResult;
+            }
+
             await _repository.UpsertAsync(tenantId, serverUrl, @namespace, certificate, privateKey, actor);
             return ServiceResult<bool>.Success(true);
         }
@@ -112,19 +108,122 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         }
     }
 
-    private static bool TryDecodeBase64(string? value, out string error)
+    private async Task<ServiceResult<bool>> CheckConnectivityAsync(string serverUrl, string @namespace, string? certificate, string? privateKey)
     {
-        error = string.Empty;
-        if (string.IsNullOrEmpty(value)) return true;
+        if (string.IsNullOrWhiteSpace(serverUrl))
+            return ServiceResult<bool>.BadRequest("serverUrl is required");
+        if (string.IsNullOrWhiteSpace(@namespace))
+            return ServiceResult<bool>.BadRequest("namespace is required");
+        if (string.IsNullOrEmpty(certificate) != string.IsNullOrEmpty(privateKey))
+            return ServiceResult<bool>.BadRequest("certificate and privateKey must be provided together");
+
+        TemporalClient? client = null;
         try
         {
-            Convert.FromBase64String(value);
-            return true;
+            client = await ConnectWithoutNamespaceAsync(serverUrl, certificate, privateKey);
+            await EnsureNamespaceExistsAsync(client, serverUrl, @namespace);
+            await EnsureSearchAttributesExistAsync(client, @namespace);
+            return ServiceResult<bool>.Success(true);
         }
         catch (FormatException ex)
         {
-            error = ex.Message;
-            return false;
+            return ServiceResult<bool>.BadRequest($"certificate/privateKey is not valid base64: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Temporal connectivity check failed for {ServerUrl}/{Namespace}",
+                LogSanitizer.Sanitize(serverUrl), LogSanitizer.Sanitize(@namespace));
+            return ServiceResult<bool>.BadRequest($"Could not connect to Temporal: {ex.Message}");
+        }
+        finally
+        {
+            await DisposeAsync(client);
+        }
+    }
+    
+    private static async Task<TemporalClient> ConnectWithoutNamespaceAsync(string serverUrl, string? certificate, string? privateKey)
+    {
+        var options = new TemporalClientConnectOptions(new(serverUrl));
+
+        if (!string.IsNullOrEmpty(certificate) && !string.IsNullOrEmpty(privateKey))
+        {
+            options.Tls = new TlsOptions
+            {
+                ClientCert = Convert.FromBase64String(certificate),
+                ClientPrivateKey = Convert.FromBase64String(privateKey)
+            };
+        }
+
+        return await TemporalClient.ConnectAsync(options);
+    }
+    
+    private async Task EnsureNamespaceExistsAsync(TemporalClient client, string serverUrl, string @namespace)
+    {
+        try
+        {
+            await client.WorkflowService.DescribeNamespaceAsync(new DescribeNamespaceRequest { Namespace = @namespace });
+        }
+        catch (RpcException ex) when (ex.Code == RpcException.StatusCode.NotFound)
+        {
+            _logger.LogInformation(
+                "Namespace {Namespace} does not exist on {ServerUrl}; registering it",
+                LogSanitizer.Sanitize(@namespace), LogSanitizer.Sanitize(serverUrl));
+
+            await client.WorkflowService.RegisterNamespaceAsync(new RegisterNamespaceRequest
+            {
+                Namespace = @namespace,
+                WorkflowExecutionRetentionPeriod = Duration.FromTimeSpan(TimeSpan.FromDays(30))
+            });
+        }
+    }
+    
+    private async Task EnsureSearchAttributesExistAsync(TemporalClient client, string @namespace)
+    {
+        try
+        {
+            var existing = await client.Connection.OperatorService.ListSearchAttributesAsync(
+                new ListSearchAttributesRequest { Namespace = @namespace });
+            var existingNames = existing.CustomAttributes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var missing = Constants.RequiredSearchAttributes
+                .Where(attr => !existingNames.Contains(attr.Key))
+                .ToList();
+
+            if (missing.Count == 0)
+            {
+                return;
+            }
+
+            _logger.LogInformation(
+                "Registering {Count} missing search attributes in namespace {Namespace}: {Attributes}",
+                missing.Count, LogSanitizer.Sanitize(@namespace), string.Join(", ", missing.Select(a => a.Key)));
+
+            var addRequest = new AddSearchAttributesRequest { Namespace = @namespace };
+            foreach (var attr in missing)
+            {
+                addRequest.SearchAttributes.Add(attr.Key, attr.Value);
+            }
+
+            await client.Connection.OperatorService.AddSearchAttributesAsync(addRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Could not verify/register search attributes for namespace {Namespace}. " +
+                "If workflows fail to start, manually register these attributes: {Attributes}",
+                LogSanitizer.Sanitize(@namespace), string.Join(", ", Constants.RequiredSearchAttributes.Keys));
+        }
+    }
+
+    private static async Task DisposeAsync(TemporalClient? client)
+    {
+        if (client?.Connection is IAsyncDisposable asyncDisposableConnection)
+        {
+            await asyncDisposableConnection.DisposeAsync();
+        }
+        else if (client?.Connection is IDisposable disposableConnection)
+        {
+            disposableConnection.Dispose();
         }
     }
 }
