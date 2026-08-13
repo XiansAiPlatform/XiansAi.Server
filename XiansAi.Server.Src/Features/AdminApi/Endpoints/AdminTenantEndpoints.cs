@@ -498,6 +498,11 @@ public static class AdminTenantEndpoints
         .WithName("AdminRevertTenantTemporalConfig")
         .WithSummary("Revert the tenant Temporal connection")
         .WithDescription("Reverts the tenant to the platform's default Temporal server.");
+
+        temporalGroup.MapPost("/test-connection", TestTenantTemporalConnection)
+        .WithName("AdminTestTenantTemporalConnection")
+        .WithSummary("Test a Temporal connection")
+        .WithDescription("Attempts to connect with the given server URL/namespace/credentials without saving anything.");
     }
 
     private static async Task<IResult> UpsertTenantTemporalConfig(
@@ -521,6 +526,16 @@ public static class AdminTenantEndpoints
             var actor = tenantContext.LoggedInUser ?? "system";
             var result = await service.RevertAsync(tenantId, actor);
             return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> TestTenantTemporalConnection(
+        string tenantId,
+        [FromBody] UpsertTenantTemporalConfigRequest request,
+        [FromServices] ITenantTemporalConfigService service)
+    {
+        var result = await service.CheckConnectivityAsync(
+            request.ServerUrl, request.Namespace, request.Certificate, request.PrivateKey);
+        return result.ToHttpResult();
     }
 
     /// <summary>

@@ -24,6 +24,7 @@ public interface ITenantTemporalConfigService
     Task<ServiceResult<UpsertTenantTemporalConfigRequest?>> GetForTenantAsync(string tenantId);
     Task<ServiceResult<bool>> UpsertAsync(string tenantId, string serverUrl, string @namespace, string? certificate, string? privateKey, string actor);
     Task<ServiceResult<bool>> RevertAsync(string tenantId, string actor);
+    Task<ServiceResult<bool>> CheckConnectivityAsync(string serverUrl, string @namespace, string? certificate, string? privateKey);
 }
 
 public class TenantTemporalConfigService : ITenantTemporalConfigService
@@ -115,7 +116,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         }
     }
 
-    private async Task<ServiceResult<bool>> CheckConnectivityAsync(string serverUrl, string @namespace, string? certificate, string? privateKey)
+    public async Task<ServiceResult<bool>> CheckConnectivityAsync(string serverUrl, string @namespace, string? certificate, string? privateKey)
     {
         if (string.IsNullOrWhiteSpace(serverUrl))
             return ServiceResult<bool>.BadRequest("serverUrl is required");
@@ -127,12 +128,9 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         TemporalClient? client = null;
         try
         {
-            using var scope = _serviceFactory.CreateScope();
-            var temporalClientService = scope.ServiceProvider.GetRequiredService<ITemporalClientService>();
             client = await ConnectWithoutNamespaceAsync(serverUrl, certificate, privateKey);
             await EnsureNamespaceExistsAsync(client, serverUrl, @namespace);
             await EnsureSearchAttributesExistAsync(client, @namespace);
-            await temporalClientService.RemoveClient(serverUrl);
             return ServiceResult<bool>.Success(true);
         }
         catch (FormatException ex)
@@ -184,9 +182,10 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
                 Namespace = @namespace,
                 WorkflowExecutionRetentionPeriod = Duration.FromTimeSpan(TimeSpan.FromDays(30))
             });
+            // Temporal server may take a moment to be ready to accept search attribute registration after namespace creation.
+            await Task.Delay(TimeSpan.FromSeconds(2));
         }
     }
-
     private async Task EnsureSearchAttributesExistAsync(TemporalClient client, string @namespace)
     {
         try
