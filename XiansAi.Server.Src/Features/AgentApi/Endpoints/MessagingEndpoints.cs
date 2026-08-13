@@ -24,6 +24,7 @@ namespace Features.AgentApi.Endpoints
 
     public static class ConversationEndpoints
     {
+        private const int MaxFiles = 5;
         private static readonly ILogger<ConversationHistoryQuery> _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<ConversationHistoryQuery>();
         private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
         {
@@ -139,6 +140,26 @@ namespace Features.AgentApi.Endpoints
             
         .WithSummary("Process outbound tool execution from Agent")
         .WithDescription("Processes an outbound tool execution message for streaming tool call steps. Delivered via SSE for frontend display of intermediate actions.");
+
+            group.MapPost("/outbound/file", async (
+                [FromBody] ChatOrDataRequest request,
+                [FromServices] IMessageService messageService) =>
+            {
+                var fileValidationError = ValidateOutboundFileData(request.Data);
+                if (fileValidationError != null)
+                {
+                    return Results.BadRequest(fileValidationError);
+                }
+
+                var result = await messageService.ProcessOutgoingMessage(request, MessageType.File);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Outbound File from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithSummary("Process outbound file from Agent")
+            .WithDescription("Processes an outbound File message with GridFS fileId references only (no inline content).");
 
             group.MapPost("/outbound/handoff", async (
                 [FromBody] HandoffRequest request,
@@ -291,6 +312,64 @@ namespace Features.AgentApi.Endpoints
 
             var result = await messageService.GetLastTaskIdAsync(workflowId, participantId, scope);
             return result.ToHttpResult();
+        }
+
+        /// <summary>
+        /// Validates an outbound File message: references only (fileId + metadata, no inline content).
+        /// Returns an error message, or null when valid.
+        /// </summary>
+        private static string? ValidateOutboundFileData(object? data)
+        {
+            if (data is not JsonElement element || element.ValueKind != JsonValueKind.Object)
+            {
+                return "data.files is required for file messages";
+            }
+
+            if (!element.TryGetProperty("files", out var filesElement) || filesElement.ValueKind != JsonValueKind.Array)
+            {
+                return "data.files must be a non-empty array";
+            }
+
+            var fileCount = filesElement.GetArrayLength();
+            if (fileCount == 0)
+            {
+                return "data.files must be a non-empty array";
+            }
+            if (fileCount > MaxFiles)
+            {
+                return $"A maximum of {MaxFiles} files can be sent per message";
+            }
+
+            foreach (var file in filesElement.EnumerateArray())
+            {
+                if (file.ValueKind != JsonValueKind.Object)
+                {
+                    return "Each file must be an object with fileId and fileName";
+                }
+
+                if (file.TryGetProperty("content", out var contentElement)
+                    && contentElement.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrEmpty(contentElement.GetString()))
+                {
+                    return "File messages must carry fileId references only; do not include content";
+                }
+
+                if (!file.TryGetProperty("fileId", out var fileIdElement)
+                    || fileIdElement.ValueKind != JsonValueKind.String
+                    || string.IsNullOrEmpty(fileIdElement.GetString()))
+                {
+                    return "Each file must include a fileId";
+                }
+
+                if (!file.TryGetProperty("fileName", out var fileNameElement)
+                    || fileNameElement.ValueKind != JsonValueKind.String
+                    || string.IsNullOrEmpty(fileNameElement.GetString()))
+                {
+                    return "Each file must include a fileName";
+                }
+            }
+
+            return null;
         }
     }
 } 
