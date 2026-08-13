@@ -77,6 +77,7 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
 
     private readonly IUserTenantService _userTenantService;
     private readonly IMemoryCache _cache;
+    private readonly OidcValidationPolicy _policy;
     private readonly ILogger<AuthorizedTenantResolver> _logger;
     private readonly TimeSpan _cacheDuration;
 
@@ -84,10 +85,12 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         IUserTenantService userTenantService,
         IMemoryCache cache,
         IConfiguration configuration,
+        OidcValidationPolicy policy,
         ILogger<AuthorizedTenantResolver> logger)
     {
         _userTenantService = userTenantService;
         _cache = cache;
+        _policy = policy;
         _logger = logger;
         _cacheDuration = TimeSpan.FromSeconds(
             configuration.GetValue<double>("Auth:ApprovedTenantCacheDurationSeconds", 30));
@@ -171,17 +174,41 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
             return cachedAccess;
         }
 
-        // The requested tenant is passed through so a user who is not a member of it is registered
-        // as pending there and becomes visible to its admins. It does not widen what comes back:
-        // the result is still only the tenants they are approved for.
+        // The address is recorded whether or not the provider vouched for it, because a record with
+        // no address cannot be matched to a person at all. Whether it may decide *identity* is a
+        // separate question the stored EmailVerified flag answers: an unverified claim is only
+        // display and contact, or someone able to assert an arbitrary email at their IdP could claim
+        // a victim's address. See OidcTokenInspector.IsEmailVerified.
         //
-        // Email is unique and used to decide account identity (CreateNewUser, ParticipantId, email
-        // lookups). An unverified claim must not participate in that — only display/contact — or an
-        // attacker who can assert an arbitrary email at their IdP can claim a victim's address
-        // (provisioning lockout / conversation-namespace squatting). See OidcTokenInspector.IsEmailVerified.
-        var emailForLinking = validation.EmailVerified ? validation.Email : null;
+        // The membership is created approved when the token was checked against the audiences this
+        // tenant declared, because that is what makes holding one the tenant's own statement that
+        // this person belongs to it — unlike the WebAPI console, which validates against the
+        // deployment-wide provider and therefore still requires an admin to approve.
+        //
+        // A provider that declares no audience accepts anything its issuer signed, including a
+        // token minted for an unrelated application there, so holding one says nothing about this
+        // tenant. Those fall back to a pending membership for an admin to approve, which is where
+        // they sat before automatic approval existed. Declaring an audience is what earns it.
+        if (!validation.AudienceValidated)
+        {
+            _policy.WarnAboutConfiguration("approval:" + requestedTenantId,
+                "Not auto-approving membership of tenant {TenantId}: its OIDC provider declares no " +
+                "expectedAudience, so this token was accepted on its issuer's signature alone. New " +
+                "members wait for an admin until expectedAudience is set on the provider.",
+                LogSanitizer.Sanitize(requestedTenantId));
+        }
+
         var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
-            providerUserId, emailForLinking, validation.Name, providerAuthority, requestedTenantId);
+            new SignInIdentity
+            {
+                UserId = providerUserId,
+                Email = validation.Email,
+                EmailVerified = validation.EmailVerified,
+                Name = validation.Name,
+                ProviderAuthority = providerAuthority
+            },
+            requestedTenantId,
+            approveNewMembership: validation.AudienceValidated);
 
         if (!result.IsSuccess || result.Data == null)
         {

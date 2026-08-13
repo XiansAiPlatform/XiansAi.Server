@@ -77,14 +77,25 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
         // Modern keys already store the canonical user id; only legacy email CreatedBy values
         // need a DB round-trip. This runs on every Admin API auth and authorization pass, so
         // skipping the user-id path avoids an uncached lookup per request.
-        var resolvedUserId = userIdOrEmail;
+        //
+        // An address can answer to more than one account, and the key records no more than the
+        // address, so the accounts are combined rather than one being picked. The roles come back
+        // with the identity and are not read from the cache, which is keyed per account.
+        string resolvedUserId;
+        List<string> userRoles;
         if (userIdOrEmail.Contains('@'))
         {
-            var user = await _userRepository.GetByUserEmailAsync(userIdOrEmail);
-            resolvedUserId = user?.UserId ?? userIdOrEmail;
+            var identity = await _userRepository.ResolveEmailIdentityAsync(userIdOrEmail, apiKey.TenantId);
+            resolvedUserId = identity?.PrimaryUserId ?? userIdOrEmail;
+            userRoles = identity == null
+                ? new List<string>()
+                : SystemRoles.ExcludingParticipantRoles(identity.Roles);
         }
-
-        var userRoles = await _roleCacheService.GetUserRolesAsync(resolvedUserId, apiKey.TenantId);
+        else
+        {
+            resolvedUserId = userIdOrEmail;
+            userRoles = await _roleCacheService.GetUserRolesAsync(resolvedUserId, apiKey.TenantId);
+        }
 
         var hasSysAdmin = userRoles.Contains(SystemRoles.SysAdmin);
         var hasTenantAdmin = userRoles.Contains(SystemRoles.TenantAdmin);

@@ -18,6 +18,22 @@ public interface IUserRepository
     Task<User?> GetByIdAsync(string id);
     Task<User?> GetByUserEmailAsync(string email);
     /// <summary>
+    /// Every record holding this address. More than one is legitimate: two identity providers can
+    /// each hold an account for the same person, and the provider subject rather than the address
+    /// is what a record is keyed on.
+    /// </summary>
+    Task<List<User>> GetAllByUserEmailAsync(string email);
+    /// <summary>
+    /// Folds every record holding <paramref name="email"/> into the one identity a credential that
+    /// names an address acts as. Null when no usable record exists.
+    /// </summary>
+    Task<EmailIdentityResolution?> ResolveEmailIdentityAsync(string email, string tenantId);
+    /// <summary>
+    /// Whether any record other than <paramref name="excludingUserId"/> holds this address. Callers
+    /// use it to keep a SysAdmin's address unique, since SysAdmin cannot be resolved from a shared one.
+    /// </summary>
+    Task<bool> IsEmailSharedAsync(string email, string excludingUserId);
+    /// <summary>
     /// Resolves a user by <see cref="User.UserId"/> first, then by email when the value looks like an email.
     /// Needed because identity can arrive as the canonical user id or as an email (bootstrapped users
     /// and legacy API keys may store the email in place of the user id).
@@ -33,8 +49,14 @@ public interface IUserRepository
     Task<bool> UnlockUserAsync(string userId);
     Task<bool> IsLockedOutAsync(string userId);
     Task<bool> IsSysAdmin(string userId);
+    /// <summary>
+    /// Sets only the fields supplied, leaving the rest of the record untouched. Unlike
+    /// <see cref="UpdateAsync"/>, which replaces the whole document, this cannot undo a change
+    /// another request made in the meantime — a tenant membership appended in parallel, say.
+    /// </summary>
+    Task<bool> UpdateProfileFieldsAsync(string userId, string? email, bool? emailVerified, string? name);
     Task<string?> PinProviderAuthorityIfUnsetAsync(string userId, string providerAuthority);
-    Task<bool> AddPendingTenantRoleIfAbsentAsync(string userId, string tenantId);
+    Task<bool> AddTenantRoleIfAbsentAsync(string userId, string tenantId, bool isApproved, IReadOnlyList<string> roles);
     Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin);
     Task<bool> DeleteUser(string userId, string? tenantId = null);
     Task<List<User>> SearchUsersAsync(string query, string? tenantId = null);
@@ -294,6 +316,38 @@ public class UserRepository : IUserRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByUserEmail");
     }
 
+    public async Task<List<User>> GetAllByUserEmailAsync(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return new List<User>();
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            // Normalize email to lowercase (emails are stored in lowercase in DB)
+            var normalizedEmail = email.ToLowerInvariant();
+            return await _users.Find(x => x.Email == normalizedEmail).ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAllByUserEmail");
+    }
+
+    public async Task<EmailIdentityResolution?> ResolveEmailIdentityAsync(string email, string tenantId)
+    {
+        var records = await GetAllByUserEmailAsync(email);
+        return EmailIdentityResolution.From(email, records, tenantId, _logger);
+    }
+
+    public async Task<bool> IsEmailSharedAsync(string email, string excludingUserId)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return false;
+        }
+
+        var owners = await GetAllByUserEmailAsync(email);
+        return owners.Any(user => !string.Equals(user.UserId, excludingUserId, StringComparison.Ordinal));
+    }
+
     public async Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail)
     {
         if (string.IsNullOrWhiteSpace(userIdOrEmail))
@@ -365,9 +419,20 @@ public class UserRepository : IUserRepository
         if (user == null)
             return new List<string>();
 
-        // Only return roles for approved tenants
+        // A disabled account carries nothing, matching what an address resolves to through
+        // EmailIdentityResolution. Without this a credential naming the id kept its roles after the
+        // account was turned off.
+        if (user.IsLockedOut)
+        {
+            _logger.LogWarning("No roles for {UserId}: the account is disabled",
+                LogSanitizer.RedactUserId(user.UserId));
+            return new List<string>();
+        }
+
+        // Only return roles for approved tenants. Copied, because SysAdmin is appended below and
+        // the record's own list would otherwise grow a role nobody wrote.
         var tenantRole = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == tenantId && tr.IsApproved);
-        var result = tenantRole?.Roles ?? new List<string>();
+        var result = tenantRole?.Roles.ToList() ?? new List<string>();
 
         if (user.IsSysAdmin)
         {
@@ -421,6 +486,42 @@ public class UserRepository : IUserRepository
             var result = await _users.ReplaceOneAsync(x => x.UserId == userId, user);
             return result.ModifiedCount > 0;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateUser");
+    }
+
+    public async Task<bool> UpdateProfileFieldsAsync(
+        string userId, string? email, bool? emailVerified, string? name)
+    {
+        var updates = new List<UpdateDefinition<User>>();
+
+        if (email != null)
+        {
+            // Stored lowercase, matching the property setter on the model.
+            updates.Add(Builders<User>.Update.Set(x => x.Email, email.ToLowerInvariant()));
+        }
+
+        if (emailVerified.HasValue)
+        {
+            updates.Add(Builders<User>.Update.Set(x => x.EmailVerified, emailVerified.Value));
+        }
+
+        if (name != null)
+        {
+            updates.Add(Builders<User>.Update.Set(x => x.Name, name));
+        }
+
+        if (updates.Count == 0)
+        {
+            return false;
+        }
+
+        updates.Add(Builders<User>.Update.Set(x => x.UpdatedAt, DateTime.UtcNow));
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var result = await _users.UpdateOneAsync(
+                x => x.UserId == userId, Builders<User>.Update.Combine(updates));
+            return result.ModifiedCount > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateUserProfileFields");
     }
 
     public async Task<bool> LockUserAsync(string userId, string reason, string lockedByUserId)
@@ -518,15 +619,19 @@ public class UserRepository : IUserRepository
     }
 
     /// <summary>
-    /// Records an unapproved membership of <paramref name="tenantId"/>, unless the user already has
-    /// some membership of it. Grants nothing on its own — it exists so the user shows up in the
+    /// Records a membership of <paramref name="tenantId"/>, unless the user already has some
+    /// membership of it. An existing row is never altered: it may carry roles an admin granted, or
+    /// an approval they deliberately withheld.
+    ///
+    /// An unapproved membership grants nothing on its own — it exists so the user shows up in the
     /// tenant's pending list for an admin to approve or ignore.
     ///
     /// Conditional on the server rather than read-then-write, because concurrent requests from the
     /// same newly provisioned user would otherwise each append their own row.
     /// </summary>
     /// <returns>True when this call added the membership.</returns>
-    public async Task<bool> AddPendingTenantRoleIfAbsentAsync(string userId, string tenantId)
+    public async Task<bool> AddTenantRoleIfAbsentAsync(
+        string userId, string tenantId, bool isApproved, IReadOnlyList<string> roles)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -539,14 +644,14 @@ public class UserRepository : IUserRepository
                 .Push(u => u.TenantRoles, new TenantRole
                 {
                     Tenant = tenantId,
-                    Roles = new List<string>(),
-                    IsApproved = false
+                    Roles = roles.ToList(),
+                    IsApproved = isApproved
                 })
                 .Set(u => u.UpdatedAt, DateTime.UtcNow);
 
             var result = await _users.UpdateOneAsync(withoutTenant, update);
             return result.ModifiedCount > 0;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddPendingTenantRoleIfAbsent");
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "AddTenantRoleIfAbsent");
     }
 
     public async Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin)

@@ -6,6 +6,7 @@ using Features.AdminApi.Utils;
 using Features.AdminApi.Auth;
 using Shared.Data.Models;
 using Shared.Services;
+using Shared.Utils;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -97,7 +98,8 @@ public static class AdminOwnershipEndpoints
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
             [FromServices] IWebhookEventPublisher webhookEventPublisher,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ILogger<IUserRepository> logger) =>
         {
             try
             {
@@ -135,7 +137,27 @@ public static class AdminOwnershipEndpoints
                 }
 
                 // Get new admin user to validate they exist (by user id or email)
-                var newAdminUser = await userRepository.GetByUserIdOrEmailAsync(request.NewAdminId);
+                var newAdminUser = await userRepository.GetByUserIdAsync(request.NewAdminId);
+
+                if (newAdminUser == null && request.NewAdminId.Contains('@'))
+                {
+                    // Ownership names exactly one account, so an address that answers to several
+                    // is refused rather than resolved to whichever record came back first.
+                    var owners = await userRepository.GetAllByUserEmailAsync(request.NewAdminId);
+                    if (owners.Count > 1)
+                    {
+                        logger.LogWarning(
+                            "Ownership transfer refused: {Email} matches {Count} accounts",
+                            LogSanitizer.RedactEmail(request.NewAdminId), owners.Count);
+                        return Results.Conflict(new
+                        {
+                            error = $"'{request.NewAdminId}' matches more than one account. " +
+                                    "Use the user id of the intended account."
+                        });
+                    }
+
+                    newAdminUser = owners.FirstOrDefault();
+                }
 
                 if (newAdminUser == null)
                 {

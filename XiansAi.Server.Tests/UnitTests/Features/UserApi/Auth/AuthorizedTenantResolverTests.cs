@@ -1,6 +1,7 @@
 using Features.UserApi.Auth;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Auth;
@@ -25,11 +26,31 @@ public class AuthorizedTenantResolverTests
             _userTenantService.Object,
             cache ?? new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
             configuration,
+            BuildPolicy(),
             NullLogger<AuthorizedTenantResolver>.Instance);
     }
 
+    private static OidcValidationPolicy BuildPolicy() =>
+        new(
+            new ConfigurationBuilder().Build(),
+            Mock.Of<IHostEnvironment>(env => env.EnvironmentName == "Production"),
+            new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
+            NullLogger<OidcValidationPolicy>.Instance);
+
+    /// <summary>A token checked against the audiences its tenant's provider declared.</summary>
     private static OidcValidationResult ValidToken() =>
-        OidcValidationResult.Ok(CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User");
+        OidcValidationResult.Ok(
+            CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User",
+            audienceValidated: true);
+
+    /// <summary>
+    /// A token from a tenant whose provider declares no expectedAudience, so it was accepted on its
+    /// issuer's signature alone and may have been minted for an unrelated application.
+    /// </summary>
+    private static OidcValidationResult TokenWithNoAudienceChecked() =>
+        OidcValidationResult.Ok(
+            CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User",
+            audienceValidated: false);
 
     private void SetupApprovedTenants(params string[] tenantIds)
     {
@@ -41,10 +62,13 @@ public class AuthorizedTenantResolverTests
         var tenants = tenantIds.Select(t => new TenantInfoDto { TenantId = t, Name = t }).ToList();
         _userTenantService
             .Setup(x => x.EnsureUserAndGetApprovedTenants(
-                providerUserId, It.IsAny<string?>(), It.IsAny<string?>(), providerAuthority, It.IsAny<string?>()))
+                IdentityOf(providerUserId, providerAuthority), It.IsAny<string?>(), It.IsAny<bool>()))
             .ReturnsAsync(ServiceResult<ResolvedUserAccess>.Success(
                 new ResolvedUserAccess { UserId = providerUserId, Tenants = tenants }));
     }
+
+    private static SignInIdentity IdentityOf(string providerUserId, string providerAuthority) =>
+        It.Is<SignInIdentity>(i => i.UserId == providerUserId && i.ProviderAuthority == providerAuthority);
 
     [Fact]
     public async Task ResolveAsync_Denies_WhenUserHasNoApprovedTenants()
@@ -138,7 +162,7 @@ public class AuthorizedTenantResolverTests
     {
         _userTenantService
             .Setup(x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, It.IsAny<string?>()))
+                IdentityOf(ProviderUserId, ProviderAuthority), It.IsAny<string?>(), It.IsAny<bool>()))
             .ReturnsAsync(ServiceResult<ResolvedUserAccess>.InternalServerError("boom"));
         var resolver = BuildResolver();
 
@@ -158,7 +182,7 @@ public class AuthorizedTenantResolverTests
 
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, It.IsAny<string?>()),
+                IdentityOf(ProviderUserId, ProviderAuthority), It.IsAny<string?>(), It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -174,31 +198,34 @@ public class AuthorizedTenantResolverTests
 
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, "tenant-a"),
+                IdentityOf(ProviderUserId, ProviderAuthority), "tenant-a", It.IsAny<bool>()),
             Times.Once);
     }
 
     [Fact]
-    public async Task ResolveAsync_DoesNotPassAnUnverifiedEmail_ForAccountLinking()
+    public async Task ResolveAsync_PassesAnUnverifiedEmail_ButMarksItUnverified()
     {
-        // Email uniqueness and ParticipantId treat the address as identity. An unverified claim
-        // must not be written onto the user record or an attacker can claim a victim's address.
+        // Providers that issue no email_verified claim at all — Azure B2C among them — would
+        // otherwise leave every record they provision with no address, and nothing later fills it
+        // in. The address is stored; the flag is what keeps it from deciding identity.
         SetupApprovedTenants("tenant-a");
         var resolver = BuildResolver();
         var validation = OidcValidationResult.Ok(
-            CanonicalUserId, ProviderUserId, ProviderAuthority, "victim@example.com", "Test User",
+            CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User",
             emailVerified: false);
 
         await resolver.ResolveAsync(validation, "tenant-a");
 
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, null, "Test User", ProviderAuthority, "tenant-a"),
+                It.Is<SignInIdentity>(i =>
+                    i.Email == "user@example.com" && !i.EmailVerified && i.Name == "Test User"),
+                "tenant-a", It.IsAny<bool>()),
             Times.Once);
     }
 
     [Fact]
-    public async Task ResolveAsync_PassesAVerifiedEmail_ForAccountLinking()
+    public async Task ResolveAsync_PassesAVerifiedEmail_AsVerified()
     {
         SetupApprovedTenants("tenant-a");
         var resolver = BuildResolver();
@@ -210,7 +237,40 @@ public class AuthorizedTenantResolverTests
 
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, "user@example.com", "Test User", ProviderAuthority, "tenant-a"),
+                It.Is<SignInIdentity>(i => i.Email == "user@example.com" && i.EmailVerified),
+                "tenant-a", It.IsAny<bool>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_AsksForTheMembershipToBeApproved()
+    {
+        // This token was checked against the audiences the tenant declared, so it was minted for
+        // this tenant's own application — which is what makes holding one the tenant's statement
+        // that this person belongs to it.
+        SetupApprovedTenants("tenant-a");
+        var resolver = BuildResolver();
+
+        await resolver.ResolveAsync(ValidToken(), "tenant-a");
+
+        _userTenantService.Verify(
+            x => x.EnsureUserAndGetApprovedTenants(It.IsAny<SignInIdentity>(), "tenant-a", true),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DoesNotAskForApproval_WhenNoAudienceWasChecked()
+    {
+        // Without a declared audience the provider accepts anything its issuer signed, including a
+        // token minted for an unrelated application there. That says nothing about this tenant, so
+        // the membership goes back to waiting for an admin.
+        SetupApprovedTenants("tenant-a");
+        var resolver = BuildResolver();
+
+        await resolver.ResolveAsync(TokenWithNoAudienceChecked(), "tenant-a");
+
+        _userTenantService.Verify(
+            x => x.EnsureUserAndGetApprovedTenants(It.IsAny<SignInIdentity>(), "tenant-a", false),
             Times.Once);
     }
 
@@ -219,7 +279,7 @@ public class AuthorizedTenantResolverTests
     {
         _userTenantService
             .SetupSequence(x => x.EnsureUserAndGetApprovedTenants(
-                ProviderUserId, It.IsAny<string?>(), It.IsAny<string?>(), ProviderAuthority, It.IsAny<string?>()))
+                IdentityOf(ProviderUserId, ProviderAuthority), It.IsAny<string?>(), It.IsAny<bool>()))
             .ReturnsAsync(ServiceResult<ResolvedUserAccess>.InternalServerError("transient"))
             .ReturnsAsync(ServiceResult<ResolvedUserAccess>.Success(new ResolvedUserAccess
             {
@@ -275,7 +335,7 @@ public class AuthorizedTenantResolverTests
     {
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
-                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()),
+                It.IsAny<SignInIdentity>(), It.IsAny<string?>(), It.IsAny<bool>()),
             Times.Never);
     }
 }

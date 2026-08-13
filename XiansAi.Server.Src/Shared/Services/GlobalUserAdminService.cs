@@ -57,6 +57,13 @@ public class GlobalUserDetail
     public required bool IsSysAdmin { get; init; }
     [JsonPropertyName("isEnabled")]
     public required bool IsEnabled { get; init; }
+    /// <summary>
+    /// Why the account is disabled, for whoever has to decide whether to enable it. An account
+    /// created because its address is also a system administrator's says so here, along with what
+    /// enabling it on its own would cost — which is not otherwise visible from this record.
+    /// </summary>
+    [JsonPropertyName("disabledReason")]
+    public string? DisabledReason { get; init; }
     [JsonPropertyName("memberships")]
     public required List<GlobalUserMembership> Memberships { get; init; }
 }
@@ -256,6 +263,21 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             if (user == null)
                 return ServiceResult<GlobalUserDetail>.NotFound("User not found");
 
+            // The one place that accepts a grant on an address several accounts hold. Making it
+            // here is the operator stating that those accounts are the same person, which is what
+            // lets the address authenticate as a system administrator again. Every other promotion
+            // path refuses, so this is the only record of that decision being taken.
+            if (isSysAdmin
+                && !string.IsNullOrWhiteSpace(user.Email)
+                && await _userRepository.IsEmailSharedAsync(user.Email, user.UserId))
+            {
+                _logger.LogWarning(
+                    "Granting SysAdmin to {UserId}, whose email other accounts also hold. That " +
+                    "address authenticates as a system administrator only once every enabled " +
+                    "account holding it has the role",
+                    LogSanitizer.Sanitize(userId));
+            }
+
             var updated = await _userRepository.SetSysAdminAsync(userId, isSysAdmin);
             if (!updated)
                 return ServiceResult<GlobalUserDetail>.InternalServerError("Update failed");
@@ -290,7 +312,11 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             if (enabled)
             {
                 ok = await _userRepository.UnlockUserAsync(userId);
-                if (ok) user.IsLockedOut = false;
+                if (ok)
+                {
+                    user.IsLockedOut = false;
+                    await WarnIfEnablingDemotesASysAdminAsync(user);
+                }
             }
             else
             {
@@ -324,6 +350,36 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogError(ex, "Error setting status for user {UserId}", LogSanitizer.Sanitize(userId));
             return ServiceResult<GlobalUserDetail>.InternalServerError("An error occurred while updating the user");
         }
+    }
+
+    /// <summary>
+    /// Records the case where enabling this account takes SysAdmin away from another one.
+    ///
+    /// An address only authenticates as a system administrator when every enabled account holding
+    /// it has the role, so enabling one that does not withdraws it — from a different account than
+    /// the one being enabled, on credentials that name only an email. Granting this account the
+    /// same role puts it back.
+    /// </summary>
+    private async Task WarnIfEnablingDemotesASysAdminAsync(User user)
+    {
+        if (user.IsSysAdmin || string.IsNullOrWhiteSpace(user.Email))
+            return;
+
+        var owners = await _userRepository.GetAllByUserEmailAsync(user.Email);
+        var affected = owners
+            .Where(owner => owner.IsSysAdmin && owner.UserId != user.UserId)
+            .Select(owner => owner.UserId)
+            .ToList();
+
+        if (affected.Count == 0)
+            return;
+
+        _logger.LogError(
+            "Enabled {UserId}, which holds the same email as system administrator(s) {Others} " +
+            "without holding that role. Until it is granted the same role, that address no longer " +
+            "authenticates as a system administrator on credentials naming only an email",
+            LogSanitizer.Sanitize(user.UserId),
+            LogSanitizer.Sanitize(string.Join(", ", affected)));
     }
 
     private static GlobalUserSummary ToSummary(User user)
@@ -361,6 +417,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             Name = user.Name,
             IsSysAdmin = user.IsSysAdmin,
             IsEnabled = !user.IsLockedOut,
+            DisabledReason = user.IsLockedOut ? user.LockedOutReason : null,
             Memberships = memberships,
         };
     }

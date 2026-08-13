@@ -31,6 +31,18 @@ public class AdminRoleTenantResolverTests
         CreatedBy = createdBy
     };
 
+    private void ResolvesTo(string primaryUserId, params string[] roles)
+    {
+        _userRepo
+            .Setup(x => x.ResolveEmailIdentityAsync(Email, TenantId))
+            .ReturnsAsync(new EmailIdentityResolution(
+                PrimaryUserId: primaryUserId,
+                CandidateUserIds: new[] { primaryUserId },
+                Roles: roles,
+                IsSysAdmin: roles.Contains(SystemRoles.SysAdmin),
+                IsAmbiguous: false));
+    }
+
     [Fact]
     public async Task ResolveAsync_SkipsUserLookup_WhenOwnerIsAlreadyAUserId()
     {
@@ -42,60 +54,69 @@ public class AdminRoleTenantResolverTests
 
         Assert.True(result.Success);
         Assert.Equal(UserId, result.ResolvedUserId);
-        _userRepo.Verify(x => x.GetByUserEmailAsync(It.IsAny<string>()), Times.Never);
-        _userRepo.Verify(x => x.GetByUserIdOrEmailAsync(It.IsAny<string>()), Times.Never);
+        _userRepo.Verify(x => x.ResolveEmailIdentityAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         _userRepo.Verify(x => x.GetByUserIdAsync(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
     public async Task ResolveAsync_LooksUpRolesByCanonicalUserId_WhenOwnerIsAnEmail()
     {
-        _userRepo
-            .Setup(x => x.GetByUserEmailAsync(Email))
-            .ReturnsAsync(new User { UserId = UserId, Email = Email });
-        _roleCache
-            .Setup(x => x.GetUserRolesAsync(UserId, TenantId))
-            .ReturnsAsync(new List<string> { SystemRoles.TenantAdmin });
+        ResolvesTo(UserId, SystemRoles.TenantAdmin);
 
         var result = await BuildResolver().ResolveAsync(Email, KeyOwnedBy(Email), string.Empty);
 
         Assert.True(result.Success);
         Assert.Equal(UserId, result.ResolvedUserId);
         Assert.Equal(TenantId, result.FinalTenantId);
-        _userRepo.Verify(x => x.GetByUserEmailAsync(Email), Times.Once);
-        _roleCache.Verify(x => x.GetUserRolesAsync(UserId, TenantId), Times.Once);
+        _userRepo.Verify(x => x.ResolveEmailIdentityAsync(Email, TenantId), Times.Once);
     }
 
     [Fact]
-    public async Task ResolveAsync_FallsBackToEmail_WhenNoUserRecordMatches()
+    public async Task ResolveAsync_DoesNotConsultTheRoleCache_ForAnEmail()
+    {
+        // The cache is keyed on whatever it is handed but only ever invalidated by user id, so an
+        // email-keyed entry would serve roles that a revocation had already removed.
+        ResolvesTo(UserId, SystemRoles.TenantAdmin);
+
+        await BuildResolver().ResolveAsync(Email, KeyOwnedBy(Email), string.Empty);
+
+        _roleCache.Verify(x => x.GetUserRolesAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Fails_WhenNoUserRecordHoldsTheEmail()
     {
         _userRepo
-            .Setup(x => x.GetByUserEmailAsync(Email))
-            .ReturnsAsync((User?)null);
-        _roleCache
-            .Setup(x => x.GetUserRolesAsync(Email, TenantId))
-            .ReturnsAsync(new List<string> { SystemRoles.TenantAdmin });
+            .Setup(x => x.ResolveEmailIdentityAsync(Email, TenantId))
+            .ReturnsAsync((EmailIdentityResolution?)null);
 
         var result = await BuildResolver().ResolveAsync(Email, KeyOwnedBy(Email), string.Empty);
 
-        Assert.True(result.Success);
+        Assert.False(result.Success);
         Assert.Equal(Email, result.ResolvedUserId);
     }
 
     [Fact]
     public async Task ResolveAsync_Fails_WhenUserHasNoAdminRole()
     {
-        _userRepo
-            .Setup(x => x.GetByUserEmailAsync(Email))
-            .ReturnsAsync(new User { UserId = UserId, Email = Email });
-        _roleCache
-            .Setup(x => x.GetUserRolesAsync(UserId, TenantId))
-            .ReturnsAsync(new List<string> { SystemRoles.TenantUser });
+        ResolvesTo(UserId, SystemRoles.TenantUser);
 
         var result = await BuildResolver().ResolveAsync(Email, KeyOwnedBy(Email), string.Empty);
 
         Assert.False(result.Success);
         Assert.Equal(UserId, result.ResolvedUserId);
         Assert.Equal("User does not have required admin role", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DropsParticipantRoles_SoTheyMatchWhatTheCachedPathWouldReturn()
+    {
+        // A participant is someone an agent talks to, not someone who acts on a request.
+        ResolvesTo(UserId, SystemRoles.TenantAdmin, SystemRoles.TenantParticipant);
+
+        var result = await BuildResolver().ResolveAsync(Email, KeyOwnedBy(Email), string.Empty);
+
+        Assert.True(result.Success);
+        Assert.DoesNotContain(SystemRoles.TenantParticipant, result.UserRoles!);
     }
 }

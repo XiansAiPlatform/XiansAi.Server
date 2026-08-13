@@ -169,7 +169,11 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 OidcTokenInspector.GetEmail(jwt),
                 OidcTokenInspector.GetName(jwt),
                 OidcTokenInspector.ExpiresAt(jwt),
-                OidcTokenInspector.IsEmailVerified(jwt));
+                OidcTokenInspector.IsEmailVerified(jwt),
+                // The parameters record whether the provider declared any audience to check
+                // against, so callers can tell an audience-checked token from one accepted on its
+                // issuer's signature alone.
+                parameters.ValidateAudience);
         }
         catch (SecurityTokenException ex)
         {
