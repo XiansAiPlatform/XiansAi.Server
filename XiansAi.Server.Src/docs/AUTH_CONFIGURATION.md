@@ -285,13 +285,25 @@ the deployment-wide provider, so holding one says nothing about any particular t
 
 ### Email collisions at sign-in
 
-A user record is keyed on the provider subject (`sub` / `oid`, or the configured `userIdClaim`).
-Sign-in refuses to provision a second account when the token's email already belongs to a different
-subject — merging on email alone would hand over that account's access. Leave `userIdClaim` unset
-(or set it to a stable claim) so the same person keeps the same account across sessions.
+A user record is keyed on the provider subject (`sub` / `oid`, or the configured `userIdClaim`), and
+a subject is only unique within one issuer. One person signing in through two directories therefore
+has two records carrying the same address, which is expected rather than an error.
+
+Sign-in refuses to provision a second account when the address is already held **at the same
+provider**, or when either record's provider cannot be identified — there the address really does
+name one account, and merging on it alone would hand over that account's access. A second account at
+a genuinely different provider is allowed, except when the address belongs to a system
+administrator, where the record is created disabled for an operator to review.
+
+Leave `userIdClaim` unset (or set it to a stable claim) so the same person keeps the same account
+across sessions.
 
 Conversation threads may still be keyed by email: the User API accepts the account's stored email as
-`participantId` even when the account id is the provider subject.
+`participantId` even when the account id is the provider subject — unless the address is held by
+more than one account, in which case it falls back to the subject.
+
+See [`EMAIL_IDENTITY_RESOLUTION.md`](EMAIL_IDENTITY_RESOLUTION.md) for how identity and authority are
+resolved when an address names several accounts, including the rules for system administrators.
 
 ### Certificate Validation Caching (Agent API)
 
