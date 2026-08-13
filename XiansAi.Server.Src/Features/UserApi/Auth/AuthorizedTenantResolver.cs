@@ -28,9 +28,16 @@ public class AuthorizedTenantResolution
     public string? AccountUserId { get; private init; }
 
     /// <summary>
-    /// The account's stored email when present. Null when unauthorized or the account has no email.
+    /// The address that may namespace this account's message threads. Null when unauthorized, when
+    /// the account has no email, or when another account holds the same one.
     /// </summary>
-    public string? Email { get; private init; }
+    public string? ConversationEmail { get; private init; }
+
+    /// <summary>
+    /// The address stored on the account, which identifies the caller but namespaces nothing. Null
+    /// when unauthorized or the account has no email.
+    /// </summary>
+    public string? AccountEmail { get; private init; }
 
     public static AuthorizedTenantResolution Denied() => new();
 
@@ -38,14 +45,16 @@ public class AuthorizedTenantResolution
         string matchedTenantId,
         List<string> authorizedTenantIds,
         string accountUserId,
-        string? email = null) =>
+        string? conversationEmail = null,
+        string? accountEmail = null) =>
         new()
         {
             IsAuthorized = true,
             MatchedTenantId = matchedTenantId,
             AuthorizedTenantIds = authorizedTenantIds,
             AccountUserId = accountUserId,
-            Email = email
+            ConversationEmail = conversationEmail,
+            AccountEmail = accountEmail
         };
 }
 
@@ -127,7 +136,8 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
 
         // Copied because the source list may be a shared cache entry.
         return AuthorizedTenantResolution.Authorized(
-            matchedTenantId, access.TenantIds.ToList(), access.AccountUserId, access.Email);
+            matchedTenantId, access.TenantIds.ToList(), access.AccountUserId,
+            access.ConversationEmail, access.AccountEmail);
     }
 
     /// <summary>The account a token resolves to and the tenants it is approved for.</summary>
@@ -135,7 +145,8 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
     {
         public required string AccountUserId { get; init; }
         public required IReadOnlyList<string> TenantIds { get; init; }
-        public string? Email { get; init; }
+        public string? ConversationEmail { get; init; }
+        public string? AccountEmail { get; init; }
     }
 
     /// <summary>
@@ -222,7 +233,8 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         {
             AccountUserId = result.Data.UserId,
             TenantIds = result.Data.Tenants.Select(t => t.TenantId).ToArray(),
-            Email = result.Data.Email
+            ConversationEmail = result.Data.ConversationEmail,
+            AccountEmail = result.Data.AccountEmail
         };
 
         var cacheOptions = new MemoryCacheEntryOptions()

@@ -312,7 +312,7 @@ public class UserTenantServiceApprovedTenantsTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal("acme", Assert.Single(result.Data!.Tenants).TenantId);
-        Assert.Equal("user@example.com", result.Data.Email);
+        Assert.Equal("user@example.com", result.Data.ConversationEmail);
     }
 
     [Fact]
@@ -579,7 +579,11 @@ public class UserTenantServiceApprovedTenantsTests
         var result = await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
 
         Assert.True(result.IsSuccess);
-        Assert.Null(result.Data!.Email);
+        Assert.Null(result.Data!.ConversationEmail);
+
+        // Still reported as the account's address, so the caller stays recognisable when they name
+        // themselves by it — it just does not become the namespace.
+        Assert.Equal("shared@example.com", result.Data.AccountEmail);
     }
 
     [Fact]

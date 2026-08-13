@@ -52,11 +52,18 @@ public class ResolvedUserAccess
     public required List<TenantInfoDto> Tenants { get; init; }
 
     /// <summary>
-    /// The account's stored email, when present. Used as an alternate conversation participant id so
-    /// clients may keep naming the person by email while the account remains keyed by the provider
-    /// subject.
+    /// The address that may name this account's message threads, or null when it may not because
+    /// another account holds it too. Threads are namespaced by this, so it has to name exactly one
+    /// account.
     /// </summary>
-    public string? Email { get; init; }
+    public string? ConversationEmail { get; init; }
+
+    /// <summary>
+    /// The address stored on the record, whether or not another account also holds it. It may
+    /// identify the caller — recognising them when they name themselves by email — but must never
+    /// namespace anything, which is what <see cref="ConversationEmail"/> is for.
+    /// </summary>
+    public string? AccountEmail { get; init; }
 }
 
 /// <summary>
@@ -304,7 +311,8 @@ public class UserTenantService : IUserTenantService
             {
                 UserId = userId,
                 Tenants = tenants.Data,
-                Email = await ConversationIdentityEmailAsync(user)
+                ConversationEmail = await ConversationIdentityEmailAsync(user),
+                AccountEmail = NormalizeEmail(user?.Email)
             });
     }
 
@@ -332,7 +340,12 @@ public class UserTenantService : IUserTenantService
             return null;
         }
 
-        return user.Email.Trim().ToLowerInvariant();
+        return NormalizeEmail(user.Email);
+    }
+
+    private static string? NormalizeEmail(string? email)
+    {
+        return string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
     }
 
     /// <summary>

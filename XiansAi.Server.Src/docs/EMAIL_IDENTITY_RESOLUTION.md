@@ -165,6 +165,13 @@ than one record it is withheld, logging `Not using the email of {UserId} as thei
 identity`, and the account falls back to being named by its provider subject — which always names
 exactly one account.
 
+The address is withheld only from *naming threads*. It is still carried as the account's email, so a
+caller is recognised when they name themselves by it: `ParticipantIdResolver` treats any id the
+caller answers to — participant id, canonical login id, account email, or provider subject — as a
+request for their own threads, and resolves it to the id they were actually issued. Clients that
+send an email address as `participantId` therefore keep working when it turns out to be shared,
+instead of being refused with a 403.
+
 The practical consequence is that a person whose address is shared gets a *different*
 `participantId` than they would with a unique address. Their existing threads under the address are
 not visible under the subject.

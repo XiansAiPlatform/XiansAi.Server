@@ -15,8 +15,14 @@ public readonly record struct ResolvedParticipant(string ParticipantId, string? 
 public static class ParticipantIdResolver
 {
     /// <summary>
-    /// Resolves the participant id for a request. An explicitly supplied id wins; otherwise the
-    /// caller's own participant id from the authenticated token is used.
+    /// Resolves the participant id for a request. An id naming someone else wins; naming yourself,
+    /// by any of the identifiers you answer to, is the same as naming no one and yields your own
+    /// participant id.
+    ///
+    /// That equivalence is what lets a client keep sending an email address whose owner is not
+    /// unique. The address cannot namespace threads — two accounts hold it, and one namespace would
+    /// merge their conversations — but it still identifies the caller, so it resolves to the id
+    /// they were actually issued rather than being refused.
     ///
     /// Ids are lowercased because participant ids are frequently email addresses, and callers are
     /// inconsistent about casing.
@@ -34,9 +40,13 @@ public static class ParticipantIdResolver
         var ownParticipantId = (tenantContext.ParticipantId ?? string.Empty).ToLowerInvariant();
         var canonicalLoginId = (tenantContext.LoggedInUser ?? string.Empty).ToLowerInvariant();
 
-        var participantId = string.IsNullOrEmpty(requestedParticipantId)
-            ? ownParticipantId
-            : requestedParticipantId.ToLowerInvariant();
+        var namesSomeoneElse =
+            !string.IsNullOrEmpty(requestedParticipantId) &&
+            !NamesSelf(requestedParticipantId, tenantContext);
+
+        var participantId = namesSomeoneElse
+            ? requestedParticipantId!.ToLowerInvariant()
+            : ownParticipantId;
 
         // The fallback is only meaningful for the caller's own threads, and only when the two ids
         // actually differ.
@@ -74,8 +84,7 @@ public static class ParticipantIdResolver
     ///
     /// API keys are tenant-scoped service credentials held by trusted callers that legitimately act
     /// on behalf of many end users, so they may name any participant. A token holder may only name
-    /// themselves: their conversation participant id, canonical login id, account email, or raw
-    /// provider subject — clients pass any of these depending on era and client code.
+    /// themselves.
     /// </summary>
     public static bool CanActAs(string? participantId, ITenantContext tenantContext)
     {
@@ -84,11 +93,16 @@ public static class ParticipantIdResolver
             return true;
         }
 
-        if (string.IsNullOrEmpty(participantId))
-        {
-            return false;
-        }
+        return !string.IsNullOrEmpty(participantId) && NamesSelf(participantId, tenantContext);
+    }
 
+    /// <summary>
+    /// Whether the id is one the caller answers to: their conversation participant id, canonical
+    /// login id, account email, or raw provider subject — clients pass any of these depending on
+    /// era and client code.
+    /// </summary>
+    private static bool NamesSelf(string participantId, ITenantContext tenantContext)
+    {
         return MatchesOwnId(participantId, tenantContext.ParticipantId) ||
                MatchesOwnId(participantId, tenantContext.LoggedInUser) ||
                MatchesOwnId(participantId, tenantContext.Email) ||
