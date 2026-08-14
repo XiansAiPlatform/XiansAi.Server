@@ -52,7 +52,16 @@ public interface ITenantParticipantUserService
 {
     Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search, string? role = null);
     Task<ServiceResult<TenantParticipantUser>> GetAsync(string tenantId, string userId);
-    Task<ServiceResult<TenantParticipantUser>> CreateAsync(string tenantId, string email, string name, string role);
+    /// <summary>
+    /// Grants <paramref name="role"/> in the tenant to the account named by <paramref name="userId"/>,
+    /// or, when no user id is given, to the single account holding <paramref name="email"/> —
+    /// creating one from that address and <paramref name="name"/> if none does.
+    ///
+    /// An address held by more than one account settles nothing, and is refused; that is what
+    /// <paramref name="userId"/> is for.
+    /// </summary>
+    Task<ServiceResult<TenantParticipantUser>> CreateAsync(
+        string tenantId, string? email, string? name, string role, string? userId = null);
     Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
         string tenantId, string userId, string? name, string? email, string? role, bool? isApproved,
         bool callerIsSysAdmin = false);
@@ -158,25 +167,34 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         }
     }
 
-    public async Task<ServiceResult<TenantParticipantUser>> CreateAsync(string tenantId, string email, string name, string role)
+    public async Task<ServiceResult<TenantParticipantUser>> CreateAsync(
+        string tenantId, string? email, string? name, string role, string? userId = null)
     {
         var normalizedRole = NormalizeTenantRole(role);
         if (normalizedRole == null)
             return ServiceResult<TenantParticipantUser>.BadRequest(
                 $"Role must be one of: {string.Join(", ", AllowedTenantRoles)}");
 
-        var sanitizedEmail = ValidationHelpers.SanitizeAndValidateEmail(email);
+        // An existing account is named by its user id. An address is not an identifier here: it can
+        // answer to more than one account, and the role granted may be TenantAdmin, so resolving
+        // one would risk handing that role to a different account than the caller meant.
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            return await AddRoleToNamedAccountAsync(userId.Trim(), tenantId, normalizedRole);
+        }
+
+        var sanitizedEmail = ValidationHelpers.SanitizeAndValidateEmail(email ?? string.Empty);
         if (sanitizedEmail == null)
-            return ServiceResult<TenantParticipantUser>.BadRequest("Invalid email address");
+            return ServiceResult<TenantParticipantUser>.BadRequest(
+                "Supply either a userId for an existing account, or a valid email to create a new one");
 
-        var sanitizedName = ValidationHelpers.SanitizeString(name);
-        if (string.IsNullOrWhiteSpace(sanitizedName))
-            return ServiceResult<TenantParticipantUser>.BadRequest("Name is required");
-
-        // If the user already exists, add them to the tenant instead of creating a new account.
-        // The role granted here can be TenantAdmin, so the address has to name one account: an
-        // address two records answer to is refused rather than resolved to whichever came back
-        // first, which would hand the role to a different account than the admin meant.
+        // An address exactly one account holds names it as surely as a user id does, so the
+        // membership is added rather than the caller being sent to look up something the address
+        // already settles. Refusing here would not make anything safer: an operator sent to find
+        // the user id would search by the same address and arrive at the same record.
+        //
+        // Several accounts is the case a user id exists to settle, and the role granted here can
+        // be TenantAdmin, so that one is refused rather than resolved to whichever came back first.
         var lookup = EmailAccountLookup.From(await _userRepository.GetAllByUserEmailAsync(sanitizedEmail));
         if (lookup.IsAmbiguous)
         {
@@ -189,6 +207,12 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
         if (lookup.Account != null)
             return await AddTenantToExistingUserAsync(lookup.Account, tenantId, normalizedRole);
+
+        // Only a new account needs a name; adding an existing one takes the name already on it.
+        var sanitizedName = ValidationHelpers.SanitizeString(name ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(sanitizedName))
+            return ServiceResult<TenantParticipantUser>.BadRequest(
+                "Name is required to create a new account");
 
         var dto = new CreateNewUserDto
         {
@@ -225,6 +249,29 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             Role = normalizedRole,
             IsApproved = !created.IsLockedOut && (tenantRole?.IsApproved ?? true),
         }, StatusCode.Created);
+    }
+
+    /// <summary>
+    /// Adds the role to the account the caller named by user id, which is the only identifier that
+    /// names exactly one account.
+    /// </summary>
+    private async Task<ServiceResult<TenantParticipantUser>> AddRoleToNamedAccountAsync(
+        string userId, string tenantId, string normalizedRole)
+    {
+        if (userId.Contains('@'))
+        {
+            return ServiceResult<TenantParticipantUser>.BadRequest(
+                "userId must be a user id, not an email address. Omit it and supply email and " +
+                "name to create a new account.");
+        }
+
+        var user = await _userRepository.GetByUserIdAsync(userId);
+        if (user == null)
+        {
+            return ServiceResult<TenantParticipantUser>.NotFound($"User '{userId}' not found");
+        }
+
+        return await AddTenantToExistingUserAsync(user, tenantId, normalizedRole);
     }
 
     private async Task<ServiceResult<TenantParticipantUser>> AddTenantToExistingUserAsync(

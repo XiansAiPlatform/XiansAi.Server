@@ -20,9 +20,14 @@ public static class AdminOwnershipEndpoints
     /// </summary>
     public class TransferOwnershipRequest
     {
+        /// <summary>
+        /// The <see cref="User.UserId"/> of the account to hand ownership to. Addresses are not
+        /// accepted: one can answer to more than one account, and this API knows the user id —
+        /// every endpoint that returns a user returns it.
+        /// </summary>
         [Required]
         [StringLength(200, MinimumLength = 1)]
-        public required string NewAdminId { get; set; }  // User identifier (userId, email, username, etc.)
+        public required string NewAdminId { get; set; }
     }
 
     /// <summary>
@@ -136,29 +141,21 @@ public static class AdminOwnershipEndpoints
                     return Results.Forbid();
                 }
 
-                // Get new admin user to validate they exist (by user id or email)
-                var newAdminUser = await userRepository.GetByUserIdAsync(request.NewAdminId);
-
-                if (newAdminUser == null && request.NewAdminId.Contains('@'))
+                // Ownership names exactly one account, and an address does not: two providers can
+                // each hold a record for the same one. Resolving an address here would hand the
+                // agent to whichever record was found rather than the one the caller meant.
+                if (request.NewAdminId.Contains('@'))
                 {
-                    // Ownership names exactly one account, so an address that answers to several
-                    // is refused rather than resolved to whichever record came back first.
-                    var owners = await userRepository.GetAllByUserEmailAsync(request.NewAdminId);
-                    if (owners.Count > 1)
+                    logger.LogWarning("Ownership transfer refused: {Email} is an address, not a user id",
+                        LogSanitizer.RedactEmail(request.NewAdminId));
+                    return Results.BadRequest(new
                     {
-                        logger.LogWarning(
-                            "Ownership transfer refused: {Email} matches {Count} accounts",
-                            LogSanitizer.RedactEmail(request.NewAdminId), owners.Count);
-                        return Results.Conflict(new
-                        {
-                            error = $"'{request.NewAdminId}' matches more than one account. " +
-                                    "Use the user id of the intended account."
-                        });
-                    }
-
-                    newAdminUser = owners.FirstOrDefault();
+                        error = "newAdminId must be a user id, not an email address. " +
+                                "An address can answer to more than one account."
+                    });
                 }
 
+                var newAdminUser = await userRepository.GetByUserIdAsync(request.NewAdminId);
                 if (newAdminUser == null)
                 {
                     return Results.BadRequest(new { error = $"User '{request.NewAdminId}' not found" });

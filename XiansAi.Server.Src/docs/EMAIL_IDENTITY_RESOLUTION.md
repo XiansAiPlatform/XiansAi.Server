@@ -179,24 +179,28 @@ not visible under the subject.
 
 The fold answers "what may this credential do", where combining the accounts is the right answer.
 An operator naming a person by address is asking something else — *which* account — and there
-folding would act on an account they did not mean. These surfaces count every record holding the
-address and refuse when there is more than one.
+folding would act on an account they did not mean.
 
-Describing or transferring to one account:
+These surfaces count every record holding the address and refuse when more than one does. An
+address exactly one account holds names it as surely as a user id would, so that case proceeds:
+refusing it would not make anything safer, since an operator sent to find the user id would search
+by the same address and arrive at the same record.
 
-- **Ownership transfer** (`AdminOwnershipEndpoints`) — `409` with "matches more than one account.
-  Use the user id of the intended account."
 - **Participant lookup** (`AdminParticipantsEndpoints`) — `409` with "This email matches more than
-  one account, so participant details cannot be resolved from it."
-
-Granting a membership, which is the same question with a write attached. Both resolve through
-`EmailAccountLookup.From` and refuse with its shared wording, and both also refuse a disabled
-account rather than leaving a grant on a record that cannot sign in:
-
-- **Add user to current tenant** (`UserTenantService.AddTenantToUserIfExist`) — grants an approved
-  `TenantUser`, which is console access.
+  one account, so participant details cannot be resolved from it." Read-only.
 - **Create tenant participant** (`TenantParticipantUserService.CreateAsync`) — grants any tenant
-  role, up to `TenantAdmin`, when the address already has an account.
+  role, up to `TenantAdmin`. `userId` names an account outright and is the way past an ambiguous
+  address; otherwise `email` names the single account holding it, or creates one when none does.
+  Refuses a disabled account, rather than leaving a grant on a record that cannot sign in.
+- **Add user to current tenant** (`UserTenantService.AddTenantToUserIfExist`) — grants an approved
+  `TenantUser`, which is console access. Resolves through `EmailAccountLookup.From` and refuses a
+  disabled account. WebAPI only.
+
+One surface takes no address at all, because it names a single account and its caller always has
+the user id to hand:
+
+- **Ownership transfer** (`AdminOwnershipEndpoints`) — `400`, "newAdminId must be a user id, not an
+  email address."
 
 ## Worked examples
 
