@@ -912,7 +912,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         {
             var describeQueueRequest = new DescribeTaskQueueRequest
             {
-                Namespace = _tenantContext.GetTemporalConfig().FlowServerNamespace!,
+                Namespace = (await _tenantContext.GetTemporalConfigAsync()).FlowServerNamespace!,
                 TaskQueue = new TaskQueue { Name = taskQueueName },
                 ReportPollers = true,      // ask for the list of current pollers
                 ReportStats = false,       // stats are optional here
