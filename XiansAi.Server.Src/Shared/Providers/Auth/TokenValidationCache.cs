@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using System.Text;
-using System.Collections.Concurrent;
+using Shared.Services;
 using Shared.Utils;
 
 namespace Shared.Providers.Auth;
@@ -42,18 +42,21 @@ public class MemoryTokenValidationCache : ITokenValidationCache
     private readonly TimeSpan _absoluteExpiration;
     private readonly TimeSpan _slidingExpiration;
     private readonly long _cacheEntrySizeLimit;
-    
-    // Reverse index to track tokens by user ID for invalidation
-    // Using ConcurrentDictionary for thread-safe operations without explicit locking
-    // Key: userId, Value: ConcurrentBag of token cache keys
-    private readonly ConcurrentDictionary<string, ConcurrentBag<string>> _userTokens = new();
+
+    // Which tokens belong to which user, so that locking an account can drop them. Held by the
+    // shared singleton rather than by this instance: this cache is registered scoped, so an index
+    // of its own would be discarded with the request that cached the token, leaving the request
+    // that locks the account with nothing to evict.
+    private readonly IUserCacheIndex _userCacheIndex;
 
     public MemoryTokenValidationCache(
         IMemoryCache cache,
+        IUserCacheIndex userCacheIndex,
         ILogger<MemoryTokenValidationCache> logger,
         IConfiguration configuration)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _userCacheIndex = userCacheIndex ?? throw new ArgumentNullException(nameof(userCacheIndex));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         // Default to 5 minutes absolute expiration if not configured
@@ -122,16 +125,8 @@ public class MemoryTokenValidationCache : ITokenValidationCache
             .SetSize(_cacheEntrySizeLimit)
             .RegisterPostEvictionCallback((key, value, reason, state) =>
             {
-                // Clean up reverse index when cache entry is evicted
-                // This ensures the reverse index doesn't grow unbounded
-                if (value is CachedValidation cachedVal && !string.IsNullOrEmpty(cachedVal.UserId))
-                {
-                    // Note: We don't try to remove individual items from ConcurrentBag as it's not efficient
-                    // The bag will be cleaned up when the user is invalidated or naturally as entries expire
-                    // This is a trade-off: slight memory overhead vs. expensive item removal operations
-                    _logger.LogTrace("Cache entry evicted for user {UserId}, reason: {Reason}", 
-                        cachedVal.UserId, reason);
-                }
+                // Keeps the index from growing without bound as tokens expire on their own.
+                _userCacheIndex.Forget(userId, key.ToString() ?? string.Empty);
             });
 
         var cachedValidation = new CachedValidation
@@ -142,11 +137,7 @@ public class MemoryTokenValidationCache : ITokenValidationCache
         };
 
         _cache.Set(cacheKey, cachedValidation, cacheOptions);
-
-        // Update reverse index to track this token for the user
-        // ConcurrentDictionary.GetOrAdd is thread-safe and atomic
-        var tokens = _userTokens.GetOrAdd(userId, _ => new ConcurrentBag<string>());
-        tokens.Add(cacheKey);
+        _userCacheIndex.Track(userId, cacheKey);
 
         _logger.LogDebug("Cached successful token validation result for user {UserId}", LogSanitizer.Sanitize(userId));
         return Task.CompletedTask;
@@ -171,13 +162,10 @@ public class MemoryTokenValidationCache : ITokenValidationCache
             return Task.CompletedTask;
         }
 
-        var cacheKey = GetCacheKey(token);
-        
-        // Remove from cache - the eviction callback will handle reverse index cleanup if needed
-        // We don't try to manually clean the reverse index here to avoid race conditions
-        // and because ConcurrentBag doesn't support efficient item removal
-        _cache.Remove(cacheKey);
-        
+        // Removing the entry runs the post-eviction callback, which drops it from the index.
+        _cache.Remove(GetCacheKey(token));
+
+
         _logger.LogDebug("Removed token validation cache entry");
         return Task.CompletedTask;
     }
@@ -191,32 +179,7 @@ public class MemoryTokenValidationCache : ITokenValidationCache
             return Task.CompletedTask;
         }
 
-        // Try to remove and get the token bag for this user atomically
-        if (!_userTokens.TryRemove(userId, out var tokenBag))
-        {
-            _logger.LogDebug("No cached tokens found for user {UserId}", LogSanitizer.Sanitize(userId));
-            return Task.CompletedTask;
-        }
-
-        // Convert to array to get count and avoid multiple enumeration
-        var tokenKeys = tokenBag.ToArray();
-        
-        // Remove all cached tokens for this user
-        // Using Parallel.ForEach for better performance when there are many tokens
-        if (tokenKeys.Length > 10)
-        {
-            Parallel.ForEach(tokenKeys, tokenKey => _cache.Remove(tokenKey));
-        }
-        else
-        {
-            // For small numbers, simple loop is more efficient
-            foreach (var tokenKey in tokenKeys)
-            {
-                _cache.Remove(tokenKey);
-            }
-        }
-
-        _logger.LogInformation("Invalidated {Count} cached tokens for user {UserId}", tokenKeys.Length, LogSanitizer.Sanitize(userId));
+        _userCacheIndex.Invalidate(userId);
         return Task.CompletedTask;
     }
 

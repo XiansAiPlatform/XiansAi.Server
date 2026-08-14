@@ -18,14 +18,17 @@ namespace Shared.Services
     {
         private readonly IMemoryCache _cache;
         private readonly IUserRepository _userRepository;
+        private readonly IUserCacheIndex _userCacheIndex;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(5);
 
         public RoleCacheService(
             IMemoryCache cache,
-            IUserRepository userRepository)
+            IUserRepository userRepository,
+            IUserCacheIndex userCacheIndex)
         {
             _cache = cache;
             _userRepository = userRepository;
+            _userCacheIndex = userCacheIndex;
         }
 
         public async Task<List<string>> GetUserRolesAsync(string userId, string tenantId)
@@ -48,8 +51,15 @@ namespace Shared.Services
                 roles = SystemRoles.ExcludingParticipantRoles(rawRoles ?? new List<string>());
                 var cacheOptions = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(_cacheDuration)
-                    .SetSize(1);
+                    .SetSize(1)
+                    .RegisterPostEvictionCallback(
+                        (key, _, _, _) => _userCacheIndex.Forget(userId, key.ToString() ?? string.Empty));
                 _cache.Set(cacheKey, roles, cacheOptions);
+
+                // Tracked so that disabling the account drops its roles in every tenant, including
+                // any this user is no longer a member of — those are absent from the record the
+                // caller would otherwise iterate to work out which keys to remove.
+                _userCacheIndex.Track(userId, cacheKey);
             }
 
             return roles ?? new List<string>();

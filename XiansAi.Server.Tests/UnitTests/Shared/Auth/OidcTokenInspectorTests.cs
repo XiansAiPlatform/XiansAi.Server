@@ -196,17 +196,6 @@ public class OidcTokenInspectorTests
     }
 
     [Fact]
-    public void TheB2CEmailsArrayIsNotTreatedAsVerified()
-    {
-        // B2C states nothing about ownership of the address, and it may have come from a social
-        // account the directory never checked. Treating it as verified would let a sign-in attach
-        // itself to an existing account on that basis alone.
-        var jwt = TokenWith(("sub", "user-1"), ("emails", new[] { "a@b.com" }));
-
-        Assert.False(OidcTokenInspector.IsEmailVerified(jwt));
-    }
-
-    [Fact]
     public void NoScopeRequirementAcceptsAnyToken()
     {
         Assert.Null(OidcTokenInspector.DescribeMissingScope(new OidcProviderRule(), TokenWith(("sub", "u"))));

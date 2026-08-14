@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using Shared.Providers.Auth;
@@ -175,9 +174,21 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             return ServiceResult<TenantParticipantUser>.BadRequest("Name is required");
 
         // If the user already exists, add them to the tenant instead of creating a new account.
-        var existingUser = await _userRepository.GetByUserEmailAsync(sanitizedEmail);
-        if (existingUser != null)
-            return await AddTenantToExistingUserAsync(existingUser, tenantId, normalizedRole);
+        // The role granted here can be TenantAdmin, so the address has to name one account: an
+        // address two records answer to is refused rather than resolved to whichever came back
+        // first, which would hand the role to a different account than the admin meant.
+        var lookup = EmailAccountLookup.From(await _userRepository.GetAllByUserEmailAsync(sanitizedEmail));
+        if (lookup.IsAmbiguous)
+        {
+            _logger.LogWarning(
+                "Refusing to add {Email} to tenant {TenantId} as {Role}: it matches {Count} accounts",
+                LogSanitizer.RedactEmail(sanitizedEmail), LogSanitizer.Sanitize(tenantId),
+                normalizedRole, lookup.MatchCount);
+            return ServiceResult<TenantParticipantUser>.Conflict(EmailAccountLookup.AmbiguousError);
+        }
+
+        if (lookup.Account != null)
+            return await AddTenantToExistingUserAsync(lookup.Account, tenantId, normalizedRole);
 
         var dto = new CreateNewUserDto
         {
@@ -219,6 +230,18 @@ public class TenantParticipantUserService : ITenantParticipantUserService
     private async Task<ServiceResult<TenantParticipantUser>> AddTenantToExistingUserAsync(
         User user, string tenantId, string normalizedRole)
     {
+        // A disabled account cannot sign in, and the one kind most likely to be found by address is
+        // a record created disabled because it collides with a system administrator. Granting it a
+        // membership would leave that grant waiting on a decision nobody made here.
+        if (user.IsLockedOut)
+        {
+            _logger.LogWarning(
+                "Refusing to add disabled account {UserId} to tenant {TenantId}",
+                LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<TenantParticipantUser>.Conflict(
+                "This account is disabled, so it cannot be added to a tenant. Enable it first.");
+        }
+
         var existingMembership = user.TenantRoles.FirstOrDefault(t => t.Tenant == tenantId);
         if (existingMembership != null)
         {

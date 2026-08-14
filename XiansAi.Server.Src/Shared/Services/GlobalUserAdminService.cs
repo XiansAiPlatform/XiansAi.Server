@@ -112,23 +112,20 @@ public class GlobalUserAdminService : IGlobalUserAdminService
 
     private readonly IUserRepository _userRepository;
     private readonly ITenantCacheService _tenantCacheService;
-    private readonly IRoleCacheService _roleCacheService;
-    private readonly ITokenValidationCache _tokenCache;
+    private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<GlobalUserAdminService> _logger;
 
     public GlobalUserAdminService(
         IUserRepository userRepository,
         ITenantCacheService tenantCacheService,
-        IRoleCacheService roleCacheService,
-        ITokenValidationCache tokenCache,
+        IUserAuthorizationInvalidator authorizationInvalidator,
         IWebhookEventPublisher webhookEventPublisher,
         ILogger<GlobalUserAdminService> logger)
     {
         _userRepository = userRepository;
         _tenantCacheService = tenantCacheService;
-        _roleCacheService = roleCacheService;
-        _tokenCache = tokenCache;
+        _authorizationInvalidator = authorizationInvalidator;
         _webhookEventPublisher = webhookEventPublisher;
         _logger = logger;
     }
@@ -424,8 +421,6 @@ public class GlobalUserAdminService : IGlobalUserAdminService
 
     private async Task InvalidateCachesAsync(User user)
     {
-        foreach (var tr in user.TenantRoles)
-            _roleCacheService.InvalidateUserRoles(user.UserId, tr.Tenant);
-        await _tokenCache.InvalidateUserTokens(user.UserId);
+        await _authorizationInvalidator.InvalidateAsync(user);
     }
 }

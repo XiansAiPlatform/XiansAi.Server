@@ -27,20 +27,6 @@ public class User
         set => _email = value.ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Whether the provider stated that the holder owns <see cref="Email"/>, rather than merely
-    /// asserting it. Only a verified address may decide *who someone is* — the uniqueness check that
-    /// stops a new sign-in from taking over an existing account turns on this. An unverified address
-    /// is still stored, because display and contact do not need that proof, and because refusing to
-    /// store one leaves the record with no address at all.
-    ///
-    /// False on records created before this existed, so treat it as "not known to be verified"
-    /// rather than "known to be unverified".
-    /// </summary>
-    [BsonElement("email_verified")]
-    [JsonPropertyName("emailVerified")]
-    public bool EmailVerified { get; set; }
-
     [BsonElement("name")]
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;

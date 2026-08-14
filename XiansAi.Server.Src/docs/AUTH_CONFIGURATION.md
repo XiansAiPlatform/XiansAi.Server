@@ -310,8 +310,11 @@ resolved when an address names several accounts, including the rules for system 
 The Agent API uses certificate-based authentication and caches validation results for performance:
 
 ```bash
-# Certificate validation cache duration in minutes (default: 10)
-AgentApi__CertificateValidationCacheDurationMinutes=10
+# Idle window: an agent that keeps calling within this window never revalidates (default: 2)
+AgentApi__CertificateValidationCacheDurationMinutes=2
+
+# Hard ceiling regardless of activity (default: 5)
+AgentApi__CertificateValidationCacheMaxDurationMinutes=5
 
 # Size per cache entry for eviction policy (default: 1)
 AgentApi__CertificateValidationCacheEntrySize=1
@@ -320,7 +323,12 @@ AgentApi__CertificateValidationCacheEntrySize=1
 **Security Notes:**
 
 - Only successful certificate validations are cached
-- Cache is automatically invalidated when a certificate is revoked
+- Revoking a certificate and disabling the account both evict the entry directly
+- The ceiling bounds how long a disabled agent survives on the server instances that did not
+  handle the request that disabled it, since the cache is in-process. It matches the token and
+  role caches so that every cached authorization decision has the same worst case
+- Set the ceiling below the idle window and it is ignored, with a warning: the idle window becomes
+  the ceiling, because an entry cannot outlive the point at which it is discarded anyway
 - Uses the same global cache size limit as token validation
 - Failed validations always trigger fresh validation
 

@@ -76,12 +76,6 @@ public sealed class SignInIdentity
 
     public string? Email { get; init; }
 
-    /// <summary>
-    /// Whether the provider stated the holder owns <see cref="Email"/>. An unverified address is
-    /// still stored for display and contact, but only a verified one may decide identity.
-    /// </summary>
-    public bool EmailVerified { get; init; }
-
     public string? Name { get; init; }
 
     /// <summary>
@@ -229,7 +223,6 @@ public class UserTenantService : IUserTenantService
                     {
                         UserId = userId,
                         Email = identity.Email ?? string.Empty,
-                        EmailVerified = identity.EmailVerified,
                         Name = identity.Name ?? string.Empty,
                         ProviderAuthority = providerAuthority
                     },
@@ -352,18 +345,15 @@ public class UserTenantService : IUserTenantService
     /// Fills in an address or a name the record is missing, from what the token says.
     ///
     /// Records provisioned before the address was stored have neither, and nothing else ever
-    /// revisits them — the create path only runs on a first sign-in. Only blanks are filled: a value
-    /// already on the record may have been set by an admin, and a verified address is never replaced
-    /// by an unverified one, which would turn a proven address into an asserted one.
+    /// revisits them — the create path only runs on a first sign-in. Only blanks are filled, because
+    /// a value already on the record may have been set by an admin.
     /// </summary>
     private async Task BackfillMissingProfileAsync(User user, SignInIdentity identity)
     {
         var fillEmail = string.IsNullOrWhiteSpace(user.Email) && !string.IsNullOrWhiteSpace(identity.Email);
         var fillName = string.IsNullOrWhiteSpace(user.Name) && !string.IsNullOrWhiteSpace(identity.Name);
-        var confirmEmail = !fillEmail && !user.EmailVerified && identity.EmailVerified
-            && string.Equals(user.Email, identity.Email, StringComparison.OrdinalIgnoreCase);
 
-        if (!fillEmail && !fillName && !confirmEmail)
+        if (!fillEmail && !fillName)
         {
             return;
         }
@@ -375,7 +365,6 @@ public class UserTenantService : IUserTenantService
             await _userRepository.UpdateProfileFieldsAsync(
                 user.UserId,
                 email: fillEmail ? identity.Email : null,
-                emailVerified: fillEmail || confirmEmail ? identity.EmailVerified : null,
                 name: fillName ? identity.Name : null);
 
             _logger.LogInformation(
@@ -618,9 +607,31 @@ public class UserTenantService : IUserTenantService
             if (!validationResult.IsSuccess)
                 return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 
-            var user = await _userRepository.GetByUserEmailAsync(email);
+            // This grants an approved membership, which names one person. An address can answer to
+            // more than one account, so it is refused rather than resolved to whichever record came
+            // back first — that would put a different account in the tenant than the admin meant.
+            var lookup = EmailAccountLookup.From(await _userRepository.GetAllByUserEmailAsync(email));
+            if (lookup.IsAmbiguous)
+            {
+                _logger.LogWarning(
+                    "Refusing to add {Email} to tenant {TenantId}: it matches {Count} accounts",
+                    LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(_tenantContext.TenantId),
+                    lookup.MatchCount);
+                return ServiceResult<bool>.Conflict(EmailAccountLookup.AmbiguousError);
+            }
+
+            var user = lookup.Account;
             if (user == null)
                 return ServiceResult<bool>.NotFound("User not found");
+
+            if (user.IsLockedOut)
+            {
+                _logger.LogWarning(
+                    "Refusing to add disabled account {UserId} to tenant {TenantId}",
+                    LogSanitizer.RedactUserId(user.UserId), LogSanitizer.Sanitize(_tenantContext.TenantId));
+                return ServiceResult<bool>.Conflict(
+                    "This account is disabled, so it cannot be given a tenant membership. Enable it first.");
+            }
 
             var tenantEntry = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == _tenantContext.TenantId);
 
@@ -645,8 +656,9 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding user with email user {email} to tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.RedactEmail(email));
-            return ServiceResult<bool>.InternalServerError("Error adding tenant to user with email {email}, email");
+            _logger.LogError(ex, "Error adding user with email {Email} to tenant {TenantId}",
+                LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(_tenantContext.TenantId));
+            return ServiceResult<bool>.InternalServerError("Error adding tenant to user with this email");
         }
     }
 

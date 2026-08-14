@@ -15,7 +15,6 @@ a customer-facing one — legitimately has two records carrying the same address
 | `UserId` | The provider's subject (`sub` / `oid`, or the configured `userIdClaim`). The collection is keyed on this. Unique only within one issuer. |
 | `ProviderAuthority` | The normalized OIDC authority whose signing keys authenticated this subject. Pins the record to one provider so a second provider cannot claim the same subject. Null on records created before pinning existed; those are pinned on first use. |
 | `Email` | Stored lowercase. Used for display, for contact, and — on the credentials listed below — for identifying the caller. Not unique. |
-| `EmailVerified` | Whether the provider stated the holder owns the address, rather than merely asserting it. False on older records, so read it as "not known to be verified". |
 
 `UserId` is the identity. `Email` is a label that usually happens to be unique and sometimes is not.
 Everything in this document follows from that distinction.
@@ -178,14 +177,26 @@ not visible under the subject.
 
 ## Endpoints that refuse instead of folding
 
-Two Admin API surfaces describe or modify exactly one account, so folding would give a wrong answer
-rather than a combined one. Both count every record holding the address and refuse when there is
-more than one:
+The fold answers "what may this credential do", where combining the accounts is the right answer.
+An operator naming a person by address is asking something else — *which* account — and there
+folding would act on an account they did not mean. These surfaces count every record holding the
+address and refuse when there is more than one.
+
+Describing or transferring to one account:
 
 - **Ownership transfer** (`AdminOwnershipEndpoints`) — `409` with "matches more than one account.
   Use the user id of the intended account."
 - **Participant lookup** (`AdminParticipantsEndpoints`) — `409` with "This email matches more than
   one account, so participant details cannot be resolved from it."
+
+Granting a membership, which is the same question with a write attached. Both resolve through
+`EmailAccountLookup.From` and refuse with its shared wording, and both also refuse a disabled
+account rather than leaving a grant on a record that cannot sign in:
+
+- **Add user to current tenant** (`UserTenantService.AddTenantToUserIfExist`) — grants an approved
+  `TenantUser`, which is console access.
+- **Create tenant participant** (`TenantParticipantUserService.CreateAsync`) — grants any tenant
+  role, up to `TenantAdmin`, when the address already has an account.
 
 ## Worked examples
 
@@ -223,6 +234,35 @@ Addresses are redacted in logs, so match on the message text:
 | `Not using the email of {UserId} as their conversation identity` | This account's threads are namespaced by its subject, not its address. |
 | `subject is pinned to provider {Pinned} but was asserted by {Presented}` | A provider presented another provider's subject. Always investigate. |
 
+## Disabling an account takes effect immediately
+
+Every API caches the authorization decision it made, and none of those caches re-check whether the
+account is still enabled: the User API keeps the approved tenant list, the Agent API keeps the
+certificate's user and roles, the Admin API keeps the resolved roles, and validated tokens are kept
+for all of them. Each cache is therefore a window during which a disabled account keeps working.
+
+`IUserCacheIndex` records which entries were written for which account, because the keys are built
+from what the request presented — a token hash, a certificate thumbprint, a provider authority and
+subject — and none of those can be reconstructed from a user id. `IUserAuthorizationInvalidator`
+evicts them, and is called wherever an account is disabled, enabled, or has its roles changed.
+
+It also evicts the accounts that share the address, because a credential naming only an address
+resolves through all of them: disabling one drops it from the combined roles and withdraws the
+administrator role from the rest, so what the others resolve to has changed too.
+
+Two limits are worth knowing:
+
+- **It is per process.** The caches are in-process, so eviction on the instance that served the
+  admin request does not reach the others. Their entries expire on their own, which the absolute
+  expirations bound: 30 seconds for User API approved tenants
+  (`Auth:ApprovedTenantCacheDurationSeconds`), and 5 minutes for tokens
+  (`Auth:TokenValidationCacheDurationMinutes`), roles, and certificates
+  (`AgentApi:CertificateValidationCacheMaxDurationMinutes`). Five minutes is therefore the worst
+  case for a disabled account anywhere in the deployment.
+- **It must be a singleton.** The caches are registered scoped. An index owned by one of them would
+  be discarded with the request that wrote the entry, leaving the later request with nothing to
+  evict — which is exactly how the token cache's own reverse index behaved before this existed.
+
 ## Known edges
 
 - **`UserRepository.GetUserRolesAsync` does not fold.** Given an email it resolves by `UserId`
@@ -232,15 +272,21 @@ Addresses are redacted in logs, so match on the message text:
   semantics survive.
 - **`RoleCacheService` never caches address-shaped keys.** Entries are keyed on the value passed in,
   while every invalidation passes a canonical user id, so an entry keyed on an address would never
-  be invalidated and would serve stale roles for the full five minutes.
-- **Ownership transfer and participant lookup count disabled records too.** They count every record
-  holding the address, unlike the fold, which drops disabled ones first. So an administrator's
-  address that has a disabled duplicate awaiting review will get a `409` from those two endpoints
-  even though every other path resolves it without difficulty. Use the user id there.
-- **An unverified address is still stored.** `EmailVerified` records whether the provider vouched
-  for it. Only a verified address should be allowed to decide *who someone is*; an unverified one is
-  for display and contact, because otherwise anyone able to assert an arbitrary address at their own
-  IdP could claim a victim's.
+  be invalidated and would serve stale roles for the full five minutes. Entries keyed on a user id
+  are tracked and evicted as described above.
+- **The endpoints that refuse count disabled records too.** They count every record holding the
+  address, unlike the fold, which drops disabled ones first. So an administrator's address that has
+  a disabled duplicate awaiting review will get a `409` from all four of them even though every
+  other path resolves it without difficulty. Use the user id there.
+- **No record is kept of whether a provider vouched for an address.** An address a provider merely
+  asserted admits a second record on exactly the same terms as one it verified, so someone able to
+  set an arbitrary address at their own IdP can put a victim's address on a record they control.
+  Nothing downstream trusts an address by itself, which is what contains this: the provider pin
+  keys identity on the subject, the fold refuses to combine administrator rights across records
+  that were not accepted as the same person, and the endpoints above refuse an ambiguous address
+  rather than picking. Enforcing verification at provisioning would be the stronger answer, but it
+  is not available on Azure AD B2C, which issues no verification claim at all — every B2C sign-in
+  would be treated as unverified and refused.
 
 ## Related
 

@@ -86,6 +86,7 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
 
     private readonly IUserTenantService _userTenantService;
     private readonly IMemoryCache _cache;
+    private readonly IUserCacheIndex _userCacheIndex;
     private readonly OidcValidationPolicy _policy;
     private readonly ILogger<AuthorizedTenantResolver> _logger;
     private readonly TimeSpan _cacheDuration;
@@ -93,12 +94,14 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
     public AuthorizedTenantResolver(
         IUserTenantService userTenantService,
         IMemoryCache cache,
+        IUserCacheIndex userCacheIndex,
         IConfiguration configuration,
         OidcValidationPolicy policy,
         ILogger<AuthorizedTenantResolver> logger)
     {
         _userTenantService = userTenantService;
         _cache = cache;
+        _userCacheIndex = userCacheIndex;
         _policy = policy;
         _logger = logger;
         _cacheDuration = TimeSpan.FromSeconds(
@@ -185,11 +188,10 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
             return cachedAccess;
         }
 
-        // The address is recorded whether or not the provider vouched for it, because a record with
-        // no address cannot be matched to a person at all. Whether it may decide *identity* is a
-        // separate question the stored EmailVerified flag answers: an unverified claim is only
-        // display and contact, or someone able to assert an arbitrary email at their IdP could claim
-        // a victim's address. See OidcTokenInspector.IsEmailVerified.
+        // The address is recorded whatever it is worth, because a record with no address cannot be
+        // matched to a person at all. It never decides identity on its own: the record is keyed on
+        // the provider subject, and an address held by more than one account resolves through
+        // EmailIdentityResolution rather than naming one of them.
         //
         // The membership is created approved when the token was checked against the audiences this
         // tenant declared, because that is what makes holding one the tenant's own statement that
@@ -214,7 +216,6 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
             {
                 UserId = providerUserId,
                 Email = validation.Email,
-                EmailVerified = validation.EmailVerified,
                 Name = validation.Name,
                 ProviderAuthority = providerAuthority
             },
@@ -239,8 +240,15 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
 
         var cacheOptions = new MemoryCacheEntryOptions()
             .SetAbsoluteExpiration(_cacheDuration)
-            .SetSize(1);
+            .SetSize(1)
+            .RegisterPostEvictionCallback(
+                (key, _, _, _) => _userCacheIndex.Forget(access.AccountUserId, key.ToString() ?? string.Empty));
         _cache.Set(cacheKey, access, cacheOptions);
+
+        // Tracked against the account rather than the key, which is built from what the token
+        // presented and cannot be reconstructed when an administrator disables the account. The
+        // entry carries the approved tenants, so a hit skips the lockout check entirely.
+        _userCacheIndex.Track(access.AccountUserId, cacheKey);
 
         return access;
     }

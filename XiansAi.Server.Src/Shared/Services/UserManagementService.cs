@@ -20,13 +20,6 @@ public class UserDto
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Whether the provider stated that the holder owns <see cref="Email"/>. See
-    /// <see cref="User.EmailVerified"/>; only a verified address participates in deciding identity.
-    /// </summary>
-    [JsonPropertyName("emailVerified")]
-    public bool EmailVerified { get; set; }
-
-    /// <summary>
     /// OIDC authority the subject was authenticated by, pinned onto the new record. Null for
     /// provisioning paths that do not authenticate against a specific provider, such as operator
     /// bootstrap and admin-created users; those records are pinned on first sign-in instead.
@@ -171,6 +164,7 @@ public class UserManagementService : IUserManagementService
     private readonly IEmailService _emailService;
     private readonly IJwtClaimsExtractor _jwtClaimsExtractor;
     private readonly ITokenValidationCache _tokenCache;
+    private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
 
     private const string EMAIL_SUBJECT = "Xians.ai - Invitation";
 
@@ -183,6 +177,7 @@ public class UserManagementService : IUserManagementService
         IEmailService emailService,
         IJwtClaimsExtractor jwtClaimsExtractor,
         ITokenValidationCache tokenCache,
+        IUserAuthorizationInvalidator authorizationInvalidator,
         ILogger<UserManagementService> logger)
     {
         _userRepository = userRepository;
@@ -194,6 +189,7 @@ public class UserManagementService : IUserManagementService
         _emailService = emailService;
         _jwtClaimsExtractor = jwtClaimsExtractor;
         _tokenCache = tokenCache;
+        _authorizationInvalidator = authorizationInvalidator;
     }
 
     public async Task<ServiceResult<bool>> LockUserAsync(string userId, string reason)
@@ -212,9 +208,10 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.NotFound("User not found");
             }
 
-            // Invalidate all cached tokens for this user to ensure locked users cannot access the system
-            await _tokenCache.InvalidateUserTokens(userId);
-            _logger.LogInformation("User {UserId} locked by {AdminUserId} and tokens invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
+            // Every cached decision about this account, across all four APIs, so that the lock
+            // takes effect on the next request rather than when those entries expire.
+            await _authorizationInvalidator.InvalidateAsync(userId);
+            _logger.LogInformation("User {UserId} locked by {AdminUserId} and cached access invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -240,9 +237,9 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.NotFound("User not found");
             }
 
-            // Invalidate cached tokens so user needs to re-authenticate with fresh token
-            await _tokenCache.InvalidateUserTokens(userId);
-            _logger.LogInformation("User {UserId} unlocked by {AdminUserId} and tokens invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
+            // Cached refusals are dropped too, so the account works again without a wait.
+            await _authorizationInvalidator.InvalidateAsync(userId);
+            _logger.LogInformation("User {UserId} unlocked by {AdminUserId} and cached access invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -338,7 +335,6 @@ public class UserManagementService : IUserManagementService
             {
                 UserId = userDto.UserId,
                 Email = userDto.Email,
-                EmailVerified = userDto.EmailVerified,
                 Name = userDto.Name,
                 ProviderAuthority = userDto.ProviderAuthority,
                 IsSysAdmin = isFirstUserBootstrap,

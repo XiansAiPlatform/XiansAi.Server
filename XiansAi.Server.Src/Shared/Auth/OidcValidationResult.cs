@@ -29,12 +29,6 @@ public class OidcValidationResult
     public string? Email { get; init; }
 
     /// <summary>
-    /// Whether the provider states the holder owns <see cref="Email"/>. Only this justifies using the
-    /// address to decide which account the caller is; an unverified one is for display and contact.
-    /// </summary>
-    public bool EmailVerified { get; init; }
-
-    /// <summary>
     /// Whether the token was checked against the audiences the provider declared, rather than being
     /// accepted on its issuer's signature alone.
     ///
@@ -64,7 +58,6 @@ public class OidcValidationResult
         string? email,
         string? name,
         DateTimeOffset? tokenExpiresAt = null,
-        bool emailVerified = false,
         bool audienceValidated = false) =>
         new()
         {
@@ -73,7 +66,6 @@ public class OidcValidationResult
             ProviderUserId = providerUserId,
             ProviderAuthority = providerAuthority,
             Email = email,
-            EmailVerified = emailVerified,
             AudienceValidated = audienceValidated,
             Name = name,
             TokenExpiresAt = tokenExpiresAt

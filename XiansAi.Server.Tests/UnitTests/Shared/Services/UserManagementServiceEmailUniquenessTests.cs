@@ -39,6 +39,7 @@ public class UserManagementServiceEmailUniquenessTests
             Mock.Of<IEmailService>(),
             Mock.Of<IJwtClaimsExtractor>(),
             Mock.Of<ITokenValidationCache>(),
+            Mock.Of<IUserAuthorizationInvalidator>(),
             NullLogger<UserManagementService>.Instance);
     }
 
@@ -228,23 +229,6 @@ public class UserManagementServiceEmailUniquenessTests
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(x => x.CreateAsync(It.Is<User>(u => u.UserId == "google-subject-123")), Times.Once);
-    }
-
-    [Fact]
-    public async Task CreateNewUser_RecordsWhetherTheProviderVouchedForTheAddress()
-    {
-        ArrangeCreatable();
-
-        await BuildService().CreateNewUser(new UserDto
-        {
-            UserId = "google-subject-123",
-            Email = "fresh@example.com",
-            EmailVerified = true,
-            Name = "Test User",
-            ProviderAuthority = Provider
-        });
-
-        _userRepo.Verify(x => x.CreateAsync(It.Is<User>(u => u.EmailVerified)), Times.Once);
     }
 
     [Theory]

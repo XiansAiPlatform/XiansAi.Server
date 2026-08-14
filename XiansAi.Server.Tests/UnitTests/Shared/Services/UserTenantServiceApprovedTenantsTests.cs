@@ -534,14 +534,14 @@ public class UserTenantServiceApprovedTenantsTests
         await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
 
         _userRepo.Verify(
-            x => x.UpdateProfileFieldsAsync(UserId, "user@example.com", false, "Test User"),
+            x => x.UpdateProfileFieldsAsync(UserId, "user@example.com", "Test User"),
             Times.Once);
     }
 
     [Fact]
     public async Task EnsureUserAndGetApprovedTenants_DoesNotOverwriteAnEmailTheRecordAlreadyHas()
     {
-        // An admin may have set it deliberately, and an unverified claim must never replace it.
+        // An admin may have set it deliberately, so a token claim must never replace it.
         _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(new User
         {
             UserId = UserId,
@@ -556,7 +556,7 @@ public class UserTenantServiceApprovedTenantsTests
 
         _userRepo.Verify(
             x => x.UpdateProfileFieldsAsync(
-                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool?>(), It.IsAny<string?>()),
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()),
             Times.Never);
     }
 

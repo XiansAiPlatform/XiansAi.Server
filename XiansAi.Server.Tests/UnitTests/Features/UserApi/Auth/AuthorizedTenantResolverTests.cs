@@ -18,13 +18,16 @@ public class AuthorizedTenantResolverTests
 
     private readonly Mock<IUserTenantService> _userTenantService = new();
 
-    private AuthorizedTenantResolver BuildResolver(IMemoryCache? cache = null)
+    private AuthorizedTenantResolver BuildResolver(
+        IMemoryCache? cache = null, IUserCacheIndex? userCacheIndex = null)
     {
         var configuration = new ConfigurationBuilder().Build();
+        var memoryCache = cache ?? new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
 
         return new AuthorizedTenantResolver(
             _userTenantService.Object,
-            cache ?? new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
+            memoryCache,
+            userCacheIndex ?? new UserCacheIndex(memoryCache, NullLogger<UserCacheIndex>.Instance),
             configuration,
             BuildPolicy(),
             NullLogger<AuthorizedTenantResolver>.Instance);
@@ -158,6 +161,29 @@ public class AuthorizedTenantResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_ReChecksTheAccount_AfterItsCachedAccessIsInvalidated()
+    {
+        // The cached entry holds the approved tenants, so a hit never reaches the lockout check.
+        // Disabling the account has to drop the entry, or the account keeps its access for as long
+        // as the entry lives.
+        var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var index = new UserCacheIndex(cache, NullLogger<UserCacheIndex>.Instance);
+        SetupApprovedTenants("tenant-a");
+        var resolver = BuildResolver(cache, index);
+        await resolver.ResolveAsync(ValidToken(), "tenant-a");
+
+        index.Invalidate(ProviderUserId);
+        _userTenantService
+            .Setup(x => x.EnsureUserAndGetApprovedTenants(
+                IdentityOf(ProviderUserId, ProviderAuthority), It.IsAny<string?>(), It.IsAny<bool>()))
+            .ReturnsAsync(ServiceResult<ResolvedUserAccess>.Forbidden("User account is disabled"));
+
+        var resolution = await resolver.ResolveAsync(ValidToken(), "tenant-a");
+
+        Assert.False(resolution.IsAuthorized);
+    }
+
+    [Fact]
     public async Task ResolveAsync_Denies_WhenTenantLookupFails()
     {
         _userTenantService
@@ -203,41 +229,22 @@ public class AuthorizedTenantResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_PassesAnUnverifiedEmail_ButMarksItUnverified()
+    public async Task ResolveAsync_PassesTheAddressAndNameOnForProvisioning()
     {
-        // Providers that issue no email_verified claim at all — Azure B2C among them — would
-        // otherwise leave every record they provision with no address, and nothing later fills it
-        // in. The address is stored; the flag is what keeps it from deciding identity.
+        // Whatever the provider says about the address is passed through, because a record with no
+        // address cannot be matched to a person and nothing later fills it in. Azure B2C in
+        // particular vouches for nothing, and its users still need an address on the record.
         SetupApprovedTenants("tenant-a");
         var resolver = BuildResolver();
         var validation = OidcValidationResult.Ok(
-            CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User",
-            emailVerified: false);
+            CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User");
 
         await resolver.ResolveAsync(validation, "tenant-a");
 
         _userTenantService.Verify(
             x => x.EnsureUserAndGetApprovedTenants(
                 It.Is<SignInIdentity>(i =>
-                    i.Email == "user@example.com" && !i.EmailVerified && i.Name == "Test User"),
-                "tenant-a", It.IsAny<bool>()),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task ResolveAsync_PassesAVerifiedEmail_AsVerified()
-    {
-        SetupApprovedTenants("tenant-a");
-        var resolver = BuildResolver();
-        var validation = OidcValidationResult.Ok(
-            CanonicalUserId, ProviderUserId, ProviderAuthority, "user@example.com", "Test User",
-            emailVerified: true);
-
-        await resolver.ResolveAsync(validation, "tenant-a");
-
-        _userTenantService.Verify(
-            x => x.EnsureUserAndGetApprovedTenants(
-                It.Is<SignInIdentity>(i => i.Email == "user@example.com" && i.EmailVerified),
+                    i.Email == "user@example.com" && i.Name == "Test User"),
                 "tenant-a", It.IsAny<bool>()),
             Times.Once);
     }

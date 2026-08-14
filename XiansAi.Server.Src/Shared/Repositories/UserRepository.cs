@@ -54,7 +54,7 @@ public interface IUserRepository
     /// <see cref="UpdateAsync"/>, which replaces the whole document, this cannot undo a change
     /// another request made in the meantime — a tenant membership appended in parallel, say.
     /// </summary>
-    Task<bool> UpdateProfileFieldsAsync(string userId, string? email, bool? emailVerified, string? name);
+    Task<bool> UpdateProfileFieldsAsync(string userId, string? email, string? name);
     Task<string?> PinProviderAuthorityIfUnsetAsync(string userId, string providerAuthority);
     Task<bool> AddTenantRoleIfAbsentAsync(string userId, string tenantId, bool isApproved, IReadOnlyList<string> roles);
     Task<bool> SetSysAdminAsync(string userId, bool isSysAdmin);
@@ -488,8 +488,7 @@ public class UserRepository : IUserRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "UpdateUser");
     }
 
-    public async Task<bool> UpdateProfileFieldsAsync(
-        string userId, string? email, bool? emailVerified, string? name)
+    public async Task<bool> UpdateProfileFieldsAsync(string userId, string? email, string? name)
     {
         var updates = new List<UpdateDefinition<User>>();
 
@@ -497,11 +496,6 @@ public class UserRepository : IUserRepository
         {
             // Stored lowercase, matching the property setter on the model.
             updates.Add(Builders<User>.Update.Set(x => x.Email, email.ToLowerInvariant()));
-        }
-
-        if (emailVerified.HasValue)
-        {
-            updates.Add(Builders<User>.Update.Set(x => x.EmailVerified, emailVerified.Value));
         }
 
         if (name != null)
