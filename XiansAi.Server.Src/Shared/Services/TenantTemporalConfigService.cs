@@ -24,20 +24,24 @@ public interface ITenantTemporalConfigService
     Task<ServiceResult<UpsertTenantTemporalConfigRequest?>> GetForTenantAsync(string tenantId);
     Task<ServiceResult<bool>> UpsertAsync(string tenantId, string serverUrl, string @namespace, string? certificate, string? privateKey, string actor);
     Task<ServiceResult<bool>> RevertAsync(string tenantId, string actor);
-    Task<ServiceResult<bool>> CheckConnectivityAsync(string serverUrl, string @namespace, string? certificate, string? privateKey);
+    Task<ServiceResult<bool>> CheckConnectivityAsync(string tenantId, string serverUrl, string @namespace, string? certificate, string? privateKey);
 }
 
 public class TenantTemporalConfigService : ITenantTemporalConfigService
 {
-    private readonly IServiceScopeFactory _serviceFactory;
     private readonly ILogger<TenantTemporalConfigService> _logger;
+    private readonly ITenantTemporalConfigRepository _repository;
+    private readonly ITemporalClientService _temporalClientService;
 
     public TenantTemporalConfigService(
         IServiceScopeFactory serviceFactory,
         ILogger<TenantTemporalConfigService> logger)
     {
-        _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _logger = logger;
+
+        using var scope = serviceFactory.CreateScope();
+        _repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
+        _temporalClientService = scope.ServiceProvider.GetRequiredService<ITemporalClientService>();
     }
 
     public async Task<ServiceResult<UpsertTenantTemporalConfigRequest?>> GetForTenantAsync(string tenantId)
@@ -47,10 +51,8 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         try
         {
-            using var scope = _serviceFactory.CreateScope();
-            var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
             // Repository only returns the active (non-deleted) row, already decrypted.
-            var doc = await repository.GetByTenantIdAsync(tenantId);
+            var doc = await _repository.GetAsync(tenantId);
             if (doc == null) return ServiceResult<UpsertTenantTemporalConfigRequest?>.Success(null);
 
             var config = new UpsertTenantTemporalConfigRequest
@@ -77,15 +79,25 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         try
         {
-            using var scope = _serviceFactory.CreateScope();
-            var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
-            var connectivityResult = await CheckConnectivityAsync(serverUrl, @namespace, certificate, privateKey);
+            var connectivityResult = await CheckConnectivityAsync(tenantId, serverUrl, @namespace, certificate, privateKey);
             if (!connectivityResult.IsSuccess)
             {
                 return connectivityResult;
             }
 
-            await repository.UpsertAsync(tenantId, serverUrl, @namespace, certificate, privateKey, actor);
+            // If certificate and privateKey are not provided, try to retrieve them from the repository for the given tenantId
+            if (string.IsNullOrEmpty(certificate) && string.IsNullOrEmpty(privateKey))
+            {
+                var tenantConfig = await _repository.GetAsync(tenantId, serverUrl);
+                if (tenantConfig != null)
+                {
+                    certificate = tenantConfig.Certificate;
+                    privateKey = tenantConfig.PrivateKey;
+                }
+            }
+
+            await _repository.UpsertAsync(tenantId, serverUrl, @namespace, certificate, privateKey, actor);
+            await _temporalClientService.RemoveClient(tenantId);
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -102,11 +114,8 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         try
         {
-            using var scope = _serviceFactory.CreateScope();
-            var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
-            var temporalClientService = scope.ServiceProvider.GetRequiredService<ITemporalClientService>();
-            var reverted = await repository.RevertAsync(tenantId, actor);
-            await temporalClientService.RemoveClient(tenantId);
+            var reverted = await _repository.RevertAsync(tenantId, actor);
+            await _temporalClientService.RemoveClient(tenantId);
             return reverted ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");
         }
         catch (Exception ex)
@@ -116,7 +125,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         }
     }
 
-    public async Task<ServiceResult<bool>> CheckConnectivityAsync(string serverUrl, string @namespace, string? certificate, string? privateKey)
+    public async Task<ServiceResult<bool>> CheckConnectivityAsync(string tenantId, string serverUrl, string @namespace, string? certificate, string? privateKey)
     {
         if (string.IsNullOrWhiteSpace(serverUrl))
             return ServiceResult<bool>.BadRequest("serverUrl is required");
@@ -128,6 +137,16 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         TemporalClient? client = null;
         try
         {
+            // If certificate and privateKey are not provided, try to retrieve them from the repository for the given tenantId
+            if (string.IsNullOrEmpty(certificate) && string.IsNullOrEmpty(privateKey))
+            {
+                var tenantConfig = await _repository.GetAsync(tenantId, serverUrl);
+                if (tenantConfig != null)
+                {
+                    certificate = tenantConfig.Certificate;
+                    privateKey = tenantConfig.PrivateKey;
+                }
+            }
             client = await ConnectWithoutNamespaceAsync(serverUrl, certificate, privateKey);
             await EnsureNamespaceExistsAsync(client, serverUrl, @namespace);
             await EnsureSearchAttributesExistAsync(client, @namespace);
@@ -148,7 +167,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
             await DisposeAsync(client);
         }
     }
-    
+
     private static async Task<TemporalClient> ConnectWithoutNamespaceAsync(string serverUrl, string? certificate, string? privateKey)
     {
         var options = new TemporalClientConnectOptions(new(serverUrl));
@@ -164,7 +183,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         return await TemporalClient.ConnectAsync(options);
     }
-    
+
     private async Task EnsureNamespaceExistsAsync(TemporalClient client, string serverUrl, string @namespace)
     {
         try

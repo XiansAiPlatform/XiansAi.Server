@@ -8,7 +8,8 @@ namespace Shared.Repositories;
 
 public interface ITenantTemporalConfigRepository
 {
-    Task<TenantTemporalConfig?> GetByTenantIdAsync(string tenantId);
+    Task<TenantTemporalConfig?> GetAsync(string tenantId);
+    Task<TenantTemporalConfig?> GetAsync(string tenantId, string serverUrl);
 
     Task UpsertAsync(string tenantId, string serverUrl, string @namespace, string? certificate, string? privateKey, string actor);
 
@@ -45,7 +46,7 @@ public class TenantTemporalConfigRepository : ITenantTemporalConfigRepository
         }
     }
 
-    public async Task<TenantTemporalConfig?> GetByTenantIdAsync(string tenantId)
+    public async Task<TenantTemporalConfig?> GetAsync(string tenantId)
     {
         try
         {
@@ -55,7 +56,6 @@ public class TenantTemporalConfigRepository : ITenantTemporalConfigRepository
                 doc.Certificate = doc.Certificate == null ? null : _encryption.Decrypt(doc.Certificate, _uniqueSecret);
                 doc.PrivateKey = doc.PrivateKey == null ? null : _encryption.Decrypt(doc.PrivateKey, _uniqueSecret);
             }
-
             return doc;
         }
         catch (Exception ex)
@@ -64,6 +64,26 @@ public class TenantTemporalConfigRepository : ITenantTemporalConfigRepository
             return null;
         }
     }
+
+    public async Task<TenantTemporalConfig?> GetAsync(string tenantId, string serverUrl)
+    {
+        try
+        {
+            var doc = await _collection.Find(x => x.TenantId == tenantId && x.ServerUrl == serverUrl && !x.IsReverted).FirstOrDefaultAsync();
+            if (doc != null)
+            {
+                doc.Certificate = doc.Certificate == null ? null : _encryption.Decrypt(doc.Certificate, _uniqueSecret);
+                doc.PrivateKey = doc.PrivateKey == null ? null : _encryption.Decrypt(doc.PrivateKey, _uniqueSecret);
+            }
+            return doc;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving Temporal config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return null;
+        }
+    }
+
 
     public async Task UpsertAsync(string tenantId, string serverUrl, string @namespace, string? certificate, string? privateKey, string actor)
     {

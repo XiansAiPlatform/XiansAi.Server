@@ -534,7 +534,7 @@ public static class AdminTenantEndpoints
         [FromServices] ITenantTemporalConfigService service)
     {
         var result = await service.CheckConnectivityAsync(
-            request.ServerUrl, request.Namespace, request.Certificate, request.PrivateKey);
+            tenantId, request.ServerUrl, request.Namespace, request.Certificate, request.PrivateKey);
         return result.ToHttpResult();
     }
 

@@ -167,15 +167,15 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
 
         using var scope = _serviceFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
-        var tenantConnection = await repository.GetByTenantIdAsync(tenantId);
+        var tenantConnection = await repository.GetAsync(tenantId);
         if (tenantConnection != null)
         {
             return new TemporalConfig
             {
                 FlowServerUrl = tenantConnection.ServerUrl,
                 FlowServerNamespace = tenantConnection.Namespace,
-                CertificateBase64 = tenantConnection.Certificate == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.Certificate)),
-                PrivateKeyBase64 = tenantConnection.PrivateKey == null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(tenantConnection.PrivateKey))
+                CertificateBase64 = tenantConnection.Certificate == null ? null : tenantConnection.Certificate,
+                PrivateKeyBase64 = tenantConnection.PrivateKey == null ? null : tenantConnection.PrivateKey
             };
         }
 
