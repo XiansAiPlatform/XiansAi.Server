@@ -64,7 +64,8 @@ Address-based resolution only happens where the credential carries nothing else.
 | Admin API key, legacy `CreatedBy` | An email | Folded (below). Roles come back with the identity and are **not** read from the cache. Participant roles are dropped. |
 | Agent API certificate, OU is a user id | The `UserId` | `CertificateUserAccess.Resolve`, which applies the same rules as the fold to that one record. |
 | Agent API certificate, OU is an email | An email | Folded. |
-| WebAPI console / User API sign-in | The provider subject | Direct lookup. Never folded — a token names its subject exactly. |
+| User API sign-in | The provider subject | Direct lookup. Never folded — a token names its subject exactly. |
+| WebAPI console sign-in | Whatever `ClaimMappings.UserIdClaim` names, `sub` by default | Direct lookup. Folded only where that claim is configured to an address, since then the token names one no more exactly than a legacy API key does. |
 | Admin ownership transfer, participant lookup | Either | **Refused** on an ambiguous address rather than folded. See [Endpoints that refuse](#endpoints-that-refuse-instead-of-folding). |
 
 ## The fold
@@ -272,11 +273,6 @@ Two limits are worth knowing:
 
 ## Known edges
 
-- **`UserRepository.GetUserRolesAsync` does not fold.** Given an email it resolves by `UserId`
-  first, then falls back to the first record that happens to hold the address. Every caller that can
-  receive an address folds before reaching it — the Admin API resolver does so explicitly — so this
-  is a fallback rather than a live path, but it is the one remaining place where "first record wins"
-  semantics survive.
 - **`RoleCacheService` never caches address-shaped keys.** Entries are keyed on the value passed in,
   while every invalidation passes a canonical user id, so an entry keyed on an address would never
   be invalidated and would serve stale roles for the full five minutes. Entries keyed on a user id

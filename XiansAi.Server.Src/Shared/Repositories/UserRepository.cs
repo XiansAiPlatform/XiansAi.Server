@@ -413,11 +413,29 @@ public class UserRepository : IUserRepository
 
     public async Task<List<string>> GetUserRolesAsync(string userId, string tenantId)
     {
-        // Accept either the canonical user id or an email (legacy API-key CreatedBy values).
-        var user = await GetByUserIdOrEmailAsync(userId);
+        if (string.IsNullOrWhiteSpace(userId))
+            return new List<string>();
+
+        // The canonical id names one account and needs no folding. Checked first so a record whose
+        // UserId is itself an address — some providers issue one — still resolves to itself.
+        var user = await GetByUserIdAsync(userId);
 
         if (user == null)
+        {
+            // No record is keyed on this value, so an address here names whoever holds it, which
+            // can be more than one account. Fold rather than taking whichever the collection scan
+            // returned first: SysAdmin is global, and one record holding it while another does not
+            // means nobody has accepted the two as the same person. The fold also drops disabled
+            // records before choosing, where picking first could land on one and report no roles
+            // while a live account holds the same address.
+            if (userId.Contains('@'))
+            {
+                var identity = await ResolveEmailIdentityAsync(userId, tenantId);
+                return identity?.Roles.ToList() ?? new List<string>();
+            }
+
             return new List<string>();
+        }
 
         // A disabled account carries nothing, matching what an address resolves to through
         // EmailIdentityResolution. Without this a credential naming the id kept its roles after the
