@@ -196,11 +196,14 @@ by the same address and arrive at the same record.
   `TenantUser`, which is console access. Resolves through `EmailAccountLookup.From` and refuses a
   disabled account. WebAPI only.
 
-One surface takes no address at all, because it names a single account and its caller always has
-the user id to hand:
+One surface takes no address at all. It never creates an account, so its target always exists and
+the caller has necessarily obtained it from something that returned a user id; accepting an address
+would only add a resolution step that can be redundant or wrong, never necessary:
 
 - **Ownership transfer** (`AdminOwnershipEndpoints`) — `400`, "newAdminId must be a user id, not an
-  email address."
+  email address." The account is also refused when disabled, and when it holds no approved
+  membership of the tenant unless it is a system administrator — the lookup is not tenant-scoped,
+  so without that any account in the deployment could be made owner of a tenant's agent.
 
 ## Worked examples
 

@@ -161,6 +161,32 @@ public static class AdminOwnershipEndpoints
                     return Results.BadRequest(new { error = $"User '{request.NewAdminId}' not found" });
                 }
 
+                // A disabled account cannot sign in, so handing it the agent would leave that agent
+                // with an owner nobody can act as.
+                if (newAdminUser.IsLockedOut)
+                {
+                    logger.LogWarning("Ownership transfer refused: {UserId} is disabled",
+                        LogSanitizer.RedactUserId(newAdminUser.UserId));
+                    return Results.Conflict(new
+                    {
+                        error = "This account is disabled, so it cannot own an agent. Enable it first."
+                    });
+                }
+
+                // The lookup above is not tenant-scoped, so without this any account in the
+                // deployment could be made owner of this tenant's agent. A system administrator
+                // reaches every tenant already, and is the one account that need not be a member.
+                if (!newAdminUser.IsSysAdmin && !IsApprovedMemberOf(newAdminUser, parsedTenant))
+                {
+                    logger.LogWarning(
+                        "Ownership transfer refused: {UserId} is not a member of tenant {TenantId}",
+                        LogSanitizer.RedactUserId(newAdminUser.UserId), LogSanitizer.Sanitize(parsedTenant));
+                    return Results.BadRequest(new
+                    {
+                        error = $"User '{request.NewAdminId}' is not an approved member of tenant '{parsedTenant}'"
+                    });
+                }
+
                 // Determine the identifier to use (prefer userId)
                 var newAdminUserId = newAdminUser.UserId;
 
@@ -215,6 +241,15 @@ public static class AdminOwnershipEndpoints
         .WithName("TransferOwnership")
         ;
     }
+
+    /// <summary>
+    /// Whether the account holds an approved membership of the tenant. A pending one is not enough:
+    /// its roles do not count anywhere else either, so it names someone who cannot yet act here.
+    /// </summary>
+    private static bool IsApprovedMemberOf(User user, string tenantId) =>
+        user.TenantRoles.Any(membership =>
+            string.Equals(membership.Tenant, tenantId, StringComparison.OrdinalIgnoreCase)
+            && membership.IsApproved);
 }
 
 
