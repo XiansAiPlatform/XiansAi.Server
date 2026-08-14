@@ -86,6 +86,10 @@ namespace Features.WebApi.Services
                 if (user == null)
                     return ServiceResult<bool>.NotFound("User not found");
 
+                var sharedEmail = await FindSharedEmailConflictAsync(user);
+                if (sharedEmail != null)
+                    return sharedEmail;
+
                 user.IsSysAdmin = true;
                 var result = await _userRepository.UpdateAsync(_tenantContext.LoggedInUser, user);
                 _roleCacheService.InvalidateUserRoles(_tenantContext.LoggedInUser, _tenantContext.TenantId);
@@ -116,6 +120,10 @@ namespace Features.WebApi.Services
                 if (user == null)
                     return ServiceResult<bool>.NotFound("User not found");
 
+                var sharedEmail = await FindSharedEmailConflictAsync(user);
+                if (sharedEmail != null)
+                    return sharedEmail;
+
                 user.IsSysAdmin = true;
 
                 var result = await _userRepository.UpdateAsync(userId, user);
@@ -129,6 +137,32 @@ namespace Features.WebApi.Services
                 _logger.LogError(ex, "Error assigning roles to user {UserId}", LogSanitizer.Sanitize(userId));
                 return ServiceResult<bool>.InternalServerError("Error assigning roles");
             }
+        }
+
+        /// <summary>
+        /// Refuses a promotion whose address is held by more than one account, or null when it may
+        /// go ahead.
+        ///
+        /// Granting the role to one of several accounts sharing an address changes what that
+        /// address resolves to for all of them, so it is not a decision this endpoint should make
+        /// as a side effect of ordinary role management. The global user endpoint is the one place
+        /// that accepts it, where the operator is looking at every account holding the address.
+        /// </summary>
+        private async Task<ServiceResult<bool>?> FindSharedEmailConflictAsync(User user)
+        {
+            if (string.IsNullOrWhiteSpace(user.Email))
+                return null;
+
+            if (!await _userRepository.IsEmailSharedAsync(user.Email, user.UserId))
+                return null;
+
+            _logger.LogWarning(
+                "Refusing to grant SysAdmin to {UserId}: another account holds the same email",
+                LogSanitizer.Sanitize(user.UserId));
+            return ServiceResult<bool>.Conflict(
+                "More than one account holds this email address, so the system administrator role " +
+                "cannot be granted from here. Use the global user administration endpoint, which " +
+                "shows every account holding the address.");
         }
 
         public async Task<ServiceResult<bool>> RemoveSysAdminRolesToUserAsync(string userId)

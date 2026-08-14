@@ -164,6 +164,7 @@ public class UserManagementService : IUserManagementService
     private readonly IEmailService _emailService;
     private readonly IJwtClaimsExtractor _jwtClaimsExtractor;
     private readonly ITokenValidationCache _tokenCache;
+    private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
 
     private const string EMAIL_SUBJECT = "Xians.ai - Invitation";
 
@@ -176,6 +177,7 @@ public class UserManagementService : IUserManagementService
         IEmailService emailService,
         IJwtClaimsExtractor jwtClaimsExtractor,
         ITokenValidationCache tokenCache,
+        IUserAuthorizationInvalidator authorizationInvalidator,
         ILogger<UserManagementService> logger)
     {
         _userRepository = userRepository;
@@ -187,6 +189,7 @@ public class UserManagementService : IUserManagementService
         _emailService = emailService;
         _jwtClaimsExtractor = jwtClaimsExtractor;
         _tokenCache = tokenCache;
+        _authorizationInvalidator = authorizationInvalidator;
     }
 
     public async Task<ServiceResult<bool>> LockUserAsync(string userId, string reason)
@@ -205,9 +208,10 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.NotFound("User not found");
             }
 
-            // Invalidate all cached tokens for this user to ensure locked users cannot access the system
-            await _tokenCache.InvalidateUserTokens(userId);
-            _logger.LogInformation("User {UserId} locked by {AdminUserId} and tokens invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
+            // Every cached decision about this account, across all four APIs, so that the lock
+            // takes effect on the next request rather than when those entries expire.
+            await _authorizationInvalidator.InvalidateAsync(userId);
+            _logger.LogInformation("User {UserId} locked by {AdminUserId} and cached access invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -233,9 +237,9 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.NotFound("User not found");
             }
 
-            // Invalidate cached tokens so user needs to re-authenticate with fresh token
-            await _tokenCache.InvalidateUserTokens(userId);
-            _logger.LogInformation("User {UserId} unlocked by {AdminUserId} and tokens invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
+            // Cached refusals are dropped too, so the account works again without a wait.
+            await _authorizationInvalidator.InvalidateAsync(userId);
+            _logger.LogInformation("User {UserId} unlocked by {AdminUserId} and cached access invalidated", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -293,23 +297,19 @@ public class UserManagementService : IUserManagementService
                 return ServiceResult<bool>.Conflict("User already exists");
             }
 
-            // Email is unique across the system. Several lookups resolve a person by email and take
-            // the first match — certificate authentication and ownership transfer both accept an
-            // email in place of a user id — so a second record sharing one makes those resolve to
-            // an arbitrary record. Every deliberate creation path already refuses this; enforcing it
-            // here means an implicit path cannot quietly reopen the hole.
+            // One person can legitimately hold an account at two identity providers, so an address
+            // shared across providers is allowed. Two records under the *same* provider are not:
+            // there the address really does name one account, so a second one is a duplicate.
             //
             // Records with no email cannot collide and are not compared, or they would all match
             // each other.
+            var admission = EmailAdmission.Allowed;
             if (!string.IsNullOrWhiteSpace(userDto.Email))
             {
-                var emailOwner = await _userRepository.GetByUserEmailAsync(userDto.Email);
-                if (emailOwner != null)
+                admission = await AdmitEmailAsync(userDto);
+                if (admission.Conflict != null)
                 {
-                    _logger.LogWarning(
-                        "Refusing to create {UserId}: its email already belongs to {ExistingUserId}",
-                        LogSanitizer.RedactUserId(userDto.UserId), LogSanitizer.RedactUserId(emailOwner.UserId));
-                    return ServiceResult<bool>.Conflict("A user with this email already exists");
+                    return admission.Conflict;
                 }
             }
             else
@@ -338,7 +338,11 @@ public class UserManagementService : IUserManagementService
                 Name = userDto.Name,
                 ProviderAuthority = userDto.ProviderAuthority,
                 IsSysAdmin = isFirstUserBootstrap,
-                IsLockedOut = false,
+                IsLockedOut = admission.NeedsReview,
+                LockedOutReason = admission.NeedsReview
+                    ? SharedWithSysAdminReason(admission.SysAdminOwnerId!)
+                    : null,
+                LockedOutAt = admission.NeedsReview ? DateTime.UtcNow : null,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 TenantRoles = new List<TenantRole>()
@@ -391,6 +395,108 @@ public class UserManagementService : IUserManagementService
             return ServiceResult<bool>.InternalServerError("An error occurred while creating the new user");
         }
     }
+
+    /// <summary>
+    /// Whether a record may be created for an address somebody already holds, and in what state.
+    /// </summary>
+    /// <param name="Conflict">The result to return instead of creating anything.</param>
+    /// <param name="SysAdminOwnerId">
+    /// The system administrator already holding the address, when the record is to be created
+    /// disabled so a person can decide whether the two are the same someone.
+    /// </param>
+    private sealed record EmailAdmission(ServiceResult<bool>? Conflict, string? SysAdminOwnerId)
+    {
+        public static readonly EmailAdmission Allowed = new(null, null);
+
+        public static EmailAdmission Refuse(ServiceResult<bool> conflict) => new(conflict, null);
+
+        public static EmailAdmission ForReview(string sysAdminOwnerId) => new(null, sysAdminOwnerId);
+
+        public bool NeedsReview => SysAdminOwnerId != null;
+    }
+
+    /// <summary>
+    /// Decides what to do about an address an existing record already holds.
+    ///
+    /// A second account at a *different* identity provider belongs to the same person arriving
+    /// through another door, so it is allowed — that is the case this exists for. Two records under
+    /// providers that cannot be told apart are refused: the same provider, where the address really
+    /// does name one account, and an unknown provider on either side, since a record that might
+    /// have come from the same provider has to be treated as the same account.
+    ///
+    /// An address a system administrator holds is neither allowed outright nor refused. Refusing it
+    /// leaves a real person in a second directory unable to sign in at all, with no way through
+    /// that does not involve deleting somebody's account. Allowing it outright would strip SysAdmin
+    /// from the account that has it, since the role is never resolved from an address whose records
+    /// do not all hold it. So the record is created disabled: inert, invisible to that resolution,
+    /// and waiting for an administrator to decide.
+    /// </summary>
+    private async Task<EmailAdmission> AdmitEmailAsync(UserDto userDto)
+    {
+        var owners = await _userRepository.GetAllByUserEmailAsync(userDto.Email);
+        if (owners.Count == 0)
+        {
+            return EmailAdmission.Allowed;
+        }
+
+        // Before the SysAdmin case, so that a duplicate under the same provider is refused for
+        // being a duplicate rather than queued for a review that should never happen.
+        var sameProviderOwner = owners.FirstOrDefault(
+            owner => !IsDifferentProvider(owner.ProviderAuthority, userDto.ProviderAuthority));
+        if (sameProviderOwner != null)
+        {
+            _logger.LogWarning(
+                "Refusing to create {UserId} from {Authority}: {ExistingUserId} already holds its email " +
+                "and cannot be told apart as a separate provider",
+                LogSanitizer.RedactUserId(userDto.UserId),
+                LogSanitizer.Sanitize(userDto.ProviderAuthority ?? "(unknown)"),
+                LogSanitizer.RedactUserId(sameProviderOwner.UserId));
+            return EmailAdmission.Refuse(ServiceResult<bool>.Conflict("A user with this email already exists"));
+        }
+
+        var sysAdminOwner = owners.FirstOrDefault(owner => owner.IsSysAdmin);
+        if (sysAdminOwner != null)
+        {
+            _logger.LogWarning(
+                "Creating {UserId} from {Authority} disabled: its email belongs to system administrator " +
+                "{ExistingUserId}. Until an administrator enables it and grants it the same role, it " +
+                "cannot sign in and does not affect what that address resolves to",
+                LogSanitizer.RedactUserId(userDto.UserId),
+                LogSanitizer.Sanitize(userDto.ProviderAuthority ?? "(unknown)"),
+                LogSanitizer.RedactUserId(sysAdminOwner.UserId));
+            return EmailAdmission.ForReview(sysAdminOwner.UserId);
+        }
+
+        _logger.LogInformation(
+            "Creating {UserId} from {Authority} with an email already held by {Count} account(s) at " +
+            "other providers; they resolve as one identity where a credential names only the address",
+            LogSanitizer.RedactUserId(userDto.UserId),
+            LogSanitizer.Sanitize(userDto.ProviderAuthority ?? "(unknown)"),
+            owners.Count);
+        return EmailAdmission.Allowed;
+    }
+
+    /// <summary>
+    /// Why the record is disabled, written for whoever finds it in the admin console and has to
+    /// decide. It states the consequence of enabling it on its own, because that consequence lands
+    /// on a different account than the one being enabled and is otherwise invisible from here.
+    /// </summary>
+    private static string SharedWithSysAdminReason(string sysAdminUserId) =>
+        $"Created disabled for review: this email is also held by system administrator {sysAdminUserId}. " +
+        "If both accounts belong to the same person, enable this one and grant it the system " +
+        "administrator role in the same sitting. Enabling it without the grant takes that role away " +
+        "from credentials that name only an email address — legacy API keys and certificates whose " +
+        "OU is an email — until the grant is made.";
+
+    /// <summary>
+    /// True only when both records name a provider and the two differ. An unknown provider on
+    /// either side reads as "cannot be told apart", because a record that might have come from the
+    /// same provider has to be treated as the same account.
+    /// </summary>
+    private static bool IsDifferentProvider(string? existingAuthority, string? incomingAuthority) =>
+        !string.IsNullOrEmpty(existingAuthority)
+        && !string.IsNullOrEmpty(incomingAuthority)
+        && !string.Equals(existingAuthority, incomingAuthority, StringComparison.OrdinalIgnoreCase);
 
     public async Task<ServiceResult<bool>> UpdateUser(EditUserDto user)
     {

@@ -98,8 +98,21 @@ public static class AdminParticipantsEndpoints
                 }
                 email = validatedEmail;
 
-                // Get user by email
-                var user = await userRepository.GetByUserEmailAsync(email);
+                // Get user by email. The reply describes one participant's memberships, so an
+                // address that answers to several accounts is refused rather than answered from
+                // whichever record came back first.
+                var owners = await userRepository.GetAllByUserEmailAsync(email);
+                if (owners.Count > 1)
+                {
+                    logger.LogWarning("Participant lookup refused: {EmailRedacted} matches {Count} accounts",
+                        LogSanitizer.RedactEmail(email), owners.Count);
+                    return Results.Problem(
+                        detail: "This email matches more than one account, so participant details " +
+                                "cannot be resolved from it.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+
+                var user = owners.FirstOrDefault();
 
                 // Reject locked-out users
                 if (user?.IsLockedOut == true)

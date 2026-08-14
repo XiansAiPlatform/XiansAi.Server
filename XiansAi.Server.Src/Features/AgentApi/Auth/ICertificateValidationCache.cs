@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using System;
 using System.Collections.Generic;
+using Shared.Services;
 using Shared.Utils;
 
 namespace Features.AgentApi.Auth;
@@ -46,6 +47,7 @@ public interface ICertificateValidationCache
 public class MemoryCertificateValidationCache : ICertificateValidationCache
 {
     private readonly IMemoryCache _cache;
+    private readonly IUserCacheIndex _userCacheIndex;
     private readonly ILogger<MemoryCertificateValidationCache> _logger;
     private readonly TimeSpan _cacheDuration;
     private readonly TimeSpan _cacheMaxDuration;
@@ -53,20 +55,24 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
 
     public MemoryCertificateValidationCache(
         IMemoryCache cache,
+        IUserCacheIndex userCacheIndex,
         ILogger<MemoryCertificateValidationCache> logger,
         IConfiguration configuration)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _userCacheIndex = userCacheIndex ?? throw new ArgumentNullException(nameof(userCacheIndex));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         
         // Idle window: an agent that keeps calling within this window never revalidates.
         _cacheDuration = TimeSpan.FromMinutes(
-            configuration.GetValue<double>("AgentApi:CertificateValidationCacheDurationMinutes", 10));
+            configuration.GetValue<double>("AgentApi:CertificateValidationCacheDurationMinutes", 2));
 
-        // Hard ceiling regardless of activity. Revocation and deletion evict the entry directly,
-        // so this only bounds staleness when the eviction happened on another server instance.
+        // Hard ceiling regardless of activity. Revoking a certificate and disabling the account
+        // both evict the entry directly, so this only bounds staleness on the server instances
+        // that did not handle that request. Matched to the token and role caches, so that every
+        // cached authorization decision has the same worst case on the instances it did not reach.
         _cacheMaxDuration = TimeSpan.FromMinutes(
-            configuration.GetValue<double>("AgentApi:CertificateValidationCacheMaxDurationMinutes", 30));
+            configuration.GetValue<double>("AgentApi:CertificateValidationCacheMaxDurationMinutes", 5));
 
         if (_cacheMaxDuration < _cacheDuration)
         {
@@ -127,9 +133,17 @@ public class MemoryCertificateValidationCache : ICertificateValidationCache
             .SetSlidingExpiration(_cacheDuration)
             .SetAbsoluteExpiration(_cacheMaxDuration)
             .SetPriority(CacheItemPriority.Normal)
-            .SetSize(_cacheEntrySize);
+            .SetSize(_cacheEntrySize)
+            .RegisterPostEvictionCallback(
+                (key, _, _, _) => _userCacheIndex.Forget(validation.UserId, key.ToString() ?? string.Empty));
         
         _cache.Set(cacheKey, validation, cacheOptions);
+
+        // Tracked against the account the certificate resolved to, so that disabling that account
+        // stops its agents rather than leaving them running until the entry ages out. The entry
+        // holds the roles and the SysAdmin flag, so a cache hit never revisits the record.
+        _userCacheIndex.Track(validation.UserId, cacheKey);
+
         _logger.LogDebug("Cached successful certificate validation for thumbprint: {Thumbprint}", thumbprint);
     }
 

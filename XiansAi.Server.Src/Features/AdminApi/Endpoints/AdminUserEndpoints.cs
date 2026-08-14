@@ -19,13 +19,30 @@ namespace Features.AdminApi.Endpoints;
 /// </summary>
 public static class AdminUserEndpoints
 {
+    /// <summary>
+    /// Either names an existing account with <see cref="UserId"/>, or supplies
+    /// <see cref="Email"/> and <see cref="Name"/> to create one.
+    /// </summary>
     public sealed class CreateTenantParticipantUserRequest
     {
+        /// <summary>
+        /// The account to give the role to. Takes precedence: when it is set, the address and name
+        /// are ignored. Settles which account is meant when an address is held by more than one,
+        /// which matters because the role granted here may be TenantAdmin.
+        /// </summary>
+        [JsonPropertyName("userId")]
+        public string? UserId { get; init; }
+
+        /// <summary>
+        /// Names the single account holding it, or creates one when none does. Refused when more
+        /// than one account holds it, since then it names nobody in particular — supply
+        /// <see cref="UserId"/> instead.
+        /// </summary>
         [JsonPropertyName("email")]
-        public required string Email { get; init; }
+        public string? Email { get; init; }
 
         [JsonPropertyName("name")]
-        public required string Name { get; init; }
+        public string? Name { get; init; }
 
         /// <summary>Any tenant role: TenantAdmin, TenantUser, TenantParticipant, or TenantParticipantAdmin.</summary>
         [JsonPropertyName("role")]
@@ -97,7 +114,7 @@ public static class AdminUserEndpoints
             if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
                 return forbid;
 
-            var result = await service.CreateAsync(tenantId, body.Email, body.Name, body.Role);
+            var result = await service.CreateAsync(tenantId, body.Email, body.Name, body.Role, body.UserId);
             if (result.IsSuccess && result.Data != null)
             {
                 var location = AdminApiConstants.BuildVersionedPath(

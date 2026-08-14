@@ -52,11 +52,37 @@ public class ResolvedUserAccess
     public required List<TenantInfoDto> Tenants { get; init; }
 
     /// <summary>
-    /// The account's stored email, when present. Used as an alternate conversation participant id so
-    /// clients may keep naming the person by email while the account remains keyed by the provider
-    /// subject.
+    /// The address that may name this account's message threads, or null when it may not because
+    /// another account holds it too. Threads are namespaced by this, so it has to name exactly one
+    /// account.
     /// </summary>
+    public string? ConversationEmail { get; init; }
+
+    /// <summary>
+    /// The address stored on the record, whether or not another account also holds it. It may
+    /// identify the caller — recognising them when they name themselves by email — but must never
+    /// namespace anything, which is what <see cref="ConversationEmail"/> is for.
+    /// </summary>
+    public string? AccountEmail { get; init; }
+}
+
+/// <summary>
+/// What a validated token says about the person signing in, as far as provisioning needs it.
+/// </summary>
+public sealed class SignInIdentity
+{
+    /// <summary>The raw provider subject, which is the form the users collection is keyed on.</summary>
+    public required string UserId { get; init; }
+
     public string? Email { get; init; }
+
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// The authority whose signing keys authenticated the subject. A subject is only unique within
+    /// one issuer, so the record is pinned to this.
+    /// </summary>
+    public string? ProviderAuthority { get; init; }
 }
 
 public interface IUserTenantService
@@ -66,7 +92,7 @@ public interface IUserTenantService
     Task<ServiceResult<List<TenantInfoDto>>> GetTenantsForUser(string userId);
     Task<ServiceResult<List<TenantInfoDto>>> GetApprovedTenantsForUserId(string userId);
     Task<ServiceResult<ResolvedUserAccess>> EnsureUserAndGetApprovedTenants(
-        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null);
+        SignInIdentity identity, string? requestedTenantId = null, bool approveNewMembership = false);
     Task<ServiceResult<List<User>>> GetUnapprovedUsers();
     Task<ServiceResult<bool>> AddTenantToUser(string userId, string tenantId);
     Task<ServiceResult<bool>> RemoveTenantFromUser(string userId, string tenantId);
@@ -151,24 +177,32 @@ public class UserTenantService : IUserTenantService
 
     /// <summary>
     /// Creates the user record if this is their first sign-in, then returns the tenants they are an
-    /// approved member of. A brand new user is approved for nothing, so this returns an empty list
-    /// and the caller refuses the request until an admin acts. Identity comes from an
-    /// already-validated token; the token is not re-parsed here.
+    /// approved member of. Where the membership still needs approving this returns an empty list and
+    /// the caller refuses the request until an admin acts. Identity comes from an already-validated
+    /// token; the token is not re-parsed here.
     ///
-    /// <paramref name="providerAuthority"/> ties the subject to the provider that authenticated it.
-    /// A subject is only unique within one issuer, so without this a provider could assert another
-    /// provider's subject and resolve that person's record.
+    /// <see cref="SignInIdentity.ProviderAuthority"/> ties the subject to the provider that
+    /// authenticated it. A subject is only unique within one issuer, so without this a provider
+    /// could assert another provider's subject and resolve that person's record.
     ///
     /// <paramref name="requestedTenantId"/> is the tenant the caller was trying to reach. Supplying
-    /// it registers the user as pending on that tenant, which is what makes them visible to its
-    /// admins; without it a rejected first-time user leaves no trace anyone can act on.
+    /// it registers the user on that tenant, which is what makes them visible to its admins; without
+    /// it a rejected first-time user leaves no trace anyone can act on.
+    ///
+    /// <paramref name="approveNewMembership"/> makes that membership approved rather than pending.
+    /// Only for callers that validated the token against the tenant's own OIDC configuration, where
+    /// holding such a token is itself the tenant's statement that this person belongs to it. The
+    /// WebAPI console path must not set it: its tokens are validated against the deployment-wide
+    /// provider, so a token holder could otherwise join any tenant they name.
     /// </summary>
     public async Task<ServiceResult<ResolvedUserAccess>> EnsureUserAndGetApprovedTenants(
-        string userId, string? email, string? name, string? providerAuthority, string? requestedTenantId = null)
+        SignInIdentity identity, string? requestedTenantId = null, bool approveNewMembership = false)
     {
+        var userId = identity.UserId;
         if (string.IsNullOrEmpty(userId))
             return ServiceResult<ResolvedUserAccess>.Unauthorized("User not authenticated");
 
+        var providerAuthority = identity.ProviderAuthority;
         if (string.IsNullOrEmpty(providerAuthority))
         {
             _logger.LogWarning("No provider authority for user {UserId}; cannot establish which provider " +
@@ -188,8 +222,8 @@ public class UserTenantService : IUserTenantService
                     new UserDto
                     {
                         UserId = userId,
-                        Email = email ?? string.Empty,
-                        Name = name ?? string.Empty,
+                        Email = identity.Email ?? string.Empty,
+                        Name = identity.Name ?? string.Empty,
                         ProviderAuthority = providerAuthority
                     },
                     allowFirstUserSysAdminBootstrap: false);
@@ -197,7 +231,7 @@ public class UserTenantService : IUserTenantService
                 if (created.IsSuccess)
                 {
                     _logger.LogInformation("Provisioned user {UserId} on first sign-in", LogSanitizer.RedactUserId(userId));
-                    await RegisterAsPendingMemberAsync(userId, requestedTenantId);
+                    await RegisterMembershipAsync(userId, requestedTenantId, approveNewMembership);
                     return await GetAccessForUserId(userId);
                 }
 
@@ -213,9 +247,11 @@ public class UserTenantService : IUserTenantService
                 existingUser = await _userRepository.GetByUserIdAsync(userId);
                 if (existingUser == null)
                 {
-                    // ...or the conflict was on the email, which already belongs to a different
-                    // subject. The token only proves that this provider *says* this person's email
-                    // is that string; merging into the existing account would hand over its access.
+                    // ...or the conflict was on the email. A second account at another provider is
+                    // allowed — including one whose address a system administrator holds, which is
+                    // created disabled instead — so reaching here means the address is
+                    // indistinguishable from an existing one: the same provider, or a provider that
+                    // cannot be identified.
                     _logger.LogWarning(
                         "Refusing to provision {UserId} from {Authority}: the email in this token is " +
                         "already registered to a different account.",
@@ -231,9 +267,11 @@ public class UserTenantService : IUserTenantService
                     "This subject is registered to a different identity provider");
             }
 
+            await BackfillMissingProfileAsync(existingUser, identity);
+
             // Also for an existing record: a known user reaching a tenant they have never been a
             // member of is the same situation as a brand new one, and needs the same visibility.
-            await RegisterAsPendingMemberAsync(userId, requestedTenantId);
+            await RegisterMembershipAsync(userId, requestedTenantId, approveNewMembership);
         }
         catch (Exception ex)
         {
@@ -252,31 +290,111 @@ public class UserTenantService : IUserTenantService
         var tenants = await GetApprovedTenantsForUserId(userId);
         if (!tenants.IsSuccess || tenants.Data == null)
         {
-            return ServiceResult<ResolvedUserAccess>.InternalServerError(
-                tenants.ErrorMessage ?? "Error getting tenants for user");
+            // Carries the original status through: a disabled account is refused there, and
+            // flattening that to a 500 would tell the caller the server broke.
+            return ServiceResult<ResolvedUserAccess>.Failure(
+                tenants.ErrorMessage ?? "Error getting tenants for user",
+                tenants.StatusCode);
         }
 
         var user = await _userRepository.GetByUserIdAsync(userId);
-        string? email = null;
-        if (!string.IsNullOrWhiteSpace(user?.Email))
-        {
-            email = user.Email.Trim().ToLowerInvariant();
-        }
 
         return ServiceResult<ResolvedUserAccess>.Success(
-            new ResolvedUserAccess { UserId = userId, Tenants = tenants.Data, Email = email });
+            new ResolvedUserAccess
+            {
+                UserId = userId,
+                Tenants = tenants.Data,
+                ConversationEmail = await ConversationIdentityEmailAsync(user),
+                AccountEmail = NormalizeEmail(user?.Email)
+            });
     }
 
     /// <summary>
-    /// Registers the user as pending on the tenant they tried to reach, so that its admins can see
-    /// and approve them. Grants no access: the membership is unapproved, and the caller still
-    /// refuses this request.
+    /// The address this account may be named by in conversations, or null when it may not be.
+    ///
+    /// The caller uses this as the participant id, which is the namespace their message threads live
+    /// in, so an address two accounts answer to would put both in one namespace and let either read
+    /// the other's conversations. Where the address does not name a single account, the account
+    /// falls back to being named by its provider subject, which always does.
+    /// </summary>
+    private async Task<string?> ConversationIdentityEmailAsync(User? user)
+    {
+        if (user == null || string.IsNullOrWhiteSpace(user.Email))
+        {
+            return null;
+        }
+
+        if (await _userRepository.IsEmailSharedAsync(user.Email, user.UserId))
+        {
+            _logger.LogWarning(
+                "Not using the email of {UserId} as their conversation identity: another account holds " +
+                "the same address, and sharing one would merge their message threads",
+                LogSanitizer.RedactUserId(user.UserId));
+            return null;
+        }
+
+        return NormalizeEmail(user.Email);
+    }
+
+    private static string? NormalizeEmail(string? email)
+    {
+        return string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Fills in an address or a name the record is missing, from what the token says.
+    ///
+    /// Records provisioned before the address was stored have neither, and nothing else ever
+    /// revisits them — the create path only runs on a first sign-in. Only blanks are filled, because
+    /// a value already on the record may have been set by an admin.
+    /// </summary>
+    private async Task BackfillMissingProfileAsync(User user, SignInIdentity identity)
+    {
+        var fillEmail = string.IsNullOrWhiteSpace(user.Email) && !string.IsNullOrWhiteSpace(identity.Email);
+        var fillName = string.IsNullOrWhiteSpace(user.Name) && !string.IsNullOrWhiteSpace(identity.Name);
+
+        if (!fillEmail && !fillName)
+        {
+            return;
+        }
+
+        try
+        {
+            // Written field by field rather than as a whole record, so a membership another request
+            // is appending right now cannot be undone by writing back the copy read a moment ago.
+            await _userRepository.UpdateProfileFieldsAsync(
+                user.UserId,
+                email: fillEmail ? identity.Email : null,
+                name: fillName ? identity.Name : null);
+
+            _logger.LogInformation(
+                "Filled in missing profile fields for {UserId} from their token (email: {FilledEmail}, name: {FilledName})",
+                LogSanitizer.RedactUserId(user.UserId), fillEmail, fillName);
+        }
+        catch (Exception ex)
+        {
+            // Cosmetic next to the reason the caller is here, so a failure must not deny the sign-in.
+            _logger.LogWarning(ex, "Could not fill in missing profile fields for {UserId}",
+                LogSanitizer.RedactUserId(user.UserId));
+        }
+    }
+
+    /// <summary>
+    /// Registers the user on the tenant they tried to reach, so that its admins can see them.
+    ///
+    /// Unapproved, the membership grants no access and exists only for an admin to approve or
+    /// ignore. Approved — see <c>approveNewMembership</c> on the caller — it admits them as a
+    /// participant, which is what lets an agent hold a conversation with them without also handing
+    /// them the WebAPI console.
+    ///
+    /// Only ever adds a missing membership. An existing row is left as it stands: an admin may have
+    /// deliberately withheld approval, and there is no separate state that says so.
     ///
     /// Skipped when the tenant does not exist or is disabled. The tenant id arrives from the caller,
     /// so without that check anyone holding a valid token could append a row to their own user
     /// record for every name they cared to try.
     /// </summary>
-    private async Task RegisterAsPendingMemberAsync(string userId, string? requestedTenantId)
+    private async Task RegisterMembershipAsync(string userId, string? requestedTenantId, bool approve)
     {
         if (string.IsNullOrWhiteSpace(requestedTenantId))
         {
@@ -291,12 +409,19 @@ public class UserTenantService : IUserTenantService
                 return;
             }
 
+            // Participant rather than TenantUser: the WebAPI console admits SysAdmin, TenantAdmin and
+            // TenantUser, so granting TenantUser here would hand the console to everyone who ever
+            // signed in to a tenant's own app.
+            var roles = approve ? new[] { SystemRoles.TenantParticipant } : Array.Empty<string>();
+
             // Uses the stored casing so the membership matches how the tenant is recorded elsewhere.
-            var added = await _userRepository.AddPendingTenantRoleIfAbsentAsync(userId, tenant.TenantId);
+            var added = await _userRepository.AddTenantRoleIfAbsentAsync(userId, tenant.TenantId, approve, roles);
             if (added)
             {
                 _logger.LogInformation(
-                    "User {UserId} requested access to tenant {TenantId} and is awaiting approval",
+                    approve
+                        ? "User {UserId} joined tenant {TenantId} as a participant"
+                        : "User {UserId} requested access to tenant {TenantId} and is awaiting approval",
                     LogSanitizer.RedactUserId(userId), LogSanitizer.Sanitize(tenant.TenantId));
             }
         }
@@ -304,7 +429,7 @@ public class UserTenantService : IUserTenantService
         {
             // Visibility for admins is a convenience; failing to record it must not turn an ordinary
             // "not a member" refusal into an error.
-            _logger.LogWarning(ex, "Could not record pending membership of {TenantId} for {UserId}",
+            _logger.LogWarning(ex, "Could not record membership of {TenantId} for {UserId}",
                 LogSanitizer.Sanitize(requestedTenantId), LogSanitizer.RedactUserId(userId));
         }
     }
@@ -370,9 +495,21 @@ public class UserTenantService : IUserTenantService
             if (string.IsNullOrEmpty(userId))
                 return ServiceResult<List<TenantInfoDto>>.Unauthorized("User not authenticated");
 
-            var isSysAdmin = await _userRepository.IsSysAdmin(userId);
+            var user = await _userRepository.GetByUserIdAsync(userId);
 
-            if (isSysAdmin)
+            // Every sign-in door reaches its tenants through here, so this is where a disabled
+            // account is turned away. Certificates were checking the flag and nothing else was, so
+            // an account disabled pending review could still sign in and be handed its tenants.
+            if (user != null && user.IsLockedOut)
+            {
+                _logger.LogWarning(
+                    "Refusing sign-in for {UserId}: the account is disabled. {Reason}",
+                    LogSanitizer.RedactUserId(userId),
+                    LogSanitizer.Sanitize(user.LockedOutReason ?? "(no reason recorded)"));
+                return ServiceResult<List<TenantInfoDto>>.Unauthorized("This account is disabled");
+            }
+
+            if (user != null && user.IsSysAdmin)
             {
                 var allTenants = await _tenantRepository.GetAllAsync();
                 var enabledTenants = allTenants
@@ -470,9 +607,31 @@ public class UserTenantService : IUserTenantService
             if (!validationResult.IsSuccess)
                 return ServiceResult<bool>.Forbidden(validationResult.ErrorMessage!, validationResult.StatusCode);
 
-            var user = await _userRepository.GetByUserEmailAsync(email);
+            // This grants an approved membership, which names one person. An address can answer to
+            // more than one account, so it is refused rather than resolved to whichever record came
+            // back first — that would put a different account in the tenant than the admin meant.
+            var lookup = EmailAccountLookup.From(await _userRepository.GetAllByUserEmailAsync(email));
+            if (lookup.IsAmbiguous)
+            {
+                _logger.LogWarning(
+                    "Refusing to add {Email} to tenant {TenantId}: it matches {Count} accounts",
+                    LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(_tenantContext.TenantId),
+                    lookup.MatchCount);
+                return ServiceResult<bool>.Conflict(EmailAccountLookup.AmbiguousError);
+            }
+
+            var user = lookup.Account;
             if (user == null)
                 return ServiceResult<bool>.NotFound("User not found");
+
+            if (user.IsLockedOut)
+            {
+                _logger.LogWarning(
+                    "Refusing to add disabled account {UserId} to tenant {TenantId}",
+                    LogSanitizer.RedactUserId(user.UserId), LogSanitizer.Sanitize(_tenantContext.TenantId));
+                return ServiceResult<bool>.Conflict(
+                    "This account is disabled, so it cannot be given a tenant membership. Enable it first.");
+            }
 
             var tenantEntry = user.TenantRoles.FirstOrDefault(tr => tr.Tenant == _tenantContext.TenantId);
 
@@ -497,8 +656,9 @@ public class UserTenantService : IUserTenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding user with email user {email} to tenant {TenantId}", LogSanitizer.Sanitize(_tenantContext.TenantId), LogSanitizer.RedactEmail(email));
-            return ServiceResult<bool>.InternalServerError("Error adding tenant to user with email {email}, email");
+            _logger.LogError(ex, "Error adding user with email {Email} to tenant {TenantId}",
+                LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(_tenantContext.TenantId));
+            return ServiceResult<bool>.InternalServerError("Error adding tenant to user with this email");
         }
     }
 
@@ -857,9 +1017,35 @@ public class UserTenantService : IUserTenantService
             .Concat(_jwtClaimsExtractor.ExtractClaims(token, "roles"));
 
         var isSysAdmin = tokenGroupIds.Any(id => configuredIds.Contains(id));
+
+        // Nobody decides this per user — it follows from a group claim on every login — so without
+        // the check a second account at another directory would be promoted merely for being in
+        // that directory's admin group, which is the escalation this whole area exists to stop.
+        // Accepting two accounts as the same person is an operator's decision, made through the
+        // global user endpoint. Demotion is never blocked: taking the role away is always safe.
+        if (isSysAdmin && await IsEmailSharedWithAnotherAccountAsync(userId))
+        {
+            _logger.LogError(
+                "Not granting SysAdmin to {UserId} from group claims: another account holds the same " +
+                "email. If they are the same person, grant it through global user administration",
+                LogSanitizer.RedactUserId(userId));
+            return;
+        }
+
         await _userRepository.SetSysAdminAsync(userId, isSysAdmin);
 
         _logger.LogInformation("Azure AD group SysAdmin sync: user={UserId} isSysAdmin={IsSysAdmin}", userId, isSysAdmin);
+    }
+
+    private async Task<bool> IsEmailSharedWithAnotherAccountAsync(string userId)
+    {
+        var user = await _userRepository.GetByUserIdAsync(userId);
+        if (user == null || string.IsNullOrWhiteSpace(user.Email))
+        {
+            return false;
+        }
+
+        return await _userRepository.IsEmailSharedAsync(user.Email, user.UserId);
     }
 
     /// <summary>

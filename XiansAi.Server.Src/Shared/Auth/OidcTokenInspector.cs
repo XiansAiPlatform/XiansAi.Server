@@ -143,8 +143,7 @@ public static class OidcTokenInspector
     }
 
     /// <summary>
-    /// The address to record for display and contact, which is a looser question than who the caller
-    /// is — see <see cref="IsEmailVerified"/> for that.
+    /// The address to record for display and contact.
     ///
     /// <c>emails</c> is Azure AD B2C's array spelling. Some B2C user flows (including custom
     /// policies) instead issue a single <c>emailAddress</c> string — without that spelling a B2C
@@ -158,41 +157,6 @@ public static class OidcTokenInspector
 
     public static string? GetName(JsonWebToken jwt) =>
         FirstPresent(jwt, ["name", ClaimTypes.Name, "preferred_username"]).Value;
-
-    /// <summary>
-    /// Whether the provider states that the holder actually owns the address in the token, which is
-    /// the only basis on which an email may be used to decide *who someone is* rather than merely how
-    /// to display or contact them.
-    ///
-    /// Deliberately stricter than <see cref="GetEmail"/>. That method falls back to
-    /// <c>preferred_username</c> and <c>upn</c>, which are frequently not addresses at all and are
-    /// editable by the user at many providers, and to B2C's <c>emails</c>, which carries no
-    /// verification signal — a B2C address may come from a social account the directory never
-    /// checked. Only a genuine <c>email</c> claim backed by one of the verification claims below
-    /// counts here, so a B2C sign-in is never verified on the token's own evidence.
-    ///
-    /// <c>xms_edov</c> is accepted alongside the standard <c>email_verified</c> because Entra ID does
-    /// not issue the latter — it publishes <c>xms_edov</c> to say the email's domain was verified by
-    /// its owner. Without one of the two, an Entra <c>email</c> is settable by any tenant
-    /// administrator to any string, which is the nOAuth account-takeover pattern.
-    /// </summary>
-    public static bool IsEmailVerified(JsonWebToken jwt)
-    {
-        var email = FirstPresent(jwt, ["email", ClaimTypes.Email]).Value;
-        if (string.IsNullOrWhiteSpace(email))
-        {
-            return false;
-        }
-
-        return IsTrueClaim(jwt, "email_verified") || IsTrueClaim(jwt, "xms_edov");
-    }
-
-    /// <summary>
-    /// Reads a boolean claim. Providers serialize these as both JSON booleans and strings, and the
-    /// two arrive here as "True" and "true" respectively, so the comparison ignores case.
-    /// </summary>
-    private static bool IsTrueClaim(JsonWebToken jwt, string claimType) =>
-        string.Equals(GetExactClaim(jwt, claimType), "true", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Checks that the token carries every scope the provider requires, or returns null when the

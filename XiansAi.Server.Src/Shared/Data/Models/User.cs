@@ -4,6 +4,8 @@ using System.Text.Json.Serialization;
 
 namespace Shared.Data.Models;
 
+// Documents may carry fields written by newer server versions; ignoring them keeps reads working.
+[BsonIgnoreExtraElements]
 public class User
 {
     [BsonId]
@@ -80,6 +82,7 @@ public class User
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
+[BsonIgnoreExtraElements]
 public class TenantRole
 {
     [BsonElement("tenant")]

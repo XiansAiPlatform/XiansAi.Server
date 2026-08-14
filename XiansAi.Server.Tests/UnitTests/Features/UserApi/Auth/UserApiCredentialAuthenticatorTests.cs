@@ -158,7 +158,7 @@ public class UserApiCredentialAuthenticatorTests
         _tenantResolver
             .Setup(x => x.ResolveAsync(It.IsAny<OidcValidationResult>(), "tenant-a"))
             .ReturnsAsync(AuthorizedTenantResolution.Authorized(
-                "tenant-a", ["tenant-a"], ProviderUserId, accountEmail));
+                "tenant-a", ["tenant-a"], ProviderUserId, accountEmail, accountEmail));
 
         var result = await BuildAuthenticator().AuthenticateAsync(FromHeader(Jwt), "tenant-a", SchemeName);
 
@@ -169,6 +169,28 @@ public class UserApiCredentialAuthenticatorTests
         Assert.Equal(accountEmail, _tenantContext.Object.ParticipantId);
         Assert.Equal(accountEmail, _tenantContext.Object.Email);
         Assert.Equal(ProviderUserId, _tenantContext.Object.ProviderSubject);
+    }
+
+    [Fact]
+    public async Task Jwt_NamesTheCallerByTheirSubject_ButStillReportsAWithheldSharedEmail()
+    {
+        // Another account holds the address, so it cannot namespace threads. It is still carried as
+        // the account email so a client that keeps sending it is recognised rather than refused.
+        const string sharedEmail = "shared@example.com";
+
+        SetupValidJwt();
+        _tenantResolver
+            .Setup(x => x.ResolveAsync(It.IsAny<OidcValidationResult>(), "tenant-a"))
+            .ReturnsAsync(AuthorizedTenantResolution.Authorized(
+                "tenant-a", ["tenant-a"], ProviderUserId, conversationEmail: null, accountEmail: sharedEmail));
+
+        var result = await BuildAuthenticator().AuthenticateAsync(FromHeader(Jwt), "tenant-a", SchemeName);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ProviderUserId, result.Principal!.FindFirst(UserApiClaimTypes.ParticipantId)?.Value);
+        Assert.Equal(sharedEmail, result.Principal.FindFirst(UserApiClaimTypes.Email)?.Value);
+        Assert.Equal(ProviderUserId, _tenantContext.Object.ParticipantId);
+        Assert.Equal(sharedEmail, _tenantContext.Object.Email);
     }
 
     [Fact]
