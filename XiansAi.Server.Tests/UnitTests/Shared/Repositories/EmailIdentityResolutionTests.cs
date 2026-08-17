@@ -43,6 +43,34 @@ public class EmailIdentityResolutionTests
         Assert.Null(Fold());
     }
 
+    // UsableRecords and ResolveSysAdmin are used directly by the participant lookup, which spans
+    // every tenant rather than resolving one and so combines the records itself.
+
+    [Fact]
+    public void UsableRecords_DropsTheDisabledOnesAndOrdersTheRestByAge()
+    {
+        var older = Record("b-older", createdAt: new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var newer = Record("a-newer", createdAt: new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var disabled = Record("c-disabled", isLockedOut: true);
+
+        var usable = EmailIdentityResolution.UsableRecords(new[] { newer, disabled, older });
+
+        Assert.Equal(new[] { "b-older", "a-newer" }, usable.Select(record => record.UserId));
+    }
+
+    [Fact]
+    public void ResolveSysAdmin_GrantsTheRoleOnlyWhenEveryRecordHoldsIt()
+    {
+        var admin = Record("admin", isSysAdmin: true);
+        var other = Record("other", isSysAdmin: true);
+        var notAnAdmin = Record("plain");
+
+        Assert.True(EmailIdentityResolution.ResolveSysAdmin(
+            Email, new[] { admin, other }, NullLogger.Instance));
+        Assert.False(EmailIdentityResolution.ResolveSysAdmin(
+            Email, new[] { admin, notAnAdmin }, NullLogger.Instance));
+    }
+
     [Fact]
     public void From_ReturnsNull_WhenEveryRecordHoldingItIsLockedOut()
     {

@@ -66,7 +66,9 @@ Address-based resolution only happens where the credential carries nothing else.
 | Agent API certificate, OU is an email | An email | Folded. |
 | User API sign-in | The provider subject | Direct lookup. Never folded — a token names its subject exactly. |
 | WebAPI console sign-in | Whatever `ClaimMappings.UserIdClaim` names, `sub` by default | Direct lookup. Folded only where that claim is configured to an address, since then the token names one no more exactly than a legacy API key does. |
-| Admin ownership transfer, participant lookup | Either | **Refused** on an ambiguous address rather than folded. See [Endpoints that refuse](#endpoints-that-refuse-instead-of-folding). |
+| Admin participant lookup, `/participants/{email}` | An email | Folded across every tenant, since the reply names no account. |
+| Admin participant lookup, `/participants/by-user-id/{userId}` | The `UserId` | Direct lookup. Nothing is combined: the caller named one account, so the reply describes that one. |
+| Admin ownership transfer, tenant participant create | Either | **Refused** on an ambiguous address rather than folded. See [Endpoints that refuse](#endpoints-that-refuse-instead-of-folding). |
 
 ## The fold
 
@@ -187,8 +189,6 @@ address exactly one account holds names it as surely as a user id would, so that
 refusing it would not make anything safer, since an operator sent to find the user id would search
 by the same address and arrive at the same record.
 
-- **Participant lookup** (`AdminParticipantsEndpoints`) — `409` with "This email matches more than
-  one account, so participant details cannot be resolved from it." Read-only.
 - **Create tenant participant** (`TenantParticipantUserService.CreateAsync`) — grants any tenant
   role, up to `TenantAdmin`. `userId` names an account outright and is the way past an ambiguous
   address; otherwise `email` names the single account holding it, or creates one when none does.
@@ -196,6 +196,25 @@ by the same address and arrive at the same record.
 - **Add user to current tenant** (`UserTenantService.AddTenantToUserIfExist`) — grants an approved
   `TenantUser`, which is console access. Resolves through `EmailAccountLookup.From` and refuses a
   disabled account. WebAPI only.
+
+**Participant lookup** (`AdminParticipantsEndpoints`) used to sit in this list and no longer does.
+It is the one address-named surface whose reply names no account: it returns the tenants a person
+reaches and their role in each, so there is nothing for the caller to act on with the wrong record.
+Refusing it also had no way out — the remedy for two accounts belonging to one administrator is to
+enable both and grant the role to both, and this endpoint kept refusing afterwards, leaving deleting
+a record as the only escape. It now combines them: tenants are the union, `PrimaryRole` picks the
+highest role across the records for each tenant, and `isSystemAdmin` follows
+`EmailIdentityResolution.ResolveSysAdmin`. Disabled records are dropped first, so the `403` for a
+locked-out account is now reached only when every record holding the address is disabled.
+
+`GET /participants/by-user-id/{userId}` answers the same shape without any of that. A caller holding
+the signed-in person's provider subject names one account outright, so nothing is combined and the
+reply describes what that account alone reaches — the rule every sign-in path already follows. The
+two can differ deliberately: where one record holds SysAdmin and another does not, the address says
+no and the user id says whatever that record says. That is the point of naming an account rather
+than an address, and it is safe because a squatter arriving at another directory is provisioned
+disabled and refused here on that basis, not on the strength of the address. The address route
+remains for callers that have no more than an address, so no stored data or existing caller changes.
 
 One surface takes no address at all. It never creates an account, so its target always exists and
 the caller has necessarily obtained it from something that returned a user id; accepting an address
@@ -279,8 +298,9 @@ Two limits are worth knowing:
   are tracked and evicted as described above.
 - **The endpoints that refuse count disabled records too.** They count every record holding the
   address, unlike the fold, which drops disabled ones first. So an administrator's address that has
-  a disabled duplicate awaiting review will get a `409` from all four of them even though every
-  other path resolves it without difficulty. Use the user id there.
+  a disabled duplicate awaiting review will get a `409` from them even though every other path
+  resolves it without difficulty. Use the user id there. Participant lookup no longer behaves this
+  way.
 - **No record is kept of whether a provider vouched for an address.** An address a provider merely
   asserted admits a second record on exactly the same terms as one it verified, so someone able to
   set an arbitrary address at their own IdP can put a victim's address on a record they control.

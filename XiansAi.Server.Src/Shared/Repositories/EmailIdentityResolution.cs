@@ -47,14 +47,7 @@ public sealed record EmailIdentityResolution(
     public static EmailIdentityResolution? From(
         string email, IReadOnlyList<User> records, string tenantId, ILogger logger)
     {
-        // Ordered so the identity a credential acts as does not change between requests. Unordered
-        // this is whatever the collection scan returned first, which is how the same credential
-        // could resolve to a different account on a later call.
-        var candidates = records
-            .Where(user => !user.IsLockedOut)
-            .OrderBy(user => user.CreatedAt)
-            .ThenBy(user => user.UserId, StringComparer.Ordinal)
-            .ToList();
+        var candidates = UsableRecords(records);
 
         if (candidates.Count == 0)
         {
@@ -95,6 +88,25 @@ public sealed record EmailIdentityResolution(
     }
 
     /// <summary>
+    /// The records an address can actually answer as: the disabled ones dropped, and the rest in a
+    /// fixed order.
+    ///
+    /// Ordered so the identity a credential acts as does not change between requests. Unordered
+    /// this is whatever the collection scan returned first, which is how the same credential could
+    /// resolve to a different account on a later call.
+    ///
+    /// Exposed for callers that combine the records themselves because they answer a question this
+    /// record does not model — one that spans every tenant rather than the one being resolved —
+    /// and which must still drop disabled records and order the rest identically.
+    /// </summary>
+    public static IReadOnlyList<User> UsableRecords(IReadOnlyList<User> records) =>
+        records
+            .Where(user => !user.IsLockedOut)
+            .OrderBy(user => user.CreatedAt)
+            .ThenBy(user => user.UserId, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
     /// SysAdmin is global and grants access to every tenant, so an address only carries it when
     /// every record answering to that address holds it. One record short and the answer is no: a
     /// second account at another provider is created for review and without the role, so a mixed
@@ -104,7 +116,13 @@ public sealed record EmailIdentityResolution(
     /// away from the account that had it, on the paths that name only an address. Completing the
     /// grant restores it.
     /// </summary>
-    private static bool ResolveSysAdmin(string email, IReadOnlyList<User> candidates, ILogger logger)
+    /// <param name="email">The address being resolved, used only for logging.</param>
+    /// <param name="candidates">
+    /// The records from <see cref="UsableRecords"/>. Passing disabled records would let one that
+    /// nobody has reviewed withhold the role from the account that holds it.
+    /// </param>
+    /// <param name="logger">Records a set that does not agree on the role.</param>
+    public static bool ResolveSysAdmin(string email, IReadOnlyList<User> candidates, ILogger logger)
     {
         // Safe on the single-record case, which is the ordinary one: the record's own flag decides.
         if (candidates.All(user => user.IsSysAdmin))
