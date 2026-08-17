@@ -513,6 +513,7 @@ public class AgentRepository : IAgentRepository
                 Name = agentName,
                 SystemScoped = systemScoped,
                 Tenant = systemScoped ? null : tenant,
+                OriginTenant = tenant,
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 OwnerAccess = new List<string>(),
