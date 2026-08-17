@@ -155,8 +155,34 @@ public static class OidcTokenInspector
     public static string? GetEmail(JsonWebToken jwt) =>
         FirstPresent(jwt, ["email", ClaimTypes.Email, "emails", "emailAddress", "preferred_username", "upn"]).Value;
 
+    /// <summary>
+    /// The display name to record.
+    ///
+    /// A directory that issues the given and family names separately carries no single name claim,
+    /// so without composing one the record is created with no name at all. Both the OIDC spellings
+    /// and the camelCase spellings some directories use are accepted.
+    ///
+    /// The composed name is preferred over <c>preferred_username</c>, which is usually an address
+    /// and makes a poor display name when the person's actual name is in the same token.
+    /// </summary>
     public static string? GetName(JsonWebToken jwt) =>
-        FirstPresent(jwt, ["name", ClaimTypes.Name, "preferred_username"]).Value;
+        FirstPresent(jwt, ["name", ClaimTypes.Name]).Value
+        ?? ComposeName(jwt)
+        ?? FirstPresent(jwt, ["preferred_username"]).Value;
+
+    private static string? ComposeName(JsonWebToken jwt)
+    {
+        var givenName = FirstPresent(jwt, ["given_name", ClaimTypes.GivenName, "firstName"]).Value;
+        var familyName = FirstPresent(jwt, ["family_name", ClaimTypes.Surname, "lastName"]).Value;
+
+        // Either one alone is still a better name than none.
+        var parts = new[] { givenName, familyName }
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(part => part!.Trim());
+
+        var composed = string.Join(' ', parts);
+        return string.IsNullOrWhiteSpace(composed) ? null : composed;
+    }
 
     /// <summary>
     /// Checks that the token carries every scope the provider requires, or returns null when the
