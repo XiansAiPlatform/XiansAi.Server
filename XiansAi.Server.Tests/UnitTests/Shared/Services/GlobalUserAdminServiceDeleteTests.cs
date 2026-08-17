@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Auth;
 using Shared.Data.Models;
-using Shared.Providers.Auth;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.Services;
@@ -15,8 +14,7 @@ public class GlobalUserAdminServiceDeleteTests
     private const string TargetUserId = "target-user";
 
     private readonly Mock<IUserRepository> _userRepo = new();
-    private readonly Mock<IRoleCacheService> _roleCache = new();
-    private readonly Mock<ITokenValidationCache> _tokenCache = new();
+    private readonly Mock<IUserAuthorizationInvalidator> _invalidator = new();
     private readonly Mock<IWebhookEventPublisher> _webhooks = new();
     private readonly GlobalUserAdminService _service;
 
@@ -24,14 +22,13 @@ public class GlobalUserAdminServiceDeleteTests
     {
         _webhooks.Setup(x => x.PublishAsync(It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<string?>()))
             .Returns(Task.CompletedTask);
-        _tokenCache.Setup(x => x.InvalidateUserTokens(It.IsAny<string>()))
+        _invalidator.Setup(x => x.InvalidateAsync(It.IsAny<User>()))
             .Returns(Task.CompletedTask);
 
         _service = new GlobalUserAdminService(
             _userRepo.Object,
             Mock.Of<ITenantCacheService>(),
-            _roleCache.Object,
-            _tokenCache.Object,
+            _invalidator.Object,
             _webhooks.Object,
             NullLogger<GlobalUserAdminService>.Instance);
     }
@@ -47,8 +44,9 @@ public class GlobalUserAdminServiceDeleteTests
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(x => x.DeleteUser(TargetUserId, null), Times.Once);
-        _roleCache.Verify(x => x.InvalidateUserRoles(TargetUserId, "parkly.no"), Times.Once);
-        _tokenCache.Verify(x => x.InvalidateUserTokens(TargetUserId), Times.Once);
+        // One call now stands for every cache the account is held in, including those of any
+        // account sharing its address.
+        _invalidator.Verify(x => x.InvalidateAsync(user), Times.Once);
         _webhooks.Verify(
             x => x.PublishAsync(WebhookEventTypes.UserDeleted, It.IsAny<object?>(), It.IsAny<string?>()),
             Times.Once);

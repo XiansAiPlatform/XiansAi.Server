@@ -170,6 +170,44 @@ public class OidcTokenInspectorTests
     }
 
     [Fact]
+    public void NameIsComposedFromTheStandardGivenAndFamilyClaims()
+    {
+        var jwt = TokenWith(("sub", "user-1"), ("given_name", "Prasadini"), ("family_name", "Abeyasinghe"));
+
+        Assert.Equal("Prasadini Abeyasinghe", OidcTokenInspector.GetName(jwt));
+    }
+
+    [Fact]
+    public void NameIsComposedFromTheCamelCaseClaimsSomeDirectoriesIssue()
+    {
+        // A directory issuing firstName/lastName and no name claim left the record with no name.
+        var jwt = TokenWith(("sub", "user-1"), ("firstName", "Prasadini"), ("lastName", "Abeyasinghe"));
+
+        Assert.Equal("Prasadini Abeyasinghe", OidcTokenInspector.GetName(jwt));
+    }
+
+    [Fact]
+    public void HalfAComposedNameIsBetterThanNone()
+    {
+        Assert.Equal("Prasadini", OidcTokenInspector.GetName(TokenWith(("given_name", "Prasadini"))));
+    }
+
+    [Fact]
+    public void APersonsNameIsPreferredOverThePreferredUsernameAddress()
+    {
+        var jwt = TokenWith(
+            ("preferred_username", "a@b.com"), ("given_name", "Prasadini"), ("family_name", "Abeyasinghe"));
+
+        Assert.Equal("Prasadini Abeyasinghe", OidcTokenInspector.GetName(jwt));
+    }
+
+    [Fact]
+    public void PreferredUsernameIsStillTheNameWhenNothingElseCarriesOne()
+    {
+        Assert.Equal("a@b.com", OidcTokenInspector.GetName(TokenWith(("preferred_username", "a@b.com"))));
+    }
+
+    [Fact]
     public void PreferredUsernameStandsInForAMissingEmail()
     {
         Assert.Equal("a@b.com", OidcTokenInspector.GetEmail(TokenWith(("preferred_username", "a@b.com"))));
