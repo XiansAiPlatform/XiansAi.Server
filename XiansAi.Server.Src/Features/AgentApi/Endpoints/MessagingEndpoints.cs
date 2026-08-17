@@ -143,13 +143,31 @@ namespace Features.AgentApi.Endpoints
 
             group.MapPost("/outbound/file", async (
                 [FromBody] ChatOrDataRequest request,
-                [FromServices] IMessageService messageService) =>
+                [FromServices] IMessageService messageService,
+                [FromServices] IMessageFileStorage fileStorage,
+                [FromServices] ITenantContext tenantContext,
+                CancellationToken cancellationToken) =>
             {
+                if (string.IsNullOrEmpty(request.ParticipantId))
+                {
+                    return Results.BadRequest("participantId is required for file messages");
+                }
+
                 var fileValidationError = ValidateOutboundFileData(request.Data);
                 if (fileValidationError != null)
                 {
                     return Results.BadRequest(fileValidationError);
                 }
+
+                var (resolvedFiles, resolveError) = await ResolveOutboundFileRefsAsync(
+                    fileStorage, tenantContext.TenantId, request.ParticipantId, request.Data, cancellationToken);
+                if (resolveError != null)
+                {
+                    return Results.BadRequest(resolveError);
+                }
+
+                // Persist and signal the server-verified references, never the agent-supplied copy.
+                request.Data = new { files = resolvedFiles };
 
                 var result = await messageService.ProcessOutgoingMessage(request, MessageType.File);
                 return result.ToHttpResult();
@@ -370,6 +388,44 @@ namespace Features.AgentApi.Endpoints
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Resolves each agent-supplied fileId against storage, confirming the file exists in the
+        /// caller's tenant and belongs to the target participant. Returns the stored references
+        /// (authoritative name, content type and size), or an error message.
+        /// Assumes the payload already passed <see cref="ValidateOutboundFileData"/>.
+        /// </summary>
+        private static async Task<(List<StoredFileRef> Files, string? Error)> ResolveOutboundFileRefsAsync(
+            IMessageFileStorage fileStorage,
+            string tenantId,
+            string participantId,
+            object? data,
+            CancellationToken cancellationToken)
+        {
+            var files = new List<StoredFileRef>();
+            var filesElement = ((JsonElement)data!).GetProperty("files");
+
+            foreach (var file in filesElement.EnumerateArray())
+            {
+                var fileId = file.GetProperty("fileId").GetString()!;
+                var resolved = await fileStorage.ResolveReferenceAsync(
+                    tenantId, participantId, fileId, cancellationToken);
+
+                if (resolved == null)
+                {
+                    _logger.LogWarning(
+                        "Outbound file message rejected for participant {ParticipantId}: fileId {FileId} could not be resolved",
+                        LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(fileId));
+
+                    // Deliberately generic: do not reveal whether the file exists or is owned by someone else.
+                    return (files, "One or more fileId values are unknown or not available for this participant");
+                }
+
+                files.Add(resolved);
+            }
+
+            return (files, null);
         }
     }
 } 

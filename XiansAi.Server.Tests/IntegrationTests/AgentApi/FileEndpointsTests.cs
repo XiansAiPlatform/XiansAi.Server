@@ -74,6 +74,27 @@ public class FileEndpointsTests : IntegrationTestBase, IClassFixture<MongoDbFixt
     }
 
     [Fact]
+    public async Task UploadFiles_MissingParticipantId_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/agent/files", new
+        {
+            files = new[]
+            {
+                new
+                {
+                    content = Convert.ToBase64String(Encoding.UTF8.GetBytes("orphan")),
+                    fileName = "orphan.txt",
+                    contentType = "text/plain"
+                }
+            }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("participantId is required", body);
+    }
+
+    [Fact]
     public async Task UploadFiles_InvalidBase64_ReturnsBadRequest()
     {
         var response = await _client.PostAsJsonAsync("/api/agent/files", new

@@ -51,13 +51,20 @@ public static class FileEndpoints
                 return Results.Unauthorized();
             }
 
+            // Every stored file must have an owner: outbound messages may only reference files
+            // belonging to the participant they are sent to.
+            if (string.IsNullOrWhiteSpace(request.ParticipantId))
+            {
+                return Results.BadRequest("participantId is required");
+            }
+
             var fileValidationError = ValidateFiles(request.Files);
             if (fileValidationError != null)
             {
                 return Results.BadRequest(fileValidationError);
             }
 
-            var participantId = request.ParticipantId?.ToLowerInvariant() ?? string.Empty;
+            var participantId = request.ParticipantId.ToLowerInvariant();
 
             try
             {
