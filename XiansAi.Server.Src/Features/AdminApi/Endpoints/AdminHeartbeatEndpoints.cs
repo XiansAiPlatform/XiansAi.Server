@@ -56,7 +56,7 @@ public static class AdminHeartbeatEndpoints
             }
 
             // Construct workflow ID and validate activation exists
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(workflowType);
             var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
             if (!validationResult.IsSuccess)
             {

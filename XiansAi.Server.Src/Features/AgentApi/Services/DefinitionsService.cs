@@ -40,6 +40,9 @@ public class FlowDefinitionRequest
     [JsonPropertyName("activable")]
     public bool Activable { get; set; } = false;
 
+    [JsonPropertyName("isBuiltIn")]
+    public bool IsBuiltIn { get; set; } = false;
+
     [JsonPropertyName("onboardingJson")]
     public string? OnboardingJson { get; set; }
 
@@ -421,6 +424,7 @@ public class DefinitionsService : IDefinitionsService
             Markdown = string.IsNullOrEmpty(existingDefinition?.Markdown) ? string.Empty : existingDefinition.Markdown,
             SystemScoped = systemScoped,
             Activable = request.Activable,
+            IsBuiltIn = request.IsBuiltIn,
             Tenant = systemScoped ? null : _tenantContext.TenantId,
             Summary = request.Summary,
             OnboardingJson = request.OnboardingJson,

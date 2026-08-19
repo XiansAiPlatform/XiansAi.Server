@@ -1,5 +1,6 @@
 using Shared.Auth;
 using Shared.Exceptions;
+using Shared.Utils;
 
 public class WorkflowIdentifier
 {
@@ -101,7 +102,7 @@ public class WorkflowIdentifier
 
     public static string BuildSupervisorWorkflowId(string tenantId, string agentName, string? idPostfix = null)
     {
-        return BuildWorkflowId(tenantId, agentName, "Supervisor Workflow", idPostfix);
+        return BuildWorkflowId(tenantId, agentName, WorkflowTypeDefaults.Supervisor, idPostfix);
     }
 
     public static string GetWorkflowType(string workflow)

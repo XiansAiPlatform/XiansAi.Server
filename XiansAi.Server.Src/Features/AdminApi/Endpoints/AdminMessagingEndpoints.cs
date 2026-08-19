@@ -372,7 +372,7 @@ public static class AdminMessagingEndpoints
             }
 
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(workflowType);
 
             // Validate activation exists and is active, and optionally that the agent has this workflow type registered
             var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
@@ -430,7 +430,7 @@ public static class AdminMessagingEndpoints
             CancellationToken cancellationToken) =>
         {
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
+            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(request.WorkflowType);
 
             // Validate activation exists and is active, and that the agent has this workflow type registered
             var validationResult = await activationValidationService.ValidateActivationAsync(
@@ -505,7 +505,7 @@ public static class AdminMessagingEndpoints
             }
 
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
+            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(request.WorkflowType);
 
             // Validate activation exists and is active, and that the agent has this workflow type registered
             var validationResult = await activationValidationService.ValidateActivationAsync(
@@ -593,7 +593,7 @@ public static class AdminMessagingEndpoints
             }
 
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(workflowType);
 
             // Validate activation exists and is active, and that the agent has this workflow type registered
             var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
@@ -644,7 +644,7 @@ public static class AdminMessagingEndpoints
             }
 
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(workflowType);
 
             // Validate activation exists and is active, and that the agent has this workflow type registered
             var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
@@ -700,7 +700,7 @@ public static class AdminMessagingEndpoints
             }
 
             // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
+            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(workflowType);
 
             // Validate activation exists and is active, and that the agent has this workflow type registered
             var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);

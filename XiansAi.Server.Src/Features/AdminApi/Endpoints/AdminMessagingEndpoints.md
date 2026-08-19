@@ -9,7 +9,7 @@ Query Params:
 - agentName
 - activationName
 - participantId
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - defaults to "Supervisor Workflow". Any built-in workflow name is allowed, e.g. "Conversation Workflow 1")
 
 When this is called we need to take distinct scopes in message threads for
 
@@ -26,7 +26,7 @@ Query Params:
 - agentName
 - activationName
 - participantId
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - defaults to "Supervisor Workflow". Any built-in workflow name is allowed, e.g. "Conversation Workflow 1")
 - topic (optional - return messages with null in scope)
 
 ## send
@@ -41,7 +41,7 @@ Body:
 - activationName (required)
 - participantId (required)
 - text (required)
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - defaults to "Supervisor Workflow". Any built-in workflow name is allowed, e.g. "Conversation Workflow 1")
 - data (optional)
 - topic (optional - stored as scope in message thread)
 - type (optional - 'Chat' or 'Data', defaults to 'Chat')
@@ -65,7 +65,7 @@ Query Parameters:
 - agentName (required)
 - activationName (required)
 - participantId (required)
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - defaults to "Supervisor Workflow". Any built-in workflow name is allowed, e.g. "Conversation Workflow 1")
 - heartbeatSeconds (optional - default: 60, range: 1-300)
 
 The endpoint constructs the workflowId as follows:
