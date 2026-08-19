@@ -228,35 +228,57 @@ public class CertificateAuthenticationHandler : AuthenticationHandler<Certificat
         // The certificate's OU may carry either the canonical user id or the user's email,
         // depending on which UI issued the certificate. Resolve by user id first, then
         // fall back to email so certificates issued by either path authenticate correctly.
-        var user = await _userRepository.GetByUserIdAsync(subjectUser)
-            ?? await _userRepository.GetByUserEmailAsync(subjectUser);
-        if (user == null)
+        // Both paths refuse a locked-out account and only count an approved membership.
+        var user = await _userRepository.GetByUserIdAsync(subjectUser);
+        if (user != null)
         {
-            return (false, "Invalid user ID", new CachedCertificateValidation { IsValid = false });
+            var (error, identity) = CertificateUserAccess.Resolve(user, tenantId, _logger);
+            if (identity == null)
+            {
+                _logger.LogWarning(
+                    "Certificate authentication denied for {UserId}: {Reason}",
+                    LogSanitizer.RedactUserId(user.UserId), error);
+                return (false, error, new CachedCertificateValidation { IsValid = false });
+            }
+
+            // Always use the canonical user id for the authenticated context, regardless of
+            // whether the certificate identified the user by id or by email.
+            var userId = string.IsNullOrEmpty(identity.PrimaryUserId) ? subjectUser : identity.PrimaryUserId;
+            return (true, null, BuildValidation(
+                tenantId, userId, identity.Roles.ToList(), identity.IsSysAdmin));
         }
 
-        // Always use the canonical user id for the authenticated context, regardless of
-        // whether the certificate identified the user by id or by email.
-        var userId = string.IsNullOrEmpty(user.UserId) ? subjectUser : user.UserId;
+        // An address can answer to more than one account, and the certificate records no more than
+        // the address, so the accounts are combined rather than one being picked arbitrarily.
+        if (subjectUser.Contains('@'))
+        {
+            var identity = await _userRepository.ResolveEmailIdentityAsync(subjectUser, tenantId);
+            if (identity != null)
+            {
+                return (true, null, BuildValidation(
+                    tenantId, identity.PrimaryUserId, identity.Roles.ToList(), identity.IsSysAdmin));
+            }
+        }
 
-        var roles = user.TenantRoles
-            .FirstOrDefault(tr => tr.Tenant == tenantId)?.Roles?.ToList() ?? new List<string>();
+        return (false, "Invalid user ID", new CachedCertificateValidation { IsValid = false });
+    }
 
-        if (user.IsSysAdmin && !roles.Contains(SystemRoles.SysAdmin))
+    private static CachedCertificateValidation BuildValidation(
+        string tenantId, string userId, List<string> roles, bool isSysAdmin)
+    {
+        if (isSysAdmin && !roles.Contains(SystemRoles.SysAdmin))
         {
             roles.Add(SystemRoles.SysAdmin);
         }
 
-        var validation = new CachedCertificateValidation
+        return new CachedCertificateValidation
         {
             IsValid = true,
             TenantId = tenantId,
             UserId = userId,
             Roles = roles.ToArray(), // Use array for immutability (matches default Array.Empty<string>())
-            IsSysAdmin = user.IsSysAdmin
+            IsSysAdmin = isSysAdmin
         };
-
-        return (true, null, validation);
     }
 
     private Task<AuthenticateResult> CreateAuthenticationTicket(X509Certificate2 cert, CachedCertificateValidation validation)

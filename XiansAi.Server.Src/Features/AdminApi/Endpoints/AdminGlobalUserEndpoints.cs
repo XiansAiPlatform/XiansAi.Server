@@ -136,6 +136,22 @@ public static class AdminGlobalUserEndpoints
             return result.ToHttpResult();
         })
         .WithName("AdminSetGlobalUserStatus");
+
+        // DELETE /api/v1/admin/users/{userId} — permanently delete the user account
+        group.MapDelete("/{userId}", async (
+            string userId,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] IGlobalUserAdminService service,
+            [FromServices] ILoggerFactory loggerFactory) =>
+        {
+            if (!IsSysAdminCaller(tenantContext, loggerFactory, "delete global user", out var forbid))
+                return forbid;
+
+            var actingUserId = tenantContext.LoggedInUser ?? "system";
+            var result = await service.DeleteUserAsync(userId, actingUserId);
+            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult();
+        })
+        .WithName("AdminDeleteGlobalUser");
     }
 
     /// <summary>

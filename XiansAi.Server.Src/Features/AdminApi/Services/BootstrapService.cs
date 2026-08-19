@@ -191,11 +191,15 @@ public class BootstrapService : IBootstrapService
                 return ServiceResult<Tenant>.Success(existingTenant);
             }
 
+            // Only newly created ids have to be lowercase; the lookup above still finds tenants
+            // created before that rule whatever their casing.
+            var newTenantId = Tenant.SanitizeAndValidateNewTenantId(sanitizedTenantId);
+
             var tenant = new Tenant
             {
                 Id = ObjectId.GenerateNewId().ToString(),
-                TenantId = sanitizedTenantId,
-                Name = sanitizedTenantId,
+                TenantId = newTenantId,
+                Name = newTenantId,
                 Enabled = true,
                 CreatedBy = SystemCreator,
                 CreatedAt = DateTime.UtcNow,

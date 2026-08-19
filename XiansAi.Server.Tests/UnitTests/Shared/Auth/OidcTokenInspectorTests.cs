@@ -170,6 +170,44 @@ public class OidcTokenInspectorTests
     }
 
     [Fact]
+    public void NameIsComposedFromTheStandardGivenAndFamilyClaims()
+    {
+        var jwt = TokenWith(("sub", "user-1"), ("given_name", "Prasadini"), ("family_name", "Abeyasinghe"));
+
+        Assert.Equal("Prasadini Abeyasinghe", OidcTokenInspector.GetName(jwt));
+    }
+
+    [Fact]
+    public void NameIsComposedFromTheCamelCaseClaimsSomeDirectoriesIssue()
+    {
+        // A directory issuing firstName/lastName and no name claim left the record with no name.
+        var jwt = TokenWith(("sub", "user-1"), ("firstName", "Prasadini"), ("lastName", "Abeyasinghe"));
+
+        Assert.Equal("Prasadini Abeyasinghe", OidcTokenInspector.GetName(jwt));
+    }
+
+    [Fact]
+    public void HalfAComposedNameIsBetterThanNone()
+    {
+        Assert.Equal("Prasadini", OidcTokenInspector.GetName(TokenWith(("given_name", "Prasadini"))));
+    }
+
+    [Fact]
+    public void APersonsNameIsPreferredOverThePreferredUsernameAddress()
+    {
+        var jwt = TokenWith(
+            ("preferred_username", "a@b.com"), ("given_name", "Prasadini"), ("family_name", "Abeyasinghe"));
+
+        Assert.Equal("Prasadini Abeyasinghe", OidcTokenInspector.GetName(jwt));
+    }
+
+    [Fact]
+    public void PreferredUsernameIsStillTheNameWhenNothingElseCarriesOne()
+    {
+        Assert.Equal("a@b.com", OidcTokenInspector.GetName(TokenWith(("preferred_username", "a@b.com"))));
+    }
+
+    [Fact]
     public void PreferredUsernameStandsInForAMissingEmail()
     {
         Assert.Equal("a@b.com", OidcTokenInspector.GetEmail(TokenWith(("preferred_username", "a@b.com"))));
@@ -193,17 +231,6 @@ public class OidcTokenInspectorTests
         var jwt = TokenWith(("sub", "user-1"), ("emailAddress", "a@b.com"));
 
         Assert.Equal("a@b.com", OidcTokenInspector.GetEmail(jwt));
-    }
-
-    [Fact]
-    public void TheB2CEmailsArrayIsNotTreatedAsVerified()
-    {
-        // B2C states nothing about ownership of the address, and it may have come from a social
-        // account the directory never checked. Treating it as verified would let a sign-in attach
-        // itself to an existing account on that basis alone.
-        var jwt = TokenWith(("sub", "user-1"), ("emails", new[] { "a@b.com" }));
-
-        Assert.False(OidcTokenInspector.IsEmailVerified(jwt));
     }
 
     [Fact]

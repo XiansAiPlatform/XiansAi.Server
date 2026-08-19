@@ -84,6 +84,11 @@ public static class SharedConfiguration
         // Register HttpClient for token services
         builder.Services.AddHttpClient();
 
+        // Which cache entries belong to which user, so that disabling an account can drop them.
+        // Singleton because the caches that populate it are scoped, and an index that went out of
+        // scope with the request that wrote the entry could never evict it later.
+        builder.Services.AddSingleton<IUserCacheIndex, UserCacheIndex>();
+
         // Register token validation cache
         builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
 
@@ -234,6 +239,7 @@ public static class SharedConfiguration
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
+        builder.Services.AddScoped<IUserAuthorizationInvalidator, UserAuthorizationInvalidator>();
         builder.Services.AddSingleton<ITenantCacheService, TenantCacheService>();
         builder.Services.AddScoped<IUserTenantService, UserTenantService>();
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();

@@ -616,10 +616,12 @@ public class TenantService : ITenantService
             var finalCreatedBy = request.CreatedBy ?? createdBy ?? _tenantContext.LoggedInUser ?? throw new InvalidOperationException("Logged in user is not set");
             _logger.LogInformation("Final CreatedBy value determined: {FinalCreatedBy}", LogSanitizer.Sanitize(finalCreatedBy));
 
+            var newTenantId = Tenant.SanitizeAndValidateNewTenantId(request.TenantId);
+
             var tenant = new Tenant
             {
                 Id = ObjectId.GenerateNewId().ToString(),
-                TenantId = request.TenantId,
+                TenantId = newTenantId,
                 Name = request.Name,
                 Domain = request.Domain,
                 Description = request.Description,
@@ -678,14 +680,42 @@ public class TenantService : ITenantService
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
         {
-            _logger.LogWarning("Duplicate tenant ID or domain: {TenantId}", LogSanitizer.Sanitize(request.TenantId));
-            return ServiceResult<TenantCreatedResult>.BadRequest("A tenant with this ID or domain already exists.");
+            var message = DescribeDuplicateTenant(ex.WriteError?.Message, request.TenantId, request.Domain);
+            _logger.LogWarning("Rejected duplicate tenant {TenantId}: {Message}. Write error: {WriteError}",
+                LogSanitizer.Sanitize(request.TenantId), message, LogSanitizer.Sanitize(ex.WriteError?.Message));
+            return ServiceResult<TenantCreatedResult>.BadRequest(message);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating tenant");
             return ServiceResult<TenantCreatedResult>.InternalServerError("An error occurred while creating the tenant.");
         }
+    }
+
+    /// <summary>
+    /// Explains which value collided when MongoDB rejects a tenant write as a duplicate.
+    /// The write error names the violated index, which is the only way to tell a tenant id
+    /// clash apart from a domain clash.
+    /// </summary>
+    private static string DescribeDuplicateTenant(string? writeErrorMessage, string tenantId, string? domain)
+    {
+        var writeError = writeErrorMessage ?? string.Empty;
+
+        if (writeError.Contains("tenant_id", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"A tenant with ID '{tenantId}' already exists.";
+        }
+
+        if (writeError.Contains("domain", StringComparison.OrdinalIgnoreCase))
+        {
+            // A unique domain index also rejects a tenant that leaves the domain empty when another
+            // one already has none, which reads as a false conflict unless the message spells it out.
+            return string.IsNullOrWhiteSpace(domain)
+                ? "This database requires every tenant to have a unique domain, and another tenant already has none. Provide a domain for this tenant."
+                : $"A tenant with domain '{domain}' already exists.";
+        }
+
+        return "A tenant with this ID or domain already exists.";
     }
 
     public async Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request)
@@ -846,7 +876,19 @@ public class TenantService : ITenantService
         existingTenant.UpdatedAt = DateTime.UtcNow;
         var validatedTenant = existingTenant.SanitizeAndValidate();
 
-        var success = await _tenantRepository.UpdateAsync(id, validatedTenant);
+        bool success;
+        try
+        {
+            success = await _tenantRepository.UpdateAsync(id, validatedTenant);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError?.Code == 11000) // Duplicate key error
+        {
+            var message = DescribeDuplicateTenant(ex.WriteError?.Message, validatedTenant.TenantId, validatedTenant.Domain);
+            _logger.LogWarning("Rejected duplicate tenant update for {Id}: {Message}. Write error: {WriteError}",
+                LogSanitizer.Sanitize(id), message, LogSanitizer.Sanitize(ex.WriteError?.Message));
+            return ServiceResult<Tenant>.BadRequest(message);
+        }
+
         if (!success)
         {
             _logger.LogError("Failed to update tenant with ID {Id}", LogSanitizer.Sanitize(id));

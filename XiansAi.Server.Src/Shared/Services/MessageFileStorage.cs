@@ -68,6 +68,18 @@ public interface IMessageFileStorage
         string fileId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Resolves a stored file into its authoritative reference. Returns null if the file does not
+    /// exist, belongs to another tenant, or is not owned by the given participant. Use this before
+    /// attaching an agent-supplied fileId to a message, so one participant's file cannot be
+    /// delivered to another.
+    /// </summary>
+    Task<StoredFileRef?> ResolveReferenceAsync(
+        string tenantId,
+        string participantId,
+        string fileId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Deletes stored files by id. Missing files and other tenants' files are ignored.</summary>
     Task DeleteAsync(
         string tenantId,
@@ -150,6 +162,64 @@ public class MessageFileStorage : IMessageFileStorage
         string fileId,
         CancellationToken cancellationToken = default)
     {
+        var fileInfo = await FindFileForTenantAsync(tenantId, fileId, cancellationToken);
+        if (fileInfo == null)
+        {
+            return null;
+        }
+
+        var stream = await _bucket.OpenDownloadStreamAsync(fileInfo.Id, cancellationToken: cancellationToken);
+
+        return new DownloadedFile
+        {
+            Stream = stream,
+            FileName = GetFileName(fileInfo),
+            ContentType = GetContentType(fileInfo),
+        };
+    }
+
+    public async Task<StoredFileRef?> ResolveReferenceAsync(
+        string tenantId,
+        string participantId,
+        string fileId,
+        CancellationToken cancellationToken = default)
+    {
+        var fileInfo = await FindFileForTenantAsync(tenantId, fileId, cancellationToken);
+        if (fileInfo == null)
+        {
+            return null;
+        }
+
+        // Participant ownership: a file may only be attached to a message for the participant it
+        // was stored against. Files stored without an owner are never attachable.
+        var storedParticipantId = fileInfo.Metadata?.GetValue("participant_id", BsonNull.Value)?.AsString;
+        if (string.IsNullOrEmpty(storedParticipantId) ||
+            !string.Equals(storedParticipantId, participantId, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "Rejected file reference {FileId} for tenant {TenantId}: file is not owned by the target participant",
+                LogSanitizer.Sanitize(fileId), LogSanitizer.Sanitize(tenantId));
+            return null;
+        }
+
+        return new StoredFileRef
+        {
+            FileId = fileId,
+            FileName = GetFileName(fileInfo),
+            ContentType = GetContentType(fileInfo),
+            FileSize = fileInfo.Length,
+        };
+    }
+
+    /// <summary>
+    /// Loads the GridFS file document, enforcing tenant isolation. Returns null when the id is
+    /// malformed, the file is missing, or it belongs to another tenant.
+    /// </summary>
+    private async Task<GridFSFileInfo?> FindFileForTenantAsync(
+        string tenantId,
+        string fileId,
+        CancellationToken cancellationToken)
+    {
         if (!ObjectId.TryParse(fileId, out var objectId))
         {
             return null;
@@ -174,18 +244,14 @@ public class MessageFileStorage : IMessageFileStorage
             return null;
         }
 
-        var contentType = fileInfo.Metadata?.GetValue("content_type", DefaultContentType)?.AsString ?? DefaultContentType;
-        var fileName = fileInfo.Metadata?.GetValue("file_name", fileInfo.Filename)?.AsString ?? fileInfo.Filename;
-
-        var stream = await _bucket.OpenDownloadStreamAsync(objectId, cancellationToken: cancellationToken);
-
-        return new DownloadedFile
-        {
-            Stream = stream,
-            FileName = fileName,
-            ContentType = contentType,
-        };
+        return fileInfo;
     }
+
+    private static string GetFileName(GridFSFileInfo fileInfo) =>
+        fileInfo.Metadata?.GetValue("file_name", fileInfo.Filename)?.AsString ?? fileInfo.Filename;
+
+    private static string GetContentType(GridFSFileInfo fileInfo) =>
+        fileInfo.Metadata?.GetValue("content_type", DefaultContentType)?.AsString ?? DefaultContentType;
 
     public async Task DeleteAsync(
         string tenantId,

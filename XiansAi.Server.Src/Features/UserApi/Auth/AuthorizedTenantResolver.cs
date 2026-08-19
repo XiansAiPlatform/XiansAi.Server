@@ -28,9 +28,16 @@ public class AuthorizedTenantResolution
     public string? AccountUserId { get; private init; }
 
     /// <summary>
-    /// The account's stored email when present. Null when unauthorized or the account has no email.
+    /// The address that may namespace this account's message threads. Null when unauthorized, when
+    /// the account has no email, or when another account holds the same one.
     /// </summary>
-    public string? Email { get; private init; }
+    public string? ConversationEmail { get; private init; }
+
+    /// <summary>
+    /// The address stored on the account, which identifies the caller but namespaces nothing. Null
+    /// when unauthorized or the account has no email.
+    /// </summary>
+    public string? AccountEmail { get; private init; }
 
     public static AuthorizedTenantResolution Denied() => new();
 
@@ -38,14 +45,16 @@ public class AuthorizedTenantResolution
         string matchedTenantId,
         List<string> authorizedTenantIds,
         string accountUserId,
-        string? email = null) =>
+        string? conversationEmail = null,
+        string? accountEmail = null) =>
         new()
         {
             IsAuthorized = true,
             MatchedTenantId = matchedTenantId,
             AuthorizedTenantIds = authorizedTenantIds,
             AccountUserId = accountUserId,
-            Email = email
+            ConversationEmail = conversationEmail,
+            AccountEmail = accountEmail
         };
 }
 
@@ -77,17 +86,23 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
 
     private readonly IUserTenantService _userTenantService;
     private readonly IMemoryCache _cache;
+    private readonly IUserCacheIndex _userCacheIndex;
+    private readonly OidcValidationPolicy _policy;
     private readonly ILogger<AuthorizedTenantResolver> _logger;
     private readonly TimeSpan _cacheDuration;
 
     public AuthorizedTenantResolver(
         IUserTenantService userTenantService,
         IMemoryCache cache,
+        IUserCacheIndex userCacheIndex,
         IConfiguration configuration,
+        OidcValidationPolicy policy,
         ILogger<AuthorizedTenantResolver> logger)
     {
         _userTenantService = userTenantService;
         _cache = cache;
+        _userCacheIndex = userCacheIndex;
+        _policy = policy;
         _logger = logger;
         _cacheDuration = TimeSpan.FromSeconds(
             configuration.GetValue<double>("Auth:ApprovedTenantCacheDurationSeconds", 30));
@@ -124,7 +139,8 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
 
         // Copied because the source list may be a shared cache entry.
         return AuthorizedTenantResolution.Authorized(
-            matchedTenantId, access.TenantIds.ToList(), access.AccountUserId, access.Email);
+            matchedTenantId, access.TenantIds.ToList(), access.AccountUserId,
+            access.ConversationEmail, access.AccountEmail);
     }
 
     /// <summary>The account a token resolves to and the tenants it is approved for.</summary>
@@ -132,7 +148,8 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
     {
         public required string AccountUserId { get; init; }
         public required IReadOnlyList<string> TenantIds { get; init; }
-        public string? Email { get; init; }
+        public string? ConversationEmail { get; init; }
+        public string? AccountEmail { get; init; }
     }
 
     /// <summary>
@@ -171,17 +188,39 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
             return cachedAccess;
         }
 
-        // The requested tenant is passed through so a user who is not a member of it is registered
-        // as pending there and becomes visible to its admins. It does not widen what comes back:
-        // the result is still only the tenants they are approved for.
+        // The address is recorded whatever it is worth, because a record with no address cannot be
+        // matched to a person at all. It never decides identity on its own: the record is keyed on
+        // the provider subject, and an address held by more than one account resolves through
+        // EmailIdentityResolution rather than naming one of them.
         //
-        // Email is unique and used to decide account identity (CreateNewUser, ParticipantId, email
-        // lookups). An unverified claim must not participate in that — only display/contact — or an
-        // attacker who can assert an arbitrary email at their IdP can claim a victim's address
-        // (provisioning lockout / conversation-namespace squatting). See OidcTokenInspector.IsEmailVerified.
-        var emailForLinking = validation.EmailVerified ? validation.Email : null;
+        // The membership is created approved when the token was checked against the audiences this
+        // tenant declared, because that is what makes holding one the tenant's own statement that
+        // this person belongs to it — unlike the WebAPI console, which validates against the
+        // deployment-wide provider and therefore still requires an admin to approve.
+        //
+        // A provider that declares no audience accepts anything its issuer signed, including a
+        // token minted for an unrelated application there, so holding one says nothing about this
+        // tenant. Those fall back to a pending membership for an admin to approve, which is where
+        // they sat before automatic approval existed. Declaring an audience is what earns it.
+        if (!validation.AudienceValidated)
+        {
+            _policy.WarnAboutConfiguration("approval:" + requestedTenantId,
+                "Not auto-approving membership of tenant {TenantId}: its OIDC provider declares no " +
+                "expectedAudience, so this token was accepted on its issuer's signature alone. New " +
+                "members wait for an admin until expectedAudience is set on the provider.",
+                LogSanitizer.Sanitize(requestedTenantId));
+        }
+
         var result = await _userTenantService.EnsureUserAndGetApprovedTenants(
-            providerUserId, emailForLinking, validation.Name, providerAuthority, requestedTenantId);
+            new SignInIdentity
+            {
+                UserId = providerUserId,
+                Email = validation.Email,
+                Name = validation.Name,
+                ProviderAuthority = providerAuthority
+            },
+            requestedTenantId,
+            approveNewMembership: validation.AudienceValidated);
 
         if (!result.IsSuccess || result.Data == null)
         {
@@ -195,13 +234,21 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         {
             AccountUserId = result.Data.UserId,
             TenantIds = result.Data.Tenants.Select(t => t.TenantId).ToArray(),
-            Email = result.Data.Email
+            ConversationEmail = result.Data.ConversationEmail,
+            AccountEmail = result.Data.AccountEmail
         };
 
         var cacheOptions = new MemoryCacheEntryOptions()
             .SetAbsoluteExpiration(_cacheDuration)
-            .SetSize(1);
+            .SetSize(1)
+            .RegisterPostEvictionCallback(
+                (key, _, _, _) => _userCacheIndex.Forget(access.AccountUserId, key.ToString() ?? string.Empty));
         _cache.Set(cacheKey, access, cacheOptions);
+
+        // Tracked against the account rather than the key, which is built from what the token
+        // presented and cannot be reconstructed when an administrator disables the account. The
+        // entry carries the approved tenants, so a hit skips the lockout check entirely.
+        _userCacheIndex.Track(access.AccountUserId, cacheKey);
 
         return access;
     }

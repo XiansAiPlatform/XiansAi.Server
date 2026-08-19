@@ -203,6 +203,64 @@ public static class AdminMessagingEndpoints
     }
 
     /// <summary>
+    /// Validates an outbound File message: references only (fileId + metadata, no inline content).
+    /// Returns an error message, or null when valid.
+    /// </summary>
+    private static string? ValidateOutboundFileData(object? data)
+    {
+        if (data is not JsonElement element || element.ValueKind != JsonValueKind.Object)
+        {
+            return "data.files is required for file messages";
+        }
+
+        if (!element.TryGetProperty("files", out var filesElement) || filesElement.ValueKind != JsonValueKind.Array)
+        {
+            return "data.files must be a non-empty array";
+        }
+
+        var fileCount = filesElement.GetArrayLength();
+        if (fileCount == 0)
+        {
+            return "data.files must be a non-empty array";
+        }
+        if (fileCount > MaxFiles)
+        {
+            return $"A maximum of {MaxFiles} files can be sent per message";
+        }
+
+        foreach (var file in filesElement.EnumerateArray())
+        {
+            if (file.ValueKind != JsonValueKind.Object)
+            {
+                return "Each file must be an object with fileId and fileName";
+            }
+
+            if (file.TryGetProperty("content", out var contentElement)
+                && contentElement.ValueKind == JsonValueKind.String
+                && !string.IsNullOrEmpty(contentElement.GetString()))
+            {
+                return "File messages must carry fileId references only; do not include content";
+            }
+
+            if (!file.TryGetProperty("fileId", out var fileIdElement)
+                || fileIdElement.ValueKind != JsonValueKind.String
+                || string.IsNullOrEmpty(fileIdElement.GetString()))
+            {
+                return "Each file must include a fileId";
+            }
+
+            if (!file.TryGetProperty("fileName", out var fileNameElement)
+                || fileNameElement.ValueKind != JsonValueKind.String
+                || string.IsNullOrEmpty(fileNameElement.GetString()))
+            {
+                return "Each file must include a fileName";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Uploads the strongly-typed files to GridFS and returns lightweight references
     /// (fileId + metadata, no bytes) suitable for persisting and signalling.
     /// </summary>

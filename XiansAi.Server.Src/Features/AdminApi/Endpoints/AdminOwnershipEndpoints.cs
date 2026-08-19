@@ -6,6 +6,7 @@ using Features.AdminApi.Utils;
 using Features.AdminApi.Auth;
 using Shared.Data.Models;
 using Shared.Services;
+using Shared.Utils;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -19,9 +20,14 @@ public static class AdminOwnershipEndpoints
     /// </summary>
     public class TransferOwnershipRequest
     {
+        /// <summary>
+        /// The <see cref="User.UserId"/> of the account to hand ownership to. Addresses are not
+        /// accepted: one can answer to more than one account, and this API knows the user id —
+        /// every endpoint that returns a user returns it.
+        /// </summary>
         [Required]
         [StringLength(200, MinimumLength = 1)]
-        public required string NewAdminId { get; set; }  // User identifier (userId, email, username, etc.)
+        public required string NewAdminId { get; set; }
     }
 
     /// <summary>
@@ -97,7 +103,8 @@ public static class AdminOwnershipEndpoints
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
             [FromServices] IWebhookEventPublisher webhookEventPublisher,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] ILogger<IUserRepository> logger) =>
         {
             try
             {
@@ -134,14 +141,50 @@ public static class AdminOwnershipEndpoints
                     return Results.Forbid();
                 }
 
-                // Get new admin user to validate they exist
-                // Try by userId first, then by email
-                var newAdminUser = await userRepository.GetByUserIdAsync(request.NewAdminId) ??
-                                   await userRepository.GetByUserEmailAsync(request.NewAdminId);
+                // Ownership names exactly one account, and an address does not: two providers can
+                // each hold a record for the same one. Resolving an address here would hand the
+                // agent to whichever record was found rather than the one the caller meant.
+                if (request.NewAdminId.Contains('@'))
+                {
+                    logger.LogWarning("Ownership transfer refused: {Email} is an address, not a user id",
+                        LogSanitizer.RedactEmail(request.NewAdminId));
+                    return Results.BadRequest(new
+                    {
+                        error = "newAdminId must be a user id, not an email address. " +
+                                "An address can answer to more than one account."
+                    });
+                }
 
+                var newAdminUser = await userRepository.GetByUserIdAsync(request.NewAdminId);
                 if (newAdminUser == null)
                 {
                     return Results.BadRequest(new { error = $"User '{request.NewAdminId}' not found" });
+                }
+
+                // A disabled account cannot sign in, so handing it the agent would leave that agent
+                // with an owner nobody can act as.
+                if (newAdminUser.IsLockedOut)
+                {
+                    logger.LogWarning("Ownership transfer refused: {UserId} is disabled",
+                        LogSanitizer.RedactUserId(newAdminUser.UserId));
+                    return Results.Conflict(new
+                    {
+                        error = "This account is disabled, so it cannot own an agent. Enable it first."
+                    });
+                }
+
+                // The lookup above is not tenant-scoped, so without this any account in the
+                // deployment could be made owner of this tenant's agent. A system administrator
+                // reaches every tenant already, and is the one account that need not be a member.
+                if (!newAdminUser.IsSysAdmin && !IsApprovedMemberOf(newAdminUser, parsedTenant))
+                {
+                    logger.LogWarning(
+                        "Ownership transfer refused: {UserId} is not a member of tenant {TenantId}",
+                        LogSanitizer.RedactUserId(newAdminUser.UserId), LogSanitizer.Sanitize(parsedTenant));
+                    return Results.BadRequest(new
+                    {
+                        error = $"User '{request.NewAdminId}' is not an approved member of tenant '{parsedTenant}'"
+                    });
                 }
 
                 // Determine the identifier to use (prefer userId)
@@ -198,6 +241,15 @@ public static class AdminOwnershipEndpoints
         .WithName("TransferOwnership")
         ;
     }
+
+    /// <summary>
+    /// Whether the account holds an approved membership of the tenant. A pending one is not enough:
+    /// its roles do not count anywhere else either, so it names someone who cannot yet act here.
+    /// </summary>
+    private static bool IsApprovedMemberOf(User user, string tenantId) =>
+        user.TenantRoles.Any(membership =>
+            string.Equals(membership.Tenant, tenantId, StringComparison.OrdinalIgnoreCase)
+            && membership.IsApproved);
 }
 
 

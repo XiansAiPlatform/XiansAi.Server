@@ -76,6 +76,9 @@ public static class WebhookEventTypes
     /// <summary>A user account was disabled (locked out).</summary>
     public const string UserDisabled = "user.disabled";
 
+    /// <summary>A user account was permanently deleted.</summary>
+    public const string UserDeleted = "user.deleted";
+
     // ----- Agents, deployments and templates -----
 
     /// <summary>An agent was registered for the first time (via the Agent API).</summary>

@@ -4,6 +4,7 @@ using MongoDB.Driver;
 using Shared.Data;
 using Shared.Repositories;
 using Features.UserApi.Websocket;
+using Features.UserApi.Utils;
 using System.Text.Json;
 using MongoDB.Driver.Linq;
 using Shared.Services;
@@ -152,8 +153,8 @@ namespace Features.UserApi.Services
                             // Decrypt the message text
                             DecryptMessageText(message);
 
-                            var groupId = message.WorkflowId + message.ParticipantId + message.TenantId;
-                            var tenantGroupId = message.WorkflowId + message.TenantId;
+                            var groupId = MessageGroupKey.ForParticipant(message.WorkflowId, message.ParticipantId, message.TenantId);
+                            var tenantGroupId = MessageGroupKey.ForTenant(message.WorkflowId, message.TenantId);
 
                             // Check if this is a response to a pending synchronous request
                             if (message.Direction == MessageDirection.Outgoing && !string.IsNullOrEmpty(message.RequestId))
@@ -227,8 +228,7 @@ namespace Features.UserApi.Services
                                     var messageEvent = new MessageStreamEvent
                                     {
                                         Message = message,
-                                        GroupId = groupId,
-                                        TenantGroupId = tenantGroupId
+                                        GroupId = groupId
                                     };
                                     await _messageEventPublisher.PublishMessageAsync(messageEvent, stoppingToken);
                                 }
@@ -238,7 +238,7 @@ namespace Features.UserApi.Services
                                 }
                             }
                             _logger.LogDebug("Sent message to group {GroupId}: {MessageId}",
-                                message.WorkflowId + message.ParticipantId, message.Id);
+                                groupId, message.Id);
                         }
                     }
                 }

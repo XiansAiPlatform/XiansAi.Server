@@ -65,6 +65,13 @@ public class AppMessageRouterService : BackgroundService
                 return;
             }
 
+            // File attachments are Studio-only in v1; do not push JSON file refs into Slack/Teams.
+            if (message.MessageType == MessageType.File)
+            {
+                _logger.LogInformation("Skipping app-channel routing for File message {MessageId}", message.Id);
+                return;
+            }
+
             // Check if message is from an app integration (origin format: "app:{platformId}:{integrationId}")
             if (string.IsNullOrEmpty(message.Origin) || (!message.Origin.StartsWith("app:") && !message.Origin.Equals("agent-initiated")))
             {

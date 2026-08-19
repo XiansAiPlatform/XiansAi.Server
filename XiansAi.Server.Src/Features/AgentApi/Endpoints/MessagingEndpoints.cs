@@ -24,6 +24,7 @@ namespace Features.AgentApi.Endpoints
 
     public static class ConversationEndpoints
     {
+        private const int MaxFiles = 5;
         private static readonly ILogger<ConversationHistoryQuery> _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<ConversationHistoryQuery>();
         private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
         {
@@ -139,6 +140,44 @@ namespace Features.AgentApi.Endpoints
             
         .WithSummary("Process outbound tool execution from Agent")
         .WithDescription("Processes an outbound tool execution message for streaming tool call steps. Delivered via SSE for frontend display of intermediate actions.");
+
+            group.MapPost("/outbound/file", async (
+                [FromBody] ChatOrDataRequest request,
+                [FromServices] IMessageService messageService,
+                [FromServices] IMessageFileStorage fileStorage,
+                [FromServices] ITenantContext tenantContext,
+                CancellationToken cancellationToken) =>
+            {
+                if (string.IsNullOrEmpty(request.ParticipantId))
+                {
+                    return Results.BadRequest("participantId is required for file messages");
+                }
+
+                var fileValidationError = ValidateOutboundFileData(request.Data);
+                if (fileValidationError != null)
+                {
+                    return Results.BadRequest(fileValidationError);
+                }
+
+                var (resolvedFiles, resolveError) = await ResolveOutboundFileRefsAsync(
+                    fileStorage, tenantContext.TenantId, request.ParticipantId, request.Data, cancellationToken);
+                if (resolveError != null)
+                {
+                    return Results.BadRequest(resolveError);
+                }
+
+                // Persist and signal the server-verified references, never the agent-supplied copy.
+                request.Data = new { files = resolvedFiles };
+
+                var result = await messageService.ProcessOutgoingMessage(request, MessageType.File);
+                return result.ToHttpResult();
+            })
+            .WithName("Process Outbound File from Agent")
+            .Produces<object>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithSummary("Process outbound file from Agent")
+            .WithDescription("Processes an outbound File message with GridFS fileId references only (no inline content).");
 
             group.MapPost("/outbound/handoff", async (
                 [FromBody] HandoffRequest request,
@@ -291,6 +330,102 @@ namespace Features.AgentApi.Endpoints
 
             var result = await messageService.GetLastTaskIdAsync(workflowId, participantId, scope);
             return result.ToHttpResult();
+        }
+
+        /// <summary>
+        /// Validates an outbound File message: references only (fileId + metadata, no inline content).
+        /// Returns an error message, or null when valid.
+        /// </summary>
+        private static string? ValidateOutboundFileData(object? data)
+        {
+            if (data is not JsonElement element || element.ValueKind != JsonValueKind.Object)
+            {
+                return "data.files is required for file messages";
+            }
+
+            if (!element.TryGetProperty("files", out var filesElement) || filesElement.ValueKind != JsonValueKind.Array)
+            {
+                return "data.files must be a non-empty array";
+            }
+
+            var fileCount = filesElement.GetArrayLength();
+            if (fileCount == 0)
+            {
+                return "data.files must be a non-empty array";
+            }
+            if (fileCount > MaxFiles)
+            {
+                return $"A maximum of {MaxFiles} files can be sent per message";
+            }
+
+            foreach (var file in filesElement.EnumerateArray())
+            {
+                if (file.ValueKind != JsonValueKind.Object)
+                {
+                    return "Each file must be an object with fileId and fileName";
+                }
+
+                if (file.TryGetProperty("content", out var contentElement)
+                    && contentElement.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrEmpty(contentElement.GetString()))
+                {
+                    return "File messages must carry fileId references only; do not include content";
+                }
+
+                if (!file.TryGetProperty("fileId", out var fileIdElement)
+                    || fileIdElement.ValueKind != JsonValueKind.String
+                    || string.IsNullOrEmpty(fileIdElement.GetString()))
+                {
+                    return "Each file must include a fileId";
+                }
+
+                if (!file.TryGetProperty("fileName", out var fileNameElement)
+                    || fileNameElement.ValueKind != JsonValueKind.String
+                    || string.IsNullOrEmpty(fileNameElement.GetString()))
+                {
+                    return "Each file must include a fileName";
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Resolves each agent-supplied fileId against storage, confirming the file exists in the
+        /// caller's tenant and belongs to the target participant. Returns the stored references
+        /// (authoritative name, content type and size), or an error message.
+        /// Assumes the payload already passed <see cref="ValidateOutboundFileData"/>.
+        /// </summary>
+        private static async Task<(List<StoredFileRef> Files, string? Error)> ResolveOutboundFileRefsAsync(
+            IMessageFileStorage fileStorage,
+            string tenantId,
+            string participantId,
+            object? data,
+            CancellationToken cancellationToken)
+        {
+            var files = new List<StoredFileRef>();
+            var filesElement = ((JsonElement)data!).GetProperty("files");
+
+            foreach (var file in filesElement.EnumerateArray())
+            {
+                var fileId = file.GetProperty("fileId").GetString()!;
+                var resolved = await fileStorage.ResolveReferenceAsync(
+                    tenantId, participantId, fileId, cancellationToken);
+
+                if (resolved == null)
+                {
+                    _logger.LogWarning(
+                        "Outbound file message rejected for participant {ParticipantId}: fileId {FileId} could not be resolved",
+                        LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(fileId));
+
+                    // Deliberately generic: do not reveal whether the file exists or is owned by someone else.
+                    return (files, "One or more fileId values are unknown or not available for this participant");
+                }
+
+                files.Add(resolved);
+            }
+
+            return (files, null);
         }
     }
 } 
