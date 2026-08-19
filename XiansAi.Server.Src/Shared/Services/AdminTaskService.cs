@@ -110,7 +110,8 @@ public class AdminTaskService : IAdminTaskService
         try
         {
             _logger.LogInformation("Retrieving task with workflow ID: {WorkflowId}", LogSanitizer.Sanitize(workflowId));
-            var client = await _clientFactory.GetClientAsync();
+            var agentNameFromId = WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId));
+            var client = await _clientFactory.GetClientAsync(agentNameFromId);
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 
@@ -223,8 +224,9 @@ public class AdminTaskService : IAdminTaskService
 
         try
         {
-            var client = await _clientFactory.GetClientAsync();
-            
+            // agentName is an optional filter here - the listing can span every agent in the tenant.
+            var client = await _clientFactory.GetClientAsync(agentName ?? string.Empty);
+
             // Build base query with filters
             var queryParts = new List<string>
             {
@@ -450,7 +452,8 @@ public class AdminTaskService : IAdminTaskService
                 "Retrieving task statistics - TenantId: {TenantId}, StartDate: {StartDate}, EndDate: {EndDate}, ParticipantId: {ParticipantId}",
                 tenantId, startDate.Value, endDate.Value, participantId ?? "null");
 
-            var client = await _clientFactory.GetClientAsync();
+            // Statistics span every agent in the tenant - no single agent to scope the client to.
+            var client = await _clientFactory.GetClientAsync(string.Empty);
 
             // Build base query with common filters
             var baseQueryParts = new List<string>
@@ -673,7 +676,7 @@ public class AdminTaskService : IAdminTaskService
         try
         {
             _logger.LogInformation("Updating draft for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 
@@ -714,7 +717,7 @@ public class AdminTaskService : IAdminTaskService
                 "Updating metadata for task {WorkflowId} with {MetadataKeyCount} keys",
                 LogSanitizer.Sanitize(workflowId),
                 metadata.Count);
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
             await workflowHandle.SignalAsync("UpdateMetadata", new object[] { metadata });
@@ -759,7 +762,7 @@ public class AdminTaskService : IAdminTaskService
                 LogSanitizer.Sanitize(workflowId),
                 LogSanitizer.Sanitize(comment ?? "(none)"),
                 metadata?.Count ?? 0);
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 

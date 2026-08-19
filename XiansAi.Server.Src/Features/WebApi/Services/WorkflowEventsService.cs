@@ -52,7 +52,7 @@ public class WorkflowEventsService : IWorkflowEventsService
         {
             try
             {
-                var client = await _clientFactory.GetClientAsync();
+                var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
                 var handle = client.GetWorkflowHandle(workflowId);
                 var options = new WorkflowHistoryEventFetchOptions
                 {
@@ -203,7 +203,7 @@ public class WorkflowEventsService : IWorkflowEventsService
         
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
             var handle = client.GetWorkflowHandle(workflowId);
             
             var events = new List<HistoryEvent>();

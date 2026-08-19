@@ -12,7 +12,8 @@ namespace Shared.Utils.Temporal;
 public interface ITemporalClientService
 {
     Task<ITemporalClient> GetClientAsync(string tenantId);
-    ITemporalClient GetClient(string tenantId);
+    Task<ITemporalClient> GetClientAsync(string tenantId, string? agentName);
+    ITemporalClient GetClient(string tenantId, string agentName);
     Task RemoveClient(string tenantId);
 }
 
@@ -40,27 +41,25 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
 
     }
 
-    public ITemporalClient GetClient(string tenantId)
+    public ITemporalClient GetClient(string tenantId, string? agentName)
     {
         // For backward compatibility, use async version but block
         // Consider making all callers async to avoid this
-        return GetClientAsync(tenantId).GetAwaiter().GetResult();
+        return GetClientAsync(tenantId, agentName).GetAwaiter().GetResult();
     }
 
-    public Task RemoveClient(string tenantId)
+    public Task<ITemporalClient> GetClientAsync(string tenantId)
     {
-        if (_clients.TryRemove(tenantId, out _))
-        {
-            _logger.LogInformation("Removed cached Temporal client for tenant {TenantId}", tenantId);
-        }
-        return Task.CompletedTask;
+        return GetClientAsync(tenantId, null);
     }
 
-    public async Task<ITemporalClient> GetClientAsync(string tenantId)
+    public async Task<ITemporalClient> GetClientAsync(string tenantId, string? agentName)
     {
         ThrowIfDisposed();
 
-        if (_clients.TryGetValue(tenantId, out var existingClient))
+        String clientKey = $"{tenantId}:{agentName}";
+
+        if (_clients.TryGetValue(clientKey, out var existingClient))
         {
             return existingClient;
         }
@@ -70,19 +69,19 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         try
         {
             // Double-check pattern
-            if (_clients.TryGetValue(tenantId, out existingClient))
+            if (_clients.TryGetValue(clientKey, out existingClient))
             {
                 return existingClient;
             }
 
-            var config = await GetTemporalConfig(tenantId);
+            var config = await GetTemporalConfig(tenantId, agentName);
             var endpointKey = BuildEndpointKey(config);
 
             // Reuse an already-connected client only when the URL, namespace and TLS credentials all match.
             // Startup often warms "default" while requests use the real tenant id with the same root config.
             if (_clientsByEndpoint.TryGetValue(endpointKey, out var sharedClient))
             {
-                _clients.TryAdd(tenantId, sharedClient);
+                _clients.TryAdd(clientKey, sharedClient);
                 _logger.LogInformation(
                     "Reusing existing Temporal client for tenant {TenantId} ({Url}, namespace: {Namespace})",
                     tenantId, config.FlowServerUrl, config.FlowServerNamespace);
@@ -112,7 +111,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             try
             {
                 var client = await TemporalClient.ConnectAsync(options);
-                _clients.TryAdd(tenantId, client);
+                _clients.TryAdd(clientKey, client);
                 _clientsByEndpoint.TryAdd(endpointKey, client);
 
                 await EnsureSearchAttributesRegisteredAsync(client, config.FlowServerNamespace!);
@@ -124,7 +123,7 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
             {
                 _logger.LogError(ex, "Failed to connect to Temporal server for tenant {TenantId} at {Url}. Error: {ErrorMessage}",
                     tenantId, config.FlowServerUrl, ex.Message);
-                _clients.TryRemove(tenantId, out _);
+                _clients.TryRemove(clientKey, out _);
                 _clientsByEndpoint.TryRemove(endpointKey, out _);
                 throw;
             }
@@ -133,6 +132,18 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         {
             _connectionSemaphore.Release();
         }
+    }
+
+    public Task RemoveClient(string tenantId)
+    {
+        foreach (var kvp in _clients)
+        {
+            if (kvp.Key.StartsWith($"{tenantId}:"))
+            {
+                _clients.TryRemove(kvp.Key, out _);
+            }
+        }
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -159,14 +170,25 @@ public class TemporalClientService : ITemporalClientService, IDisposable, IAsync
         return Convert.ToHexString(hash);
     }
 
-    private async Task<TemporalConfig> GetTemporalConfig(string tenantId)
+    private async Task<TemporalConfig> GetTemporalConfig(string tenantId, string? agentName)
     {
+
         if (string.IsNullOrEmpty(tenantId))
             throw new InvalidOperationException("TenantId is required");
 
 
         using var scope = _serviceFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
+        var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
+
+        if (!string.IsNullOrEmpty(agentName))
+        {
+            var agent = await agentRepository.GetByNameAndTenantAsync(agentName, tenantId);
+            if (!string.IsNullOrEmpty(agent?.OriginTenant))
+            {
+                tenantId = agent.OriginTenant;
+            }
+        }
         var tenantConnection = await repository.GetAsync(tenantId);
         if (tenantConnection != null)
         {

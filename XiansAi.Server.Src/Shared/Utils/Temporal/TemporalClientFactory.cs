@@ -5,8 +5,8 @@ namespace Shared.Utils.Temporal;
 
 public interface ITemporalClientFactory
 {
-    ITemporalClient GetClient();
-    Task<ITemporalClient> GetClientAsync();
+    ITemporalClient GetClient(string? agentName);
+    Task<ITemporalClient> GetClientAsync(string? agentName);
 }
 
 public class TemporalClientFactory : ITemporalClientFactory
@@ -22,13 +22,13 @@ public class TemporalClientFactory : ITemporalClientFactory
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
     }
 
-    public ITemporalClient GetClient()
+    public ITemporalClient GetClient(string? agentName)
     {
-        return _temporalClientService.GetClient(_tenantContext.TenantId);
+        return _temporalClientService.GetClient(_tenantContext.TenantId, agentName);
     }
 
-    public Task<ITemporalClient> GetClientAsync()
+    public Task<ITemporalClient> GetClientAsync(string? agentName)
     {
-        return _temporalClientService.GetClientAsync(_tenantContext.TenantId);
+        return _temporalClientService.GetClientAsync(_tenantContext.TenantId, agentName);
     }
 } 

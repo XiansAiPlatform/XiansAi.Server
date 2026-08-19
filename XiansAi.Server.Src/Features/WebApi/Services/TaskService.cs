@@ -147,7 +147,8 @@ public class TaskService : ITaskService
 
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            // agent is an optional filter here - the listing can span every agent in the tenant.
+            var client = await _clientFactory.GetClientAsync(agent);
             var tasks = new List<TaskInfoResponse>();
 
             // Build query with filters

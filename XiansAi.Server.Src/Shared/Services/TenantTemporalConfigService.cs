@@ -32,6 +32,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
     private readonly ILogger<TenantTemporalConfigService> _logger;
     private readonly ITenantTemporalConfigRepository _repository;
     private readonly ITemporalClientService _temporalClientService;
+    private readonly ITemporalGatewayService _temporalGatewayService;
 
     public TenantTemporalConfigService(
         IServiceScopeFactory serviceFactory,
@@ -42,6 +43,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         using var scope = serviceFactory.CreateScope();
         _repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
         _temporalClientService = scope.ServiceProvider.GetRequiredService<ITemporalClientService>();
+        _temporalGatewayService = scope.ServiceProvider.GetRequiredService<ITemporalGatewayService>();
     }
 
     public async Task<ServiceResult<UpsertTenantTemporalConfigRequest?>> GetForTenantAsync(string tenantId)
@@ -149,7 +151,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
             }
             client = await ConnectWithoutNamespaceAsync(serverUrl, certificate, privateKey);
             await EnsureNamespaceExistsAsync(client, serverUrl, @namespace);
-            await EnsureSearchAttributesExistAsync(client, @namespace);
+            await _temporalGatewayService.EnsureSearchAttributesExistAsync(client, @namespace);
             return ServiceResult<bool>.Success(true);
         }
         catch (FormatException ex)
@@ -203,43 +205,6 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
             });
             // Temporal server may take a moment to be ready to accept search attribute registration after namespace creation.
             await Task.Delay(TimeSpan.FromSeconds(2));
-        }
-    }
-    private async Task EnsureSearchAttributesExistAsync(TemporalClient client, string @namespace)
-    {
-        try
-        {
-            var existing = await client.Connection.OperatorService.ListSearchAttributesAsync(
-                new ListSearchAttributesRequest { Namespace = @namespace });
-            var existingNames = existing.CustomAttributes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var missing = Constants.RequiredSearchAttributes
-                .Where(attr => !existingNames.Contains(attr.Key))
-                .ToList();
-
-            if (missing.Count == 0)
-            {
-                return;
-            }
-
-            _logger.LogInformation(
-                "Registering {Count} missing search attributes in namespace {Namespace}: {Attributes}",
-                missing.Count, LogSanitizer.Sanitize(@namespace), string.Join(", ", missing.Select(a => a.Key)));
-
-            var addRequest = new AddSearchAttributesRequest { Namespace = @namespace };
-            foreach (var attr in missing)
-            {
-                addRequest.SearchAttributes.Add(attr.Key, attr.Value);
-            }
-
-            await client.Connection.OperatorService.AddSearchAttributesAsync(addRequest);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Could not verify/register search attributes for namespace {Namespace}. " +
-                "If workflows fail to start, manually register these attributes: {Attributes}",
-                LogSanitizer.Sanitize(@namespace), string.Join(", ", Constants.RequiredSearchAttributes.Keys));
         }
     }
 

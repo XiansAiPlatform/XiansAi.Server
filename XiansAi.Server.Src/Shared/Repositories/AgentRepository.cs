@@ -19,6 +19,7 @@ public class AgentWithDefinitions
 public interface IAgentRepository
 {
     Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles);
+    Task<Agent?> GetByNameAndTenantAsync(string name, string tenant);
     Task<Agent?> GetByIdAsync(string id, string userId, string[] userRoles);
     Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string? tenant);
     Task CreateAsync(Agent agent);
@@ -93,6 +94,11 @@ public class AgentRepository : IAgentRepository
         }
 
         return agent;
+    }
+
+    public async Task<Agent?> GetByNameAndTenantAsync(string name, string tenant)
+    {
+        return await GetByNameInternalAsync(name, tenant);
     }
 
     public async Task<Agent?> GetByNameInternalAsync(string name, string? tenant)

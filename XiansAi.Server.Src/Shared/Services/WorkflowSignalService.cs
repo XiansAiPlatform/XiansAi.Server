@@ -129,7 +129,8 @@ public class WorkflowSignalService : IWorkflowSignalService
                 activity?.SetTag("user.id", _tenantContext.LoggedInUser);
             }
 
-            var client = await _clientFactory.GetClientAsync() ?? throw new Exception("Failed to get Temporal client");
+            var targetAgentName = WorkflowIdentifier.GetAgentName(request.TargetWorkflowType);
+            var client = await _clientFactory.GetClientAsync(targetAgentName) ?? throw new Exception("Failed to get Temporal client");
 
             activity?.SetTag("temporal.namespace", client.Options.Namespace);
 

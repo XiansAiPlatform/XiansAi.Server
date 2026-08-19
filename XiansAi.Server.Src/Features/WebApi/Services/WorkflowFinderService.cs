@@ -99,7 +99,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         try
         {
             _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(workflowRunId));
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
             var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
 
             var workflowDescription = await workflowHandle.DescribeAsync();
@@ -170,7 +170,8 @@ public class WorkflowFinderService : IWorkflowFinderService
                 return ServiceResult<PaginatedWorkflowsResponse>.Unauthorized("User is not authenticated.");
             }
 
-            var client = await _clientFactory.GetClientAsync();
+            // agent is an optional filter here - the listing can span every agent in the tenant.
+            var client = await _clientFactory.GetClientAsync(agent);
             var workflows = new List<WorkflowResponse>();
 
             var tenantId = _tenantContext.TenantId ?? string.Empty;
@@ -387,7 +388,8 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            // Spans every agent in agentNames - no single agent to scope the client to.
+            var client = await _clientFactory.GetClientAsync(null);
 
             var listQuery = BuildQuery(agentNames, status);
 
@@ -492,7 +494,7 @@ public class WorkflowFinderService : IWorkflowFinderService
                 return ServiceResult<List<string>>.Forbidden("You do not have read permission to this agent");
             }
 
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _clientFactory.GetClientAsync(agent);
             var workflowTypes = new HashSet<string>();
 
             var tenantId = _tenantContext.TenantId ?? string.Empty;
@@ -579,7 +581,8 @@ public class WorkflowFinderService : IWorkflowFinderService
             };
             var listQuery = string.Join(" and ", queryParts);
 
-            var client = await _clientFactory.GetClientAsync();
+            // Spans every agent in agentNames - no single agent to scope the client to.
+            var client = await _clientFactory.GetClientAsync(string.Empty);
             var postfixSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             const int maxWorkflowsToScan = 500;
             var listOptions = new WorkflowListOptions { Limit = maxWorkflowsToScan };
@@ -644,7 +647,8 @@ public class WorkflowFinderService : IWorkflowFinderService
                 ValidateTqlValue(tenantId);
             }
 
-            var client = await _clientFactory.GetClientAsync();
+            // agentName is an optional filter here - the listing can span every agent in the tenant.
+            var client = await _clientFactory.GetClientAsync(agentName ?? string.Empty);
             var workflows = new List<WorkflowResponse>();
             var queryParts = new List<string>
             {

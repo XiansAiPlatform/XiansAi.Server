@@ -171,10 +171,10 @@ public class WorkflowStarterService : IWorkflowStarterService
         WorkflowOptions options,
         string workflowType)
     {
-        _logger.LogDebug("Starting workflow {WorkflowType} with {ParamCount} parameters", 
+        _logger.LogDebug("Starting workflow {WorkflowType} with {ParamCount} parameters",
             LogSanitizer.Sanitize(workflowType), parameters.Length);
-        
-        var client = await _clientFactory.GetClientAsync();
+
+        var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(workflowType));
         return await client.StartWorkflowAsync(
             workflowType,
             parameters,

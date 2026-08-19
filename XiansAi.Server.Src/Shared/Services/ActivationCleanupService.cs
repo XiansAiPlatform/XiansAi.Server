@@ -38,20 +38,24 @@ public interface IActivationCleanupService
     /// </summary>
     /// <param name="workflowIds">List of workflow IDs to cancel</param>
     /// <param name="tenantId">The tenant ID for getting the Temporal client</param>
+    /// <param name="agentName">The agent name for getting the Temporal client</param>
     /// <returns>Result with count of cancelled workflows</returns>
     Task<ServiceResult<WorkflowCleanupResult>> CancelWorkflowsAsync(
-        List<string> workflowIds, 
-        string tenantId);
+        List<string> workflowIds,
+        string tenantId,
+        string agentName);
 
     /// <summary>
     /// Deletes all schedules by their IDs.
     /// </summary>
     /// <param name="scheduleIds">List of schedule IDs to delete</param>
     /// <param name="tenantId">The tenant ID for getting the Temporal client</param>
+    /// <param name="agentName">The agent name for getting the Temporal client</param>
     /// <returns>Result with count of deleted schedules</returns>
     Task<ServiceResult<ScheduleCleanupResult>> DeleteSchedulesAsync(
-        List<string> scheduleIds, 
-        string tenantId);
+        List<string> scheduleIds,
+        string tenantId,
+        string agentName);
 
     /// <summary>
     /// Performs complete cleanup of workflows and schedules for an activation.
@@ -128,7 +132,7 @@ public class ActivationCleanupService : IActivationCleanupService
                 "Searching for workflows with tenantId={TenantId}, agent={Agent}, idPostfix={IdPostfix}",
                 tenantId, agentName, idPostfix);
 
-            var client = await _temporalClientService.GetClientAsync(tenantId);
+            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
             var workflowIds = new List<string>();
 
             // Build query using search attributes, filtering for running workflows only
@@ -179,7 +183,7 @@ public class ActivationCleanupService : IActivationCleanupService
                 "Searching for schedules with tenantId={TenantId}, agent={Agent}, idPostfix={IdPostfix}",
                 tenantId, agentName, idPostfix);
 
-            var client = await _temporalClientService.GetClientAsync(tenantId);
+            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
             var scheduleIds = new List<string>();
 
             // Build query for schedules using search attributes
@@ -222,8 +226,9 @@ public class ActivationCleanupService : IActivationCleanupService
     /// Cancels all running workflows by their IDs, then verifies and terminates any that remain running.
     /// </summary>
     public async Task<ServiceResult<WorkflowCleanupResult>> CancelWorkflowsAsync(
-        List<string> workflowIds, 
-        string tenantId)
+        List<string> workflowIds,
+        string tenantId,
+        string agentName)
     {
         var result = new WorkflowCleanupResult
         {
@@ -238,7 +243,7 @@ public class ActivationCleanupService : IActivationCleanupService
 
         try
         {
-            var client = await _temporalClientService.GetClientAsync(tenantId);
+            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
             var workflowsToVerify = new List<string>();
 
             // Step 1: Send cancellation requests to all running workflows
@@ -350,8 +355,9 @@ public class ActivationCleanupService : IActivationCleanupService
     /// Deletes all schedules by their IDs.
     /// </summary>
     public async Task<ServiceResult<ScheduleCleanupResult>> DeleteSchedulesAsync(
-        List<string> scheduleIds, 
-        string tenantId)
+        List<string> scheduleIds,
+        string tenantId,
+        string agentName)
     {
         var result = new ScheduleCleanupResult
         {
@@ -366,7 +372,7 @@ public class ActivationCleanupService : IActivationCleanupService
 
         try
         {
-            var client = await _temporalClientService.GetClientAsync(tenantId);
+            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
 
             foreach (var scheduleId in scheduleIds)
             {
@@ -449,7 +455,8 @@ public class ActivationCleanupService : IActivationCleanupService
             // Step 3: Cancel all workflows
             var cancelResult = await CancelWorkflowsAsync(
                 workflowsResult.Data,
-                activation.TenantId);
+                activation.TenantId,
+                activation.AgentName);
 
             if (cancelResult.IsSuccess && cancelResult.Data != null)
             {
@@ -465,7 +472,8 @@ public class ActivationCleanupService : IActivationCleanupService
             // Step 4: Delete all schedules
             var deleteResult = await DeleteSchedulesAsync(
                 schedulesResult.Data,
-                activation.TenantId);
+                activation.TenantId,
+                activation.AgentName);
 
             if (deleteResult.IsSuccess && deleteResult.Data != null)
             {

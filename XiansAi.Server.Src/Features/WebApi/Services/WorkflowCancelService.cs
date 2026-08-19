@@ -58,7 +58,7 @@ public class WorkflowCancelService : IWorkflowCancelService
                 return ServiceResult<WorkflowCancelResult>.BadRequest("WorkflowId is required");
             }
 
-            var client = await _temporalClientFactory.GetClientAsync();
+            var client = await _temporalClientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
             var handle = client.GetWorkflowHandle(workflowId);
             
             var result = new WorkflowCancelResult();
@@ -108,7 +108,8 @@ public class WorkflowCancelService : IWorkflowCancelService
 
             _logger.LogInformation("Cancelling all running workflows for tenant {TenantId} with query: {Query}", tenantId, listQuery);
 
-            var client = await _temporalClientFactory.GetClientAsync();
+            // Spans every agent in agentNames - no single agent to scope the client to.
+            var client = await _temporalClientFactory.GetClientAsync(null);
             var result = new CancelAllWorkflowsResult();
 
             var workflowIds = new List<string>();

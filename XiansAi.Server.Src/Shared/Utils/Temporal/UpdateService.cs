@@ -38,7 +38,7 @@ public class UpdateService
         var workflowInfo = new WorkflowIdentifier(workflowIdentifier, tenantContext);
         
         // Get the temporal client
-        var client = await temporalClientFactory.GetClientAsync();
+        var client = await temporalClientFactory.GetClientAsync(workflowInfo.AgentName);
 
         var systemScoped = agentService.IsSystemAgent(workflowInfo.AgentName).Result.Data;
 
