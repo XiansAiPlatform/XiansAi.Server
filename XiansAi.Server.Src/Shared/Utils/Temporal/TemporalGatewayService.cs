@@ -1,16 +1,16 @@
 using System.Collections.Concurrent;
-using Shared.Auth;
 using Shared.Repositories;
-using Shared.Utils;
-using Shared.Utils.Temporal;
 using Temporalio.Api.OperatorService.V1;
 using Temporalio.Client;
 using Temporalio.Extensions.OpenTelemetry;
 
+namespace Shared.Utils.Temporal;
+
 public interface ITemporalGatewayService
 {
-    Task<List<ITemporalClient>> GetClientAsync(string tenantId);
+    IAsyncEnumerable<ITemporalClient> GetClientsAsync(string tenantId);
     Task<ITemporalClient> GetClientAsync(string tenantId, string agentName);
+    Task<ITemporalClient> GetClientInternalAsync(string tenantId, string? agentName);
     Task RemoveClients(string tenantId);
     Task EnsureSearchAttributesExistAsync(TemporalClient client, string @namespace = "default");
 }
@@ -21,7 +21,6 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
     private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
     private volatile bool _disposed = false;
     private readonly object _disposeLock = new object();
-
 
     private readonly IAgentRepository _agentRepository;
     private readonly ITenantTemporalConfigRepository _tenantTemporalConfigRepository;
@@ -41,7 +40,7 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
-    public async Task<List<ITemporalClient>> GetClientAsync(string tenantId)
+    public async IAsyncEnumerable<ITemporalClient> GetClientsAsync(string tenantId)
     {
         ThrowIfDisposed();
         await _connectionSemaphore.WaitAsync();
@@ -52,10 +51,9 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
             {
                 if (client.Key.StartsWith($"{tenantId}:"))
                 {
-                    clients.Add(client.Value);
+                    yield return client.Value;
                 }
             }
-            return clients;
         }
         finally
         {
@@ -65,11 +63,20 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
 
     public async Task<ITemporalClient> GetClientAsync(string tenantId, string agentName)
     {
+        return await GetClientInternalAsync(tenantId, agentName);
+    }
+
+    public async Task<ITemporalClient> GetClientInternalAsync(string tenantId, string? agentName)
+    {
         ThrowIfDisposed();
+
+        if (string.IsNullOrEmpty(tenantId))
+            throw new InvalidOperationException("TenantId is required");
+
         await _connectionSemaphore.WaitAsync();
         try
         {
-            String clientKey = $"{tenantId}:{agentName}";
+            String clientKey = string.IsNullOrEmpty(agentName) ? tenantId : $"{tenantId}:{agentName}";
             if (_clients.TryGetValue(clientKey, out var existingClient))
             {
                 return existingClient;
@@ -169,10 +176,6 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
     }
     private async Task<TemporalConfig> GetTemporalConfig(string tenantId, string? agentName)
     {
-
-        if (string.IsNullOrEmpty(tenantId))
-            throw new InvalidOperationException("TenantId is required");
-
 
         if (!string.IsNullOrEmpty(agentName))
         {

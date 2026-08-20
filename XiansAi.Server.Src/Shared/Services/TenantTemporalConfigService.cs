@@ -31,7 +31,6 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 {
     private readonly ILogger<TenantTemporalConfigService> _logger;
     private readonly ITenantTemporalConfigRepository _repository;
-    private readonly ITemporalClientService _temporalClientService;
     private readonly ITemporalGatewayService _temporalGatewayService;
 
     public TenantTemporalConfigService(
@@ -42,7 +41,6 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
         using var scope = serviceFactory.CreateScope();
         _repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
-        _temporalClientService = scope.ServiceProvider.GetRequiredService<ITemporalClientService>();
         _temporalGatewayService = scope.ServiceProvider.GetRequiredService<ITemporalGatewayService>();
     }
 
@@ -99,7 +97,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
             }
 
             await _repository.UpsertAsync(tenantId, serverUrl, @namespace, certificate, privateKey, actor);
-            await _temporalClientService.RemoveClient(tenantId);
+            await _temporalGatewayService.RemoveClients(tenantId);
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -117,7 +115,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         try
         {
             var reverted = await _repository.RevertAsync(tenantId, actor);
-            await _temporalClientService.RemoveClient(tenantId);
+            await _temporalGatewayService.RemoveClients(tenantId);
             return reverted ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");
         }
         catch (Exception ex)

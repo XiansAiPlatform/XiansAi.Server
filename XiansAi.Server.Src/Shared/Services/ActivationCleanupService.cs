@@ -107,14 +107,14 @@ public class ActivationCleanupResult
 /// </summary>
 public class ActivationCleanupService : IActivationCleanupService
 {
-    private readonly ITemporalClientService _temporalClientService;
+    private readonly ITemporalGatewayService _temporalGatewayService;
     private readonly ILogger<ActivationCleanupService> _logger;
 
     public ActivationCleanupService(
-        ITemporalClientService temporalClientService,
+        ITemporalGatewayService temporalGatewayService,
         ILogger<ActivationCleanupService> logger)
     {
-        _temporalClientService = temporalClientService ?? throw new ArgumentNullException(nameof(temporalClientService));
+        _temporalGatewayService = temporalGatewayService ?? throw new ArgumentNullException(nameof(temporalGatewayService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -132,7 +132,6 @@ public class ActivationCleanupService : IActivationCleanupService
                 "Searching for workflows with tenantId={TenantId}, agent={Agent}, idPostfix={IdPostfix}",
                 tenantId, agentName, idPostfix);
 
-            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
             var workflowIds = new List<string>();
 
             // Build query using search attributes, filtering for running workflows only
@@ -147,14 +146,17 @@ public class ActivationCleanupService : IActivationCleanupService
             var query = string.Join(" AND ", queryParts);
             _logger.LogDebug("Executing workflow query: {Query}", query);
 
-            // Query only running workflows that match the criteria
-            await foreach (var workflow in client.ListWorkflowsAsync(query))
+            await foreach (var client in _temporalGatewayService.GetClientsAsync(tenantId))
             {
-                if (!string.IsNullOrEmpty(workflow.Id))
+                // Query only running workflows that match the criteria
+                await foreach (var workflow in client.ListWorkflowsAsync(query))
                 {
-                    workflowIds.Add(workflow.Id);
-                    _logger.LogDebug("Found running workflow: {WorkflowId} with status {Status}", 
-                        workflow.Id, workflow.Status);
+                    if (!string.IsNullOrEmpty(workflow.Id) && workflow.Id.StartsWith(tenantId))
+                    {
+                        workflowIds.Add(workflow.Id);
+                        _logger.LogDebug("Found running workflow: {WorkflowId} with status {Status}",
+                            workflow.Id, workflow.Status);
+                    }
                 }
             }
 
@@ -182,8 +184,7 @@ public class ActivationCleanupService : IActivationCleanupService
             _logger.LogInformation(
                 "Searching for schedules with tenantId={TenantId}, agent={Agent}, idPostfix={IdPostfix}",
                 tenantId, agentName, idPostfix);
-
-            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
+                
             var scheduleIds = new List<string>();
 
             // Build query for schedules using search attributes
@@ -202,14 +203,18 @@ public class ActivationCleanupService : IActivationCleanupService
                 Query = query 
             };
 
-            await foreach (var schedule in client.ListSchedulesAsync(listOptions))
+            await foreach (var client in _temporalGatewayService.GetClientsAsync(tenantId))
             {
-                if (!string.IsNullOrEmpty(schedule.Id))
+                await foreach (var schedule in client.ListSchedulesAsync(listOptions))
                 {
-                    scheduleIds.Add(schedule.Id);
-                    _logger.LogDebug("Found schedule: {ScheduleId}", schedule.Id);
+                    if (!string.IsNullOrEmpty(schedule.Id) && schedule.Id.StartsWith(tenantId))
+                    {
+                        scheduleIds.Add(schedule.Id);
+                        _logger.LogDebug("Found schedule: {ScheduleId}", schedule.Id);
+                    }
                 }
             }
+
 
             _logger.LogInformation("Found {Count} schedules for activation", scheduleIds.Count);
             return ServiceResult<List<string>>.Success(scheduleIds);
@@ -243,7 +248,7 @@ public class ActivationCleanupService : IActivationCleanupService
 
         try
         {
-            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
+            var client = await _temporalGatewayService.GetClientAsync(tenantId, agentName);
             var workflowsToVerify = new List<string>();
 
             // Step 1: Send cancellation requests to all running workflows
@@ -372,7 +377,7 @@ public class ActivationCleanupService : IActivationCleanupService
 
         try
         {
-            var client = await _temporalClientService.GetClientAsync(tenantId, agentName);
+            var client = await _temporalGatewayService.GetClientAsync(tenantId, agentName);
 
             foreach (var scheduleId in scheduleIds)
             {

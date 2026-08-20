@@ -433,14 +433,14 @@ public class Program
         try
         {
             using var scope = services.CreateScope();
-            var temporalClientService = scope.ServiceProvider.GetRequiredService<Shared.Utils.Temporal.ITemporalClientService>();
+            var temporalGatewayFactory = scope.ServiceProvider.GetRequiredService<Shared.Utils.Temporal.ITemporalGatewayFactory>();
             var tenantIdsToWarm = GetTemporalTenantIdsToWarm(configuration);
 
             foreach (var tenantId in tenantIdsToWarm)
             {
                 try
                 {
-                    await temporalClientService.GetClientAsync(tenantId);
+                    await temporalGatewayFactory.GetClientAsync(tenantId);
                     _logger.LogInformation("Temporal connection validated successfully for tenant {TenantId}", tenantId);
                 }
                 catch (Exception ex)

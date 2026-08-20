@@ -24,7 +24,7 @@ public interface ITaskService
 /// </summary>
 public class TaskService : ITaskService
 {
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ILogger<TaskService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IAgentRepository _agentRepository;
@@ -32,14 +32,14 @@ public class TaskService : ITaskService
     private readonly IAdminTaskService _adminTaskService;
 
     public TaskService(
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ILogger<TaskService> logger,
         ITenantContext tenantContext,
         IAgentRepository agentRepository,
         IPermissionsService permissionsService,
         IAdminTaskService adminTaskService)
     {
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _temporalGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -148,7 +148,7 @@ public class TaskService : ITaskService
         try
         {
             // agent is an optional filter here - the listing can span every agent in the tenant.
-            var client = await _clientFactory.GetClientAsync(agent);
+            var client = await _temporalGatewayFactory.GetClientAsync(agent);
             var tasks = new List<TaskInfoResponse>();
 
             // Build query with filters

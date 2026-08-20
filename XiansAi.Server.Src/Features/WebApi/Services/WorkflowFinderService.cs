@@ -37,7 +37,7 @@ public interface IWorkflowFinderService
 /// </summary>
 public class WorkflowFinderService : IWorkflowFinderService
 {
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ILogger<WorkflowFinderService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IAgentRepository _agentRepository;
@@ -49,7 +49,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowFinderService"/> class.
     /// </summary>
-    /// <param name="clientFactory">The Temporal client factory for workflow operations.</param>
+    /// <param name="temporalGatewayFactory">The Temporal gateway factory for workflow operations.</param>
     /// <param name="logger">Logger for recording operational events.</param>
     /// <param name="tenantContext">Context containing tenant-specific information.</param>
     /// <param name="agentRepository">The agent repository for accessing agent information.</param>
@@ -58,7 +58,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <param name="logRepository">The log repository for retrieving workflow logs.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowFinderService(
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ILogger<WorkflowFinderService> logger,
         ITenantContext tenantContext,
         IAgentRepository agentRepository,
@@ -66,7 +66,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         IMemoryCache cache,
         ILogRepository logRepository)
     {
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _temporalGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -99,7 +99,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         try
         {
             _logger.LogInformation("Retrieving workflow with ID: {WorkflowId} and workflowRunId: {WorkflowRunId}", LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(workflowRunId));
-            var client = await _clientFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
+            var client = await _temporalGatewayFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
             var workflowHandle = client.GetWorkflowHandle(workflowId, workflowRunId);
 
             var workflowDescription = await workflowHandle.DescribeAsync();
@@ -151,7 +151,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <returns>A result containing the paginated list of workflows.</returns>
     public async Task<ServiceResult<PaginatedWorkflowsResponse>> GetWorkflows(string? status, string? agent, string? workflowType, string? user, string? idPostfix, int? pageSize, string? pageToken)
     {
-        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, WorkflowType: {WorkflowType}, User: {User}, IdPostfix: {IdPostfix}, PageSize: {PageSize}, PageToken: {PageToken}", 
+        _logger.LogInformation("Retrieving paginated workflows with filters - Status: {Status}, Agent: {Agent}, WorkflowType: {WorkflowType}, User: {User}, IdPostfix: {IdPostfix}, PageSize: {PageSize}, PageToken: {PageToken}",
             status ?? "null", agent ?? "null", workflowType ?? "null", user ?? "null", idPostfix ?? "null", pageSize ?? 20, pageToken ?? "null");
 
         // Validate page size
@@ -171,7 +171,8 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             // agent is an optional filter here - the listing can span every agent in the tenant.
-            var client = await _clientFactory.GetClientAsync(agent);
+            var client = await _temporalGatewayFactory.GetClientAsync(agent);
+
             var workflows = new List<WorkflowResponse>();
 
             var tenantId = _tenantContext.TenantId ?? string.Empty;
@@ -388,19 +389,20 @@ public class WorkflowFinderService : IWorkflowFinderService
 
         try
         {
-            // Spans every agent in agentNames - no single agent to scope the client to.
-            var client = await _clientFactory.GetClientAsync(null);
 
             var listQuery = BuildQuery(agentNames, status);
 
             _logger.LogDebug("Executing workflow query: {Query}", LogSanitizer.Sanitize(string.IsNullOrEmpty(listQuery) ? "No date filters" : listQuery));
 
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
+            await foreach (var client in _temporalGatewayFactory.GetClientsAsync(_tenantContext.TenantId))
             {
-                var mappedWorkflow = MapWorkflowToResponse(workflow);
-                if (mappedWorkflow != null)
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
                 {
-                    allWorkflowResponses.Add(mappedWorkflow);
+                    var mappedWorkflow = MapWorkflowToResponse(workflow);
+                    if (mappedWorkflow != null)
+                    {
+                        allWorkflowResponses.Add(mappedWorkflow);
+                    }
                 }
             }
             _logger.LogInformation("Retrieved {Count} workflows matching the specified criteria", allWorkflowResponses.Count);
@@ -494,7 +496,7 @@ public class WorkflowFinderService : IWorkflowFinderService
                 return ServiceResult<List<string>>.Forbidden("You do not have read permission to this agent");
             }
 
-            var client = await _clientFactory.GetClientAsync(agent);
+            var client = await _temporalGatewayFactory.GetClientAsync(agent);
             var workflowTypes = new HashSet<string>();
 
             var tenantId = _tenantContext.TenantId ?? string.Empty;
@@ -581,22 +583,23 @@ public class WorkflowFinderService : IWorkflowFinderService
             };
             var listQuery = string.Join(" and ", queryParts);
 
-            // Spans every agent in agentNames - no single agent to scope the client to.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
             var postfixSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             const int maxWorkflowsToScan = 500;
             var listOptions = new WorkflowListOptions { Limit = maxWorkflowsToScan };
             var count = 0;
 
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            await foreach (var client in _temporalGatewayFactory.GetClientsAsync(tenantId))
             {
-                var idPostfix = ExtractMemoValue(workflow.Memo, Constants.IdPostfixKey);
-                if (!string.IsNullOrWhiteSpace(idPostfix))
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
                 {
-                    postfixSet.Add(idPostfix.Trim());
+                    var idPostfix = ExtractMemoValue(workflow.Memo, Constants.IdPostfixKey);
+                    if (!string.IsNullOrWhiteSpace(idPostfix))
+                    {
+                        postfixSet.Add(idPostfix.Trim());
+                    }
+                    count++;
+                    if (count >= maxWorkflowsToScan) break;
                 }
-                count++;
-                if (count >= maxWorkflowsToScan) break;
             }
 
             var result = postfixSet.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
@@ -648,7 +651,7 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             // agentName is an optional filter here - the listing can span every agent in the tenant.
-            var client = await _clientFactory.GetClientAsync(agentName ?? string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync(agentName);
             var workflows = new List<WorkflowResponse>();
             var queryParts = new List<string>
             {

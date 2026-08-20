@@ -76,20 +76,20 @@ public class ScheduleDeleteResult
 /// </summary>
 public class ScheduleService : IScheduleService
 {
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ITenantContext _tenantContext;
     private readonly IPermissionsService _permissionsService;
     private readonly IAgentRepository _agentRepository;
     private readonly ILogger<ScheduleService> _logger;
     
     public ScheduleService(
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ITenantContext tenantContext,
         IPermissionsService permissionsService,
         IAgentRepository agentRepository,
         ILogger<ScheduleService> logger)
     {
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _temporalGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -102,7 +102,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // request.AgentName is an optional filter - the listing can span every agent in the tenant.
-            var client = await _clientFactory.GetClientAsync(request.AgentName);
+            var client = await _temporalGatewayFactory.GetClientAsync(request.AgentName);
             var schedules = new List<ScheduleModel>();
             
             // Calculate pagination parameters
@@ -223,7 +223,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // Agent isn't known until the schedule is described.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync();
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
             var description = await scheduleHandle.DescribeAsync();
             
@@ -265,7 +265,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // Agent isn't known until the schedule is described.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync();
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
             var description = await scheduleHandle.DescribeAsync();
             
@@ -310,7 +310,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // Agent isn't known until the schedule is described.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync();
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
             var description = await scheduleHandle.DescribeAsync();
             
@@ -880,7 +880,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // Agent isn't known until the schedule is described.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync(string.Empty);
             
             // First, get the schedule to verify permissions and tenant
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
@@ -922,7 +922,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // Agent isn't known until the schedule is described.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync(string.Empty);
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
 
             // Security check: Tenant isolation and agent write permission
@@ -961,7 +961,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // Agent isn't known until the schedule is described.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync(string.Empty);
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
 
             // Security check: Tenant isolation and agent write permission
@@ -1060,7 +1060,7 @@ public class ScheduleService : IScheduleService
                 return ServiceResult<ScheduleDeleteResult>.NotFound($"Agent {agentName} not found");
             }
             
-            var client = await _clientFactory.GetClientAsync(agentName);
+            var client = await _temporalGatewayFactory.GetClientAsync(agentName);
             var result = new ScheduleDeleteResult();
             
             // Build query to find all schedules for this agent in the current tenant
@@ -1129,7 +1129,7 @@ public class ScheduleService : IScheduleService
         try
         {
             // Deletes schedules for every agent in the tenant - no single agent to scope the client to.
-            var client = await _clientFactory.GetClientAsync(string.Empty);
+            var client = await _temporalGatewayFactory.GetClientAsync();
             var result = new ScheduleDeleteResult();
 
             var queryParts = new List<string>();
