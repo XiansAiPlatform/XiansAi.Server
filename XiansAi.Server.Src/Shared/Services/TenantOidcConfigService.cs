@@ -331,9 +331,11 @@ public class TenantOidcConfigService : ITenantOidcConfigService
     /// Rejects a configuration the validator would refuse or silently override at runtime, so that
     /// the administrator finds out while saving rather than when their users cannot sign in.
     ///
-    /// A missing audience is only warned about: existing configurations were never required to
-    /// declare one, and refusing here would block those tenants from making unrelated edits. It
-    /// becomes a hard failure at validation time once Auth:RequireOidcAudience is enabled.
+    /// A missing audience is refused outright, including on a provider that predates the rule and
+    /// on a save that does not touch it. Grandfathering it would leave the configurations that
+    /// actually matter unfixed forever, since nothing else ever forces them to be revisited. The
+    /// cost is that a tenant configured this way cannot save any OIDC change until it declares one;
+    /// sign-in is unaffected until Auth:RequireOidcAudience is enabled.
     ///
     /// A mutable <c>userIdClaim</c> is refused when newly introduced or changed. An unchanged
     /// pre-existing value is grandfathered with a warning so tenants already configured that way
@@ -368,10 +370,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             if (provider.ExpectedAudience is not { Count: > 0 })
             {
                 _logger.LogWarning(
-                    "OIDC provider '{Provider}' for tenant {TenantId} was saved without an " +
-                    "expectedAudience, so it will accept any token its issuer signed — including " +
-                    "tokens minted for a different application.",
-                    LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(tenantId));
+                    "Refused an OIDC save for tenant {TenantId}: provider '{Provider}' declares no " +
+                    "expectedAudience.",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(name));
+                return $"Provider '{name}' declares no expectedAudience, so it would accept any " +
+                       "token its issuer signed — including one minted for a different application " +
+                       "at that same identity provider. Set expectedAudience to the client id (or " +
+                       "API identifier) this tenant's tokens are issued for.";
             }
         }
 

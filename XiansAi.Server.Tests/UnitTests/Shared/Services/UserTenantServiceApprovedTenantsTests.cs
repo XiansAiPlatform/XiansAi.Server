@@ -44,6 +44,40 @@ public class UserTenantServiceApprovedTenantsTests
             CreatedBy = "test-user"
         };
 
+    private static SignInIdentity IdentityFor(
+        string userId = UserId,
+        string? email = "user@example.com",
+        string? name = "Test User",
+        string? authority = Authority) =>
+        new() { UserId = userId, Email = email, Name = name, ProviderAuthority = authority };
+
+    /// <summary>The pending membership every caller but the UserApi sign-in path records.</summary>
+    private void VerifyPendingMembershipRecorded(string tenantId, Times times) =>
+        _userRepo.Verify(
+            x => x.AddTenantRoleIfAbsentAsync(UserId, tenantId, false, It.Is<IReadOnlyList<string>>(r => r.Count == 0)),
+            times);
+
+    private void VerifyNoMembershipRecorded() =>
+        _userRepo.Verify(
+            x => x.AddTenantRoleIfAbsentAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<string>>()),
+            Times.Never);
+
+    /// <summary>
+    /// A concurrent request that creates the record first: the lookup finds nothing until the
+    /// creation attempt loses the race, and finds it from then on. Modelled as state rather than a
+    /// fixed sequence of answers, so it does not depend on how many times the record is read.
+    /// </summary>
+    private void ArrangeLostRaceToCreate(User racedUser)
+    {
+        var exists = false;
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(() => exists ? racedUser : null);
+        _userManagementService
+            .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
+            .Callback(() => exists = true)
+            .ReturnsAsync(ServiceResult<bool>.Conflict("User already exists"));
+    }
+
     /// <summary>Lets an unpinned record adopt whichever authority is presented.</summary>
     private void AllowPinAdoption()
     {
@@ -55,7 +89,8 @@ public class UserTenantServiceApprovedTenantsTests
     [Fact]
     public async Task EnsureUserAndGetApprovedTenants_RejectsAnEmptyUserId()
     {
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(string.Empty, null, null, Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(userId: string.Empty, email: null, name: null));
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
@@ -64,7 +99,8 @@ public class UserTenantServiceApprovedTenantsTests
     [Fact]
     public async Task EnsureUserAndGetApprovedTenants_RejectsATokenWithNoProviderAuthority()
     {
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, null);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(email: null, name: null, authority: null));
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
@@ -81,8 +117,7 @@ public class UserTenantServiceApprovedTenantsTests
             .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
             .ReturnsAsync(ServiceResult<bool>.Success(true));
 
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
 
         Assert.True(result.IsSuccess);
         Assert.Empty(result.Data!.Tenants);
@@ -112,9 +147,9 @@ public class UserTenantServiceApprovedTenantsTests
         ArrangeFirstTimeUserRequesting("acme");
 
         await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "acme");
+            IdentityFor(), "acme");
 
-        _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(UserId, "acme"), Times.Once);
+        VerifyPendingMembershipRecorded("acme", Times.Once());
     }
 
     [Fact]
@@ -123,7 +158,7 @@ public class UserTenantServiceApprovedTenantsTests
         ArrangeFirstTimeUserRequesting("acme");
 
         var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "acme");
+            IdentityFor(), "acme");
 
         // Being registered as pending must not put the tenant in the approved list, or the caller
         // would let them straight in.
@@ -145,9 +180,9 @@ public class UserTenantServiceApprovedTenantsTests
             .ReturnsAsync(BuildTenant("id-1", "acme", "Tenant", true));
 
         await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "ACME");
+            IdentityFor(), "ACME");
 
-        _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(UserId, "acme"), Times.Once);
+        VerifyPendingMembershipRecorded("acme", Times.Once());
     }
 
     [Theory]
@@ -158,9 +193,9 @@ public class UserTenantServiceApprovedTenantsTests
         ArrangeFirstTimeUserRequesting("acme");
 
         await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, tenantId);
+            IdentityFor(), tenantId);
 
-        _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        VerifyNoMembershipRecorded();
     }
 
     [Fact]
@@ -172,9 +207,9 @@ public class UserTenantServiceApprovedTenantsTests
         _tenantRepo.Setup(x => x.GetByTenantIdAsync("does-not-exist")).ReturnsAsync((Tenant?)null);
 
         await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "does-not-exist");
+            IdentityFor(), "does-not-exist");
 
-        _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        VerifyNoMembershipRecorded();
     }
 
     [Fact]
@@ -183,9 +218,9 @@ public class UserTenantServiceApprovedTenantsTests
         ArrangeFirstTimeUserRequesting("acme", tenantEnabled: false);
 
         await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "acme");
+            IdentityFor(), "acme");
 
-        _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        VerifyNoMembershipRecorded();
     }
 
     [Fact]
@@ -207,9 +242,9 @@ public class UserTenantServiceApprovedTenantsTests
             .ReturnsAsync(BuildTenant("id-1", "acme", "Tenant", true));
 
         await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "acme");
+            IdentityFor(), "acme");
 
-        _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(UserId, "acme"), Times.Once);
+        VerifyPendingMembershipRecorded("acme", Times.Once());
     }
 
     [Fact]
@@ -230,11 +265,12 @@ public class UserTenantServiceApprovedTenantsTests
             .Setup(x => x.GetByTenantIdAsync("acme"))
             .ReturnsAsync(BuildTenant("id-1", "acme", "Tenant", true));
         _userRepo
-            .Setup(x => x.AddPendingTenantRoleIfAbsentAsync(UserId, "acme"))
+            .Setup(x => x.AddTenantRoleIfAbsentAsync(
+                UserId, "acme", It.IsAny<bool>(), It.IsAny<IReadOnlyList<string>>()))
             .ThrowsAsync(new Exception("mongo unavailable"));
 
         var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "acme");
+            IdentityFor(), "acme");
 
         Assert.True(result.IsSuccess);
         Assert.Equal("other", Assert.Single(result.Data!.Tenants).TenantId);
@@ -252,11 +288,11 @@ public class UserTenantServiceApprovedTenantsTests
             .ReturnsAsync(ServiceResult<bool>.Conflict("A user with this email already exists"));
 
         var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "taken@example.com", "Test User", Authority, "acme");
+            IdentityFor(email: "taken@example.com"), "acme");
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
-        _userRepo.Verify(x => x.AddPendingTenantRoleIfAbsentAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        VerifyNoMembershipRecorded();
     }
 
     [Fact]
@@ -264,26 +300,19 @@ public class UserTenantServiceApprovedTenantsTests
     {
         // Same Conflict from the creator, but here the record really is this subject's, so the
         // sign-in continues rather than being mistaken for an email collision.
-        var racedUser = new User { UserId = UserId, ProviderAuthority = Authority, Email = "user@example.com" };
-        _userRepo.SetupSequence(x => x.GetByUserIdAsync(UserId))
-            .ReturnsAsync((User?)null)
-            .ReturnsAsync(racedUser)
-            .ReturnsAsync(racedUser);
-        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
+        ArrangeLostRaceToCreate(
+            new User { UserId = UserId, ProviderAuthority = Authority, Email = "user@example.com" });
         _userRepo.Setup(x => x.GetUserTenantsAsync(UserId))
             .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "acme", Name = "Acme" } });
-        _userManagementService
-            .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
-            .ReturnsAsync(ServiceResult<bool>.Conflict("User already exists"));
         _tenantRepo.Setup(x => x.GetByTenantIdAsync("acme"))
             .ReturnsAsync(BuildTenant("id-1", "acme", "Acme", true));
 
         var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, "user@example.com", "Test User", Authority, "acme");
+            IdentityFor(), "acme");
 
         Assert.True(result.IsSuccess);
         Assert.Equal("acme", Assert.Single(result.Data!.Tenants).TenantId);
-        Assert.Equal("user@example.com", result.Data.Email);
+        Assert.Equal("user@example.com", result.Data.ConversationEmail);
     }
 
     [Fact]
@@ -296,7 +325,7 @@ public class UserTenantServiceApprovedTenantsTests
             .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
             .ReturnsAsync(ServiceResult<bool>.Success(true));
 
-        await BuildService().EnsureUserAndGetApprovedTenants(UserId, "user@example.com", "Test User", Authority);
+        await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
 
         _userManagementService.Verify(
             x => x.CreateNewUser(It.Is<UserDto>(u => u.UserId == UserId), false),
@@ -313,7 +342,7 @@ public class UserTenantServiceApprovedTenantsTests
             .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
             .ReturnsAsync(ServiceResult<bool>.Success(true));
 
-        await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor(email: null, name: null));
 
         _userManagementService.Verify(
             x => x.CreateNewUser(It.Is<UserDto>(u => u.ProviderAuthority == Authority), false),
@@ -328,7 +357,7 @@ public class UserTenantServiceApprovedTenantsTests
         _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
         _userRepo.Setup(x => x.GetUserTenantsAsync(UserId)).ReturnsAsync(new List<TenantInfoDto>());
 
-        await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor(email: null, name: null));
 
         _userManagementService.Verify(
             x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()),
@@ -338,19 +367,12 @@ public class UserTenantServiceApprovedTenantsTests
     [Fact]
     public async Task EnsureUserAndGetApprovedTenants_ToleratesAConcurrentProvisioningConflict()
     {
-        var racedUser = new User { UserId = UserId, ProviderAuthority = Authority };
-        _userRepo.SetupSequence(x => x.GetByUserIdAsync(UserId))
-            .ReturnsAsync((User?)null)
-            .ReturnsAsync(racedUser)
-            .ReturnsAsync(racedUser);
-        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
+        ArrangeLostRaceToCreate(new User { UserId = UserId, ProviderAuthority = Authority });
         _userRepo.Setup(x => x.GetUserTenantsAsync(UserId))
             .ReturnsAsync(new List<TenantInfoDto> { new() { TenantId = "tenant-a", Name = "Tenant A" } });
-        _userManagementService
-            .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
-            .ReturnsAsync(ServiceResult<bool>.Conflict("User already exists"));
 
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(email: null, name: null));
 
         Assert.True(result.IsSuccess);
         Assert.Equal("tenant-a", Assert.Single(result.Data!.Tenants).TenantId);
@@ -364,7 +386,8 @@ public class UserTenantServiceApprovedTenantsTests
             .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
             .ReturnsAsync(ServiceResult<bool>.InternalServerError("database unavailable"));
 
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(email: null, name: null));
 
         Assert.False(result.IsSuccess);
         _userRepo.Verify(x => x.GetUserTenantsAsync(It.IsAny<string>()), Times.Never);
@@ -378,7 +401,7 @@ public class UserTenantServiceApprovedTenantsTests
             .ReturnsAsync(new User { UserId = UserId, ProviderAuthority = Authority });
 
         var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, null, null, "https://evil.example");
+            IdentityFor(email: null, name: null, authority: "https://evil.example"));
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
@@ -393,7 +416,8 @@ public class UserTenantServiceApprovedTenantsTests
         _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
         _userRepo.Setup(x => x.GetUserTenantsAsync(UserId)).ReturnsAsync(new List<TenantInfoDto>());
 
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(email: null, name: null));
 
         Assert.True(result.IsSuccess);
     }
@@ -407,7 +431,8 @@ public class UserTenantServiceApprovedTenantsTests
         _userRepo.Setup(x => x.GetUserTenantsAsync(UserId)).ReturnsAsync(new List<TenantInfoDto>());
         AllowPinAdoption();
 
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(email: null, name: null));
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(x => x.PinProviderAuthorityIfUnsetAsync(UserId, Authority), Times.Once);
@@ -422,7 +447,8 @@ public class UserTenantServiceApprovedTenantsTests
             .Setup(x => x.PinProviderAuthorityIfUnsetAsync(UserId, It.IsAny<string>()))
             .ReturnsAsync("https://someone-else.example");
 
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(email: null, name: null));
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
@@ -434,11 +460,11 @@ public class UserTenantServiceApprovedTenantsTests
         // Nothing pins a SysAdmin ahead of time, so refusing adoption would lock them out for good.
         _userRepo.Setup(x => x.GetByUserIdAsync(UserId))
             .ReturnsAsync(new User { UserId = UserId, ProviderAuthority = null, IsSysAdmin = true });
-        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
-        _userRepo.Setup(x => x.GetUserTenantsAsync(UserId)).ReturnsAsync(new List<TenantInfoDto>());
+        _tenantRepo.Setup(x => x.GetAllAsync()).ReturnsAsync(new List<Tenant>());
         AllowPinAdoption();
 
-        var result = await BuildService().EnsureUserAndGetApprovedTenants(UserId, null, null, Authority);
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(email: null, name: null));
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(x => x.PinProviderAuthorityIfUnsetAsync(UserId, Authority), Times.Once);
@@ -451,10 +477,113 @@ public class UserTenantServiceApprovedTenantsTests
             .ReturnsAsync(new User { UserId = UserId, ProviderAuthority = Authority, IsSysAdmin = true });
 
         var result = await BuildService().EnsureUserAndGetApprovedTenants(
-            UserId, null, null, "https://evil.example");
+            IdentityFor(email: null, name: null, authority: "https://evil.example"));
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_CreatesAnApprovedParticipantMembership_WhenTheCallerAsksForOne()
+    {
+        // The UserApi path validated this token against the rules the tenant configured for its own
+        // identity provider, so holding one is the tenant's own statement that this person belongs
+        // to it — there is nothing further for an admin to decide.
+        ArrangeFirstTimeUserRequesting("acme");
+
+        await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(), "acme", approveNewMembership: true);
+
+        _userRepo.Verify(
+            x => x.AddTenantRoleIfAbsentAsync(UserId, "acme", true,
+                It.Is<IReadOnlyList<string>>(r => r.Single() == SystemRoles.TenantParticipant)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_GrantsParticipant_NotTenantUser()
+    {
+        // TenantUser would admit them to the WebAPI console, which accepts SysAdmin, TenantAdmin and
+        // TenantUser. UserApi authorizes on approved membership rather than on a role.
+        ArrangeFirstTimeUserRequesting("acme");
+
+        await BuildService().EnsureUserAndGetApprovedTenants(
+            IdentityFor(), "acme", approveNewMembership: true);
+
+        _userRepo.Verify(
+            x => x.AddTenantRoleIfAbsentAsync(UserId, "acme", It.IsAny<bool>(),
+                It.Is<IReadOnlyList<string>>(r => !r.Contains(SystemRoles.TenantUser))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_FillsInAnEmailAndNameTheRecordIsMissing()
+    {
+        // Records provisioned before the address was stored have neither, and nothing else ever
+        // revisits them — the create path only runs on a first sign-in.
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(new User
+        {
+            UserId = UserId,
+            ProviderAuthority = Authority,
+            Email = string.Empty,
+            Name = string.Empty
+        });
+        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
+        _userRepo.Setup(x => x.GetUserTenantsAsync(UserId)).ReturnsAsync(new List<TenantInfoDto>());
+
+        await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
+
+        _userRepo.Verify(
+            x => x.UpdateProfileFieldsAsync(UserId, "user@example.com", "Test User"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_DoesNotOverwriteAnEmailTheRecordAlreadyHas()
+    {
+        // An admin may have set it deliberately, so a token claim must never replace it.
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(new User
+        {
+            UserId = UserId,
+            ProviderAuthority = Authority,
+            Email = "set-by-an-admin@example.com",
+            Name = "Set By An Admin"
+        });
+        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
+        _userRepo.Setup(x => x.GetUserTenantsAsync(UserId)).ReturnsAsync(new List<TenantInfoDto>());
+
+        await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
+
+        _userRepo.Verify(
+            x => x.UpdateProfileFieldsAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_WithholdsASharedEmailFromTheConversationIdentity()
+    {
+        // The caller uses this as the participant id, which is the namespace their message threads
+        // live in. Two accounts sharing one would let either read the other's conversations.
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(new User
+        {
+            UserId = UserId,
+            ProviderAuthority = Authority,
+            Email = "shared@example.com",
+            Name = "Test User"
+        });
+        _userRepo.Setup(x => x.IsEmailSharedAsync("shared@example.com", UserId)).ReturnsAsync(true);
+        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(false);
+        _userRepo.Setup(x => x.GetUserTenantsAsync(UserId)).ReturnsAsync(new List<TenantInfoDto>());
+
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Data!.ConversationEmail);
+
+        // Still reported as the account's address, so the caller stays recognisable when they name
+        // themselves by it — it just does not become the namespace.
+        Assert.Equal("shared@example.com", result.Data.AccountEmail);
     }
 
     [Fact]
@@ -473,7 +602,8 @@ public class UserTenantServiceApprovedTenantsTests
     [Fact]
     public async Task GetApprovedTenantsForUserId_ReturnsAllEnabledTenants_ForASysAdmin()
     {
-        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ReturnsAsync(true);
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId))
+            .ReturnsAsync(new User { UserId = UserId, IsSysAdmin = true });
         _tenantRepo.Setup(x => x.GetAllAsync()).ReturnsAsync(new List<Tenant>
         {
             BuildTenant("000000000000000000000001", "tenant-a", "Tenant A", enabled: true),
@@ -489,11 +619,65 @@ public class UserTenantServiceApprovedTenantsTests
     [Fact]
     public async Task GetApprovedTenantsForUserId_FailsClosed_WhenTheLookupThrows()
     {
-        _userRepo.Setup(x => x.IsSysAdmin(UserId)).ThrowsAsync(new InvalidOperationException("mongo down"));
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId))
+            .ThrowsAsync(new InvalidOperationException("mongo down"));
 
         var result = await BuildService().GetApprovedTenantsForUserId(UserId);
 
         Assert.False(result.IsSuccess);
         Assert.Null(result.Data);
+    }
+
+    [Fact]
+    public async Task GetApprovedTenantsForUserId_RefusesADisabledAccount()
+    {
+        // Every sign-in door reaches its tenants through here. Only certificates were checking the
+        // flag, so an account disabled pending review could sign in everywhere else.
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(new User
+        {
+            UserId = UserId,
+            IsLockedOut = true,
+            LockedOutReason = "Created disabled for review"
+        });
+
+        var result = await BuildService().GetApprovedTenantsForUserId(UserId);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
+        _userRepo.Verify(x => x.GetUserTenantsAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetApprovedTenantsForUserId_RefusesADisabledSysAdmin()
+    {
+        // Being a system administrator does not survive the account being turned off, or disabling
+        // one would leave them with every tenant.
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId))
+            .ReturnsAsync(new User { UserId = UserId, IsSysAdmin = true, IsLockedOut = true });
+
+        var result = await BuildService().GetApprovedTenantsForUserId(UserId);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
+        _tenantRepo.Verify(x => x.GetAllAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureUserAndGetApprovedTenants_RefusesADisabledAccountAsUnauthorized()
+    {
+        // Not as a server error: the account being disabled is an answer, not a breakage.
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(new User
+        {
+            UserId = UserId,
+            ProviderAuthority = Authority,
+            Email = "user@example.com",
+            Name = "Test User",
+            IsLockedOut = true
+        });
+
+        var result = await BuildService().EnsureUserAndGetApprovedTenants(IdentityFor());
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCode.Unauthorized, result.StatusCode);
     }
 }

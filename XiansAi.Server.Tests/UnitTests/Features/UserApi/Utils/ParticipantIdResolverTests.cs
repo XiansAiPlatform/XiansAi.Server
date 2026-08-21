@@ -202,4 +202,69 @@ public class ParticipantIdResolverTests
     {
         Assert.False(ParticipantIdResolver.CanActAs("", TenantContext(CanonicalUserId, ProviderUserId)));
     }
+
+    /// <summary>
+    /// The address is held by a second account, so it namespaces nothing and the caller was issued
+    /// their provider subject instead. Naming themselves by it must still land on their own threads.
+    /// </summary>
+    private static ITenantContext WithheldEmailContext() =>
+        TenantContext(
+            CanonicalUserId,
+            participantId: ProviderUserId,
+            email: "shared@example.com",
+            providerSubject: ProviderUserId);
+
+    [Theory]
+    [InlineData("shared@example.com")]
+    [InlineData("Shared@Example.COM")]
+    public void Resolve_ResolvesAWithheldEmailToTheCallersOwnParticipantId(string requested)
+    {
+        var resolved = ParticipantIdResolver.Resolve(requested, WithheldEmailContext());
+
+        Assert.Equal(ProviderUserId, resolved.ParticipantId);
+    }
+
+    [Fact]
+    public void TryResolve_AllowsAWithheldEmail_WithoutPuttingTheCallerInTheSharedNamespace()
+    {
+        var allowed = ParticipantIdResolver.TryResolve(
+            "shared@example.com", WithheldEmailContext(), out var participant);
+
+        Assert.True(allowed);
+        Assert.Equal(ProviderUserId, participant.ParticipantId);
+    }
+
+    [Fact]
+    public void Resolve_KeepsTheEmailAsTheNamespace_WhenItNamesOnlyTheCaller()
+    {
+        var context = TenantContext(
+            CanonicalUserId,
+            participantId: "user@example.com",
+            email: "user@example.com",
+            providerSubject: ProviderUserId);
+
+        var resolved = ParticipantIdResolver.Resolve("user@example.com", context);
+
+        Assert.Equal("user@example.com", resolved.ParticipantId);
+    }
+
+    [Fact]
+    public void Resolve_ResolvesTheCanonicalLoginIdToTheCallersOwnParticipantId()
+    {
+        var resolved = ParticipantIdResolver.Resolve(
+            CanonicalUserId, TenantContext(CanonicalUserId, ProviderUserId));
+
+        Assert.Equal(ProviderUserId, resolved.ParticipantId);
+        Assert.Equal(CanonicalUserId, resolved.LegacyParticipantId);
+    }
+
+    [Fact]
+    public void Resolve_LeavesAnApiKeyNamingAnEndUserAlone()
+    {
+        var tenantContext = TenantContext("service-account", "service-account", UserType.UserApiKey);
+
+        var resolved = ParticipantIdResolver.Resolve("shared@example.com", tenantContext);
+
+        Assert.Equal("shared@example.com", resolved.ParticipantId);
+    }
 }

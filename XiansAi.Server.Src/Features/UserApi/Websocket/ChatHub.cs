@@ -546,7 +546,11 @@ namespace Features.UserApi.Websocket
                     workflowId = tenantContext.TenantId + ":" + workflow;
                 }
                 
-                var groupName = workflowId + participantId + tenantId;
+                // Normalize participant ID to lowercase for consistency with stored data,
+                // which the change stream uses to build the group name it broadcasts to.
+                var resolvedParticipantId = participantId.ToLowerInvariant();
+
+                var groupName = MessageGroupKey.ForParticipant(workflowId, resolvedParticipantId, tenantId);
                 await Groups.AddToGroupAsync(Context.ConnectionId, groupName, cancellationToken);
                 
                 _logger.LogInformation("User {UserId} subscribed to group {GroupName} on connection {ConnectionId}",
@@ -621,7 +625,11 @@ namespace Features.UserApi.Websocket
                     workflowId = tenantContext.TenantId + ":" + workflow;
                 }
 
-                var groupName = workflowId + participantId + tenantId;
+                // Must match the casing used when subscribing, or the connection stays
+                // in the group after unsubscribing.
+                var resolvedParticipantId = participantId.ToLowerInvariant();
+
+                var groupName = MessageGroupKey.ForParticipant(workflowId, resolvedParticipantId, tenantId);
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName, cancellationToken);
                 
                 _logger.LogInformation("User {UserId} unsubscribed from group {GroupName} on connection {ConnectionId}",

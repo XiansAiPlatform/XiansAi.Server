@@ -28,8 +28,11 @@ namespace Shared.Auth;
         string ParticipantId { get; set; }
 
         /// <summary>
-        /// The account's stored email when known. A token holder may name this as
-        /// <see cref="ParticipantId"/> even when the account is keyed by a provider subject.
+        /// The account's stored email when known. A token holder may name themselves by it, which
+        /// resolves to their <see cref="ParticipantId"/>.
+        ///
+        /// It identifies the caller but must not namespace anything: another account can hold the
+        /// same address, in which case <see cref="ParticipantId"/> is deliberately something else.
         /// </summary>
         string? Email { get; set; }
 

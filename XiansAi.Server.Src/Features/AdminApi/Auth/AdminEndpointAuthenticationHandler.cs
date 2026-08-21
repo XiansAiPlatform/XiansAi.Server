@@ -144,7 +144,7 @@ namespace Features.AdminApi.Auth
 
                         var finalTenantId = resolutionResult.FinalTenantId!;
                         var userRoles = resolutionResult.UserRoles!;
-                        // Prefer canonical GUID when CreatedBy was a legacy email.
+                        // Prefer the canonical user_id when the key owner was stored as an email.
                         var resolvedUserId = resolutionResult.ResolvedUserId ?? apiKey.CreatedBy;
 
                         _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}",

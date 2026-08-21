@@ -74,12 +74,15 @@ public class UserTenantServicePortalProvisioningTests
     {
         // Genuine creation race: the conflict is on user id, and the record is there.
         ArrangeFirstSignIn("new@example.com");
+        // The record appears once the concurrent request has created it, rather than after a fixed
+        // number of reads, so the test does not depend on how often it is looked up.
+        var racedUser = new User { UserId = UserId, Email = "new@example.com" };
+        var exists = false;
+        _userRepo.Setup(x => x.GetByUserIdAsync(UserId)).ReturnsAsync(() => exists ? racedUser : null);
         _userManagementService
             .Setup(x => x.CreateNewUser(It.IsAny<UserDto>(), It.IsAny<bool>()))
+            .Callback(() => exists = true)
             .ReturnsAsync(ServiceResult<bool>.Conflict("User already exists"));
-        _userRepo.SetupSequence(x => x.GetByUserIdAsync(UserId))
-            .ReturnsAsync((User?)null)
-            .ReturnsAsync(new User { UserId = UserId, Email = "new@example.com" });
 
         var result = await BuildService().GetCurrentUserTenants(Token);
 

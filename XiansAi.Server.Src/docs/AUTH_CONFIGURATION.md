@@ -239,6 +239,12 @@ Auth__OidcWarningIntervalMinutes=15
 
   This blocks addresses written directly into a configuration. It cannot stop a hostname that
   resolves to an internal address, which needs egress control at the network layer.
+- A provider must declare `expectedAudience`. Without one it accepts any token its issuer signed,
+  including one minted for an unrelated application at that same identity provider, and a UserApi
+  sign-in turns a valid token into approved tenant membership. This is refused at save time even for
+  a provider that predates the rule and even on a save that does not touch it, so a tenant
+  configured that way cannot save any OIDC change until it declares one. Sign-in is unaffected until
+  `Auth__RequireOidcAudience` is enabled; membership is (see below).
 - A mutable `userIdClaim` / `userIdClaims` entry (`email`, `emails`, `preferred_username`, `upn`,
   `name`, `nameid`, `unique_name`, and the matching claim-type URIs) is refused when newly
   introduced or changed. The portal resolves identity from the deployment auth provider's stable
@@ -258,26 +264,57 @@ watch the logs for the warning it emits, fix each tenant it names, then set the 
 
 | Switch | Warning it emits | Fix before enabling |
 | --- | --- | --- |
-| `Auth__RequireOidcAudience` | Provider declares no `expectedAudience` | Set `expectedAudience` on the provider. Until then, any token that issuer signed is accepted — including one minted for an unrelated application at the same identity provider. |
+| `Auth__RequireOidcAudience` | Provider declares no `expectedAudience` | Set `expectedAudience` on the provider. Until then, any token that issuer signed is accepted — including one minted for an unrelated application at the same identity provider. New configurations cannot be saved without one, so this warning only names tenants configured before that rule. |
 | `Auth__StrictSubjectClaim` | Identity fell back to a claim users can change | Leave `userIdClaim` unset (defaults to `sub`/`oid`), or set it to a stable claim. Note that this changes the user id of anyone currently signing in through a fallback claim, orphaning their existing record — naming the claim they already resolve to keeps them on it. Do not set it to a mutable claim; that is refused at save time for new configurations. |
+
+### Tenant membership on User API sign-in
+
+A first-time User API sign-in records the caller as a member of the tenant they asked for. That
+membership is created **approved** — no admin step — when the token was checked against the
+provider's `expectedAudience`, because an audience proves the token was minted for this tenant's own
+application, which is what makes holding one the tenant's own statement that the person belongs to
+it.
+
+When the provider declares no `expectedAudience`, the token was accepted on its issuer's signature
+alone and could have been minted for an unrelated application at that issuer. The membership is then
+created **pending** instead, waiting for an admin, and a throttled warning names the tenant. Setting
+`expectedAudience` is what restores automatic approval.
+
+The WebAPI console always creates a pending membership regardless: its tokens are validated against
+the deployment-wide provider, so holding one says nothing about any particular tenant.
 
 ### Email collisions at sign-in
 
-A user record is keyed on the provider subject (`sub` / `oid`, or the configured `userIdClaim`).
-Sign-in refuses to provision a second account when the token's email already belongs to a different
-subject — merging on email alone would hand over that account's access. Leave `userIdClaim` unset
-(or set it to a stable claim) so the same person keeps the same account across sessions.
+A user record is keyed on the provider subject (`sub` / `oid`, or the configured `userIdClaim`), and
+a subject is only unique within one issuer. One person signing in through two directories therefore
+has two records carrying the same address, which is expected rather than an error.
+
+Sign-in refuses to provision a second account when the address is already held **at the same
+provider**, or when either record's provider cannot be identified — there the address really does
+name one account, and merging on it alone would hand over that account's access. A second account at
+a genuinely different provider is allowed, except when the address belongs to a system
+administrator, where the record is created disabled for an operator to review.
+
+Leave `userIdClaim` unset (or set it to a stable claim) so the same person keeps the same account
+across sessions.
 
 Conversation threads may still be keyed by email: the User API accepts the account's stored email as
-`participantId` even when the account id is the provider subject.
+`participantId` even when the account id is the provider subject — unless the address is held by
+more than one account, in which case it falls back to the subject.
+
+See [`EMAIL_IDENTITY_RESOLUTION.md`](EMAIL_IDENTITY_RESOLUTION.md) for how identity and authority are
+resolved when an address names several accounts, including the rules for system administrators.
 
 ### Certificate Validation Caching (Agent API)
 
 The Agent API uses certificate-based authentication and caches validation results for performance:
 
 ```bash
-# Certificate validation cache duration in minutes (default: 10)
-AgentApi__CertificateValidationCacheDurationMinutes=10
+# Idle window: an agent that keeps calling within this window never revalidates (default: 2)
+AgentApi__CertificateValidationCacheDurationMinutes=2
+
+# Hard ceiling regardless of activity (default: 5)
+AgentApi__CertificateValidationCacheMaxDurationMinutes=5
 
 # Size per cache entry for eviction policy (default: 1)
 AgentApi__CertificateValidationCacheEntrySize=1
@@ -286,7 +323,12 @@ AgentApi__CertificateValidationCacheEntrySize=1
 **Security Notes:**
 
 - Only successful certificate validations are cached
-- Cache is automatically invalidated when a certificate is revoked
+- Revoking a certificate and disabling the account both evict the entry directly
+- The ceiling bounds how long a disabled agent survives on the server instances that did not
+  handle the request that disabled it, since the cache is in-process. It matches the token and
+  role caches so that every cached authorization decision has the same worst case
+- Set the ceiling below the idle window and it is ignored, with a warning: the idle window becomes
+  the ceiling, because an entry cannot outlive the point at which it is discarded anyway
 - Uses the same global cache size limit as token validation
 - Failed validations always trigger fresh validation
 

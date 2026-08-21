@@ -313,7 +313,23 @@ public class MessageService : IMessageService
             // Auto-populate origin and platform metadata from last incoming message in the SAME topic if not provided.
             // Scope filtering ensures web replies don't get routed to Slack/Teams when the last message in thread was from another topic.
             // Prefer the in-memory cache populated on inbound save; fall back to a single MongoDB query.
-            if (string.IsNullOrEmpty(request.Origin) || request.Data == null)
+            // File messages must never inherit last-incoming Data (that may be Slack metadata or another user's file refs).
+            if (messageType == MessageType.File)
+            {
+                if (string.IsNullOrEmpty(request.Origin))
+                {
+                    segment.Restart();
+                    var (lastOrigin, _) = await GetLastIncomingOriginAndDataCachedAsync(threadId, replyScope);
+                    originMs = segment.ElapsedMilliseconds;
+
+                    if (!string.IsNullOrEmpty(lastOrigin))
+                    {
+                        request.Origin = lastOrigin;
+                        _logger.LogInformation("Auto-populated origin from last incoming message in scope {Scope}: {Origin}", LogSanitizer.Sanitize(replyScope ?? "default"), LogSanitizer.Sanitize(lastOrigin));
+                    }
+                }
+            }
+            else if (string.IsNullOrEmpty(request.Origin) || request.Data == null)
             {
                 segment.Restart();
                 var (lastOrigin, lastData) = await GetLastIncomingOriginAndDataCachedAsync(threadId, replyScope);

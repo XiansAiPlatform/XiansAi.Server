@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using Shared.Providers.Auth;
@@ -23,9 +22,28 @@ public class TenantParticipantUser
     /// <summary>Preferred participant role when both are present.</summary>
     [JsonPropertyName("role")]
     public required string Role { get; init; }
+    /// <summary>All roles the user holds in this tenant.</summary>
+    [JsonPropertyName("roles")]
+    public List<string> Roles { get; init; } = new();
     /// <summary>True only when the tenant role is approved and the user is not locked out.</summary>
     [JsonPropertyName("isApproved")]
     public required bool IsApproved { get; init; }
+    [JsonPropertyName("isSysAdmin")]
+    public bool IsSysAdmin { get; init; }
+    [JsonPropertyName("providerAuthority")]
+    public string? ProviderAuthority { get; init; }
+    [JsonPropertyName("isLockedOut")]
+    public bool IsLockedOut { get; init; }
+    [JsonPropertyName("lockedOutReason")]
+    public string? LockedOutReason { get; init; }
+    [JsonPropertyName("lockedOutAt")]
+    public DateTime? LockedOutAt { get; init; }
+    [JsonPropertyName("lockedOutBy")]
+    public string? LockedOutBy { get; init; }
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; init; }
+    [JsonPropertyName("updatedAt")]
+    public DateTime UpdatedAt { get; init; }
 }
 
 /// <summary>
@@ -53,7 +71,16 @@ public interface ITenantParticipantUserService
 {
     Task<ServiceResult<PagedParticipantResult>> ListAsync(string tenantId, int page, int pageSize, string? search, string? role = null);
     Task<ServiceResult<TenantParticipantUser>> GetAsync(string tenantId, string userId);
-    Task<ServiceResult<TenantParticipantUser>> CreateAsync(string tenantId, string email, string name, string role);
+    /// <summary>
+    /// Grants <paramref name="role"/> in the tenant to the account named by <paramref name="userId"/>,
+    /// or, when no user id is given, to the single account holding <paramref name="email"/> —
+    /// creating one from that address and <paramref name="name"/> if none does.
+    ///
+    /// An address held by more than one account settles nothing, and is refused; that is what
+    /// <paramref name="userId"/> is for.
+    /// </summary>
+    Task<ServiceResult<TenantParticipantUser>> CreateAsync(
+        string tenantId, string? email, string? name, string role, string? userId = null);
     Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
         string tenantId, string userId, string? name, string? email, string? role, bool? isApproved,
         bool callerIsSysAdmin = false);
@@ -159,25 +186,52 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         }
     }
 
-    public async Task<ServiceResult<TenantParticipantUser>> CreateAsync(string tenantId, string email, string name, string role)
+    public async Task<ServiceResult<TenantParticipantUser>> CreateAsync(
+        string tenantId, string? email, string? name, string role, string? userId = null)
     {
         var normalizedRole = NormalizeTenantRole(role);
         if (normalizedRole == null)
             return ServiceResult<TenantParticipantUser>.BadRequest(
                 $"Role must be one of: {string.Join(", ", AllowedTenantRoles)}");
 
-        var sanitizedEmail = ValidationHelpers.SanitizeAndValidateEmail(email);
+        // An existing account is named by its user id. An address is not an identifier here: it can
+        // answer to more than one account, and the role granted may be TenantAdmin, so resolving
+        // one would risk handing that role to a different account than the caller meant.
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            return await AddRoleToNamedAccountAsync(userId.Trim(), tenantId, normalizedRole);
+        }
+
+        var sanitizedEmail = ValidationHelpers.SanitizeAndValidateEmail(email ?? string.Empty);
         if (sanitizedEmail == null)
-            return ServiceResult<TenantParticipantUser>.BadRequest("Invalid email address");
+            return ServiceResult<TenantParticipantUser>.BadRequest(
+                "Supply either a userId for an existing account, or a valid email to create a new one");
 
-        var sanitizedName = ValidationHelpers.SanitizeString(name);
+        // An address exactly one account holds names it as surely as a user id does, so the
+        // membership is added rather than the caller being sent to look up something the address
+        // already settles. Refusing here would not make anything safer: an operator sent to find
+        // the user id would search by the same address and arrive at the same record.
+        //
+        // Several accounts is the case a user id exists to settle, and the role granted here can
+        // be TenantAdmin, so that one is refused rather than resolved to whichever came back first.
+        var lookup = EmailAccountLookup.From(await _userRepository.GetAllByUserEmailAsync(sanitizedEmail));
+        if (lookup.IsAmbiguous)
+        {
+            _logger.LogWarning(
+                "Refusing to add {Email} to tenant {TenantId} as {Role}: it matches {Count} accounts",
+                LogSanitizer.RedactEmail(sanitizedEmail), LogSanitizer.Sanitize(tenantId),
+                normalizedRole, lookup.MatchCount);
+            return ServiceResult<TenantParticipantUser>.Conflict(EmailAccountLookup.AmbiguousError);
+        }
+
+        if (lookup.Account != null)
+            return await AddTenantToExistingUserAsync(lookup.Account, tenantId, normalizedRole);
+
+        // Only a new account needs a name; adding an existing one takes the name already on it.
+        var sanitizedName = ValidationHelpers.SanitizeString(name ?? string.Empty);
         if (string.IsNullOrWhiteSpace(sanitizedName))
-            return ServiceResult<TenantParticipantUser>.BadRequest("Name is required");
-
-        // If the user already exists, add them to the tenant instead of creating a new account.
-        var existingUser = await _userRepository.GetByUserEmailAsync(sanitizedEmail);
-        if (existingUser != null)
-            return await AddTenantToExistingUserAsync(existingUser, tenantId, normalizedRole);
+            return ServiceResult<TenantParticipantUser>.BadRequest(
+                "Name is required to create a new account");
 
         var dto = new CreateNewUserDto
         {
@@ -206,19 +260,53 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             },
             tenantId);
 
-        return ServiceResult<TenantParticipantUser>.Success(new TenantParticipantUser
+        return ServiceResult<TenantParticipantUser>.Success(
+            ToTenantUserDto(
+                created,
+                normalizedRole,
+                !created.IsLockedOut && (tenantRole?.IsApproved ?? true),
+                tenantRole?.Roles ?? new List<string> { normalizedRole }),
+            StatusCode.Created);
+    }
+
+    /// <summary>
+    /// Adds the role to the account the caller named by user id, which is the only identifier that
+    /// names exactly one account.
+    /// </summary>
+    private async Task<ServiceResult<TenantParticipantUser>> AddRoleToNamedAccountAsync(
+        string userId, string tenantId, string normalizedRole)
+    {
+        if (userId.Contains('@'))
         {
-            UserId = created.UserId,
-            Email = created.Email,
-            Name = created.Name,
-            Role = normalizedRole,
-            IsApproved = !created.IsLockedOut && (tenantRole?.IsApproved ?? true),
-        }, StatusCode.Created);
+            return ServiceResult<TenantParticipantUser>.BadRequest(
+                "userId must be a user id, not an email address. Omit it and supply email and " +
+                "name to create a new account.");
+        }
+
+        var user = await _userRepository.GetByUserIdAsync(userId);
+        if (user == null)
+        {
+            return ServiceResult<TenantParticipantUser>.NotFound($"User '{userId}' not found");
+        }
+
+        return await AddTenantToExistingUserAsync(user, tenantId, normalizedRole);
     }
 
     private async Task<ServiceResult<TenantParticipantUser>> AddTenantToExistingUserAsync(
         User user, string tenantId, string normalizedRole)
     {
+        // A disabled account cannot sign in, and the one kind most likely to be found by address is
+        // a record created disabled because it collides with a system administrator. Granting it a
+        // membership would leave that grant waiting on a decision nobody made here.
+        if (user.IsLockedOut)
+        {
+            _logger.LogWarning(
+                "Refusing to add disabled account {UserId} to tenant {TenantId}",
+                LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<TenantParticipantUser>.Conflict(
+                "This account is disabled, so it cannot be added to a tenant. Enable it first.");
+        }
+
         var existingMembership = user.TenantRoles.FirstOrDefault(t => t.Tenant == tenantId);
         if (existingMembership != null)
         {
@@ -260,14 +348,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             },
             tenantId);
 
-        return ServiceResult<TenantParticipantUser>.Success(new TenantParticipantUser
-        {
-            UserId = user.UserId,
-            Email = user.Email,
-            Name = user.Name,
-            Role = normalizedRole,
-            IsApproved = !user.IsLockedOut,
-        }, StatusCode.Created);
+        return ServiceResult<TenantParticipantUser>.Success(MapToTenantUser(user, tenantId)!, StatusCode.Created);
     }
 
     public async Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
@@ -555,13 +636,35 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         if (tr == null)
             return null;
 
+        return ToTenantUserDto(
+            user,
+            PrimaryRole(tr.Roles),
+            !user.IsLockedOut && tr.IsApproved,
+            tr.Roles);
+    }
+
+    private static TenantParticipantUser ToTenantUserDto(
+        User user,
+        string role,
+        bool isApproved,
+        List<string> roles)
+    {
         return new TenantParticipantUser
         {
             UserId = user.UserId,
             Email = user.Email,
             Name = user.Name,
-            Role = PrimaryRole(tr.Roles),
-            IsApproved = !user.IsLockedOut && tr.IsApproved,
+            Role = role,
+            Roles = roles,
+            IsApproved = isApproved,
+            IsSysAdmin = user.IsSysAdmin,
+            ProviderAuthority = user.ProviderAuthority,
+            IsLockedOut = user.IsLockedOut,
+            LockedOutReason = user.LockedOutReason,
+            LockedOutAt = user.LockedOutAt,
+            LockedOutBy = user.LockedOutBy,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt,
         };
     }
 

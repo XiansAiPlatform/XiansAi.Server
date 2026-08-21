@@ -81,7 +81,7 @@ Admin API endpoint.
     Note that the **tenant branding** operations (theme and logo management — see below) are
     *not* SysAdmin-only; they are scoped per tenant and a `TenantAdmin` may use them on their
     own tenant.
-  - **Global user management** (`AdminGlobalUserEndpoints`): list/get/patch users
+  - **Global user management** (`AdminGlobalUserEndpoints`): list/get/patch/delete users
     platform-wide, set the SysAdmin flag, and set user status.
   - **Cross-tenant participant lookup** (`AdminParticipantsEndpoints`): look up a participant
     and their tenant memberships across all tenants.

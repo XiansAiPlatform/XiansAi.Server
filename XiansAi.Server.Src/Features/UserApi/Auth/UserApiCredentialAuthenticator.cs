@@ -298,15 +298,14 @@ public class UserApiCredentialAuthenticator : IUserApiCredentialAuthenticator
         // Records written by this path are attributed to the canonical `provider|subject` id.
         var canonicalUserId = validation.CanonicalUserId!;
 
-        // Conversation identity prefers the account's stored email when present so clients that
-        // still pass email as participantId (and historical threads keyed by email) keep working
-        // while the account remains the provider subject. Falls back to the token subject when the
-        // account has no email.
-        var accountEmail = string.IsNullOrWhiteSpace(resolution.Email)
-            ? null
-            : resolution.Email.Trim().ToLowerInvariant();
+        // Two addresses with different jobs. The conversation one namespaces message threads, so it
+        // is only present when it names a single account; the token subject stands in otherwise.
+        // The account one merely identifies the caller, so it is set either way and lets someone
+        // whose address is shared still be recognised when they name themselves by it.
+        var conversationEmail = Normalize(resolution.ConversationEmail);
+        var accountEmail = Normalize(resolution.AccountEmail);
         var providerSubject = validation.ProviderUserId;
-        var participantId = accountEmail ?? providerSubject;
+        var participantId = conversationEmail ?? providerSubject;
 
         _tenantContext.LoggedInUser = canonicalUserId;
         _tenantContext.UserType = UserType.UserToken;
@@ -350,6 +349,11 @@ public class UserApiCredentialAuthenticator : IUserApiCredentialAuthenticator
         }
 
         return Succeed(claims, schemeName);
+    }
+
+    private static string? Normalize(string? email)
+    {
+        return string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
     }
 
     private AuthenticateResult SucceedAsApiKey(ApiKey apiKey, string schemeName)

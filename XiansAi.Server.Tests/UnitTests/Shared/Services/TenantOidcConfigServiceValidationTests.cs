@@ -137,11 +137,11 @@ public class TenantOidcConfigServiceValidationTests
     }
 
     [Fact]
-    public async Task ProviderWithoutAnAudienceIsStillAccepted()
+    public async Task ProviderWithoutAnAudienceIsRejected()
     {
-        // Existing configurations were never required to declare an audience, so refusing here
-        // would block those tenants from making unrelated edits. It is warned about instead, and
-        // only becomes a hard failure once Auth:RequireOidcAudience is enabled.
+        // Without one the provider accepts anything its issuer signed, including a token minted for
+        // an unrelated application there — and a UserApi sign-in turns a valid token into tenant
+        // membership.
         var config = ConfigWith("""
             {
               "issuer": "https://login.example.com",
@@ -151,7 +151,46 @@ public class TenantOidcConfigServiceValidationTests
 
         var result = await CreateService().UpsertAsync(TenantId, config, "admin");
 
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsSuccess);
+        Assert.Contains("expectedAudience", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ProviderWithAnEmptyAudienceListIsRejected()
+    {
+        // An empty list checks nothing, so it must not read as having declared an audience.
+        var config = ConfigWith("""
+            {
+              "issuer": "https://login.example.com",
+              "authority": "https://login.example.com",
+              "expectedAudience": []
+            }
+            """);
+
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("expectedAudience", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task PreExistingProviderWithoutAnAudienceIsStillRejected()
+    {
+        // Deliberately not grandfathered, unlike a mutable userIdClaim. Nothing else ever forces
+        // these configurations to be revisited, so allowing unrelated edits to go through would
+        // leave them audience-less forever. Sign-in keeps working; only saving is blocked.
+        var existing = ConfigWith("""
+            {
+              "issuer": "https://login.example.com",
+              "authority": "https://login.example.com"
+            }
+            """);
+
+        var result = await CreateService(existingConfigJson: existing)
+            .UpsertAsync(TenantId, existing, "admin");
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("expectedAudience", result.ErrorMessage);
     }
 
     [Fact]
