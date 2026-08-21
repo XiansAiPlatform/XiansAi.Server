@@ -191,14 +191,30 @@ public class ActivationValidationServiceTests
     }
 
     [Fact]
-    public async Task ResolveConversationalWorkflowAsync_DoesNotTreatSupervisorNameAsSpecial()
+    public async Task ResolveConversationalWorkflowAsync_TreatsSupervisorNameAsBuiltInForBackwardCompatibility()
     {
         SeedFlowDefinitions(($"{AgentName}:Supervisor Workflow", false));
 
-        var result = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, "Supervisor Workflow");
+        var specified = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, "Supervisor Workflow");
+        var omitted = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, workflowType: null);
 
-        Assert.False(result.IsSuccess);
-        Assert.Contains("conversational capability", result.ErrorMessage);
+        Assert.True(specified.IsSuccess);
+        Assert.Equal("Supervisor Workflow", specified.Data);
+        Assert.True(omitted.IsSuccess);
+        Assert.Equal("Supervisor Workflow", omitted.Data);
+    }
+
+    [Fact]
+    public async Task ResolveConversationalWorkflowAsync_WhenOmitted_PrefersExplicitBuiltInOverSupervisor()
+    {
+        SeedFlowDefinitions(
+            ($"{AgentName}:Supervisor Workflow", false),
+            ($"{AgentName}:Conversation Workflow 1", true));
+
+        var result = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, workflowType: null);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Conversation Workflow 1", result.Data);
     }
 
     [Fact]

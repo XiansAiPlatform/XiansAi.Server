@@ -24,9 +24,10 @@ public interface IActivationValidationService
 
     /// <summary>
     /// Resolves the flow name to use for conversation routing.
-    /// Conversational capability comes from <c>IsBuiltIn</c> on the flow definition, not from a well-known name.
-    /// When <paramref name="workflowType"/> is provided, that definition must be built-in.
-    /// When omitted, the agent's unique built-in workflow is used.
+    /// Conversational capability comes from <c>IsBuiltIn</c> on the flow definition.
+    /// The well-known name "Supervisor Workflow" is also treated as conversational for backward compatibility.
+    /// When <paramref name="workflowType"/> is provided, that definition must be built-in (or Supervisor Workflow).
+    /// When omitted, the agent's unique built-in workflow is used, falling back to Supervisor Workflow.
     /// </summary>
     /// <returns>The short flow name (without the agent prefix) on success.</returns>
     Task<ServiceResult<string>> ResolveConversationalWorkflowAsync(string tenantId, string agentName, string? workflowType);
@@ -62,6 +63,8 @@ public class ActivationValidationService : IActivationValidationService
     private const string AgentWorkflowTypesCacheKeyPrefix = "activation:agent-workflow-types:";
     private const double DefaultCacheMinutes = 5;
     private const double DefaultWorkflowTypeCacheMinutes = 15;
+    // Older agents registered the conversational workflow under this name without isBuiltIn.
+    private const string LegacySupervisorWorkflowName = "Supervisor Workflow";
 
     private readonly IActivationRepository _activationRepository;
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
@@ -305,7 +308,7 @@ public class ActivationValidationService : IActivationValidationService
                 $"Workflow type '{fullWorkflowType}' is not registered for agent '{agentName}'. Registered workflow types: {registeredList}.");
         }
 
-        if (!match.IsBuiltIn)
+        if (!HasConversationalCapability(agentName, match))
         {
             var flowName = ToFlowName(agentName, match.FullType);
             _logger.LogWarning(
@@ -321,23 +324,39 @@ public class ActivationValidationService : IActivationValidationService
     private static ServiceResult<string> ResolveDefaultConversationalWorkflow(
         string agentName, List<RegisteredWorkflow> registered)
     {
-        var conversational = registered.Where(workflow => workflow.IsBuiltIn).ToList();
-        if (conversational.Count == 0)
-        {
-            return ServiceResult<string>.BadRequest(
-                $"Agent '{agentName}' has no built-in workflow with conversational capability.");
-        }
+        var builtIn = registered.Where(workflow => workflow.IsBuiltIn).ToList();
+        if (builtIn.Count == 1)
+            return ServiceResult<string>.Success(ToFlowName(agentName, builtIn[0].FullType));
 
-        if (conversational.Count > 1)
+        if (builtIn.Count > 1)
         {
-            var names = string.Join(", ", conversational
+            var names = string.Join(", ", builtIn
                 .Select(workflow => ToFlowName(agentName, workflow.FullType))
                 .OrderBy(name => name, StringComparer.Ordinal));
             return ServiceResult<string>.BadRequest(
                 $"Agent '{agentName}' has multiple built-in conversational workflows: {names}. Specify workflowType.");
         }
 
-        return ServiceResult<string>.Success(ToFlowName(agentName, conversational[0].FullType));
+        var supervisor = registered.FirstOrDefault(workflow =>
+            IsLegacySupervisorWorkflow(agentName, workflow.FullType));
+        if (supervisor != null)
+            return ServiceResult<string>.Success(LegacySupervisorWorkflowName);
+
+        return ServiceResult<string>.BadRequest(
+            $"Agent '{agentName}' has no built-in workflow with conversational capability.");
+    }
+
+    private static bool HasConversationalCapability(string agentName, RegisteredWorkflow workflow)
+    {
+        return workflow.IsBuiltIn || IsLegacySupervisorWorkflow(agentName, workflow.FullType);
+    }
+
+    private static bool IsLegacySupervisorWorkflow(string agentName, string fullWorkflowType)
+    {
+        return string.Equals(
+            ToFlowName(agentName, fullWorkflowType),
+            LegacySupervisorWorkflowName,
+            StringComparison.Ordinal);
     }
 
     private static RegisteredWorkflow? FindRegisteredWorkflow(
