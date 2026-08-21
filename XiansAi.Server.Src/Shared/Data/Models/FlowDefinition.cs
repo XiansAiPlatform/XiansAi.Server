@@ -73,6 +73,10 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
     [BsonElement("activable")]
     public bool Activable { get; set; } = false;
 
+    [BsonElement("is_built_in")]
+    [System.Text.Json.Serialization.JsonPropertyName("isBuiltIn")]
+    public bool IsBuiltIn { get; set; } = false;
+
     [BsonElement("summary")]
     [StringLength(500, ErrorMessage = "Summary cannot exceed 500 characters")]
     public string? Summary { get; set; }
@@ -97,6 +101,7 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
             Tenant = ValidationHelpers.SanitizeString(Tenant),
             SystemScoped = SystemScoped,
             Activable = Activable,
+            IsBuiltIn = IsBuiltIn,
             Summary = ValidationHelpers.SanitizeString(Summary),
             OnboardingJson = ValidationHelpers.SanitizeString(OnboardingJson),
             CreatedAt = CreatedAt,

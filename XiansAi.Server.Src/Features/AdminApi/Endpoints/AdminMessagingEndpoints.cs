@@ -24,7 +24,7 @@ public class AdminSendMessageRequest
 {
     public required string AgentName { get; set; }
     public required string ActivationName { get; set; }
-    /// <summary>Optional. Defaults to "Supervisor Workflow"</summary>
+    /// <summary>Optional. When omitted, the agent's unique built-in conversational workflow is used.</summary>
     public string? WorkflowType { get; set; }
     public required string ParticipantId { get; set; }
     public required string Text { get; set; }
@@ -59,7 +59,7 @@ public class AdminSendFileMessageRequest
 {
     public required string AgentName { get; set; }
     public required string ActivationName { get; set; }
-    /// <summary>Optional. Defaults to "Supervisor Workflow"</summary>
+    /// <summary>Optional. When omitted, the agent's unique built-in conversational workflow is used.</summary>
     public string? WorkflowType { get; set; }
     public required string ParticipantId { get; set; }
     /// <summary>Optional chat text to accompany the files.</summary>
@@ -371,15 +371,13 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
-
-            // Validate activation exists and is active, and optionally that the agent has this workflow type registered
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
-            if (!validationResult.IsSuccess)
+            var resolved = await ResolveConversationalActivationAsync(
+                activationValidationService, tenantId, agentName, activationName, workflowType);
+            if (!resolved.IsSuccess)
             {
-                return validationResult.ToHttpResult();
+                return resolved.ToHttpResult();
             }
+            var effectiveWorkflowType = resolved.Data!;
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
@@ -429,16 +427,13 @@ public static class AdminMessagingEndpoints
             HttpContext context,
             CancellationToken cancellationToken) =>
         {
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
-
-            // Validate activation exists and is active, and that the agent has this workflow type registered
-            var validationResult = await activationValidationService.ValidateActivationAsync(
-                tenantId, request.AgentName, request.ActivationName, effectiveWorkflowType);
-            if (!validationResult.IsSuccess)
+            var resolved = await ResolveConversationalActivationAsync(
+                activationValidationService, tenantId, request.AgentName, request.ActivationName, request.WorkflowType);
+            if (!resolved.IsSuccess)
             {
-                return validationResult.ToHttpResult();
+                return resolved.ToHttpResult();
             }
+            var effectiveWorkflowType = resolved.Data!;
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, request.AgentName, effectiveWorkflowType, request.ActivationName);
             
             // Default to Chat if type not specified
@@ -504,16 +499,13 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest(fileValidationError);
             }
 
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(request.WorkflowType) ? "Supervisor Workflow" : request.WorkflowType.Trim();
-
-            // Validate activation exists and is active, and that the agent has this workflow type registered
-            var validationResult = await activationValidationService.ValidateActivationAsync(
-                tenantId, request.AgentName, request.ActivationName, effectiveWorkflowType);
-            if (!validationResult.IsSuccess)
+            var resolved = await ResolveConversationalActivationAsync(
+                activationValidationService, tenantId, request.AgentName, request.ActivationName, request.WorkflowType);
+            if (!resolved.IsSuccess)
             {
-                return validationResult.ToHttpResult();
+                return resolved.ToHttpResult();
             }
+            var effectiveWorkflowType = resolved.Data!;
             var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, request.AgentName, effectiveWorkflowType, request.ActivationName);
 
             // Normalize participantId to lowercase (typically an email)
@@ -592,15 +584,13 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
-
-            // Validate activation exists and is active, and that the agent has this workflow type registered
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
-            if (!validationResult.IsSuccess)
+            var resolved = await ResolveConversationalActivationAsync(
+                activationValidationService, tenantId, agentName, activationName, workflowType);
+            if (!resolved.IsSuccess)
             {
-                return validationResult.ToHttpResult();
+                return resolved.ToHttpResult();
             }
+            var effectiveWorkflowType = resolved.Data!;
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
@@ -643,15 +633,13 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
-
-            // Validate activation exists and is active, and that the agent has this workflow type registered
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
-            if (!validationResult.IsSuccess)
+            var resolved = await ResolveConversationalActivationAsync(
+                activationValidationService, tenantId, agentName, activationName, workflowType);
+            if (!resolved.IsSuccess)
             {
-                return validationResult.ToHttpResult();
+                return resolved.ToHttpResult();
             }
+            var effectiveWorkflowType = resolved.Data!;
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
@@ -699,15 +687,13 @@ public static class AdminMessagingEndpoints
                 return Results.BadRequest("participantId query parameter is required");
             }
 
-            // Construct the workflow ID. Default to Supervisor Workflow for backward compatibility.
-            var effectiveWorkflowType = string.IsNullOrWhiteSpace(workflowType) ? "Supervisor Workflow" : workflowType.Trim();
-
-            // Validate activation exists and is active, and that the agent has this workflow type registered
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
-            if (!validationResult.IsSuccess)
+            var resolved = await ResolveConversationalActivationAsync(
+                activationValidationService, tenantId, agentName, activationName, workflowType);
+            if (!resolved.IsSuccess)
             {
-                return validationResult.ToHttpResult();
+                return resolved.ToHttpResult();
             }
+            var effectiveWorkflowType = resolved.Data!;
             
             // Normalize participantId to lowercase (typically an email)
             participantId = participantId.ToLowerInvariant();
@@ -724,6 +710,33 @@ public static class AdminMessagingEndpoints
         })
         .WithName("DeleteMessagesByTopicForAdminApi")
         ;
+    }
+
+    /// <summary>
+    /// Resolves the conversational flow from <c>IsBuiltIn</c> and confirms the activation is usable.
+    /// </summary>
+    private static async Task<ServiceResult<string>> ResolveConversationalActivationAsync(
+        IActivationValidationService activationValidationService,
+        string tenantId,
+        string agentName,
+        string activationName,
+        string? workflowType)
+    {
+        var resolved = await activationValidationService.ResolveConversationalWorkflowAsync(
+            tenantId, agentName, workflowType);
+        if (!resolved.IsSuccess)
+            return resolved;
+
+        var validationResult = await activationValidationService.ValidateActivationAsync(
+            tenantId, agentName, activationName, resolved.Data);
+        if (!validationResult.IsSuccess)
+        {
+            return ServiceResult<string>.Failure(
+                validationResult.ErrorMessage ?? "Activation validation failed",
+                validationResult.StatusCode);
+        }
+
+        return ServiceResult<string>.Success(resolved.Data!);
     }
 }
 
