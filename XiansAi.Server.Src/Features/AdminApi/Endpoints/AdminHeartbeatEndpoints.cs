@@ -55,9 +55,16 @@ public static class AdminHeartbeatEndpoints
                 return Results.BadRequest("timeoutSeconds must be between 1 and 30");
             }
 
-            // Construct workflow ID and validate activation exists
-            var effectiveWorkflowType = WorkflowTypeDefaults.EffectiveName(workflowType);
-            var validationResult = await activationValidationService.ValidateActivationAsync(tenantId, agentName, activationName, effectiveWorkflowType);
+            var resolved = await activationValidationService.ResolveConversationalWorkflowAsync(
+                tenantId, agentName, workflowType);
+            if (!resolved.IsSuccess)
+            {
+                return Results.Json(new { available = false }, statusCode: StatusCodes.Status200OK);
+            }
+            var effectiveWorkflowType = resolved.Data!;
+
+            var validationResult = await activationValidationService.ValidateActivationAsync(
+                tenantId, agentName, activationName, effectiveWorkflowType);
             if (!validationResult.IsSuccess)
             {
                 return Results.Json(new { available = false }, statusCode: StatusCodes.Status200OK);

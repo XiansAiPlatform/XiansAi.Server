@@ -172,6 +172,75 @@ public class ActivationValidationServiceTests
     }
 
     [Fact]
+    public async Task ResolveConversationalWorkflowAsync_UsesRequestedBuiltInWorkflow()
+    {
+        SeedFlowDefinitions(
+            (FullWorkflowType, true),
+            ($"{AgentName}:Invoice Workflow", false));
+
+        var result = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, "Invoice Workflow");
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+        Assert.Contains("conversational capability", result.ErrorMessage);
+
+        var builtInResult = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, FlowName);
+
+        Assert.True(builtInResult.IsSuccess);
+        Assert.Equal(FlowName, builtInResult.Data);
+    }
+
+    [Fact]
+    public async Task ResolveConversationalWorkflowAsync_DoesNotTreatSupervisorNameAsSpecial()
+    {
+        SeedFlowDefinitions(($"{AgentName}:Supervisor Workflow", false));
+
+        var result = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, "Supervisor Workflow");
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("conversational capability", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ResolveConversationalWorkflowAsync_WhenOmitted_UsesUniqueBuiltInWorkflow()
+    {
+        SeedFlowDefinitions(
+            ($"{AgentName}:Conversation Workflow 1", true),
+            ($"{AgentName}:Invoice Workflow", false));
+
+        var result = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, workflowType: null);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Conversation Workflow 1", result.Data);
+    }
+
+    [Fact]
+    public async Task ResolveConversationalWorkflowAsync_WhenOmitted_RequiresUniqueBuiltInWorkflow()
+    {
+        SeedFlowDefinitions(
+            ($"{AgentName}:Conversation Workflow 1", true),
+            ($"{AgentName}:Conversation Workflow 2", true));
+
+        var result = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, workflowType: null);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("multiple built-in conversational workflows", result.ErrorMessage);
+        Assert.Contains("Conversation Workflow 1", result.ErrorMessage);
+        Assert.Contains("Conversation Workflow 2", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ResolveConversationalWorkflowAsync_WhenOmitted_FailsWithoutBuiltInWorkflow()
+    {
+        SeedFlowDefinitions(($"{AgentName}:Invoice Workflow", false));
+
+        var result = await _service.ResolveConversationalWorkflowAsync(TenantId, AgentName, workflowType: null);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("no built-in workflow", result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task InvalidateAgentWorkflowTypesCache_ClearsCachedList()
     {
         SeedFlowDefinitions(FullWorkflowType);
@@ -199,14 +268,20 @@ public class ActivationValidationServiceTests
 
     private void SeedFlowDefinitions(params string[] workflowTypes)
     {
+        SeedFlowDefinitions(workflowTypes.Select(wt => (wt, false)).ToArray());
+    }
+
+    private void SeedFlowDefinitions(params (string WorkflowType, bool IsBuiltIn)[] workflowTypes)
+    {
         var definitions = workflowTypes.Select(wt => new FlowDefinition
         {
             Id = Guid.NewGuid().ToString("N"),
             Agent = AgentName,
-            WorkflowType = wt,
+            WorkflowType = wt.WorkflowType,
             Hash = Guid.NewGuid().ToString("N"),
             CreatedBy = "tester",
             Tenant = TenantId,
+            IsBuiltIn = wt.IsBuiltIn,
             ActivityDefinitions = new List<ActivityDefinition>(),
             ParameterDefinitions = new List<ParameterDefinition>()
         }).ToList();

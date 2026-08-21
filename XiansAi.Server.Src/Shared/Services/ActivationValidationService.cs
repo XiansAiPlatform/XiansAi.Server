@@ -18,9 +18,18 @@ public interface IActivationValidationService
     /// <param name="tenantId">The tenant ID.</param>
     /// <param name="agentName">The agent name.</param>
     /// <param name="activationName">The activation name (workflow ID postfix).</param>
-    /// <param name="workflowType">Optional. When provided, validates that the agent has a flow definition for this workflow type (e.g. "Supervisor Workflow", "Integrator Workflow").</param>
+    /// <param name="workflowType">Optional. When provided, validates that the agent has a flow definition for this workflow type.</param>
     /// <returns>Success if activation exists and is active; NotFound if not found; Conflict if deactivated; BadRequest if workflow type not registered for agent.</returns>
     Task<ServiceResult> ValidateActivationAsync(string tenantId, string agentName, string activationName, string? workflowType = null);
+
+    /// <summary>
+    /// Resolves the flow name to use for conversation routing.
+    /// Conversational capability comes from <c>IsBuiltIn</c> on the flow definition, not from a well-known name.
+    /// When <paramref name="workflowType"/> is provided, that definition must be built-in.
+    /// When omitted, the agent's unique built-in workflow is used.
+    /// </summary>
+    /// <returns>The short flow name (without the agent prefix) on success.</returns>
+    Task<ServiceResult<string>> ResolveConversationalWorkflowAsync(string tenantId, string agentName, string? workflowType);
 
     /// <summary>
     /// Validates that a message target (workflow id + type) is routable:
@@ -114,6 +123,41 @@ public class ActivationValidationService : IActivationValidationService
         return ServiceResult.Success();
     }
 
+    public async Task<ServiceResult<string>> ResolveConversationalWorkflowAsync(
+        string tenantId, string agentName, string? workflowType)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+            return ServiceResult<string>.BadRequest("TenantId is required");
+        if (string.IsNullOrWhiteSpace(agentName))
+            return ServiceResult<string>.BadRequest("AgentName is required");
+
+        try
+        {
+            var registered = await GetRegisteredWorkflowsAsync(tenantId, agentName);
+            if (registered.Count == 0)
+            {
+                _logger.LogWarning(
+                    "No workflow definitions found for agent '{AgentName}' in tenant {TenantId}",
+                    LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<string>.BadRequest(
+                    $"No agent process registered for agent '{agentName}'. Unable to use this agent for this purpose.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(workflowType))
+                return ResolveSpecifiedConversationalWorkflow(agentName, workflowType.Trim(), registered);
+
+            return ResolveDefaultConversationalWorkflow(agentName, registered);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error resolving conversational workflow for agent '{AgentName}' in tenant {TenantId}",
+                LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<string>.InternalServerError(
+                "An error occurred while resolving the conversational workflow");
+        }
+    }
+
     public async Task<ServiceResult> ValidateWorkflowTargetAsync(string tenantId, string workflowId, string workflowType)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
@@ -187,15 +231,8 @@ public class ActivationValidationService : IActivationValidationService
     {
         try
         {
-            var fullWorkflowType = NormalizeFullWorkflowType(agentName, workflowType);
-            var cacheKey = BuildAgentWorkflowTypesCacheKey(tenantId, agentName);
-            var registeredTypes = await _cache.GetOrAddAsync(
-                cacheKey,
-                _ => LoadRegisteredWorkflowTypesAsync(tenantId, agentName),
-                _workflowTypeCacheDuration,
-                size: 1);
-
-            if (registeredTypes.Count == 0)
+            var registered = await GetRegisteredWorkflowsAsync(tenantId, agentName);
+            if (registered.Count == 0)
             {
                 _logger.LogWarning(
                     "No workflow definitions found for agent '{AgentName}' in tenant {TenantId}",
@@ -205,26 +242,17 @@ public class ActivationValidationService : IActivationValidationService
                     StatusCode.BadRequest);
             }
 
-            var hasWorkflow = registeredTypes.Any(t =>
-                string.Equals(t, fullWorkflowType, StringComparison.Ordinal));
-            if (!hasWorkflow)
-            {
-                var displayTypes = registeredTypes
-                    .Select(t => t.Contains(':') ? t.Split(':').LastOrDefault()?.Trim() : t)
-                    .Where(t => !string.IsNullOrEmpty(t))
-                    .Distinct()
-                    .OrderBy(t => t)
-                    .ToList();
-                var registeredList = displayTypes.Count > 0 ? string.Join(", ", displayTypes) : "none";
-                _logger.LogWarning(
-                    "Workflow type '{WorkflowType}' is not registered for agent '{AgentName}'. Registered types: {Registered}",
-                    LogSanitizer.Sanitize(fullWorkflowType), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(registeredList));
-                return ServiceResult.Failure(
-                    $"Workflow type '{fullWorkflowType}' is not registered for agent '{agentName}'. Registered workflow types: {registeredList}.",
-                    StatusCode.BadRequest);
-            }
+            var fullWorkflowType = NormalizeFullWorkflowType(agentName, workflowType);
+            if (FindRegisteredWorkflow(registered, fullWorkflowType) != null)
+                return ServiceResult.Success();
 
-            return ServiceResult.Success();
+            var registeredList = FormatRegisteredFlowNames(agentName, registered);
+            _logger.LogWarning(
+                "Workflow type '{WorkflowType}' is not registered for agent '{AgentName}'. Registered types: {Registered}",
+                LogSanitizer.Sanitize(fullWorkflowType), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(registeredList));
+            return ServiceResult.Failure(
+                $"Workflow type '{fullWorkflowType}' is not registered for agent '{agentName}'. Registered workflow types: {registeredList}.",
+                StatusCode.BadRequest);
         }
         catch (Exception ex)
         {
@@ -236,20 +264,109 @@ public class ActivationValidationService : IActivationValidationService
         }
     }
 
-    private async Task<List<string>> LoadRegisteredWorkflowTypesAsync(string tenantId, string agentName)
+    private async Task<List<RegisteredWorkflow>> GetRegisteredWorkflowsAsync(string tenantId, string agentName)
+    {
+        var cacheKey = BuildAgentWorkflowTypesCacheKey(tenantId, agentName);
+        return await _cache.GetOrAddAsync(
+            cacheKey,
+            _ => LoadRegisteredWorkflowsAsync(tenantId, agentName),
+            _workflowTypeCacheDuration,
+            size: 1);
+    }
+
+    private async Task<List<RegisteredWorkflow>> LoadRegisteredWorkflowsAsync(string tenantId, string agentName)
     {
         var flowDefinitions = await _flowDefinitionRepository.GetByNameAsync(agentName, tenantId);
         if (flowDefinitions == null || flowDefinitions.Count == 0)
         {
-            return new List<string>();
+            return new List<RegisteredWorkflow>();
         }
 
         return flowDefinitions
-            .Select(fd => fd.WorkflowType)
-            .Where(t => !string.IsNullOrEmpty(t))
-            .Distinct(StringComparer.Ordinal)
+            .Where(fd => !string.IsNullOrEmpty(fd.WorkflowType))
+            .GroupBy(fd => fd.WorkflowType, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Select(fd => new RegisteredWorkflow(fd.WorkflowType, fd.IsBuiltIn))
             .ToList();
     }
+
+    private ServiceResult<string> ResolveSpecifiedConversationalWorkflow(
+        string agentName, string workflowType, List<RegisteredWorkflow> registered)
+    {
+        var fullWorkflowType = NormalizeFullWorkflowType(agentName, workflowType);
+        var match = FindRegisteredWorkflow(registered, fullWorkflowType);
+        if (match == null)
+        {
+            var registeredList = FormatRegisteredFlowNames(agentName, registered);
+            _logger.LogWarning(
+                "Workflow type '{WorkflowType}' is not registered for agent '{AgentName}'. Registered types: {Registered}",
+                LogSanitizer.Sanitize(fullWorkflowType), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(registeredList));
+            return ServiceResult<string>.BadRequest(
+                $"Workflow type '{fullWorkflowType}' is not registered for agent '{agentName}'. Registered workflow types: {registeredList}.");
+        }
+
+        if (!match.IsBuiltIn)
+        {
+            var flowName = ToFlowName(agentName, match.FullType);
+            _logger.LogWarning(
+                "Workflow type '{WorkflowType}' for agent '{AgentName}' is not built-in and cannot be used for conversations",
+                LogSanitizer.Sanitize(match.FullType), LogSanitizer.Sanitize(agentName));
+            return ServiceResult<string>.BadRequest(
+                $"Workflow type '{flowName}' does not have conversational capability. Only built-in workflows can be used for conversations.");
+        }
+
+        return ServiceResult<string>.Success(ToFlowName(agentName, match.FullType));
+    }
+
+    private static ServiceResult<string> ResolveDefaultConversationalWorkflow(
+        string agentName, List<RegisteredWorkflow> registered)
+    {
+        var conversational = registered.Where(workflow => workflow.IsBuiltIn).ToList();
+        if (conversational.Count == 0)
+        {
+            return ServiceResult<string>.BadRequest(
+                $"Agent '{agentName}' has no built-in workflow with conversational capability.");
+        }
+
+        if (conversational.Count > 1)
+        {
+            var names = string.Join(", ", conversational
+                .Select(workflow => ToFlowName(agentName, workflow.FullType))
+                .OrderBy(name => name, StringComparer.Ordinal));
+            return ServiceResult<string>.BadRequest(
+                $"Agent '{agentName}' has multiple built-in conversational workflows: {names}. Specify workflowType.");
+        }
+
+        return ServiceResult<string>.Success(ToFlowName(agentName, conversational[0].FullType));
+    }
+
+    private static RegisteredWorkflow? FindRegisteredWorkflow(
+        List<RegisteredWorkflow> registered, string fullWorkflowType)
+    {
+        return registered.FirstOrDefault(workflow =>
+            string.Equals(workflow.FullType, fullWorkflowType, StringComparison.Ordinal));
+    }
+
+    private static string FormatRegisteredFlowNames(string agentName, List<RegisteredWorkflow> registered)
+    {
+        var displayTypes = registered
+            .Select(workflow => ToFlowName(agentName, workflow.FullType))
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Distinct()
+            .OrderBy(name => name)
+            .ToList();
+        return displayTypes.Count > 0 ? string.Join(", ", displayTypes) : "none";
+    }
+
+    private static string ToFlowName(string agentName, string fullWorkflowType)
+    {
+        var agentPrefix = agentName + ":";
+        if (fullWorkflowType.StartsWith(agentPrefix, StringComparison.Ordinal))
+            return fullWorkflowType[agentPrefix.Length..];
+        return fullWorkflowType;
+    }
+
+    private sealed record RegisteredWorkflow(string FullType, bool IsBuiltIn);
 
     private async Task<ServiceResult> ValidateFromRepositoryAsync(string tenantId, string agentName, string activationName)
     {
