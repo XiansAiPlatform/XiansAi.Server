@@ -9,7 +9,7 @@ Query Params:
 - agentName
 - activationName
 - participantId
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - must be a built-in conversational workflow when provided, or "Supervisor Workflow" for backward compatibility. When omitted, the agent's unique built-in workflow is used, falling back to Supervisor Workflow)
 
 When this is called we need to take distinct scopes in message threads for
 
@@ -26,7 +26,7 @@ Query Params:
 - agentName
 - activationName
 - participantId
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - must be a built-in conversational workflow when provided, or "Supervisor Workflow" for backward compatibility. When omitted, the agent's unique built-in workflow is used, falling back to Supervisor Workflow)
 - topic (optional - return messages with null in scope)
 
 ## send
@@ -41,7 +41,7 @@ Body:
 - activationName (required)
 - participantId (required)
 - text (required)
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - must be a built-in conversational workflow when provided, or "Supervisor Workflow" for backward compatibility. When omitted, the agent's unique built-in workflow is used, falling back to Supervisor Workflow)
 - data (optional)
 - topic (optional - stored as scope in message thread)
 - type (optional - 'Chat' or 'Data', defaults to 'Chat')
@@ -65,7 +65,7 @@ Query Parameters:
 - agentName (required)
 - activationName (required)
 - participantId (required)
-- workflowType (optional - defaults to "Supervisor Workflow". Use "Conversational" for Company Research Agent)
+- workflowType (optional - must be a built-in conversational workflow when provided, or "Supervisor Workflow" for backward compatibility. When omitted, the agent's unique built-in workflow is used, falling back to Supervisor Workflow)
 - heartbeatSeconds (optional - default: 60, range: 1-300)
 
 The endpoint constructs the workflowId as follows:

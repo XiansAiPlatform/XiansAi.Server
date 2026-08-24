@@ -99,11 +99,6 @@ public class WorkflowIdentifier
         return workflowId;
     }
 
-    public static string BuildSupervisorWorkflowId(string tenantId, string agentName, string? idPostfix = null)
-    {
-        return BuildWorkflowId(tenantId, agentName, "Supervisor Workflow", idPostfix);
-    }
-
     public static string GetWorkflowType(string workflow)
     {
         // if workflow has 1 ":" then we got workflowType
