@@ -66,9 +66,10 @@ public static class AdminAgentDeploymentEndpoints
         adminAgentGroup.MapDelete("/{agentName}", async (
             string tenantId,
             string agentName,
-            [FromServices] IAdminAgentService adminAgentService) =>
+            [FromQuery] bool forceDelete = false,
+            [FromServices] IAdminAgentService adminAgentService = null!) =>
         {
-            var result = await adminAgentService.DeleteAgentDeploymentAsync(agentName, tenantId);
+            var result = await adminAgentService.DeleteAgentDeploymentAsync(agentName, tenantId, forceDelete);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();

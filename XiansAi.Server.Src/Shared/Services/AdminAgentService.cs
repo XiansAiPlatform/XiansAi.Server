@@ -12,7 +12,7 @@ public interface IAdminAgentService
     Task<ServiceResult<AgentListResult>> GetAgentDeploymentsAsync(string tenantId, int? page, int? pageSize);
     Task<ServiceResult<AgentWithDefinitions>> GetAgentDeploymentByNameAsync(string agentName, string tenantId);
     Task<ServiceResult<Agent>> UpdateAgentDeploymentAsync(string agentName, string tenantId, UpdateAgentRequest request);
-    Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId);
+    Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId, bool forceDelete = false);
 }
 
 public class AgentListResult
@@ -245,7 +245,7 @@ public class AdminAgentService : IAdminAgentService
     /// <summary>
     /// Deletes an agent instance using the AgentDeletionService.
     /// </summary>
-    public async Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId)
+    public async Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId, bool forceDelete = false)
     {
         try
         {
@@ -269,7 +269,7 @@ public class AdminAgentService : IAdminAgentService
             }
 
             // Use AgentDeletionService to delete the agent (handles cascading deletes)
-            var deletionResult = await _agentDeletionService.DeleteAgentAsync(agent.Name, agent.SystemScoped);
+            var deletionResult = await _agentDeletionService.DeleteAgentAsync(agent.Name, agent.SystemScoped, forceDelete);
             if (!deletionResult.IsSuccess)
             {
                 _logger.LogWarning("Failed to delete agent {AgentName} in tenant {TenantId}: {Error}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(deletionResult.ErrorMessage));
