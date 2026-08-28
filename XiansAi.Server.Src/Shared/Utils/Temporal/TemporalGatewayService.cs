@@ -179,7 +179,7 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
 
         if (!string.IsNullOrEmpty(agentName))
         {
-            var agent = await _agentRepository.GetByNameAndTenantAsync(agentName, tenantId);
+            var agent = await _agentRepository.GetByNameAndOriginTenantAsync(agentName, tenantId);
             if (!string.IsNullOrEmpty(agent?.OriginTenant))
             {
                 tenantId = agent.OriginTenant;
