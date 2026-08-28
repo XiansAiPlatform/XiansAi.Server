@@ -58,6 +58,15 @@ public class WorkflowCancelService : IWorkflowCancelService
                 return ServiceResult<WorkflowCancelResult>.BadRequest("WorkflowId is required");
             }
 
+            if (!WorkflowBelongsToCurrentTenant(workflowId))
+            {
+                _logger.LogWarning(
+                    "Rejected cancel for workflow {WorkflowId} that does not belong to tenant {TenantId}",
+                    LogSanitizer.Sanitize(workflowId),
+                    _tenantContext.TenantId);
+                return ServiceResult<WorkflowCancelResult>.Forbidden("Workflow does not belong to this tenant");
+            }
+
             var client = await _temporalGatewayService.GetClientAsync(_tenantContext.TenantId, WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
             var handle = client.GetWorkflowHandle(workflowId);
             
@@ -116,7 +125,7 @@ public class WorkflowCancelService : IWorkflowCancelService
             {
                 await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
                 {
-                    if (!string.IsNullOrEmpty(workflow.Id) && workflow.Id.StartsWith(tenantId))
+                    if (!string.IsNullOrEmpty(workflow.Id) && workflow.Id.StartsWith(tenantId + ":", StringComparison.Ordinal))
                     {
                         try
                         {
@@ -155,5 +164,12 @@ public class WorkflowCancelService : IWorkflowCancelService
             _logger.LogError(ex, "Error cancelling all workflows for tenant {TenantId}", _tenantContext.TenantId);
             return ServiceResult<CancelAllWorkflowsResult>.InternalServerError($"Error cancelling all workflows: {ex.Message}");
         }
+    }
+
+    private bool WorkflowBelongsToCurrentTenant(string workflowId)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return !string.IsNullOrEmpty(tenantId)
+            && workflowId.StartsWith(tenantId + ":", StringComparison.Ordinal);
     }
 }

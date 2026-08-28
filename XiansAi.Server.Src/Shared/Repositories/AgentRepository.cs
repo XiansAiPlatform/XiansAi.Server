@@ -52,6 +52,13 @@ public interface IAgentRepository
     /// <returns>The system-scoped agent, or null if none exists with that name.</returns>
     Task<Agent?> GetSystemScopedByNameAsync(string agentName);
 
+    /// <summary>
+    /// Returns distinct origin-tenant ids for agents that belong to the given tenant.
+    /// Used to locate Temporal clusters that may host this tenant's workflows.
+    /// </summary>
+    /// <param name="tenant">The tenant whose agents should be inspected.</param>
+    Task<List<string>> GetDistinctOriginTenantsAsync(string tenant);
+
 }
 
 public class AgentRepository : IAgentRepository
@@ -442,6 +449,28 @@ public class AgentRepository : IAgentRepository
                 .SortBy(x => x.Tenant)
                 .ToListAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetDeployedInstancesByName");
+    }
+
+    public async Task<List<string>> GetDistinctOriginTenantsAsync(string tenant)
+    {
+        if (string.IsNullOrWhiteSpace(tenant))
+        {
+            return new List<string>();
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var originTenants = await _agents
+                .Find(x => x.Tenant == tenant)
+                .Project(x => x.OriginTenant)
+                .ToListAsync();
+
+            return originTenants
+                .Where(origin => !string.IsNullOrWhiteSpace(origin))
+                .Select(origin => origin!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetDistinctOriginTenants");
     }
 
     public async Task<Agent?> GetSystemScopedByNameAsync(string agentName)
