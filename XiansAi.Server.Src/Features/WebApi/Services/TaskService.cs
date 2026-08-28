@@ -24,7 +24,7 @@ public interface ITaskService
 /// </summary>
 public class TaskService : ITaskService
 {
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ILogger<TaskService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IAgentRepository _agentRepository;
@@ -32,14 +32,14 @@ public class TaskService : ITaskService
     private readonly IAdminTaskService _adminTaskService;
 
     public TaskService(
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ILogger<TaskService> logger,
         ITenantContext tenantContext,
         IAgentRepository agentRepository,
         IPermissionsService permissionsService,
         IAdminTaskService adminTaskService)
     {
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _temporalGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -147,7 +147,7 @@ public class TaskService : ITaskService
 
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            // agent is an optional filter here - the listing can span every agent in the tenant.
             var tasks = new List<TaskInfoResponse>();
 
             // Build query with filters
@@ -224,13 +224,21 @@ public class TaskService : ITaskService
             var allTasks = new List<TaskInfoResponse>();
             var itemsProcessed = 0;
 
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            await foreach (var client in _temporalGatewayFactory.GetClientsForAgentAsync(agent))
             {
-                var taskInfo = MapWorkflowToTaskInfo(workflow);
-                allTasks.Add(taskInfo);
-                itemsProcessed++;
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+                {
+                    var taskInfo = MapWorkflowToTaskInfo(workflow);
+                    allTasks.Add(taskInfo);
+                    itemsProcessed++;
 
-                // If we have enough items for this page and to determine next page, break early
+                    // If we have enough items for this page and to determine next page, break early
+                    if (itemsProcessed >= minRequiredItems)
+                    {
+                        break;
+                    }
+                }
+
                 if (itemsProcessed >= minRequiredItems)
                 {
                     break;

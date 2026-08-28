@@ -76,20 +76,20 @@ public class ScheduleDeleteResult
 /// </summary>
 public class ScheduleService : IScheduleService
 {
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ITenantContext _tenantContext;
     private readonly IPermissionsService _permissionsService;
     private readonly IAgentRepository _agentRepository;
     private readonly ILogger<ScheduleService> _logger;
     
     public ScheduleService(
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ITenantContext tenantContext,
         IPermissionsService permissionsService,
         IAgentRepository agentRepository,
         ILogger<ScheduleService> logger)
     {
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _temporalGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _permissionsService = permissionsService ?? throw new ArgumentNullException(nameof(permissionsService));
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -101,7 +101,7 @@ public class ScheduleService : IScheduleService
     {
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            // request.AgentName is an optional filter - the listing can span every agent in the tenant.
             var schedules = new List<ScheduleModel>();
             
             // Calculate pagination parameters
@@ -141,65 +141,73 @@ public class ScheduleService : IScheduleService
                 ? new Temporalio.Client.Schedules.ScheduleListOptions { Query = query }
                 : null;
             
-            await foreach (var schedule in client.ListSchedulesAsync(listOptions))
+            await foreach (var client in _temporalGatewayFactory.GetClientsForAgentAsync(request.AgentName))
             {
-                totalProcessed++;
-                
-                try
+                await foreach (var schedule in client.ListSchedulesAsync(listOptions))
                 {
-                    var scheduleId = schedule.Id;
+                    totalProcessed++;
                     
-                    // Now describe to get full details (expensive operation)
-                    var scheduleHandle = client.GetScheduleHandle(scheduleId);
-                    var description = await scheduleHandle.DescribeAsync();
-                    
-                    var scheduleModel = MapToScheduleModel(scheduleId, description);
-                    
-                    // Security check: Agent permission (still needed for authorization)
-                    if (!string.IsNullOrEmpty(scheduleModel.AgentName))
+                    try
                     {
-                        var hasPermission = await HasScheduleAccessAsync(scheduleModel.AgentName);
-                        if (!hasPermission)
+                        var scheduleId = schedule.Id;
+                        
+                        // Now describe to get full details (expensive operation)
+                        var scheduleHandle = client.GetScheduleHandle(scheduleId);
+                        var description = await scheduleHandle.DescribeAsync();
+                        
+                        var scheduleModel = MapToScheduleModel(scheduleId, description);
+                        
+                        // Security check: Agent permission (still needed for authorization)
+                        if (!string.IsNullOrEmpty(scheduleModel.AgentName))
                         {
-                            _logger.LogDebug("Skipping schedule {ScheduleId} - user lacks permission for agent {AgentName}", 
-                                LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.AgentName));
+                            var hasPermission = await HasScheduleAccessAsync(scheduleModel.AgentName);
+                            if (!hasPermission)
+                            {
+                                _logger.LogDebug("Skipping schedule {ScheduleId} - user lacks permission for agent {AgentName}", 
+                                    LogSanitizer.Sanitize(scheduleId), LogSanitizer.Sanitize(scheduleModel.AgentName));
+                                continue;
+                            }
+                        }
+                        
+                        // Apply additional client-side filters (workflow type, status, search term)
+                        if (!ShouldIncludeSchedule(scheduleModel, request))
+                        {
                             continue;
                         }
+                        
+                        // Handle pagination by skipping
+                        if (skippedCount < skipCount)
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+                        
+                        schedules.Add(scheduleModel);
+                        processedCount++;
+                        
+                        // Early termination - we have enough for this page
+                        if (processedCount >= neededCount)
+                        {
+                            _logger.LogInformation("Collected {Count} schedules for page, stopping iteration early (processed {Total} total)", 
+                                processedCount, totalProcessed);
+                            break;
+                        }
                     }
-                    
-                    // Apply additional client-side filters (workflow type, status, search term)
-                    if (!ShouldIncludeSchedule(scheduleModel, request))
+                    catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
                     {
-                        continue;
+                        _logger.LogDebug("Schedule {ScheduleId} was found in listing but not found when describing - likely recently deleted or stale cache", LogSanitizer.Sanitize(schedule.Id));
+                        // Continue with other schedules - this is normal when schedules are recently deleted
                     }
-                    
-                    // Handle pagination by skipping
-                    if (skippedCount < skipCount)
+                    catch (Exception ex)
                     {
-                        skippedCount++;
-                        continue;
-                    }
-                    
-                    schedules.Add(scheduleModel);
-                    processedCount++;
-                    
-                    // Early termination - we have enough for this page
-                    if (processedCount >= neededCount)
-                    {
-                        _logger.LogInformation("Collected {Count} schedules for page, stopping iteration early (processed {Total} total)", 
-                            processedCount, totalProcessed);
-                        break;
+                        _logger.LogWarning(ex, "Failed to process schedule {ScheduleId}", LogSanitizer.Sanitize(schedule.Id));
+                        // Continue with other schedules instead of failing completely
                     }
                 }
-                catch (Exception ex) when (ex.Message.Contains("not found") || ex.Message.Contains("NotFound"))
+
+                if (processedCount >= neededCount)
                 {
-                    _logger.LogDebug("Schedule {ScheduleId} was found in listing but not found when describing - likely recently deleted or stale cache", LogSanitizer.Sanitize(schedule.Id));
-                    // Continue with other schedules - this is normal when schedules are recently deleted
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to process schedule {ScheduleId}", LogSanitizer.Sanitize(schedule.Id));
-                    // Continue with other schedules instead of failing completely
+                    break;
                 }
             }
             
@@ -221,7 +229,11 @@ public class ScheduleService : IScheduleService
     {
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await FindClientForScheduleAsync(scheduleId);
+            if (client == null)
+            {
+                return ServiceResult<List<ScheduleRunModel>>.NotFound($"Schedule {scheduleId} not found");
+            }
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
             var description = await scheduleHandle.DescribeAsync();
             
@@ -262,7 +274,11 @@ public class ScheduleService : IScheduleService
     {
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await FindClientForScheduleAsync(scheduleId);
+            if (client == null)
+            {
+                return ServiceResult<List<ScheduleRunModel>>.NotFound($"Schedule {scheduleId} not found");
+            }
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
             var description = await scheduleHandle.DescribeAsync();
             
@@ -306,7 +322,11 @@ public class ScheduleService : IScheduleService
     {
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await FindClientForScheduleAsync(scheduleId);
+            if (client == null)
+            {
+                return ServiceResult<ScheduleModel>.NotFound($"Schedule {scheduleId} not found");
+            }
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
             var description = await scheduleHandle.DescribeAsync();
             
@@ -328,6 +348,34 @@ public class ScheduleService : IScheduleService
         }
     }
     
+    /// <summary>
+    /// Locates the Temporal client that hosts <paramref name="scheduleId"/>, searching every
+    /// cluster the current tenant may use (the tenant's own config plus origin-tenant clusters).
+    /// </summary>
+    private async Task<ITemporalClient?> FindClientForScheduleAsync(string scheduleId)
+    {
+        await foreach (var client in _temporalGatewayFactory.GetClientsAsync(_tenantContext.TenantId))
+        {
+            try
+            {
+                await client.GetScheduleHandle(scheduleId).DescribeAsync();
+                return client;
+            }
+            catch (Exception ex) when (IsTemporalNotFound(ex))
+            {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsTemporalNotFound(Exception ex)
+    {
+        return ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("NotFound", StringComparison.Ordinal);
+    }
+
     private ScheduleModel MapToScheduleModel(string scheduleId, Temporalio.Client.Schedules.ScheduleDescription description)
     {
         // Extract tenant and agent metadata from schedule memo or action
@@ -875,7 +923,11 @@ public class ScheduleService : IScheduleService
         
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await FindClientForScheduleAsync(scheduleId);
+            if (client == null)
+            {
+                return ServiceResult<bool>.NotFound($"Schedule {scheduleId} not found");
+            }
             
             // First, get the schedule to verify permissions and tenant
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
@@ -916,7 +968,11 @@ public class ScheduleService : IScheduleService
 
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await FindClientForScheduleAsync(scheduleId);
+            if (client == null)
+            {
+                return ServiceResult<bool>.NotFound($"Schedule {scheduleId} not found");
+            }
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
 
             // Security check: Tenant isolation and agent write permission
@@ -954,7 +1010,11 @@ public class ScheduleService : IScheduleService
 
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await FindClientForScheduleAsync(scheduleId);
+            if (client == null)
+            {
+                return ServiceResult<bool>.NotFound($"Schedule {scheduleId} not found");
+            }
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
 
             // Security check: Tenant isolation and agent write permission
@@ -1053,7 +1113,7 @@ public class ScheduleService : IScheduleService
                 return ServiceResult<ScheduleDeleteResult>.NotFound($"Agent {agentName} not found");
             }
             
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _temporalGatewayFactory.GetClientAsync(agentName);
             var result = new ScheduleDeleteResult();
             
             // Build query to find all schedules for this agent in the current tenant
@@ -1121,7 +1181,7 @@ public class ScheduleService : IScheduleService
     {
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            // Deletes schedules for every agent in the tenant - no single agent to scope the client to.
             var result = new ScheduleDeleteResult();
 
             var queryParts = new List<string>();
@@ -1139,30 +1199,35 @@ public class ScheduleService : IScheduleService
                 ? new Temporalio.Client.Schedules.ScheduleListOptions { Query = query }
                 : null;
 
-            var scheduleIds = new List<string>();
-            await foreach (var schedule in client.ListSchedulesAsync(listOptions))
+            await foreach (var client in _temporalGatewayFactory.GetClientsAsync(_tenantContext.TenantId))
             {
-                scheduleIds.Add(schedule.Id);
-            }
-
-            _logger.LogInformation("Found {Count} schedules to delete for tenant {TenantId}", scheduleIds.Count, LogSanitizer.Sanitize(_tenantContext.TenantId));
-
-            foreach (var scheduleId in scheduleIds)
-            {
-                try
+                var scheduleIds = new List<string>();
+                await foreach (var schedule in client.ListSchedulesAsync(listOptions))
                 {
-                    var scheduleHandle = client.GetScheduleHandle(scheduleId);
-                    await scheduleHandle.DeleteAsync();
-
-                    result.DeletedScheduleIds.Add(scheduleId);
-                    result.DeletedCount++;
-
-                    _logger.LogInformation("Successfully deleted schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
+                    scheduleIds.Add(schedule.Id);
                 }
-                catch (Exception ex)
+
+                _logger.LogInformation(
+                    "Found {Count} schedules to delete on one Temporal cluster for tenant {TenantId}",
+                    scheduleIds.Count, LogSanitizer.Sanitize(_tenantContext.TenantId));
+
+                foreach (var scheduleId in scheduleIds)
                 {
-                    _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
-                    result.FailedScheduleIds.Add(scheduleId);
+                    try
+                    {
+                        var scheduleHandle = client.GetScheduleHandle(scheduleId);
+                        await scheduleHandle.DeleteAsync();
+
+                        result.DeletedScheduleIds.Add(scheduleId);
+                        result.DeletedCount++;
+
+                        _logger.LogInformation("Successfully deleted schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
+                        result.FailedScheduleIds.Add(scheduleId);
+                    }
                 }
             }
 
