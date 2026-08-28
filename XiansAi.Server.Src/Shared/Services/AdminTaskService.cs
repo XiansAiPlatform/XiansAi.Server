@@ -225,7 +225,11 @@ public class AdminTaskService : IAdminTaskService
         try
         {
             // agentName is an optional filter here - the listing can span every agent in the tenant.
-            var client = await _temporalGatewayFactory.GetClientAsync(agentName);
+            var clients = new List<ITemporalClient>();
+            await foreach (var resolvedClient in _temporalGatewayFactory.GetClientsForAgentAsync(agentName))
+            {
+                clients.Add(resolvedClient);
+            }
 
             // Build base query with filters
             var queryParts = new List<string>
@@ -262,7 +266,7 @@ public class AdminTaskService : IAdminTaskService
             _logger.LogDebug("Executing paginated tasks query: {Query}", LogSanitizer.Sanitize(listQuery));
 
             // Get total count efficiently using CountWorkflow API if available
-            int? totalCount = await GetWorkflowCountAsync(client, listQuery, agentName);
+            int? totalCount = await GetWorkflowCountAsync(clients, listQuery);
 
             // Calculate pagination parameters
             int skipCount = 0;
@@ -274,29 +278,35 @@ public class AdminTaskService : IAdminTaskService
             // Fetch exactly what we need (no extra item needed since we have total count)
             var listOptions = new WorkflowListOptions
             {
-                Limit = actualPageSize // No +1 needed - we use totalCount for next page detection
+                Limit = skipCount + actualPageSize
             };
 
             var allTasks = new List<AdminTaskInfoResponse>();
             var itemsProcessed = 0;
             var tasksSkipped = 0;
 
-
-
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            foreach (var client in clients)
             {
-                // Skip items for pagination
-                if (tasksSkipped < skipCount)
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
                 {
-                    tasksSkipped++;
-                    continue;
+                    // Skip items for pagination
+                    if (tasksSkipped < skipCount)
+                    {
+                        tasksSkipped++;
+                        continue;
+                    }
+
+                    var taskInfo = MapWorkflowToTaskInfo(workflow);
+                    allTasks.Add(taskInfo);
+                    itemsProcessed++;
+
+                    // Stop when we have exactly what we need
+                    if (itemsProcessed >= actualPageSize)
+                    {
+                        break;
+                    }
                 }
 
-                var taskInfo = MapWorkflowToTaskInfo(workflow);
-                allTasks.Add(taskInfo);
-                itemsProcessed++;
-
-                // Stop when we have exactly what we need
                 if (itemsProcessed >= actualPageSize)
                 {
                     break;
@@ -352,30 +362,32 @@ public class AdminTaskService : IAdminTaskService
     /// Efficiently gets the total count of workflows matching the query using CountWorkflow API.
     /// Falls back to null if the API is not available or fails.
     /// </summary>
-    private async Task<int?> GetWorkflowCountAsync(ITemporalClient client, string listQuery, string? agentName)
+    private async Task<int?> GetWorkflowCountAsync(IReadOnlyList<ITemporalClient> clients, string listQuery)
     {
-        try
-        {
-            // Build count query - add Task Workflow filter when agentName is not specified
-            var countQuery = listQuery;
+        var total = 0;
+        var anySucceeded = false;
 
-            _logger.LogDebug("Executing count query: {CountQuery}", LogSanitizer.Sanitize(countQuery));
+        foreach (var client in clients)
+        {
+            try
+            {
+                _logger.LogDebug("Executing count query: {CountQuery}", LogSanitizer.Sanitize(listQuery));
+                var countResponse = await client.CountWorkflowsAsync(listQuery);
+                _logger.LogDebug("CountWorkflow API returned: {Count}", countResponse.Count);
+                total += (int)countResponse.Count;
+                anySucceeded = true;
+            }
+            catch (NotSupportedException ex)
+            {
+                _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", LogSanitizer.Sanitize(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get workflow count using CountWorkflow API, continuing without total count");
+            }
+        }
 
-            // Call CountWorkflowsAsync directly - available in Temporal Server v1.20+
-            var countResponse = await client.CountWorkflowsAsync(countQuery);
-            _logger.LogDebug("CountWorkflow API returned: {Count}", countResponse.Count);
-            return (int)countResponse.Count;
-        }
-        catch (NotSupportedException ex)
-        {
-            _logger.LogDebug("CountWorkflow API not supported in this Temporal version: {Message}", LogSanitizer.Sanitize(ex.Message));
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get workflow count using CountWorkflow API, continuing without total count");
-            return null;
-        }
+        return anySucceeded ? total : null;
     }
 
     /// <summary>
@@ -527,10 +539,10 @@ public class AdminTaskService : IAdminTaskService
                     switch (statusValue)
                     {
                         case "Running":
-                            pending = groupCount;
+                            pending += groupCount;
                             break;
                         case "Completed":
-                            completed = groupCount;
+                            completed += groupCount;
                             break;
                         case "Canceled":
                         case "Terminated":

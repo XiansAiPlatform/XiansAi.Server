@@ -110,6 +110,10 @@ namespace Shared.Auth;
             }
             if (temporalConfig.FlowServerUrl == null)
                 throw new InvalidOperationException($"FlowServerUrl is required for tenant {TenantId}");
+            if (string.IsNullOrWhiteSpace(temporalConfig.FlowServerNamespace))
+                throw new InvalidOperationException($"FlowServerNamespace is required for tenant {TenantId}");
+            if (string.IsNullOrEmpty(temporalConfig.CertificateBase64) != string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64))
+                throw new InvalidOperationException($"Certificate and private key must both be set or both omitted for tenant {TenantId}");
 
             return temporalConfig;
         }

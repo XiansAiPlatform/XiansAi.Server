@@ -70,6 +70,33 @@ public class TemporalGatewayServiceTests
 
         agentRepository.Verify(r => r.GetDistinctOriginTenantsAsync(TenantId), Times.Once);
         temporalConfigRepository.Verify(r => r.GetAsync(TenantId), Times.Once);
+        temporalConfigRepository.Verify(r => r.GetAsync("platform"), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetClientsAsync_StillAttemptsOriginTenant_WhenCallerTenantConfigIsMissing()
+    {
+        var agentRepository = new Mock<IAgentRepository>();
+        var temporalConfigRepository = new Mock<ITenantTemporalConfigRepository>();
+
+        agentRepository
+            .Setup(r => r.GetDistinctOriginTenantsAsync(TenantId))
+            .ReturnsAsync(new List<string> { "platform" });
+        temporalConfigRepository
+            .Setup(r => r.GetAsync(TenantId))
+            .ReturnsAsync((TenantTemporalConfig?)null);
+        temporalConfigRepository
+            .Setup(r => r.GetAsync("platform"))
+            .ReturnsAsync((TenantTemporalConfig?)null);
+
+        var service = CreateService(agentRepository.Object, temporalConfigRepository.Object);
+
+        var enumerator = service.GetClientsAsync(TenantId).GetAsyncEnumerator();
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await enumerator.MoveNextAsync());
+
+        temporalConfigRepository.Verify(r => r.GetAsync(TenantId), Times.Once);
+        temporalConfigRepository.Verify(r => r.GetAsync("platform"), Times.Once);
     }
 
     private static TemporalGatewayService CreateService(

@@ -61,7 +61,7 @@ public class TenantTemporalConfigRepository : ITenantTemporalConfigRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving Temporal config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
-            return null;
+            throw;
         }
     }
 
@@ -80,7 +80,7 @@ public class TenantTemporalConfigRepository : ITenantTemporalConfigRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving Temporal config for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
-            return null;
+            throw;
         }
     }
 

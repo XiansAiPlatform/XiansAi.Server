@@ -148,7 +148,6 @@ public class TaskService : ITaskService
         try
         {
             // agent is an optional filter here - the listing can span every agent in the tenant.
-            var client = await _temporalGatewayFactory.GetClientAsync(agent);
             var tasks = new List<TaskInfoResponse>();
 
             // Build query with filters
@@ -225,13 +224,21 @@ public class TaskService : ITaskService
             var allTasks = new List<TaskInfoResponse>();
             var itemsProcessed = 0;
 
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            await foreach (var client in _temporalGatewayFactory.GetClientsForAgentAsync(agent))
             {
-                var taskInfo = MapWorkflowToTaskInfo(workflow);
-                allTasks.Add(taskInfo);
-                itemsProcessed++;
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+                {
+                    var taskInfo = MapWorkflowToTaskInfo(workflow);
+                    allTasks.Add(taskInfo);
+                    itemsProcessed++;
 
-                // If we have enough items for this page and to determine next page, break early
+                    // If we have enough items for this page and to determine next page, break early
+                    if (itemsProcessed >= minRequiredItems)
+                    {
+                        break;
+                    }
+                }
+
                 if (itemsProcessed >= minRequiredItems)
                 {
                     break;

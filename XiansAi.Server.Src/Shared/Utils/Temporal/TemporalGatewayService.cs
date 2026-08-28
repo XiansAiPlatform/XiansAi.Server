@@ -2,14 +2,14 @@ using Shared.Repositories;
 using Temporalio.Api.OperatorService.V1;
 using Temporalio.Client;
 using Temporalio.Extensions.OpenTelemetry;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Shared.Utils.Temporal;
 
 public interface ITemporalGatewayService
 {
     IAsyncEnumerable<ITemporalClient> GetClientsAsync(string tenantId);
-    Task<ITemporalClient> GetClientAsync(string tenantId, string agentName);
-    Task<ITemporalClient> GetClientInternalAsync(string tenantId, string? agentName);
+    Task<ITemporalClient> GetClientAsync(string tenantId, string? agentName = null);
     Task RemoveClients(string tenantId);
     Task EnsureSearchAttributesExistAsync(TemporalClient client, string @namespace = "default");
 }
@@ -21,8 +21,7 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
     private volatile bool _disposed = false;
     private readonly object _disposeLock = new object();
 
-    private readonly IAgentRepository _agentRepository;
-    private readonly ITenantTemporalConfigRepository _tenantTemporalConfigRepository;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IConfiguration _configuration;
     private readonly ILogger<TemporalGatewayService> _logger;
 
@@ -31,10 +30,7 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
         ILogger<TemporalGatewayService> logger,
         IConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(serviceFactory);
-        using var scope = serviceFactory.CreateScope();
-        _tenantTemporalConfigRepository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
-        _agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
+        _serviceScopeFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
@@ -53,12 +49,12 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
         }
     }
 
-    public async Task<ITemporalClient> GetClientAsync(string tenantId, string agentName)
+    public async Task<ITemporalClient> GetClientAsync(string tenantId, string? agentName = null)
     {
         return await GetClientInternalAsync(tenantId, agentName);
     }
 
-    public async Task<ITemporalClient> GetClientInternalAsync(string tenantId, string? agentName)
+    private async Task<ITemporalClient> GetClientInternalAsync(string tenantId, string? agentName)
     {
         ThrowIfDisposed();
 
@@ -81,12 +77,13 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
                 return existingClient;
             }
 
+            var flowServerNamespace = config.FlowServerNamespace!;
             var options = new TemporalClientConnectOptions(new(config.FlowServerUrl))
             {
-                Namespace = config.FlowServerNamespace!,
+                Namespace = flowServerNamespace,
                 Interceptors = [new TracingInterceptor()]
             };
-            if (config.CertificateBase64 != null && config.PrivateKeyBase64 != null)
+            if (!string.IsNullOrEmpty(config.CertificateBase64) && !string.IsNullOrEmpty(config.PrivateKeyBase64))
             {
                 options.Tls = new TlsOptions()
                 {
@@ -100,7 +97,7 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
 
             var client = await TemporalClient.ConnectAsync(options);
             _clientCache.Add(requestKey, configTenantId, client);
-            await EnsureSearchAttributesExistAsync(client, config.FlowServerNamespace!);
+            await EnsureSearchAttributesExistAsync(client, flowServerNamespace);
             _logger.LogInformation("Successfully connected to Temporal server for tenant {TenantId}", tenantId);
             return client;
         }
@@ -179,33 +176,36 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
 
     private async Task<(TemporalConfig Config, string ConfigTenantId)> GetTemporalConfig(string tenantId, string? agentName)
     {
+        using var scope = _serviceScopeFactory.CreateScope();
+        var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
+        var tenantTemporalConfigRepository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
+
         var configTenantId = tenantId;
         if (!string.IsNullOrEmpty(agentName))
         {
-            var agent = await _agentRepository.GetByNameAndOriginTenantAsync(agentName, tenantId);
-            if (!string.IsNullOrEmpty(agent?.OriginTenant))
+            var agent = await agentRepository.GetByNameAndOriginTenantAsync(agentName, tenantId);
+            if (!string.IsNullOrWhiteSpace(agent?.OriginTenant))
             {
                 configTenantId = agent.OriginTenant;
             }
         }
 
-        var tenantConnection = await _tenantTemporalConfigRepository.GetAsync(configTenantId);
+        var tenantConnection = await tenantTemporalConfigRepository.GetAsync(configTenantId);
+        TemporalConfig? temporalConfig;
         if (tenantConnection != null)
         {
-            return (new TemporalConfig
+            temporalConfig = new TemporalConfig
             {
                 FlowServerUrl = tenantConnection.ServerUrl,
                 FlowServerNamespace = tenantConnection.Namespace,
-                CertificateBase64 = tenantConnection.Certificate == null ? null : tenantConnection.Certificate,
-                PrivateKeyBase64 = tenantConnection.PrivateKey == null ? null : tenantConnection.PrivateKey
-            }, configTenantId);
+                CertificateBase64 = tenantConnection.Certificate,
+                PrivateKeyBase64 = tenantConnection.PrivateKey
+            };
         }
-
-        var temporalConfig = _configuration.GetSection($"Tenants:{configTenantId}:Temporal").Get<TemporalConfig>();
-
-        if (temporalConfig == null)
+        else
         {
-            temporalConfig = _configuration.GetSection("Temporal").Get<TemporalConfig>();
+            temporalConfig = _configuration.GetSection($"Tenants:{configTenantId}:Temporal").Get<TemporalConfig>()
+                ?? _configuration.GetSection("Temporal").Get<TemporalConfig>();
         }
 
         if (temporalConfig == null)
@@ -213,8 +213,17 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
             throw new InvalidOperationException($"Temporal configuration for tenant {configTenantId} not found");
         }
 
-        if (temporalConfig.FlowServerUrl == null)
+        if (string.IsNullOrWhiteSpace(temporalConfig.FlowServerUrl))
             throw new InvalidOperationException($"FlowServerUrl is required for tenant {configTenantId}");
+
+        if (string.IsNullOrWhiteSpace(temporalConfig.FlowServerNamespace))
+            throw new InvalidOperationException($"FlowServerNamespace is required for tenant {configTenantId}");
+
+        if (string.IsNullOrEmpty(temporalConfig.CertificateBase64) != string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64))
+        {
+            throw new InvalidOperationException(
+                $"Certificate and private key must both be set or both omitted for tenant {configTenantId}");
+        }
 
         return (temporalConfig, configTenantId);
     }
@@ -224,6 +233,7 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
         var configTenantIds = await ResolveTemporalConfigTenantIdsAsync(tenantId);
         var uniqueClients = new List<ITemporalClient>();
         var seenIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Exception? firstFailure = null;
 
         foreach (var configTenantId in configTenantIds)
         {
@@ -232,10 +242,11 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
             {
                 client = await GetClientInternalAsync(configTenantId, null);
             }
-            catch (Exception ex) when (!string.Equals(configTenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+            catch (Exception ex)
             {
+                firstFailure ??= ex;
                 _logger.LogWarning(ex,
-                    "Skipping Temporal cluster for origin tenant {OriginTenant} while listing clients for tenant {TenantId}",
+                    "Skipping Temporal cluster for config tenant {ConfigTenant} while listing clients for tenant {TenantId}",
                     configTenantId, tenantId);
                 continue;
             }
@@ -245,6 +256,11 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
             {
                 uniqueClients.Add(client);
             }
+        }
+
+        if (uniqueClients.Count == 0)
+        {
+            throw firstFailure ?? new InvalidOperationException($"No Temporal clients available for tenant {tenantId}");
         }
 
         return uniqueClients;
@@ -257,7 +273,9 @@ public class TemporalGatewayService : ITemporalGatewayService, IDisposable, IAsy
 
         try
         {
-            var originTenants = await _agentRepository.GetDistinctOriginTenantsAsync(tenantId) ?? new List<string>();
+            using var scope = _serviceScopeFactory.CreateScope();
+            var agentRepository = scope.ServiceProvider.GetRequiredService<IAgentRepository>();
+            var originTenants = await agentRepository.GetDistinctOriginTenantsAsync(tenantId) ?? new List<string>();
             foreach (var originTenant in originTenants)
             {
                 if (seen.Add(originTenant))

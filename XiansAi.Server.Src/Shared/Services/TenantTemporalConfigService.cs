@@ -34,14 +34,13 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
     private readonly ITemporalGatewayService _temporalGatewayService;
 
     public TenantTemporalConfigService(
-        IServiceScopeFactory serviceFactory,
+        ITenantTemporalConfigRepository repository,
+        ITemporalGatewayService temporalGatewayService,
         ILogger<TenantTemporalConfigService> logger)
     {
-        _logger = logger;
-
-        using var scope = serviceFactory.CreateScope();
-        _repository = scope.ServiceProvider.GetRequiredService<ITenantTemporalConfigRepository>();
-        _temporalGatewayService = scope.ServiceProvider.GetRequiredService<ITemporalGatewayService>();
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _temporalGatewayService = temporalGatewayService ?? throw new ArgumentNullException(nameof(temporalGatewayService));
     }
 
     public async Task<ServiceResult<UpsertTenantTemporalConfigRequest?>> GetForTenantAsync(string tenantId)

@@ -151,7 +151,7 @@ public class ActivationCleanupService : IActivationCleanupService
                 // Query only running workflows that match the criteria
                 await foreach (var workflow in client.ListWorkflowsAsync(query))
                 {
-                    if (!string.IsNullOrEmpty(workflow.Id) && workflow.Id.StartsWith(tenantId))
+                    if (!string.IsNullOrEmpty(workflow.Id) && workflow.Id.StartsWith(tenantId + ":", StringComparison.Ordinal))
                     {
                         workflowIds.Add(workflow.Id);
                         _logger.LogDebug("Found running workflow: {WorkflowId} with status {Status}",
@@ -207,7 +207,7 @@ public class ActivationCleanupService : IActivationCleanupService
             {
                 await foreach (var schedule in client.ListSchedulesAsync(listOptions))
                 {
-                    if (!string.IsNullOrEmpty(schedule.Id) && schedule.Id.StartsWith(tenantId))
+                    if (!string.IsNullOrEmpty(schedule.Id) && schedule.Id.StartsWith(tenantId + ":", StringComparison.Ordinal))
                     {
                         scheduleIds.Add(schedule.Id);
                         _logger.LogDebug("Found schedule: {ScheduleId}", schedule.Id);

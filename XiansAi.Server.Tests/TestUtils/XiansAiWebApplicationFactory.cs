@@ -16,6 +16,7 @@ using Shared.Data.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Auth;
+using Temporalio.Client;
 
 namespace Tests.TestUtils;
 
@@ -86,12 +87,21 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             RemoveService<IBackgroundTaskService>(services);
             services.AddSingleton(mockBackgroundTaskService.Object);
 
-            // Mock the Temporal client service so tests never reach out to a live Temporal
+            // Mock the Temporal gateway so tests never reach out to a live Temporal
             // server. Workflow-dependent endpoints surface a handled error instead of hanging
             // on a connection attempt; the startup validation also succeeds against this mock.
-            var mockTemporalClientService = new Mock<ITemporalClientService>();
-            RemoveService<ITemporalClientService>(services);
-            services.AddSingleton(mockTemporalClientService.Object);
+            var mockTemporalGatewayService = new Mock<ITemporalGatewayService>();
+            mockTemporalGatewayService
+                .Setup(x => x.GetClientAsync(It.IsAny<string>(), It.IsAny<string?>()))
+                .ReturnsAsync(Mock.Of<ITemporalClient>());
+            mockTemporalGatewayService
+                .Setup(x => x.GetClientsAsync(It.IsAny<string>()))
+                .Returns(EmptyTemporalClients());
+            mockTemporalGatewayService
+                .Setup(x => x.RemoveClients(It.IsAny<string>()))
+                .Returns(Task.CompletedTask);
+            RemoveService<ITemporalGatewayService>(services);
+            services.AddSingleton(mockTemporalGatewayService.Object);
 
             // Mock activation cleanup so deactivate endpoints can succeed without Temporal.
             var mockActivationCleanupService = new Mock<IActivationCleanupService>();
@@ -239,6 +249,11 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             mockAuthProviderFactory.Setup(x => x.GetProvider()).Returns(mockAuthProvider.Object);
             services.AddSingleton<IAuthProviderFactory>(mockAuthProviderFactory.Object);
         });
+    }
+
+    private static async IAsyncEnumerable<ITemporalClient> EmptyTemporalClients()
+    {
+        yield break;
     }
 
     /// <summary>

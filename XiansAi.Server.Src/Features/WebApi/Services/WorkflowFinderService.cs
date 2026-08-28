@@ -171,8 +171,6 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             // agent is an optional filter here - the listing can span every agent in the tenant.
-            var client = await _temporalGatewayFactory.GetClientAsync(agent);
-
             var workflows = new List<WorkflowResponse>();
 
             var tenantId = _tenantContext.TenantId ?? string.Empty;
@@ -287,16 +285,24 @@ public class WorkflowFinderService : IWorkflowFinderService
             var allWorkflows = new List<WorkflowResponse>();
             var itemsProcessed = 0;
             
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
+            await foreach (var client in _temporalGatewayFactory.GetClientsForAgentAsync(agent))
             {
-                var mappedWorkflow = MapWorkflowToResponse(workflow);
-                if (mappedWorkflow != null)
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery, listOptions))
                 {
-                    allWorkflows.Add(mappedWorkflow);
+                    var mappedWorkflow = MapWorkflowToResponse(workflow);
+                    if (mappedWorkflow != null)
+                    {
+                        allWorkflows.Add(mappedWorkflow);
+                    }
+                    itemsProcessed++;
+                    
+                    // If we have enough items for this page and to determine next page, we can break early
+                    if (itemsProcessed >= minRequiredItems)
+                    {
+                        break;
+                    }
                 }
-                itemsProcessed++;
-                
-                // If we have enough items for this page and to determine next page, we can break early
+
                 if (itemsProcessed >= minRequiredItems)
                 {
                     break;
@@ -651,7 +657,6 @@ public class WorkflowFinderService : IWorkflowFinderService
             }
 
             // agentName is an optional filter here - the listing can span every agent in the tenant.
-            var client = await _temporalGatewayFactory.GetClientAsync(agentName);
             var workflows = new List<WorkflowResponse>();
             var queryParts = new List<string>
             {
@@ -684,12 +689,15 @@ public class WorkflowFinderService : IWorkflowFinderService
             string listQuery = string.Join(" and ", queryParts);
             _logger.LogDebug("Executing workflow query: {Query}", LogSanitizer.Sanitize(listQuery));
 
-            await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
+            await foreach (var client in _temporalGatewayFactory.GetClientsForAgentAsync(agentName))
             {
-                var mappedWorkflow = MapWorkflowToResponse(workflow);
-                if (mappedWorkflow != null)
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
                 {
-                    workflows.Add(mappedWorkflow);
+                    var mappedWorkflow = MapWorkflowToResponse(workflow);
+                    if (mappedWorkflow != null)
+                    {
+                        workflows.Add(mappedWorkflow);
+                    }
                 }
             }
 
@@ -919,7 +927,7 @@ public class WorkflowFinderService : IWorkflowFinderService
         {
             var describeQueueRequest = new DescribeTaskQueueRequest
             {
-                Namespace = (await _tenantContext.GetTemporalConfigAsync()).FlowServerNamespace!,
+                Namespace = client.Options.Namespace ?? string.Empty,
                 TaskQueue = new TaskQueue { Name = taskQueueName },
                 ReportPollers = true,      // ask for the list of current pollers
                 ReportStats = false,       // stats are optional here
