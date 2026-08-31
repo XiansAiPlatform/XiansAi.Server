@@ -24,7 +24,12 @@ public class Agent : ModelValidatorBase<Agent>
     [Required(ErrorMessage = "Tenant is required")]
     public required string? Tenant { get; set; }
 
-    [BsonElement("created_by")]  
+    [BsonElement("origin_tenant")]
+    [StringLength(50, MinimumLength = 1, ErrorMessage = "Origin tenant must be between 1 and 50 characters")]
+    [RegularExpression(@"^[a-zA-Z0-9._@|+\-:/\\,#=]+$", ErrorMessage = "Origin tenant contains invalid characters")]
+    public string? OriginTenant { get; set; }
+
+    [BsonElement("created_by")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Created by must be between 1 and 100 characters")]
     [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Created by contains invalid characters")]
     [Required(ErrorMessage = "Created by is required")]
@@ -135,6 +140,7 @@ public class Agent : ModelValidatorBase<Agent>
             Id = Id,
             Name = Name,
             Tenant = Tenant,
+            OriginTenant = OriginTenant,
             CreatedBy = CreatedBy,
             CreatedAt = CreatedAt,
             OwnerAccess = OwnerAccess?.ToList() ?? new List<string>(),
@@ -164,6 +170,7 @@ public class Agent : ModelValidatorBase<Agent>
             Id = this.Id,
             Name = ValidationHelpers.SanitizeString(this.Name),
             Tenant = ValidationHelpers.SanitizeString(this.Tenant),
+            OriginTenant = ValidationHelpers.SanitizeString(this.OriginTenant),
             CreatedBy = ValidationHelpers.SanitizeString(this.CreatedBy),
             CreatedAt = this.CreatedAt,
             OwnerAccess = ValidationHelpers.SanitizeStringList(this.OwnerAccess),

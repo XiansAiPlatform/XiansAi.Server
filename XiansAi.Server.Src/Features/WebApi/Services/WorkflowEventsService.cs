@@ -27,17 +27,17 @@ public interface IWorkflowEventsService
 
 public class WorkflowEventsService : IWorkflowEventsService
 {
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ILogger<WorkflowEventsService> _logger;
 
     private readonly Dictionary<long, HistoryEvent> _scheduledEvents = new();
     private readonly Dictionary<long, HistoryEvent> _startedEvents = new();
 
     public WorkflowEventsService(
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ILogger<WorkflowEventsService> logger)
     {
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _temporalGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -52,7 +52,7 @@ public class WorkflowEventsService : IWorkflowEventsService
         {
             try
             {
-                var client = await _clientFactory.GetClientAsync();
+                var client = await _temporalGatewayFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
                 var handle = client.GetWorkflowHandle(workflowId);
                 var options = new WorkflowHistoryEventFetchOptions
                 {
@@ -203,7 +203,7 @@ public class WorkflowEventsService : IWorkflowEventsService
         
         try
         {
-            var client = await _clientFactory.GetClientAsync();
+            var client = await _temporalGatewayFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
             var handle = client.GetWorkflowHandle(workflowId);
             
             var events = new List<HistoryEvent>();

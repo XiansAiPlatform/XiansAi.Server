@@ -452,6 +452,90 @@ public static class AdminTenantEndpoints
 
         // Per-tenant OIDC token-acceptance configuration — SysAdmin only.
         MapTenantOidcConfigEndpoints(adminApiGroup);
+
+        // Per-tenant Temporal connection override — SysAdmin only.
+        MapTenantTemporalConfigEndpoints(adminApiGroup);
+    }
+
+    /// <summary>
+    /// Maps the per-tenant Temporal connection override endpoints
+    /// (<c>/tenants/{tenantId}/temporal-config</c>). Restricted to SysAdmin: the override carries
+    /// TLS client credentials and determines which Temporal server the tenant's workflows run on.
+    /// </summary>
+    private static void MapTenantTemporalConfigEndpoints(RouteGroupBuilder adminApiGroup)
+    {
+        var temporalGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/temporal-config")
+            .WithTags("AdminAPI - Tenant Temporal Config")
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<SysAdminOnlyFilter>()
+            .AddEndpointFilter<TenantRouteScopeFilter>();
+
+        // Get the tenant's Temporal override. Returns the config directly, or null when none exists.
+        temporalGroup.MapGet("", async (
+            string tenantId,
+            [FromServices] ITenantTemporalConfigService service) =>
+        {
+            var result = await service.GetForTenantAsync(tenantId);
+            return result.ToHttpResult();
+        })
+        .WithName("AdminGetTenantTemporalConfig")
+        .WithSummary("Get the tenant Temporal connection override")
+        .WithDescription("Returns the tenant's dedicated Temporal connection, or null when none is configured.");
+
+        // Create or replace the tenant's Temporal override.
+        temporalGroup.MapPut("", UpsertTenantTemporalConfig)
+            .WithName("AdminUpdateTenantTemporalConfig")
+            .WithSummary("Set the tenant Temporal connection override")
+            .WithDescription("Creates or replaces the tenant's dedicated Temporal server connection. The tenantId is taken from the route.");
+
+        temporalGroup.MapPost("", UpsertTenantTemporalConfig)
+            .WithName("AdminCreateTenantTemporalConfig")
+            .WithSummary("Set the tenant Temporal connection override")
+            .WithDescription("Creates or replaces the tenant's dedicated Temporal server connection. The tenantId is taken from the route.");
+
+
+        temporalGroup.MapPost("/revert", RevertTenantTemporalConfig)
+        .WithName("AdminRevertTenantTemporalConfig")
+        .WithSummary("Revert the tenant Temporal connection")
+        .WithDescription("Reverts the tenant to the platform's default Temporal server.");
+
+        temporalGroup.MapPost("/test-connection", TestTenantTemporalConnection)
+        .WithName("AdminTestTenantTemporalConnection")
+        .WithSummary("Test a Temporal connection")
+        .WithDescription("Attempts to connect with the given server URL/namespace/credentials without saving anything.");
+    }
+
+    private static async Task<IResult> UpsertTenantTemporalConfig(
+        string tenantId,
+        [FromBody] UpsertTenantTemporalConfigRequest request,
+        [FromServices] ITenantTemporalConfigService service,
+        [FromServices] ITenantContext tenantContext)
+    {
+        var actor = tenantContext.LoggedInUser ?? "system";
+        var result = await service.UpsertAsync(
+            tenantId, request.ServerUrl, request.Namespace, request.Certificate, request.PrivateKey, actor);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> RevertTenantTemporalConfig(
+        string tenantId,
+        [FromBody] UpsertTenantTemporalConfigRequest request,
+        [FromServices] ITenantTemporalConfigService service,
+        [FromServices] ITenantContext tenantContext)
+    {
+            var actor = tenantContext.LoggedInUser ?? "system";
+            var result = await service.RevertAsync(tenantId, actor);
+            return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> TestTenantTemporalConnection(
+        string tenantId,
+        [FromBody] UpsertTenantTemporalConfigRequest request,
+        [FromServices] ITenantTemporalConfigService service)
+    {
+        var result = await service.CheckConnectivityAsync(
+            tenantId, request.ServerUrl, request.Namespace, request.Certificate, request.PrivateKey);
+        return result.ToHttpResult();
     }
 
     /// <summary>
