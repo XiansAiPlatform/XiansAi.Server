@@ -76,7 +76,7 @@ public class WorkflowSignalService : IWorkflowSignalService
     private static readonly ConcurrentDictionary<string, bool> _systemAgentCache = new(StringComparer.Ordinal);
 
     private readonly IAgentService _agentService;
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _clientGatewayFactory;
     private readonly ILogger<WorkflowSignalService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly string _tenantTagName;
@@ -85,7 +85,7 @@ public class WorkflowSignalService : IWorkflowSignalService
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowSignalService"/> class.
     /// </summary>
-    /// <param name="clientFactory">The factory for obtaining Temporal clients.</param>
+    /// <param name="temporalGatewayFactory">The factory for obtaining Temporal clients.</param>
     /// <param name="logger">The logger for recording operational information.</param>
     /// <param name="tenantContext">The tenant context for the current request.</param>
     /// <param name="agentService">The agent service for checking if an agent is system scoped.</param>
@@ -93,13 +93,13 @@ public class WorkflowSignalService : IWorkflowSignalService
     /// <exception cref="ArgumentNullException">Thrown when any of the required services is null.</exception>
     public WorkflowSignalService(
         IAgentService agentService,
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ILogger<WorkflowSignalService> logger,
         ITenantContext tenantContext,
         IConfiguration configuration)
     {
         _agentService = agentService ?? throw new ArgumentNullException(nameof(agentService));
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _clientGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _tenantTagName = OpenTelemetryExtensions.ResolveTenantTagName(
@@ -129,7 +129,8 @@ public class WorkflowSignalService : IWorkflowSignalService
                 activity?.SetTag("user.id", _tenantContext.LoggedInUser);
             }
 
-            var client = await _clientFactory.GetClientAsync() ?? throw new Exception("Failed to get Temporal client");
+            var targetAgentName = WorkflowIdentifier.GetAgentName(request.TargetWorkflowType);
+            var client = await _clientGatewayFactory.GetClientAsync(targetAgentName) ?? throw new Exception("Failed to get Temporal client");
 
             activity?.SetTag("temporal.namespace", client.Options.Namespace);
 

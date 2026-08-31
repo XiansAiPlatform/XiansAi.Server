@@ -19,6 +19,7 @@ public class AgentWithDefinitions
 public interface IAgentRepository
 {
     Task<Agent?> GetByNameAsync(string name, string tenant, string userId, string[] userRoles);
+    Task<Agent?> GetByNameAndOriginTenantAsync(string name, string tenant);
     Task<Agent?> GetByIdAsync(string id, string userId, string[] userRoles);
     Task<List<Agent>> GetAgentsWithPermissionAsync(string userId, string? tenant);
     Task CreateAsync(Agent agent);
@@ -50,6 +51,13 @@ public interface IAgentRepository
     /// <param name="agentName">The template/agent name to match.</param>
     /// <returns>The system-scoped agent, or null if none exists with that name.</returns>
     Task<Agent?> GetSystemScopedByNameAsync(string agentName);
+
+    /// <summary>
+    /// Returns distinct origin-tenant ids for agents that belong to the given tenant.
+    /// Used to locate Temporal clusters that may host this tenant's workflows.
+    /// </summary>
+    /// <param name="tenant">The tenant whose agents should be inspected.</param>
+    Task<List<string>> GetDistinctOriginTenantsAsync(string tenant);
 
 }
 
@@ -93,6 +101,11 @@ public class AgentRepository : IAgentRepository
         }
 
         return agent;
+    }
+
+    public async Task<Agent?> GetByNameAndOriginTenantAsync(string name, string tenant)
+    {
+        return await GetByNameInternalAsync(name, tenant);
     }
 
     public async Task<Agent?> GetByNameInternalAsync(string name, string? tenant)
@@ -438,6 +451,28 @@ public class AgentRepository : IAgentRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetDeployedInstancesByName");
     }
 
+    public async Task<List<string>> GetDistinctOriginTenantsAsync(string tenant)
+    {
+        if (string.IsNullOrWhiteSpace(tenant))
+        {
+            return new List<string>();
+        }
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var originTenants = await _agents
+                .Find(x => x.Tenant == tenant)
+                .Project(x => x.OriginTenant)
+                .ToListAsync();
+
+            return originTenants
+                .Where(origin => !string.IsNullOrWhiteSpace(origin))
+                .Select(origin => origin!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetDistinctOriginTenants");
+    }
+
     public async Task<Agent?> GetSystemScopedByNameAsync(string agentName)
     {
         if (string.IsNullOrWhiteSpace(agentName))
@@ -513,6 +548,7 @@ public class AgentRepository : IAgentRepository
                 Name = agentName,
                 SystemScoped = systemScoped,
                 Tenant = systemScoped ? null : tenant,
+                OriginTenant = tenant,
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 OwnerAccess = new List<string>(),

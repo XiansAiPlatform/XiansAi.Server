@@ -306,6 +306,7 @@ public class TemplateService : ITemplateService
                 Id = ObjectId.GenerateNewId().ToString(),
                 Name = templateAgent.Agent.Name,
                 Tenant = tenantId,
+                OriginTenant = templateAgent.Agent.OriginTenant,
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 SystemScoped = false, // User tenant agents are not system scoped
@@ -443,6 +444,7 @@ public class TemplateService : ITemplateService
                 Id = ObjectId.GenerateNewId().ToString(),
                 Name = sourceAgent.Name,
                 Tenant = null,
+                OriginTenant = tenantId,
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 SystemScoped = true,

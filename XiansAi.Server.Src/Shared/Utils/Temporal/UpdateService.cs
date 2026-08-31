@@ -17,7 +17,7 @@ public class UpdateService
     /// <param name="queryParams">Query parameters from the webhook request</param>
     /// <param name="body">Request body from the webhook</param>
     /// <param name="tenantContext">Tenant context for workflow identification</param>
-    /// <param name="temporalClientFactory">Factory to get temporal client</param>
+    /// <param name="temporalGatewayFactory">Factory to get temporal client</param>
     /// <param name="agentService">Agent service for checking if an agent is system scoped</param>
     /// <param name="timeout">Timeout for the update operation (default: 30 seconds). Manually enforced via cancellation token.</param>
     /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
@@ -29,7 +29,7 @@ public class UpdateService
         IDictionary<string, string> queryParams,
         string body,
         ITenantContext tenantContext,
-        ITemporalClientFactory temporalClientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         IAgentService agentService,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
@@ -38,7 +38,7 @@ public class UpdateService
         var workflowInfo = new WorkflowIdentifier(workflowIdentifier, tenantContext);
         
         // Get the temporal client
-        var client = await temporalClientFactory.GetClientAsync();
+        var client = await temporalGatewayFactory.GetClientAsync(workflowInfo.AgentName);
 
         var systemScoped = agentService.IsSystemAgent(workflowInfo.AgentName).Result.Data;
 

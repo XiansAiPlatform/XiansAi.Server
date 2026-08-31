@@ -49,7 +49,7 @@ public interface IWorkflowStarterService
 /// </summary>
 public class WorkflowStarterService : IWorkflowStarterService
 {
-    private readonly ITemporalClientFactory _clientFactory;
+    private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ILogger<WorkflowStarterService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IAgentService _agentService;
@@ -58,20 +58,20 @@ public class WorkflowStarterService : IWorkflowStarterService
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkflowStarterService"/> class.
     /// </summary>
-    /// <param name="clientFactory">The Temporal client factory.</param>
+    /// <param name="temporalGatewayFactory">The Temporal client factory.</param>
     /// <param name="logger">The logger instance.</param>
     /// <param name="tenantContext">The tenant context.</param>
     /// <param name="agentService">The agent service.</param>
     /// <param name="flowDefinitionRepository">The flow definition repository.</param>
     /// <exception cref="ArgumentNullException">Thrown when any required dependency is null.</exception>
     public WorkflowStarterService(
-        ITemporalClientFactory clientFactory,
+        ITemporalGatewayFactory temporalGatewayFactory,
         ILogger<WorkflowStarterService> logger,
         ITenantContext tenantContext,
         IAgentService agentService,
         IFlowDefinitionRepository flowDefinitionRepository)
     {
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _temporalGatewayFactory = temporalGatewayFactory ?? throw new ArgumentNullException(nameof(temporalGatewayFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _agentService = agentService ?? throw new ArgumentNullException(nameof(agentService));
@@ -171,10 +171,10 @@ public class WorkflowStarterService : IWorkflowStarterService
         WorkflowOptions options,
         string workflowType)
     {
-        _logger.LogDebug("Starting workflow {WorkflowType} with {ParamCount} parameters", 
+        _logger.LogDebug("Starting workflow {WorkflowType} with {ParamCount} parameters",
             LogSanitizer.Sanitize(workflowType), parameters.Length);
-        
-        var client = await _clientFactory.GetClientAsync();
+
+        var client = await _temporalGatewayFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(workflowType));
         return await client.StartWorkflowAsync(
             workflowType,
             parameters,

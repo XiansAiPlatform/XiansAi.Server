@@ -1,3 +1,4 @@
+using Shared.Repositories;
 using Shared.Utils.Temporal;
 
 namespace Shared.Auth;
@@ -44,8 +45,8 @@ namespace Shared.Auth;
 
         string[] UserRoles { get; set; }
         IEnumerable<string> AuthorizedTenantIds { get; set; }
-        
-        TemporalConfig GetTemporalConfig();
+
+        Task<TemporalConfig> GetTemporalConfigAsync();
 
         string? Authorization { get; set; }
     }
@@ -53,6 +54,7 @@ namespace Shared.Auth;
     public class TenantContext : ITenantContext
     {
         private readonly IConfiguration _configuration;
+        private readonly ITenantTemporalConfigRepository _tenantTemporalConfigRepository;
         private string? _participantId;
 
         public UserType UserType { get; set; } = UserType.Unknown;
@@ -71,17 +73,31 @@ namespace Shared.Auth;
         public required string[] UserRoles { get; set; } = Array.Empty<string>();
         public IEnumerable<string> AuthorizedTenantIds { get; set; } = new List<string>();
         public string? Authorization { get; set; }
-        public TenantContext(IConfiguration configuration)
+        public TenantContext(IConfiguration configuration, ITenantTemporalConfigRepository tenantTemporalConfigRepository)
         {
             _configuration = configuration;
+            _tenantTemporalConfigRepository = tenantTemporalConfigRepository;
         }
 
-        public TemporalConfig GetTemporalConfig() 
-        { 
-            if (string.IsNullOrEmpty(TenantId)) 
+        public async Task<TemporalConfig> GetTemporalConfigAsync()
+        {
+            if (string.IsNullOrEmpty(TenantId))
                  throw new InvalidOperationException("TenantId is required");
 
-            // get the temporal config for the tenant
+            // A tenant-specific override saved via the admin UI takes precedence.
+            var overrideConfig = await _tenantTemporalConfigRepository.GetAsync(TenantId);
+            if (overrideConfig != null)
+            {
+                return new TemporalConfig
+                {
+                    FlowServerUrl = overrideConfig.ServerUrl,
+                    FlowServerNamespace = overrideConfig.Namespace,
+                    CertificateBase64 = overrideConfig.Certificate,
+                    PrivateKeyBase64 = overrideConfig.PrivateKey
+                };
+            }
+
+            // Next, a tenant-specific section in IConfiguration (env vars set at deploy time).
             var temporalConfig = _configuration.GetSection($"Tenants:{TenantId}:Temporal").Get<TemporalConfig>();
 
             if (temporalConfig == null) {
@@ -92,9 +108,13 @@ namespace Shared.Auth;
             if (temporalConfig == null) {
                 throw new InvalidOperationException($"Temporal configuration for tenant {TenantId} not found");
             }
-            if (temporalConfig.FlowServerUrl == null) 
+            if (temporalConfig.FlowServerUrl == null)
                 throw new InvalidOperationException($"FlowServerUrl is required for tenant {TenantId}");
-            
+            if (string.IsNullOrWhiteSpace(temporalConfig.FlowServerNamespace))
+                throw new InvalidOperationException($"FlowServerNamespace is required for tenant {TenantId}");
+            if (string.IsNullOrEmpty(temporalConfig.CertificateBase64) != string.IsNullOrEmpty(temporalConfig.PrivateKeyBase64))
+                throw new InvalidOperationException($"Certificate and private key must both be set or both omitted for tenant {TenantId}");
+
             return temporalConfig;
         }
      }
