@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Data.Models;
+using Shared.Providers;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.Services;
@@ -19,6 +20,7 @@ public class ActivationValidationServiceTests
 
     private readonly Mock<IActivationRepository> _activationRepository = new();
     private readonly Mock<IFlowDefinitionRepository> _flowDefinitionRepository = new();
+    private readonly Mock<ICacheInvalidationBus> _invalidationBus = new();
     private readonly PassthroughAsyncResultCache _cache = new();
     private readonly ActivationValidationService _service;
 
@@ -29,7 +31,8 @@ public class ActivationValidationServiceTests
             _flowDefinitionRepository.Object,
             _cache,
             NullLogger<ActivationValidationService>.Instance,
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            _invalidationBus.Object);
     }
 
     [Fact]
@@ -280,6 +283,40 @@ public class ActivationValidationServiceTests
 
         Assert.True(result.IsSuccess);
         _flowDefinitionRepository.Verify(r => r.GetByNameAsync(AgentName, TenantId), Times.Once);
+    }
+
+    [Fact]
+    public void InvalidateActivationCache_PublishesExactRemovedKey()
+    {
+        _service.InvalidateActivationCache(TenantId, AgentName, ActivationName);
+
+        _invalidationBus.Verify(bus => bus.PublishAsync(
+            It.Is<CacheInvalidationEnvelope>(envelope =>
+                envelope.Type == CacheInvalidationType.Activation &&
+                envelope.TenantId == TenantId &&
+                envelope.Keys != null &&
+                envelope.Keys.SequenceEqual(new[]
+                {
+                    $"activation:validation:{TenantId}\x01{AgentName}\x01{ActivationName}"
+                })),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void InvalidateAgentWorkflowTypesCache_PublishesExactRemovedKey()
+    {
+        _service.InvalidateAgentWorkflowTypesCache(TenantId, AgentName);
+
+        _invalidationBus.Verify(bus => bus.PublishAsync(
+            It.Is<CacheInvalidationEnvelope>(envelope =>
+                envelope.Type == CacheInvalidationType.AgentWorkflowTypes &&
+                envelope.TenantId == TenantId &&
+                envelope.Keys != null &&
+                envelope.Keys.SequenceEqual(new[]
+                {
+                    $"activation:agent-workflow-types:{TenantId}\x01{AgentName}"
+                })),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private void SeedFlowDefinitions(params string[] workflowTypes)

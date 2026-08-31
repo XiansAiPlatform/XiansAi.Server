@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Caching.Memory;
 using Shared.Data.Models;
+using Shared.Providers;
 using Shared.Repositories;
 
 namespace Shared.Services;
@@ -43,6 +44,7 @@ public class TenantCacheService : ITenantCacheService
     private readonly IMemoryCache _cache;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TenantCacheService> _logger;
+    private readonly ICacheInvalidationBus _invalidationBus;
     private readonly TimeSpan _tenantCacheExpiration;
     private readonly TimeSpan _nullResultCacheExpiration;
 
@@ -50,11 +52,13 @@ public class TenantCacheService : ITenantCacheService
         IMemoryCache cache,
         IServiceScopeFactory scopeFactory,
         IConfiguration configuration,
-        ILogger<TenantCacheService> logger)
+        ILogger<TenantCacheService> logger,
+        ICacheInvalidationBus invalidationBus)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _invalidationBus = invalidationBus ?? throw new ArgumentNullException(nameof(invalidationBus));
 
         var expirationMinutes = configuration.GetValue<int>("TenantCache:ExpirationMinutes", 5);
         var nullResultExpirationMinutes = configuration.GetValue<int>("TenantCache:NullResultExpirationMinutes", 2);
@@ -126,6 +130,12 @@ public class TenantCacheService : ITenantCacheService
         }
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
         _cache.Remove(cacheKey);
+        _ = _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+            CacheInvalidationType.Tenant,
+            UserId: null,
+            tenantId,
+            Keys: [cacheKey],
+            DateTimeOffset.UtcNow));
         _logger.LogDebug("Invalidated tenant cache for {TenantId}", tenantId);
     }
 }

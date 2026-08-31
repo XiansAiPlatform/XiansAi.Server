@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Providers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Shared.Providers.Auth.Auth0;
@@ -88,6 +89,7 @@ public static class SharedConfiguration
         // Singleton because the caches that populate it are scoped, and an index that went out of
         // scope with the request that wrote the entry could never evict it later.
         builder.Services.AddSingleton<IUserCacheIndex, UserCacheIndex>();
+        builder.Services.AddSingleton<ICacheInvalidationApplicator, CacheInvalidationApplicator>();
 
         // Register token validation cache
         builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();

@@ -1,4 +1,4 @@
-﻿using Shared.Auth;
+using Shared.Auth;
 using Shared.Utils.Services;
 using System.Text.Json.Serialization;
 using Shared.Data.Models;
@@ -46,26 +46,23 @@ namespace Features.WebApi.Services
     public class RoleManagementService : IRoleManagementService
     {
         private readonly IUserRepository _userRepository;
-        private readonly IRoleCacheService _roleCacheService;
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<RoleManagementService> _logger;
         private readonly IAuthProviderFactory _authProviderFactory;
-        private readonly ITokenValidationCache _tokenCache;
+        private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
 
         public RoleManagementService(
             IUserRepository userRepository,
-            IRoleCacheService roleCacheService,
             ITenantContext tenantContext,
             ILogger<RoleManagementService> logger,
             IAuthProviderFactory authProviderFactory,
-            ITokenValidationCache tokenCache)
+            IUserAuthorizationInvalidator authorizationInvalidator)
         {
             _userRepository = userRepository;
-            _roleCacheService = roleCacheService;
             _tenantContext = tenantContext;
             _logger = logger;
             _authProviderFactory = authProviderFactory;
-            _tokenCache = tokenCache;
+            _authorizationInvalidator = authorizationInvalidator;
         }
 
         public async Task<ServiceResult<bool>> AssignBootstrapSysAdminRolesToUserAsync()
@@ -92,8 +89,7 @@ namespace Features.WebApi.Services
 
                 user.IsSysAdmin = true;
                 var result = await _userRepository.UpdateAsync(_tenantContext.LoggedInUser, user);
-                _roleCacheService.InvalidateUserRoles(_tenantContext.LoggedInUser, _tenantContext.TenantId);
-                await _tokenCache.InvalidateUserTokens(_tenantContext.LoggedInUser);
+                await _authorizationInvalidator.InvalidateAsync(_tenantContext.LoggedInUser);
                 return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)
@@ -127,8 +123,7 @@ namespace Features.WebApi.Services
                 user.IsSysAdmin = true;
 
                 var result = await _userRepository.UpdateAsync(userId, user);
-                _roleCacheService.InvalidateUserRoles(userId, _tenantContext.TenantId);
-                await _tokenCache.InvalidateUserTokens(userId);
+                await _authorizationInvalidator.InvalidateAsync(userId);
 
                 return ServiceResult<bool>.Success(result);
             }
@@ -181,8 +176,7 @@ namespace Features.WebApi.Services
                     return ServiceResult<bool>.NotFound("User not found");
                 user.IsSysAdmin = false;
                 var result = await _userRepository.UpdateAsync(userId, user);
-                _roleCacheService.InvalidateUserRoles(userId, _tenantContext.TenantId);
-                await _tokenCache.InvalidateUserTokens(userId);
+                await _authorizationInvalidator.InvalidateAsync(userId);
                 return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)
@@ -219,8 +213,7 @@ namespace Features.WebApi.Services
 
                 var result = await _userRepository.UpdateAsync(roleDto.UserId, user);
 
-                _roleCacheService.InvalidateUserRoles(roleDto.UserId, roleDto.TenantId);
-                await _tokenCache.InvalidateUserTokens(roleDto.UserId);
+                await _authorizationInvalidator.InvalidateAsync(roleDto.UserId);
                 return ServiceResult<bool>.Success(true);
             }
             catch (Exception ex)
@@ -370,8 +363,7 @@ namespace Features.WebApi.Services
 
 
                 var result = await _userRepository.UpdateAsync(roleDto.UserId, user);
-                _roleCacheService.InvalidateUserRoles(roleDto.UserId, roleDto.TenantId);
-                await _tokenCache.InvalidateUserTokens(roleDto.UserId);
+                await _authorizationInvalidator.InvalidateAsync(roleDto.UserId);
                 return ServiceResult<bool>.Success(result);
             }
             catch (Exception ex)

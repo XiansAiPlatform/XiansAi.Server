@@ -13,7 +13,17 @@ Shared/Providers/Cache/
 ├── ICacheProvider.cs              # Main cache abstraction
 ├── RedisCacheProvider.cs          # Redis implementation
 ├── InMemoryCacheProvider.cs       # In-memory implementation
-└── CacheProviderFactory.cs        # Simple factory with configuration-based selection
+├── CacheProviderFactory.cs        # Simple factory with configuration-based selection
+├── ICacheInvalidationBus.cs       # Cross-replica invalidation publish API
+├── RedisCacheInvalidationBus.cs   # Redis pub/sub transport (redis provider only)
+├── NoOpCacheInvalidationBus.cs    # No-op when provider is memory
+├── ICacheInvalidationApplicator.cs
+└── CacheInvalidationApplicator.cs # Applies invalidation envelopes to local L1 caches
+
+Shared/Services/
+├── IPendingRequestCoordinator.cs
+├── RedisPendingRequestCoordinator.cs  # Sync /converse coordination (redis provider only)
+└── NoOpPendingRequestCoordinator.cs   # In-process only (memory provider)
 ```
 
 ### 1. Cache Provider Interface
@@ -42,6 +52,18 @@ public interface ICacheProvider
 - **Volatile**: Lost on application restart
 - **Development/Testing**: Useful for development and testing scenarios
 - **No Dependencies**: Always available
+
+### 3. Cross-Replica Invalidation (`ICacheInvalidationBus`)
+
+When `Cache:Provider=redis`, services publish `CacheInvalidationEnvelope` messages through `ICacheInvalidationBus` whenever auth or messaging L1 caches should be cleared (user disable, API key revoke, tenant change, activation deactivate, thread origin updates, and similar). `RedisCacheInvalidationBus` sends envelopes over Redis pub/sub (`xians:cache:invalidate`); each replica subscribes and forwards received envelopes to `ICacheInvalidationApplicator`, which evicts the matching keys from that instance's in-memory caches.
+
+With `Cache:Provider=memory`, `NoOpCacheInvalidationBus` is registered — publishes are ignored and invalidation stays local to the process.
+
+### 4. Pending Request Coordination (`IPendingRequestCoordinator`)
+
+Synchronous `/converse` flows use `IPendingRequestCoordinator` so a waiter on one replica can receive a completion handled on another. When Redis is configured, `RedisPendingRequestCoordinator` stores the response in a short-lived Redis key and signals completion over pub/sub (`xians:pending:complete`). With the memory provider, `NoOpPendingRequestCoordinator` keeps coordination in-process only.
+
+**Multiple server replicas require `Cache:Provider=redis`.** Without it, auth/messaging caches can stay stale until TTL on other instances, and `/converse` may time out when the waiter and completer hit different replicas.
 
 ## Configuration
 

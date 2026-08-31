@@ -8,6 +8,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Shared.Data;
 using Shared.Utils;
 using Shared.Auth;
+using Shared.Providers;
 using Shared.Services;
 
 namespace Shared.Repositories;
@@ -292,6 +293,7 @@ public class ConversationRepository : IConversationRepository
     private readonly IBackgroundTaskService _backgroundTaskService;
     private readonly IMemoryCache _memoryCache;
     private readonly IIncomingOriginCache _incomingOriginCache;
+    private readonly ICacheInvalidationBus _invalidationBus;
 
     public ConversationRepository(
         IDatabaseService databaseService, 
@@ -301,7 +303,8 @@ public class ConversationRepository : IConversationRepository
         IConfiguration configuration,
         IBackgroundTaskService backgroundTaskService,
         IMemoryCache memoryCache,
-        IIncomingOriginCache incomingOriginCache)
+        IIncomingOriginCache incomingOriginCache,
+        ICacheInvalidationBus invalidationBus)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
@@ -309,6 +312,7 @@ public class ConversationRepository : IConversationRepository
         _backgroundTaskService = backgroundTaskService ?? throw new ArgumentNullException(nameof(backgroundTaskService));
         _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
         _incomingOriginCache = incomingOriginCache ?? throw new ArgumentNullException(nameof(incomingOriginCache));
+        _invalidationBus = invalidationBus ?? throw new ArgumentNullException(nameof(invalidationBus));
         
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _database = database;
@@ -1379,7 +1383,14 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
     private void InvalidateThreadIdCache(string tenantId, string workflowId, string participantId)
     {
-        _memoryCache.Remove(BuildThreadIdCacheKey(tenantId, workflowId, participantId));
+        var cacheKey = BuildThreadIdCacheKey(tenantId, workflowId, participantId);
+        _memoryCache.Remove(cacheKey);
+        _ = _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+            CacheInvalidationType.ThreadId,
+            UserId: null,
+            TenantId: tenantId,
+            Keys: [cacheKey],
+            DateTimeOffset.UtcNow));
     }
 
     private void DecryptMessageText(ConversationMessage message)

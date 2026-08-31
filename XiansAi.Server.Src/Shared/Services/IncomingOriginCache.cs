@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Primitives;
+using Shared.Providers;
 
 namespace Shared.Services;
 
@@ -24,7 +25,7 @@ public interface IIncomingOriginCache
     /// <summary>
     /// Drops every scope cached for the thread. Thread ids are globally unique, so no tenant id is needed.
     /// </summary>
-    void InvalidateThread(string threadId);
+    void InvalidateThread(string threadId, bool publish = true);
 
     /// <summary>
     /// Drops a single scope of a thread, for deletes that only remove messages of one topic.
@@ -54,11 +55,16 @@ public class IncomingOriginCache : IIncomingOriginCache
 
     private readonly IMemoryCache _cache;
     private readonly ILogger<IncomingOriginCache> _logger;
+    private readonly ICacheInvalidationBus _invalidationBus;
 
-    public IncomingOriginCache(IMemoryCache cache, ILogger<IncomingOriginCache> logger)
+    public IncomingOriginCache(
+        IMemoryCache cache,
+        ILogger<IncomingOriginCache> logger,
+        ICacheInvalidationBus invalidationBus)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _invalidationBus = invalidationBus ?? throw new ArgumentNullException(nameof(invalidationBus));
     }
 
     public IncomingOriginData? Get(string tenantId, string threadId, string? scope)
@@ -91,7 +97,7 @@ public class IncomingOriginCache : IIncomingOriginCache
         _cache.Set(BuildKey(tenantId, threadId, scope), data, options);
     }
 
-    public void InvalidateThread(string threadId)
+    public void InvalidateThread(string threadId, bool publish = true)
     {
         if (string.IsNullOrEmpty(threadId))
         {
@@ -101,6 +107,11 @@ public class IncomingOriginCache : IIncomingOriginCache
         if (_threadEvictionSources.TryRemove(threadId, out var evictionSource))
         {
             evictionSource.Cancel();
+        }
+
+        if (publish)
+        {
+            PublishThreadInvalidation(threadId);
         }
     }
 
@@ -112,12 +123,23 @@ public class IncomingOriginCache : IIncomingOriginCache
         }
 
         _cache.Remove(BuildKey(tenantId, threadId, scope));
+        PublishThreadInvalidation(threadId);
     }
 
     private static string BuildKey(string tenantId, string threadId, string? scope)
     {
         var normalizedScope = string.IsNullOrWhiteSpace(scope) ? DefaultScopeKey : scope.Trim();
         return $"{CacheKeyPrefix}{tenantId}:{threadId}:{normalizedScope}";
+    }
+
+    private void PublishThreadInvalidation(string threadId)
+    {
+        _ = _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+            CacheInvalidationType.ThreadOrigin,
+            UserId: null,
+            TenantId: null,
+            Keys: [threadId],
+            DateTimeOffset.UtcNow));
     }
 
     private CancellationTokenSource GetOrCreateEvictionSource(string threadId)

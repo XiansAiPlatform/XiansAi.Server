@@ -163,7 +163,6 @@ public class UserManagementService : IUserManagementService
     private readonly IInvitationRepository _invitationRepository;
     private readonly IEmailService _emailService;
     private readonly IJwtClaimsExtractor _jwtClaimsExtractor;
-    private readonly ITokenValidationCache _tokenCache;
     private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
 
     private const string EMAIL_SUBJECT = "Xians.ai - Invitation";
@@ -176,7 +175,6 @@ public class UserManagementService : IUserManagementService
         IInvitationRepository invitationRepository,
         IEmailService emailService,
         IJwtClaimsExtractor jwtClaimsExtractor,
-        ITokenValidationCache tokenCache,
         IUserAuthorizationInvalidator authorizationInvalidator,
         ILogger<UserManagementService> logger)
     {
@@ -188,7 +186,6 @@ public class UserManagementService : IUserManagementService
         _invitationRepository = invitationRepository;
         _emailService = emailService;
         _jwtClaimsExtractor = jwtClaimsExtractor;
-        _tokenCache = tokenCache;
         _authorizationInvalidator = authorizationInvalidator;
     }
 
@@ -540,9 +537,9 @@ public class UserManagementService : IUserManagementService
 
         await _userRepository.UpdateAsyncById(user.Id, existingUser);
 
-        // Invalidate all cached tokens for this user to ensure permission changes take effect immediately
-        await _tokenCache.InvalidateUserTokens(user.UserId);
-        _logger.LogInformation("Invalidated cached tokens for user {UserId} after update", LogSanitizer.Sanitize(user.UserId));
+        // Drop every cached authorization decision for this account so role/lock changes take effect now.
+        await _authorizationInvalidator.InvalidateAsync(user.UserId);
+        _logger.LogInformation("Invalidated cached authorization for user {UserId} after update", LogSanitizer.Sanitize(user.UserId));
 
         return ServiceResult<bool>.Success(true);
     }
@@ -735,9 +732,9 @@ public class UserManagementService : IUserManagementService
             return ServiceResult<bool>.NotFound("User not found or does not belong to the current tenant");
         }
         
-        // Invalidate all cached tokens for the deleted user
-        await _tokenCache.InvalidateUserTokens(userId);
-        _logger.LogInformation("User {UserId} deleted and tokens invalidated", LogSanitizer.Sanitize(userId));
+        // Drop every cached authorization decision for the deleted user.
+        await _authorizationInvalidator.InvalidateAsync(userId);
+        _logger.LogInformation("User {UserId} deleted and authorization caches invalidated", LogSanitizer.Sanitize(userId));
         
         return ServiceResult<bool>.Success(deleted);
     }

@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Shared.Providers;
 using Shared.Services;
 
 namespace Tests.UnitTests.Shared.Services;
@@ -9,11 +11,12 @@ public class IncomingOriginCacheTests
     private const string TenantId = "tenant-a";
     private const string ThreadId = "68b1f0c2a1b2c3d4e5f60718";
 
-    private static IncomingOriginCache BuildCache()
+    private static IncomingOriginCache BuildCache(ICacheInvalidationBus? invalidationBus = null)
     {
         return new IncomingOriginCache(
             new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
-            NullLogger<IncomingOriginCache>.Instance);
+            NullLogger<IncomingOriginCache>.Instance,
+            invalidationBus ?? new NoOpCacheInvalidationBus());
     }
 
     [Fact]
@@ -133,5 +136,34 @@ public class IncomingOriginCacheTests
         cache.InvalidateScope(TenantId, ThreadId, null);
 
         Assert.Null(cache.Get(TenantId, ThreadId, null));
+    }
+
+    [Fact]
+    public void InvalidateScope_PublishesThreadOriginUsingThreadId()
+    {
+        var bus = new Mock<ICacheInvalidationBus>();
+        var cache = BuildCache(bus.Object);
+
+        cache.InvalidateScope(TenantId, ThreadId, "topic1");
+
+        bus.Verify(x => x.PublishAsync(
+            It.Is<CacheInvalidationEnvelope>(envelope =>
+                envelope.Type == CacheInvalidationType.ThreadOrigin &&
+                envelope.Keys != null &&
+                envelope.Keys.SequenceEqual(new[] { ThreadId })),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void InvalidateThread_WhenApplyingRemoteEvent_DoesNotRepublish()
+    {
+        var bus = new Mock<ICacheInvalidationBus>();
+        var cache = BuildCache(bus.Object);
+
+        cache.InvalidateThread(ThreadId, publish: false);
+
+        bus.Verify(x => x.PublishAsync(
+            It.IsAny<CacheInvalidationEnvelope>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 }

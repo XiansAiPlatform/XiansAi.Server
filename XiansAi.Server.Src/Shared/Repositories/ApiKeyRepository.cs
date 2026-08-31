@@ -13,6 +13,7 @@ namespace Shared.Repositories
         Task<(string apiKey, ApiKey meta)> CreateAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null);
         Task<bool> RevokeAsync(string id, string tenantId);
         Task<long> DeleteAllAsync();
+        Task<List<ApiKey>> GetAllAsync();
         Task<List<ApiKey>> GetByTenantAsync(string tenantId, bool hasRevoked=false);
         Task<(string apiKey, ApiKey meta)?> RotateAsync(string id, string tenantId);
         Task<ApiKey?> GetByIdAsync(string id, string tenantId);
@@ -108,6 +109,22 @@ namespace Shared.Repositories
                     throw;
                 }
             }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteAllApiKeys");
+        }
+
+        public async Task<List<ApiKey>> GetAllAsync()
+        {
+            return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                try
+                {
+                    return await _collection.Find(FilterDefinition<ApiKey>.Empty).ToListAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting all API keys");
+                    throw;
+                }
+            }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAllApiKeys");
         }
 
         public async Task<List<ApiKey>> GetByTenantAsync(string tenantId, bool hasRevoked = false)

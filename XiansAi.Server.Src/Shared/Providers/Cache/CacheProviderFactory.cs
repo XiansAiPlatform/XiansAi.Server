@@ -1,3 +1,6 @@
+using StackExchange.Redis;
+using Shared.Services;
+
 namespace Shared.Providers;
 
 /// <summary>
@@ -32,9 +35,11 @@ public class CacheProviderFactory
         var cacheProvider = GetConfigValue(configuration, "Cache:Provider");
         if (string.IsNullOrWhiteSpace(cacheProvider))
         {
-            // Default to memory cache if not configured
-            services.AddMemoryCache();
+            // Default to memory cache if not configured.
+            // IMemoryCache (with SizeLimit) is registered by SharedConfiguration before this factory runs.
             services.AddScoped<ICacheProvider, InMemoryCacheProvider>();
+            services.AddSingleton<ICacheInvalidationBus, NoOpCacheInvalidationBus>();
+            services.AddSingleton<IPendingRequestCoordinator, NoOpPendingRequestCoordinator>();
             return;
         }
 
@@ -52,10 +57,24 @@ public class CacheProviderFactory
                     options.Configuration = connectionString;
                 });
                 services.AddScoped<ICacheProvider, RedisCacheProvider>();
+                services.AddSingleton<IConnectionMultiplexer>(_ =>
+                    ConnectionMultiplexer.Connect(connectionString));
+                services.AddSingleton<RedisCacheInvalidationBus>();
+                services.AddSingleton<ICacheInvalidationBus>(serviceProvider =>
+                    serviceProvider.GetRequiredService<RedisCacheInvalidationBus>());
+                services.AddSingleton<IHostedService>(serviceProvider =>
+                    serviceProvider.GetRequiredService<RedisCacheInvalidationBus>());
+                services.AddSingleton<RedisPendingRequestCoordinator>();
+                services.AddSingleton<IPendingRequestCoordinator>(serviceProvider =>
+                    serviceProvider.GetRequiredService<RedisPendingRequestCoordinator>());
+                services.AddSingleton<IHostedService>(serviceProvider =>
+                    serviceProvider.GetRequiredService<RedisPendingRequestCoordinator>());
                 break;
             case "memory":
-                services.AddMemoryCache();
+                // IMemoryCache (with SizeLimit) is registered by SharedConfiguration before this factory runs.
                 services.AddScoped<ICacheProvider, InMemoryCacheProvider>();
+                services.AddSingleton<ICacheInvalidationBus, NoOpCacheInvalidationBus>();
+                services.AddSingleton<IPendingRequestCoordinator, NoOpPendingRequestCoordinator>();
                 break;
             default:
                 throw new InvalidOperationException($"Unsupported cache provider: {cacheProvider}");

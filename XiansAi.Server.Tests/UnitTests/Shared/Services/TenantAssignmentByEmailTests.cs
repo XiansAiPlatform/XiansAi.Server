@@ -26,6 +26,7 @@ public class TenantAssignmentByEmailTests
 
     private readonly Mock<IUserRepository> _userRepo = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
+    private readonly Mock<IUserAuthorizationInvalidator> _authorizationInvalidator = new();
 
     public TenantAssignmentByEmailTests()
     {
@@ -71,8 +72,7 @@ public class TenantAssignmentByEmailTests
     private TenantParticipantUserService BuildParticipantService() => new(
         _userRepo.Object,
         Mock.Of<IUserTenantService>(),
-        Mock.Of<IRoleCacheService>(),
-        Mock.Of<ITokenValidationCache>(),
+        _authorizationInvalidator.Object,
         Mock.Of<IWebhookEventPublisher>(),
         NullLogger<TenantParticipantUserService>.Instance);
 
@@ -142,6 +142,7 @@ public class TenantAssignmentByEmailTests
                 u.TenantRoles.Any(tr =>
                     tr.Tenant == TenantId && tr.Roles.Contains(SystemRoles.TenantParticipant)))),
             Times.Once);
+        _authorizationInvalidator.Verify(x => x.InvalidateAsync("the-only-subject"), Times.Once);
     }
 
     [Fact]
