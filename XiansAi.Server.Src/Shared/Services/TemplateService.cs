@@ -11,7 +11,7 @@ public interface ITemplateService
 {
     Task<ServiceResult<List<AgentWithDefinitions>>> GetSystemScopedAgentDefinitions(bool basicDataOnly = false);
     Task<ServiceResult<Agent>> DeployTemplate(string agentName);
-    Task<ServiceResult<bool>> DeleteSystemScopedAgent(string agentName);
+    Task<ServiceResult<bool>> DeleteSystemScopedAgent(string agentName, bool cleanActivations = false);
     Task<ServiceResult<Agent>> DeployTemplateToTenant(string agentName, string tenantId, string createdBy, string? onboardingJson = null);
     Task<ServiceResult<Agent>> PromoteAgentToTemplateAsync(string agentName, string tenantId, string createdBy);
     Task<ServiceResult<Agent>> GetSystemScopedAgentByIdAsync(string templateObjectId);
@@ -60,6 +60,8 @@ public class TemplateService : ITemplateService
     private readonly ITenantContext _tenantContext;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IActivationValidationService _activationValidationService;
+    private readonly IActivationRepository _activationRepository;
+    private readonly IActivationService _activationService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TemplateService"/> class.
@@ -71,6 +73,8 @@ public class TemplateService : ITemplateService
     /// <param name="tenantContext">Context for the current tenant and user information.</param>
     /// <param name="webhookEventPublisher">Publisher for outbound webhook events.</param>
     /// <param name="activationValidationService">Service used to invalidate cached workflow-type lookups.</param>
+    /// <param name="activationRepository">Repository for agent activation operations.</param>
+    /// <param name="activationService">Service for deactivating and deleting agent activations.</param>
     public TemplateService(
         IAgentRepository agentRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
@@ -78,7 +82,9 @@ public class TemplateService : ITemplateService
         ILogger<TemplateService> logger,
         ITenantContext tenantContext,
         IWebhookEventPublisher webhookEventPublisher,
-        IActivationValidationService activationValidationService
+        IActivationValidationService activationValidationService,
+        IActivationRepository activationRepository,
+        IActivationService activationService
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -88,6 +94,8 @@ public class TemplateService : ITemplateService
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
+        _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
     }
 
     /// <summary>
@@ -177,8 +185,9 @@ public class TemplateService : ITemplateService
     /// This operation is only available to system administrators.
     /// </summary>
     /// <param name="agentName">The name of the system-scoped agent to delete.</param>
+    /// <param name="cleanActivations">When true, also force-deletes all activations (with cascading data) across every tenant deployment of this template.</param>
     /// <returns>A service result indicating success or failure.</returns>
-    public async Task<ServiceResult<bool>> DeleteSystemScopedAgent(string agentName)
+    public async Task<ServiceResult<bool>> DeleteSystemScopedAgent(string agentName, bool cleanActivations = false)
     {
         try
         {
@@ -205,6 +214,14 @@ public class TemplateService : ITemplateService
             {
                 _logger.LogWarning("Agent {AgentName} is not system-scoped", LogSanitizer.Sanitize(agentName));
                 return ServiceResult<bool>.BadRequest($"Agent '{agentName}' is not a system-scoped agent. Only system-scoped agents can be deleted through this endpoint.");
+            }
+
+            // Best-effort: force-delete all activations (with their cascading data) across every
+            // tenant that has deployed this template. Failures here are logged but never block
+            // deleting the template itself — tenant deployments are independent resources.
+            if (cleanActivations)
+            {
+                await ForceDeleteActivationsAcrossTenantsAsync(agentName);
             }
 
             // Delete all flow definitions associated with this agent
@@ -247,6 +264,98 @@ public class TemplateService : ITemplateService
             return ServiceResult<bool>.InternalServerError(
                 "An error occurred while deleting the system-scoped agent");
         }
+    }
+
+    /// <summary>
+    /// Force-deletes every activation (deactivating live workflows/schedules first, then running
+    /// the full cascading data cleanup) for every tenant-scoped deployment of a template, across
+    /// all tenants. Best-effort per activation and per tenant — failures are logged, not thrown,
+    /// so one bad tenant/activation never blocks cleanup of the rest.
+    /// </summary>
+    private async Task ForceDeleteActivationsAcrossTenantsAsync(string templateName)
+    {
+        var deployments = await _agentRepository.GetDeployedInstancesByNameAsync(templateName);
+        if (deployments == null || deployments.Count == 0)
+        {
+            return;
+        }
+
+        var totalDeleted = 0;
+        var totalFailed = 0;
+
+        foreach (var deployment in deployments)
+        {
+            var tenantId = deployment.Tenant;
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                continue;
+            }
+
+            List<AgentActivation> activations;
+            try
+            {
+                activations = await _activationRepository.GetByAgentNameAsync(deployment.Name, tenantId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to list activations for template {TemplateName} in tenant {TenantId}",
+                    LogSanitizer.Sanitize(templateName), LogSanitizer.Sanitize(tenantId));
+                continue;
+            }
+
+            foreach (var activation in activations)
+            {
+                try
+                {
+                    if (activation.WorkflowIds != null && activation.WorkflowIds.Count > 0)
+                    {
+                        var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId);
+                        if (!deactivateResult.IsSuccess)
+                        {
+                            totalFailed++;
+                            _logger.LogWarning("Failed to deactivate activation {ActivationName} for template {TemplateName} in tenant {TenantId}: {Error}",
+                                LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(templateName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(deactivateResult.ErrorMessage));
+                            continue;
+                        }
+                    }
+
+                    var deleteResult = await _activationService.DeleteActivationAsync(activation.Id);
+                    if (deleteResult.IsSuccess)
+                    {
+                        totalDeleted++;
+                    }
+                    else
+                    {
+                        totalFailed++;
+                        _logger.LogWarning("Failed to delete activation {ActivationName} for template {TemplateName} in tenant {TenantId}: {Error}",
+                            LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(templateName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(deleteResult.ErrorMessage));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    totalFailed++;
+                    _logger.LogWarning(ex, "Error force-deleting activation {ActivationName} for template {TemplateName} in tenant {TenantId}",
+                        LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(templateName), LogSanitizer.Sanitize(tenantId));
+                }
+            }
+
+            try
+            {
+                // Organization-level knowledge for this tenant's deployment (shared across its
+                // activations, not tied to any single one) — cleaned up once per tenant, after
+                // that tenant's activations are gone, same as the single-agent force-delete flow.
+                await _knowledgeRepository.DeleteOrganizationLevelByAgentAsync<Knowledge>(deployment.Name, tenantId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete organization-level knowledge for template {TemplateName} in tenant {TenantId}",
+                    LogSanitizer.Sanitize(templateName), LogSanitizer.Sanitize(tenantId));
+            }
+        }
+
+        _logger.LogInformation(
+            "Force-deleted activations for template {TemplateName} across {TenantCount} tenant deployment(s): {Deleted} deleted, {Failed} failed",
+            LogSanitizer.Sanitize(templateName), deployments.Count, totalDeleted, totalFailed);
     }
 
     /// <summary>
