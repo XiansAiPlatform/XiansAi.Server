@@ -92,6 +92,9 @@ public class TenantService : ITenantService
     private readonly IRoleManagementService _roleManagementService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ITenantMetadataProtector _metadataProtector;
+    private readonly IActivationRepository _activationRepository;
+    private readonly IActivationService _activationService;
+    private readonly IKnowledgeRepository _knowledgeRepository;
 
 
     public TenantService(
@@ -101,7 +104,10 @@ public class TenantService : ITenantService
         ITenantContext tenantContext,
         IRoleManagementService roleManagementService,
         IWebhookEventPublisher webhookEventPublisher,
-        ITenantMetadataProtector metadataProtector)
+        ITenantMetadataProtector metadataProtector,
+        IActivationRepository activationRepository,
+        IActivationService activationService,
+        IKnowledgeRepository knowledgeRepository)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
@@ -110,6 +116,9 @@ public class TenantService : ITenantService
         _roleManagementService = roleManagementService ?? throw new ArgumentNullException(nameof(roleManagementService));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _metadataProtector = metadataProtector ?? throw new ArgumentNullException(nameof(metadataProtector));
+        _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
+        _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
+        _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -930,6 +939,14 @@ public class TenantService : ITenantService
             }
             EnsureTenantAccessOrThrow(existingTenant.TenantId);
 
+            // Best-effort: force-delete all of this tenant's activations (with their cascading
+            // data) before removing the tenant record itself — deleting a tenant should never
+            // leave orphaned activation data behind. Failures are logged, not blocking.
+            if (!string.IsNullOrEmpty(existingTenant.TenantId))
+            {
+                await ForceDeleteActivationsForTenantAsync(existingTenant.TenantId);
+            }
+
             var success = await _tenantRepository.DeleteAsync(id);
             if (success)
             {
@@ -969,4 +986,88 @@ public class TenantService : ITenantService
         }
     }
 
+    /// <summary>
+    /// Force-deletes every activation (deactivating live workflows/schedules first, then running
+    /// the full cascading data cleanup) belonging to a tenant, plus that tenant's organization-level
+    /// knowledge per agent. Best-effort — failures are logged, not thrown, so cleanup issues never
+    /// block deleting the tenant record itself.
+    /// </summary>
+    private async Task ForceDeleteActivationsForTenantAsync(string tenantId)
+    {
+        List<AgentActivation> activations;
+        try
+        {
+            activations = await _activationRepository.GetByTenantIdAsync(tenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to list activations for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return;
+        }
+
+        if (activations == null || activations.Count == 0)
+        {
+            return;
+        }
+
+        var totalDeleted = 0;
+        var totalFailed = 0;
+        var agentNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var activation in activations)
+        {
+            agentNames.Add(activation.AgentName);
+            try
+            {
+                if (activation.WorkflowIds != null && activation.WorkflowIds.Count > 0)
+                {
+                    var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId);
+                    if (!deactivateResult.IsSuccess)
+                    {
+                        totalFailed++;
+                        _logger.LogWarning("Failed to deactivate activation {ActivationName} for agent {AgentName} in tenant {TenantId}: {Error}",
+                            LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(activation.AgentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(deactivateResult.ErrorMessage));
+                        continue;
+                    }
+                }
+
+                var deleteResult = await _activationService.DeleteActivationAsync(activation.Id);
+                if (deleteResult.IsSuccess)
+                {
+                    totalDeleted++;
+                }
+                else
+                {
+                    totalFailed++;
+                    _logger.LogWarning("Failed to delete activation {ActivationName} for agent {AgentName} in tenant {TenantId}: {Error}",
+                        LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(activation.AgentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(deleteResult.ErrorMessage));
+                }
+            }
+            catch (Exception ex)
+            {
+                totalFailed++;
+                _logger.LogWarning(ex, "Error force-deleting activation {ActivationName} for agent {AgentName} in tenant {TenantId}",
+                    LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(activation.AgentName), LogSanitizer.Sanitize(tenantId));
+            }
+        }
+
+        foreach (var agentName in agentNames)
+        {
+            try
+            {
+                // Organization-level knowledge (shared across an agent's activations, not tied to
+                // any single one) — cleaned up once per agent, after this tenant's activations are gone.
+                await _knowledgeRepository.DeleteOrganizationLevelByAgentAsync<Knowledge>(agentName, tenantId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete organization-level knowledge for agent {AgentName} in tenant {TenantId}",
+                    LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
+            }
+        }
+
+        _logger.LogInformation(
+            "Force-deleted activations for tenant {TenantId} across {AgentCount} agent(s): {Deleted} deleted, {Failed} failed",
+            LogSanitizer.Sanitize(tenantId), agentNames.Count, totalDeleted, totalFailed);
+    }
 }

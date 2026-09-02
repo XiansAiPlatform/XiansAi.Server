@@ -532,6 +532,6 @@ public class ActivationCleanupService : IActivationCleanupService
                 $"Failed to find schedules: {schedulesResult.ErrorMessage}");
         }
 
-        return await DeleteSchedulesAsync(schedulesResult.Data!, tenantId);
+        return await DeleteSchedulesAsync(schedulesResult.Data!, tenantId, agentName);
     }
 }
