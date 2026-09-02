@@ -83,6 +83,12 @@ public class RedisCacheInvalidationBusTests
         var envelope = CreateEnvelope();
 
         await bus.StartAsync(CancellationToken.None);
+        for (var attempt = 0; attempt < 20 && handler is null; attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.NotNull(handler);
         handler!(RedisChannel.Literal("xians:cache:invalidate"), JsonSerializer.Serialize(envelope));
 
         applicator.Verify(value => value.Apply(It.Is<CacheInvalidationEnvelope>(
@@ -99,7 +105,7 @@ public class RedisCacheInvalidationBusTests
             .Returns(subscriber.Object);
 
         return new RedisCacheInvalidationBus(
-            multiplexer.Object,
+            new Lazy<IConnectionMultiplexer>(() => multiplexer.Object),
             (applicator ?? new Mock<ICacheInvalidationApplicator>()).Object,
             NullLogger<RedisCacheInvalidationBus>.Instance);
     }

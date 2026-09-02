@@ -230,6 +230,8 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IMessageService, MessageService>();
         // Singleton to match the IMemoryCache lifetime: it tracks per-thread eviction state that
         // must be shared by the message service writing entries and the repository invalidating them.
+        builder.Services.AddSingleton<Lazy<ICacheInvalidationBus>>(sp =>
+            new Lazy<ICacheInvalidationBus>(() => sp.GetRequiredService<ICacheInvalidationBus>()));
         builder.Services.AddSingleton<IIncomingOriginCache, IncomingOriginCache>();
         builder.Services.AddScoped<IMessageFileStorage, MessageFileStorage>();
         builder.Services.AddScoped<IFeedbackService, FeedbackService>();

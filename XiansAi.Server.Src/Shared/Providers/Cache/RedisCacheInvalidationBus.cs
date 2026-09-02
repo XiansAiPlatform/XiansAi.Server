@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
 namespace Shared.Providers;
@@ -12,22 +13,23 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
 
     private static readonly RedisChannel Channel = RedisChannel.Literal(ChannelName);
 
-    private readonly ISubscriber _subscriber;
+    private readonly Lazy<IConnectionMultiplexer> _connectionMultiplexer;
     private readonly ICacheInvalidationApplicator _applicator;
     private readonly ILogger<RedisCacheInvalidationBus> _logger;
     private readonly Action<RedisChannel, RedisValue> _messageHandler;
 
     public RedisCacheInvalidationBus(
-        IConnectionMultiplexer connectionMultiplexer,
+        Lazy<IConnectionMultiplexer> connectionMultiplexer,
         ICacheInvalidationApplicator applicator,
         ILogger<RedisCacheInvalidationBus> logger)
     {
-        ArgumentNullException.ThrowIfNull(connectionMultiplexer);
+        _connectionMultiplexer = connectionMultiplexer ?? throw new ArgumentNullException(nameof(connectionMultiplexer));
         _applicator = applicator ?? throw new ArgumentNullException(nameof(applicator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _subscriber = connectionMultiplexer.GetSubscriber();
         _messageHandler = HandleMessage;
     }
+
+    private ISubscriber Subscriber => _connectionMultiplexer.Value.GetSubscriber();
 
     public async Task PublishAsync(
         CacheInvalidationEnvelope envelope,
@@ -39,7 +41,7 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
         {
             cancellationToken.ThrowIfCancellationRequested();
             var payload = JsonSerializer.Serialize(envelope);
-            await _subscriber.PublishAsync(Channel, payload).ConfigureAwait(false);
+            await Subscriber.PublishAsync(Channel, payload).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -51,12 +53,27 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
     public Task StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return _subscriber.SubscribeAsync(Channel, _messageHandler);
+        _logger.LogInformation("Starting Redis cache invalidation bus subscription");
+        // Do not block host startup on Redis subscription; Kestrel must start even if pub/sub is slow.
+        _ = SubscribeSafelyAsync(cancellationToken);
+        return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken) =>
+        Subscriber.UnsubscribeAsync(Channel, _messageHandler);
+
+    private async Task SubscribeSafelyAsync(CancellationToken cancellationToken)
     {
-        return _subscriber.UnsubscribeAsync(Channel, _messageHandler);
+        await Task.Yield();
+        try
+        {
+            await Subscriber.SubscribeAsync(Channel, _messageHandler).ConfigureAwait(false);
+            _logger.LogInformation("Subscribed to Redis cache invalidation channel {Channel}", ChannelName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to subscribe to Redis cache invalidation channel {Channel}", ChannelName);
+        }
     }
 
     private void HandleMessage(RedisChannel channel, RedisValue payload)

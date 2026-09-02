@@ -57,18 +57,17 @@ public class CacheProviderFactory
                     options.Configuration = connectionString;
                 });
                 services.AddScoped<ICacheProvider, RedisCacheProvider>();
-                services.AddSingleton<IConnectionMultiplexer>(_ =>
-                    ConnectionMultiplexer.Connect(connectionString));
+                services.AddSingleton(_ => new Lazy<IConnectionMultiplexer>(() => ConnectMultiplexer(connectionString)));
+                services.AddSingleton<IConnectionMultiplexer>(sp =>
+                    sp.GetRequiredService<Lazy<IConnectionMultiplexer>>().Value);
                 services.AddSingleton<RedisCacheInvalidationBus>();
                 services.AddSingleton<ICacheInvalidationBus>(serviceProvider =>
                     serviceProvider.GetRequiredService<RedisCacheInvalidationBus>());
-                services.AddSingleton<IHostedService>(serviceProvider =>
-                    serviceProvider.GetRequiredService<RedisCacheInvalidationBus>());
+                services.AddHostedService(sp => sp.GetRequiredService<RedisCacheInvalidationBus>());
                 services.AddSingleton<RedisPendingRequestCoordinator>();
                 services.AddSingleton<IPendingRequestCoordinator>(serviceProvider =>
                     serviceProvider.GetRequiredService<RedisPendingRequestCoordinator>());
-                services.AddSingleton<IHostedService>(serviceProvider =>
-                    serviceProvider.GetRequiredService<RedisPendingRequestCoordinator>());
+                services.AddHostedService(sp => sp.GetRequiredService<RedisPendingRequestCoordinator>());
                 break;
             case "memory":
                 // IMemoryCache (with SizeLimit) is registered by SharedConfiguration before this factory runs.
@@ -79,5 +78,13 @@ public class CacheProviderFactory
             default:
                 throw new InvalidOperationException($"Unsupported cache provider: {cacheProvider}");
         }
+    }
+
+    private static IConnectionMultiplexer ConnectMultiplexer(string connectionString)
+    {
+        var options = ConfigurationOptions.Parse(connectionString);
+        options.AbortOnConnectFail = false;
+        options.ConnectTimeout = 5000;
+        return ConnectionMultiplexer.Connect(options);
     }
 } 

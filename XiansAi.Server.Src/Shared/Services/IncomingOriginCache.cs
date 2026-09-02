@@ -55,12 +55,12 @@ public class IncomingOriginCache : IIncomingOriginCache
 
     private readonly IMemoryCache _cache;
     private readonly ILogger<IncomingOriginCache> _logger;
-    private readonly ICacheInvalidationBus _invalidationBus;
+    private readonly Lazy<ICacheInvalidationBus> _invalidationBus;
 
     public IncomingOriginCache(
         IMemoryCache cache,
         ILogger<IncomingOriginCache> logger,
-        ICacheInvalidationBus invalidationBus)
+        Lazy<ICacheInvalidationBus> invalidationBus)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -134,7 +134,7 @@ public class IncomingOriginCache : IIncomingOriginCache
 
     private void PublishThreadInvalidation(string threadId)
     {
-        _ = _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+        _ = _invalidationBus.Value.PublishAsync(new CacheInvalidationEnvelope(
             CacheInvalidationType.ThreadOrigin,
             UserId: null,
             TenantId: null,

@@ -13,10 +13,11 @@ public class IncomingOriginCacheTests
 
     private static IncomingOriginCache BuildCache(ICacheInvalidationBus? invalidationBus = null)
     {
+        var bus = invalidationBus ?? new NoOpCacheInvalidationBus();
         return new IncomingOriginCache(
             new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
             NullLogger<IncomingOriginCache>.Instance,
-            invalidationBus ?? new NoOpCacheInvalidationBus());
+            new Lazy<ICacheInvalidationBus>(() => bus));
     }
 
     [Fact]

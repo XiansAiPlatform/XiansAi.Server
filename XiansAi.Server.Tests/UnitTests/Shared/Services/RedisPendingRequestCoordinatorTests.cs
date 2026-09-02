@@ -115,7 +115,7 @@ public class RedisPendingRequestCoordinatorTests
             .Returns(subscriber.Object);
 
         return new RedisPendingRequestCoordinator(
-            multiplexer.Object,
+            new Lazy<IConnectionMultiplexer>(() => multiplexer.Object),
             NullLogger<RedisPendingRequestCoordinator>.Instance);
     }
 

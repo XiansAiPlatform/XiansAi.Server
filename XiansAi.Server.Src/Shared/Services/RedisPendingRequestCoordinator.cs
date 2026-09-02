@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Hosting;
 using Shared.Repositories;
 using StackExchange.Redis;
 
@@ -15,21 +16,21 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
     private static readonly RedisChannel CompletionChannel =
         RedisChannel.Literal(CompletionChannelName);
 
-    private readonly IDatabase _database;
-    private readonly ISubscriber _subscriber;
+    private readonly Lazy<IConnectionMultiplexer> _connectionMultiplexer;
     private readonly ILogger<RedisPendingRequestCoordinator> _logger;
     private readonly Action<RedisChannel, RedisValue> _messageHandler;
 
     public RedisPendingRequestCoordinator(
-        IConnectionMultiplexer connectionMultiplexer,
+        Lazy<IConnectionMultiplexer> connectionMultiplexer,
         ILogger<RedisPendingRequestCoordinator> logger)
     {
-        ArgumentNullException.ThrowIfNull(connectionMultiplexer);
+        _connectionMultiplexer = connectionMultiplexer ?? throw new ArgumentNullException(nameof(connectionMultiplexer));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _database = connectionMultiplexer.GetDatabase();
-        _subscriber = connectionMultiplexer.GetSubscriber();
         _messageHandler = HandleCompletionSignal;
     }
+
+    private IDatabase Database => _connectionMultiplexer.Value.GetDatabase();
+    private ISubscriber Subscriber => _connectionMultiplexer.Value.GetSubscriber();
 
     public event Action<string, ConversationMessage, MessageType?>? CompletionReceived;
 
@@ -66,14 +67,14 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
             cancellationToken.ThrowIfCancellationRequested();
             var result = new PendingRequestResult(response, messageType);
             var payload = JsonSerializer.Serialize(result);
-            await _database.StringSetAsync(
+            await Database.StringSetAsync(
                 GetResultKey(requestId),
                 payload,
                 ResultExpiry,
                 When.Always,
                 CommandFlags.None).ConfigureAwait(false);
             var signal = JsonSerializer.Serialize(new CompletionSignal(requestId));
-            await _subscriber.PublishAsync(CompletionChannel, signal).ConfigureAwait(false);
+            await Subscriber.PublishAsync(CompletionChannel, signal).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -86,11 +87,34 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
     public Task StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return _subscriber.SubscribeAsync(CompletionChannel, _messageHandler);
+        _logger.LogInformation("Starting Redis pending-request completion subscription");
+        // Do not block host startup on Redis subscription; Kestrel must start even if pub/sub is slow.
+        _ = SubscribeSafelyAsync(cancellationToken);
+        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) =>
-        _subscriber.UnsubscribeAsync(CompletionChannel, _messageHandler);
+        Subscriber.UnsubscribeAsync(CompletionChannel, _messageHandler);
+
+    private async Task SubscribeSafelyAsync(CancellationToken cancellationToken)
+    {
+        await Task.Yield();
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Subscriber.SubscribeAsync(CompletionChannel, _messageHandler).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Subscribed to Redis pending-request completion channel {Channel}",
+                CompletionChannelName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to subscribe to Redis pending-request completion channel {Channel}",
+                CompletionChannelName);
+        }
+    }
 
     private void HandleCompletionSignal(RedisChannel channel, RedisValue payload)
     {
@@ -118,7 +142,7 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var payload = await _database
+            var payload = await Database
                 .StringGetAsync(GetResultKey(requestId), CommandFlags.None)
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
