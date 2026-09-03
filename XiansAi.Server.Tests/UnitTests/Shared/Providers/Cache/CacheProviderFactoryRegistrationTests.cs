@@ -65,7 +65,8 @@ public class CacheProviderFactoryRegistrationTests
         var config = BuildConfig(new Dictionary<string, string?>
         {
             ["Cache:Provider"] = "redis",
-            ["Cache:Redis:ConnectionString"] = "localhost:6379,abortConnect=false,connectTimeout=1"
+            ["Cache:Redis:ConnectionString"] = "localhost:6379,abortConnect=false,connectTimeout=1",
+            ["Cache:Redis:AllowInsecureConnection"] = "true"
         });
         var services = CreateServicesWithSharedMemoryCache();
         CacheProviderFactory.RegisterProvider(services, config);
@@ -100,12 +101,64 @@ public class CacheProviderFactoryRegistrationTests
     }
 
     [Fact]
+    public void RedisProvider_ThrowsInNonDevelopment_WhenAuthOrTlsMissing()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["Cache:Provider"] = "redis",
+            ["Cache:Redis:ConnectionString"] = "localhost:6379"
+        });
+        var services = CreateServicesWithSharedMemoryCache();
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CacheProviderFactory.RegisterProvider(services, config));
+
+        Assert.Contains("AUTH and TLS", ex.Message);
+    }
+
+    [Fact]
+    public void RedisProvider_AllowsInsecureConnection_WhenExplicitlyEnabled()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["Cache:Provider"] = "redis",
+            ["Cache:Redis:ConnectionString"] = "localhost:6379",
+            ["Cache:Redis:AllowInsecureConnection"] = "true"
+        });
+        var services = CreateServicesWithSharedMemoryCache();
+
+        CacheProviderFactory.RegisterProvider(services, config);
+
+        Assert.Equal(typeof(RedisCacheProvider), GetImplementationType(services, typeof(ICacheProvider)));
+    }
+
+    [Fact]
+    public void RedisProvider_AcceptsConnectionStringWithAuthAndTls()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["Cache:Provider"] = "redis",
+            ["Cache:Redis:ConnectionString"] =
+                "redis.example.com:6380,password=secret,ssl=true,abortConnect=false,connectTimeout=1"
+        });
+        var services = CreateServicesWithSharedMemoryCache();
+
+        CacheProviderFactory.RegisterProvider(services, config);
+
+        Assert.Equal(typeof(RedisCacheProvider), GetImplementationType(services, typeof(ICacheProvider)));
+    }
+
+    [Fact]
     public void DoubleUnderscoreFormatIsSupportedForRedis()
     {
         var config = BuildConfig(new Dictionary<string, string?>
         {
             ["Cache__Provider"] = "redis",
-            ["Cache__Redis__ConnectionString"] = "localhost:6379,abortConnect=false,connectTimeout=1"
+            ["Cache__Redis__ConnectionString"] = "localhost:6379,abortConnect=false,connectTimeout=1",
+            ["Cache__Redis__AllowInsecureConnection"] = "true"
         });
         var services = CreateServicesWithSharedMemoryCache();
         CacheProviderFactory.RegisterProvider(services, config);

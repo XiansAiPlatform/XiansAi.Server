@@ -1,5 +1,6 @@
-using StackExchange.Redis;
+using Microsoft.Extensions.Logging;
 using Shared.Services;
+using StackExchange.Redis;
 
 namespace Shared.Providers;
 
@@ -52,6 +53,9 @@ public class CacheProviderFactory
                 {
                     throw new InvalidOperationException("Redis cache provider requires Cache:Redis:ConnectionString or Cache__Redis__ConnectionString");
                 }
+
+                ValidateRedisConnectionSecurity(configuration, connectionString);
+
                 services.AddStackExchangeRedisCache(options =>
                 {
                     options.Configuration = connectionString;
@@ -80,6 +84,28 @@ public class CacheProviderFactory
         }
     }
 
+    private static void ValidateRedisConnectionSecurity(IConfiguration configuration, string connectionString)
+    {
+        var environment =
+            configuration["ASPNETCORE_ENVIRONMENT"]
+            ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? "Production";
+        var isDevelopment = string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase);
+        var allowInsecure = bool.TryParse(
+            GetConfigValue(configuration, "Cache:Redis:AllowInsecureConnection"),
+            out var parsed) && parsed;
+
+        using var loggerFactory = LoggerFactory.Create(builder =>
+            builder.SetMinimumLevel(LogLevel.Warning).AddSimpleConsole());
+        var logger = loggerFactory.CreateLogger("CacheProviderFactory");
+
+        RedisConnectionSecurity.ValidateOrThrow(
+            connectionString,
+            isDevelopment,
+            allowInsecure,
+            message => logger.LogWarning("{Message}", message));
+    }
+
     private static IConnectionMultiplexer ConnectMultiplexer(string connectionString)
     {
         var options = ConfigurationOptions.Parse(connectionString);
@@ -87,4 +113,4 @@ public class CacheProviderFactory
         options.ConnectTimeout = 5000;
         return ConnectionMultiplexer.Connect(options);
     }
-} 
+}
