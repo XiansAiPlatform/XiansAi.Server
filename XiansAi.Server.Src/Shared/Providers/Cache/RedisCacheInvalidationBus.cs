@@ -43,10 +43,22 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
             var payload = JsonSerializer.Serialize(envelope);
             await Subscriber.PublishAsync(Channel, payload).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            // Best-effort: cancellation of the publish path must not fail the business operation.
+        }
+        catch (RedisException ex)
         {
             // Invalidation is best-effort and must never break the business operation that caused it.
             _logger.LogWarning(ex, "Failed to publish cache invalidation to Redis");
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to serialize cache invalidation envelope");
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogWarning(ex, "Failed to publish cache invalidation; Redis connection disposed");
         }
     }
 
@@ -70,9 +82,17 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
             await Subscriber.SubscribeAsync(Channel, _messageHandler).ConfigureAwait(false);
             _logger.LogInformation("Subscribed to Redis cache invalidation channel {Channel}", ChannelName);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Subscription abandoned because the host is shutting down.
+        }
+        catch (RedisException ex)
         {
             _logger.LogWarning(ex, "Failed to subscribe to Redis cache invalidation channel {Channel}", ChannelName);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogWarning(ex, "Failed to subscribe to Redis cache invalidation; connection disposed");
         }
     }
 
@@ -89,7 +109,11 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
 
             _applicator.Apply(envelope);
         }
-        catch (Exception ex)
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize cache invalidation envelope from Redis");
+        }
+        catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Failed to apply cache invalidation received from Redis");
         }

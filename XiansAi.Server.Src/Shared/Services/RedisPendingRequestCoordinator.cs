@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Shared.Repositories;
+using Shared.Utils;
 using StackExchange.Redis;
 
 namespace Shared.Services;
@@ -47,10 +48,23 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
         {
             throw;
         }
-        catch (Exception ex)
+        catch (RedisException ex)
         {
             _logger.LogWarning(ex,
-                "Failed to check Redis for pending request {RequestId}", requestId);
+                "Failed to check Redis for pending request {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to deserialize pending request result for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to check Redis for pending request {RequestId}; connection disposed",
+                LogSanitizer.Sanitize(requestId));
         }
     }
 
@@ -76,11 +90,27 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
             var signal = JsonSerializer.Serialize(new CompletionSignal(requestId));
             await Subscriber.PublishAsync(CompletionChannel, signal).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            // Best-effort: cancellation of the publish path must not fail the completing request path.
+        }
+        catch (RedisException ex)
         {
             _logger.LogWarning(ex,
                 "Failed to publish pending request completion to Redis for {RequestId}",
-                requestId);
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to serialize pending request completion for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to publish pending request completion for {RequestId}; connection disposed",
+                LogSanitizer.Sanitize(requestId));
         }
     }
 
@@ -107,12 +137,22 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
                 "Subscribed to Redis pending-request completion channel {Channel}",
                 CompletionChannelName);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Subscription abandoned because the host is shutting down.
+        }
+        catch (RedisException ex)
         {
             _logger.LogWarning(
                 ex,
                 "Failed to subscribe to Redis pending-request completion channel {Channel}",
                 CompletionChannelName);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to subscribe to pending-request completion; connection disposed");
         }
     }
 
@@ -129,9 +169,9 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
 
             _ = RetrieveAndNotifyAsync(signal.RequestId, CancellationToken.None);
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to process pending request completion signal");
+            _logger.LogWarning(ex, "Failed to deserialize pending request completion signal");
         }
     }
 
@@ -156,7 +196,8 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
             if (result?.Response is null)
             {
                 _logger.LogWarning(
-                    "Ignoring invalid pending request result for {RequestId}", requestId);
+                    "Ignoring invalid pending request result for {RequestId}",
+                    LogSanitizer.Sanitize(requestId));
                 return;
             }
 
@@ -166,11 +207,23 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
         {
             throw;
         }
-        catch (Exception ex)
+        catch (RedisException ex)
         {
             _logger.LogWarning(ex,
                 "Failed to retrieve pending request result from Redis for {RequestId}",
-                requestId);
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to deserialize pending request result for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to retrieve pending request result for {RequestId}; connection disposed",
+                LogSanitizer.Sanitize(requestId));
         }
     }
 

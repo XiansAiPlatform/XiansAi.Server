@@ -583,8 +583,8 @@ public class Program
         var cacheProvider = Environment.GetEnvironmentVariable("Cache__Provider") ?? "(unset — defaults to memory)";
         var redisConnection = Environment.GetEnvironmentVariable("Cache__Redis__ConnectionString");
         _logger.LogInformation(
-            "Cache configuration after env load: Provider={CacheProvider}, Redis={RedisConnection}",
+            "Cache configuration after env load: Provider={CacheProvider}, Redis={RedisConnectionConfigured}",
             cacheProvider,
-            string.IsNullOrWhiteSpace(redisConnection) ? "(unset)" : redisConnection);
+            string.IsNullOrWhiteSpace(redisConnection) ? "(unset)" : "(configured)");
     }
 }

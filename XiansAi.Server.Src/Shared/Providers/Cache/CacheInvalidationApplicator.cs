@@ -81,12 +81,9 @@ public sealed class CacheInvalidationApplicator : ICacheInvalidationApplicator
             return;
         }
 
-        foreach (var key in keys)
+        foreach (var key in keys.Where(static key => !string.IsNullOrWhiteSpace(key)))
         {
-            if (!string.IsNullOrWhiteSpace(key))
-            {
-                _memoryCache.Remove(key);
-            }
+            _memoryCache.Remove(key);
         }
     }
 }
