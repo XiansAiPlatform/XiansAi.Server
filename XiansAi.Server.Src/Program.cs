@@ -78,6 +78,9 @@ public class Program
         }
     }
 
+    // .env values must win over stale shell variables (e.g. Cache__Provider=memory left in a terminal).
+    private static readonly LoadOptions EnvFileLoadOptions = new(clobberExistingVars: true);
+
     /// <summary>
     /// Loads environment variables from the appropriate file(s).
     /// </summary>
@@ -93,7 +96,7 @@ public class Program
                 {
                     Console.WriteLine($"Loading custom environment file: {envFile}");
                     _logger?.LogInformation("Loading custom environment file: {EnvFile}", envFile);
-                    Env.Load(envFile);
+                    Env.Load(envFile, EnvFileLoadOptions);
                 }
                 else
                 {
@@ -108,7 +111,7 @@ public class Program
             {
                 Console.WriteLine("Loading default environment file: .env");
                 _logger?.LogInformation("Loading default environment file: .env");
-                Env.Load();
+                Env.Load(".env", EnvFileLoadOptions);
             }
             catch (FileNotFoundException)
             {
@@ -125,7 +128,7 @@ public class Program
             {
                 Console.WriteLine($"Loading environment variables from {envFile} (ASPNETCORE_ENVIRONMENT={envName})");
                 _logger?.LogInformation("Loading environment variables from {EnvFile} (ASPNETCORE_ENVIRONMENT={Environment})", envFile, envName);
-                Env.Load(envFile);
+                Env.Load(envFile, EnvFileLoadOptions);
             }
             catch (FileNotFoundException)
             {
@@ -576,5 +579,12 @@ public class Program
             var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
             _logger.LogInformation("Using default environment file loading for environment: {Environment}", envName);
         }
+
+        var cacheProvider = Environment.GetEnvironmentVariable("Cache__Provider") ?? "(unset — defaults to memory)";
+        var redisConnection = Environment.GetEnvironmentVariable("Cache__Redis__ConnectionString");
+        _logger.LogInformation(
+            "Cache configuration after env load: Provider={CacheProvider}, Redis={RedisConnectionConfigured}",
+            cacheProvider,
+            string.IsNullOrWhiteSpace(redisConnection) ? "(unset)" : "(configured)");
     }
 }

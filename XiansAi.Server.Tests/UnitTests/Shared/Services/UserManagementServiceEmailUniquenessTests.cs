@@ -38,7 +38,6 @@ public class UserManagementServiceEmailUniquenessTests
             Mock.Of<IInvitationRepository>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IJwtClaimsExtractor>(),
-            Mock.Of<ITokenValidationCache>(),
             Mock.Of<IUserAuthorizationInvalidator>(),
             NullLogger<UserManagementService>.Instance);
     }

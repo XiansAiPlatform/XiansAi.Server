@@ -1,4 +1,5 @@
 using Shared.Data.Models;
+using Shared.Providers;
 using Shared.Repositories;
 using Shared.Utils;
 
@@ -25,15 +26,18 @@ public class UserAuthorizationInvalidator : IUserAuthorizationInvalidator
     private readonly IUserCacheIndex _userCacheIndex;
     private readonly IUserRepository _userRepository;
     private readonly ILogger<UserAuthorizationInvalidator> _logger;
+    private readonly ICacheInvalidationBus _invalidationBus;
 
     public UserAuthorizationInvalidator(
         IUserCacheIndex userCacheIndex,
         IUserRepository userRepository,
-        ILogger<UserAuthorizationInvalidator> logger)
+        ILogger<UserAuthorizationInvalidator> logger,
+        ICacheInvalidationBus invalidationBus)
     {
         _userCacheIndex = userCacheIndex;
         _userRepository = userRepository;
         _logger = logger;
+        _invalidationBus = invalidationBus;
     }
 
     public async Task InvalidateAsync(string userId)
@@ -46,7 +50,7 @@ public class UserAuthorizationInvalidator : IUserAuthorizationInvalidator
         var user = await _userRepository.GetByUserIdAsync(userId);
         if (user == null)
         {
-            _userCacheIndex.Invalidate(userId);
+            await InvalidateUserAsync(userId);
             return;
         }
 
@@ -55,7 +59,7 @@ public class UserAuthorizationInvalidator : IUserAuthorizationInvalidator
 
     public async Task InvalidateAsync(User user)
     {
-        _userCacheIndex.Invalidate(user.UserId);
+        await InvalidateUserAsync(user.UserId);
 
         if (string.IsNullOrWhiteSpace(user.Email))
         {
@@ -73,7 +77,7 @@ public class UserAuthorizationInvalidator : IUserAuthorizationInvalidator
             {
                 if (!string.Equals(sibling.UserId, user.UserId, StringComparison.Ordinal))
                 {
-                    _userCacheIndex.Invalidate(sibling.UserId);
+                    await InvalidateUserAsync(sibling.UserId);
                 }
             }
         }
@@ -84,5 +88,16 @@ public class UserAuthorizationInvalidator : IUserAuthorizationInvalidator
                 "Could not invalidate cached authorization for the accounts sharing {Email}",
                 LogSanitizer.RedactEmail(user.Email));
         }
+    }
+
+    private async Task InvalidateUserAsync(string userId)
+    {
+        _userCacheIndex.Invalidate(userId);
+        await _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+            CacheInvalidationType.UserAuth,
+            userId,
+            TenantId: null,
+            Keys: null,
+            DateTimeOffset.UtcNow));
     }
 }

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Data.Models;
 using Shared.Providers.Auth;
+using Shared.Providers;
 using Shared.Repositories;
 using Shared.Services;
 
@@ -164,6 +165,37 @@ public class UserCacheInvalidationTests
         Assert.False(_cache.TryGetValue("mine", out _));
     }
 
-    private UserAuthorizationInvalidator BuildInvalidator(IUserCacheIndex index) =>
-        new(index, _userRepo.Object, NullLogger<UserAuthorizationInvalidator>.Instance);
+    [Fact]
+    public async Task Invalidator_PublishesUserAuthAfterRemovingLocalEntries()
+    {
+        var index = BuildIndex();
+        _cache.Set("mine", "value", new MemoryCacheEntryOptions().SetSize(1));
+        index.Track(UserId, "mine");
+        var bus = new Mock<ICacheInvalidationBus>();
+        bus.Setup(x => x.PublishAsync(
+                It.IsAny<CacheInvalidationEnvelope>(),
+                It.IsAny<CancellationToken>()))
+            .Callback(() => Assert.False(_cache.TryGetValue("mine", out _)))
+            .Returns(Task.CompletedTask);
+
+        await BuildInvalidator(index, bus.Object).InvalidateAsync(
+            new User { UserId = UserId, Email = string.Empty });
+
+        bus.Verify(x => x.PublishAsync(
+            It.Is<CacheInvalidationEnvelope>(envelope =>
+                envelope.Type == CacheInvalidationType.UserAuth &&
+                envelope.UserId == UserId &&
+                envelope.TenantId == null &&
+                envelope.Keys == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private UserAuthorizationInvalidator BuildInvalidator(
+        IUserCacheIndex index,
+        ICacheInvalidationBus? invalidationBus = null) =>
+        new(
+            index,
+            _userRepo.Object,
+            NullLogger<UserAuthorizationInvalidator>.Instance,
+            invalidationBus ?? Mock.Of<ICacheInvalidationBus>());
 }

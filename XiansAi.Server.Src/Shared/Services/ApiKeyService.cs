@@ -6,6 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using System.Text;
 using Shared.Utils;
+using Shared.Providers;
 namespace Shared.Services
 {
     public interface IApiKeyService
@@ -31,17 +32,24 @@ namespace Shared.Services
         private readonly ILogger<ApiKeyService> _logger;
         private readonly IMemoryCache _cache;
         private readonly IWebhookEventPublisher _webhookEventPublisher;
+        private readonly ICacheInvalidationBus _invalidationBus;
         
         // Cache configuration
         private static readonly TimeSpan ApiKeyCacheExpiration = TimeSpan.FromMinutes(15);
         private static readonly string CacheKeyPrefix = "apikey:";
 
-        public ApiKeyService(IApiKeyRepository apiKeyRepository, ILogger<ApiKeyService> logger, IMemoryCache cache, IWebhookEventPublisher webhookEventPublisher)
+        public ApiKeyService(
+            IApiKeyRepository apiKeyRepository,
+            ILogger<ApiKeyService> logger,
+            IMemoryCache cache,
+            IWebhookEventPublisher webhookEventPublisher,
+            ICacheInvalidationBus invalidationBus)
         {
             _apiKeyRepository = apiKeyRepository;
             _logger = logger;
             _cache = cache;
             _webhookEventPublisher = webhookEventPublisher;
+            _invalidationBus = invalidationBus;
         }
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
@@ -85,8 +93,7 @@ namespace Shared.Services
                 // Invalidate cache entry if the key existed
                 if (existingKey != null)
                 {
-                    var cacheKey = $"{CacheKeyPrefix}{tenantId}:{existingKey.HashedKey}";
-                    _cache.Remove(cacheKey);
+                    await InvalidateApiKeyCachesAsync(tenantId, existingKey.HashedKey);
                     _logger.LogDebug("Invalidated cache for revoked API key {ApiKeyId} in tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 }
 
@@ -109,12 +116,14 @@ namespace Shared.Services
             _logger.LogWarning("Deleting ALL API keys across all tenants");
             try
             {
+                // Snapshot cache identities before deletion because only stored hashes can target
+                // both the tenant-scoped and tenant-agnostic authentication entries.
+                var existingKeys = await _apiKeyRepository.GetAllAsync();
                 var deleted = await _apiKeyRepository.DeleteAllAsync();
 
-                // Drop cached lookups so the deleted keys can no longer authenticate from cache.
-                if (_cache is MemoryCache memoryCache)
+                foreach (var key in existingKeys)
                 {
-                    memoryCache.Clear();
+                    await InvalidateApiKeyCachesAsync(key.TenantId, key.HashedKey);
                 }
 
                 _logger.LogWarning("Deleted {Count} API key(s) across all tenants", deleted);
@@ -157,8 +166,7 @@ namespace Shared.Services
                 // Invalidate old cache entry if the key existed
                 if (existingKey != null)
                 {
-                    var oldCacheKey = $"{CacheKeyPrefix}{tenantId}:{existingKey.HashedKey}";
-                    _cache.Remove(oldCacheKey);
+                    await InvalidateApiKeyCachesAsync(tenantId, existingKey.HashedKey);
                     _logger.LogDebug("Invalidated old cache for rotated API key {ApiKeyId} in tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 }
                 
@@ -327,6 +335,27 @@ namespace Shared.Services
             using var sha256 = SHA256.Create();
             var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
             return Convert.ToBase64String(hash);
+        }
+
+        private async Task InvalidateApiKeyCachesAsync(string tenantId, string hashedKey)
+        {
+            string[] cacheKeys =
+            [
+                $"{CacheKeyPrefix}{tenantId}:{hashedKey}",
+                $"{CacheKeyPrefix}auth:{hashedKey}"
+            ];
+
+            foreach (var cacheKey in cacheKeys)
+            {
+                _cache.Remove(cacheKey);
+            }
+
+            await _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+                CacheInvalidationType.ApiKey,
+                UserId: null,
+                TenantId: tenantId,
+                Keys: cacheKeys,
+                DateTimeOffset.UtcNow));
         }
     }
 }

@@ -20,11 +20,21 @@ public class PendingRequestService : IPendingRequestService, IDisposable
 {
     private readonly ConcurrentDictionary<string, PendingRequest> _pendingRequests = new();
     private readonly ILogger<PendingRequestService> _logger;
+    private readonly IPendingRequestCoordinator _coordinator;
     private readonly Timer _cleanupTimer;
 
     public PendingRequestService(ILogger<PendingRequestService> logger)
+        : this(logger, new NoOpPendingRequestCoordinator())
     {
-        _logger = logger;
+    }
+
+    public PendingRequestService(
+        ILogger<PendingRequestService> logger,
+        IPendingRequestCoordinator coordinator)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _coordinator.CompletionReceived += CompleteRemoteRequest;
         
         // Clean up expired requests every 30 seconds
         _cleanupTimer = new Timer(CleanupExpiredRequests, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
@@ -49,6 +59,7 @@ public class PendingRequestService : IPendingRequestService, IDisposable
             
             using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             combinedCts.CancelAfter(timeout);
+            await _coordinator.AnnounceWaitAsync(requestId, combinedCts.Token);
             
             var response = await pendingRequest.TaskCompletionSource.Task.WaitAsync(combinedCts.Token);
             _logger.LogDebug("Received {MessageType} response for request {RequestId}", expectedMessageType, requestId);
@@ -79,6 +90,27 @@ public class PendingRequestService : IPendingRequestService, IDisposable
             return;
         }
 
+        if (TryCompleteLocalRequest(requestId, response, messageType))
+        {
+            return;
+        }
+
+        _logger.LogDebug("No pending request found for RequestId {RequestId} - may be on another server instance, already completed, or timed out", LogSanitizer.Sanitize(requestId));
+        if (response is ConversationMessage conversationMessage)
+        {
+            _ = _coordinator.PublishCompletionAsync(
+                requestId,
+                conversationMessage,
+                messageType,
+                CancellationToken.None);
+        }
+    }
+
+    private bool TryCompleteLocalRequest<T>(
+        string requestId,
+        T response,
+        MessageType? messageType)
+    {
         if (_pendingRequests.TryRemove(requestId, out var pendingRequest))
         {
             if (pendingRequest is PendingRequest<T> typedRequest)
@@ -91,22 +123,30 @@ public class PendingRequestService : IPendingRequestService, IDisposable
                     
                     // Re-add the request back to the dictionary since this response doesn't match
                     _pendingRequests.TryAdd(requestId, pendingRequest);
-                    return;
+                    return true;
                 }
 
                 _logger.LogDebug("Completing request {RequestId} with {MessageType} response", LogSanitizer.Sanitize(requestId), LogSanitizer.Sanitize(messageType?.ToString() ?? "unspecified"));
                 typedRequest.TaskCompletionSource.SetResult(response);
+                return true;
             }
             else
             {
                 _logger.LogWarning("Type mismatch when completing request {RequestId}. Expected {ExpectedType}, got {ActualType}", 
                     LogSanitizer.Sanitize(requestId), typeof(T).Name, LogSanitizer.Sanitize(pendingRequest.GetType().GetGenericArguments().FirstOrDefault()?.Name ?? "unknown"));
+                return true;
             }
         }
-        else
-        {
-            _logger.LogDebug("No pending request found for RequestId {RequestId} - may have already completed or timed out", LogSanitizer.Sanitize(requestId));
-        }
+
+        return false;
+    }
+
+    private void CompleteRemoteRequest(
+        string requestId,
+        ConversationMessage response,
+        MessageType? messageType)
+    {
+        TryCompleteLocalRequest(requestId, response, messageType);
     }
 
     public void CompleteRequestWithError(string requestId, Exception exception)
@@ -179,6 +219,7 @@ public class PendingRequestService : IPendingRequestService, IDisposable
     public void Dispose()
     {
         _cleanupTimer?.Dispose();
+        _coordinator.CompletionReceived -= CompleteRemoteRequest;
         
         // Cancel all pending requests
         foreach (var kvp in _pendingRequests)

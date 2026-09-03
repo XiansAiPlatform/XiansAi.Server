@@ -20,8 +20,6 @@ namespace Features.UserApi.Services
         // never dropped; re-checking on every transient-error reconnect adds unnecessary I/O.
         private static volatile bool _collectionEnsured = false;
 
-        private readonly IHubContext<ChatHub> _hubContext;
-        private readonly IHubContext<TenantChatHub> _tenantHubContext;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MongoChangeStreamService> _logger;
         private readonly IMessageEventPublisher _messageEventPublisher;
@@ -29,8 +27,6 @@ namespace Features.UserApi.Services
         private readonly string _uniqueSecret;
 
         public MongoChangeStreamService(
-            IHubContext<ChatHub> hubContext,
-            IHubContext<TenantChatHub> tenantHubContext,
             IServiceScopeFactory scopeFactory,
             ILogger<MongoChangeStreamService> logger,
             IMessageEventPublisher messageEventPublisher,
@@ -40,8 +36,6 @@ namespace Features.UserApi.Services
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-            _hubContext = hubContext;
-            _tenantHubContext = tenantHubContext;
             _messageEventPublisher = messageEventPublisher ?? throw new ArgumentNullException(nameof(messageEventPublisher));
             _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         
@@ -61,6 +55,34 @@ namespace Features.UserApi.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            // GetDatabaseAsync completes synchronously (Task.FromResult), so without an
+            // initial yield this method can block IHostedService startup on WatchAsync /
+            // Mongo retries before Kestrel binds.
+            await Task.Yield();
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var database = await scope.ServiceProvider
+                    .GetRequiredService<IDatabaseService>()
+                    .GetDatabaseAsync();
+                if (!await SupportsChangeStreamsAsync(database, stoppingToken))
+                {
+                    _logger.LogWarning(
+                        "MongoDB deployment does not support change streams (standalone instance detected). " +
+                        "Live SignalR/SSE message push is disabled until MongoDB runs as a replica set.");
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, stoppingToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogInformation("MongoChangeStreamService is stopping.");
+                    }
+
+                    return;
+                }
+            }
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -68,6 +90,8 @@ namespace Features.UserApi.Services
                     using var scope = _scopeFactory.CreateScope();
                     var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
                     var pendingRequestService = scope.ServiceProvider.GetRequiredService<IPendingRequestService>();
+                    var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
+                    var tenantHubContext = scope.ServiceProvider.GetRequiredService<IHubContext<TenantChatHub>>();
                     var database = await databaseService.GetDatabaseAsync();
                     var collectionName = "conversation_message";
                     var collection = database.GetCollection<ConversationMessage>(collectionName);
@@ -183,9 +207,9 @@ namespace Features.UserApi.Services
                                     _logger.LogDebug("Sending handoff message to group {GroupId}: {Message}",
                                         groupId, JsonSerializer.Serialize(message));
                                     await Task.WhenAll(
-                                        _hubContext.Clients.Group(groupId)
+                                        hubContext.Clients.Group(groupId)
                                             .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken),
-                                        _tenantHubContext.Clients.Group(tenantGroupId)
+                                        tenantHubContext.Clients.Group(tenantGroupId)
                                             .SendAsync("ReceiveHandoff", message, cancellationToken: stoppingToken)
                                     );
                                 }
@@ -196,12 +220,12 @@ namespace Features.UserApi.Services
                                         groupId, JsonSerializer.Serialize(message));
                                     await Task.WhenAll(
                                         // TODO: Remove the backward compatibility ReceiveMetadata later
-                                        _hubContext.Clients.Group(groupId)
+                                        hubContext.Clients.Group(groupId)
                                             .SendAsync("ReceiveMetadata", message, cancellationToken: stoppingToken),
                                         // New method names
-                                        _hubContext.Clients.Group(groupId)
+                                        hubContext.Clients.Group(groupId)
                                             .SendAsync("ReceiveData", message, cancellationToken: stoppingToken),
-                                        _tenantHubContext.Clients.Group(tenantGroupId)
+                                        tenantHubContext.Clients.Group(tenantGroupId)
                                             .SendAsync("ReceiveData", message, cancellationToken: stoppingToken)
                                     );
                                 }
@@ -212,12 +236,12 @@ namespace Features.UserApi.Services
                                         groupId, JsonSerializer.Serialize(message));
                                     await Task.WhenAll(
                                         // TODO: Remove the backward compatibility ReceiveMessage later
-                                        _hubContext.Clients.Group(groupId)
+                                        hubContext.Clients.Group(groupId)
                                             .SendAsync("ReceiveMessage", message, cancellationToken: stoppingToken),
                                         // New method names
-                                        _hubContext.Clients.Group(groupId)
+                                        hubContext.Clients.Group(groupId)
                                             .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken),
-                                        _tenantHubContext.Clients.Group(tenantGroupId)
+                                        tenantHubContext.Clients.Group(tenantGroupId)
                                             .SendAsync("ReceiveChat", message, cancellationToken: stoppingToken)
                                     );
                                 }
@@ -247,6 +271,21 @@ namespace Features.UserApi.Services
                     _logger.LogInformation("MongoChangeStreamService is stopping.");
                     break;
                 }
+                catch (MongoCommandException ex) when (IsChangeStreamUnsupported(ex))
+                {
+                    _logger.LogWarning(
+                        "MongoDB change streams require a replica set ({Message}). Live SignalR/SSE push is disabled.",
+                        ex.Message);
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, stoppingToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogInformation("MongoChangeStreamService is stopping.");
+                        break;
+                    }
+                }
                 catch (MongoException ex) when (ex.HasErrorLabel("TransientTransactionError") || ex is MongoConnectionException || ex is MongoNotPrimaryException || ex is MongoNodeIsRecoveringException)
                 {
                     _logger.LogWarning(ex, "MongoChangeStreamService: Transient MongoDB error. Retrying in 5 seconds...");
@@ -264,6 +303,27 @@ namespace Features.UserApi.Services
                 }
             }
         }
+
+        private static async Task<bool> SupportsChangeStreamsAsync(
+            IMongoDatabase database,
+            CancellationToken cancellationToken)
+        {
+            var hello = await database.RunCommandAsync<BsonDocument>(
+                new BsonDocument("hello", 1),
+                cancellationToken: cancellationToken);
+
+            if (hello.TryGetValue("setName", out var setName)
+                && setName.IsString
+                && !string.IsNullOrWhiteSpace(setName.AsString))
+            {
+                return true;
+            }
+
+            return hello.TryGetValue("msg", out var msg) && msg.AsString == "isdbgrid";
+        }
+
+        private static bool IsChangeStreamUnsupported(MongoCommandException ex) =>
+            ex.Message.Contains("only supported on replica sets", StringComparison.OrdinalIgnoreCase);
 
         private void ConvertBsonMetadataToObjectInternal(ConversationMessage message)
         {
