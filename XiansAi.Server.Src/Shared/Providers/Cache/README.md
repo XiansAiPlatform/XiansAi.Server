@@ -61,7 +61,7 @@ With `Cache:Provider=memory`, `NoOpCacheInvalidationBus` is registered — publi
 
 ### 4. Pending Request Coordination (`IPendingRequestCoordinator`)
 
-Synchronous `/converse` flows use `IPendingRequestCoordinator` so a waiter on one replica can receive a completion handled on another. When Redis is configured, `RedisPendingRequestCoordinator` stores the response in a short-lived Redis key and signals completion over pub/sub (`xians:pending:complete`). With the memory provider, `NoOpPendingRequestCoordinator` keeps coordination in-process only.
+Synchronous `/converse` flows use `IPendingRequestCoordinator` so a waiter on one replica can receive a completion handled on another. When Redis is configured, `RedisPendingRequestCoordinator` stores an **encrypted** response payload (via `ISecureEncryptionService`, same conversation unique secret as Mongo at-rest encryption) in a short-lived Redis key and signals completion over pub/sub (`xians:pending:complete`). Decrypted conversation content is never written to Redis in plaintext. With the memory provider, `NoOpPendingRequestCoordinator` keeps coordination in-process only.
 
 **Multiple server replicas require `Cache:Provider=redis`.** Without it, auth/messaging caches can stay stale until TTL on other instances, and `/converse` may time out when the waiter and completer hit different replicas.
 
@@ -127,6 +127,36 @@ Synchronous `/converse` flows use `IPendingRequestCoordinator` so a waiter on on
   }
 }
 ```
+
+## Security: Redis as a trusted control plane
+
+When `Cache:Provider=redis`, replicas coordinate over Redis pub/sub and short-lived keys:
+
+| Channel / key | Purpose |
+|---------------|---------|
+| `xians:cache:invalidate` | Cross-replica L1 cache eviction |
+| `xians:pending:complete` + `xians:pending:result:*` | Cross-replica `/converse` completion (result values are encrypted; signals carry only `requestId`) |
+
+**Anyone with publish access to that Redis can force cache evictions.** Invalidation envelopes are not application-signed today. Pending-result payloads (`xians:pending:result:*`) are encrypted with `ISecureEncryptionService` using the conversation unique secret before write, so decrypted chat content is not stored in Redis in plaintext. Redis access control (network isolation + AUTH + TLS) remains required.
+
+### Production requirements
+
+1. **Network isolation** — Redis reachable only from server replicas (private VNet / private endpoint / security group), not the public internet.
+2. **AUTH** — Require a password (or ACL user+password) in `Cache:Redis:ConnectionString`.
+3. **TLS** — Set `ssl=true` (or equivalent) so traffic is encrypted in transit.
+
+Startup validation enforces AUTH + TLS outside Development. Local Docker Redis without password/TLS is allowed in Development (warning only), or in any environment when `Cache:Redis:AllowInsecureConnection=true` (lab/staging escape hatch — do not use in production).
+
+```env
+# Production
+Cache__Provider=redis
+Cache__Redis__ConnectionString=your-redis:6380,password=***,ssl=true
+
+# Local multi-replica only (Development warns; or set explicitly)
+# Cache__Redis__AllowInsecureConnection=true
+```
+
+HMAC / shared-secret checks on invalidation and completion envelopes are a possible future hardening step; they are not implemented yet.
 
 ### In-Memory Configuration
 

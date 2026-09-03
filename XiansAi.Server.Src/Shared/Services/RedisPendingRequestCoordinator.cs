@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Shared.Repositories;
@@ -8,6 +9,8 @@ namespace Shared.Services;
 
 /// <summary>
 /// Coordinates pending requests through Redis result keys and completion signals.
+/// Result payloads are encrypted with <see cref="ISecureEncryptionService"/> before
+/// being written to Redis so decrypted conversation content is never stored in plaintext.
 /// </summary>
 public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator, IHostedService
 {
@@ -18,15 +21,22 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
         RedisChannel.Literal(CompletionChannelName);
 
     private readonly Lazy<IConnectionMultiplexer> _connectionMultiplexer;
+    private readonly ISecureEncryptionService _encryption;
+    private readonly string _uniqueSecret;
     private readonly ILogger<RedisPendingRequestCoordinator> _logger;
     private readonly Action<RedisChannel, RedisValue> _messageHandler;
 
     public RedisPendingRequestCoordinator(
         Lazy<IConnectionMultiplexer> connectionMultiplexer,
+        ISecureEncryptionService encryption,
+        IConfiguration configuration,
         ILogger<RedisPendingRequestCoordinator> logger)
     {
         _connectionMultiplexer = connectionMultiplexer ?? throw new ArgumentNullException(nameof(connectionMultiplexer));
+        _encryption = encryption ?? throw new ArgumentNullException(nameof(encryption));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(configuration);
+        _uniqueSecret = ResolveConversationUniqueSecret(configuration, _logger);
         _messageHandler = HandleCompletionSignal;
     }
 
@@ -60,6 +70,18 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
                 "Failed to deserialize pending request result for {RequestId}",
                 LogSanitizer.Sanitize(requestId));
         }
+        catch (CryptographicException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to decrypt pending request result for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (FormatException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to decode pending request result for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
         catch (ObjectDisposedException ex)
         {
             _logger.LogWarning(ex,
@@ -80,10 +102,12 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
         {
             cancellationToken.ThrowIfCancellationRequested();
             var result = new PendingRequestResult(response, messageType);
-            var payload = JsonSerializer.Serialize(result);
+            var plaintext = JsonSerializer.Serialize(result);
+            // Never write decrypted conversation content to Redis in plaintext.
+            var ciphertext = _encryption.Encrypt(plaintext, _uniqueSecret);
             await Database.StringSetAsync(
                 GetResultKey(requestId),
-                payload,
+                ciphertext,
                 ResultExpiry,
                 When.Always,
                 CommandFlags.None).ConfigureAwait(false);
@@ -104,6 +128,18 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
         {
             _logger.LogWarning(ex,
                 "Failed to serialize pending request completion for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to encrypt pending request completion for {RequestId}; plaintext was not written to Redis",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (CryptographicException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to encrypt pending request completion for {RequestId}; plaintext was not written to Redis",
                 LogSanitizer.Sanitize(requestId));
         }
         catch (ObjectDisposedException ex)
@@ -192,7 +228,8 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
                 return;
             }
 
-            var result = JsonSerializer.Deserialize<PendingRequestResult>(payload.ToString());
+            var plaintext = _encryption.Decrypt(payload.ToString(), _uniqueSecret);
+            var result = JsonSerializer.Deserialize<PendingRequestResult>(plaintext);
             if (result?.Response is null)
             {
                 _logger.LogWarning(
@@ -219,12 +256,51 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
                 "Failed to deserialize pending request result for {RequestId}",
                 LogSanitizer.Sanitize(requestId));
         }
+        catch (CryptographicException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to decrypt pending request result for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (FormatException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to decode pending request result for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to decrypt pending request result for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
         catch (ObjectDisposedException ex)
         {
             _logger.LogWarning(ex,
                 "Failed to retrieve pending request result for {RequestId}; connection disposed",
                 LogSanitizer.Sanitize(requestId));
         }
+    }
+
+    private static string ResolveConversationUniqueSecret(
+        IConfiguration configuration,
+        ILogger logger)
+    {
+        var uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:ConversationMessageKey"];
+        if (!string.IsNullOrWhiteSpace(uniqueSecret))
+        {
+            return uniqueSecret;
+        }
+
+        logger.LogWarning(
+            "EncryptionKeys:UniqueSecrets:ConversationMessageKey is not configured. Using the base secret value.");
+        var baseSecret = configuration["EncryptionKeys:BaseSecret"];
+        if (string.IsNullOrWhiteSpace(baseSecret))
+        {
+            throw new InvalidOperationException("EncryptionKeys:BaseSecret is not configured");
+        }
+
+        return baseSecret;
     }
 
     private static RedisKey GetResultKey(string requestId) =>
