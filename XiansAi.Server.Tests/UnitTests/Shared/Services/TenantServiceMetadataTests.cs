@@ -28,6 +28,9 @@ public class TenantServiceMetadataTests
     private readonly Mock<ITenantContext> _context = new();
     private readonly Mock<IRoleManagementService> _roles = new();
     private readonly Mock<IWebhookEventPublisher> _webhooks = new();
+    private readonly Mock<IActivationRepository> _activationRepository = new();
+    private readonly Mock<IActivationService> _activationService = new();
+    private readonly Mock<IKnowledgeRepository> _knowledgeRepository = new();
     private readonly TenantMetadataProtector _protector;
     private readonly TenantService _service;
 
@@ -59,7 +62,10 @@ public class TenantServiceMetadataTests
             _context.Object,
             _roles.Object,
             _webhooks.Object,
-            _protector);
+            _protector,
+            _activationRepository.Object,
+            _activationService.Object,
+            _knowledgeRepository.Object);
     }
 
     private static Tenant CreateStoredTenant(List<TenantMetadata>? metadata = null)

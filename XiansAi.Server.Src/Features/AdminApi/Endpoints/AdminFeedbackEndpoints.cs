@@ -130,5 +130,25 @@ public static class AdminFeedbackEndpoints
             "(up to contextBefore messages before and contextAfter messages after the rated message, " +
             "each capped at 50). Set chatOnly=true to include only chat messages in the surrounding context. " +
             "The rated message is always included and is identified by ratedMessageId.");
+
+        // Delete all feedback for a given agent activation.
+        // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
+        feedbackGroup.MapDelete("/agents/{agentName}/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IFeedbackService feedbackService) =>
+        {
+            var result = await feedbackService.DeleteFeedbackByActivationAsync(tenantId, agentName, activationId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = $"Deleted {result.Data} feedback entry(ies)", deletedCount = result.Data });
+        })
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .WithName("DeleteFeedbackByActivation")
+        ;
     }
 }

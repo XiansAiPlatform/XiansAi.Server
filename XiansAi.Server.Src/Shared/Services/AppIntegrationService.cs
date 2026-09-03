@@ -81,6 +81,24 @@ public interface IAppIntegrationService
     /// Delete a builtin webhook integration (revokes API key + deletes integration).
     /// </summary>
     Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId);
+
+    /// <summary>
+    /// Delete all builtin webhook integrations for a specific agent activation
+    /// (revokes each associated API key + deletes each integration).
+    /// </summary>
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName);
+
+    /// <summary>
+    /// Delete all builtin webhook integrations for an agent, across every activation
+    /// (revokes each associated API key + deletes each integration).
+    /// </summary>
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName);
+
+    /// <summary>
+    /// Delete all builtin webhook integrations matching an activation name, across every agent
+    /// (revokes each associated API key + deletes each integration).
+    /// </summary>
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName);
 }
 
 /// <summary>
@@ -708,6 +726,67 @@ public class AppIntegrationService : IAppIntegrationService
         }
 
         return await DeleteIntegrationAsync(integrationId, tenantId);
+    }
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+        }
+
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentActivationAsync(tenantId, agentName, activationName));
+    }
+
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId and AgentName are required");
+        }
+
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentAsync(tenantId, agentName));
+    }
+
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId and ActivationName are required");
+        }
+
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByActivationAsync(tenantId, activationName));
+    }
+
+
+    private async Task<ServiceResult<int>> DeleteBuiltinWebhooksAsync(Func<Task<List<AppIntegration>>> fetchCandidates)
+    {
+        try
+        {
+            var toDelete = await fetchCandidates();
+            var deletedCount = 0;
+
+            foreach (var webhook in toDelete)
+            {
+                var deleteResult = await DeleteBuiltinWebhookAsync(webhook.Id, webhook.TenantId);
+                if (deleteResult.IsSuccess)
+                {
+                    deletedCount++;
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Failed to delete webhook {IntegrationId} for agent {AgentName}, activation {ActivationName}: {Error}",
+                        LogSanitizer.Sanitize(webhook.Id), LogSanitizer.Sanitize(webhook.AgentName ?? "any"), LogSanitizer.Sanitize(webhook.ActivationName ?? "any"), LogSanitizer.Sanitize(deleteResult.ErrorMessage));
+                }
+            }
+
+            return ServiceResult<int>.Success(deletedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting webhooks.");
+            return ServiceResult<int>.InternalServerError("An error occurred while deleting webhooks");
+        }
     }
 
     public async Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(

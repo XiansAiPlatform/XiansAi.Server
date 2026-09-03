@@ -30,6 +30,12 @@ public interface IAdminMetricsService
     Task<ServiceResult<AdminMetricsCategoriesResponse>> GetMetricsCategoriesAsync(
         AdminMetricsCategoriesRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Delete all performance-metric records for a given agent activation.
+    /// </summary>
+    Task<ServiceResult<int>> DeleteMetricsByActivationAsync(
+        string tenantId, string agentName, string activationName, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -148,6 +154,32 @@ public class AdminMetricsService : IAdminMetricsService
         {
             _logger.LogError(ex, "Failed to retrieve metrics categories. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminMetricsCategoriesResponse>.InternalServerError("Failed to retrieve metrics categories");
+        }
+    }
+
+    public async Task<ServiceResult<int>> DeleteMetricsByActivationAsync(
+        string tenantId, string agentName, string activationName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+        }
+
+        try
+        {
+            var deletedCount = await _repository.DeleteByAgentAndActivationAsync(tenantId, agentName, activationName, cancellationToken);
+
+            _logger.LogInformation(
+                "Deleted {DeletedCount} metric(s) for agent {AgentName}, activation {ActivationName}",
+                deletedCount, LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+
+            return ServiceResult<int>.Success(deletedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting metrics for tenant {TenantId}, agent {AgentName}, activation {ActivationName}",
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+            return ServiceResult<int>.InternalServerError("An error occurred while deleting metrics");
         }
     }
 

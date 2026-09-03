@@ -42,6 +42,9 @@ public static class AdminApiConfiguration
 
         // Register platform bootstrap service
         builder.Services.AddScoped<IBootstrapService, BootstrapService>();
+
+        // Register Temporal Worker Deployment Version management
+        builder.Services.AddScoped<IWorkerDeploymentService, WorkerDeploymentService>();
         
         // PendingRequestService for heartbeat sync flow (TryAdd: UserApi may already register it)
         builder.Services.TryAddSingleton<IPendingRequestService, PendingRequestService>();
@@ -134,6 +137,7 @@ public static class AdminApiConfiguration
         AdminFeedbackEndpoints.MapAdminFeedbackEndpoints(adminApiGroup);
         AdminTaskEndpoints.MapAdminTaskEndpoints(adminApiGroup);
         AdminScheduleEndpoints.MapAdminScheduleEndpoints(adminApiGroup);
+        AdminWorkerDeploymentEndpoints.MapAdminWorkerDeploymentEndpoints(adminApiGroup);
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
         AdminUserEndpoints.MapAdminUserEndpoints(adminApiGroup);
         AdminGlobalUserEndpoints.MapAdminGlobalUserEndpoints(adminApiGroup);

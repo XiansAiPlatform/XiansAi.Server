@@ -21,12 +21,13 @@ public class AgentDeletionResult
     public int DeletedLogs { get; set; }
     public int DeletedUsageEvents { get; set; }
     public int RevokedApiKeys { get; set; }
+    public int DeletedActivations { get; set; }
     public bool AgentDeleted { get; set; }
 }
 
 public interface IAgentDeletionService
 {
-    Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped);
+    Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, bool forceDelete = false);
 }
 
 /// <summary>
@@ -44,6 +45,7 @@ public class AgentDeletionService : IAgentDeletionService
     private readonly IScheduleService _scheduleService;
     private readonly IDatabaseService _databaseService;
     private readonly IActivationRepository _activationRepository;
+    private readonly IActivationService _activationService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IActivationValidationService _activationValidationService;
     private readonly ILogger<AgentService> _logger;
@@ -62,6 +64,7 @@ public class AgentDeletionService : IAgentDeletionService
         IScheduleService scheduleService,
         IDatabaseService databaseService,
         IActivationRepository activationRepository,
+        IActivationService activationService,
         IWebhookEventPublisher webhookEventPublisher,
         IActivationValidationService activationValidationService,
         ILogger<AgentService> logger)
@@ -76,12 +79,13 @@ public class AgentDeletionService : IAgentDeletionService
         _scheduleService = scheduleService ?? throw new ArgumentNullException(nameof(scheduleService));
         _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
+        _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped)
+    public async Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, bool forceDelete = false)
     {
         try
         {
@@ -119,19 +123,72 @@ public class AgentDeletionService : IAgentDeletionService
                 return ServiceResult<AgentDeletionResult>.NotFound("Agent not found");
             }
 
+            var result = new AgentDeletionResult();
+
             // Check if there are any activations for this agent
             if (tenantId != null)
             {
                 var activations = await _activationRepository.GetByAgentNameAsync(agentName, tenantId);
                 if (activations != null && activations.Count > 0)
                 {
-                    _logger.LogWarning("Cannot delete agent {AgentName} - {Count} activation(s) exist", LogSanitizer.Sanitize(agentName), activations.Count);
-                    return ServiceResult<AgentDeletionResult>.Conflict(
-                        $"Cannot delete agent '{agentName}' because it has {activations.Count} activation(s). Please delete all activations first.");
+                    if (!forceDelete)
+                    {
+                        _logger.LogWarning("Cannot delete agent {AgentName} - {Count} activation(s) exist", LogSanitizer.Sanitize(agentName), activations.Count);
+                        return ServiceResult<AgentDeletionResult>.Conflict(
+                            $"Cannot delete agent '{agentName}' because it has {activations.Count} activation(s). Please delete all activations first, or pass forceDelete=true.");
+                    }
+
+                    // Force delete: deactivate (cancels live workflows/schedules) then delete each activation first.
+                    var failedActivations = new List<string>();
+                    var deletedActivations = 0;
+                    foreach (var activation in activations)
+                    {
+                        if (activation.WorkflowIds != null && activation.WorkflowIds.Count > 0)
+                        {
+                            var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId);
+                            if (!deactivateResult.IsSuccess)
+                            {
+                                failedActivations.Add($"Failed to deactivate '{activation.Name}': {deactivateResult.ErrorMessage}");
+                                continue;
+                            }
+                        }
+
+                        var deleteResult = await _activationService.DeleteActivationAsync(activation.Id);
+                        if (deleteResult.IsSuccess)
+                        {
+                            deletedActivations++;
+                        }
+                        else
+                        {
+                            failedActivations.Add($"Failed to delete '{activation.Name}': {deleteResult.ErrorMessage}");
+                        }
+                    }
+
+                    if (failedActivations.Count > 0)
+                    {
+                        _logger.LogWarning(
+                            "Aborting delete of agent {AgentName} - {FailedCount} of {TotalCount} activation(s) failed to clean up",
+                            LogSanitizer.Sanitize(agentName), failedActivations.Count, activations.Count);
+                        return ServiceResult<AgentDeletionResult>.Conflict(
+                            $"Deleted {deletedActivations} of {activations.Count} activation(s) for agent '{agentName}'. " +
+                            $"Failed: {string.Join("; ", failedActivations)}. Agent was not deleted — please retry.");
+                    }
+
+                    result.DeletedActivations = deletedActivations;
+
+                    // Organization-level knowledge (shared across the agent's activations, not tied to
+                    // any single one) is cleaned up once here, after all activations are gone — not per
+                    // activation, since it isn't scoped to any one of them.
+                    try
+                    {
+                        await _knowledgeRepository.DeleteOrganizationLevelByAgentAsync<Knowledge>(agentName, tenantId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete organization-level knowledge for agent {AgentName}", LogSanitizer.Sanitize(agentName));
+                    }
                 }
             }
-
-            var result = new AgentDeletionResult();
 
             // Delete schedules (tenant scoped only)
             if (!systemScoped)
@@ -180,8 +237,9 @@ public class AgentDeletionService : IAgentDeletionService
                 }
             }
 
-            // Delete documents tied to agent id
-            result.DeletedDocuments = await DeleteDocumentsByAgentAsync(agent.Id, tenantId);
+            // Delete documents tied to agent (Document.AgentId actually stores the agent's name,
+            // not its Mongo _id — matches how documents are created/queried elsewhere)
+            result.DeletedDocuments = await DeleteDocumentsByAgentAsync(agentName, tenantId);
 
             // Delete logs for agent
             result.DeletedLogs = await DeleteLogsByAgentAsync(agentName, tenantId);
@@ -213,6 +271,7 @@ public class AgentDeletionService : IAgentDeletionService
                     deletedFlowDefinitions = result.DeletedFlowDefinitions,
                     deletedKnowledgeItems = result.DeletedKnowledgeItems,
                     revokedApiKeys = result.RevokedApiKeys,
+                    deletedActivations = result.DeletedActivations,
                 },
                 tenantId);
 
@@ -225,11 +284,11 @@ public class AgentDeletionService : IAgentDeletionService
         }
     }
 
-    private async Task<int> DeleteDocumentsByAgentAsync(string agentId, string? tenantId)
+    private async Task<int> DeleteDocumentsByAgentAsync(string agentName, string? tenantId)
     {
         var filters = new List<FilterDefinition<BsonDocument>>
         {
-            Builders<BsonDocument>.Filter.Eq("agent_id", agentId)
+            Builders<BsonDocument>.Filter.Eq("agent_id", agentName)
         };
 
         filters.Add(string.IsNullOrEmpty(tenantId)

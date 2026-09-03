@@ -149,5 +149,25 @@ public static class AdminDataEndpoints
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("DeleteAdminDataRecord")
         ;
+
+        // Delete all documents (every type) for a given agent activation.
+        // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
+        dataGroup.MapDelete("/agents/{agentName}/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IAdminDataService dataService) =>
+        {
+            var result = await dataService.DeleteDocumentsByActivationAsync(tenantId, agentName, activationId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = $"Deleted {result.Data} document(s)", deletedCount = result.Data });
+        })
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .WithName("DeleteDocumentsByActivation")
+        ;
     }
 }

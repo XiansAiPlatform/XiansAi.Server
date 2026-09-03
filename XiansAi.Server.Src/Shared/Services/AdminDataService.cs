@@ -135,6 +135,11 @@ public interface IAdminDataService
     Task<ServiceResult<AdminDataDeleteRecordResponse>> DeleteRecordAsync(
         AdminDataDeleteRecordRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Delete all documents (every type, no date restriction) for a given agent activation.
+    /// </summary>
+    Task<ServiceResult<int>> DeleteDocumentsByActivationAsync(string tenantId, string agentName, string activationName);
 }
 
 /// <summary>
@@ -404,6 +409,35 @@ public class AdminDataService : IAdminDataService
             _logger.LogError(ex, "Failed to delete record. RecordId: {RecordId}, Error: {ErrorMessage}", 
                 LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminDataDeleteRecordResponse>.InternalServerError("Failed to delete record");
+        }
+    }
+
+    public async Task<ServiceResult<int>> DeleteDocumentsByActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+        }
+
+        try
+        {
+            var deletedCount = await _documentRepository.DeleteByFilterAsync(tenantId, new DocumentQueryFilter
+            {
+                AgentId = agentName,
+                ActivationName = activationName
+            });
+
+            _logger.LogInformation(
+                "Deleted {DeletedCount} document(s) for agent {AgentName}, activation {ActivationName}",
+                deletedCount, LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+
+            return ServiceResult<int>.Success(deletedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting documents for tenant {TenantId}, agent {AgentName}, activation {ActivationName}",
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+            return ServiceResult<int>.InternalServerError("An error occurred while deleting documents");
         }
     }
 

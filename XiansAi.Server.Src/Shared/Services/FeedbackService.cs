@@ -50,6 +50,7 @@ public interface IFeedbackService
 {
     Task<ServiceResult<string>> SubmitFeedbackAsync(SubmitMessageFeedbackRequest request);
     Task<List<ConversationMessageDto>> BuildMessagesWithFeedbackAsync(IReadOnlyList<ConversationMessage> messages, string tenantId);
+    Task<ServiceResult<int>> DeleteFeedbackByActivationAsync(string tenantId, string agentName, string activationName);
 }
 
 public class FeedbackService : IFeedbackService
@@ -179,6 +180,31 @@ public class FeedbackService : IFeedbackService
         {
             _logger.LogError(ex, "Failed to save feedback for message {MessageId}", LogSanitizer.Sanitize(request.MessageId));
             return ServiceResult<string>.InternalServerError("Failed to save feedback.");
+        }
+    }
+
+    public async Task<ServiceResult<int>> DeleteFeedbackByActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+        }
+
+        try
+        {
+            var deletedCount = await _feedbackRepository.DeleteByAgentAndActivationAsync(tenantId, agentName, activationName);
+
+            _logger.LogInformation(
+                "Deleted {DeletedCount} feedback entry(ies) for agent {AgentName}, activation {ActivationName}",
+                deletedCount, LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+
+            return ServiceResult<int>.Success((int)deletedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting feedback for tenant {TenantId}, agent {AgentName}, activation {ActivationName}",
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+            return ServiceResult<int>.InternalServerError("An error occurred while deleting feedback");
         }
     }
 

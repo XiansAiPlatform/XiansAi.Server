@@ -79,6 +79,8 @@ public interface IAdminLogsService
         DateTime? endDate,
         int page,
         int pageSize);
+
+    Task<ServiceResult<int>> DeleteLogsByActivationAsync(string tenantId, string agentName, string activationName);
 }
 
 /// <summary>
@@ -238,6 +240,31 @@ public class AdminLogsService : IAdminLogsService
         {
             _logger.LogError(ex, "Failed to retrieve admin log streams. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AdminLogStreamsResponse>.InternalServerError("Failed to retrieve log streams");
+        }
+    }
+
+    public async Task<ServiceResult<int>> DeleteLogsByActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        {
+            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+        }
+
+        try
+        {
+            var deletedCount = await _logRepository.DeleteByAgentAndActivationAsync(tenantId, agentName, activationName);
+
+            _logger.LogInformation(
+                "Deleted {DeletedCount} log(s) for agent {AgentName}, activation {ActivationName}",
+                deletedCount, LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+
+            return ServiceResult<int>.Success((int)deletedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting logs for tenant {TenantId}, agent {AgentName}, activation {ActivationName}",
+                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
+            return ServiceResult<int>.InternalServerError("An error occurred while deleting logs");
         }
     }
 

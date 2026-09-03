@@ -92,8 +92,9 @@ public static class AdminTemplateEndpoints
         // Delete Agent Template
         adminTemplateGroup.MapDelete("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
-            [FromServices] ITemplateService templateService,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromQuery] bool cleanActivations = false,
+            [FromServices] ITemplateService templateService = null!,
+            [FromServices] ITenantContext tenantContext = null!) =>
         {
             // Templates are system-scoped (global) resources; only SysAdmins may delete them.
             if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext))
@@ -111,7 +112,7 @@ public static class AdminTemplateEndpoints
             }
 
             var template = templateResult.Data!;
-            var result = await templateService.DeleteSystemScopedAgent(template.Name);
+            var result = await templateService.DeleteSystemScopedAgent(template.Name, cleanActivations);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -226,8 +227,9 @@ public static class AdminTemplateEndpoints
         // Delete Agent Template by Name
         adminTemplateGroup.MapDelete("/agentTemplates/by-name/{templateAgentName}", async (
             string templateAgentName,
-            [FromServices] ITemplateService templateService,
-            [FromServices] ITenantContext tenantContext) =>
+            [FromQuery] bool cleanActivations = false,
+            [FromServices] ITemplateService templateService = null!,
+            [FromServices] ITenantContext tenantContext = null!) =>
         {
             // Templates are system-scoped (global) resources; only SysAdmins may delete them.
             if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext))
@@ -244,7 +246,7 @@ public static class AdminTemplateEndpoints
                 return templateResult.ToHttpResult();
             }
 
-            var result = await templateService.DeleteSystemScopedAgent(templateResult.Data!.Name);
+            var result = await templateService.DeleteSystemScopedAgent(templateResult.Data!.Name, cleanActivations);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();

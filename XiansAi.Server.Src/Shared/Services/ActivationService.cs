@@ -59,6 +59,13 @@ public class ActivationService : IActivationService
     private readonly IActivationCleanupService _cleanupService;
     private readonly IActivationValidationService _activationValidationService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAppIntegrationService _appIntegrationService;
+    private readonly IAdminDataService _dataService;
+    private readonly IKnowledgeService _knowledgeService;
+    private readonly IAdminLogsService _logsService;
+    private readonly IMessageService _messageService;
+    private readonly IAdminMetricsService _metricsService;
+    private readonly IFeedbackService _feedbackService;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -69,6 +76,13 @@ public class ActivationService : IActivationService
         IActivationCleanupService cleanupService,
         IActivationValidationService activationValidationService,
         IWebhookEventPublisher webhookEventPublisher,
+        IAppIntegrationService appIntegrationService,
+        IAdminDataService dataService,
+        IKnowledgeService knowledgeService,
+        IAdminLogsService logsService,
+        IMessageService messageService,
+        IAdminMetricsService metricsService,
+        IFeedbackService feedbackService,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -78,6 +92,13 @@ public class ActivationService : IActivationService
         _cleanupService = cleanupService ?? throw new ArgumentNullException(nameof(cleanupService));
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _appIntegrationService = appIntegrationService ?? throw new ArgumentNullException(nameof(appIntegrationService));
+        _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
+        _knowledgeService = knowledgeService ?? throw new ArgumentNullException(nameof(knowledgeService));
+        _logsService = logsService ?? throw new ArgumentNullException(nameof(logsService));
+        _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
+        _metricsService = metricsService ?? throw new ArgumentNullException(nameof(metricsService));
+        _feedbackService = feedbackService ?? throw new ArgumentNullException(nameof(feedbackService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -704,6 +725,10 @@ public class ActivationService : IActivationService
                 return ServiceResult<bool>.Conflict("Cannot delete an activation with running workflows. Please deactivate it first.");
             }
 
+            // Clean up all data scoped to this activation (app integrations, messages, documents,
+            // knowledge, logs, schedules, usage metrics, feedback) before removing the record itself.
+            await CleanupActivationDataAsync(activation);
+
             var deleted = await _activationRepository.DeleteAsync(activationId);
             if (!deleted)
             {
@@ -727,6 +752,95 @@ public class ActivationService : IActivationService
             _logger.LogError(ex, "Error deleting activation {ActivationId}", LogSanitizer.Sanitize(activationId));
             return ServiceResult<bool>.InternalServerError(
                 "An error occurred while deleting the activation");
+        }
+    }
+
+    /// <summary>
+    /// Best-effort cleanup of all data scoped to an activation: conversation threads/messages,
+    /// documents, knowledge, logs, schedules, app integrations, usage metrics, and feedback.
+    /// Each resource type is cleaned up independently — a failure in one does not block the others
+    /// or the activation record deletion that follows.
+    /// </summary>
+    private async Task CleanupActivationDataAsync(AgentActivation activation)
+    {
+        var tenantId = activation.TenantId;
+        var agentName = activation.AgentName;
+        var activationName = activation.Name;
+
+        try
+        {
+            await _messageService.DeleteMessagesByActivationAsync(tenantId, agentName, activationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete conversation threads/messages for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+        }
+
+        try
+        {
+            await _dataService.DeleteDocumentsByActivationAsync(tenantId, agentName, activationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete documents for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+        }
+
+        try
+        {
+            await _knowledgeService.DeleteAllByAgentAndActivationForTenantAsync(tenantId, agentName, activationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete knowledge for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+        }
+
+        try
+        {
+            await _logsService.DeleteLogsByActivationAsync(tenantId, agentName, activationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete logs for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+        }
+
+        try
+        {
+            // Defensive re-check: schedules are normally already gone from a prior deactivate,
+            // but this covers schedules created without ever starting a workflow.
+            await _cleanupService.DeleteSchedulesByActivationAsync(tenantId, agentName, activationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete schedules for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+        }
+
+        try
+        {
+            // Note: only removes "builtin_webhook" platform integrations — Slack/Teams/Outlook/generic
+            // webhook integrations tied to this activation are not covered by this method.
+            await _appIntegrationService.DeleteBuiltinWebhooksByAgentAndActivationAsync(tenantId, agentName, activationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete app integrations for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+        }
+
+        try
+        {
+            await _metricsService.DeleteMetricsByActivationAsync(tenantId, agentName, activationName, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete usage/performance metrics for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+        }
+
+        try
+        {
+            await _feedbackService.DeleteFeedbackByActivationAsync(tenantId, agentName, activationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete feedback for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
         }
     }
 }

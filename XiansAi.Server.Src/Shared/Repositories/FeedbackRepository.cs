@@ -3,6 +3,7 @@ using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
 using Shared.Utils;
+using System.Text.RegularExpressions;
 
 namespace Shared.Repositories;
 
@@ -57,6 +58,13 @@ public interface IFeedbackRepository
 
     /// <summary>Returns aggregated statistics (counts per rating and per reason category) for the query.</summary>
     Task<FeedbackStatsResult> GetFeedbackStatsAsync(FeedbackQuery query);
+
+    /// <summary>
+    /// Deletes all feedback for a given agent activation. Feedback has no ActivationName field,
+    /// so this matches on WorkflowId ending in ":{activationName}" (same approach as
+    /// ConversationRepository.GetByTenantAgentAndActivationAsync).
+    /// </summary>
+    Task<long> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName);
 }
 
 public class FeedbackRepository : IFeedbackRepository
@@ -187,6 +195,21 @@ public class FeedbackRepository : IFeedbackRepository
                 ReasonCategoryCounts = reasonGroups
             };
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetFeedbackStats");
+    }
+
+    public async Task<long> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var builder = Builders<MessageFeedbackDocument>.Filter;
+            var filter = builder.And(
+                builder.Eq(f => f.TenantId, tenantId),
+                builder.Eq(f => f.AgentName, agentName),
+                builder.Regex(f => f.WorkflowId, new BsonRegularExpression(Regex.Escape(":" + activationName) + "$")));
+
+            var result = await _collection.DeleteManyAsync(filter);
+            return result.DeletedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteFeedbackByAgentAndActivation");
     }
 
     private static FilterDefinition<MessageFeedbackDocument> BuildQueryFilter(FeedbackQuery query)
