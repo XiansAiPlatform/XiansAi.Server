@@ -102,6 +102,25 @@ public static class AdminLogsEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminLogs");
+
+        // Delete all logs for a given agent activation.
+        // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
+        logsGroup.MapDelete("/logs/agents/{agentName}/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IAdminLogsService logsService) =>
+        {
+            var result = await logsService.DeleteLogsByActivationAsync(tenantId, agentName, activationId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = $"Deleted {result.Data} log(s)", deletedCount = result.Data });
+        })
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .WithName("DeleteLogsByActivation");
     }
 
     /// <summary>

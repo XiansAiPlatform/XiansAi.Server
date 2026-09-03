@@ -28,6 +28,8 @@ public interface IKnowledgeRepository
     Task<List<T>> GetSystemScopedByAgentAsync<T>(string agentName) where T : IKnowledge;
     Task<List<T>> GetByAgentAndTenantAsync<T>(string agentName, string tenantId) where T : IKnowledge;
     Task<long> DeleteAllByAgentAsync<T>(string agentName, string? tenantId) where T : IKnowledge;
+    Task<long> DeleteAllByAgentAndActivationAsync<T>(string agentName, string tenantId, string activationName) where T : IKnowledge;
+    Task<long> DeleteOrganizationLevelByAgentAsync<T>(string agentName, string tenantId) where T : IKnowledge;
 }
 
 public class KnowledgeRepository : IKnowledgeRepository
@@ -526,6 +528,44 @@ public class KnowledgeRepository : IKnowledgeRepository
             var result = await collection.DeleteManyAsync(filter);
             return result.DeletedCount;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteAllByAgent");
+    }
+
+    public async Task<long> DeleteAllByAgentAndActivationAsync<T>(string agentName, string tenantId, string activationName) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+
+            var filter = Builders<T>.Filter.And(
+                Builders<T>.Filter.Eq(x => x.Agent, agentName),
+                Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<T>.Filter.Eq(x => x.ActivationName, activationName));
+
+            var result = await collection.DeleteManyAsync(filter);
+            return result.DeletedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteAllByAgentAndActivation");
+    }
+
+    public async Task<long> DeleteOrganizationLevelByAgentAsync<T>(string agentName, string tenantId) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+
+            // Organization-level knowledge is shared across all activations of the agent —
+            // identified by having no activation_name, as opposed to activation-scoped knowledge.
+            var noActivationFilter = Builders<T>.Filter.Or(
+                Builders<T>.Filter.Eq(x => x.ActivationName, null),
+                Builders<T>.Filter.Eq(x => x.ActivationName, string.Empty));
+
+            var filter = Builders<T>.Filter.And(
+                Builders<T>.Filter.Eq(x => x.Agent, agentName),
+                Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
+                noActivationFilter);
+
+            var result = await collection.DeleteManyAsync(filter);
+            return result.DeletedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteOrganizationLevelByAgent");
     }
 
 

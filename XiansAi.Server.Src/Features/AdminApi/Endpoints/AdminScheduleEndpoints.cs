@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Features.WebApi.Services;
 using Features.AdminApi.Auth;
 using Shared.Models.Schedule;
+using Shared.Services;
 using Shared.Utils.Services;
 
 namespace Features.AdminApi.Endpoints;
@@ -239,6 +240,27 @@ public static class AdminScheduleEndpoints
         .WithName("AdminDeleteAllAgentSchedules")
         .WithSummary("Delete all schedules for an agent")
         .WithDescription("Deletes all schedules associated with the specified agent. This operation cannot be undone.")
+        ;
+
+        // Delete all schedules for a given agent activation.
+        // Note: "activationId" here is the activation's name (Temporal's idPostfix search
+        // attribute), not the AgentActivation record's id. Unlike the other categories, schedules
+        // are Temporal-native (no Mongo collection), so this reuses IActivationCleanupService's
+        // find-then-delete primitives rather than a repository.
+        scheduleGroup.MapDelete("/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IActivationCleanupService activationCleanupService) =>
+        {
+            var result = await activationCleanupService.DeleteSchedulesByActivationAsync(tenantId, agentName, activationId);
+            return result.ToHttpResult();
+        })
+        .Produces<ScheduleCleanupResult>()
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithName("AdminDeleteSchedulesByActivation")
+        .WithSummary("Delete all schedules for an agent activation")
+        .WithDescription("Deletes all Temporal schedules matching the given agent and activation (idPostfix). This operation cannot be undone.")
         ;
     }
 

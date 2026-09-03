@@ -56,6 +56,8 @@ public interface ILogRepository
         DateTime? endDate,
         int page = 1,
         int pageSize = 20);
+
+    Task<long> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName);
 }
 
 /// <summary>
@@ -503,5 +505,22 @@ public class LogRepository : ILogRepository
         }
 
         return filter;
+    }
+
+    public async Task<long> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName)
+    {
+        var filter = BuildAdminLogsFilter(
+            tenantId,
+            agentName,
+            activationName,
+            participantId: null,
+            workflowIds: null,
+            workflowType: null,
+            logLevels: null,
+            startDate: null,
+            endDate: null);
+
+        var result = await _logs.DeleteManyAsync(filter);
+        return result.DeletedCount;
     }
 }

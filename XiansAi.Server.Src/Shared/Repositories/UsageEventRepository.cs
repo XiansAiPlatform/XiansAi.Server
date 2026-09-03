@@ -12,7 +12,9 @@ public interface IUsageEventRepository
     Task<List<UsageMetric>> GetMetricsAsync(string tenantId, string? participantId, DateTime? since = null, CancellationToken cancellationToken = default);
     
     Task<int> DeleteByAgentAsync(string tenantId, string agentName, CancellationToken cancellationToken = default);
-    
+
+    Task<int> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName, CancellationToken cancellationToken = default);
+
     // Flexible aggregation method for usage events statistics
     Task<UsageEventsResponse> GetUsageEventsAsync(
         string tenantId, 
@@ -104,6 +106,21 @@ public class UsageEventRepository : IUsageEventRepository
             var result = await _collection.DeleteManyAsync(filter, cancellationToken);
             return (int)result.DeletedCount;
         }, _logger, operationName: "DeleteUsageMetricsByAgent");
+    }
+
+    public async Task<int> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName, CancellationToken cancellationToken = default)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var builder = Builders<UsageMetric>.Filter;
+            var filter = builder.And(
+                builder.Eq(x => x.TenantId, tenantId),
+                builder.Eq(x => x.AgentName, agentName),
+                builder.Eq(x => x.ActivationName, activationName));
+
+            var result = await _collection.DeleteManyAsync(filter, cancellationToken);
+            return (int)result.DeletedCount;
+        }, _logger, operationName: "DeleteUsageMetricsByAgentAndActivation");
     }
 
     public async Task<List<UsageMetric>> GetMetricsAsync(string tenantId, string? participantId, DateTime? since = null, CancellationToken cancellationToken = default)

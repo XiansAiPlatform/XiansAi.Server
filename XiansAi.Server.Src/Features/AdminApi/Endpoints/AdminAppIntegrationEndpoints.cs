@@ -142,6 +142,27 @@ public static class AdminAppIntegrationEndpoints
         
         .Produces(StatusCodes.Status200OK);
 
+        // Delete all builtin webhooks for a given agent activation.
+        // Note: "activationId" here is the activation's name (matching
+        // AppIntegration.ActivationName), not the AgentActivation record's id.
+        webhookGroup.MapDelete("/agents/{agentName}/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IAppIntegrationService integrationService) =>
+        {
+            var result = await integrationService.DeleteBuiltinWebhooksByAgentAndActivationAsync(tenantId, agentName, activationId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = $"Deleted {result.Data} webhook(s)", deletedCount = result.Data });
+        })
+        .WithName("DeleteWebhooksByActivation")
+
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
+
         webhookGroup.MapDelete("{integrationId}", async (
             string tenantId,
             string integrationId,

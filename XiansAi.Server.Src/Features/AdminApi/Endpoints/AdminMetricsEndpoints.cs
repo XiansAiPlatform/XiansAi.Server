@@ -141,5 +141,26 @@ public static class AdminMetricsEndpoints
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminMetricsCategories")
         ;
+
+        // Delete all performance-metric records for a given agent activation.
+        // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
+        metricsGroup.MapDelete("/agents/{agentName}/activation/{activationId}", async (
+            string tenantId,
+            string agentName,
+            string activationId,
+            [FromServices] IAdminMetricsService metricsService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await metricsService.DeleteMetricsByActivationAsync(tenantId, agentName, activationId, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = $"Deleted {result.Data} metric(s)", deletedCount = result.Data });
+        })
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .WithName("DeleteMetricsByActivation")
+        ;
     }
 }

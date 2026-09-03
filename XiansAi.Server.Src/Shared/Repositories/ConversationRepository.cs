@@ -213,6 +213,16 @@ public interface IConversationRepository
     // Thread operations
     Task<string> CreateOrGetThreadIdAsync(ConversationThread thread);
     Task<List<ConversationThread>> GetByTenantAndAgentAsync(string tenantId, string agent, int? page = null, int? pageSize = null);
+    /// <summary>
+    /// Gets every thread (across all participants) for a given agent activation, matched by
+    /// WorkflowId ending in ":{activationName}".
+    /// </summary>
+    Task<List<ConversationThread>> GetByTenantAgentAndActivationAsync(string tenantId, string agent, string activationName);
+    /// <summary>
+    /// Gets every thread (across all agents and participants) whose WorkflowId ends in
+    /// ":{activationName}", for a given tenant. Use when the agent name isn't known.
+    /// </summary>
+    Task<List<ConversationThread>> GetByTenantAndActivationAsync(string tenantId, string activationName);
     Task<bool> DeleteThreadAsync(string threadId, string? tenantId = null);
     Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
 
@@ -411,6 +421,49 @@ public class ConversationRepository : IConversationRepository
             
             return results;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantAndAgent");
+    }
+
+    public async Task<List<ConversationThread>> GetByTenantAgentAndActivationAsync(string tenantId, string agent, string activationName)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<ConversationThread>.Filter.And(
+                Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationThread>.Filter.Eq(x => x.Agent, agent),
+                Builders<ConversationThread>.Filter.Regex(
+                    x => x.WorkflowId,
+                    new BsonRegularExpression(Regex.Escape(":" + activationName) + "$"))
+            );
+
+            var results = await _threadsCollection.Find(filter).ToListAsync();
+
+            _logger.LogDebug(
+                "GetByTenantAgentAndActivationAsync returned {Count} threads for tenant {TenantId}, agent {Agent}, activation {Activation}",
+                results.Count, LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agent), LogSanitizer.Sanitize(activationName));
+
+            return results;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantAgentAndActivation");
+    }
+
+    public async Task<List<ConversationThread>> GetByTenantAndActivationAsync(string tenantId, string activationName)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<ConversationThread>.Filter.And(
+                Builders<ConversationThread>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationThread>.Filter.Regex(
+                    x => x.WorkflowId,
+                    new BsonRegularExpression(Regex.Escape(":" + activationName) + "$"))
+            );
+
+            var results = await _threadsCollection.Find(filter).ToListAsync();
+
+            _logger.LogDebug(
+                "GetByTenantAndActivationAsync returned {Count} threads for tenant {TenantId}, activation {Activation}",
+                results.Count, LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(activationName));
+
+            return results;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantAndActivation");
     }
 
     public async Task<bool> DeleteThreadAsync(string id, string? tenantId = null)

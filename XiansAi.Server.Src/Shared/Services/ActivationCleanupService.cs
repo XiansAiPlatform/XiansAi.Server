@@ -64,6 +64,15 @@ public interface IActivationCleanupService
     /// <returns>Result with cleanup statistics</returns>
     Task<ServiceResult<ActivationCleanupResult>> CleanupActivationResourcesAsync(
         AgentActivation activation);
+
+    /// <summary>
+    /// Finds and deletes all schedules for an activation (combines
+    /// <see cref="FindSchedulesByActivationAsync"/> + <see cref="DeleteSchedulesAsync"/>).
+    /// </summary>
+    Task<ServiceResult<ScheduleCleanupResult>> DeleteSchedulesByActivationAsync(
+        string tenantId,
+        string agentName,
+        string idPostfix);
 }
 
 /// <summary>
@@ -509,5 +518,20 @@ public class ActivationCleanupService : IActivationCleanupService
             return ServiceResult<ActivationCleanupResult>.InternalServerError(
                 $"Failed to cleanup activation resources: {ex.Message}");
         }
+    }
+
+    public async Task<ServiceResult<ScheduleCleanupResult>> DeleteSchedulesByActivationAsync(
+        string tenantId,
+        string agentName,
+        string idPostfix)
+    {
+        var schedulesResult = await FindSchedulesByActivationAsync(tenantId, agentName, idPostfix);
+        if (!schedulesResult.IsSuccess)
+        {
+            return ServiceResult<ScheduleCleanupResult>.InternalServerError(
+                $"Failed to find schedules: {schedulesResult.ErrorMessage}");
+        }
+
+        return await DeleteSchedulesAsync(schedulesResult.Data!, tenantId, agentName);
     }
 }
