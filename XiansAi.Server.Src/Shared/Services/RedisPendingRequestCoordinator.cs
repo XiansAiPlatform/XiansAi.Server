@@ -64,6 +64,15 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
                 "Failed to check Redis for pending request {RequestId}",
                 LogSanitizer.Sanitize(requestId));
         }
+        catch (RedisTimeoutException ex)
+        {
+            // RedisTimeoutException derives from TimeoutException, not RedisException.
+            // Without this handler a slow Redis would fail the waiting request instead of
+            // letting it complete locally.
+            _logger.LogWarning(ex,
+                "Timed out checking Redis for pending request {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex,
@@ -124,6 +133,13 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
                 "Failed to publish pending request completion to Redis for {RequestId}",
                 LogSanitizer.Sanitize(requestId));
         }
+        catch (RedisTimeoutException ex)
+        {
+            // RedisTimeoutException derives from TimeoutException, not RedisException.
+            _logger.LogWarning(ex,
+                "Timed out publishing pending request completion to Redis for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex,
@@ -182,6 +198,14 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
             _logger.LogWarning(
                 ex,
                 "Failed to subscribe to Redis pending-request completion channel {Channel}",
+                CompletionChannelName);
+        }
+        catch (RedisTimeoutException ex)
+        {
+            // RedisTimeoutException derives from TimeoutException, not RedisException.
+            _logger.LogWarning(
+                ex,
+                "Timed out subscribing to Redis pending-request completion channel {Channel}",
                 CompletionChannelName);
         }
         catch (ObjectDisposedException ex)
@@ -248,6 +272,13 @@ public sealed class RedisPendingRequestCoordinator : IPendingRequestCoordinator,
         {
             _logger.LogWarning(ex,
                 "Failed to retrieve pending request result from Redis for {RequestId}",
+                LogSanitizer.Sanitize(requestId));
+        }
+        catch (RedisTimeoutException ex)
+        {
+            // RedisTimeoutException derives from TimeoutException, not RedisException.
+            _logger.LogWarning(ex,
+                "Timed out retrieving pending request result from Redis for {RequestId}",
                 LogSanitizer.Sanitize(requestId));
         }
         catch (JsonException ex)

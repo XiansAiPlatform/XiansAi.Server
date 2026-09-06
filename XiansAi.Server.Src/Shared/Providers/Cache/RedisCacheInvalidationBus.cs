@@ -52,6 +52,12 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
             // Invalidation is best-effort and must never break the business operation that caused it.
             _logger.LogWarning(ex, "Failed to publish cache invalidation to Redis");
         }
+        catch (RedisTimeoutException ex)
+        {
+            // RedisTimeoutException derives from TimeoutException, not RedisException,
+            // so it needs its own handler or a slow Redis would fail the caller.
+            _logger.LogWarning(ex, "Timed out publishing cache invalidation to Redis");
+        }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to serialize cache invalidation envelope");
@@ -89,6 +95,11 @@ public sealed class RedisCacheInvalidationBus : ICacheInvalidationBus, IHostedSe
         catch (RedisException ex)
         {
             _logger.LogWarning(ex, "Failed to subscribe to Redis cache invalidation channel {Channel}", ChannelName);
+        }
+        catch (RedisTimeoutException ex)
+        {
+            // RedisTimeoutException derives from TimeoutException, not RedisException.
+            _logger.LogWarning(ex, "Timed out subscribing to Redis cache invalidation channel {Channel}", ChannelName);
         }
         catch (ObjectDisposedException ex)
         {

@@ -20,6 +20,10 @@ namespace Features.UserApi.Services
         // never dropped; re-checking on every transient-error reconnect adds unnecessary I/O.
         private static volatile bool _collectionEnsured = false;
 
+        // Skip the replica-set support check after it has passed once. The deployment
+        // topology does not change while the process runs.
+        private static volatile bool _changeStreamSupportEnsured = false;
+
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MongoChangeStreamService> _logger;
         private readonly IMessageEventPublisher _messageEventPublisher;
@@ -60,29 +64,6 @@ namespace Features.UserApi.Services
             // Mongo retries before Kestrel binds.
             await Task.Yield();
 
-            using (var scope = _scopeFactory.CreateScope())
-            {
-                var database = await scope.ServiceProvider
-                    .GetRequiredService<IDatabaseService>()
-                    .GetDatabaseAsync();
-                if (!await SupportsChangeStreamsAsync(database, stoppingToken))
-                {
-                    _logger.LogWarning(
-                        "MongoDB deployment does not support change streams (standalone instance detected). " +
-                        "Live SignalR/SSE message push is disabled until MongoDB runs as a replica set.");
-                    try
-                    {
-                        await Task.Delay(Timeout.Infinite, stoppingToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        _logger.LogInformation("MongoChangeStreamService is stopping.");
-                    }
-
-                    return;
-                }
-            }
-
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -93,6 +74,26 @@ namespace Features.UserApi.Services
                     var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
                     var tenantHubContext = scope.ServiceProvider.GetRequiredService<IHubContext<TenantChatHub>>();
                     var database = await databaseService.GetDatabaseAsync();
+
+                    // The support check runs inside the retry loop: an unhandled exception in
+                    // ExecuteAsync stops the whole host (BackgroundServiceExceptionBehavior.StopHost),
+                    // so a transient Mongo outage at startup must hit the catch blocks below and
+                    // retry instead of escaping.
+                    if (!_changeStreamSupportEnsured)
+                    {
+                        if (!await SupportsChangeStreamsAsync(database, stoppingToken))
+                        {
+                            _logger.LogWarning(
+                                "MongoDB deployment does not support change streams (standalone instance detected). " +
+                                "Live SignalR/SSE message push is disabled until MongoDB runs as a replica set.");
+                            // Sleeps until shutdown; the cancellation lands in the
+                            // OperationCanceledException handler below, which stops the loop.
+                            await Task.Delay(Timeout.Infinite, stoppingToken);
+                            return;
+                        }
+
+                        _changeStreamSupportEnsured = true;
+                    }
                     var collectionName = "conversation_message";
                     var collection = database.GetCollection<ConversationMessage>(collectionName);
 
@@ -319,7 +320,7 @@ namespace Features.UserApi.Services
                 return true;
             }
 
-            return hello.TryGetValue("msg", out var msg) && msg.AsString == "isdbgrid";
+            return hello.TryGetValue("msg", out var msg) && msg.IsString && msg.AsString == "isdbgrid";
         }
 
         private static bool IsChangeStreamUnsupported(MongoCommandException ex) =>

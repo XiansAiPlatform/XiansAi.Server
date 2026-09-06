@@ -66,6 +66,25 @@ public class RedisCacheInvalidationBusTests
     }
 
     [Fact]
+    public async Task PublishAsync_WhenRedisTimesOut_DoesNotThrow()
+    {
+        // RedisTimeoutException derives from TimeoutException, not RedisException,
+        // so it must be handled explicitly for publishing to stay best-effort.
+        var subscriber = new Mock<ISubscriber>();
+        subscriber
+            .Setup(value => value.PublishAsync(
+                It.IsAny<RedisChannel>(),
+                It.IsAny<RedisValue>(),
+                It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new RedisTimeoutException("timeout", CommandStatus.Unknown));
+        var bus = CreateBus(subscriber);
+
+        var exception = await Record.ExceptionAsync(() => bus.PublishAsync(CreateEnvelope()));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public async Task StartAsync_SubscriptionAppliesDeserializedEnvelope()
     {
         var subscriber = new Mock<ISubscriber>();

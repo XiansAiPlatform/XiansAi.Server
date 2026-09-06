@@ -136,6 +136,45 @@ public class RedisPendingRequestCoordinatorTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => announceTask);
     }
 
+    [Fact]
+    public async Task AnnounceWaitAsync_WhenRedisTimesOut_DoesNotThrow()
+    {
+        // RedisTimeoutException derives from TimeoutException, not RedisException,
+        // so it must be handled explicitly or a slow Redis would fail the waiting
+        // request instead of letting it complete locally.
+        var database = new Mock<IDatabase>();
+        database
+            .Setup(value => value.StringGetAsync(
+                It.IsAny<RedisKey>(),
+                It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new RedisTimeoutException("timeout", CommandStatus.Unknown));
+        var coordinator = CreateCoordinator(database, new Mock<ISubscriber>(), CreatePassThroughEncryption().Object);
+
+        var exception = await Record.ExceptionAsync(() => coordinator.AnnounceWaitAsync("req-1"));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task PublishCompletionAsync_WhenRedisTimesOut_DoesNotThrow()
+    {
+        var database = new Mock<IDatabase>();
+        database
+            .Setup(value => value.StringSetAsync(
+                It.IsAny<RedisKey>(),
+                It.IsAny<RedisValue>(),
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<When>(),
+                It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new RedisTimeoutException("timeout", CommandStatus.Unknown));
+        var coordinator = CreateCoordinator(database, new Mock<ISubscriber>(), CreatePassThroughEncryption().Object);
+
+        var exception = await Record.ExceptionAsync(() =>
+            coordinator.PublishCompletionAsync("req-1", CreateMessage("req-1"), MessageType.Chat));
+
+        Assert.Null(exception);
+    }
+
     private static Mock<ISecureEncryptionService> CreatePassThroughEncryption()
     {
         var encryption = new Mock<ISecureEncryptionService>();
