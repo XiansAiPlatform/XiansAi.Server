@@ -24,6 +24,7 @@ public class RoleManagementServiceSysAdminEmailTests
 
     private readonly Mock<IUserRepository> _userRepo = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
+    private readonly Mock<IUserAuthorizationInvalidator> _authorizationInvalidator = new();
 
     public RoleManagementServiceSysAdminEmailTests()
     {
@@ -35,11 +36,10 @@ public class RoleManagementServiceSysAdminEmailTests
     private RoleManagementService BuildService() =>
         new(
             _userRepo.Object,
-            Mock.Of<IRoleCacheService>(),
             _tenantContext.Object,
             NullLogger<RoleManagementService>.Instance,
             Mock.Of<IAuthProviderFactory>(),
-            Mock.Of<ITokenValidationCache>());
+            _authorizationInvalidator.Object);
 
     private void ArrangeTarget(string email, bool emailIsShared)
     {
@@ -71,6 +71,7 @@ public class RoleManagementServiceSysAdminEmailTests
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(x => x.UpdateAsync(TargetUserId, It.Is<User>(u => u.IsSysAdmin)), Times.Once);
+        _authorizationInvalidator.Verify(x => x.InvalidateAsync(TargetUserId), Times.Once);
     }
 
     [Fact]

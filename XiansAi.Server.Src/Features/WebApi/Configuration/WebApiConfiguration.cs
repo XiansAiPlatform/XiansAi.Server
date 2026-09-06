@@ -48,7 +48,9 @@ public static class WebApiConfiguration
     public static WebApplicationBuilder AddWebApiOidcAuth(this WebApplicationBuilder builder)
     {
         var authProvider = builder.Configuration["AuthProvider:Provider"];
-        var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+        using var startupLoggerFactory = LoggerFactory.Create(lb =>
+            lb.SetMinimumLevel(LogLevel.Information).AddSimpleConsole());
+        var logger = startupLoggerFactory.CreateLogger<Program>();
 
         if (string.IsNullOrWhiteSpace(authProvider))
         {

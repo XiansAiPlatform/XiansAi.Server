@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Providers.Auth;
 
@@ -9,16 +10,16 @@ public static class AuthConfigurationExtensions
     {
         // Add Authentication without setting global defaults - let each endpoint specify its own scheme
         builder.Services.AddAuthentication()
-        .AddJwtBearer("JWT", options =>
-        {
-            // Use the service provider to get the appropriate provider
-            var serviceProvider = builder.Services.BuildServiceProvider();
-            var authProviderFactory = serviceProvider.GetRequiredService<IAuthProviderFactory>();
-            var authProvider = authProviderFactory.GetProvider();
-            
-            // Configure JWT options via the provider
-            authProvider.ConfigureJwtBearer(options, builder.Configuration);
-        });
+            .AddJwtBearer("JWT", _ => { });
+
+        // Never call BuildServiceProvider() during service registration — it creates a second
+        // root container whose hosted services can deadlock the real host at RunAsync().
+        builder.Services.AddOptions<JwtBearerOptions>("JWT")
+            .Configure<IAuthProviderFactory, IConfiguration>((options, authProviderFactory, configuration) =>
+            {
+                var authProvider = authProviderFactory.GetProvider();
+                authProvider.ConfigureJwtBearer(options, configuration);
+            });
         
         // Add Authorization with the unified auth requirement
         builder.Services.AddAuthorization(options =>

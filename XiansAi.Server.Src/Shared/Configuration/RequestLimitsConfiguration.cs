@@ -82,7 +82,9 @@ public static class RequestLimitsConfiguration
             options.MemoryBufferThreshold = 65_536;
         });
 
-        var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+        using var startupLoggerFactory = LoggerFactory.Create(lb =>
+            lb.SetMinimumLevel(LogLevel.Information).AddSimpleConsole());
+        var logger = startupLoggerFactory.CreateLogger<Program>();
         logger.LogInformation(
             "Request limits configured - MaxRequestBodySize: {MaxRequestBodySize}MB, " +
             "MultipartBodyLengthLimit: {MultipartBodyLengthLimit}MB, " +

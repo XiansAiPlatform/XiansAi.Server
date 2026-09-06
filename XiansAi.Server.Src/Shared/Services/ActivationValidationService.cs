@@ -1,4 +1,5 @@
 using Shared.Repositories;
+using Shared.Providers;
 using Shared.Utils.Services;
 using Shared.Utils;
 
@@ -70,6 +71,7 @@ public class ActivationValidationService : IActivationValidationService
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly IAsyncResultCache _cache;
     private readonly ILogger<ActivationValidationService> _logger;
+    private readonly ICacheInvalidationBus _invalidationBus;
 
     // Activation state and flow definitions change rarely and every mutation path invalidates the
     // relevant key explicitly, so these durations only bound staleness for server instances that
@@ -82,12 +84,14 @@ public class ActivationValidationService : IActivationValidationService
         IFlowDefinitionRepository flowDefinitionRepository,
         IAsyncResultCache cache,
         ILogger<ActivationValidationService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ICacheInvalidationBus invalidationBus)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
         _flowDefinitionRepository = flowDefinitionRepository ?? throw new ArgumentNullException(nameof(flowDefinitionRepository));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _invalidationBus = invalidationBus ?? throw new ArgumentNullException(nameof(invalidationBus));
 
         if (configuration == null) throw new ArgumentNullException(nameof(configuration));
 
@@ -201,12 +205,26 @@ public class ActivationValidationService : IActivationValidationService
 
     public void InvalidateActivationCache(string tenantId, string agentName, string activationName)
     {
-        _cache.Remove(BuildCacheKey(tenantId, agentName, activationName));
+        var cacheKey = BuildCacheKey(tenantId, agentName, activationName);
+        _cache.Remove(cacheKey);
+        _ = _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+            CacheInvalidationType.Activation,
+            UserId: null,
+            TenantId: tenantId,
+            Keys: [cacheKey],
+            DateTimeOffset.UtcNow));
     }
 
     public void InvalidateAgentWorkflowTypesCache(string tenantId, string agentName)
     {
-        _cache.Remove(BuildAgentWorkflowTypesCacheKey(tenantId, agentName));
+        var cacheKey = BuildAgentWorkflowTypesCacheKey(tenantId, agentName);
+        _cache.Remove(cacheKey);
+        _ = _invalidationBus.PublishAsync(new CacheInvalidationEnvelope(
+            CacheInvalidationType.AgentWorkflowTypes,
+            UserId: null,
+            TenantId: tenantId,
+            Keys: [cacheKey],
+            DateTimeOffset.UtcNow));
     }
 
     private static string BuildCacheKey(string tenantId, string agentName, string activationName)

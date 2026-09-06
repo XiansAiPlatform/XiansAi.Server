@@ -98,23 +98,20 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
     private readonly IUserRepository _userRepository;
     private readonly IUserTenantService _userTenantService;
-    private readonly IRoleCacheService _roleCacheService;
-    private readonly ITokenValidationCache _tokenCache;
+    private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly ILogger<TenantParticipantUserService> _logger;
 
     public TenantParticipantUserService(
         IUserRepository userRepository,
         IUserTenantService userTenantService,
-        IRoleCacheService roleCacheService,
-        ITokenValidationCache tokenCache,
+        IUserAuthorizationInvalidator authorizationInvalidator,
         IWebhookEventPublisher webhookEventPublisher,
         ILogger<TenantParticipantUserService> logger)
     {
         _userRepository = userRepository;
         _userTenantService = userTenantService;
-        _roleCacheService = roleCacheService;
-        _tokenCache = tokenCache;
+        _authorizationInvalidator = authorizationInvalidator;
         _webhookEventPublisher = webhookEventPublisher;
         _logger = logger;
     }
@@ -577,8 +574,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
     private async Task InvalidateCachesAsync(string userId, string tenantId)
     {
-        _roleCacheService.InvalidateUserRoles(userId, tenantId);
-        await _tokenCache.InvalidateUserTokens(userId);
+        await _authorizationInvalidator.InvalidateAsync(userId);
     }
 
     /// <summary>Tenant role containing a participant role, regardless of approval status.</summary>
