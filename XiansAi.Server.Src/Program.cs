@@ -78,8 +78,21 @@ public class Program
         }
     }
 
-    // .env values must win over stale shell variables (e.g. Cache__Provider=memory left in a terminal).
-    private static readonly LoadOptions EnvFileLoadOptions = new(clobberExistingVars: true);
+    // .env values win over stale shell variables (e.g. Cache__Provider=memory left in a
+    // terminal) only in Development. Everywhere else existing variables are never overwritten:
+    // secrets and configuration provided by the orchestrator (Kubernetes, Azure App Settings)
+    // must win over any .env file that accidentally ships with a deployment. Note that
+    // DotNetEnv's own default is clobberExistingVars: true, so the non-Development case must
+    // opt out explicitly. Unset ASPNETCORE_ENVIRONMENT is treated as non-Development on
+    // purpose (fail closed), matching RedisConnectionSecurity.
+    private static LoadOptions EnvFileLoadOptions =>
+        new(clobberExistingVars: IsDevelopmentEnvironment());
+
+    private static bool IsDevelopmentEnvironment() =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+            "Development",
+            StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Loads environment variables from the appropriate file(s).
@@ -87,6 +100,12 @@ public class Program
     /// <param name="customEnvFiles">Optional custom environment file paths specified via command line.</param>
     private static void LoadEnvironmentVariables(List<string> customEnvFiles)
     {
+        if (!IsDevelopmentEnvironment())
+        {
+            Console.WriteLine("Non-Development environment: existing environment variables take precedence over .env files");
+            _logger?.LogInformation("Non-Development environment: existing environment variables take precedence over .env files");
+        }
+
         if (customEnvFiles != null && customEnvFiles.Count > 0)
         {
             // Load each custom environment file
