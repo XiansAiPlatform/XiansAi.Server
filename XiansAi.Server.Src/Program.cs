@@ -7,6 +7,7 @@ using Shared.Data;
 using Features.WebApi.Scripts;
 using Features.UserApi.Configuration;
 using Features.AdminApi.Configuration;
+using Features.AdminApi.Services;
 using Features.AppsApi.Configuration;
 
 /// <summary>
@@ -247,8 +248,12 @@ public class Program
         var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
         await indexSynchronizer.EnsureIndexesAsync();
 
-        // Seed default data 
+        // Seed default data
         await SeedData.SeedDefaultDataAsync(app.Services, _logger);
+
+        // Provision the admin-console pseudo-tenant's OIDC config from AdminConsoleOidc:* env vars,
+        // so AdminApi's per-user identity check (X-User-Token) doesn't need a manual API call to set up.
+        await AdminConsoleOidcSeeder.SeedAsync(app.Services, _logger);
 
         return app;
     }
