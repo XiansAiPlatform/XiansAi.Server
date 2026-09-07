@@ -70,6 +70,15 @@ public static class AdminTenantScopeGuard
         Results.Json(
             new { message = "Access denied: Only system administrators can perform this operation" },
             statusCode: StatusCodes.Status403Forbidden);
+
+    /// <summary>
+    /// Standard 401 response used when a route requires a verified acting human and the caller
+    /// only presented the shared API key.
+    /// </summary>
+    public static IResult VerifiedActingUserRequired() =>
+        Results.Json(
+            new { message = "This operation requires a verified user token (X-User-Token), not just the API key" },
+            statusCode: StatusCodes.Status401Unauthorized);
 }
 
 /// <summary>
@@ -125,6 +134,35 @@ public sealed class TenantRouteScopeFilter : IEndpointFilter
                 LogSanitizer.Sanitize(tenantContext.TenantId),
                 LogSanitizer.Sanitize(tenantContext.LoggedInUser));
             return AdminTenantScopeGuard.TenantScopeMismatch();
+        }
+
+        return await next(context);
+    }
+}
+
+/// <summary>
+/// Endpoint filter that requires a verified acting human on the request (see
+/// <c>AdminEndpointAuthenticationHandler.TryApplyVerifiedActingUserAsync</c>), not just the shared
+/// API key. Apply to sensitive AdminApi routes — granting/denying access, deleting resources. A caller that omits the verified token must be
+/// rejected outright, not quietly fall back to the key owner's identity. Routes with a legitimate
+/// non-human caller (scripts, jobs) should not get this filter.
+/// </summary>
+public sealed class RequireVerifiedActingUserFilter : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var httpContext = context.HttpContext;
+        var tenantContext = httpContext.RequestServices.GetRequiredService<ITenantContext>();
+
+        if (!tenantContext.ActingUserVerified)
+        {
+            var logger = httpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("AdminVerifiedActingUserScope");
+            logger.LogWarning(
+                "Rejected request to a verified-acting-user-required route: no verified user token present. ServiceCaller: {UserId}",
+                LogSanitizer.Sanitize(tenantContext.ServiceCallerUserId ?? tenantContext.LoggedInUser));
+            return AdminTenantScopeGuard.VerifiedActingUserRequired();
         }
 
         return await next(context);
