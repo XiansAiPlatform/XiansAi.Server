@@ -2,7 +2,7 @@
 
 This document provides a comprehensive guide for configuring authentication providers in the XiansAi Server. The system supports multiple authentication providers through a unified interface, allowing you to switch between providers with minimal configuration changes.
 
-> **Note:** Configuring an identity provider is optional. It is only required for Agent Studio user (browser) login via the WebAPI. If `AuthProvider__Provider` is omitted (or set to `None`), the WebAPI login surface is not wired and the platform runs in Admin-API-key-only mode — Admin APIs authenticate with the bootstrapped API key and agents authenticate with certificates.
+> **Note:** Configuring an identity provider is optional. It is only required for Agent Studio user (browser) login via the WebAPI. If `AuthProvider__Provider` is omitted (or set to `None`), the WebAPI login surface is not wired and the platform runs in Admin-API-key-only mode — Admin APIs authenticate with the bootstrapped API key and agents authenticate with certificates. Separately and optionally, AdminApi callers may also forward a verified human's own OIDC token via `X-User-Token` — see [Admin Console OIDC](#admin-console-oidc-verified-acting-user-for-adminapi) below.
 
 ## Architecture Overview
 
@@ -304,6 +304,42 @@ more than one account, in which case it falls back to the subject.
 
 See [`EMAIL_IDENTITY_RESOLUTION.md`](EMAIL_IDENTITY_RESOLUTION.md) for how identity and authority are
 resolved when an address names several accounts, including the rules for system administrators.
+
+### Admin Console OIDC (verified acting user for AdminApi)
+
+AdminApi authenticates every request on a single shared API key (the key owner, not the human
+operating the client). Any AdminApi client (agent-studio today) may additionally forward that
+human's own OIDC ID token via an `X-User-Token` header, alongside the unchanged `Authorization:
+Bearer` API key, to upgrade the resolved identity to the real verified human — see
+[Verified Acting User](admin-api/roles.md#verified-acting-user-x-user-token) in the Admin API
+roles doc for the full authorization behavior this unlocks.
+
+That token is validated against a dedicated `admin-console` **pseudo-tenant**, not any real
+tenant's own OIDC config — the humans behind an AdminApi client operate across many tenants, not
+one. Configure its provider(s) the same way you would any tenant's OIDC provider list:
+
+```bash
+# Seeding is on by default; set to false to disable it without removing every provider below.
+#AdminConsoleOidc__Enabled=true
+
+# One block per provider, keyed by an arbitrary name (e.g. "agentstudio") — the name is never
+# interpreted, it only has to be unique.
+AdminConsoleOidc__Providers__agentstudio__Authority=https://your-idp.example.com/
+AdminConsoleOidc__Providers__agentstudio__ClientId=your-agentstudio-client-id
+
+# Optional; defaults to Authority. Set only if the token's issuer claim differs from the authority.
+#AdminConsoleOidc__Providers__agentstudio__Issuer=
+
+# Optional; left unset by default. Only set this if the provider actually puts a verifiable
+# scope/scp claim in its ID tokens (most don't — scope is normally an access-token concept).
+#AdminConsoleOidc__Providers__agentstudio__Scope=
+```
+
+Leaving every `AdminConsoleOidc__Providers__*` entry unset keeps AdminApi exactly as it was: API
+key only, no `X-User-Token` support — any forwarded header would simply fail validation. This
+config is provisioned into the `admin-console` pseudo-tenant's OIDC record automatically at
+startup (`AdminConsoleOidcSeeder`), unlike a real tenant's OIDC config, which is written through an
+API call.
 
 ### Certificate Validation Caching (Agent API)
 

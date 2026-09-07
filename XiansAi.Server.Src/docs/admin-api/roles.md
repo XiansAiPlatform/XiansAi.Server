@@ -19,6 +19,10 @@ Authentication and authorization happen in two stages:
 Both stages delegate role/tenant resolution to **`AdminRoleTenantResolver`**, which is the
 single source of truth for who may call the Admin API.
 
+Optionally, a caller may forward a second credential — the real human operator's own OIDC token —
+which upgrades the resolved identity from the API key owner to that verified human. See
+[Verified Acting User](#verified-acting-user-x-user-token) below.
+
 > **Key rule:** Only callers whose API key owner holds the **`SysAdmin`** or **`TenantAdmin`**
 > role can use the Admin API. Access is granted by an *explicit* role assignment only —
 > email-domain matching is intentionally **not** used to grant admin access.
@@ -127,6 +131,42 @@ with HTTP `403 Forbidden`.
 For workflow-scoped routes, `AdminTenantScopeGuard.WorkflowIdBelongsToContext` performs the
 equivalent check by verifying the tenant segment of the workflow ID
 (`{tenantId}:{agent}:{workflowType}[:{activation}]`).
+
+## Verified Acting User (`X-User-Token`)
+
+AdminApi normally authenticates every request as the **owner of the shared API key**, not the
+individual human operating the client. Any AdminApi client (agent-studio today) may optionally
+forward that human's own OIDC ID token in an `X-User-Token` header — alongside the unchanged
+`Authorization: Bearer` API key — to upgrade the resolved identity to the real acting user.
+
+- **Validation**: `AdminEndpointAuthenticationHandler` reads `X-User-Token` and delegates to
+  `AdminActingUserResolver`, which validates it via `IDynamicOidcValidator` against a dedicated
+  **`admin-console` pseudo-tenant** — not any real tenant's own OIDC config, since the humans
+  behind an AdminApi client operate across many tenants rather than belonging to one. The
+  pseudo-tenant's provider list is configured via `AdminConsoleOidc__Providers__*` and auto-seeded
+  at startup by `AdminConsoleOidcSeeder` (see
+  [Admin Console OIDC](../AUTH_CONFIGURATION.md#admin-console-oidc-verified-acting-user-for-adminapi)).
+- **Fail closed, not silent fallback**: no header at all leaves the API-key-owner identity
+  untouched. A header that fails validation rejects the whole request (`401`) rather than quietly
+  falling back to the key owner's privilege.
+- **On success**, `ITenantContext` is updated:
+  - `LoggedInUser` / `UserRoles` become the verified human's own canonical user id (the platform's
+    raw `User.UserId`, not a provider-prefixed id) and their tenant roles.
+  - `ServiceCallerUserId` retains the original API key owner's id, so audit logging never loses
+    which credential actually authenticated the request.
+  - `ActingUserVerified` is set to `true`.
+- **Authorization short-circuit**: `ValidAdminEndpointAccessHandler` treats
+  `ActingUserVerified == true` as sufficient on its own — a verified acting user does not also need
+  to hold `SysAdmin`/`TenantAdmin` themselves, since the point is letting a scoped-down human reach
+  an endpoint they were explicitly granted, not re-deriving admin status from their own roles.
+- **Requiring a verified human on a route**: apply the `RequireVerifiedActingUserFilter` endpoint
+  filter to any route where the shared API key alone must not be sufficient (e.g. destructive
+  operations). It returns `401` (`"This operation requires a verified user token (X-User-Token),
+  not just the API key"`) when `ActingUserVerified` is `false`. Routes with a legitimate
+  non-human caller (scripts, jobs) should not get this filter.
+
+This is entirely optional — a deployment with no `AdminConsoleOidc__Providers__*` configured keeps
+working exactly as before, on the API key alone.
 
 ## Ownership-Based Permissions
 
@@ -238,11 +278,16 @@ the validated schema) so clients can fetch a starting point instead of duplicati
 | SysAdmin targets a non-existent tenant | `404 Not Found` (`TenantNotFoundException`) |
 | Route `tenantId` does not match resolved context tenant | `403 Forbidden` (`"Tenant scope mismatch"`) |
 | Authenticated admin calls a SysAdmin-only endpoint without `SysAdmin` | `403 Forbidden` |
+| Forwarded `X-User-Token` present but fails OIDC validation | `401 Unauthorized` (`"Invalid user token"`) |
+| Route requires a verified acting user (`RequireVerifiedActingUserFilter`) but none was forwarded | `401 Unauthorized` (`"This operation requires a verified user token (X-User-Token), not just the API key"`) |
 
 ## Related Code
 
 - `Shared/Auth/SystemRoles.cs` — role constants
 - `Features/AdminApi/Auth/AdminRoleTenantResolver.cs` — role & tenant resolution
-- `Features/AdminApi/Auth/AdminEndpointAuthenticationHandler.cs` — API key authentication
+- `Features/AdminApi/Auth/AdminEndpointAuthenticationHandler.cs` — API key authentication, `X-User-Token` handling
+- `Features/AdminApi/Auth/AdminActingUserResolver.cs` — verified acting user resolution (`admin-console` pseudo-tenant)
 - `Features/AdminApi/Auth/ValidAdminEndpointAccessHandler.cs` — authorization requirement
-- `Features/AdminApi/Auth/AdminTenantScopeGuard.cs` — tenant-scope guards & route filter
+- `Features/AdminApi/Auth/AdminTenantScopeGuard.cs` — tenant-scope guards, route filter, `RequireVerifiedActingUserFilter`
+- `Shared/Configuration/AdminConsoleOidcSettings.cs` — `AdminConsoleOidc__*` configuration shape
+- `Features/AdminApi/Services/AdminConsoleOidcSeeder.cs` — startup seeding of the pseudo-tenant's OIDC config

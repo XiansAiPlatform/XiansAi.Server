@@ -41,12 +41,24 @@ Authorization: Bearer your-admin-api-key-here
 
 **Authorization header only.** The API key must be passed in the `Authorization: Bearer` header. Query parameters (e.g. `?apikey=`) are **not supported** because they can leak into reverse-proxy access logs, CDN logs, and browser history.
 
+### Optional: Verified Acting User (`X-User-Token`)
+
+Every request otherwise authenticates as the **owner of the shared API key**, not the individual
+human operating the client. A caller (agent-studio today) may additionally forward that human's
+own OIDC ID token via an `X-User-Token` header to upgrade the resolved identity to the real
+verified human, and require it on sensitive routes via `RequireVerifiedActingUserFilter`. This is
+opt-in and configured via `AdminConsoleOidc__Providers__*` — see
+[Verified Acting User](../../docs/admin-api/roles.md#verified-acting-user-x-user-token) for the
+full behavior and [Admin Console OIDC](../../docs/AUTH_CONFIGURATION.md#admin-console-oidc-verified-acting-user-for-adminapi)
+for configuration.
+
 ### Authentication Implementation
 
 - **Authentication Scheme**: `AdminEndpointApiKeyScheme`
 - **Handler**: `AdminEndpointAuthenticationHandler`
 - **Authorization Policy**: `AdminEndpointAuthPolicy`
 - **Requirement**: `ValidAdminEndpointAccessRequirement`
+- **Verified acting user resolver**: `AdminActingUserResolver`
 
 ## Available Endpoints
 
@@ -140,6 +152,8 @@ AdminApi/
 ├── ADMIN_API_EXAMPLE.http              # Example HTTP requests
 ├── Auth/                               # Authentication handlers
 │   ├── AdminEndpointAuthenticationHandler.cs
+│   ├── AdminActingUserResolver.cs      # Verified acting user (X-User-Token) resolution
+│   ├── AdminTenantScopeGuard.cs        # Tenant-scope guards, incl. RequireVerifiedActingUserFilter
 │   ├── ValidAdminEndpointAccessHandler.cs
 │   └── ValidAdminEndpointAccessRequirement.cs
 ├── Configuration/                      # Service configuration
@@ -154,6 +168,8 @@ AdminApi/
 │   ├── AdminTemplateEndpoints.cs
 │   ├── AdminTenantEndpoints.cs
 │   └── WorkflowManagementEndpoints.cs
+├── Services/                           # Startup/background services
+│   └── AdminConsoleOidcSeeder.cs       # Seeds the admin-console pseudo-tenant's OIDC config
 └── Utils/                              # Utilities and middleware
     └── AdminApiDebugLoggingMiddleware.cs
 ```
@@ -284,9 +300,10 @@ Enable debug logging during development to see detailed request/response informa
 
 - [API Versioning Guide](./API_VERSIONING_GUIDE.md)
 - [Debug Logging Documentation](./DEBUG_LOGGING.md)
-- [Authentication Configuration](../../../docs/AUTH_CONFIGURATION.md)
-- [Rate Limiting Implementation](../../../docs/RATE_LIMITING_IMPLEMENTATION.md)
-- [OpenAPI Documentation](../../../docs/OPENAPI_DOCS.md)
+- [Admin API Roles & Permissions](../../docs/admin-api/roles.md)
+- [Authentication Configuration](../../docs/AUTH_CONFIGURATION.md)
+- [Rate Limiting Implementation](../../docs/RATE_LIMITING_IMPLEMENTATION.md)
+- [OpenAPI Documentation](../../docs/OPENAPI_DOCS.md)
 
 ## Support
 
