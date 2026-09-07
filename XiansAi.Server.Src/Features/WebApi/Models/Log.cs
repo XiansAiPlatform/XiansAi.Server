@@ -47,6 +47,12 @@ public class Log
     [BsonElement("exception")]
     public string? Exception { get; set; }
 
+    [BsonElement("trace_id")]
+    public string? TraceId { get; set; }
+
+    [BsonElement("span_id")]
+    public string? SpanId { get; set; }
+
     [BsonElement("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 }

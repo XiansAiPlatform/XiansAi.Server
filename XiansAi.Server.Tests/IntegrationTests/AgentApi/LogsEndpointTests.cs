@@ -119,4 +119,28 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task CreateSingleLog_WithTraceIds_PersistsTraceAndSpanId()
+    {
+        var logRequest = new LogRequest
+        {
+            Message = "Traced log message",
+            Level = LogLevel.Error,
+            WorkflowId = ObjectId.GenerateNewId().ToString(),
+            WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+            WorkflowType = "TestWorkflowType",
+            Agent = "TestAgent",
+            TraceId = "0af7651916cd43dd8448eb211c80319c",
+            SpanId = "b7ad6b7169203331"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/agent/logs/single", logRequest);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<Log>(JsonReadOptions);
+        Assert.NotNull(result);
+        Assert.Equal(logRequest.TraceId, result.TraceId);
+        Assert.Equal(logRequest.SpanId, result.SpanId);
+    }
 }
