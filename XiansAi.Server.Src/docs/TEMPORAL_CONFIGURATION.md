@@ -212,8 +212,9 @@ Temporal__DefaultTaskQueue=default
 # Enable detailed logging for Temporal operations
 Logging__LogLevel__Temporalio=Information
 
-# Application Insights correlation
-ApplicationInsights__EnableTemporalTracking=true
+# Distributed tracing uses Temporalio.Extensions.OpenTelemetry TracingInterceptor
+# when OpenTelemetry__Enabled=true and OpenTelemetry__OtlpEndpoint points at the collector.
+# See docs/observability/AGENTRI_OBSERVABILITY.md
 ```
 
 ## Configuration Validation
