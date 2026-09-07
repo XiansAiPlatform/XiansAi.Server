@@ -49,6 +49,20 @@ namespace Shared.Auth;
         Task<TemporalConfig> GetTemporalConfigAsync();
 
         string? Authorization { get; set; }
+
+        /// <summary>
+        /// On AdminApi, every request authenticates as the shared API key's owner, this preserves
+        /// that identity for audit purposes even when <see cref="LoggedInUser"/> gets upgraded to a
+        /// verified real acting human below. Null for non-AdminApi requests, where the two never
+        /// diverge in the first place.
+        /// </summary>
+        string? ServiceCallerUserId { get; set; }
+
+        /// <summary>
+        /// True only when <see cref="LoggedInUser"/>/<see cref="UserRoles"/> were populated from a
+        /// verified user token. Routes that require a real acting human gate on this.
+        /// </summary>
+        bool ActingUserVerified { get; set; }
     }
 
     public class TenantContext : ITenantContext
@@ -73,6 +87,8 @@ namespace Shared.Auth;
         public required string[] UserRoles { get; set; } = Array.Empty<string>();
         public IEnumerable<string> AuthorizedTenantIds { get; set; } = new List<string>();
         public string? Authorization { get; set; }
+        public string? ServiceCallerUserId { get; set; }
+        public bool ActingUserVerified { get; set; }
         public TenantContext(IConfiguration configuration, ITenantTemporalConfigRepository tenantTemporalConfigRepository)
         {
             _configuration = configuration;
