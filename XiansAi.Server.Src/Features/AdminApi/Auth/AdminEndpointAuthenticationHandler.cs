@@ -19,10 +19,19 @@ namespace Features.AdminApi.Auth
         /// </summary>
         public const string FailureReasonItemKey = "AdminApi.AuthFailureReason";
 
+        /// <summary>
+        /// Optional second credential carrying the real acting human's own OIDC token — any
+        /// AdminApi client may forward one (agent-studio's <c>session.accessToken</c> is today's
+        /// only example). Kept separate from <c>Authorization</c>, which stays the API key.
+        /// Validated by <see cref="IAdminActingUserResolver"/>
+        /// </summary>
+        public const string UserTokenHeaderName = "X-User-Token";
+
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<AdminEndpointAuthenticationHandler> _logger;
         private readonly IApiKeyService _apiKeyService;
         private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
+        private readonly IAdminActingUserResolver _actingUserResolver;
 
         private AuthenticateResult FailWithReason(string reason)
         {
@@ -36,13 +45,46 @@ namespace Features.AdminApi.Auth
             UrlEncoder encoder,
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
-            IAdminRoleTenantResolver adminRoleTenantResolver)
+            IAdminRoleTenantResolver adminRoleTenantResolver,
+            IAdminActingUserResolver actingUserResolver)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<AdminEndpointAuthenticationHandler>();
             _tenantContext = tenantContext;
             _apiKeyService = apiKeyService;
             _adminRoleTenantResolver = adminRoleTenantResolver;
+            _actingUserResolver = actingUserResolver;
+        }
+
+        /// <summary>
+        /// Applies the optional forwarded user token, when present, upgrading
+        /// <c>ITenantContext.LoggedInUser</c>/<c>UserRoles</c> from the API key owner to the real
+        /// verified human. A present-but-invalid token fails the whole request rather than silently
+        /// falling back — see the "fail closed, not silent fallback" decision in the design doc: a
+        /// caller that tried to prove who it is and failed must not quietly regain the key's full
+        /// privilege under the untouched fallback path.
+        /// </summary>
+        private async Task<AuthenticateResult?> TryApplyVerifiedActingUserAsync(string finalTenantId, string apiKeyOwnerUserId)
+        {
+            var userToken = Request.Headers[UserTokenHeaderName].FirstOrDefault();
+            var resolution = await _actingUserResolver.ResolveAsync(userToken, finalTenantId);
+
+            if (!resolution.Attempted)
+            {
+                return null; // no token supplied - proceed with the key-owner identity, unchanged
+            }
+
+            if (!resolution.Success)
+            {
+                return FailWithReason(resolution.Error ?? "Invalid user token");
+            }
+
+            _tenantContext.ServiceCallerUserId = apiKeyOwnerUserId;
+            _tenantContext.LoggedInUser = resolution.CanonicalUserId!;
+            _tenantContext.UserRoles = resolution.UserRoles!;
+            _tenantContext.ActingUserVerified = true;
+
+            return null; // success - _tenantContext is already updated; caller proceeds as normal
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -155,18 +197,32 @@ namespace Features.AdminApi.Auth
                         _tenantContext.UserRoles = userRoles.ToArray();
                         _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
                         _tenantContext.Authorization = accessToken;
+                        _tenantContext.ServiceCallerUserId = resolvedUserId;
+                        _tenantContext.ActingUserVerified = false;
+
+                        // Optional second credential: upgrades LoggedInUser/UserRoles from the API
+                        // key owner to the real acting human when the caller forwards one. Absent
+                        // or already-invalid tokens leave everything above untouched (or fail the
+                        // request outright for an invalid one) — see the method's own doc comment.
+                        var userTokenFailure = await TryApplyVerifiedActingUserAsync(finalTenantId, resolvedUserId);
+                        if (userTokenFailure != null)
+                        {
+                            return userTokenFailure;
+                        }
 
                         var claims = new List<Claim>
                         {
-                            new Claim(ClaimTypes.NameIdentifier, resolvedUserId),
+                            new Claim(ClaimTypes.NameIdentifier, _tenantContext.LoggedInUser),
                             new Claim("TenantId", finalTenantId)
                         };
 
                         var identity = new ClaimsIdentity(claims, Scheme.Name);
                         var principal = new ClaimsPrincipal(identity);
                         var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                        _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}",
-                            LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
+                        _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, ServiceCaller={ServiceCallerUserId}, Tenant={TenantId}, Roles={Roles}, Verified={Verified}",
+                            LogSanitizer.RedactUserId(_tenantContext.LoggedInUser), LogSanitizer.RedactUserId(resolvedUserId),
+                            LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", _tenantContext.UserRoles)),
+                            _tenantContext.ActingUserVerified);
 
                         return AuthenticateResult.Success(ticket);
                     }

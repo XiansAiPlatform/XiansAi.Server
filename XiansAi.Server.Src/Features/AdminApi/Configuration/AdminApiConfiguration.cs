@@ -63,6 +63,13 @@ public static class AdminApiConfiguration
         // Register shared admin role/tenant resolver (used by both auth and authorization handlers)
         builder.Services.AddScoped<IAdminRoleTenantResolver, AdminRoleTenantResolver>();
 
+        // Validates the optional forwarded user token (see AdminEndpointAuthenticationHandler /
+        // AdminActingUserResolver). ITenantOidcConfigService/OidcValidationPolicy/IMemoryCache are
+        // already registered centrally in SharedConfiguration - IDynamicOidcValidator is the one
+        // piece AdminApi is missing, mirroring UserApiConfiguration's identical registration.
+        builder.Services.AddScoped<global::Shared.Auth.IDynamicOidcValidator, global::Shared.Auth.DynamicOidcValidator>();
+        builder.Services.AddScoped<IAdminActingUserResolver, AdminActingUserResolver>();
+
         // Configure authentication scheme for AdminApi endpoints
         builder.Services.AddAuthentication(options =>
         {
