@@ -11,6 +11,7 @@ public interface IAuditActivityService
 {
     Task<ServiceResult<AuditActivity>> RecordActivityAsync(
         string action,
+        string? description,
         string? activationName = null,
         Dictionary<string, object?>? details = null);
 
@@ -45,6 +46,7 @@ public class AuditActivityService : IAuditActivityService
 
     public async Task<ServiceResult<AuditActivity>> RecordActivityAsync(
         string action,
+        string? description,
         string? activationName = null,
         Dictionary<string, object?>? details = null)
     {
@@ -60,6 +62,7 @@ public class AuditActivityService : IAuditActivityService
                 TenantId = _tenantContext.TenantId,
                 PerformedBy = _tenantContext.LoggedInUser,
                 Action = action,
+                Description = description,
                 ActivationName = activationName,
                 Details = details ?? []
             };

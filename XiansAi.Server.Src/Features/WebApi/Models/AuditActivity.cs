@@ -33,6 +33,10 @@ public class AuditActivity : ModelValidatorBase<AuditActivity>
     [StringLength(100, ErrorMessage = "Activation name must be at most 100 characters")]
     public string? ActivationName { get; set; }
 
+    [BsonElement("description")]
+    [StringLength(500, ErrorMessage = "Description must be at most 500 characters")]
+    public string? Description { get; set; }
+
     [BsonElement("details")]
     public Dictionary<string, object?>? Details { get; set; } = [];
 
@@ -48,6 +52,7 @@ public class AuditActivity : ModelValidatorBase<AuditActivity>
             PerformedBy = ValidationHelpers.SanitizeString(PerformedBy),
             Action = ValidationHelpers.SanitizeString(Action),
             ActivationName = string.IsNullOrEmpty(ActivationName) ? ActivationName : ValidationHelpers.SanitizeString(ActivationName),
+            Description = string.IsNullOrEmpty(Description) ? Description : ValidationHelpers.SanitizeString(Description),
             Details = Details,
             CreatedAt = CreatedAt
         };
