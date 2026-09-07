@@ -40,6 +40,16 @@ namespace Features.AdminApi.Auth
                 tenantContext.UserRoles == null)
                 return false;
 
+            // A verified acting user (see AdminEndpointAuthenticationHandler.TryApplyVerifiedActingUserAsync)
+            // may legitimately hold neither admin role - that's the whole point of letting a
+            // scoped-down human reach an endpoint via an explicit grant. Its presence alone proves
+            // authentication already ran and fully resolved the context, regardless of which roles
+            // came back, so it must short-circuit here the same as the SysAdmin/TenantAdmin case
+            // below - otherwise this falls through to re-resolving via the API key's own roles,
+            // which fails for anyone who isn't themselves a SysAdmin/TenantAdmin.
+            if (tenantContext.ActingUserVerified)
+                return true;
+
             return tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) ||
                    tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin);
         }
