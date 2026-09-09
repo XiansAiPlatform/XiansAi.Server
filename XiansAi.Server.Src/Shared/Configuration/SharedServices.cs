@@ -44,6 +44,10 @@ public static class SharedServices
 
         // Register MongoDB context as singleton - it only reads configuration
         services.AddSingleton<IMongoDbContext, MongoDbContext>();
+
+        // Expose the bound MongoDB configuration (provider, timeouts, ...) to consumers that need
+        // to adapt behaviour to the engine, e.g. UsageEventRepository on Azure DocumentDB
+        services.AddSingleton<IMongoDBConfig>(sp => sp.GetRequiredService<IMongoDbContext>().GetMongoDBConfig());
         
         // Register MongoDB client as singleton - MongoClient is thread-safe and should be reused
         services.AddSingleton<IMongoDbClientService, MongoDbClientService>();
