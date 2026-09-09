@@ -54,11 +54,13 @@ public class UsageEventRepository : IUsageEventRepository
 {
     private readonly IMongoCollection<UsageMetric> _collection;
     private readonly ILogger<UsageEventRepository> _logger;
+    private readonly IMongoDBConfig _config;
 
-    public UsageEventRepository(IDatabaseService databaseService, ILogger<UsageEventRepository> logger)
+    public UsageEventRepository(IDatabaseService databaseService, IMongoDBConfig config, ILogger<UsageEventRepository> logger)
     {
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _collection = database.GetCollection<UsageMetric>("usage_metrics");
+        _config = config;
         _logger = logger;
     }
 
@@ -1413,26 +1415,49 @@ public class UsageEventRepository : IUsageEventRepository
                 ? new BsonInt32(1) 
                 : (BsonValue)"$value";
 
+            // Azure DocumentDB (pg_documentdb) returns wrong results for $dateTrunc with unit day/week:
+            // buckets are offset by several days and drift month to month. $dateToString formats the
+            // calendar fields directly and is correct there, so on DocumentDB we group on a
+            // "%Y-%m-%d" / "%Y-%m" string key and parse it back in C#. Week is not available as a
+            // documented $dateToString specifier on Azure, so day and week both group by calendar
+            // day in the database and week is rolled up in C# (see RollUpDailyBucketsToWeeks).
+            // Real MongoDB keeps the original $dateTrunc query so behaviour there is unchanged.
+            var useCalendarStringBuckets = _config.Provider == MongoProvider.DocumentDB;
+            var groupByLower = request.GroupBy.ToLowerInvariant();
+
+            BsonDocument bucketKey = useCalendarStringBuckets
+                ? new BsonDocument("$dateToString", new BsonDocument
+                    {
+                        { "format", groupByLower == "month" ? "%Y-%m" : "%Y-%m-%d" },
+                        { "date", "$created_at" },
+                        { "timezone", "UTC" }
+                    })
+                : new BsonDocument("$dateTrunc", new BsonDocument
+                    {
+                        { "date", "$created_at" },
+                        { "unit", request.GroupBy }
+                    });
+
+            var groupStage = new BsonDocument
+            {
+                { "_id", new BsonDocument { { "bucket", bucketKey } } },
+                { "value", new BsonDocument(aggOperator, aggValue) },
+                { "count", new BsonDocument("$sum", 1) },
+                { "unit", new BsonDocument("$first", "$unit") }
+            };
+            if (useCalendarStringBuckets)
+            {
+                // Raw sum lets the weekly roll-up of daily buckets recompute an exact count-weighted
+                // average regardless of the requested aggregation.
+                groupStage.Add("sum", new BsonDocument("$sum", "$value"));
+            }
+
             var pipeline = new List<BsonDocument>
             {
                 new BsonDocument("$match", matchFilter),
-                new BsonDocument("$group", new BsonDocument
-                {
-                    { "_id", new BsonDocument
-                        {
-                            { "timestamp", new BsonDocument("$dateTrunc", new BsonDocument
-                                {
-                                    { "date", "$created_at" },
-                                    { "unit", request.GroupBy }
-                                })
-                            }
-                        }
-                    },
-                    { "value", new BsonDocument(aggOperator, aggValue) },
-                    { "count", new BsonDocument("$sum", 1) },
-                    { "unit", new BsonDocument("$first", "$unit") }
-                }),
-                new BsonDocument("$sort", new BsonDocument("_id.timestamp", 1))
+                new BsonDocument("$group", groupStage),
+                // Sorts correctly for both BSON dates and zero-padded calendar strings.
+                new BsonDocument("$sort", new BsonDocument("_id.bucket", 1))
             };
 
             // Add breakdown facet if requested
@@ -1450,21 +1475,14 @@ public class UsageEventRepository : IUsageEventRepository
                             new BsonDocument("$lookup", new BsonDocument
                             {
                                 { "from", "usage_metrics" },
-                                { "let", new BsonDocument("timestamp", "$_id.timestamp") },
+                                { "let", new BsonDocument("bucket", "$_id.bucket") },
                                 { "pipeline", new BsonArray
                                     {
                                         new BsonDocument("$match", new BsonDocument("$expr", new BsonDocument("$and", new BsonArray
                                         {
                                             matchFilter,
-                                            new BsonDocument("$eq", new BsonArray
-                                            {
-                                                new BsonDocument("$dateTrunc", new BsonDocument
-                                                {
-                                                    { "date", "$created_at" },
-                                                    { "unit", request.GroupBy }
-                                                }),
-                                                "$$timestamp"
-                                            })
+                                            // Same key expression as the outer $group so both sides agree
+                                            new BsonDocument("$eq", new BsonArray { bucketKey, "$$bucket" })
                                         }))),
                                         new BsonDocument("$group", new BsonDocument
                                         {
@@ -1488,12 +1506,14 @@ public class UsageEventRepository : IUsageEventRepository
             List<MetricTimeSeriesDataPoint> dataPoints;
             if (request.IncludeBreakdowns && results != null)
             {
-                dataPoints = ParseTimeSeriesWithBreakdowns(results["dataPoints"].AsBsonArray, results["activationBreakdown"].AsBsonArray);
+                dataPoints = ParseTimeSeriesWithBreakdowns(
+                    results["dataPoints"].AsBsonArray, results["activationBreakdown"].AsBsonArray,
+                    groupByLower, request.Aggregation, useCalendarStringBuckets);
             }
             else
             {
                 var simpleResults = await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken).ToListAsync(cancellationToken);
-                dataPoints = ParseTimeSeriesDataPoints(simpleResults);
+                dataPoints = ParseTimeSeriesDataPoints(simpleResults, groupByLower, request.Aggregation, useCalendarStringBuckets);
             }
 
             var summary = CalculateTimeSeriesSummary(dataPoints);
@@ -1804,37 +1824,111 @@ public class UsageEventRepository : IUsageEventRepository
         return (GetPercentile(0.50), GetPercentile(0.95), GetPercentile(0.99));
     }
 
-    private static List<MetricTimeSeriesDataPoint> ParseTimeSeriesDataPoints(List<BsonDocument> results)
+    /// <summary>
+    /// One row of the time series $group stage. <paramref name="Sum"/> is the raw sum of values in
+    /// the bucket, kept alongside the requested aggregation so weekly roll-ups can compute exact averages.
+    /// </summary>
+    private readonly record struct TimeSeriesBucket(DateTime Timestamp, double Value, double Sum, long Count);
+
+    /// <summary>
+    /// Parses the time series $group output into data points.
+    /// </summary>
+    /// <param name="results">Documents with <c>_id.bucket</c>, <c>value</c>, <c>sum</c> and <c>count</c>.</param>
+    /// <param name="groupByLower">Lower-cased groupBy: "day", "week" or "month".</param>
+    /// <param name="aggregation">Requested aggregation; used only when rolling daily buckets up to weeks.</param>
+    /// <param name="calendarStringBuckets">
+    /// True when <c>_id.bucket</c> is a "%Y-%m-%d" / "%Y-%m" string produced by $dateToString (DocumentDB path);
+    /// false when it is a BSON date produced by $dateTrunc (MongoDB path).
+    /// </param>
+    private static List<MetricTimeSeriesDataPoint> ParseTimeSeriesDataPoints(
+        IEnumerable<BsonDocument> results, string groupByLower, string aggregation, bool calendarStringBuckets)
     {
-        return results.Select(doc =>
+        var buckets = new List<TimeSeriesBucket>();
+        foreach (var doc in results)
         {
-            var timestamp = doc["_id"].AsBsonDocument["timestamp"].ToUniversalTime();
-            return new MetricTimeSeriesDataPoint
-            {
-                Timestamp = timestamp,
-                Value = doc["value"].ToDouble(),
-                Count = doc["count"].ToInt64(),
-                Breakdowns = null
-            };
+            var key = doc["_id"].AsBsonDocument.GetValue("bucket", BsonNull.Value);
+            // A null created_at yields a null key under both operators; skip rather than fail the whole series
+            if (key.IsBsonNull)
+                continue;
+
+            var timestamp = calendarStringBuckets
+                ? ParseBucketKey(key.AsString, groupByLower)
+                : key.ToUniversalTime();
+
+            buckets.Add(new TimeSeriesBucket(
+                timestamp,
+                doc["value"].ToDouble(),
+                doc.GetValue("sum", 0.0).ToDouble(),
+                doc["count"].ToInt64()));
+        }
+
+        // On the string-key path weeks were grouped as calendar days in the database
+        if (calendarStringBuckets && groupByLower == "week")
+            buckets = RollUpDailyBucketsToWeeks(buckets, aggregation);
+
+        return buckets.Select(b => new MetricTimeSeriesDataPoint
+        {
+            Timestamp = b.Timestamp,
+            Value = b.Value,
+            Count = b.Count,
+            Breakdowns = null
         }).ToList();
     }
 
-    private static List<MetricTimeSeriesDataPoint> ParseTimeSeriesWithBreakdowns(BsonArray dataPointsArray, BsonArray breakdownArray)
+    private static List<MetricTimeSeriesDataPoint> ParseTimeSeriesWithBreakdowns(
+        BsonArray dataPointsArray, BsonArray breakdownArray, string groupByLower, string aggregation, bool calendarStringBuckets)
     {
         // This is a simplified version - in practice you'd need to match breakdowns to timestamps
-        return dataPointsArray.Select(item =>
-        {
-            var doc = item.AsBsonDocument;
-            var timestamp = doc["_id"].AsBsonDocument["timestamp"].ToUniversalTime();
-            
-            return new MetricTimeSeriesDataPoint
+        // TODO: Implement breakdown parsing
+        return ParseTimeSeriesDataPoints(
+            dataPointsArray.Select(item => item.AsBsonDocument), groupByLower, aggregation, calendarStringBuckets);
+    }
+
+    /// <summary>
+    /// Parses a $dateToString bucket key ("yyyy-MM-dd" for day/week, "yyyy-MM" for month) to a UTC DateTime
+    /// at the start of the bucket.
+    /// </summary>
+    private static DateTime ParseBucketKey(string key, string groupByLower)
+    {
+        const System.Globalization.DateTimeStyles utc =
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal;
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+        return groupByLower == "month"
+            ? DateTime.ParseExact(key, "yyyy-MM", invariant, utc)
+            : DateTime.ParseExact(key, "yyyy-MM-dd", invariant, utc);
+    }
+
+    /// <summary>
+    /// Sunday-based week start, matching $dateTrunc's default startOfWeek so the API contract is preserved.
+    /// </summary>
+    private static DateTime StartOfWeek(DateTime day) => day.Date.AddDays(-(int)day.DayOfWeek);
+
+    /// <summary>
+    /// Rolls calendar-day buckets up to Sunday-based weeks. sum/count fold with Sum, min with Min, max with Max,
+    /// and avg is recomputed as a count-weighted mean from the raw sums (never an average of daily averages).
+    /// </summary>
+    private static List<TimeSeriesBucket> RollUpDailyBucketsToWeeks(List<TimeSeriesBucket> days, string aggregation)
+    {
+        var aggregationLower = aggregation.ToLowerInvariant();
+
+        return days
+            .GroupBy(d => StartOfWeek(d.Timestamp))
+            .OrderBy(g => g.Key)
+            .Select(g =>
             {
-                Timestamp = timestamp,
-                Value = doc["value"].ToDouble(),
-                Count = doc["count"].ToInt64(),
-                Breakdowns = null  // TODO: Implement breakdown parsing
-            };
-        }).ToList();
+                var count = g.Sum(d => d.Count);
+                var sum = g.Sum(d => d.Sum);
+                var value = aggregationLower switch
+                {
+                    "avg" => count > 0 ? sum / count : 0,
+                    "min" => g.Min(d => d.Value),
+                    "max" => g.Max(d => d.Value),
+                    _ => g.Sum(d => d.Value)  // sum, count
+                };
+                return new TimeSeriesBucket(g.Key, value, sum, count);
+            })
+            .ToList();
     }
 
     private static TimeSeriesSummary CalculateTimeSeriesSummary(List<MetricTimeSeriesDataPoint> dataPoints)
