@@ -23,7 +23,7 @@ public static class WebApiConfiguration
         builder.Services.AddScoped<IActivitiesService, ActivitiesService>();
         builder.Services.AddScoped<IMessagingService, MessagingService>();
         builder.Services.AddScoped<IAuditingService, AuditingService>();
-        builder.Services.AddScoped<IAuditActivityService, AuditActivityService>();
+        builder.Services.AddScoped<IAuditLogService, AuditLogService>();
         builder.Services.AddScoped<IAgentService, AgentService>();
         builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
         builder.Services.AddScoped<ITemplateService, TemplateService>();
@@ -38,7 +38,6 @@ public static class WebApiConfiguration
         // Register repositories
         builder.Services.AddScoped<ILogRepository, LogRepository>();
         builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
-        builder.Services.AddScoped<IAuditActivityRepository, AuditActivityRepository>();
 
         return builder;
     }

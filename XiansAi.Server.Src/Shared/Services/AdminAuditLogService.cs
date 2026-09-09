@@ -1,25 +1,25 @@
-using Features.WebApi.Models;
-using Features.WebApi.Repositories;
+using Shared.Data.Models;
+using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
 
 namespace Shared.Services;
 
 /// <summary>
-/// Response model for a paginated page of audit activities.
+/// Response model for a paginated page of audit log entries.
 /// </summary>
-public class AdminAuditActivityListResponse
+public class AdminAuditLogListResponse
 {
-    public required IEnumerable<AuditActivity> Activities { get; set; }
+    public required IEnumerable<AuditLogEntry> Entries { get; set; }
     public required long TotalCount { get; set; }
     public required int Page { get; set; }
     public required int PageSize { get; set; }
     public required int TotalPages { get; set; }
 }
 
-public interface IAdminAuditActivityService
+public interface IAdminAuditLogService
 {
-    Task<ServiceResult<AdminAuditActivityListResponse>> GetActivitiesAsync(
+    Task<ServiceResult<AdminAuditLogListResponse>> GetEntriesAsync(
         string tenantId,
         string? performedBy,
         string? activationName,
@@ -37,23 +37,23 @@ public interface IAdminAuditActivityService
 }
 
 /// <summary>
-/// AdminApi-facing read access to the audit trail (who did what, and when), scoped to a
+/// AdminApi-facing read access to the audit log (who did what, and when), scoped to a
 /// tenant resolved authoritatively from the route rather than the caller's own token.
 /// </summary>
-public class AdminAuditActivityService : IAdminAuditActivityService
+public class AdminAuditLogService : IAdminAuditLogService
 {
-    private readonly IAuditActivityRepository _auditActivityRepository;
-    private readonly ILogger<AdminAuditActivityService> _logger;
+    private readonly IAuditLogRepository _auditLogRepository;
+    private readonly ILogger<AdminAuditLogService> _logger;
 
-    public AdminAuditActivityService(
-        IAuditActivityRepository auditActivityRepository,
-        ILogger<AdminAuditActivityService> logger)
+    public AdminAuditLogService(
+        IAuditLogRepository auditLogRepository,
+        ILogger<AdminAuditLogService> logger)
     {
-        _auditActivityRepository = auditActivityRepository ?? throw new ArgumentNullException(nameof(auditActivityRepository));
+        _auditLogRepository = auditLogRepository ?? throw new ArgumentNullException(nameof(auditLogRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<AdminAuditActivityListResponse>> GetActivitiesAsync(
+    public async Task<ServiceResult<AdminAuditLogListResponse>> GetEntriesAsync(
         string tenantId,
         string? performedBy,
         string? activationName,
@@ -67,7 +67,7 @@ public class AdminAuditActivityService : IAdminAuditActivityService
         {
             if (string.IsNullOrWhiteSpace(tenantId))
             {
-                return ServiceResult<AdminAuditActivityListResponse>.BadRequest("Tenant ID is required");
+                return ServiceResult<AdminAuditLogListResponse>.BadRequest("Tenant ID is required");
             }
 
             if (page < 1)
@@ -80,24 +80,24 @@ public class AdminAuditActivityService : IAdminAuditActivityService
                 pageSize = 20;
             }
 
-            var (activities, totalCount) = await _auditActivityRepository.GetFilteredAsync(
+            var (entries, totalCount) = await _auditLogRepository.GetFilteredAsync(
                 tenantId, performedBy, activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
 
-            var response = new AdminAuditActivityListResponse
+            var response = new AdminAuditLogListResponse
             {
-                Activities = activities,
+                Entries = entries,
                 TotalCount = totalCount,
                 Page = page,
                 PageSize = pageSize,
                 TotalPages = (int)Math.Ceiling((double)totalCount / pageSize)
             };
 
-            return ServiceResult<AdminAuditActivityListResponse>.Success(response);
+            return ServiceResult<AdminAuditLogListResponse>.Success(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving audit activities for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
-            return ServiceResult<AdminAuditActivityListResponse>.InternalServerError("An error occurred while retrieving audit activities");
+            _logger.LogError(ex, "Error retrieving audit log entries for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<AdminAuditLogListResponse>.InternalServerError("An error occurred while retrieving audit log entries");
         }
     }
 
@@ -110,7 +110,7 @@ public class AdminAuditActivityService : IAdminAuditActivityService
                 return ServiceResult<IEnumerable<string>>.BadRequest("Tenant ID is required");
             }
 
-            var values = await _auditActivityRepository.GetDistinctPerformedByAsync(tenantId);
+            var values = await _auditLogRepository.GetDistinctPerformedByAsync(tenantId);
             return ServiceResult<IEnumerable<string>>.Success(values);
         }
         catch (Exception ex)
@@ -129,7 +129,7 @@ public class AdminAuditActivityService : IAdminAuditActivityService
                 return ServiceResult<IEnumerable<string>>.BadRequest("Tenant ID is required");
             }
 
-            var values = await _auditActivityRepository.GetDistinctActivationNamesAsync(tenantId);
+            var values = await _auditLogRepository.GetDistinctActivationNamesAsync(tenantId);
             return ServiceResult<IEnumerable<string>>.Success(values);
         }
         catch (Exception ex)

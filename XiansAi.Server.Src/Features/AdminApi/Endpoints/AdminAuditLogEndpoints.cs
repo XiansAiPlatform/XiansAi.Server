@@ -6,24 +6,24 @@ using Features.AdminApi.Auth;
 namespace Features.AdminApi.Endpoints;
 
 /// <summary>
-/// AdminApi endpoints for reading the audit trail (who did what, and when).
-/// These endpoints live under <c>/api/v{version}/admin/tenants/{tenantId}/audit-activities</c>.
+/// AdminApi endpoints for reading the audit log (who did what, and when).
+/// These endpoints live under <c>/api/v{version}/admin/tenants/{tenantId}/audit-logs</c>.
 /// The tenant is resolved authoritatively by <see cref="AdminRoleTenantResolver"/> and enforced
 /// by <see cref="TenantRouteScopeFilter"/>.
 /// </summary>
-public static class AdminAuditActivityEndpoints
+public static class AdminAuditLogEndpoints
 {
-    public static void MapAdminAuditActivityEndpoints(this RouteGroupBuilder adminApiGroup)
+    public static void MapAdminAuditLogEndpoints(this RouteGroupBuilder adminApiGroup)
     {
-        var auditActivityGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/audit-activities")
-            .WithTags("AdminAPI - Audit Activities")
+        var auditLogGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/audit-logs")
+            .WithTags("AdminAPI - Audit Log")
             .RequireAuthorization("AdminEndpointAuthPolicy")
             .AddEndpointFilter<TenantRouteScopeFilter>();
 
-        // Paginated, filterable list of audit activities (newest first).
-        auditActivityGroup.MapGet("", async (
+        // Paginated, filterable list of audit log entries (newest first).
+        auditLogGroup.MapGet("", async (
             string tenantId,
-            [FromServices] IAdminAuditActivityService auditActivityService,
+            [FromServices] IAdminAuditLogService auditLogService,
             [FromQuery] string? performedBy = null,
             [FromQuery] string? activationName = null,
             [FromQuery] bool onlyWithoutActivation = false,
@@ -32,45 +32,45 @@ public static class AdminAuditActivityEndpoints
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
-            var result = await auditActivityService.GetActivitiesAsync(
+            var result = await auditLogService.GetEntriesAsync(
                 tenantId, performedBy, activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
 
             return result.ToHttpResult();
         })
-        .Produces<AdminAuditActivityListResponse>(StatusCodes.Status200OK)
+        .Produces<AdminAuditLogListResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
-        .WithName("GetAdminAuditActivities")
-        .WithSummary("List audit activities")
+        .WithName("GetAdminAuditLogs")
+        .WithSummary("List audit log entries")
         .WithDescription(
-            "Returns a paginated list of audit trail entries for the tenant, newest first. " +
+            "Returns a paginated list of audit log entries for the tenant, newest first. " +
             "Filter by performedBy, activationName, a createdAt date range, or set onlyWithoutActivation=true " +
-            "to list only activities that have no associated activation. Page size is limited to 100.");
+            "to list only entries that have no associated activation. Page size is limited to 100.");
 
         // Distinct "performed by" values, for populating a filter dropdown.
-        auditActivityGroup.MapGet("/performed-by", async (
+        auditLogGroup.MapGet("/performed-by", async (
             string tenantId,
-            [FromServices] IAdminAuditActivityService auditActivityService) =>
+            [FromServices] IAdminAuditLogService auditLogService) =>
         {
-            var result = await auditActivityService.GetPerformedByOptionsAsync(tenantId);
+            var result = await auditLogService.GetPerformedByOptionsAsync(tenantId);
             return result.ToHttpResult();
         })
         .Produces<IEnumerable<string>>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
-        .WithName("GetAdminAuditActivityPerformedByOptions")
+        .WithName("GetAdminAuditLogPerformedByOptions")
         .WithSummary("List distinct performed-by values")
         .WithDescription("Returns the distinct, non-empty performedBy values recorded for the tenant, sorted alphabetically.");
 
         // Distinct activation names, for populating a filter dropdown.
-        auditActivityGroup.MapGet("/activation-names", async (
+        auditLogGroup.MapGet("/activation-names", async (
             string tenantId,
-            [FromServices] IAdminAuditActivityService auditActivityService) =>
+            [FromServices] IAdminAuditLogService auditLogService) =>
         {
-            var result = await auditActivityService.GetActivationNameOptionsAsync(tenantId);
+            var result = await auditLogService.GetActivationNameOptionsAsync(tenantId);
             return result.ToHttpResult();
         })
         .Produces<IEnumerable<string>>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
-        .WithName("GetAdminAuditActivityActivationNameOptions")
+        .WithName("GetAdminAuditLogActivationNameOptions")
         .WithSummary("List distinct activation names")
         .WithDescription("Returns the distinct, non-empty activation names recorded for the tenant, sorted alphabetically.");
     }

@@ -559,7 +559,7 @@ webhook_deliveries:
     expire_after: 15d
     background: true
 
-audit_activities:
+audit_logs:
   - name: tenant_id_1_created_at_-1
     keys:
       tenant_id: asc
