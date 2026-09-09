@@ -1418,7 +1418,7 @@ public class UsageEventRepository : IUsageEventRepository
                 : new BsonDocument("$dateTrunc", new BsonDocument
                     {
                         { "date", "$created_at" },
-                        { "unit", request.GroupBy }
+                        { "unit", groupByLower }  // $dateTrunc units are case-sensitive; groupBy is validated case-insensitively
                     });
 
             var groupStage = new BsonDocument

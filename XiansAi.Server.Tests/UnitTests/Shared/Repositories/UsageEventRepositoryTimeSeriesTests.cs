@@ -160,6 +160,23 @@ public class UsageEventRepositoryTimeSeriesTests : IClassFixture<MongoDbFixture>
         Assert.Equal(6, point.Value);
     }
 
+    [Theory]
+    [InlineData(MongoProvider.MongoDB)]
+    [InlineData(MongoProvider.DocumentDB)]
+    public async Task GroupBy_IsCaseInsensitive_OnBothPaths(MongoProvider provider)
+    {
+        // groupBy is validated case-insensitively upstream; $dateTrunc units are case-sensitive,
+        // so the repository must normalise before building the pipeline.
+        if (CannotRun(provider)) return;
+        var tenantId = await SeedThreeRecordsOnSep9();
+
+        var response = await CreateRepository(provider).GetAdminMetricsTimeSeriesAsync(Request(tenantId, "Week"));
+
+        var point = Assert.Single(response.DataPoints);
+        Assert.Equal(Utc(2026, 9, 6), point.Timestamp);
+        Assert.Equal(3, point.Count);
+    }
+
     /// <summary>
     /// Records spread across days in two Sunday-based weeks (Aug 30 - Sep 5 and Sep 6 - Sep 12), with uneven
     /// per-day counts so an average-of-daily-averages would be visibly wrong (60 instead of 40).
