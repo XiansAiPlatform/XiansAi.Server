@@ -6,6 +6,8 @@ namespace Shared.Data;
 
 public interface IMongoDbClientService
 {
+    /// <summary>The bound MongoDB configuration this client was created from.</summary>
+    IMongoDBConfig Config { get; }
     IMongoDatabase GetDatabase();
     IMongoCollection<T> GetCollection<T>(string collectionName);
     IMongoClient GetClient();
