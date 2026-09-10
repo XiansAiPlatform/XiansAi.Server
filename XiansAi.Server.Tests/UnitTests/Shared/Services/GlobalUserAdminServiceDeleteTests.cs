@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -30,8 +31,11 @@ public class GlobalUserAdminServiceDeleteTests
             Mock.Of<ITenantCacheService>(),
             _invalidator.Object,
             _webhooks.Object,
+            Mock.Of<IAuditLogService>(),
             NullLogger<GlobalUserAdminService>.Instance);
     }
+
+    private static Microsoft.AspNetCore.Http.HttpContext TestHttpContext() => new Microsoft.AspNetCore.Http.DefaultHttpContext();
 
     [Fact]
     public async Task DeleteUserAsync_RemovesUserAndInvalidatesCaches()
@@ -40,7 +44,7 @@ public class GlobalUserAdminServiceDeleteTests
         _userRepo.Setup(x => x.GetByUserIdAsync(TargetUserId)).ReturnsAsync(user);
         _userRepo.Setup(x => x.DeleteUser(TargetUserId, null)).ReturnsAsync(true);
 
-        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId);
+        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(x => x.DeleteUser(TargetUserId, null), Times.Once);
@@ -57,7 +61,7 @@ public class GlobalUserAdminServiceDeleteTests
     {
         _userRepo.Setup(x => x.GetByUserIdAsync(TargetUserId)).ReturnsAsync((User?)null);
 
-        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId);
+        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId, TestHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.NotFound, result.StatusCode);
@@ -70,7 +74,7 @@ public class GlobalUserAdminServiceDeleteTests
         var user = CreateUser(ActingUserId, isSysAdmin: true);
         _userRepo.Setup(x => x.GetByUserIdAsync(ActingUserId)).ReturnsAsync(user);
 
-        var result = await _service.DeleteUserAsync(ActingUserId, ActingUserId);
+        var result = await _service.DeleteUserAsync(ActingUserId, ActingUserId, TestHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Forbidden, result.StatusCode);
@@ -88,7 +92,7 @@ public class GlobalUserAdminServiceDeleteTests
             CreateUser("locked-admin", isSysAdmin: true, lockedOut: true),
         });
 
-        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId);
+        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId, TestHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
@@ -107,7 +111,7 @@ public class GlobalUserAdminServiceDeleteTests
         });
         _userRepo.Setup(x => x.DeleteUser(TargetUserId, null)).ReturnsAsync(true);
 
-        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId);
+        var result = await _service.DeleteUserAsync(TargetUserId, ActingUserId, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(x => x.DeleteUser(TargetUserId, null), Times.Once);

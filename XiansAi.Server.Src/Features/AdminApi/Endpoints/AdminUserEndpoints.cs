@@ -107,6 +107,7 @@ public static class AdminUserEndpoints
         group.MapPost("", async (
             string tenantId,
             [FromBody] CreateTenantParticipantUserRequest body,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantParticipantUserService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -114,7 +115,7 @@ public static class AdminUserEndpoints
             if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
                 return forbid;
 
-            var result = await service.CreateAsync(tenantId, body.Email, body.Name, body.Role, body.UserId);
+            var result = await service.CreateAsync(tenantId, body.Email, body.Name, body.Role, httpContext, body.UserId);
             if (result.IsSuccess && result.Data != null)
             {
                 var location = AdminApiConstants.BuildVersionedPath(
@@ -129,6 +130,7 @@ public static class AdminUserEndpoints
             string tenantId,
             string userId,
             [FromBody] UpdateTenantParticipantUserRequest body,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantParticipantUserService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -137,7 +139,7 @@ public static class AdminUserEndpoints
                 return forbid;
 
             var isSysAdmin = tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) == true;
-            var result = await service.UpdateAsync(tenantId, userId, body.Name, body.Email, body.Role, body.IsApproved, isSysAdmin);
+            var result = await service.UpdateAsync(tenantId, userId, body.Name, body.Email, body.Role, body.IsApproved, httpContext, isSysAdmin);
             return result.ToHttpResult();
         })
         .WithName("AdminUpdateTenantParticipantUser");
@@ -145,6 +147,7 @@ public static class AdminUserEndpoints
         group.MapDelete("/{userId}", async (
             string tenantId,
             string userId,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantParticipantUserService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -153,7 +156,7 @@ public static class AdminUserEndpoints
                 return forbid;
 
             var isSysAdmin = tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) == true;
-            var result = await service.DeleteAsync(tenantId, userId, isSysAdmin);
+            var result = await service.DeleteAsync(tenantId, userId, httpContext, isSysAdmin);
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult();
         })
         .WithName("AdminDeleteTenantParticipantUser");
@@ -165,6 +168,7 @@ public static class AdminUserEndpoints
             string tenantId,
             string userId,
             string role,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantParticipantUserService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -173,7 +177,7 @@ public static class AdminUserEndpoints
                 return forbid;
 
             var isSysAdmin = tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) == true;
-            var result = await service.RemoveRoleAsync(tenantId, userId, role, isSysAdmin);
+            var result = await service.RemoveRoleAsync(tenantId, userId, role, httpContext, isSysAdmin);
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult();
         })
         .WithName("AdminRemoveTenantUserRole");

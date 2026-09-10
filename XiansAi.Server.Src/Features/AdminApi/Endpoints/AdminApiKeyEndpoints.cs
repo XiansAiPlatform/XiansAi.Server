@@ -54,6 +54,7 @@ public static class AdminApiKeyEndpoints
             [FromQuery] string userId,
             [FromQuery] string? name,
             [FromQuery] bool revokePrevious,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] CertificateService certificateService,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -63,7 +64,7 @@ public static class AdminApiKeyEndpoints
             if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
                 return forbid;
 
-            return await certificateService.GenerateClientCertificateBase64ForUser(userId, revokePrevious, name);
+            return await certificateService.GenerateClientCertificateBase64ForUser(userId, httpContext, revokePrevious, name);
         })
         .WithName("AgentCertificate_Generate")
         .WithSummary("Generate a new agent certificate")
@@ -112,6 +113,7 @@ public static class AdminApiKeyEndpoints
             string thumbprint,
             [FromQuery] string userId,
             [FromQuery] string? reason,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] CertificateService certificateService,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -122,7 +124,7 @@ public static class AdminApiKeyEndpoints
                 return forbid;
 
             var effectiveReason = string.IsNullOrWhiteSpace(reason) ? "Revoked by admin" : reason;
-            var revoked = await certificateService.RevokeCertificateAsync(thumbprint, effectiveReason, userId);
+            var revoked = await certificateService.RevokeCertificateAsync(thumbprint, effectiveReason, userId, httpContext);
             return revoked
                 ? Results.Ok()
                 : Results.NotFound(new { message = "Agent certificate not found or not issued to the specified user." });
@@ -150,6 +152,7 @@ public static class AdminApiKeyEndpoints
             string tenantId,
             [FromQuery] string userId,
             [FromBody] CreateAdminApiKeyRequest body,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -159,7 +162,7 @@ public static class AdminApiKeyEndpoints
             if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
                 return forbid;
 
-            var result = await service.CreateApiKeyAsync(tenantId, body.Name, userId);
+            var result = await service.CreateApiKeyAsync(tenantId, body.Name, userId, httpContext);
             if (result.IsSuccess)
             {
                 var (apiKey, meta) = result.Data;
@@ -245,6 +248,7 @@ public static class AdminApiKeyEndpoints
             string tenantId,
             string id,
             [FromQuery] string userId,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -254,7 +258,7 @@ public static class AdminApiKeyEndpoints
             if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
                 return forbid;
 
-            var result = await service.RevokeApiKeyAsync(id, tenantId, userId);
+            var result = await service.RevokeApiKeyAsync(id, tenantId, userId, httpContext);
             return result.IsSuccess ? Results.Ok() : result.ToHttpResult();
         })
         .WithName("AdminApiKey_Revoke")
@@ -266,6 +270,7 @@ public static class AdminApiKeyEndpoints
             string tenantId,
             string id,
             [FromQuery] string userId,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -275,7 +280,7 @@ public static class AdminApiKeyEndpoints
             if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
                 return forbid;
 
-            var result = await service.RotateApiKeyAsync(id, tenantId, userId);
+            var result = await service.RotateApiKeyAsync(id, tenantId, userId, httpContext);
             if (result.IsSuccess && result.Data != null)
             {
                 var (apiKey, meta) = result.Data.Value;

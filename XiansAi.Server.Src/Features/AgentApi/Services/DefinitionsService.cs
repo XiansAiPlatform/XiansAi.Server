@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using MongoDB.Driver;
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -128,9 +129,9 @@ public class CreateAgentRequest
 
 public interface IDefinitionsService
 {
-    Task<IResult> CreateAsync(FlowDefinitionRequest request);
+    Task<IResult> CreateAsync(FlowDefinitionRequest request, HttpContext httpContext);
     Task<IResult> CheckHash(string workflowType, bool systemScoped, string hash);
-    Task<IResult> CreateAgentAsync(CreateAgentRequest request);
+    Task<IResult> CreateAgentAsync(CreateAgentRequest request, HttpContext httpContext);
 }
 
 public class DefinitionsService : IDefinitionsService
@@ -142,7 +143,8 @@ public class DefinitionsService : IDefinitionsService
     private readonly IAgentPermissionRepository _agentPermissionRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IActivationValidationService _activationValidationService;
-    
+    private readonly IAuditLogService _auditLogService;
+
     public DefinitionsService(
         Repositories.IFlowDefinitionRepository flowDefinitionRepository,
         IAgentRepository agentRepository,
@@ -150,7 +152,8 @@ public class DefinitionsService : IDefinitionsService
         ITenantContext tenantContext,
         IAgentPermissionRepository agentPermissionRepository,
         IWebhookEventPublisher webhookEventPublisher,
-        IActivationValidationService activationValidationService
+        IActivationValidationService activationValidationService,
+        IAuditLogService auditLogService
     )
     {
         _flowDefinitionRepository = flowDefinitionRepository;
@@ -160,9 +163,10 @@ public class DefinitionsService : IDefinitionsService
         _agentPermissionRepository = agentPermissionRepository;
         _webhookEventPublisher = webhookEventPublisher;
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
-    public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
+    public async Task<IResult> CreateAsync(FlowDefinitionRequest request, HttpContext httpContext)
     {
         try
         {
@@ -247,10 +251,16 @@ public class DefinitionsService : IDefinitionsService
                 await _flowDefinitionRepository.CreateAsync(definition);
                 _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
+                var updatedMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
                 await _webhookEventPublisher.PublishAsync(
                     WebhookEventTypes.FlowDefinitionUpdated,
-                    new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash },
+                    updatedMetadata,
                     _tenantContext.TenantId);
+                await _auditLogService.RecordEntryAsync(
+                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.FlowDefinitionUpdated,
+                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    activationName: null,
+                    details: updatedMetadata);
 
                 return Results.Ok("Definition deleted and recreated successfully");
             }
@@ -262,10 +272,16 @@ public class DefinitionsService : IDefinitionsService
         await _flowDefinitionRepository.CreateAsync(definition);
         _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
+        var createdMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
         await _webhookEventPublisher.PublishAsync(
             WebhookEventTypes.FlowDefinitionCreated,
-            new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash },
+            createdMetadata,
             _tenantContext.TenantId);
+        await _auditLogService.RecordEntryAsync(
+            action: httpContext.GetEndpointName() ?? WebhookEventTypes.FlowDefinitionCreated,
+            description: httpContext.GetEndpointSummary() ?? string.Empty,
+            activationName: null,
+            details: createdMetadata);
 
         return Results.Ok("New definition created successfully");
     }
@@ -284,7 +300,7 @@ public class DefinitionsService : IDefinitionsService
         return Results.NotFound("Hash does not match");
     }
 
-    public async Task<IResult> CreateAgentAsync(CreateAgentRequest request)
+    public async Task<IResult> CreateAgentAsync(CreateAgentRequest request, HttpContext httpContext)
     {
         try
         {
@@ -352,10 +368,16 @@ public class DefinitionsService : IDefinitionsService
 
         if (existingAgent == null)
         {
+            var registeredMetadata = new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy };
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.AgentRegistered,
-                new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy },
+                registeredMetadata,
                 _tenantContext.TenantId);
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.AgentRegistered,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: registeredMetadata);
         }
         
         return Results.Ok(new 

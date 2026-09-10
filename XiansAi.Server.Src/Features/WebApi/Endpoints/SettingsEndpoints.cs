@@ -19,7 +19,7 @@ public static class SettingsEndpoints
             [FromServices] CertificateService endpoint,
             [FromQuery] bool revoke_previous = false) =>
         {
-            return endpoint.GenerateClientCertificateBase64(revoke_previous);
+            return endpoint.GenerateClientCertificateBase64(context, revoke_previous);
         })
         .WithName("Generate Client Certificate Base64")
         

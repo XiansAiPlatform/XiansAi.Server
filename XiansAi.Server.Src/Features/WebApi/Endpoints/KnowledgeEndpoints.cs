@@ -35,9 +35,10 @@ public static class KnowledgeEndpoints
 
         knowledgeGroup.MapPost("/", async (
             [FromBody] KnowledgeRequest request,
+            HttpContext httpContext,
             [FromServices] IKnowledgeService endpoint) =>
         {
-            return await endpoint.Create(request);
+            return await endpoint.Create(request, httpContext);
         })
         .WithName("Create Instruction")
         ;
@@ -65,14 +66,15 @@ public static class KnowledgeEndpoints
         knowledgeGroup.MapDelete("/all", async (
             [FromQuery] string name,
             [FromQuery] string agent,
+            HttpContext httpContext,
             [FromServices] IKnowledgeService endpoint) =>
         {
-            var request = new DeleteAllVersionsRequest 
+            var request = new DeleteAllVersionsRequest
             {
                 Name = name,
                 Agent = agent
             };
-            return await endpoint.DeleteAllVersions(request);
+            return await endpoint.DeleteAllVersions(request, httpContext);
         })
         .WithName("Delete All Versions")
         ;

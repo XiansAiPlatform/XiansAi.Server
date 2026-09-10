@@ -60,6 +60,7 @@ public static class WebhookEndpoints
 
     private static async Task<IResult> CreateWebhook(
         [FromBody] CreateBuiltinWebhookRequest request,
+        HttpContext httpContext,
         [FromServices] IAppIntegrationService integrationService,
         [FromServices] ITenantContext tenantContext,
         [FromServices] ILogger<AgentWebhookEndpointsLogger> logger)
@@ -77,7 +78,7 @@ public static class WebhookEndpoints
             "Agent creating builtin webhook for tenant {TenantId}, agent {AgentName}, activation {ActivationName}",
             LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(request.ActivationName));
 
-        var result = await integrationService.CreateBuiltinWebhookAsync(request, tenantId, createdBy);
+        var result = await integrationService.CreateBuiltinWebhookAsync(request, tenantId, createdBy, httpContext);
         return result.ToHttpResult();
     }
 
@@ -106,6 +107,7 @@ public static class WebhookEndpoints
 
     private static async Task<IResult> DeleteWebhook(
         string integrationId,
+        HttpContext httpContext,
         [FromServices] IAppIntegrationService integrationService,
         [FromServices] ITenantContext tenantContext,
         [FromServices] ILogger<AgentWebhookEndpointsLogger> logger)
@@ -117,7 +119,7 @@ public static class WebhookEndpoints
             return Results.Problem("TenantId could not be resolved", statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var result = await integrationService.DeleteBuiltinWebhookAsync(integrationId, tenantId);
+        var result = await integrationService.DeleteBuiltinWebhookAsync(integrationId, tenantId, httpContext);
         if (!result.IsSuccess)
         {
             return result.ToHttpResult();

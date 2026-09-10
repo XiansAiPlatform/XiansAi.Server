@@ -1,4 +1,5 @@
 using MongoDB.Bson;
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Utils;
 using Shared.Utils.Services;
@@ -70,17 +71,17 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> GetTenantByTenantId(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false);
     Task<ServiceResult<List<TenantMetadata>>> GetTenantMetadata(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false);
     Task<ServiceResult<TenantMetadata>> GetTenantMetadataByKey(string tenantId, string key, CancellationToken cancellationToken = default, bool bypassCache = false);
-    Task<ServiceResult<TenantMetadata>> UpsertTenantMetadata(string tenantId, string key, UpsertTenantMetadataRequest request);
-    Task<ServiceResult<bool>> DeleteTenantMetadata(string tenantId, string key);
+    Task<ServiceResult<TenantMetadata>> UpsertTenantMetadata(string tenantId, string key, UpsertTenantMetadataRequest request, HttpContext httpContext);
+    Task<ServiceResult<bool>> DeleteTenantMetadata(string tenantId, string key, HttpContext httpContext);
     Task<ServiceResult<Tenant>> GetCurrentTenantInfo(CancellationToken cancellationToken = default);
     Task<ServiceResult<List<Tenant>>> GetAllTenants();
     Task<ServiceResult<TenantListResult>> GetAllTenants(int? page, int? pageSize, string? search = null);
     Task<ServiceResult<List<string>>> GetTenantIdList();
-    Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null);
-    Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
-    Task<ServiceResult<Tenant>> UpdateTenantTheme(string id, string? theme);
-    Task<ServiceResult<Tenant>> UpdateTenantLogo(string id, Logo? logo);
-    Task<ServiceResult<bool>> DeleteTenant(string id);
+    Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, HttpContext httpContext, string? createdBy = null);
+    Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request, HttpContext httpContext);
+    Task<ServiceResult<Tenant>> UpdateTenantTheme(string id, string? theme, HttpContext httpContext);
+    Task<ServiceResult<Tenant>> UpdateTenantLogo(string id, Logo? logo, HttpContext httpContext);
+    Task<ServiceResult<bool>> DeleteTenant(string id, HttpContext httpContext);
 }
 
 public class TenantService : ITenantService
@@ -95,6 +96,7 @@ public class TenantService : ITenantService
     private readonly IActivationRepository _activationRepository;
     private readonly IActivationService _activationService;
     private readonly IKnowledgeRepository _knowledgeRepository;
+    private readonly IAuditLogService _auditLogService;
 
 
     public TenantService(
@@ -107,7 +109,8 @@ public class TenantService : ITenantService
         ITenantMetadataProtector metadataProtector,
         IActivationRepository activationRepository,
         IActivationService activationService,
-        IKnowledgeRepository knowledgeRepository)
+        IKnowledgeRepository knowledgeRepository,
+        IAuditLogService auditLogService)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
@@ -119,6 +122,7 @@ public class TenantService : ITenantService
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
         _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
         _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -351,7 +355,7 @@ public class TenantService : ITenantService
     /// exists. Secret values are encrypted before persisting; the response echoes the entry
     /// as provided by the caller.
     /// </summary>
-    public async Task<ServiceResult<TenantMetadata>> UpsertTenantMetadata(string tenantId, string key, UpsertTenantMetadataRequest request)
+    public async Task<ServiceResult<TenantMetadata>> UpsertTenantMetadata(string tenantId, string key, UpsertTenantMetadataRequest request, HttpContext httpContext)
     {
         try
         {
@@ -388,7 +392,7 @@ public class TenantService : ITenantService
             }
             existingTenant.Metadata = metadata;
 
-            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id);
+            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id, httpContext);
             if (!persistResult.IsSuccess)
             {
                 return ServiceResult<TenantMetadata>.Failure(
@@ -417,7 +421,7 @@ public class TenantService : ITenantService
     /// <summary>
     /// Removes a single metadata entry by key (case-insensitive).
     /// </summary>
-    public async Task<ServiceResult<bool>> DeleteTenantMetadata(string tenantId, string key)
+    public async Task<ServiceResult<bool>> DeleteTenantMetadata(string tenantId, string key, HttpContext httpContext)
     {
         try
         {
@@ -444,7 +448,7 @@ public class TenantService : ITenantService
                 return ServiceResult<bool>.NotFound("Metadata key not found");
             }
 
-            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id);
+            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id, httpContext);
             if (!persistResult.IsSuccess)
             {
                 return ServiceResult<bool>.Failure(
@@ -615,7 +619,7 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, string? createdBy = null)
+    public async Task<ServiceResult<TenantCreatedResult>> CreateTenant(CreateTenantRequest request, HttpContext httpContext, string? createdBy = null)
     {
         try
         {
@@ -664,16 +668,21 @@ public class TenantService : ITenantService
             await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.TenantCreated,
-                new
-                {
-                    tenantId = validatedTenant.TenantId,
-                    name = validatedTenant.Name,
-                    domain = validatedTenant.Domain,
-                    createdBy = validatedTenant.CreatedBy,
-                },
-                validatedTenant.TenantId);
+            var metadata = new
+            {
+                tenantId = validatedTenant.TenantId,
+                name = validatedTenant.Name,
+                domain = validatedTenant.Domain,
+                createdBy = validatedTenant.CreatedBy,
+            };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.TenantCreated, metadata, validatedTenant.TenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.TenantCreated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: metadata);
 
             var result = new TenantCreatedResult
             {
@@ -727,7 +736,7 @@ public class TenantService : ITenantService
         return "A tenant with this ID or domain already exists.";
     }
 
-    public async Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request)
+    public async Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request, HttpContext httpContext)
     {
         try
         {
@@ -769,14 +778,20 @@ public class TenantService : ITenantService
             if (request.Metadata != null)
                 existingTenant.Metadata = _metadataProtector.Protect(request.Metadata, existingTenant.TenantId);
 
-            var result = await PersistTenantUpdate(existingTenant, id);
+            var result = await PersistTenantUpdate(existingTenant, id, httpContext);
 
             if (result.IsSuccess && request.Enabled.HasValue && request.Enabled.Value != wasEnabled)
             {
-                await _webhookEventPublisher.PublishAsync(
-                    request.Enabled.Value ? WebhookEventTypes.TenantEnabled : WebhookEventTypes.TenantDisabled,
-                    new { tenantId = existingTenant.TenantId, id = existingTenant.Id },
-                    existingTenant.TenantId);
+                var enabledEvent = request.Enabled.Value ? WebhookEventTypes.TenantEnabled : WebhookEventTypes.TenantDisabled;
+                var metadata = new { tenantId = existingTenant.TenantId, id = existingTenant.Id };
+
+                await _webhookEventPublisher.PublishAsync(enabledEvent, metadata, existingTenant.TenantId);
+
+                await _auditLogService.RecordEntryAsync(
+                    action: enabledEvent,
+                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    activationName: null,
+                    details: metadata);
             }
 
             return result;
@@ -801,7 +816,7 @@ public class TenantService : ITenantService
     /// <summary>
     /// Sets (or clears) the tenant's theme. Passing a null or whitespace theme removes it.
     /// </summary>
-    public async Task<ServiceResult<Tenant>> UpdateTenantTheme(string id, string? theme)
+    public async Task<ServiceResult<Tenant>> UpdateTenantTheme(string id, string? theme, HttpContext httpContext)
     {
         try
         {
@@ -818,7 +833,7 @@ public class TenantService : ITenantService
 
             existingTenant.Theme = string.IsNullOrWhiteSpace(theme) ? null : theme;
 
-            return await PersistTenantUpdate(existingTenant, id);
+            return await PersistTenantUpdate(existingTenant, id, httpContext);
         }
         catch (ValidationException ex)
         {
@@ -840,7 +855,7 @@ public class TenantService : ITenantService
     /// <summary>
     /// Sets (or clears) the tenant's logo. Passing a null logo removes it.
     /// </summary>
-    public async Task<ServiceResult<Tenant>> UpdateTenantLogo(string id, Logo? logo)
+    public async Task<ServiceResult<Tenant>> UpdateTenantLogo(string id, Logo? logo, HttpContext httpContext)
     {
         try
         {
@@ -857,7 +872,7 @@ public class TenantService : ITenantService
 
             existingTenant.Logo = logo;
 
-            return await PersistTenantUpdate(existingTenant, id);
+            return await PersistTenantUpdate(existingTenant, id, httpContext);
         }
         catch (ValidationException ex)
         {
@@ -880,7 +895,7 @@ public class TenantService : ITenantService
     /// Validates, persists and cache-invalidates an already-mutated tenant entity.
     /// Shared by the tenant update operations so the save/validate/cache logic lives in one place.
     /// </summary>
-    private async Task<ServiceResult<Tenant>> PersistTenantUpdate(Tenant existingTenant, string id)
+    private async Task<ServiceResult<Tenant>> PersistTenantUpdate(Tenant existingTenant, string id, HttpContext httpContext)
     {
         existingTenant.UpdatedAt = DateTime.UtcNow;
         var validatedTenant = existingTenant.SanitizeAndValidate();
@@ -911,22 +926,27 @@ public class TenantService : ITenantService
 
         _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
 
-        await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.TenantUpdated,
-            new
-            {
-                tenantId = validatedTenant.TenantId,
-                id = validatedTenant.Id,
-                name = validatedTenant.Name,
-                domain = validatedTenant.Domain,
-                enabled = validatedTenant.Enabled,
-            },
-            validatedTenant.TenantId);
+        var metadata = new
+        {
+            tenantId = validatedTenant.TenantId,
+            id = validatedTenant.Id,
+            name = validatedTenant.Name,
+            domain = validatedTenant.Domain,
+            enabled = validatedTenant.Enabled,
+        };
+
+        await _webhookEventPublisher.PublishAsync(WebhookEventTypes.TenantUpdated, metadata, validatedTenant.TenantId);
+
+        await _auditLogService.RecordEntryAsync(
+            action: httpContext.GetEndpointName() ?? WebhookEventTypes.TenantUpdated,
+            description: httpContext.GetEndpointSummary() ?? string.Empty,
+            activationName: null,
+            details: metadata);
 
         return ServiceResult<Tenant>.Success(validatedTenant);
     }
 
-    public async Task<ServiceResult<bool>> DeleteTenant(string id)
+    public async Task<ServiceResult<bool>> DeleteTenant(string id, HttpContext httpContext)
     {
         try
         {
@@ -944,7 +964,7 @@ public class TenantService : ITenantService
             // leave orphaned activation data behind. Failures are logged, not blocking.
             if (!string.IsNullOrEmpty(existingTenant.TenantId))
             {
-                await ForceDeleteActivationsForTenantAsync(existingTenant.TenantId);
+                await ForceDeleteActivationsForTenantAsync(existingTenant.TenantId, httpContext);
             }
 
             var success = await _tenantRepository.DeleteAsync(id);
@@ -956,10 +976,15 @@ public class TenantService : ITenantService
                     _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
                 _logger.LogInformation("Deleted tenant with ID {Id}", LogSanitizer.Sanitize(id));
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.TenantDeleted,
-                    new { tenantId = existingTenant.TenantId, id = existingTenant.Id, name = existingTenant.Name },
-                    existingTenant.TenantId);
+                var metadata = new { tenantId = existingTenant.TenantId, id = existingTenant.Id, name = existingTenant.Name };
+
+                await _webhookEventPublisher.PublishAsync(WebhookEventTypes.TenantDeleted, metadata, existingTenant.TenantId);
+
+                await _auditLogService.RecordEntryAsync(
+                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.TenantDeleted,
+                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    activationName: null,
+                    details: metadata);
 
                 return ServiceResult<bool>.Success(true);
             }
@@ -992,7 +1017,7 @@ public class TenantService : ITenantService
     /// knowledge per agent. Best-effort — failures are logged, not thrown, so cleanup issues never
     /// block deleting the tenant record itself.
     /// </summary>
-    private async Task ForceDeleteActivationsForTenantAsync(string tenantId)
+    private async Task ForceDeleteActivationsForTenantAsync(string tenantId, HttpContext httpContext)
     {
         List<AgentActivation> activations;
         try
@@ -1021,7 +1046,7 @@ public class TenantService : ITenantService
             {
                 if (activation.WorkflowIds != null && activation.WorkflowIds.Count > 0)
                 {
-                    var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId);
+                    var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId, httpContext);
                     if (!deactivateResult.IsSuccess)
                     {
                         totalFailed++;
@@ -1031,7 +1056,7 @@ public class TenantService : ITenantService
                     }
                 }
 
-                var deleteResult = await _activationService.DeleteActivationAsync(activation.Id);
+                var deleteResult = await _activationService.DeleteActivationAsync(activation.Id, httpContext);
                 if (deleteResult.IsSuccess)
                 {
                     totalDeleted++;

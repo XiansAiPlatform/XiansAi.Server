@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Shared.Repositories;
+using Shared.Auditing;
 using Shared.Auth;
 using System.ComponentModel.DataAnnotations;
 using Features.AdminApi.Utils;
@@ -100,9 +101,11 @@ public static class AdminOwnershipEndpoints
             string tenantId,
             string agentId,
             [FromBody] TransferOwnershipRequest request,
+            HttpContext httpContext,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
             [FromServices] IWebhookEventPublisher webhookEventPublisher,
+            [FromServices] IAuditLogService auditLogService,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ILogger<IUserRepository> logger) =>
         {
@@ -206,18 +209,24 @@ public static class AdminOwnershipEndpoints
                     return Results.Problem("Failed to transfer ownership");
                 }
 
+                var transferredMetadata = new
+                {
+                    tenantId = parsedTenant,
+                    agentId = agent.Id,
+                    agentName,
+                    previousOwners,
+                    newOwner = newAdminUserId,
+                    transferredBy = tenantContext.LoggedInUser
+                };
                 await webhookEventPublisher.PublishAsync(
                     WebhookEventTypes.AgentOwnershipTransferred,
-                    new
-                    {
-                        tenantId = parsedTenant,
-                        agentId = agent.Id,
-                        agentName,
-                        previousOwners,
-                        newOwner = newAdminUserId,
-                        transferredBy = tenantContext.LoggedInUser
-                    },
+                    transferredMetadata,
                     parsedTenant);
+                await auditLogService.RecordEntryAsync(
+                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.AgentOwnershipTransferred,
+                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    activationName: null,
+                    details: transferredMetadata);
 
                 return Results.Ok(new
                 {

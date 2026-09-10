@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using Shared.Providers.Auth;
@@ -120,10 +121,10 @@ public interface IGlobalUserAdminService
 {
     Task<ServiceResult<GlobalUserListResult>> ListUsersAsync(UserFilter filter);
     Task<ServiceResult<GlobalUserDetail>> GetUserWithMembershipsAsync(string userId);
-    Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email);
-    Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin);
-    Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId);
-    Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId);
+    Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email, HttpContext httpContext);
+    Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin, HttpContext httpContext);
+    Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId, HttpContext httpContext);
+    Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId, HttpContext httpContext);
 }
 
 public class GlobalUserAdminService : IGlobalUserAdminService
@@ -143,6 +144,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
     private readonly ITenantCacheService _tenantCacheService;
     private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<GlobalUserAdminService> _logger;
 
     public GlobalUserAdminService(
@@ -150,12 +152,14 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         ITenantCacheService tenantCacheService,
         IUserAuthorizationInvalidator authorizationInvalidator,
         IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<GlobalUserAdminService> logger)
     {
         _userRepository = userRepository;
         _tenantCacheService = tenantCacheService;
         _authorizationInvalidator = authorizationInvalidator;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -229,7 +233,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email)
+    public async Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email, HttpContext httpContext)
     {
         try
         {
@@ -268,9 +272,15 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             await InvalidateCachesAsync(user);
             _logger.LogInformation("Global user {UserId} profile updated", LogSanitizer.Sanitize(userId));
 
+            var updatedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name };
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.UserUpdated,
-                new { userId = user.UserId, email = user.Email, name = user.Name });
+                updatedMetadata);
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserUpdated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: updatedMetadata);
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -281,7 +291,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin)
+    public async Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin, HttpContext httpContext)
     {
         try
         {
@@ -313,9 +323,16 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogInformation("SysAdmin flag for user {UserId} set to {Value}",
                 LogSanitizer.Sanitize(userId), isSysAdmin);
 
+            var sysAdminEvent = isSysAdmin ? WebhookEventTypes.UserSysAdminGranted : WebhookEventTypes.UserSysAdminRevoked;
+            var sysAdminMetadata = new { userId = user.UserId, email = user.Email, isSysAdmin };
             await _webhookEventPublisher.PublishAsync(
-                isSysAdmin ? WebhookEventTypes.UserSysAdminGranted : WebhookEventTypes.UserSysAdminRevoked,
-                new { userId = user.UserId, email = user.Email, isSysAdmin });
+                sysAdminEvent,
+                sysAdminMetadata);
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? sysAdminEvent,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: sysAdminMetadata);
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -326,7 +343,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId)
+    public async Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId, HttpContext httpContext)
     {
         try
         {
@@ -365,9 +382,16 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogInformation("User {UserId} {Action}",
                 LogSanitizer.Sanitize(userId), enabled ? "enabled" : "disabled");
 
+            var statusEvent = enabled ? WebhookEventTypes.UserEnabled : WebhookEventTypes.UserDisabled;
+            var statusMetadata = new { userId = user.UserId, email = user.Email, enabled, reason, actingUserId };
             await _webhookEventPublisher.PublishAsync(
-                enabled ? WebhookEventTypes.UserEnabled : WebhookEventTypes.UserDisabled,
-                new { userId = user.UserId, email = user.Email, enabled, reason, actingUserId });
+                statusEvent,
+                statusMetadata);
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? statusEvent,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: statusMetadata);
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -378,7 +402,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId)
+    public async Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId, HttpContext httpContext)
     {
         try
         {
@@ -407,9 +431,15 @@ public class GlobalUserAdminService : IGlobalUserAdminService
                 LogSanitizer.Sanitize(userId),
                 LogSanitizer.Sanitize(actingUserId));
 
+            var deletedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, actingUserId };
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.UserDeleted,
-                new { userId = user.UserId, email = user.Email, name = user.Name, actingUserId });
+                deletedMetadata);
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserDeleted,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: deletedMetadata);
 
             return ServiceResult<bool>.Success(true);
         }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -50,8 +51,8 @@ public class TenantOidcRules
 public interface ITenantOidcConfigService
 {
     Task<ServiceResult<TenantOidcRules?>> GetForTenantAsync(string tenantId);
-    Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId);
-    Task<ServiceResult<bool>> DeleteAsync(string tenantId);
+    Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId, HttpContext httpContext);
+    Task<ServiceResult<bool>> DeleteAsync(string tenantId, HttpContext httpContext);
     Task<ServiceResult<List<(string tenantId, TenantOidcRules? rules)>>> GetAllAsync();
 }
 
@@ -62,20 +63,22 @@ public class TenantOidcConfigService : ITenantOidcConfigService
     private readonly ILogger<TenantOidcConfigService> _logger;
     private readonly ObjectCache _cache;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly OidcValidationPolicy _policy;
     private readonly string _uniqueSecret;
-    
+
     // Cache configuration
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromHours(1);
     private static readonly string CacheKeyPrefix = "tenant_oidc_config:";
 
-    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration, ObjectCache cache, IWebhookEventPublisher webhookEventPublisher, OidcValidationPolicy policy)
+    public TenantOidcConfigService(ITenantOidcConfigRepository repository, ISecureEncryptionService encryption, ILogger<TenantOidcConfigService> logger, IConfiguration configuration, ObjectCache cache, IWebhookEventPublisher webhookEventPublisher, IAuditLogService auditLogService, OidcValidationPolicy policy)
     {
         _repository = repository;
         _encryption = encryption;
         _logger = logger;
         _cache = cache;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _policy = policy;
         _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:TenantOidcSecretKey"] ?? string.Empty;
         if (string.IsNullOrWhiteSpace(_uniqueSecret))
@@ -179,7 +182,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         }
     }
 
-    public async Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId)
+    public async Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId, HttpContext httpContext)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             return ServiceResult<bool>.BadRequest("tenantId is required");
@@ -254,10 +257,15 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             await InvalidateCacheAsync(tenantId);
             _logger.LogDebug("Invalidated cache for tenant {TenantId} after upsert", LogSanitizer.Sanitize(tenantId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.TenantOidcUpdated,
-                new { tenantId, created = existing == null, actorUserId },
-                tenantId);
+            var metadata = new { tenantId, created = existing == null, actorUserId };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.TenantOidcUpdated, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.TenantOidcUpdated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: metadata);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -268,7 +276,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         }
     }
 
-    public async Task<ServiceResult<bool>> DeleteAsync(string tenantId)
+    public async Task<ServiceResult<bool>> DeleteAsync(string tenantId, HttpContext httpContext)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             return ServiceResult<bool>.BadRequest("tenantId is required");
@@ -276,17 +284,22 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         try
         {
             var removed = await _repository.DeleteAsync(tenantId);
-            
+
             if (removed)
             {
                 // Invalidate cache after successful deletion
                 await InvalidateCacheAsync(tenantId);
                 _logger.LogDebug("Invalidated cache for tenant {TenantId} after deletion", LogSanitizer.Sanitize(tenantId));
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.TenantOidcDeleted,
-                    new { tenantId },
-                    tenantId);
+                var metadata = new { tenantId };
+
+                await _webhookEventPublisher.PublishAsync(WebhookEventTypes.TenantOidcDeleted, metadata, tenantId);
+
+                await _auditLogService.RecordEntryAsync(
+                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.TenantOidcDeleted,
+                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    activationName: null,
+                    details: metadata);
             }
             
             return removed ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");

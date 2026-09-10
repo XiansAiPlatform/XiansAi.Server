@@ -65,8 +65,11 @@ public class TenantServiceMetadataTests
             _protector,
             _activationRepository.Object,
             _activationService.Object,
-            _knowledgeRepository.Object);
+            _knowledgeRepository.Object,
+            Mock.Of<IAuditLogService>());
     }
+
+    private static Microsoft.AspNetCore.Http.HttpContext TestHttpContext() => new Microsoft.AspNetCore.Http.DefaultHttpContext();
 
     private static Tenant CreateStoredTenant(List<TenantMetadata>? metadata = null)
     {
@@ -103,7 +106,7 @@ public class TenantServiceMetadataTests
                 new() { Key = "OpenAiKey", Value = SecretValue, Type = MetadataType.Secret },
                 new() { Key = "Region", Value = "WestEurope", Type = MetadataType.PlainText }
             }
-        });
+        }, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(persisted?.Metadata);
@@ -124,7 +127,7 @@ public class TenantServiceMetadataTests
             {
                 new() { Key = "OpenAiKey", Value = SecretValue, Type = MetadataType.Secret }
             }
-        });
+        }, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         Assert.NotEqual(SecretValue, result.Data!.Tenant.Metadata!.Single().Value);
@@ -142,7 +145,7 @@ public class TenantServiceMetadataTests
         {
             TenantId = TenantId,
             Name = "Test Tenant"
-        });
+        }, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(persisted);
@@ -161,7 +164,7 @@ public class TenantServiceMetadataTests
                 new() { Key = "Region", Value = "a" },
                 new() { Key = "region", Value = "b" }
             }
-        });
+        }, TestHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
@@ -186,7 +189,7 @@ public class TenantServiceMetadataTests
             {
                 new() { Key = "OpenAiKey", Value = SecretValue, Type = MetadataType.Secret }
             }
-        });
+        }, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         Assert.NotEqual(SecretValue, persisted!.Metadata!.Single().Value);
@@ -204,7 +207,7 @@ public class TenantServiceMetadataTests
             .Callback<string, Tenant>((_, t) => persisted = t)
             .ReturnsAsync(true);
 
-        var result = await _service.UpdateTenant(stored.Id, new UpdateTenantRequest { Name = "Renamed" });
+        var result = await _service.UpdateTenant(stored.Id, new UpdateTenantRequest { Name = "Renamed" }, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         Assert.Equal(originalCiphertext, persisted!.Metadata!.Single().Value);
@@ -303,7 +306,7 @@ public class TenantServiceMetadataTests
             .ReturnsAsync(true);
 
         var result = await _service.UpsertTenantMetadata(TenantId, "OpenAiKey",
-            new UpsertTenantMetadataRequest { Value = SecretValue, Type = MetadataType.Secret });
+            new UpsertTenantMetadataRequest { Value = SecretValue, Type = MetadataType.Secret }, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         // Response echoes the plaintext entry (metadata endpoints are the decrypted surface)
@@ -326,7 +329,7 @@ public class TenantServiceMetadataTests
             .ReturnsAsync(true);
 
         var result = await _service.UpsertTenantMetadata(TenantId, "region",
-            new UpsertTenantMetadataRequest { Value = "NorthEurope" });
+            new UpsertTenantMetadataRequest { Value = "NorthEurope" }, TestHttpContext());
 
         Assert.True(result.IsSuccess);
         Assert.Single(persisted!.Metadata!);
@@ -340,7 +343,7 @@ public class TenantServiceMetadataTests
         _repo.Setup(x => x.GetByTenantIdAsync(TenantId)).ReturnsAsync(stored);
 
         var result = await _service.UpsertTenantMetadata(TenantId, "bad key!",
-            new UpsertTenantMetadataRequest { Value = "v" });
+            new UpsertTenantMetadataRequest { Value = "v" }, TestHttpContext());
 
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
         _repo.Verify(x => x.UpdateAsync(It.IsAny<string>(), It.IsAny<Tenant>()), Times.Never);
@@ -352,7 +355,7 @@ public class TenantServiceMetadataTests
         _repo.Setup(x => x.GetByTenantIdAsync(TenantId)).ReturnsAsync((Tenant?)null);
 
         var result = await _service.UpsertTenantMetadata(TenantId, "OpenAiKey",
-            new UpsertTenantMetadataRequest { Value = "v" });
+            new UpsertTenantMetadataRequest { Value = "v" }, TestHttpContext());
 
         Assert.Equal(StatusCode.NotFound, result.StatusCode);
     }
@@ -373,7 +376,7 @@ public class TenantServiceMetadataTests
             .Callback<string, Tenant>((_, t) => persisted = t)
             .ReturnsAsync(true);
 
-        var result = await _service.DeleteTenantMetadata(TenantId, "openaikey");
+        var result = await _service.DeleteTenantMetadata(TenantId, "openaikey", TestHttpContext());
 
         Assert.True(result.IsSuccess);
         Assert.Single(persisted!.Metadata!);
@@ -385,7 +388,7 @@ public class TenantServiceMetadataTests
     {
         _repo.Setup(x => x.GetByTenantIdAsync(TenantId)).ReturnsAsync(CreateStoredTenant());
 
-        var result = await _service.DeleteTenantMetadata(TenantId, "missing");
+        var result = await _service.DeleteTenantMetadata(TenantId, "missing", TestHttpContext());
 
         Assert.Equal(StatusCode.NotFound, result.StatusCode);
         _repo.Verify(x => x.UpdateAsync(It.IsAny<string>(), It.IsAny<Tenant>()), Times.Never);

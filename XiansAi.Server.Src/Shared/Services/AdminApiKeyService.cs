@@ -14,7 +14,7 @@ public interface IAdminApiKeyService
 {
     /// <summary>Creates a named API key attributed to <paramref name="userId"/>.</summary>
     Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(
-        string tenantId, string name, string userId);
+        string tenantId, string name, string userId, HttpContext httpContext);
 
     /// <summary>Lists only the API keys created by <paramref name="userId"/> within the tenant.</summary>
     Task<ServiceResult<List<ApiKey>>> ListApiKeysAsync(string tenantId, string userId);
@@ -23,10 +23,10 @@ public interface IAdminApiKeyService
     Task<ServiceResult<ApiKey?>> GetApiKeyAsync(string id, string tenantId, string userId);
 
     /// <summary>Revokes a key only if it was created by <paramref name="userId"/>.</summary>
-    Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId, string userId);
+    Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId, string userId, HttpContext httpContext);
 
     /// <summary>Rotates a key only if it was created by <paramref name="userId"/>.</summary>
-    Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId, string userId);
+    Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId, string userId, HttpContext httpContext);
 }
 
 public class AdminApiKeyService : IAdminApiKeyService
@@ -41,13 +41,13 @@ public class AdminApiKeyService : IAdminApiKeyService
     }
 
     public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(
-        string tenantId, string name, string userId)
+        string tenantId, string name, string userId, HttpContext httpContext)
     {
         _logger.LogInformation(
             "Creating API key '{Name}' for tenant {TenantId} by user {UserId}",
             LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(userId));
 
-        return await _apiKeyService.CreateApiKeyAsync(tenantId, name, userId);
+        return await _apiKeyService.CreateApiKeyAsync(tenantId, name, userId, httpContext);
     }
 
     public async Task<ServiceResult<List<ApiKey>>> ListApiKeysAsync(string tenantId, string userId)
@@ -81,22 +81,22 @@ public class AdminApiKeyService : IAdminApiKeyService
         return result;
     }
 
-    public async Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId, string userId)
+    public async Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId, string userId, HttpContext httpContext)
     {
         var ownerCheck = await GetApiKeyAsync(id, tenantId, userId);
         if (!ownerCheck.IsSuccess || ownerCheck.Data == null)
             return ServiceResult<bool>.NotFound("API key not found.");
 
-        return await _apiKeyService.RevokeApiKeyAsync(id, tenantId);
+        return await _apiKeyService.RevokeApiKeyAsync(id, tenantId, httpContext);
     }
 
     public async Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(
-        string id, string tenantId, string userId)
+        string id, string tenantId, string userId, HttpContext httpContext)
     {
         var ownerCheck = await GetApiKeyAsync(id, tenantId, userId);
         if (!ownerCheck.IsSuccess || ownerCheck.Data == null)
             return ServiceResult<(string, ApiKey)?>.NotFound("API key not found.");
 
-        return await _apiKeyService.RotateApiKeyAsync(id, tenantId);
+        return await _apiKeyService.RotateApiKeyAsync(id, tenantId, httpContext);
     }
 }
