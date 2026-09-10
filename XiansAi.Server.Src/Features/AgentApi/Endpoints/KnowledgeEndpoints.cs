@@ -65,6 +65,7 @@ public static class KnowledgeEndpoints
 
         knowledgeGroup.MapPost("/", async (
             [FromBody] KnowledgeCreateRequest request,
+            HttpContext httpContext,
             [FromServices] IKnowledgeService endpoint) =>
         {
             _logger.LogInformation("Creating new knowledge with name: {Name}, agent: {Agent}, activationName: {ActivationName}", 
@@ -80,7 +81,7 @@ public static class KnowledgeEndpoints
                 Description = request.Description,
                 Visible = request.Visible
             };
-            var result = await endpoint.Create(knowledgeRequest);
+            var result = await endpoint.Create(knowledgeRequest, httpContext);
             return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
         })
         .Produces<object>(StatusCodes.Status201Created)
@@ -93,15 +94,16 @@ public static class KnowledgeEndpoints
         knowledgeGroup.MapDelete("/", async (
             [FromQuery] string name,
             [FromQuery] string agent,
+            HttpContext httpContext,
             [FromServices] IKnowledgeService service) =>
         {
             _logger.LogInformation("Deleting knowledge with name: {Name}, agent: {Agent}", LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(agent));
-            var deleteRequest = new DeleteAllVersionsRequest 
+            var deleteRequest = new DeleteAllVersionsRequest
             {
                 Name = name,
                 Agent = agent
             };
-            var result = await service.DeleteAllVersions(deleteRequest);
+            var result = await service.DeleteAllVersions(deleteRequest, httpContext);
             return result;
         })
         .Produces(StatusCodes.Status200OK)

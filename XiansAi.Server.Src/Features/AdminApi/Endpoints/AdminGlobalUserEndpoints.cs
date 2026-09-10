@@ -92,6 +92,7 @@ public static class AdminGlobalUserEndpoints
         group.MapPatch("/{userId}", async (
             string userId,
             [FromBody] PatchGlobalUserRequest body,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IGlobalUserAdminService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -99,7 +100,7 @@ public static class AdminGlobalUserEndpoints
             if (!IsSysAdminCaller(tenantContext, loggerFactory, "patch global user", out var forbid))
                 return forbid;
 
-            var result = await service.UpdateProfileAsync(userId, body.Name, body.Email);
+            var result = await service.UpdateProfileAsync(userId, body.Name, body.Email, httpContext);
             return result.ToHttpResult();
         })
         .WithName("AdminPatchGlobalUser");
@@ -108,6 +109,7 @@ public static class AdminGlobalUserEndpoints
         group.MapPut("/{userId}/sysadmin", async (
             string userId,
             [FromBody] SetSysAdminRequest body,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IGlobalUserAdminService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -115,7 +117,7 @@ public static class AdminGlobalUserEndpoints
             if (!IsSysAdminCaller(tenantContext, loggerFactory, "set sysadmin flag", out var forbid))
                 return forbid;
 
-            var result = await service.SetSysAdminAsync(userId, body.IsSysAdmin);
+            var result = await service.SetSysAdminAsync(userId, body.IsSysAdmin, httpContext);
             return result.ToHttpResult();
         })
         .WithName("AdminSetGlobalUserSysAdmin");
@@ -124,6 +126,7 @@ public static class AdminGlobalUserEndpoints
         group.MapPut("/{userId}/status", async (
             string userId,
             [FromBody] SetUserStatusRequest body,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IGlobalUserAdminService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -132,7 +135,7 @@ public static class AdminGlobalUserEndpoints
                 return forbid;
 
             var actingUserId = tenantContext.LoggedInUser ?? "system";
-            var result = await service.SetStatusAsync(userId, body.Enabled, body.Reason, actingUserId);
+            var result = await service.SetStatusAsync(userId, body.Enabled, body.Reason, actingUserId, httpContext);
             return result.ToHttpResult();
         })
         .WithName("AdminSetGlobalUserStatus");
@@ -140,6 +143,7 @@ public static class AdminGlobalUserEndpoints
         // DELETE /api/v1/admin/users/{userId} — permanently delete the user account
         group.MapDelete("/{userId}", async (
             string userId,
+            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IGlobalUserAdminService service,
             [FromServices] ILoggerFactory loggerFactory) =>
@@ -148,7 +152,7 @@ public static class AdminGlobalUserEndpoints
                 return forbid;
 
             var actingUserId = tenantContext.LoggedInUser ?? "system";
-            var result = await service.DeleteUserAsync(userId, actingUserId);
+            var result = await service.DeleteUserAsync(userId, actingUserId, httpContext);
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult();
         })
         .WithName("AdminDeleteGlobalUser");

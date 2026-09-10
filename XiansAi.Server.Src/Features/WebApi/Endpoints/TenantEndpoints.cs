@@ -56,13 +56,14 @@ public static class TenantEndpoints
 
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,
+            HttpContext httpContext,
             [FromServices] ITenantService endpoint,
             [FromServices] ILogger<ITenantService> logger) =>
         {
             logger.LogInformation("Endpoint received CreateTenantRequest - TenantId: {TenantId}, Name: {Name}, CreatedBy: {CreatedBy}", 
                 request.TenantId, request.Name, request.CreatedBy);
-            
-            var result = await endpoint.CreateTenant(request);
+
+            var result = await endpoint.CreateTenant(request, httpContext);
             return result.ToHttpResult();
         })
         .WithName("Create Tenant")
@@ -73,9 +74,10 @@ public static class TenantEndpoints
         tenantsGroup.MapPut("/{id}", async (
             string id,
             [FromBody] UpdateTenantRequest request,
+            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.UpdateTenant(id, request);
+            var result = await endpoint.UpdateTenant(id, request, httpContext);
             return result.ToHttpResult();
         })
         .WithName("Update Tenant")
@@ -85,9 +87,10 @@ public static class TenantEndpoints
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
+            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.DeleteTenant(id);
+            var result = await endpoint.DeleteTenant(id, httpContext);
             return result.ToHttpResult();
         })
         .WithName("Delete Tenant")

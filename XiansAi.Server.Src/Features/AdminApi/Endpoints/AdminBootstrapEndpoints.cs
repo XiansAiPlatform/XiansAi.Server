@@ -17,9 +17,10 @@ public static class AdminBootstrapEndpoints
         adminApiGroup.MapGet("/bootstrap", async (
             [FromQuery] string? email,
             [FromQuery] string? tenantId,
+            HttpContext httpContext,
             [FromServices] IBootstrapService bootstrapService) =>
         {
-            var result = await bootstrapService.BootstrapAsync(email ?? string.Empty, tenantId);
+            var result = await bootstrapService.BootstrapAsync(email ?? string.Empty, tenantId, httpContext);
             return result.ToHttpResult();
         })
         .AllowAnonymous()

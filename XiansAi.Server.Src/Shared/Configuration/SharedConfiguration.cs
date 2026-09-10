@@ -254,6 +254,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
         builder.Services.AddSingleton<ITenantMetadataProtector, TenantMetadataProtector>();
+        builder.Services.AddSingleton<IAuditLogRepository, AuditLogRepository>();
 
         // Configure JSON serialization options for minimal APIs
         // This ensures enums are serialized as strings instead of numeric values

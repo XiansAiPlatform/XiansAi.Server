@@ -558,3 +558,16 @@ webhook_deliveries:
       created_at: asc
     expire_after: 15d
     background: true
+
+audit_logs:
+  - name: tenant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      created_at: desc
+    background: true
+  - name: tenant_id_1_performed_by_1_created_at_-1
+    keys:
+      tenant_id: asc
+      performed_by: asc
+      created_at: desc
+    background: true

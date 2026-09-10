@@ -22,7 +22,8 @@ public class ApiKeyServiceCacheInvalidationTests
         NullLogger<ApiKeyService>.Instance,
         new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
         Mock.Of<IWebhookEventPublisher>(),
-        _bus.Object);
+        _bus.Object,
+        Mock.Of<IAuditLogService>());
 
     private static ApiKey ExistingKey() => new()
     {
@@ -40,7 +41,7 @@ public class ApiKeyServiceCacheInvalidationTests
         _repository.Setup(x => x.GetByIdAsync("key-id", TenantId)).ReturnsAsync(ExistingKey());
         _repository.Setup(x => x.RevokeAsync("key-id", TenantId)).ReturnsAsync(true);
 
-        var result = await BuildService().RevokeApiKeyAsync("key-id", TenantId);
+        var result = await BuildService().RevokeApiKeyAsync("key-id", TenantId, new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.True(result.IsSuccess);
         _bus.Verify(x => x.PublishAsync(
@@ -61,7 +62,7 @@ public class ApiKeyServiceCacheInvalidationTests
         _repository.Setup(x => x.RotateAsync("key-id", TenantId))
             .ReturnsAsync(("raw-new-key", ExistingKey()));
 
-        var result = await BuildService().RotateApiKeyAsync("key-id", TenantId);
+        var result = await BuildService().RotateApiKeyAsync("key-id", TenantId, new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.True(result.IsSuccess);
         _bus.Verify(x => x.PublishAsync(

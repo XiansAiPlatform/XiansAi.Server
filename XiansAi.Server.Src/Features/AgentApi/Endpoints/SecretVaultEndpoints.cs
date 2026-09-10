@@ -16,6 +16,7 @@ public static class SecretVaultEndpoints
 
         group.MapPost("", async (
             [FromBody] AgentSecretVaultCreateRequest request,
+            HttpContext httpContext,
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -43,7 +44,7 @@ public static class SecretVaultEndpoints
                 effectiveUserId,
                 effectiveActivationName,
                 SecretVaultService.NormalizeAdditionalDataFromRequest(request.AdditionalData));
-            var result = await service.CreateAsync(input, actor);
+            var result = await service.CreateAsync(input, actor, httpContext);
             return result.ToHttpResult();
         })
         .WithName("Agent_CreateSecret")
@@ -125,6 +126,7 @@ public static class SecretVaultEndpoints
         group.MapPut("/{id}", async (
             string id,
             [FromBody] AgentSecretVaultUpdateRequest request,
+            HttpContext httpContext,
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -157,7 +159,7 @@ public static class SecretVaultEndpoints
                 effectiveUserId,
                 effectiveActivationName,
                 SecretVaultService.NormalizeAdditionalDataFromRequest(request.AdditionalData));
-            var result = await service.UpdateAsync(id, input, actor);
+            var result = await service.UpdateAsync(id, input, actor, httpContext);
             return result.ToHttpResult();
         })
         .WithName("Agent_UpdateSecret")
@@ -165,6 +167,7 @@ public static class SecretVaultEndpoints
 
         group.MapDelete("/{id}", async (
             string id,
+            HttpContext httpContext,
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -173,7 +176,7 @@ public static class SecretVaultEndpoints
                 return getResult.ToHttpResult();
             if (getResult.Data != null && !SecretVaultScopeEnforcement.CanAccessSecretTenant(tenantContext, getResult.Data.TenantId))
                 return ServiceResult<bool>.Forbidden("Access denied. Secret is not in your tenant.").ToHttpResult();
-            var result = await service.DeleteAsync(id);
+            var result = await service.DeleteAsync(id, httpContext);
             return result.ToHttpResult();
         })
         .WithName("Agent_DeleteSecret")

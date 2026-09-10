@@ -1,5 +1,6 @@
 using System.Security.Cryptography.X509Certificates;
 using System.ComponentModel.DataAnnotations;
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Features.AgentApi.Repositories;
@@ -23,19 +24,22 @@ public class CertificateService
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
 
     public CertificateService(
         ILogger<CertificateService> logger,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        IWebhookEventPublisher webhookEventPublisher)
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
     }
 
     public async Task<FlowServerSettings> GetFlowServerSettingsAsync()
@@ -134,7 +138,7 @@ public class CertificateService
     /// within their tenant. Returns false when not found or ownership does not match.
     /// The validation cache is invalidated before deletion so in-flight auth attempts fail immediately.
     /// </summary>
-    public async Task<bool> RevokeCertificateAsync(string thumbprint, string reason, string targetUserId)
+    public async Task<bool> RevokeCertificateAsync(string thumbprint, string reason, string targetUserId, HttpContext httpContext)
     {
         var cert = await _certificateRepository.GetByThumbprintAsync(thumbprint);
         if (cert == null
@@ -148,10 +152,16 @@ public class CertificateService
 
         if (revoked)
         {
+            var revokedMetadata = new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason };
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.CertificateRevoked,
-                new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason },
+                revokedMetadata,
                 cert.TenantId);
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.CertificateRevoked,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: revokedMetadata);
         }
 
         return revoked;
@@ -161,11 +171,11 @@ public class CertificateService
     /// Generates a certificate for the calling user (reads <c>LoggedInUser</c> from tenant context).
     /// Used by the WebAPI; admin callers should use the overload that accepts an explicit userId.
     /// </summary>
-    public async Task<IResult> GenerateClientCertificateBase64(bool revokePrevious = false)
+    public async Task<IResult> GenerateClientCertificateBase64(HttpContext httpContext, bool revokePrevious = false)
     {
         var userId = _tenantContext.LoggedInUser
             ?? throw new UnauthorizedAccessException("User not authenticated");
-        return await GenerateClientCertificateBase64ForUser(userId, revokePrevious);
+        return await GenerateClientCertificateBase64ForUser(userId, httpContext, revokePrevious);
     }
 
     /// <summary>
@@ -174,7 +184,7 @@ public class CertificateService
     /// for identification in UIs; it does not affect the X.509 subject.
     /// </summary>
     public async Task<IResult> GenerateClientCertificateBase64ForUser(
-        string targetUserId, bool revokePrevious = false, string? friendlyName = null)
+        string targetUserId, HttpContext httpContext, bool revokePrevious = false, string? friendlyName = null)
     {
         try
         {
@@ -190,10 +200,16 @@ public class CertificateService
             var certBytes = cert.Export(X509ContentType.Cert);
             var base64String = Convert.ToBase64String(certBytes);
 
+            var createdMetadata = new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName };
             await _webhookEventPublisher.PublishAsync(
                 WebhookEventTypes.CertificateCreated,
-                new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName },
+                createdMetadata,
                 _tenantContext.TenantId);
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.CertificateCreated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: createdMetadata);
 
             return Results.Ok(new { certificate = base64String });
         }

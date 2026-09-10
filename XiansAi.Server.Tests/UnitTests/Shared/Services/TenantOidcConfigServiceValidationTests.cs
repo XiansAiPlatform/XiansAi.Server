@@ -68,6 +68,7 @@ public class TenantOidcConfigServiceValidationTests
             configuration,
             new ObjectCache(Mock.Of<ICacheProvider>(), NullLogger<ObjectCache>.Instance),
             Mock.Of<IWebhookEventPublisher>(),
+            Mock.Of<IAuditLogService>(),
             policy);
     }
 
@@ -93,7 +94,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Contains("requireSignedTokens", result.ErrorMessage);
@@ -114,7 +115,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Contains("entra", result.ErrorMessage);
@@ -131,7 +132,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService("Development").UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService("Development").UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.True(result.IsSuccess);
     }
@@ -149,7 +150,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Contains("expectedAudience", result.ErrorMessage);
@@ -167,7 +168,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Contains("expectedAudience", result.ErrorMessage);
@@ -187,7 +188,7 @@ public class TenantOidcConfigServiceValidationTests
             """);
 
         var result = await CreateService(existingConfigJson: existing)
-            .UpsertAsync(TenantId, existing, "admin");
+            .UpsertAsync(TenantId, existing, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Contains("expectedAudience", result.ErrorMessage);
@@ -204,7 +205,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.True(result.IsSuccess);
     }
@@ -226,7 +227,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Contains("mutable", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
@@ -245,7 +246,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.True(result.IsSuccess);
     }
@@ -263,7 +264,7 @@ public class TenantOidcConfigServiceValidationTests
             }
             """);
 
-        var result = await CreateService().UpsertAsync(TenantId, config, "admin");
+        var result = await CreateService().UpsertAsync(TenantId, config, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.True(result.IsSuccess);
     }
@@ -283,7 +284,7 @@ public class TenantOidcConfigServiceValidationTests
             """);
 
         var result = await CreateService(existingConfigJson: existing)
-            .UpsertAsync(TenantId, existing, "admin");
+            .UpsertAsync(TenantId, existing, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.True(result.IsSuccess);
     }
@@ -310,7 +311,7 @@ public class TenantOidcConfigServiceValidationTests
             """);
 
         var result = await CreateService(existingConfigJson: existing)
-            .UpsertAsync(TenantId, changed, "admin");
+            .UpsertAsync(TenantId, changed, "admin", new Microsoft.AspNetCore.Http.DefaultHttpContext());
 
         Assert.False(result.IsSuccess);
         Assert.Contains("mutable", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);

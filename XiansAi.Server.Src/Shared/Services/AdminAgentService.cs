@@ -1,4 +1,5 @@
 using Shared.Auth;
+using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -11,8 +12,8 @@ public interface IAdminAgentService
 {
     Task<ServiceResult<AgentListResult>> GetAgentDeploymentsAsync(string tenantId, int? page, int? pageSize);
     Task<ServiceResult<AgentWithDefinitions>> GetAgentDeploymentByNameAsync(string agentName, string tenantId);
-    Task<ServiceResult<Agent>> UpdateAgentDeploymentAsync(string agentName, string tenantId, UpdateAgentRequest request);
-    Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId, bool forceDelete = false);
+    Task<ServiceResult<Agent>> UpdateAgentDeploymentAsync(string agentName, string tenantId, UpdateAgentRequest request, HttpContext httpContext);
+    Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId, HttpContext httpContext, bool forceDelete = false);
 }
 
 public class AgentListResult
@@ -50,6 +51,7 @@ public class AdminAgentService : IAdminAgentService
     private readonly ILogger<AdminAgentService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
 
     public AdminAgentService(
         IAgentRepository agentRepository,
@@ -57,7 +59,8 @@ public class AdminAgentService : IAdminAgentService
         IAgentDeletionService agentDeletionService,
         ILogger<AdminAgentService> logger,
         ITenantContext tenantContext,
-        IWebhookEventPublisher webhookEventPublisher
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -66,6 +69,7 @@ public class AdminAgentService : IAdminAgentService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     /// <summary>
@@ -167,7 +171,7 @@ public class AdminAgentService : IAdminAgentService
     /// <summary>
     /// Updates an agent instance.
     /// </summary>
-    public async Task<ServiceResult<Agent>> UpdateAgentDeploymentAsync(string agentName, string tenantId, UpdateAgentRequest request)
+    public async Task<ServiceResult<Agent>> UpdateAgentDeploymentAsync(string agentName, string tenantId, UpdateAgentRequest request, HttpContext httpContext)
     {
         try
         {
@@ -227,10 +231,15 @@ public class AdminAgentService : IAdminAgentService
 
             _logger.LogInformation("Successfully updated agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentDeploymentUpdated,
-                new { tenantId, agentId = agent.Id, agentName = agent.Name },
-                tenantId);
+            var metadata = new { tenantId, agentId = agent.Id, agentName = agent.Name };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.AgentDeploymentUpdated, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.AgentDeploymentUpdated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: metadata);
 
             return ServiceResult<Agent>.Success(agent);
         }
@@ -245,7 +254,7 @@ public class AdminAgentService : IAdminAgentService
     /// <summary>
     /// Deletes an agent instance using the AgentDeletionService.
     /// </summary>
-    public async Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId, bool forceDelete = false)
+    public async Task<ServiceResult<bool>> DeleteAgentDeploymentAsync(string agentName, string tenantId, HttpContext httpContext, bool forceDelete = false)
     {
         try
         {
@@ -269,7 +278,7 @@ public class AdminAgentService : IAdminAgentService
             }
 
             // Use AgentDeletionService to delete the agent (handles cascading deletes)
-            var deletionResult = await _agentDeletionService.DeleteAgentAsync(agent.Name, agent.SystemScoped, forceDelete);
+            var deletionResult = await _agentDeletionService.DeleteAgentAsync(agent.Name, agent.SystemScoped, httpContext, forceDelete);
             if (!deletionResult.IsSuccess)
             {
                 _logger.LogWarning("Failed to delete agent {AgentName} in tenant {TenantId}: {Error}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(deletionResult.ErrorMessage));

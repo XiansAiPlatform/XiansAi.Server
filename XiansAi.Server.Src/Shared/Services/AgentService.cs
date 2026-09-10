@@ -8,6 +8,7 @@ using Shared.Utils.Services;
 using Features.WebApi.Services;
 using System.Text.RegularExpressions;
 using Shared.Utils;
+using Shared.Auditing;
 
 namespace Shared.Services;
 
@@ -27,7 +28,7 @@ public class AgentDeletionResult
 
 public interface IAgentDeletionService
 {
-    Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, bool forceDelete = false);
+    Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, HttpContext httpContext, bool forceDelete = false);
 }
 
 /// <summary>
@@ -48,6 +49,7 @@ public class AgentDeletionService : IAgentDeletionService
     private readonly IActivationService _activationService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IActivationValidationService _activationValidationService;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<AgentService> _logger;
 
     private IMongoCollection<BsonDocument> LogsCollection => _databaseService.GetDatabaseAsync().Result.GetCollection<BsonDocument>("logs");
@@ -67,6 +69,7 @@ public class AgentDeletionService : IAgentDeletionService
         IActivationService activationService,
         IWebhookEventPublisher webhookEventPublisher,
         IActivationValidationService activationValidationService,
+        IAuditLogService auditLogService,
         ILogger<AgentService> logger)
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -82,10 +85,11 @@ public class AgentDeletionService : IAgentDeletionService
         _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, bool forceDelete = false)
+    public async Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, HttpContext httpContext, bool forceDelete = false)
     {
         try
         {
@@ -145,7 +149,7 @@ public class AgentDeletionService : IAgentDeletionService
                     {
                         if (activation.WorkflowIds != null && activation.WorkflowIds.Count > 0)
                         {
-                            var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId);
+                            var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId, httpContext);
                             if (!deactivateResult.IsSuccess)
                             {
                                 failedActivations.Add($"Failed to deactivate '{activation.Name}': {deactivateResult.ErrorMessage}");
@@ -153,7 +157,7 @@ public class AgentDeletionService : IAgentDeletionService
                             }
                         }
 
-                        var deleteResult = await _activationService.DeleteActivationAsync(activation.Id);
+                        var deleteResult = await _activationService.DeleteActivationAsync(activation.Id, httpContext);
                         if (deleteResult.IsSuccess)
                         {
                             deletedActivations++;
@@ -260,20 +264,25 @@ public class AgentDeletionService : IAgentDeletionService
 
             result.Message = "Agent and associated resources deleted";
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentDeleted,
-                new
-                {
-                    tenantId,
-                    agentId = agent.Id,
-                    agentName = agent.Name,
-                    systemScoped,
-                    deletedFlowDefinitions = result.DeletedFlowDefinitions,
-                    deletedKnowledgeItems = result.DeletedKnowledgeItems,
-                    revokedApiKeys = result.RevokedApiKeys,
-                    deletedActivations = result.DeletedActivations,
-                },
-                tenantId);
+            var metadata = new
+            {
+                tenantId,
+                agentId = agent.Id,
+                agentName = agent.Name,
+                systemScoped,
+                deletedFlowDefinitions = result.DeletedFlowDefinitions,
+                deletedKnowledgeItems = result.DeletedKnowledgeItems,
+                revokedApiKeys = result.RevokedApiKeys,
+                deletedActivations = result.DeletedActivations,
+            };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.AgentDeleted, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.AgentDeleted,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: null,
+                details: metadata);
 
             return ServiceResult<AgentDeletionResult>.Success(result);
         }

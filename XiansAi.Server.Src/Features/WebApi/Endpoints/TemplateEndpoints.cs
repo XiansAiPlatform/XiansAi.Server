@@ -42,22 +42,24 @@ public static class TemplateEndpoints
 
         templateGroup.MapPost("/deploy", async (
             [FromBody] DeployTemplateRequest request,
+            HttpContext httpContext,
             [FromServices] ITemplateService service) =>
         {
-            var result = await service.DeployTemplate(request.AgentName);
+            var result = await service.DeployTemplate(request.AgentName, httpContext);
             return result.ToHttpResult();
         })
         .WithName("Deploy Template Agent")
-        
+
         .WithSummary("Deploy a template agent to user's tenant")
         .WithDescription("Creates a replica of a system-scoped agent and its flow definitions in the user's tenant");
 
         // System Admin only endpoint for deleting system-scoped agents
         templateGroup.MapDelete("/{agentName}", async (
             [FromRoute] string agentName,
+            HttpContext httpContext,
             [FromServices] ITemplateService service) =>
         {
-            var result = await service.DeleteSystemScopedAgent(agentName);
+            var result = await service.DeleteSystemScopedAgent(agentName, httpContext);
             return result.ToHttpResult();
         })
         .RequiresValidSysAdmin()

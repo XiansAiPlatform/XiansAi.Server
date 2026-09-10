@@ -25,7 +25,7 @@ namespace Features.WebApi.Endpoints
                 HttpContext httpContext) =>
             {
                 var userId = tenantContext.LoggedInUser ?? "system";
-                var result = await apiKeyService.CreateApiKeyAsync(tenantContext.TenantId, request.Name, userId);
+                var result = await apiKeyService.CreateApiKeyAsync(tenantContext.TenantId, request.Name, userId, httpContext);
                 if (result.IsSuccess)
                 {
                     var (apiKey, meta) = result.Data;
@@ -75,10 +75,11 @@ namespace Features.WebApi.Endpoints
             // Revoke API key
             group.MapPost("{id}/revoke", async (
                 [FromRoute] string id,
+                HttpContext httpContext,
                 [FromServices] IApiKeyService apiKeyService,
                 [FromServices] ITenantContext tenantContext) =>
             {
-                var result = await apiKeyService.RevokeApiKeyAsync(id, tenantContext.TenantId);
+                var result = await apiKeyService.RevokeApiKeyAsync(id, tenantContext.TenantId, httpContext);
                 if (result.IsSuccess && result.Data)
                 {
                     return Results.Ok();
@@ -98,10 +99,11 @@ namespace Features.WebApi.Endpoints
             // Rotate API key
             group.MapPost("{id}/rotate", async (
                 [FromRoute] string id,
+                HttpContext httpContext,
                 [FromServices] IApiKeyService apiKeyService,
                 [FromServices] ITenantContext tenantContext) =>
             {
-                var result = await apiKeyService.RotateApiKeyAsync(id, tenantContext.TenantId);
+                var result = await apiKeyService.RotateApiKeyAsync(id, tenantContext.TenantId, httpContext);
                 if (result.IsSuccess && result.Data != null)
                 {
                     var (apiKey, meta) = result.Data.Value;

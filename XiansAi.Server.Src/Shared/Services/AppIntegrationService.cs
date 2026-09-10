@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -29,33 +30,35 @@ public interface IAppIntegrationService
     /// Create a new integration
     /// </summary>
     Task<ServiceResult<AppIntegrationResponse>> CreateIntegrationAsync(
-        CreateAppIntegrationRequest request, 
-        string tenantId, 
-        string createdBy);
+        CreateAppIntegrationRequest request,
+        string tenantId,
+        string createdBy,
+        HttpContext httpContext);
 
     /// <summary>
     /// Update an existing integration
     /// </summary>
     Task<ServiceResult<AppIntegrationResponse>> UpdateIntegrationAsync(
-        string id, 
-        UpdateAppIntegrationRequest request, 
+        string id,
+        UpdateAppIntegrationRequest request,
         string tenantId,
-        string updatedBy);
+        string updatedBy,
+        HttpContext httpContext);
 
     /// <summary>
     /// Delete an integration
     /// </summary>
-    Task<ServiceResult<bool>> DeleteIntegrationAsync(string id, string tenantId);
+    Task<ServiceResult<bool>> DeleteIntegrationAsync(string id, string tenantId, HttpContext httpContext);
 
     /// <summary>
     /// Enable an integration
     /// </summary>
-    Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(string id, string tenantId, string updatedBy);
+    Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(string id, string tenantId, string updatedBy, HttpContext httpContext);
 
     /// <summary>
     /// Disable an integration
     /// </summary>
-    Task<ServiceResult<AppIntegrationResponse>> DisableIntegrationAsync(string id, string tenantId, string updatedBy);
+    Task<ServiceResult<AppIntegrationResponse>> DisableIntegrationAsync(string id, string tenantId, string updatedBy, HttpContext httpContext);
 
     /// <summary>
     /// Get the raw integration entity (for internal use by proxies)
@@ -70,7 +73,7 @@ public interface IAppIntegrationService
     /// <summary>
     /// Create a builtin webhook integration (creates API key + app integration).
     /// </summary>
-    Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy);
+    Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy, HttpContext httpContext);
 
     /// <summary>
     /// Get builtin webhook integrations for a tenant.
@@ -80,25 +83,25 @@ public interface IAppIntegrationService
     /// <summary>
     /// Delete a builtin webhook integration (revokes API key + deletes integration).
     /// </summary>
-    Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId);
+    Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId, HttpContext httpContext);
 
     /// <summary>
     /// Delete all builtin webhook integrations for a specific agent activation
     /// (revokes each associated API key + deletes each integration).
     /// </summary>
-    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName);
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName, HttpContext httpContext);
 
     /// <summary>
     /// Delete all builtin webhook integrations for an agent, across every activation
     /// (revokes each associated API key + deletes each integration).
     /// </summary>
-    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName);
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName, HttpContext httpContext);
 
     /// <summary>
     /// Delete all builtin webhook integrations matching an activation name, across every agent
     /// (revokes each associated API key + deletes each integration).
     /// </summary>
-    Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName);
+    Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName, HttpContext httpContext);
 }
 
 /// <summary>
@@ -117,6 +120,7 @@ public class AppIntegrationService : IAppIntegrationService
     private readonly IApiKeyService _apiKeyService;
     private readonly IActivationValidationService _activationValidationService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<AppIntegrationService> _logger;
 
     public AppIntegrationService(
@@ -124,12 +128,14 @@ public class AppIntegrationService : IAppIntegrationService
         IApiKeyService apiKeyService,
         IActivationValidationService activationValidationService,
         IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<AppIntegrationService> logger)
     {
         _repository = repository;
         _apiKeyService = apiKeyService;
         _activationValidationService = activationValidationService;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -284,7 +290,8 @@ public class AppIntegrationService : IAppIntegrationService
     public async Task<ServiceResult<AppIntegrationResponse>> CreateIntegrationAsync(
         CreateAppIntegrationRequest request,
         string tenantId,
-        string createdBy)
+        string createdBy,
+        HttpContext httpContext)
     {
         try
         {
@@ -353,10 +360,15 @@ public class AppIntegrationService : IAppIntegrationService
             _logger.LogInformation("Created integration {IntegrationId} with webhook URL {WebhookUrl}",
                 LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(response.WebhookUrl));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationCreated,
-                new { tenantId, integrationId = id, name = integration.Name, platformId = integration.PlatformId, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = integration.Name, platformId = integration.PlatformId, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.IntegrationCreated, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.IntegrationCreated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: integration.ActivationName,
+                details: metadata);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -372,7 +384,8 @@ public class AppIntegrationService : IAppIntegrationService
         string id,
         UpdateAppIntegrationRequest request,
         string tenantId,
-        string updatedBy)
+        string updatedBy,
+        HttpContext httpContext)
     {
         try
         {
@@ -499,10 +512,15 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Updated integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationUpdated,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.IntegrationUpdated, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.IntegrationUpdated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: existing.ActivationName,
+                details: metadata);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -514,7 +532,7 @@ public class AppIntegrationService : IAppIntegrationService
         }
     }
 
-    public async Task<ServiceResult<bool>> DeleteIntegrationAsync(string id, string tenantId)
+    public async Task<ServiceResult<bool>> DeleteIntegrationAsync(string id, string tenantId, HttpContext httpContext)
     {
         try
         {
@@ -541,10 +559,15 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Deleted integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationDeleted,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.IntegrationDeleted, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.IntegrationDeleted,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: existing.ActivationName,
+                details: metadata);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -556,7 +579,7 @@ public class AppIntegrationService : IAppIntegrationService
         }
     }
 
-    public async Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy)
+    public async Task<ServiceResult<AppIntegrationResponse>> CreateBuiltinWebhookAsync(CreateBuiltinWebhookRequest request, string tenantId, string createdBy, HttpContext httpContext)
     {
         try
         {
@@ -616,7 +639,7 @@ public class AppIntegrationService : IAppIntegrationService
                         ? request.ActivationName
                         : request.ActivationName[..maxActivationLen];
                     var keyName = $"{prefix}{activationPart}{suffix}";
-                    var createKeyResult = await _apiKeyService.CreateApiKeyAsync(tenantId, keyName, createdBy,
+                    var createKeyResult = await _apiKeyService.CreateApiKeyAsync(tenantId, keyName, createdBy, httpContext,
                         agentName: request.AgentName,
                         activationName: request.ActivationName,
                         type: "webhook",
@@ -685,10 +708,15 @@ public class AppIntegrationService : IAppIntegrationService
             var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
             _logger.LogInformation("Created builtin webhook integration {IntegrationId} with webhook URL", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationWebhookCreated,
-                new { tenantId, integrationId = id, name = integration.Name, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = integration.Name, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.IntegrationWebhookCreated, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.IntegrationWebhookCreated,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: integration.ActivationName,
+                details: metadata);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -705,7 +733,7 @@ public class AppIntegrationService : IAppIntegrationService
         return result;
     }
 
-    public async Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId)
+    public async Task<ServiceResult<bool>> DeleteBuiltinWebhookAsync(string integrationId, string tenantId, HttpContext httpContext)
     {
         var existing = await _repository.GetByIdAsync(integrationId);
         if (existing == null || existing.TenantId != tenantId)
@@ -719,46 +747,46 @@ public class AppIntegrationService : IAppIntegrationService
             var apiKeyId = apiKeyIdVal.ToString();
             if (!string.IsNullOrEmpty(apiKeyId))
             {
-                var revokeResult = await _apiKeyService.RevokeApiKeyAsync(apiKeyId, tenantId);
+                var revokeResult = await _apiKeyService.RevokeApiKeyAsync(apiKeyId, tenantId, httpContext);
                 if (!revokeResult.IsSuccess)
                     _logger.LogWarning("Failed to revoke API key {ApiKeyId} when deleting builtin webhook: {Error}", LogSanitizer.Sanitize(apiKeyId), LogSanitizer.Sanitize(revokeResult.ErrorMessage));
             }
         }
 
-        return await DeleteIntegrationAsync(integrationId, tenantId);
+        return await DeleteIntegrationAsync(integrationId, tenantId, httpContext);
     }
-    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName)
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAndActivationAsync(string tenantId, string agentName, string activationName, HttpContext httpContext)
     {
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
         {
             return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
         }
 
-        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentActivationAsync(tenantId, agentName, activationName));
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentActivationAsync(tenantId, agentName, activationName), httpContext);
     }
 
-    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName)
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByAgentAsync(string tenantId, string agentName, HttpContext httpContext)
     {
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName))
         {
             return ServiceResult<int>.BadRequest("TenantId and AgentName are required");
         }
 
-        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentAsync(tenantId, agentName));
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByAgentAsync(tenantId, agentName), httpContext);
     }
 
-    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName)
+    public async Task<ServiceResult<int>> DeleteBuiltinWebhooksByActivationNameAsync(string tenantId, string activationName, HttpContext httpContext)
     {
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(activationName))
         {
             return ServiceResult<int>.BadRequest("TenantId and ActivationName are required");
         }
 
-        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByActivationAsync(tenantId, activationName));
+        return await DeleteBuiltinWebhooksAsync(() => _repository.GetByActivationAsync(tenantId, activationName), httpContext);
     }
 
 
-    private async Task<ServiceResult<int>> DeleteBuiltinWebhooksAsync(Func<Task<List<AppIntegration>>> fetchCandidates)
+    private async Task<ServiceResult<int>> DeleteBuiltinWebhooksAsync(Func<Task<List<AppIntegration>>> fetchCandidates, HttpContext httpContext)
     {
         try
         {
@@ -767,7 +795,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             foreach (var webhook in toDelete)
             {
-                var deleteResult = await DeleteBuiltinWebhookAsync(webhook.Id, webhook.TenantId);
+                var deleteResult = await DeleteBuiltinWebhookAsync(webhook.Id, webhook.TenantId, httpContext);
                 if (deleteResult.IsSuccess)
                 {
                     deletedCount++;
@@ -790,9 +818,10 @@ public class AppIntegrationService : IAppIntegrationService
     }
 
     public async Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(
-        string id, 
-        string tenantId, 
-        string updatedBy)
+        string id,
+        string tenantId,
+        string updatedBy,
+        HttpContext httpContext)
     {
         try
         {
@@ -826,10 +855,15 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Enabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationEnabled,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.IntegrationEnabled, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.IntegrationEnabled,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: existing.ActivationName,
+                details: metadata);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -842,9 +876,10 @@ public class AppIntegrationService : IAppIntegrationService
     }
 
     public async Task<ServiceResult<AppIntegrationResponse>> DisableIntegrationAsync(
-        string id, 
-        string tenantId, 
-        string updatedBy)
+        string id,
+        string tenantId,
+        string updatedBy,
+        HttpContext httpContext)
     {
         try
         {
@@ -878,10 +913,15 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Disabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationDisabled,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
+
+            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.IntegrationDisabled, metadata, tenantId);
+
+            await _auditLogService.RecordEntryAsync(
+                action: httpContext.GetEndpointName() ?? WebhookEventTypes.IntegrationDisabled,
+                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                activationName: existing.ActivationName,
+                details: metadata);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
