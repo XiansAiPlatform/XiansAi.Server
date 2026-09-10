@@ -93,6 +93,9 @@ public static class WebhookEventTypes
     /// <summary>Ownership of an agent was transferred to another user.</summary>
     public const string AgentOwnershipTransferred = "agent.ownership.transferred";
 
+    /// <summary>An agent's owner / write / read access lists were changed (via the Admin API).</summary>
+    public const string AgentAccessChanged = "agent.access.changed";
+
     /// <summary>A system template agent was deployed into a tenant.</summary>
     public const string AgentTemplateDeployed = "agent.template.deployed";
 
