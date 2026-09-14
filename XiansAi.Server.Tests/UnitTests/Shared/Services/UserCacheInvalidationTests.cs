@@ -108,6 +108,25 @@ public class UserCacheInvalidationTests
     }
 
     [Fact]
+    public async Task RoleCache_BypassesCacheButStillFiltersParticipantRoles_WhenNoOp()
+    {
+        var index = BuildIndex();
+        _userRepo.Setup(x => x.GetUserRolesAsync(UserId, TenantId))
+            .ReturnsAsync(new List<string> { SystemRoles.TenantAdmin, SystemRoles.TenantParticipant });
+        var roleCache = new RoleCacheService(_cache, _userRepo.Object, index, new CacheOperationMode(isNoOp: true));
+
+        var first = await roleCache.GetUserRolesAsync(UserId, TenantId);
+        var second = await roleCache.GetUserRolesAsync(UserId, TenantId);
+
+        // The participant-role filter must still apply even though nothing is cached.
+        Assert.Equal(new[] { SystemRoles.TenantAdmin }, first);
+        Assert.Equal(new[] { SystemRoles.TenantAdmin }, second);
+
+        // Every call re-reads from the repository instead of serving a cached result.
+        _userRepo.Verify(x => x.GetUserRolesAsync(UserId, TenantId), Times.Exactly(2));
+    }
+
+    [Fact]
     public void CertificateCache_DropsAValidatedCertificateWhenItsAccountIsDisabled()
     {
         // The entry carries the roles and the SysAdmin flag, so a hit never revisits the record and

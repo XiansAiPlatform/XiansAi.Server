@@ -20,7 +20,7 @@ public class AuthorizedTenantResolverTests
     private readonly Mock<IUserTenantService> _userTenantService = new();
 
     private AuthorizedTenantResolver BuildResolver(
-        IMemoryCache? cache = null, IUserCacheIndex? userCacheIndex = null)
+        IMemoryCache? cache = null, IUserCacheIndex? userCacheIndex = null, bool isNoOp = false)
     {
         var configuration = new ConfigurationBuilder().Build();
         var memoryCache = cache ?? new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
@@ -32,7 +32,7 @@ public class AuthorizedTenantResolverTests
             configuration,
             BuildPolicy(),
             NullLogger<AuthorizedTenantResolver>.Instance,
-            new CacheOperationMode(isNoOp: false));
+            new CacheOperationMode(isNoOp));
     }
 
     private static OidcValidationPolicy BuildPolicy() =>
@@ -212,6 +212,24 @@ public class AuthorizedTenantResolverTests
             x => x.EnsureUserAndGetApprovedTenants(
                 IdentityOf(ProviderUserId, ProviderAuthority), It.IsAny<string?>(), It.IsAny<bool>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LooksUpTheUserOnEveryRequest_WhenNoOp()
+    {
+        SetupApprovedTenants("tenant-a");
+        var resolver = BuildResolver(isNoOp: true);
+
+        var first = await resolver.ResolveAsync(ValidToken(), "tenant-a");
+        var second = await resolver.ResolveAsync(ValidToken(), "tenant-a");
+
+        Assert.True(first.IsAuthorized);
+        Assert.True(second.IsAuthorized);
+        // Nothing is cached, so every call re-resolves against the backing service.
+        _userTenantService.Verify(
+            x => x.EnsureUserAndGetApprovedTenants(
+                IdentityOf(ProviderUserId, ProviderAuthority), It.IsAny<string?>(), It.IsAny<bool>()),
+            Times.Exactly(2));
     }
 
     [Fact]
