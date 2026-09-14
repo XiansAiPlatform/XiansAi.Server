@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -126,27 +127,27 @@ public class AdminAgentService : IAdminAgentService
         {
             _logger.LogInformation("Retrieving agent instance by name {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
-            if (string.IsNullOrWhiteSpace(agentName))
-            {
-                return ServiceResult<AgentWithDefinitions>.BadRequest("Agent name is required");
-            }
-
             if (string.IsNullOrWhiteSpace(tenantId))
             {
                 return ServiceResult<AgentWithDefinitions>.BadRequest("Tenant ID is required");
             }
 
-            var agent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
+            var nameResult = ValidateAgentName(agentName);
+            if (!nameResult.IsSuccess)
+                return ServiceResult<AgentWithDefinitions>.BadRequest(nameResult.ErrorMessage!);
+
+            var validatedAgentName = nameResult.Data!;
+            var agent = await _agentRepository.GetByNameInternalAsync(validatedAgentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentWithDefinitions>.NotFound($"Agent with name '{agentName}' not found in tenant '{tenantId}'");
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<AgentWithDefinitions>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant '{tenantId}'");
             }
 
             // Fetch workflow definitions for this agent
-            var definitions = await _flowDefinitionRepository.GetByNameAsync(agentName, tenantId);
+            var definitions = await _flowDefinitionRepository.GetByNameAsync(validatedAgentName, tenantId);
             
-            _logger.LogInformation("Found {Count} workflow definitions for agent {AgentName}", definitions?.Count ?? 0, LogSanitizer.Sanitize(agentName));
+            _logger.LogInformation("Found {Count} workflow definitions for agent {AgentName}", definitions?.Count ?? 0, LogSanitizer.Sanitize(validatedAgentName));
 
             var result = new AgentWithDefinitions
             {
@@ -173,34 +174,38 @@ public class AdminAgentService : IAdminAgentService
         {
             _logger.LogInformation("Updating agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
-            if (string.IsNullOrWhiteSpace(agentName))
-            {
-                return ServiceResult<Agent>.BadRequest("Agent name is required");
-            }
-
             if (string.IsNullOrWhiteSpace(tenantId))
             {
                 return ServiceResult<Agent>.BadRequest("Tenant ID is required");
             }
 
-            var agent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
+            var nameResult = ValidateAgentName(agentName);
+            if (!nameResult.IsSuccess)
+                return ServiceResult<Agent>.BadRequest(nameResult.ErrorMessage!);
+
+            var validatedAgentName = nameResult.Data!;
+            var agent = await _agentRepository.GetByNameInternalAsync(validatedAgentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<Agent>.NotFound($"Agent with name '{agentName}' not found in tenant '{tenantId}'");
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<Agent>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant '{tenantId}'");
             }
 
             // Update fields if provided
             if (!string.IsNullOrWhiteSpace(request.Name) && request.Name != agent.Name)
             {
-                // Check if new name already exists in the same tenant
-                var existingAgent = await _agentRepository.GetByNameInternalAsync(request.Name, agent.Tenant);
+                var newNameResult = ValidateAgentName(request.Name);
+                if (!newNameResult.IsSuccess)
+                    return ServiceResult<Agent>.BadRequest(newNameResult.ErrorMessage!);
+
+                var validatedNewName = newNameResult.Data!;
+                var existingAgent = await _agentRepository.GetByNameInternalAsync(validatedNewName, agent.Tenant);
                 if (existingAgent != null && existingAgent.Id != agent.Id)
                 {
-                    _logger.LogWarning("Agent with name {Name} already exists in tenant {TenantId}", LogSanitizer.Sanitize(request.Name), LogSanitizer.Sanitize(agent.Tenant));
-                    return ServiceResult<Agent>.Conflict($"Agent with name '{request.Name}' already exists in tenant");
+                    _logger.LogWarning("Agent with name {Name} already exists in tenant {TenantId}", LogSanitizer.Sanitize(validatedNewName), LogSanitizer.Sanitize(agent.Tenant));
+                    return ServiceResult<Agent>.Conflict($"Agent with name '{validatedNewName}' already exists in tenant");
                 }
-                agent.Name = request.Name;
+                agent.Name = validatedNewName;
             }
 
             if (request.Description != null)
@@ -251,21 +256,21 @@ public class AdminAgentService : IAdminAgentService
         {
             _logger.LogInformation("Deleting agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
-            if (string.IsNullOrWhiteSpace(agentName))
-            {
-                return ServiceResult<bool>.BadRequest("Agent name is required");
-            }
-
             if (string.IsNullOrWhiteSpace(tenantId))
             {
                 return ServiceResult<bool>.BadRequest("Tenant ID is required");
             }
 
-            var agent = await _agentRepository.GetByNameInternalAsync(agentName, tenantId);
+            var nameResult = ValidateAgentName(agentName);
+            if (!nameResult.IsSuccess)
+                return ServiceResult<bool>.BadRequest(nameResult.ErrorMessage!);
+
+            var validatedAgentName = nameResult.Data!;
+            var agent = await _agentRepository.GetByNameInternalAsync(validatedAgentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<bool>.NotFound($"Agent with name '{agentName}' not found in tenant '{tenantId}'");
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<bool>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant '{tenantId}'");
             }
 
             // Use AgentDeletionService to delete the agent (handles cascading deletes)
@@ -292,6 +297,21 @@ public class AdminAgentService : IAdminAgentService
             _logger.LogError(ex, "Error deleting agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
             return ServiceResult<bool>.InternalServerError(
                 "An error occurred while deleting the agent instance");
+        }
+    }
+
+    private static ServiceResult<string> ValidateAgentName(string agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+            return ServiceResult<string>.BadRequest("Agent name is required");
+
+        try
+        {
+            return ServiceResult<string>.Success(Agent.SanitizeAndValidateName(agentName));
+        }
+        catch (ValidationException ex)
+        {
+            return ServiceResult<string>.BadRequest(ex.Message);
         }
     }
 }

@@ -15,12 +15,12 @@ public class AgentActivation : ModelValidatorBase<AgentActivation>
 
     [BsonElement("name")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Activation name must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Activation name contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeNamePattern, ErrorMessage = "Activation name contains invalid characters")]
     public required string Name { get; set; }
 
     [BsonElement("agent_name")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "AgentName must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Agent name contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeNamePattern, ErrorMessage = "Agent name contains invalid characters")]
     [Required(ErrorMessage = "AgentName is required")]
     public required string AgentName { get; set; }
 
