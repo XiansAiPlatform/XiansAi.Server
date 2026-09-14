@@ -61,6 +61,7 @@ public interface ICacheProvider
 - **Caller Falls Through**: Every call forces the caller to read from its real source (e.g. the database)
 - **Explicit Opt-Out**: Select `Cache:Provider=noop` when a deployment should not cache at all (e.g. to rule out caching while debugging, or for data that must always be read fresh)
 - **Not the Default**: Leaving `Cache:Provider` unset still registers the in-memory provider; `noop` must be chosen explicitly
+- **Not safe for consumers that treat the cache as storage, not a performance optimization**: `ICacheProvider` is meant to be an optional speed-up — every caller should have a real fallback when a value isn't cached. `AuthorizationCacheService.CacheAuthorization` doesn't: it writes a short-lived auth handoff payload and treats a failed `SetAsync` as a hard error (it throws), because that payload has no other home for a later request to read it back from. Under `noop`, `SetAsync` always returns `false`, so this call always fails. Audit any `ICacheProvider` consumer with similar store-not-cache semantics before enabling `noop` in an environment that exercises it.
 
 ### 3. Cross-Replica Invalidation (`ICacheInvalidationBus`)
 

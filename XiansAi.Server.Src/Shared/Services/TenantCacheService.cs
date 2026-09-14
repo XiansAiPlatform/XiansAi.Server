@@ -78,6 +78,14 @@ public class TenantCacheService : ITenantCacheService
 
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
 
+        // Nothing is cached in this mode, so there is no shared state to protect — skip the
+        // per-key lock entirely instead of serializing concurrent lookups for no benefit.
+        if (_cacheMode.IsNoOp)
+        {
+            _logger.LogDebug("Fetching tenant {TenantId} from database (no-op cache provider)", tenantId);
+            return (await FetchFromDatabaseAsync(tenantId, cancellationToken))?.ShallowCopy();
+        }
+
         var semaphore = _keyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
 
         var acquired = false;
@@ -87,19 +95,12 @@ public class TenantCacheService : ITenantCacheService
             acquired = true;
 
             // Invalidated on tenant updates, so skip caching when Cache:Provider=noop.
-            if (!_cacheMode.IsNoOp && !bypassCache && _cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
+            if (!bypassCache && _cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
                 return cachedHolder?.Tenant?.ShallowCopy();
 
             _logger.LogDebug("Fetching tenant {TenantId} from database (bypassCache: {BypassCache})", tenantId, bypassCache);
 
-            using var scope = _scopeFactory.CreateScope();
-            var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
-            var tenant = await repo.GetByTenantIdAsync(tenantId, cancellationToken);
-
-            if (_cacheMode.IsNoOp)
-            {
-                return tenant?.ShallowCopy();
-            }
+            var tenant = await FetchFromDatabaseAsync(tenantId, cancellationToken);
 
             var expiration = tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration;
             var holder = new TenantCacheHolder(tenant);
@@ -119,6 +120,13 @@ public class TenantCacheService : ITenantCacheService
         {
             if (acquired) semaphore.Release();
         }
+    }
+
+    private async Task<Tenant?> FetchFromDatabaseAsync(string tenantId, CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
+        return await repo.GetByTenantIdAsync(tenantId, cancellationToken);
     }
 
     public void InvalidateTenant(string tenantId)

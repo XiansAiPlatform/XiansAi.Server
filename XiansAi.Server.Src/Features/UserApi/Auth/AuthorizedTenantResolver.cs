@@ -107,7 +107,7 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         _userCacheIndex = userCacheIndex;
         _policy = policy;
         _logger = logger;
-        _cacheMode = cacheMode;
+        _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
         _cacheDuration = TimeSpan.FromSeconds(
             configuration.GetValue<double>("Auth:ApprovedTenantCacheDurationSeconds", 30));
     }

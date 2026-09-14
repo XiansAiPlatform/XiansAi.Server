@@ -72,6 +72,11 @@ public class AsyncResultCache : IAsyncResultCache
 
     public void Remove(string key)
     {
+        if (_cacheMode.IsNoOp)
+        {
+            return;
+        }
+
         _cache.Remove(key);
     }
 }

@@ -46,8 +46,7 @@ public class CacheProviderFactory
         var cacheProvider = GetConfigValue(configuration, "Cache:Provider");
 
         // Lets services with their own IMemoryCache (roles, tenants, API keys, etc.) skip caching too.
-        services.AddSingleton<ICacheOperationMode>(new CacheOperationMode(
-            isNoOp: string.Equals(cacheProvider, "noop", StringComparison.OrdinalIgnoreCase)));
+        services.AddSingleton<ICacheOperationMode>(new CacheOperationMode(IsNoOpProvider(configuration)));
 
         if (string.IsNullOrWhiteSpace(cacheProvider))
         {

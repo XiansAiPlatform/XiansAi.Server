@@ -32,7 +32,7 @@ namespace Shared.Services
             _cache = cache;
             _userRepository = userRepository;
             _userCacheIndex = userCacheIndex;
-            _cacheMode = cacheMode;
+            _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
         }
 
         public async Task<List<string>> GetUserRolesAsync(string userId, string tenantId)
