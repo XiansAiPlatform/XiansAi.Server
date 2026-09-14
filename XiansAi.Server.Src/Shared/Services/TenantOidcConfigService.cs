@@ -129,11 +129,11 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                     if (stored)
                     {
                         _logger.LogDebug("Cached OIDC config for tenant {TenantId} with {CacheExpiration} expiration",
-                            tenantId, CacheExpiration);
+                            LogSanitizer.Sanitize(tenantId), CacheExpiration);
                     }
                     else
                     {
-                        _logger.LogDebug("Cache set ignored for tenant {TenantId} OIDC config (no-op provider)", tenantId);
+                        _logger.LogDebug("Cache set ignored for tenant {TenantId} OIDC config (no-op provider)", LogSanitizer.Sanitize(tenantId));
                     }
                 }
                 else
@@ -143,11 +143,11 @@ public class TenantOidcConfigService : ITenantOidcConfigService
                     if (stored)
                     {
                         _logger.LogDebug("Cached null OIDC config for tenant {TenantId} with {CacheExpiration} expiration",
-                            tenantId, CacheExpiration);
+                            LogSanitizer.Sanitize(tenantId), CacheExpiration);
                     }
                     else
                     {
-                        _logger.LogDebug("Cache set ignored for null tenant {TenantId} OIDC config (no-op provider)", tenantId);
+                        _logger.LogDebug("Cache set ignored for null tenant {TenantId} OIDC config (no-op provider)", LogSanitizer.Sanitize(tenantId));
                     }
                 }
             }
