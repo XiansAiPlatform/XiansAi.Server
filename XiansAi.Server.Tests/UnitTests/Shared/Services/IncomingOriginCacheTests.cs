@@ -17,7 +17,8 @@ public class IncomingOriginCacheTests
         return new IncomingOriginCache(
             new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
             NullLogger<IncomingOriginCache>.Instance,
-            new Lazy<ICacheInvalidationBus>(() => bus));
+            new Lazy<ICacheInvalidationBus>(() => bus),
+            new CacheOperationMode(isNoOp: false));
     }
 
     [Fact]

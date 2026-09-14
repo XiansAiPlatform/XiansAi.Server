@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Shared.Providers;
 
 namespace Shared.Services;
 
@@ -34,10 +35,12 @@ public interface IAsyncResultCache
 public class AsyncResultCache : IAsyncResultCache
 {
     private readonly IMemoryCache _cache;
+    private readonly ICacheOperationMode _cacheMode;
 
-    public AsyncResultCache(IMemoryCache cache)
+    public AsyncResultCache(IMemoryCache cache, ICacheOperationMode cacheMode)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
     }
 
     public async Task<T> GetOrAddAsync<T>(
@@ -47,6 +50,13 @@ public class AsyncResultCache : IAsyncResultCache
         long size = 1,
         CancellationToken cancellationToken = default) where T : class
     {
+        // Callers invalidate entries on demand (e.g. ActivationValidationService), so
+        // skip caching when Cache:Provider=noop.
+        if (_cacheMode.IsNoOp)
+        {
+            return await factory(cancellationToken);
+        }
+
         if (_cache.TryGetValue(key, out T? cached) && cached != null)
         {
             return cached;

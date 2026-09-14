@@ -56,20 +56,24 @@ public class IncomingOriginCache : IIncomingOriginCache
     private readonly IMemoryCache _cache;
     private readonly ILogger<IncomingOriginCache> _logger;
     private readonly Lazy<ICacheInvalidationBus> _invalidationBus;
+    private readonly ICacheOperationMode _cacheMode;
 
     public IncomingOriginCache(
         IMemoryCache cache,
         ILogger<IncomingOriginCache> logger,
-        Lazy<ICacheInvalidationBus> invalidationBus)
+        Lazy<ICacheInvalidationBus> invalidationBus,
+        ICacheOperationMode cacheMode)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _invalidationBus = invalidationBus ?? throw new ArgumentNullException(nameof(invalidationBus));
+        _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
     }
 
     public IncomingOriginData? Get(string tenantId, string threadId, string? scope)
     {
-        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(threadId))
+        // Invalidated on every delete, so skip caching when Cache:Provider=noop.
+        if (_cacheMode.IsNoOp || string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(threadId))
         {
             return null;
         }
@@ -83,9 +87,9 @@ public class IncomingOriginCache : IIncomingOriginCache
     {
         ArgumentNullException.ThrowIfNull(data);
 
-        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(threadId))
+        if (_cacheMode.IsNoOp || string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(threadId))
         {
-            _logger.LogDebug("Skipping incoming origin cache write: tenant id or thread id missing");
+            _logger.LogDebug("Skipping incoming origin cache write: no-op provider, or tenant id/thread id missing");
             return;
         }
 

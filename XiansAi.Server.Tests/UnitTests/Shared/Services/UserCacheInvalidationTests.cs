@@ -93,7 +93,7 @@ public class UserCacheInvalidationTests
         var index = BuildIndex();
         _userRepo.Setup(x => x.GetUserRolesAsync(UserId, It.IsAny<string>()))
             .ReturnsAsync(new List<string> { SystemRoles.TenantAdmin });
-        var roleCache = new RoleCacheService(_cache, _userRepo.Object, index);
+        var roleCache = new RoleCacheService(_cache, _userRepo.Object, index, new CacheOperationMode(isNoOp: false));
         await roleCache.GetUserRolesAsync(UserId, TenantId);
         await roleCache.GetUserRolesAsync(UserId, "other-tenant");
 

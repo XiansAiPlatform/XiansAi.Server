@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Auth;
+using Shared.Providers;
 using Shared.Services;
 using Shared.Utils.Services;
 
@@ -30,7 +31,8 @@ public class AuthorizedTenantResolverTests
             userCacheIndex ?? new UserCacheIndex(memoryCache, NullLogger<UserCacheIndex>.Instance),
             configuration,
             BuildPolicy(),
-            NullLogger<AuthorizedTenantResolver>.Instance);
+            NullLogger<AuthorizedTenantResolver>.Instance,
+            new CacheOperationMode(isNoOp: false));
     }
 
     private static OidcValidationPolicy BuildPolicy() =>

@@ -27,6 +27,16 @@ public class CacheProviderFactory
     }
 
     /// <summary>
+    /// True when Cache:Provider is set to "noop". Used by services (token/certificate validation,
+    /// roles, tenants, API keys) that keep their own IMemoryCache instead of using ICacheProvider.
+    /// </summary>
+    public static bool IsNoOpProvider(IConfiguration configuration)
+    {
+        var cacheProvider = GetConfigValue(configuration, "Cache:Provider");
+        return string.Equals(cacheProvider, "noop", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Registers the cache provider based on configuration
     /// </summary>
     /// <param name="services">Service collection</param>
@@ -34,6 +44,11 @@ public class CacheProviderFactory
     public static void RegisterProvider(IServiceCollection services, IConfiguration configuration)
     {
         var cacheProvider = GetConfigValue(configuration, "Cache:Provider");
+
+        // Lets services with their own IMemoryCache (roles, tenants, API keys, etc.) skip caching too.
+        services.AddSingleton<ICacheOperationMode>(new CacheOperationMode(
+            isNoOp: string.Equals(cacheProvider, "noop", StringComparison.OrdinalIgnoreCase)));
+
         if (string.IsNullOrWhiteSpace(cacheProvider))
         {
             // Default to memory cache if not configured.
@@ -76,6 +91,12 @@ public class CacheProviderFactory
             case "memory":
                 // IMemoryCache (with SizeLimit) is registered by SharedConfiguration before this factory runs.
                 services.AddScoped<ICacheProvider, InMemoryCacheProvider>();
+                services.AddSingleton<ICacheInvalidationBus, NoOpCacheInvalidationBus>();
+                services.AddSingleton<IPendingRequestCoordinator, NoOpPendingRequestCoordinator>();
+                break;
+            case "noop":
+                // Explicitly disables caching: every read is a miss, every write is a no-op.
+                services.AddScoped<ICacheProvider, NoOpCacheProvider>();
                 services.AddSingleton<ICacheInvalidationBus, NoOpCacheInvalidationBus>();
                 services.AddSingleton<IPendingRequestCoordinator, NoOpPendingRequestCoordinator>();
                 break;

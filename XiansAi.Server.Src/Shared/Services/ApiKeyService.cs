@@ -33,7 +33,8 @@ namespace Shared.Services
         private readonly IMemoryCache _cache;
         private readonly IWebhookEventPublisher _webhookEventPublisher;
         private readonly ICacheInvalidationBus _invalidationBus;
-        
+        private readonly ICacheOperationMode _cacheMode;
+
         // Cache configuration
         private static readonly TimeSpan ApiKeyCacheExpiration = TimeSpan.FromMinutes(15);
         private static readonly string CacheKeyPrefix = "apikey:";
@@ -43,13 +44,15 @@ namespace Shared.Services
             ILogger<ApiKeyService> logger,
             IMemoryCache cache,
             IWebhookEventPublisher webhookEventPublisher,
-            ICacheInvalidationBus invalidationBus)
+            ICacheInvalidationBus invalidationBus,
+            ICacheOperationMode cacheMode)
         {
             _apiKeyRepository = apiKeyRepository;
             _logger = logger;
             _cache = cache;
             _webhookEventPublisher = webhookEventPublisher;
             _invalidationBus = invalidationBus;
+            _cacheMode = cacheMode;
         }
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
@@ -236,18 +239,23 @@ namespace Shared.Services
                 // Generate cache key using hashed API key for security
                 var hashedKey = HashApiKey(rawKey);
                 var cacheKey = $"{CacheKeyPrefix}{tenantId}:{hashedKey}";
-                
-                // Try to get from cache first
-                if (_cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
+
+                // Invalidated on revoke/rotate/delete, so skip caching when Cache:Provider=noop.
+                if (!_cacheMode.IsNoOp && _cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
                 {
                     _logger.LogDebug("Retrieved API key for tenant {TenantId} from cache", LogSanitizer.Sanitize(tenantId));
                     return cachedApiKey;
                 }
-                
+
                 // Cache miss - fetch from database
                 _logger.LogDebug("Cache miss for tenant {TenantId} API key, fetching from database", LogSanitizer.Sanitize(tenantId));
                 var apiKey = await _apiKeyRepository.GetByRawKeyAsync(rawKey, tenantId);
-                
+
+                if (_cacheMode.IsNoOp)
+                {
+                    return apiKey;
+                }
+
                 // Cache the result (including null results to prevent repeated DB hits for invalid keys)
                 if (apiKey != null)
                 {
@@ -255,7 +263,7 @@ namespace Shared.Services
                         .SetAbsoluteExpiration(ApiKeyCacheExpiration)
                         .SetSize(1);
                     _cache.Set(cacheKey, apiKey, cacheOptions);
-                    _logger.LogDebug("Cached API key for tenant {TenantId} with {CacheExpiration} expiration", 
+                    _logger.LogDebug("Cached API key for tenant {TenantId} with {CacheExpiration} expiration",
                         tenantId, ApiKeyCacheExpiration);
                 }
                 else
@@ -267,7 +275,7 @@ namespace Shared.Services
                     _cache.Set(cacheKey, (ApiKey?)null, cacheOptions);
                     _logger.LogDebug("Cached null API key result for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 }
-                
+
                 return apiKey;
             }
             catch (Exception ex)
@@ -285,18 +293,23 @@ namespace Shared.Services
                 // Generate cache key using only the hashed API key (no tenant scoping needed for auth)
                 var hashedKey = HashApiKey(rawKey);
                 var cacheKey = $"{CacheKeyPrefix}auth:{hashedKey}";
-                
-                // Try to get from cache first
-                if (_cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
+
+                // Invalidated on revoke/rotate/delete, so skip caching when Cache:Provider=noop.
+                if (!_cacheMode.IsNoOp && _cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
                 {
                     _logger.LogDebug("Retrieved API key from cache (tenant-agnostic lookup)");
                     return cachedApiKey;
                 }
-                
+
                 // Cache miss - fetch from database
                 _logger.LogDebug("Cache miss for API key, fetching from database");
                 var apiKey = await _apiKeyRepository.GetByRawKeyAsync(rawKey);
-                
+
+                if (_cacheMode.IsNoOp)
+                {
+                    return apiKey;
+                }
+
                 // Cache the result (including null results to prevent repeated DB hits for invalid keys)
                 if (apiKey != null)
                 {

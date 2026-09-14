@@ -91,8 +91,16 @@ public static class SharedConfiguration
         builder.Services.AddSingleton<IUserCacheIndex, UserCacheIndex>();
         builder.Services.AddSingleton<ICacheInvalidationApplicator, CacheInvalidationApplicator>();
 
-        // Register token validation cache
-        builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
+        // Token validation is invalidated when a user is disabled/revoked, so it should also
+        // respect Cache:Provider=noop.
+        if (CacheProviderFactory.IsNoOpProvider(builder.Configuration))
+        {
+            builder.Services.AddScoped<ITokenValidationCache, NoOpTokenValidationCache>();
+        }
+        else
+        {
+            builder.Services.AddScoped<ITokenValidationCache, MemoryTokenValidationCache>();
+        }
 
         // Register token services
         builder.Services.AddScoped<Auth0TokenService>(serviceProvider =>

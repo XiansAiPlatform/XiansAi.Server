@@ -41,6 +41,23 @@ public class CacheProviderFactoryRegistrationTests
     }
 
     [Fact]
+    public void NoOpProvider_RegistersNoOpBusAndNoOpCacheProvider()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Cache:Provider"] = "noop"
+        });
+        var services = CreateServicesWithSharedMemoryCache();
+        CacheProviderFactory.RegisterProvider(services, config);
+
+        var sp = services.BuildServiceProvider();
+
+        Assert.IsType<NoOpCacheProvider>(sp.GetRequiredService<ICacheProvider>());
+        Assert.IsType<NoOpCacheInvalidationBus>(sp.GetRequiredService<ICacheInvalidationBus>());
+        Assert.IsType<NoOpPendingRequestCoordinator>(sp.GetRequiredService<IPendingRequestCoordinator>());
+    }
+
+    [Fact]
     public void MemoryProvider_PreservesSizeLimitFromSharedConfiguration()
     {
         const long expectedSizeLimit = 100;
