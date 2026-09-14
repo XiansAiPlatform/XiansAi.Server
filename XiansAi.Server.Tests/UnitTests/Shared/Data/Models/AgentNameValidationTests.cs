@@ -25,11 +25,30 @@ public class AgentNameValidationTests
     }
 
     [Theory]
+    [InlineData("エージェント")]
+    [InlineData("Агент")]
+    public void SanitizeAndValidateName_AcceptsNonLatinScripts(string agentName)
+    {
+        Assert.Equal(agentName, Agent.SanitizeAndValidateName(agentName));
+    }
+
+    [Fact]
+    public void SanitizeAndValidateName_TreatsLatinAndCyrillicHomoglyphsAsDistinctNames()
+    {
+        var latin = Agent.SanitizeAndValidateName("Agent");
+        var cyrillic = Agent.SanitizeAndValidateName("\u0410gent");
+
+        Assert.NotEqual(latin, cyrillic);
+    }
+
+    [Theory]
     [InlineData("<script>")]
     [InlineData("agent\"name")]
     [InlineData("agent'name")]
     [InlineData("agent{name}")]
     [InlineData("agent;drop")]
+    [InlineData("agent\u200Bname")]
+    [InlineData("agent\u200Dname")]
     public void SanitizeAndValidateName_RejectsMarkupAndInjectionCharacters(string agentName)
     {
         var exception = Assert.Throws<ValidationException>(() => Agent.SanitizeAndValidateName(agentName));

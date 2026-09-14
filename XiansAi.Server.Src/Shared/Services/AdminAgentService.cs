@@ -140,14 +140,14 @@ public class AdminAgentService : IAdminAgentService
             var agent = await _agentRepository.GetByNameInternalAsync(validatedAgentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentWithDefinitions>.NotFound($"Agent with name '{agentName}' not found in tenant '{tenantId}'");
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<AgentWithDefinitions>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant '{tenantId}'");
             }
 
             // Fetch workflow definitions for this agent
             var definitions = await _flowDefinitionRepository.GetByNameAsync(validatedAgentName, tenantId);
             
-            _logger.LogInformation("Found {Count} workflow definitions for agent {AgentName}", definitions?.Count ?? 0, LogSanitizer.Sanitize(agentName));
+            _logger.LogInformation("Found {Count} workflow definitions for agent {AgentName}", definitions?.Count ?? 0, LogSanitizer.Sanitize(validatedAgentName));
 
             var result = new AgentWithDefinitions
             {

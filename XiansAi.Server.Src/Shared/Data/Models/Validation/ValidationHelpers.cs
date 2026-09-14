@@ -9,9 +9,13 @@ namespace Shared.Data.Models.Validation;
 public static class ValidationHelpers
 {
     /// <summary>
-    /// Unicode letters (including Norwegian æ, ø, å), combining marks, digits,
-    /// and the punctuation historically allowed in human-facing names.
-    /// Rejects control characters and markup such as &lt; &gt; " '.
+    /// Human-facing names (agents, activations, workflows, activities).
+    /// Intentionally allows any Unicode letter/digit/combining mark so names
+    /// can be written in Norwegian and other languages, not only Latin-1/Nordic
+    /// blocks. Lookups compare the NFC-normalized string, so visually similar
+    /// letters from different scripts (e.g. Latin A vs Cyrillic А) are distinct
+    /// identifiers. Invisible format characters (ZWSP, ZWJ) and markup
+    /// (&lt; &gt; " ') are still rejected.
     /// </summary>
     public const string UnicodeSafeNamePattern = @"^[\p{L}\p{M}\p{N}\s._@|+\-:/\\,#=]+$";
 
@@ -22,8 +26,10 @@ public static class ValidationHelpers
 
     /// <summary>
     /// Values interpolated into Temporal Query Language filters.
-    /// Allows Unicode letters so agent names can be queried, but excludes
-    /// quotes and operators that would break TQL.
+    /// Same Unicode letter scope as <see cref="UnicodeSafeNamePattern"/> so
+    /// international agent names can be queried. Quotes and operators that
+    /// would break TQL are still rejected; values are quote-wrapped at the
+    /// call site.
     /// </summary>
     public const string TqlSafeValuePattern = @"^[\p{L}\p{M}\p{N}\-_.@ ]{1,256}$";
 
