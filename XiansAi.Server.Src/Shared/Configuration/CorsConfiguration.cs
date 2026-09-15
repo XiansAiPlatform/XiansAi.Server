@@ -29,6 +29,7 @@ public static class CorsConfiguration
                     "Accept",
                     "X-Tenant-Id",
                     "X-API-Key",
+                    "X-User-Token",
                     "X-Requested-With",
                     "X-SignalR-User-Agent"
                 };
