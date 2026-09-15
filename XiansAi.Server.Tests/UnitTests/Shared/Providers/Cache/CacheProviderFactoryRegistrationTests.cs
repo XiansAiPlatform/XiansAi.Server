@@ -24,6 +24,7 @@ public class CacheProviderFactoryRegistrationTests
 
         Assert.IsType<NoOpCacheInvalidationBus>(sp.GetRequiredService<ICacheInvalidationBus>());
         Assert.IsType<NoOpPendingRequestCoordinator>(sp.GetRequiredService<IPendingRequestCoordinator>());
+        Assert.False(sp.GetRequiredService<ICacheOperationMode>().IsNoOp);
     }
 
     [Fact]
@@ -38,6 +39,27 @@ public class CacheProviderFactoryRegistrationTests
         Assert.IsType<InMemoryCacheProvider>(sp.GetRequiredService<ICacheProvider>());
         Assert.IsType<NoOpCacheInvalidationBus>(sp.GetRequiredService<ICacheInvalidationBus>());
         Assert.IsType<NoOpPendingRequestCoordinator>(sp.GetRequiredService<IPendingRequestCoordinator>());
+        Assert.False(sp.GetRequiredService<ICacheOperationMode>().IsNoOp);
+    }
+
+    [Fact]
+    public void NoOpProvider_RegistersNoOpBusAndNoOpCacheProvider()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Cache:Provider"] = "noop"
+        });
+        var services = CreateServicesWithSharedMemoryCache();
+        CacheProviderFactory.RegisterProvider(services, config);
+
+        var sp = services.BuildServiceProvider();
+
+        Assert.IsType<NoOpCacheProvider>(sp.GetRequiredService<ICacheProvider>());
+        Assert.IsType<NoOpCacheInvalidationBus>(sp.GetRequiredService<ICacheInvalidationBus>());
+        Assert.IsType<NoOpPendingRequestCoordinator>(sp.GetRequiredService<IPendingRequestCoordinator>());
+        // This is the flag every other touched service (roles, tenants, API keys, ...) reads to
+        // decide whether to bypass its own local cache — it must actually be true here.
+        Assert.True(sp.GetRequiredService<ICacheOperationMode>().IsNoOp);
     }
 
     [Fact]
@@ -83,6 +105,9 @@ public class CacheProviderFactoryRegistrationTests
         var coordinatorDescriptor = services.Single(s => s.ServiceType == typeof(IPendingRequestCoordinator));
         Assert.NotNull(coordinatorDescriptor.ImplementationFactory);
         Assert.Null(coordinatorDescriptor.ImplementationType);
+
+        var sp = services.BuildServiceProvider();
+        Assert.False(sp.GetRequiredService<ICacheOperationMode>().IsNoOp);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using Shared.Auth;
+using Shared.Providers;
 using Shared.Services;
 using Shared.Utils;
 
@@ -89,6 +90,7 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
     private readonly IUserCacheIndex _userCacheIndex;
     private readonly OidcValidationPolicy _policy;
     private readonly ILogger<AuthorizedTenantResolver> _logger;
+    private readonly ICacheOperationMode _cacheMode;
     private readonly TimeSpan _cacheDuration;
 
     public AuthorizedTenantResolver(
@@ -97,13 +99,15 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         IUserCacheIndex userCacheIndex,
         IConfiguration configuration,
         OidcValidationPolicy policy,
-        ILogger<AuthorizedTenantResolver> logger)
+        ILogger<AuthorizedTenantResolver> logger,
+        ICacheOperationMode cacheMode)
     {
         _userTenantService = userTenantService;
         _cache = cache;
         _userCacheIndex = userCacheIndex;
         _policy = policy;
         _logger = logger;
+        _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
         _cacheDuration = TimeSpan.FromSeconds(
             configuration.GetValue<double>("Auth:ApprovedTenantCacheDurationSeconds", 30));
     }
@@ -183,7 +187,9 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
         // so caching on the subject alone would let another provider's identical subject read this
         // entry and skip the provider check that produced it.
         var cacheKey = CacheKeyPrefix + providerAuthority + "|" + providerUserId;
-        if (_cache.TryGetValue(cacheKey, out ApprovedAccess? cachedAccess) && cachedAccess != null)
+
+        // Invalidated on account changes, so skip caching when Cache:Provider=noop.
+        if (!_cacheMode.IsNoOp && _cache.TryGetValue(cacheKey, out ApprovedAccess? cachedAccess) && cachedAccess != null)
         {
             return cachedAccess;
         }
@@ -238,17 +244,20 @@ public class AuthorizedTenantResolver : IAuthorizedTenantResolver
             AccountEmail = result.Data.AccountEmail
         };
 
-        var cacheOptions = new MemoryCacheEntryOptions()
-            .SetAbsoluteExpiration(_cacheDuration)
-            .SetSize(1)
-            .RegisterPostEvictionCallback(
-                (key, _, _, _) => _userCacheIndex.Forget(access.AccountUserId, key.ToString() ?? string.Empty));
-        _cache.Set(cacheKey, access, cacheOptions);
+        if (!_cacheMode.IsNoOp)
+        {
+            var cacheOptions = new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(_cacheDuration)
+                .SetSize(1)
+                .RegisterPostEvictionCallback(
+                    (key, _, _, _) => _userCacheIndex.Forget(access.AccountUserId, key.ToString() ?? string.Empty));
+            _cache.Set(cacheKey, access, cacheOptions);
 
-        // Tracked against the account rather than the key, which is built from what the token
-        // presented and cannot be reconstructed when an administrator disables the account. The
-        // entry carries the approved tenants, so a hit skips the lockout check entirely.
-        _userCacheIndex.Track(access.AccountUserId, cacheKey);
+            // Tracked against the account rather than the key, which is built from what the token
+            // presented and cannot be reconstructed when an administrator disables the account. The
+            // entry carries the approved tenants, so a hit skips the lockout check entirely.
+            _userCacheIndex.Track(access.AccountUserId, cacheKey);
+        }
 
         return access;
     }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Shared.Providers;
 using Shared.Repositories;
 
 namespace Shared.Services
@@ -19,16 +20,19 @@ namespace Shared.Services
         private readonly IMemoryCache _cache;
         private readonly IUserRepository _userRepository;
         private readonly IUserCacheIndex _userCacheIndex;
+        private readonly ICacheOperationMode _cacheMode;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(5);
 
         public RoleCacheService(
             IMemoryCache cache,
             IUserRepository userRepository,
-            IUserCacheIndex userCacheIndex)
+            IUserCacheIndex userCacheIndex,
+            ICacheOperationMode cacheMode)
         {
             _cache = cache;
             _userRepository = userRepository;
             _userCacheIndex = userCacheIndex;
+            _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
         }
 
         public async Task<List<string>> GetUserRolesAsync(string userId, string tenantId)
@@ -44,11 +48,19 @@ namespace Shared.Services
             }
 
             var cacheKey = $"{tenantId}:{userId}:roles";
-            if (!_cache.TryGetValue(cacheKey, out List<string>? roles))
+
+            // Invalidated on account changes, so skip caching when Cache:Provider=noop.
+            if (!_cacheMode.IsNoOp && _cache.TryGetValue(cacheKey, out List<string>? cachedRoles))
             {
-                var rawRoles = await _userRepository.GetUserRolesAsync(userId, tenantId);
-                // Filter before caching - participants cannot authenticate/login (exist for Admin API queries only)
-                roles = SystemRoles.ExcludingParticipantRoles(rawRoles ?? new List<string>());
+                return cachedRoles ?? new List<string>();
+            }
+
+            var rawRoles = await _userRepository.GetUserRolesAsync(userId, tenantId);
+            // Filter before caching - participants cannot authenticate/login (exist for Admin API queries only)
+            var roles = SystemRoles.ExcludingParticipantRoles(rawRoles ?? new List<string>());
+
+            if (!_cacheMode.IsNoOp)
+            {
                 var cacheOptions = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(_cacheDuration)
                     .SetSize(1)
@@ -62,7 +74,7 @@ namespace Shared.Services
                 _userCacheIndex.Track(userId, cacheKey);
             }
 
-            return roles ?? new List<string>();
+            return roles;
         }
 
         public void InvalidateUserRoles(string userId, string tenantId)
