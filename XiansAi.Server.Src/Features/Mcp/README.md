@@ -1,0 +1,62 @@
+# Xians MCP
+
+Runs inside the server's `WebApi` and `All` modes using Streamable HTTP.
+
+**URL:** `/api/v1/admin/tenants/{tenantId}/agents/{agentName}/activations/{activationName}/mcp`
+
+**Authentication:** `Authorization: Bearer <Xians admin API key>`. Use a tenant-scoped key; never store the key in Rules JSON. Agent read/write permissions and activation boundaries are checked for every tool call.
+
+## Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `list_workflows` | Discover registered workflow types and ordered input parameter definitions. |
+| `list_schedules` | List activation schedules, 100 per zero-based page. |
+| `create_schedule` | Start a registered workflow on a cron schedule with ordered JSON arguments. |
+| `update_schedule_timing` | Change cron/timezone, keeping inputs and pause state. |
+| `delete_schedule` | Delete by exact schedule ID. |
+| `pause_schedule` | Suspend future runs. |
+| `resume_schedule` | Resume future runs. |
+| `list_data_types` | Discover record categories in the activation. |
+| `list_data_records` | Browse records by type/date with pagination. |
+| `save_data_record` | Save a new JSON object visible in Data Explorer. |
+| `delete_data_record` | Permanently delete an exact record ID after confirmation. |
+| `delete_data_records` | Permanently delete records by type/date after confirmation. |
+
+Data tools are restricted to this agent and activation. Data browsing/deletion uses date ranges up to 365 days; browsing returns at most 100 records per call. Deletions are irreversible. Confirmation flags guide the model, not a separate human-approval security boundary.
+
+List first and reuse exact IDs. Duplicate schedule names fail rather than silently keeping old inputs. MCP manages schedules; an existing agent worker executes them and decides where results go.
+
+## Scheduled prompt example
+
+Connect from Prompt Defined Agent's Rules JSON (replace the URL placeholders and store `XIANS_MCP_KEY` in the platform secret vault):
+
+```json
+{
+  "mcpServers": [{
+    "name": "xians",
+    "url": "https://your-server/api/v1/admin/tenants/your-tenant/agents/your-agent/activations/your-activation/mcp",
+    "transport": "streamableHttp",
+    "authentication": { "type": "bearer", "secret": "XIANS_MCP_KEY" }
+  }]
+}
+```
+
+Arguments for `create_schedule` targeting `Prompt Defined Agent:Scheduled Prompt Workflow`:
+
+```json
+{
+  "scheduleName": "React stars",
+  "workflowType": "Prompt Defined Agent:Scheduled Prompt Workflow",
+  "arguments": [{
+    "Prompt": "Report how many stars facebook/react has.",
+    "Parameters": {},
+    "ParticipantId": "your-chat-participant-id",
+    "Scope": null
+  }],
+  "cron": "0 9 * * *",
+  "timezone": "Asia/Colombo"
+}
+```
+
+This workflow sends its output to the specified participant. This is an administrative MCP: credentials permit managing the whole activation, not just one chat participant. Do not expose these credentials to untrusted users. Prompt Defined Agent uses MCP tools exclusively; scheduled prompt inputs must specify the correct chat participant.
