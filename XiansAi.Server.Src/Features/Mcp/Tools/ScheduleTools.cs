@@ -27,6 +27,7 @@ public sealed class ScheduleTools(
 
     private static bool BelongsToTarget(ScheduleModel schedule, McpTarget target) =>
         schedule.Id.StartsWith(Prefix(target), StringComparison.Ordinal) &&
+        schedule.Id.LastIndexOf(':') == Prefix(target).Length - 1 &&
         schedule.TenantId == target.TenantId && schedule.AgentName == target.AgentName &&
         schedule.Metadata.TryGetValue("idPostfix", out var activation) &&
         activation is string name && name == target.ActivationName;

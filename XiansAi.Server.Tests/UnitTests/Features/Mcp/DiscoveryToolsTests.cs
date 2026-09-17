@@ -42,6 +42,31 @@ public class DiscoveryToolsTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ActivationDiscoveryHandlesExistingAndMissingAgents(bool exists)
+    {
+        _tenant.SetupGet(x => x.LoggedInUser).Returns("user");
+        _tenant.SetupGet(x => x.UserRoles).Returns([]);
+        _permissions.Setup(x => x.HasReadPermission("agent")).ReturnsAsync(ServiceResult<bool>.Success(true));
+        Agent? agent = null;
+        if (exists) agent = new() { Id = "id", Name = "agent", Tenant = "tenant", CreatedBy = "user" };
+        _agents.Setup(x => x.GetByNameAsync("agent", "tenant", "user", It.IsAny<string[]>())).ReturnsAsync(agent);
+        _activations.Setup(x => x.GetByAgentNameAsync("agent", "tenant")).ReturnsAsync([
+            new AgentActivation { Id = "id", Name = "activation", AgentName = "agent", TenantId = "tenant", CreatedBy = "user" }
+        ]);
+        if (!exists)
+        {
+            await Assert.ThrowsAsync<McpException>(() => Tools().ListActivations("tenant", "agent"));
+            _activations.VerifyNoOtherCalls();
+            return;
+        }
+        var result = System.Text.Json.JsonSerializer.SerializeToElement(await Tools().ListActivations("tenant", "agent"));
+        Assert.Equal("activation", result[0].GetProperty("ActivationName").GetString());
+        Assert.Equal(1, result.GetArrayLength());
+    }
+
+    [Theory]
     [InlineData("", "allowed,template")]
     [InlineData("TenantAdmin", "allowed,denied,template")]
     [InlineData("SysAdmin", "allowed,denied,template,private-template")]

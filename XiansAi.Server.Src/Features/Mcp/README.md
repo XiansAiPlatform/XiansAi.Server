@@ -24,13 +24,15 @@ Runs inside the server's `WebApi` and `All` modes using Streamable HTTP.
 | `list_data_records` | Browse records by type/date with pagination. |
 | `save_data_record` | Save a new JSON object visible in Data Explorer; pass `content` as JSON text, e.g. `"{\"title\":\"Report\"}"`. |
 | `delete_data_record` | Permanently delete an exact record ID after confirmation. |
-| `delete_data_records` | Permanently delete records by type/date after confirmation. |
+| `delete_data_records` | Permanently delete up to 100 records by type/date after confirmation; larger matches are rejected. |
 
 Schedule and data tools require `target: { "tenantId": "...", "agentName": "...", "activationName": "..." }` and are restricted to that authorized target. Data browsing/deletion uses date ranges up to 365 days; browsing returns at most 100 records per call. Deletions are irreversible. Confirmation flags guide the model, not a separate human-approval security boundary.
 
 List first and reuse exact IDs. Duplicate schedule names fail rather than silently keeping old inputs. MCP manages schedules; an existing agent worker executes them and decides where results go.
 
 Schedule target identifiers and schedule names cannot contain `:`. Listing and modifications also verify the schedule's tenant, agent, and activation memo.
+
+Bulk deletion is restricted to the previewed record IDs, so concurrent writes cannot expand it. Every attempt writes a structured server audit log with the authenticated user, target, filters, completion status, and deleted count; confirmation flags are not independent human approval.
 
 ## Scheduled prompt example
 

@@ -362,8 +362,33 @@ public class ScheduleToolsTests
                 Schedule("tenant:agent:activation:missing", "tenant", "agent", null),
                 Schedule("tenant:agent:activation:tenant", "other", "agent", "activation"),
                 Schedule("tenant:agent:activation:agent", "tenant", "other", "activation"),
-                Schedule("tenant:agent:other:prefix", "tenant", "agent", "activation")
+                Schedule("tenant:agent:other:prefix", "tenant", "agent", "activation"),
+                Schedule("tenant:agent:activation:other:collision", "tenant", "agent", "activation")
             ]));
         Assert.Same(valid, Assert.Single(await Tools().ListSchedules(_target)));
+    }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("pause")]
+    [InlineData("resume")]
+    [InlineData("delete")]
+    public async Task MutationsRejectNestedActivationIdEvenWithMatchingMemo(string operation)
+    {
+        AllowAccess();
+        const string id = "tenant:agent:activation:other:test";
+        _schedules.Setup(x => x.GetScheduleByIdAsync(id)).ReturnsAsync(ServiceResult<ScheduleModel>.Success(
+            new ScheduleModel { Id = id, TenantId = "tenant", AgentName = "agent", WorkflowType = "agent:scheduled", ScheduleSpec = "cron",
+                Metadata = new() { ["idPostfix"] = "activation" } }));
+        Task Operation()
+        {
+            if (operation == "delete") return Tools().DeleteSchedule(_target, id);
+            return Mutate(operation, id);
+        }
+        await Assert.ThrowsAsync<McpException>(Operation);
+        _temporal.VerifyNoOtherCalls();
+        _schedules.Verify(x => x.PauseScheduleAsync(It.IsAny<string>()), Times.Never);
+        _schedules.Verify(x => x.ResumeScheduleAsync(It.IsAny<string>()), Times.Never);
+        _schedules.Verify(x => x.DeleteScheduleByIdAsync(It.IsAny<string>()), Times.Never);
     }
 }

@@ -9,6 +9,7 @@ using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils.Services;
+using Shared.Utils;
 using DocumentService = Features.AgentApi.Services.IDocumentService;
 
 namespace Features.Mcp.Tools;
@@ -21,7 +22,8 @@ public sealed class DataTools(
     IActivationRepository activations,
     IAdminDataService data,
     IDocumentRepository documents,
-    DocumentService documentService)
+    DocumentService documentService,
+    ILogger<DataTools> logger)
 {
     private async Task AuthorizeAsync(McpTarget target, bool write)
     {
@@ -112,26 +114,47 @@ public sealed class DataTools(
         await AuthorizeAsync(target, true);
         RequireConfirmation(confirmed);
         if (!MongoDB.Bson.ObjectId.TryParse(recordId, out _)) throw new McpException("Invalid record ID.");
-        var record = await documents.GetByIdAsync(recordId);
-        if (record is null || record.TenantId != tenantContext.TenantId ||
-            record.AgentId != target.AgentName || record.ActivationName != target.ActivationName)
-            throw new McpException("Record not found in this activation.");
         return Result(await data.DeleteRecordAsync(new AdminDataDeleteRecordRequest
-            { TenantId = tenantContext.TenantId, RecordId = recordId }));
+            { TenantId = tenantContext.TenantId, RecordId = recordId,
+                AgentName = target.AgentName, ActivationName = target.ActivationName }));
     }
 
     [McpServerTool(Name = "delete_data_records", Destructive = true)]
-    [Description("Permanently delete a data type's records in this activation within a date range (at most 365 days). List records first and obtain explicit user approval before setting confirmed=true.")]
+    [Description("Permanently delete at most 100 records of a data type in this activation within a date range (at most 365 days). Requests matching more than 100 records are rejected; narrow the date range. List records first and obtain explicit user approval before setting confirmed=true.")]
     public async Task<AdminDataDeleteResponse> DeleteDataRecords(McpTarget target, string dataType, DateTimeOffset startDate,
         DateTimeOffset endDate, bool confirmed = false)
     {
-        await AuthorizeAsync(target, true);
-        RequireConfirmation(confirmed);
-        return Result(await data.DeleteDataAsync(new AdminDataDeleteRequest
+        var completed = false;
+        var deletedCount = 0;
+        try
         {
-            TenantId = tenantContext.TenantId, AgentName = target.AgentName, ActivationName = target.ActivationName,
-            DataType = dataType, StartDate = startDate.UtcDateTime, EndDate = endDate.UtcDateTime
-        }));
+            await AuthorizeAsync(target, true);
+            RequireConfirmation(confirmed);
+            if (string.IsNullOrWhiteSpace(dataType)) throw new McpException("Data type is required.");
+            var preview = Result(await data.GetDataAsync(new AdminDataListRequest
+            {
+                TenantId = tenantContext.TenantId, AgentName = target.AgentName, ActivationName = target.ActivationName,
+                DataType = dataType, StartDate = startDate.UtcDateTime, EndDate = endDate.UtcDateTime, Limit = 100
+            }));
+            if (preview.Total > 100 || preview.Data.Count > 100)
+                throw new McpException("Bulk deletion is limited to 100 records. Narrow the date range.");
+            var result = Result(await data.DeleteDataAsync(new AdminDataDeleteRequest
+            {
+                TenantId = tenantContext.TenantId, AgentName = target.AgentName, ActivationName = target.ActivationName,
+                DataType = dataType, StartDate = startDate.UtcDateTime, EndDate = endDate.UtcDateTime,
+                RecordIds = preview.Data.Select(record => record.Id).ToList()
+            }));
+            completed = true;
+            deletedCount = result.DeletedCount;
+            return result;
+        }
+        finally
+        {
+            logger.LogInformation("MCP bulk-delete audit: User={User}, Tenant={Tenant}, Agent={Agent}, Activation={Activation}, Type={Type}, Start={Start}, End={End}, Completed={Completed}, DeletedCount={DeletedCount}",
+                LogSanitizer.Sanitize(tenantContext.LoggedInUser), LogSanitizer.Sanitize(tenantContext.TenantId),
+                LogSanitizer.Sanitize(target?.AgentName), LogSanitizer.Sanitize(target?.ActivationName),
+                LogSanitizer.Sanitize(dataType), startDate, endDate, completed, deletedCount);
+        }
     }
 
     private static void RequireConfirmation(bool confirmed)
