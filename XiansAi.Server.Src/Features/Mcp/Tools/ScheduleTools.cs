@@ -35,17 +35,23 @@ public sealed class ScheduleTools(
         else permission = await permissions.HasReadPermission(target.AgentName);
         if (!permission.IsSuccess || !permission.Data)
             throw new McpException("Agent access denied.");
-        var agent = await agents.GetByNameAsync(target.AgentName, tenantContext.TenantId,
+        var agentTask = agents.GetByNameAsync(target.AgentName, tenantContext.TenantId,
             tenantContext.LoggedInUser, tenantContext.UserRoles);
-        var activation = await activations.GetByNameAndAgentAsync(tenantContext.TenantId,
+        var activationTask = activations.GetByNameAndAgentAsync(tenantContext.TenantId,
             target.AgentName, target.ActivationName);
+        await Task.WhenAll(agentTask, activationTask);
+        var agent = await agentTask;
+        var activation = await activationTask;
         if (agent is null || activation is null)
             throw new McpException("Agent or activation not found.");
         return agent;
     }
 
-    private static T Result<T>(ServiceResult<T> result) => result.IsSuccess ? result.Data!
-        : throw new McpException(result.ErrorMessage ?? "Schedule operation failed.");
+    private static T Result<T>(ServiceResult<T> result)
+    {
+        if (!result.IsSuccess) throw new McpException(result.ErrorMessage ?? "Schedule operation failed.");
+        return result.Data!;
+    }
 
     private async Task AuthorizeScheduleAsync(McpTarget target, string scheduleId)
     {
@@ -95,9 +101,10 @@ public sealed class ScheduleTools(
         options.Memo = new Dictionary<string, object>(options.Memo!) { ["description"] = description ?? scheduleName };
         options.IdConflictPolicy = Temporalio.Api.Enums.V1.WorkflowIdConflictPolicy.Unspecified;
         var action = ScheduleActionStartWorkflow.Create(workflowType, arguments.Cast<object>().ToArray(), options);
+        var spec = Timing(cron, timezone);
         var client = await temporal.GetClientAsync(agent.Name);
         var id = Prefix(target) + scheduleName;
-        await client.CreateScheduleAsync(id, new Schedule(action, Timing(cron, timezone)),
+        await client.CreateScheduleAsync(id, new Schedule(action, spec),
             new ScheduleOptions { TypedSearchAttributes = options.TypedSearchAttributes });
         return id;
     }

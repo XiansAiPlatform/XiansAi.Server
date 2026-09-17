@@ -1,4 +1,5 @@
 using Features.Mcp.Tools;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Features.Mcp.Configuration;
 
@@ -6,7 +7,8 @@ public static class McpConfiguration
 {
     public static void AddXiansMcp(this IServiceCollection services)
     {
-        services.AddScoped<Features.AgentApi.Services.IDocumentService, Features.AgentApi.Services.DocumentService>();
+        // MCP also runs in WebApi-only mode, where AgentApiConfiguration is not registered.
+        services.TryAddScoped<Features.AgentApi.Services.IDocumentService, Features.AgentApi.Services.DocumentService>();
         services.AddMcpServer()
             .WithHttpTransport(options => options.Stateless = true)
             .WithTools<ScheduleTools>()

@@ -27,13 +27,17 @@ public sealed class DataTools(
     {
         McpTarget.Validate(target);
         if (target.TenantId != tenantContext.TenantId) throw new McpException("Tenant access denied.");
-        var permission = await permissions.HasReadPermission(target.AgentName);
+        ServiceResult<bool> permission;
         if (write) permission = await permissions.HasWritePermission(target.AgentName);
+        else permission = await permissions.HasReadPermission(target.AgentName);
         if (!permission.IsSuccess || !permission.Data) throw new McpException("Agent access denied.");
-        var agent = await agents.GetByNameAsync(target.AgentName, tenantContext.TenantId,
+        var agentTask = agents.GetByNameAsync(target.AgentName, tenantContext.TenantId,
             tenantContext.LoggedInUser, tenantContext.UserRoles);
-        var activation = await activations.GetByNameAndAgentAsync(tenantContext.TenantId,
+        var activationTask = activations.GetByNameAndAgentAsync(tenantContext.TenantId,
             target.AgentName, target.ActivationName);
+        await Task.WhenAll(agentTask, activationTask);
+        var agent = await agentTask;
+        var activation = await activationTask;
         if (agent is null || activation is null) throw new McpException("Agent or activation not found.");
     }
 
@@ -57,6 +61,9 @@ public sealed class DataTools(
         DateTimeOffset endDate, int skip = 0, int limit = 20)
     {
         await AuthorizeAsync(target, false);
+        if (string.IsNullOrWhiteSpace(dataType)) throw new McpException("Data type is required.");
+        if (skip < 0) throw new McpException("Skip must be non-negative.");
+        if (limit < 1) throw new McpException("Limit must be positive.");
         if (limit > 100) throw new McpException("Limit must not exceed 100.");
         return Result(await data.GetDataAsync(new AdminDataListRequest
         {

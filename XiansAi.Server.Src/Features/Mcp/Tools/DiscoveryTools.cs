@@ -9,7 +9,7 @@ namespace Features.Mcp.Tools;
 
 [McpServerToolType]
 public sealed class DiscoveryTools(ITenantContext tenantContext, IAgentRepository agents,
-    IActivationRepository activations, IPermissionsService permissions)
+    IActivationRepository activations, IPermissionsService permissions, IAgentPermissionRepository agentPermissions)
 {
     private void AuthorizeTenant(string tenantId)
     {
@@ -27,14 +27,9 @@ public sealed class DiscoveryTools(ITenantContext tenantContext, IAgentRepositor
         AuthorizeTenant(tenantId);
         var tenantAgents = await agents.GetAgentsWithPermissionAsync(tenantContext.LoggedInUser, tenantId);
         var templates = await agents.GetSystemScopedAgentsWithDefinitionsAsync(basicDataOnly: true);
-        var names = tenantAgents.Select(agent => agent.Name).Concat(templates.Select(item => item.Agent.Name)).Distinct();
-        var result = new List<object>();
-        foreach (var name in names)
-        {
-            var access = await permissions.HasReadPermission(name);
-            if (access.IsSuccess && access.Data) result.Add(new { AgentName = name });
-        }
-        return result.ToArray();
+        var loadedAgents = tenantAgents.Concat(templates.Select(item => item.Agent)).DistinctBy(agent => agent.Name);
+        return agentPermissions.GetAgentNamesWithPermission(loadedAgents, PermissionLevel.Read)
+            .Select(name => (object)new { AgentName = name }).ToArray();
     }
 
     [McpServerTool(Name = "list_activations", ReadOnly = true)]

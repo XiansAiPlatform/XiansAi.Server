@@ -87,6 +87,7 @@ public class DataToolsTests
             r.Document.AgentId == "agent" && r.Document.ActivationName == "activation" && r.Document.Id == null &&
             r.Document.Type == "reports" && r.Options == null &&
             r.Document.Content.ValueKind == JsonValueKind.Object && r.Document.Content.GetProperty("value").GetInt32() == 1)), Times.Once);
+        _permissions.Verify(x => x.HasReadPermission(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -121,6 +122,29 @@ public class DataToolsTests
         await Tools().ListDataRecords(_target, "reports", DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow);
         _data.Verify(x => x.GetDataAsync(It.Is<AdminDataListRequest>(r => r.TenantId == "tenant" &&
             r.AgentName == "agent" && r.ActivationName == "activation" && r.Limit == 20), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("reports", -1, 20)]
+    [InlineData("reports", 0, 0)]
+    [InlineData("reports", 0, -1)]
+    [InlineData("reports", 0, 101)]
+    [InlineData("", 0, 20)]
+    [InlineData(" ", 0, 20)]
+    public async Task ListRejectsInvalidInputs(string dataType, int skip, int limit)
+    {
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListDataRecords(_target, dataType,
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow, skip, limit));
+        _data.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task SaveRequiresDataType(string dataType)
+    {
+        await Assert.ThrowsAsync<McpException>(() => Tools().SaveDataRecord(_target, dataType, "{}"));
+        _storage.VerifyNoOtherCalls();
     }
 
     [Fact]
