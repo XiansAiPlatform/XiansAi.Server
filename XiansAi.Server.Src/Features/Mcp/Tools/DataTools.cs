@@ -66,21 +66,36 @@ public sealed class DataTools(
     }
 
     [McpServerTool(Name = "save_data_record")]
-    [Description("Create a new JSON object record in this activation's Data Explorer. Does not overwrite existing records. ParticipantId is optional attribution, not an access boundary.")]
-    public async Task<JsonElement> SaveDataRecord(McpTarget target, string dataType, JsonElement content, string? key = null,
+    [Description("Create a new record in this activation's Data Explorer. Content must be a string containing a JSON object, for example {\"title\":\"Report\"}. Does not overwrite existing records. ParticipantId is optional attribution, not an access boundary.")]
+    public async Task<JsonElement> SaveDataRecord(McpTarget target, string dataType, string content, string? key = null,
         string? participantId = null)
     {
         await AuthorizeAsync(target, true);
         if (string.IsNullOrWhiteSpace(dataType)) throw new McpException("Data type is required.");
-        if (content.ValueKind != JsonValueKind.Object) throw new McpException("Content must be a JSON object.");
+        var parsedContent = ParseContent(content);
         return Result(await documentService.SaveAsync(new DocumentRequest<JsonElement>
         {
             Document = new DocumentDto<JsonElement>
             {
                 AgentId = target.AgentName, ActivationName = target.ActivationName, Type = dataType,
-                Content = content, Key = key, ParticipantId = participantId
+                Content = parsedContent, Key = key, ParticipantId = participantId
             }
         }));
+    }
+
+    private static JsonElement ParseContent(string content)
+    {
+        JsonElement parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<JsonElement>(content);
+        }
+        catch (JsonException)
+        {
+            throw new McpException("Content must be valid JSON object text.");
+        }
+        if (parsed.ValueKind != JsonValueKind.Object) throw new McpException("Content must be a JSON object.");
+        return parsed;
     }
 
     [McpServerTool(Name = "delete_data_record", Destructive = true)]

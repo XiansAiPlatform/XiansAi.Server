@@ -52,7 +52,7 @@ public class DataToolsTests
     public async Task SaveRequiresWritePermission()
     {
         _permissions.Setup(x => x.HasWritePermission("agent")).ReturnsAsync(ServiceResult<bool>.Success(false));
-        await Assert.ThrowsAsync<McpException>(() => Tools().SaveDataRecord(_target, "reports", JsonSerializer.SerializeToElement(new { value = 1 })));
+        await Assert.ThrowsAsync<McpException>(() => Tools().SaveDataRecord(_target, "reports", "{\"value\":1}"));
         _storage.VerifyNoOtherCalls();
     }
 
@@ -82,10 +82,35 @@ public class DataToolsTests
     {
         _storage.Setup(x => x.SaveAsync(It.IsAny<DocumentRequest<JsonElement>>()))
             .ReturnsAsync(ServiceResult<JsonElement>.Success(JsonSerializer.SerializeToElement(new { id = "saved" })));
-        await Tools().SaveDataRecord(_target, "reports", JsonSerializer.SerializeToElement(new { value = 1 }));
+        await Tools().SaveDataRecord(_target, "reports", "{\"value\":1}");
         _storage.Verify(x => x.SaveAsync(It.Is<DocumentRequest<JsonElement>>(r =>
             r.Document.AgentId == "agent" && r.Document.ActivationName == "activation" && r.Document.Id == null &&
-            r.Document.Type == "reports" && r.Options == null)), Times.Once);
+            r.Document.Type == "reports" && r.Options == null &&
+            r.Document.Content.ValueKind == JsonValueKind.Object && r.Document.Content.GetProperty("value").GetInt32() == 1)), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveAcceptsEmptyObjectText()
+    {
+        _storage.Setup(x => x.SaveAsync(It.IsAny<DocumentRequest<JsonElement>>()))
+            .ReturnsAsync(ServiceResult<JsonElement>.Success(JsonSerializer.SerializeToElement(new { id = "saved" })));
+        await Tools().SaveDataRecord(_target, "reports", "{}");
+        _storage.Verify(x => x.SaveAsync(It.Is<DocumentRequest<JsonElement>>(r =>
+            r.Document.Content.ValueKind == JsonValueKind.Object && r.Document.Content.GetRawText() == "{}")), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("{invalid}")]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("true")]
+    [InlineData("\"text\"")]
+    public async Task SaveRejectsInvalidOrNonObjectText(string content)
+    {
+        await Assert.ThrowsAsync<McpException>(() => Tools().SaveDataRecord(_target, "reports", content));
+        _storage.VerifyNoOtherCalls();
     }
 
     [Fact]

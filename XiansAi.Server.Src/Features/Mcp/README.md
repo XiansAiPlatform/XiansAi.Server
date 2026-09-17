@@ -22,7 +22,7 @@ Runs inside the server's `WebApi` and `All` modes using Streamable HTTP.
 | `resume_schedule` | Resume future runs. |
 | `list_data_types` | Discover record categories in the activation. |
 | `list_data_records` | Browse records by type/date with pagination. |
-| `save_data_record` | Save a new JSON object visible in Data Explorer. |
+| `save_data_record` | Save a new JSON object visible in Data Explorer; pass `content` as JSON text, e.g. `"{\"title\":\"Report\"}"`. |
 | `delete_data_record` | Permanently delete an exact record ID after confirmation. |
 | `delete_data_records` | Permanently delete records by type/date after confirmation. |
 
