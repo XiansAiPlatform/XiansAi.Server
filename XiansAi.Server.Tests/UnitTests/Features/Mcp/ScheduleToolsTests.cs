@@ -135,7 +135,8 @@ public class ScheduleToolsTests
         AllowAccess();
         const string id = "tenant:agent:activation:test";
         _schedules.Setup(x => x.GetScheduleByIdAsync(id)).ReturnsAsync(ServiceResult<ScheduleModel>.Success(
-            new ScheduleModel { Id = id, TenantId = "tenant", AgentName = "agent", WorkflowType = "agent:scheduled", ScheduleSpec = "cron" }));
+            new ScheduleModel { Id = id, TenantId = "tenant", AgentName = "agent", WorkflowType = "agent:scheduled", ScheduleSpec = "cron",
+                Metadata = new() { ["idPostfix"] = "activation" } }));
         _temporal.Setup(x => x.GetClientAsync("agent")).ReturnsAsync(_client.Object);
     }
 
@@ -300,5 +301,69 @@ public class ScheduleToolsTests
                 }, DataConverter.Default], null)!;
             Updated = (await input.Updater(new ScheduleUpdateInput(description)))!.Schedule;
         }
+    }
+
+    [Theory]
+    [InlineData("tenant:other", "agent", "activation")]
+    [InlineData("tenant", "agent:other", "activation")]
+    [InlineData("tenant", "agent", "activation:other")]
+    public async Task ScheduleOperationsRejectAmbiguousTargetIdentifiers(string tenant, string agent, string activation)
+    {
+        _tenant.SetupGet(x => x.TenantId).Returns(tenant);
+        _target = new(tenant, agent, activation);
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListSchedules(_target));
+        await Assert.ThrowsAsync<McpException>(() => Tools().CreateSchedule(_target, "test", "agent:scheduled", [], "0 9 * * *"));
+        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule(_target, "tenant:agent:activation:test"));
+        _permissions.VerifyNoOtherCalls();
+        _schedules.VerifyNoOtherCalls();
+        _temporal.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("update", "other")]
+    [InlineData("pause", "other")]
+    [InlineData("resume", "other")]
+    [InlineData("delete", "other")]
+    [InlineData("delete", null)]
+    public async Task MutationsRejectWrongOrMissingActivationMemo(string operation, string? activation)
+    {
+        AllowScheduleAccess();
+        const string id = "tenant:agent:activation:test";
+        var schedule = new ScheduleModel { Id = id, TenantId = "tenant", AgentName = "agent", WorkflowType = "agent:scheduled", ScheduleSpec = "cron" };
+        if (activation is not null) schedule.Metadata["idPostfix"] = activation;
+        _schedules.Setup(x => x.GetScheduleByIdAsync(id)).ReturnsAsync(ServiceResult<ScheduleModel>.Success(schedule));
+        Task Operation()
+        {
+            if (operation == "delete") return Tools().DeleteSchedule(_target, id);
+            return Mutate(operation, id);
+        }
+        await Assert.ThrowsAsync<McpException>(Operation);
+        _temporal.Verify(x => x.GetClientAsync(It.IsAny<string>()), Times.Never);
+        _schedules.Verify(x => x.PauseScheduleAsync(It.IsAny<string>()), Times.Never);
+        _schedules.Verify(x => x.ResumeScheduleAsync(It.IsAny<string>()), Times.Never);
+        _schedules.Verify(x => x.DeleteScheduleByIdAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ListingFiltersByExactTargetAndActivationMemo()
+    {
+        AllowAccess();
+        ScheduleModel Schedule(string id, string tenant, string agent, string? activation)
+        {
+            var schedule = new ScheduleModel { Id = id, TenantId = tenant, AgentName = agent, WorkflowType = "agent:scheduled", ScheduleSpec = "cron" };
+            if (activation is not null) schedule.Metadata["idPostfix"] = activation;
+            return schedule;
+        }
+        var valid = Schedule("tenant:agent:activation:valid", "tenant", "agent", "activation");
+        _schedules.Setup(x => x.GetSchedulesAsync(It.IsAny<ScheduleFilterRequest>()))
+            .ReturnsAsync(ServiceResult<List<ScheduleModel>>.Success([
+                valid,
+                Schedule("tenant:agent:activation:other", "tenant", "agent", "other"),
+                Schedule("tenant:agent:activation:missing", "tenant", "agent", null),
+                Schedule("tenant:agent:activation:tenant", "other", "agent", "activation"),
+                Schedule("tenant:agent:activation:agent", "tenant", "other", "activation"),
+                Schedule("tenant:agent:other:prefix", "tenant", "agent", "activation")
+            ]));
+        Assert.Same(valid, Assert.Single(await Tools().ListSchedules(_target)));
     }
 }

@@ -25,11 +25,19 @@ public sealed class ScheduleTools(
 {
     private static string Prefix(McpTarget target) => $"{target.TenantId}:{target.AgentName}:{target.ActivationName}:";
 
+    private static bool BelongsToTarget(ScheduleModel schedule, McpTarget target) =>
+        schedule.Id.StartsWith(Prefix(target), StringComparison.Ordinal) &&
+        schedule.TenantId == target.TenantId && schedule.AgentName == target.AgentName &&
+        schedule.Metadata.TryGetValue("idPostfix", out var activation) &&
+        activation is string name && name == target.ActivationName;
+
     private async Task<Agent> AuthorizeAsync(McpTarget target, bool write)
     {
         McpTarget.Validate(target);
         if (target.TenantId != tenantContext.TenantId)
             throw new McpException("Tenant access denied.");
+        if (new[] { target.TenantId, target.AgentName, target.ActivationName }.Any(value => value.Contains(':')))
+            throw new McpException("Schedule target identifiers cannot contain a colon.");
         var permission = write
             ? await permissions.HasWritePermission(target.AgentName)
             : await permissions.HasReadPermission(target.AgentName);
@@ -59,7 +67,7 @@ public sealed class ScheduleTools(
         if (!scheduleId.StartsWith(Prefix(target), StringComparison.Ordinal))
             throw new McpException("Schedule does not belong to this activation. Use an exact ID from list_schedules.");
         var schedule = Result(await schedules.GetScheduleByIdAsync(scheduleId));
-        if (schedule.TenantId != tenantContext.TenantId || schedule.AgentName != target.AgentName)
+        if (!BelongsToTarget(schedule, target))
             throw new McpException("Schedule access denied.");
     }
 
@@ -72,7 +80,7 @@ public sealed class ScheduleTools(
         return Result(await schedules.GetSchedulesAsync(new ScheduleFilterRequest
         {
             AgentName = target.AgentName, SearchTerm = Prefix(target), PageSize = 100, PageToken = page.ToString()
-        })).Where(schedule => schedule.Id.StartsWith(Prefix(target), StringComparison.Ordinal)).ToList();
+        })).Where(schedule => BelongsToTarget(schedule, target)).ToList();
     }
 
     [McpServerTool(Name = "list_workflows", ReadOnly = true)]

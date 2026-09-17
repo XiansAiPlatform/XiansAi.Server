@@ -30,6 +30,8 @@ Schedule and data tools require `target: { "tenantId": "...", "agentName": "..."
 
 List first and reuse exact IDs. Duplicate schedule names fail rather than silently keeping old inputs. MCP manages schedules; an existing agent worker executes them and decides where results go.
 
+Schedule target identifiers and schedule names cannot contain `:`. Listing and modifications also verify the schedule's tenant, agent, and activation memo.
+
 ## Scheduled prompt example
 
 Connect from Prompt Defined Agent's Rules JSON (replace the Server URL and store `XIANS_MCP_KEY` in the platform secret vault):
