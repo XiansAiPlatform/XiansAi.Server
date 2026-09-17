@@ -332,6 +332,10 @@ public class ScheduleService : IScheduleService
             
             // Create a simple mock entry for mapping
             var schedule = MapToScheduleModel(scheduleId, description);
+            if (schedule.TenantId != _tenantContext.TenantId || !await HasScheduleAccessAsync(schedule.AgentName))
+                return ServiceResult<ScheduleModel>.Forbidden("You do not have permission to view this schedule");
+            if (description.Schedule.Action is Temporalio.Client.Schedules.ScheduleActionStartWorkflow action)
+                schedule.WorkflowInput = ScheduleWorkflowInput.Decode(action.Args, client.Options.DataConverter.PayloadConverter);
             
             _logger.LogInformation("Retrieved schedule {ScheduleId}", LogSanitizer.Sanitize(scheduleId));
             return ServiceResult<ScheduleModel>.Success(schedule);
