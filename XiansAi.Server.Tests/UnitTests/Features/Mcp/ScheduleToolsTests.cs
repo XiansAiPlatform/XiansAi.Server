@@ -15,7 +15,7 @@ namespace XiansAi.Server.Tests.UnitTests.Features.Mcp;
 
 public class ScheduleToolsTests
 {
-    private readonly DefaultHttpContext _http = new();
+    private McpTarget _target = new("tenant", "agent", "activation");
     private readonly Mock<ITenantContext> _tenant = new();
     private readonly Mock<IPermissionsService> _permissions = new();
     private readonly Mock<IAgentRepository> _agents = new();
@@ -23,23 +23,20 @@ public class ScheduleToolsTests
     private readonly Mock<IScheduleService> _schedules = new();
     private readonly Mock<IFlowDefinitionRepository> _definitions = new();
 
-    private ScheduleTools Tools() => new(new HttpContextAccessor { HttpContext = _http },
+    private ScheduleTools Tools() => new(
         _tenant.Object, _permissions.Object, _agents.Object, _definitions.Object, _activations.Object,
         Mock.Of<ITemporalGatewayFactory>(), _schedules.Object);
 
     public ScheduleToolsTests()
     {
-        _http.Request.RouteValues["tenantId"] = "tenant";
-        _http.Request.RouteValues["agentName"] = "agent";
-        _http.Request.RouteValues["activationName"] = "activation";
         _tenant.SetupGet(x => x.TenantId).Returns("tenant");
     }
 
     [Fact]
     public async Task ListRejectsDifferentTenant()
     {
-        _http.Request.RouteValues["tenantId"] = "other";
-        await Assert.ThrowsAsync<McpException>(() => Tools().ListSchedules());
+        _target = _target with { TenantId = "other" };
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListSchedules(_target));
         _permissions.VerifyNoOtherCalls();
         _schedules.VerifyNoOtherCalls();
     }
@@ -49,7 +46,7 @@ public class ScheduleToolsTests
     {
         _permissions.Setup(x => x.HasWritePermission("agent"))
             .ReturnsAsync(ServiceResult<bool>.Success(false));
-        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule("tenant:agent:activation:test"));
+        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule(_target, "tenant:agent:activation:test"));
         _schedules.VerifyNoOtherCalls();
     }
 
@@ -58,7 +55,7 @@ public class ScheduleToolsTests
     {
         _permissions.Setup(x => x.HasReadPermission("agent"))
             .ReturnsAsync(ServiceResult<bool>.Success(false));
-        await Assert.ThrowsAsync<McpException>(() => Tools().ListSchedules());
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListSchedules(_target));
         _schedules.VerifyNoOtherCalls();
     }
 
@@ -66,7 +63,7 @@ public class ScheduleToolsTests
     public async Task WorkflowDiscoveryRequiresReadPermission()
     {
         _permissions.Setup(x => x.HasReadPermission("agent")).ReturnsAsync(ServiceResult<bool>.Success(false));
-        await Assert.ThrowsAsync<McpException>(() => Tools().ListWorkflows());
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListWorkflows(_target));
         _definitions.VerifyNoOtherCalls();
     }
 
@@ -81,7 +78,7 @@ public class ScheduleToolsTests
             ParameterDefinitions = [new ParameterDefinition { Name = "request", Type = "ScheduledPromptRequest" }]
         };
         _definitions.Setup(x => x.GetByNameAsync("agent", "tenant")).ReturnsAsync([flow, flow]);
-        var result = System.Text.Json.JsonSerializer.SerializeToElement(await Tools().ListWorkflows());
+        var result = System.Text.Json.JsonSerializer.SerializeToElement(await Tools().ListWorkflows(_target));
         Assert.Equal(1, result.GetArrayLength());
         Assert.Equal("agent:scheduled", result[0].GetProperty("WorkflowType").GetString());
         Assert.Equal("request", result[0].GetProperty("Parameters")[0].GetProperty("Name").GetString());
@@ -104,7 +101,7 @@ public class ScheduleToolsTests
     public async Task DeleteRejectsAnotherActivationBeforeLookup()
     {
         AllowAccess();
-        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule("tenant:agent:other:test"));
+        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule(_target, "tenant:agent:other:test"));
         _schedules.VerifyNoOtherCalls();
     }
 
@@ -115,7 +112,7 @@ public class ScheduleToolsTests
         const string id = "tenant:agent:activation:test";
         _schedules.Setup(x => x.GetScheduleByIdAsync(id)).ReturnsAsync(ServiceResult<ScheduleModel>.Success(
             new ScheduleModel { Id = id, TenantId = "other", AgentName = "agent", WorkflowType = "workflow", ScheduleSpec = "cron" }));
-        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule(id));
+        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule(_target, id));
         _schedules.Verify(x => x.DeleteScheduleByIdAsync(It.IsAny<string>()), Times.Never);
     }
 
@@ -123,6 +120,6 @@ public class ScheduleToolsTests
     public async Task CreateRejectsUnregisteredWorkflow()
     {
         AllowAccess();
-        await Assert.ThrowsAsync<McpException>(() => Tools().CreateSchedule("test", "unregistered", [], "0 9 * * *"));
+        await Assert.ThrowsAsync<McpException>(() => Tools().CreateSchedule(_target, "test", "unregistered", [], "0 9 * * *"));
     }
 }

@@ -15,7 +15,6 @@ namespace Features.Mcp.Tools;
 
 [McpServerToolType]
 public sealed class ScheduleTools(
-    IHttpContextAccessor httpContextAccessor,
     ITenantContext tenantContext,
     IPermissionsService permissions,
     IAgentRepository agents,
@@ -24,23 +23,22 @@ public sealed class ScheduleTools(
     ITemporalGatewayFactory temporal,
     IScheduleService schedules)
 {
-    private string Route(string key) => httpContextAccessor.HttpContext!.Request.RouteValues[key]?.ToString()
-        ?? throw new McpException($"Missing {key}.");
+    private static string Prefix(McpTarget target) => $"{target.TenantId}:{target.AgentName}:{target.ActivationName}:";
 
-    private string Prefix => $"{tenantContext.TenantId}:{Route("agentName")}:{Route("activationName")}:";
-
-    private async Task<Agent> AuthorizeAsync(bool write)
+    private async Task<Agent> AuthorizeAsync(McpTarget target, bool write)
     {
-        if (Route("tenantId") != tenantContext.TenantId)
+        McpTarget.Validate(target);
+        if (target.TenantId != tenantContext.TenantId)
             throw new McpException("Tenant access denied.");
-        var permission = write ? await permissions.HasWritePermission(Route("agentName"))
-            : await permissions.HasReadPermission(Route("agentName"));
+        ServiceResult<bool> permission;
+        if (write) permission = await permissions.HasWritePermission(target.AgentName);
+        else permission = await permissions.HasReadPermission(target.AgentName);
         if (!permission.IsSuccess || !permission.Data)
             throw new McpException("Agent access denied.");
-        var agent = await agents.GetByNameAsync(Route("agentName"), tenantContext.TenantId,
+        var agent = await agents.GetByNameAsync(target.AgentName, tenantContext.TenantId,
             tenantContext.LoggedInUser, tenantContext.UserRoles);
         var activation = await activations.GetByNameAndAgentAsync(tenantContext.TenantId,
-            Route("agentName"), Route("activationName"));
+            target.AgentName, target.ActivationName);
         if (agent is null || activation is null)
             throw new McpException("Agent or activation not found.");
         return agent;
@@ -49,33 +47,33 @@ public sealed class ScheduleTools(
     private static T Result<T>(ServiceResult<T> result) => result.IsSuccess ? result.Data!
         : throw new McpException(result.ErrorMessage ?? "Schedule operation failed.");
 
-    private async Task AuthorizeScheduleAsync(string scheduleId)
+    private async Task AuthorizeScheduleAsync(McpTarget target, string scheduleId)
     {
-        await AuthorizeAsync(true);
-        if (!scheduleId.StartsWith(Prefix, StringComparison.Ordinal))
+        await AuthorizeAsync(target, true);
+        if (!scheduleId.StartsWith(Prefix(target), StringComparison.Ordinal))
             throw new McpException("Schedule does not belong to this activation. Use an exact ID from list_schedules.");
         var schedule = Result(await schedules.GetScheduleByIdAsync(scheduleId));
-        if (schedule.TenantId != tenantContext.TenantId || schedule.AgentName != Route("agentName"))
+        if (schedule.TenantId != tenantContext.TenantId || schedule.AgentName != target.AgentName)
             throw new McpException("Schedule access denied.");
     }
 
     [McpServerTool(Name = "list_schedules", ReadOnly = true)]
     [Description("List schedules in this activation. Use returned exact IDs for modifications. Page is zero-based.")]
-    public async Task<List<ScheduleModel>> ListSchedules(int page = 0)
+    public async Task<List<ScheduleModel>> ListSchedules(McpTarget target, int page = 0)
     {
-        await AuthorizeAsync(false);
+        await AuthorizeAsync(target, false);
         if (page < 0) throw new McpException("Page must be non-negative.");
         return Result(await schedules.GetSchedulesAsync(new ScheduleFilterRequest
         {
-            AgentName = Route("agentName"), SearchTerm = Prefix, PageSize = 100, PageToken = page.ToString()
-        })).Where(schedule => schedule.Id.StartsWith(Prefix, StringComparison.Ordinal)).ToList();
+            AgentName = target.AgentName, SearchTerm = Prefix(target), PageSize = 100, PageToken = page.ToString()
+        })).Where(schedule => schedule.Id.StartsWith(Prefix(target), StringComparison.Ordinal)).ToList();
     }
 
     [McpServerTool(Name = "list_workflows", ReadOnly = true)]
     [Description("Discover this agent's registered workflow types and ordered input parameters before creating a schedule. Registration does not guarantee an agent worker is currently running.")]
-    public async Task<object[]> ListWorkflows()
+    public async Task<object[]> ListWorkflows(McpTarget target)
     {
-        var agent = await AuthorizeAsync(false);
+        var agent = await AuthorizeAsync(target, false);
         var workflows = await definitions.GetByNameAsync(agent.Name, tenantContext.TenantId);
         return (workflows ?? []).DistinctBy(flow => flow.WorkflowType)
             .Select(flow => (object)new { flow.WorkflowType, flow.Summary, Parameters = flow.ParameterDefinitions }).ToArray();
@@ -83,22 +81,22 @@ public sealed class ScheduleTools(
 
     [McpServerTool(Name = "create_schedule")]
     [Description("Schedule a registered workflow. Arguments are its ordered JSON input values. Output delivery is determined by the workflow, not MCP. Duplicate names fail; list first.")]
-    public async Task<string> CreateSchedule(string scheduleName, string workflowType, JsonElement[] arguments,
+    public async Task<string> CreateSchedule(McpTarget target, string scheduleName, string workflowType, JsonElement[] arguments,
         string cron, string timezone = "UTC", string? description = null)
     {
-        var agent = await AuthorizeAsync(true);
+        var agent = await AuthorizeAsync(target, true);
         if (string.IsNullOrWhiteSpace(scheduleName) || scheduleName.Contains(':'))
             throw new McpException("Schedule name is required and cannot contain a colon.");
         var workflows = await definitions.GetByNameAsync(agent.Name, tenantContext.TenantId);
         if (workflows?.Any(flow => flow.WorkflowType == workflowType) != true)
             throw new McpException("Workflow must be registered on this agent.");
         var options = new NewWorkflowOptions(agent.Name, agent.SystemScoped, workflowType,
-            Route("activationName"), tenantContext);
+            target.ActivationName, tenantContext);
         options.Memo = new Dictionary<string, object>(options.Memo!) { ["description"] = description ?? scheduleName };
         options.IdConflictPolicy = Temporalio.Api.Enums.V1.WorkflowIdConflictPolicy.Unspecified;
         var action = ScheduleActionStartWorkflow.Create(workflowType, arguments.Cast<object>().ToArray(), options);
         var client = await temporal.GetClientAsync(agent.Name);
-        var id = Prefix + scheduleName;
+        var id = Prefix(target) + scheduleName;
         await client.CreateScheduleAsync(id, new Schedule(action, Timing(cron, timezone)),
             new ScheduleOptions { TypedSearchAttributes = options.TypedSearchAttributes });
         return id;
@@ -113,11 +111,11 @@ public sealed class ScheduleTools(
 
     [McpServerTool(Name = "update_schedule_timing")]
     [Description("Change cron timing of an existing schedule using its exact ID. Preserves workflow arguments and pause state.")]
-    public async Task<bool> UpdateScheduleTiming(string scheduleId, string cron, string timezone = "UTC")
+    public async Task<bool> UpdateScheduleTiming(McpTarget target, string scheduleId, string cron, string timezone = "UTC")
     {
-        await AuthorizeScheduleAsync(scheduleId);
+        await AuthorizeScheduleAsync(target, scheduleId);
         var spec = Timing(cron, timezone);
-        var client = await temporal.GetClientAsync(Route("agentName"));
+        var client = await temporal.GetClientAsync(target.AgentName);
         await client.GetScheduleHandle(scheduleId).UpdateAsync(update =>
             new ScheduleUpdate(update.Description.Schedule with { Spec = spec }));
         return true;
@@ -125,25 +123,25 @@ public sealed class ScheduleTools(
 
     [McpServerTool(Name = "delete_schedule", Destructive = true)]
     [Description("Delete a schedule using its exact ID from list_schedules.")]
-    public async Task<bool> DeleteSchedule(string scheduleId)
+    public async Task<bool> DeleteSchedule(McpTarget target, string scheduleId)
     {
-        await AuthorizeScheduleAsync(scheduleId);
+        await AuthorizeScheduleAsync(target, scheduleId);
         return Result(await schedules.DeleteScheduleByIdAsync(scheduleId));
     }
 
     [McpServerTool(Name = "pause_schedule")]
     [Description("Pause a schedule using its exact ID.")]
-    public async Task<bool> PauseSchedule(string scheduleId)
+    public async Task<bool> PauseSchedule(McpTarget target, string scheduleId)
     {
-        await AuthorizeScheduleAsync(scheduleId);
+        await AuthorizeScheduleAsync(target, scheduleId);
         return Result(await schedules.PauseScheduleAsync(scheduleId));
     }
 
     [McpServerTool(Name = "resume_schedule")]
     [Description("Resume a paused schedule using its exact ID.")]
-    public async Task<bool> ResumeSchedule(string scheduleId)
+    public async Task<bool> ResumeSchedule(McpTarget target, string scheduleId)
     {
-        await AuthorizeScheduleAsync(scheduleId);
+        await AuthorizeScheduleAsync(target, scheduleId);
         return Result(await schedules.ResumeScheduleAsync(scheduleId));
     }
 }

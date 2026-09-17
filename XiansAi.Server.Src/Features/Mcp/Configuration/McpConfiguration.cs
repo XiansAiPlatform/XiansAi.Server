@@ -10,10 +10,11 @@ public static class McpConfiguration
         services.AddMcpServer()
             .WithHttpTransport(options => options.Stateless = true)
             .WithTools<ScheduleTools>()
-            .WithTools<DataTools>();
+            .WithTools<DataTools>()
+            .WithTools<DiscoveryTools>();
     }
 
     public static void MapXiansMcp(this WebApplication app) => app.MapMcp(
-        "/api/v1/admin/tenants/{tenantId}/agents/{agentName}/activations/{activationName}/mcp")
+        "/api/v1/admin/mcp")
         .RequireAuthorization("AdminEndpointAuthPolicy");
 }
