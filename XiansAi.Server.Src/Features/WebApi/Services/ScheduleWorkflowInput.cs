@@ -12,9 +12,15 @@ public static class ScheduleWorkflowInput
     {
         try
         {
-            return argument is IEncodedRawValue encoded
-                ? JsonSerializer.SerializeToElement(converter.ToValue(encoded.Payload, typeof(JsonElement?)))
-                : JsonSerializer.SerializeToElement(argument);
+            if (argument is IEncodedRawValue encoded)
+            {
+                var value = converter.ToValue(encoded.Payload, typeof(JsonElement?));
+                return JsonSerializer.SerializeToElement(value);
+            }
+            else
+            {
+                return JsonSerializer.SerializeToElement(argument);
+            }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or JsonException or NotSupportedException)
         {
