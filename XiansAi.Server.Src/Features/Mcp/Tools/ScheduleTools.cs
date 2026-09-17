@@ -30,9 +30,9 @@ public sealed class ScheduleTools(
         McpTarget.Validate(target);
         if (target.TenantId != tenantContext.TenantId)
             throw new McpException("Tenant access denied.");
-        ServiceResult<bool> permission;
-        if (write) permission = await permissions.HasWritePermission(target.AgentName);
-        else permission = await permissions.HasReadPermission(target.AgentName);
+        var permission = write
+            ? await permissions.HasWritePermission(target.AgentName)
+            : await permissions.HasReadPermission(target.AgentName);
         if (!permission.IsSuccess || !permission.Data)
             throw new McpException("Agent access denied.");
         var agentTask = agents.GetByNameAsync(target.AgentName, tenantContext.TenantId,
