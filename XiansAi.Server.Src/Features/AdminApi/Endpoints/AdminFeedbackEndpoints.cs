@@ -24,7 +24,8 @@ public static class AdminFeedbackEndpoints
         var feedbackGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/feedback")
             .WithTags("AdminAPI - Feedback")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         feedbackGroup.MapPost("", async (
             string tenantId,
@@ -42,6 +43,7 @@ public static class AdminFeedbackEndpoints
             return result.ToHttpResult();
         })
         .WithName("AdminSubmitMessageFeedback")
+        .RequireCapability(CapabilityActions.TenantFeedbackSubmit)
         .WithSummary("Submit feedback for an agent message")
         .WithDescription(
             "Submits a 1–5 star rating for an outgoing (agent) message in the specified tenant. " +
@@ -71,6 +73,7 @@ public static class AdminFeedbackEndpoints
         .Produces<FeedbackStatsResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("AdminGetFeedbackStats")
+        .RequireCapability(CapabilityActions.TenantFeedbackStats)
         .WithSummary("Get feedback statistics")
         .WithDescription(
             "Returns aggregated feedback statistics for the tenant: total count, average rating, " +
@@ -102,6 +105,7 @@ public static class AdminFeedbackEndpoints
         .Produces<FeedbackListResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("AdminListFeedback")
+        .RequireCapability(CapabilityActions.TenantFeedbackList)
         .WithSummary("List feedback")
         .WithDescription(
             "Returns a paginated list of feedback for the tenant, newest first. Filter by rating " +
@@ -124,6 +128,7 @@ public static class AdminFeedbackEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("AdminGetFeedbackDetail")
+        .RequireCapability(CapabilityActions.TenantFeedbackGet)
         .WithSummary("Get feedback detail with thread context")
         .WithDescription(
             "Returns a single feedback entry together with the surrounding messages from its thread " +
@@ -149,6 +154,6 @@ public static class AdminFeedbackEndpoints
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("DeleteFeedbackByActivation")
-        ;
+        .RequireCapability(CapabilityActions.TenantFeedbackDeleteByActivation);
     }
 }

@@ -24,7 +24,9 @@ public static class AdminHeartbeatEndpoints
         var heartbeatGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/heartbeat")
             .WithTags("AdminAPI - Health")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .AddEndpointFilter<RequireApiKeyFilter>()
+            .EnforceCapabilities();
 
         heartbeatGroup.MapGet("", async (
             string tenantId,
@@ -109,6 +111,7 @@ public static class AdminHeartbeatEndpoints
             }
         })
         .WithName("AdminHeartbeat")
+        .RequireCapability(CapabilityActions.TenantHeartbeatCheck)
         .Produces<HeartbeatResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         ;

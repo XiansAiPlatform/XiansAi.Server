@@ -12,8 +12,10 @@ namespace Features.AdminApi.Endpoints;
 /// <summary>
 /// AdminApi endpoints for managing an agent's owner / write / read access lists. They sit next to
 /// <see cref="AdminOwnershipEndpoints"/> (which only supports viewing the lists and adding an owner)
-/// and are what Agent Studio calls. This surface requires a valid Admin API key scoped to the
-/// tenant; the Studio route handler performs the owner / tenant-admin gate before calling.
+/// and are what Agent Studio calls. This surface requires a valid Admin API key scoped to the tenant
+/// and held by a TenantAdmin/SysAdmin, via the fixed, non-delegable
+/// <see cref="CapabilityActions.TenantAgentAccessAccess"/>; the Studio route handler additionally
+/// performs its own owner / tenant-admin gate before calling.
 /// </summary>
 public static class AdminAgentAccessEndpoints
 {
@@ -42,7 +44,8 @@ public static class AdminAgentAccessEndpoints
         var levelGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agent-access")
             .WithTags("AdminAPI - Agent Access")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         levelGroup.MapGet("", async (
             string tenantId,
@@ -106,12 +109,14 @@ public static class AdminAgentAccessEndpoints
             });
         })
         .WithName("GetTenantAgentAccessForUser")
+        .RequireCapability(CapabilityActions.TenantAgentAccessAccess)
         .WithSummary("Per-agent access level for a user within a tenant");
 
         var group = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentId}/access")
             .WithTags("AdminAPI - Agent Access")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // Get the current access lists
         group.MapGet("", async (
@@ -124,7 +129,8 @@ public static class AdminAgentAccessEndpoints
 
             return Results.Ok(ToAccessResponse(agent!));
         })
-        .WithName("GetAgentAccess");
+        .WithName("GetAgentAccess")
+        .RequireCapability(CapabilityActions.TenantAgentAccessAccess);
 
         // Add (or move) a user to a level
         group.MapPost("/users", async (
@@ -153,7 +159,8 @@ public static class AdminAgentAccessEndpoints
             await PublishAccessChangedAsync(webhookEventPublisher, agent, "user-added");
             return Results.Ok(ToAccessResponse(agent));
         })
-        .WithName("AddAgentAccessUser");
+        .WithName("AddAgentAccessUser")
+        .RequireCapability(CapabilityActions.TenantAgentAccessAccess);
 
         // Change a user's level
         group.MapPatch("/users/{userId}", async (
@@ -183,7 +190,8 @@ public static class AdminAgentAccessEndpoints
             await PublishAccessChangedAsync(webhookEventPublisher, agent, "user-updated");
             return Results.Ok(ToAccessResponse(agent));
         })
-        .WithName("UpdateAgentAccessUser");
+        .WithName("UpdateAgentAccessUser")
+        .RequireCapability(CapabilityActions.TenantAgentAccessAccess);
 
         // Remove a user from every level
         group.MapDelete("/users/{userId}", async (
@@ -204,7 +212,8 @@ public static class AdminAgentAccessEndpoints
             await PublishAccessChangedAsync(webhookEventPublisher, agent, "user-removed");
             return Results.Ok(ToAccessResponse(agent));
         })
-        .WithName("RemoveAgentAccessUser");
+        .WithName("RemoveAgentAccessUser")
+        .RequireCapability(CapabilityActions.TenantAgentAccessAccess);
     }
 
     /// <summary>

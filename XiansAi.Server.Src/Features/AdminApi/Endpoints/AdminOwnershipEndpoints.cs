@@ -93,6 +93,8 @@ public static class AdminOwnershipEndpoints
             }
         })
         .WithName("GetOwnership")
+        .EnforceCapabilities()
+        .RequireCapability(CapabilityActions.TenantOwnershipGet)
         ;
 
         // Transfer Ownership
