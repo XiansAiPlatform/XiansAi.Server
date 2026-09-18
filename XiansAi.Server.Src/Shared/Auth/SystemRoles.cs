@@ -5,6 +5,10 @@ public static class SystemRoles
     public const string TenantParticipant = "TenantParticipant";
     public const string TenantParticipantAdmin = "TenantParticipantAdmin";
     public const string TenantUser = "TenantUser";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
+    {
+        SysAdmin, TenantAdmin, TenantParticipant, TenantParticipantAdmin, TenantUser,
+    };
 
     /// <summary>
     /// Drops the participant roles from the set an authenticated caller acts with. A participant is

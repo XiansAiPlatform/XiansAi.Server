@@ -37,7 +37,9 @@ public static class AdminTemplateEndpoints
     {
         var adminTemplateGroup = adminApiGroup.MapGroup("")
             .WithTags("AdminAPI - Agent Templates")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .EnforceCapabilities()
+            .WithMetadata(TenantOptionalForSysAdminMetadata.Instance);
 
         // List Agent Templates - System-scoped agents (SystemScoped = true)
         adminTemplateGroup.MapGet("/agentTemplates", async (
@@ -48,6 +50,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("BrowseAgentTemplates")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // Get Agent Template Details by ObjectId
@@ -59,6 +62,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAgentTemplateDetails")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // Update Agent Template
@@ -87,6 +91,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateAgentTemplate")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // Delete Agent Template
@@ -121,6 +126,7 @@ public static class AdminTemplateEndpoints
             return Results.NoContent();
         })
         .WithName("DeleteAgentTemplate")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // List tenants that have a deployed instance of a template
@@ -141,6 +147,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAgentTemplateDeployments")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // Deploy Template to Tenant
@@ -173,6 +180,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeployTemplateToTenant")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         MapAdminTemplateByNameEndpoints(adminTemplateGroup);
@@ -194,6 +202,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAgentTemplateDetailsByName")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // Update Agent Template by Name
@@ -222,6 +231,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateAgentTemplateByName")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // Delete Agent Template by Name
@@ -255,6 +265,7 @@ public static class AdminTemplateEndpoints
             return Results.NoContent();
         })
         .WithName("DeleteAgentTemplateByName")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // List tenants that have a deployed instance of a template, by Name
@@ -275,6 +286,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAgentTemplateDeploymentsByName")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
 
         // Deploy Template to Tenant by Name
@@ -298,6 +310,7 @@ public static class AdminTemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeployTemplateToTenantByName")
+        .RequireCapability(CapabilityActions.TenantTemplatesAccess)
         ;
     }
 }

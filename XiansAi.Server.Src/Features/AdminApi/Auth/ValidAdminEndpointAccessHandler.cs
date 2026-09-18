@@ -30,19 +30,15 @@ namespace Features.AdminApi.Auth
         }
 
         /// <summary>
-        /// Returns true if TenantContext was already fully populated by AdminEndpointAuthenticationHandler.
-        /// When true, we can skip the redundant API key lookup and role resolution.
+        /// Returns true if TenantContext was already fully populated by AdminEndpointAuthenticationHandler
+        /// — via either the API-key path or the keyless (<c>X-User-Token</c>) ID-token path. When true, we
+        /// can skip the redundant API key lookup and role resolution below, which only knows how to
+        /// re-derive an API-key caller's roles and has no way to satisfy a keyless caller at all.
         /// </summary>
-        private static bool IsContextAlreadyPopulatedByAuth(ITenantContext tenantContext)
-        {
-            if (string.IsNullOrEmpty(tenantContext.LoggedInUser) ||
-                string.IsNullOrEmpty(tenantContext.TenantId) ||
-                tenantContext.UserRoles == null)
-                return false;
-
-            return tenantContext.UserRoles.Contains(SystemRoles.SysAdmin) ||
-                   tenantContext.UserRoles.Contains(SystemRoles.TenantAdmin);
-        }
+        private static bool IsContextAlreadyPopulatedByAuth(ITenantContext tenantContext) =>
+            !string.IsNullOrEmpty(tenantContext.LoggedInUser) &&
+            !string.IsNullOrEmpty(tenantContext.TenantId) &&
+            tenantContext.UserRoles != null;
 
         protected override async Task HandleRequirementAsync(
             AuthorizationHandlerContext context,

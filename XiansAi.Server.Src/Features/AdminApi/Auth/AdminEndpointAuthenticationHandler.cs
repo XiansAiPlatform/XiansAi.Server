@@ -18,11 +18,13 @@ namespace Features.AdminApi.Auth
         /// message instead of a generic one.
         /// </summary>
         public const string FailureReasonItemKey = "AdminApi.AuthFailureReason";
+        public const string UserTokenHeaderName = "X-User-Token";
 
         private readonly ITenantContext _tenantContext;
         private readonly ILogger<AdminEndpointAuthenticationHandler> _logger;
         private readonly IApiKeyService _apiKeyService;
         private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
+        private readonly IAdminKeylessUserResolver _keylessUserResolver;
 
         private AuthenticateResult FailWithReason(string reason)
         {
@@ -36,13 +38,15 @@ namespace Features.AdminApi.Auth
             UrlEncoder encoder,
             ITenantContext tenantContext,
             IApiKeyService apiKeyService,
-            IAdminRoleTenantResolver adminRoleTenantResolver)
+            IAdminRoleTenantResolver adminRoleTenantResolver,
+            IAdminKeylessUserResolver keylessUserResolver)
             : base(options, logger, encoder)
         {
             _logger = logger.CreateLogger<AdminEndpointAuthenticationHandler>();
             _tenantContext = tenantContext;
             _apiKeyService = apiKeyService;
             _adminRoleTenantResolver = adminRoleTenantResolver;
+            _keylessUserResolver = keylessUserResolver;
         }
 
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -157,19 +161,10 @@ namespace Features.AdminApi.Auth
                         _tenantContext.Authorization = accessToken;
                         AdminOnBehalfOfBinder.Apply(Request, _tenantContext, _logger);
 
-                        var claims = new List<Claim>
-                        {
-                            new Claim(ClaimTypes.NameIdentifier, resolvedUserId),
-                            new Claim("TenantId", finalTenantId)
-                        };
-
-                        var identity = new ClaimsIdentity(claims, Scheme.Name);
-                        var principal = new ClaimsPrincipal(identity);
-                        var ticket = new AuthenticationTicket(principal, Scheme.Name);
                         _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}",
                             LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
 
-                        return AuthenticateResult.Success(ticket);
+                        return AuthenticateResult.Success(BuildTicket(resolvedUserId, finalTenantId));
                     }
                     catch (TenantNotFoundException)
                     {
@@ -184,8 +179,7 @@ namespace Features.AdminApi.Auth
                 }
                 else
                 {
-                    _logger.LogWarning("No access token found for AdminApi Endpoint connection");
-                    return FailWithReason("No access token found for AdminApi Endpoint connection");
+                    return await HandleUserTokenAuthenticationAsync(originalTenantIdFromRequest);
                 }
             }
             else
@@ -195,6 +189,75 @@ namespace Features.AdminApi.Auth
             }
         }
 
+        /// <summary>
+        /// Authenticates ID-token-only AdminApi caller.
+        /// Resolves identity and roles via <see cref="_keylessUserResolver"/>.
+        /// </summary>
+        private async Task<AuthenticateResult> HandleUserTokenAuthenticationAsync(string originalTenantIdFromRequest)
+        {
+            var userToken = Request.Headers[UserTokenHeaderName].FirstOrDefault();
+            if (string.IsNullOrEmpty(userToken))
+            {
+                _logger.LogWarning("No access token found for AdminApi Endpoint connection");
+                return FailWithReason("No access token found for AdminApi Endpoint connection");
+            }
+
+            try
+            {
+                var tenantOptionalForSysAdmin =
+                    Context.GetEndpoint()?.Metadata.GetMetadata<TenantOptionalForSysAdminMetadata>() != null;
+                var resolution = await _keylessUserResolver.ResolveAsync(
+                    userToken, originalTenantIdFromRequest, tenantRequiredForSysAdmin: !tenantOptionalForSysAdmin);
+                if (!resolution.Success)
+                {
+                    return FailWithReason(resolution.ErrorMessage ?? "Authorization failed");
+                }
+
+                var finalTenantId = resolution.FinalTenantId!;
+                var userRoles = resolution.UserRoles!;
+                var resolvedUserId = resolution.CanonicalUserId!;
+
+                _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}",
+                    LogSanitizer.RedactUserId(resolvedUserId), UserType.UserToken, string.Join(", ", userRoles));
+                _tenantContext.LoggedInUser = resolvedUserId;
+                _tenantContext.UserType = UserType.UserToken;
+                _tenantContext.TenantId = finalTenantId;
+                _tenantContext.UserRoles = userRoles;
+                _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
+                _tenantContext.Authorization = null;
+
+                _logger.LogInformation("Successfully authenticated AdminApi connection via ID token: User={UserId}, Tenant={TenantId}, Roles={Roles}",
+                    LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
+
+                return AuthenticateResult.Success(BuildTicket(resolvedUserId, finalTenantId));
+            }
+            catch (TenantNotFoundException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing X-User-Token for AdminApi Endpoint connection");
+                return FailWithReason("Error processing user token for AdminApi Endpoint connection");
+            }
+        }
+
+        /// <summary>
+        /// Builds the claims/identity/principal/ticket shape shared by both authenticated paths
+        /// (API-key and ID-token) once each has resolved a canonical user id and final tenant id.
+        /// </summary>
+        private AuthenticationTicket BuildTicket(string userId, string tenantId)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim("TenantId", tenantId)
+            };
+
+            var identity = new ClaimsIdentity(claims, Scheme.Name);
+            var principal = new ClaimsPrincipal(identity);
+            return new AuthenticationTicket(principal, Scheme.Name);
+        }
     }
 }
 

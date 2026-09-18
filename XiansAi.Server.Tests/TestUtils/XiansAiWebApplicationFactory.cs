@@ -153,6 +153,12 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             mockTenantContext.SetupProperty(x => x.UserType, UserType.UserApiKey);
             mockTenantContext.SetupProperty<IEnumerable<string>>(x => x.AuthorizedTenantIds, new List<string> { TestTenantId, "99x.io" });
             mockTenantContext.SetupProperty<string[]>(x => x.UserRoles, new[] { "SysAdmin", "TenantAdmin", "TenantUser" });
+            // Must be a tracked (stateful) property like the others above: RequireApiKeyFilter reads
+            // this back to decide whether a caller presented an API key. An unstubbed Moq property
+            // setter is a silent no-op, so without SetupProperty here, every write to Authorization
+            // from AdminEndpointAuthenticationHandler would be lost and every route gated by
+            // RequireApiKeyFilter would incorrectly look like a keyless caller.
+            mockTenantContext.SetupProperty<string?>(x => x.Authorization, null);
             RemoveService<ITenantContext>(services);
             services.AddSingleton(mockTenantContext.Object);
 

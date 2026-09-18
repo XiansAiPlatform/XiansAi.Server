@@ -2,11 +2,13 @@ using Features.AdminApi.Constants;
 using Features.AdminApi.Endpoints;
 using Features.AdminApi.Services;
 using Features.AdminApi.Auth;
+using Features.AdminApi.Repositories;
 using Features.AdminApi.Utils;
 using Features.AgentApi.Repositories;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Shared.Repositories;
 using Shared.Services;
 
 namespace Features.AdminApi.Configuration;
@@ -41,6 +43,10 @@ public static class AdminApiConfiguration
         // Register Admin API key service
         builder.Services.AddScoped<IAdminApiKeyService, AdminApiKeyService>();
 
+
+        builder.Services.AddScoped<ICapabilityMatrixRepository, CapabilityMatrixRepository>();
+        builder.Services.AddScoped<ICapabilityMatrixService, CapabilityMatrixService>();
+
         // Register platform bootstrap service
         builder.Services.AddScoped<IBootstrapService, BootstrapService>();
 
@@ -63,6 +69,13 @@ public static class AdminApiConfiguration
     {
         // Register shared admin role/tenant resolver (used by both auth and authorization handlers)
         builder.Services.AddScoped<IAdminRoleTenantResolver, AdminRoleTenantResolver>();
+
+        // Resolver for ID-token-only AdminApi callers.
+        builder.Services.AddScoped<IAdminKeylessUserResolver, AdminKeylessUserResolver>();
+
+        // Register the Mongo-backed OIDC service directly so admin components always use
+        // the per-tenant configuration, regardless of which service is registered for the interface.
+        builder.Services.AddScoped<global::Shared.Services.TenantOidcConfigService>();
 
         // Configure authentication scheme for AdminApi endpoints
         builder.Services.AddAuthentication(options =>
@@ -128,6 +141,8 @@ public static class AdminApiConfiguration
         AdminBootstrapEndpoints.MapAdminBootstrapEndpoints(adminApiGroup);
         AdminHeartbeatEndpoints.MapAdminHeartbeatEndpoints(adminApiGroup);
         AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
+        AdminConsoleOidcEndpoints.MapAdminConsoleOidcEndpoints(adminApiGroup);
+        AdminCapabilityMatrixEndpoints.MapAdminCapabilityMatrixEndpoints(adminApiGroup);
         AdminAgentDeploymentEndpoints.MapAdminAgentDeploymentsEndpoints(adminApiGroup);
         AdminAgentActivationEndpoints.MapAdminAgentActivationEndpoints(adminApiGroup);
         AdminTemplateEndpoints.MapAdminTemplateEndpoints(adminApiGroup);

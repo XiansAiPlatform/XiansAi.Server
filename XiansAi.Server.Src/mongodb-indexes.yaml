@@ -559,6 +559,12 @@ webhook_deliveries:
     expire_after: 15d
     background: true
 
+admin_capability_matrix:
+  - name: action_1
+    keys:
+      action: asc
+    unique: true
+
 audit_logs:
   - name: tenant_id_1_created_at_-1
     keys:
