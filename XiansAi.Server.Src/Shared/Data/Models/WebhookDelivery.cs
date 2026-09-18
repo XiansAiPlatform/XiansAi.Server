@@ -38,6 +38,20 @@ public static class WebhookEventTypes
     /// <summary>A tenant's OIDC configuration was deleted.</summary>
     public const string TenantOidcDeleted = "tenant.oidc.deleted";
 
+    // ----- AdminApi authorization -----
+
+    /// <summary>
+    /// A capability-matrix row was created or updated, changing which roles may perform an AdminApi
+    /// action. Payload carries the action, the previous allowed-roles list and the new one, so a
+    /// widening is reconstructible after the fact rather than only visible as current state.
+    /// </summary>
+    public const string CapabilityMatrixUpdated = "admin.capability.updated";
+
+    /// <summary>
+    /// A capability-matrix row was deleted, reverting its action to the code-level default.
+    /// </summary>
+    public const string CapabilityMatrixDeleted = "admin.capability.deleted";
+
     // ----- User lifecycle (tenant-scoped and global) -----
 
     /// <summary>A brand-new user account was created.</summary>

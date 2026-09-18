@@ -558,3 +558,9 @@ webhook_deliveries:
       created_at: asc
     expire_after: 15d
     background: true
+
+admin_capability_matrix:
+  - name: action_1
+    keys:
+      action: asc
+    unique: true
