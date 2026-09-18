@@ -34,6 +34,8 @@ public class AuditLogServiceTests
 
         Assert.Equal(FallbackAction, captured.Action);
         Assert.Equal(string.Empty, captured.Description);
+        Assert.Equal("participant-1", captured.ParticipantId);
+        Assert.Equal("user-1", captured.LoggedInUser);
     }
 
     [Fact]

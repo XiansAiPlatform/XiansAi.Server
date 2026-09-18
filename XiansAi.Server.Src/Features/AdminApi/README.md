@@ -48,6 +48,20 @@ Authorization: Bearer your-admin-api-key-here
 - **Authorization Policy**: `AdminEndpointAuthPolicy`
 - **Requirement**: `ValidAdminEndpointAccessRequirement`
 
+### Attributing the signed-in UI user
+
+The API key identifies the **service credential owner**, not the person using a UI such as
+Agent Studio. To record that person on audit log entries, send their identity alongside the key:
+
+```http
+Authorization: Bearer sk-Xnai-...
+X-On-Behalf-Of: auth0|64f2ab...
+```
+
+A valid value is stored as `TenantContext.ParticipantId` (and therefore on audit rows).
+`LoggedInUser` remains the API-key owner. The header does not grant extra permissions; a
+missing or invalid value is ignored and the participant id falls back to the key owner.
+
 ## Available Endpoints
 
 ### Tenant Management
@@ -278,7 +292,8 @@ Enable debug logging during development to see detailed request/response informa
 3. **Rate Limiting**: AdminAPI is subject to global rate limiting policies
 4. **HTTPS**: Always use HTTPS in production
 5. **Tenant Isolation**: Some endpoints require `X-Tenant-Id` header for tenant-scoped operations
-6. **Debug Logging**: Only enable debug logging when actively troubleshooting; disable in production
+6. **UI-user attribution**: `X-On-Behalf-Of` is an assertion by a trusted API-key holder, not verified end-user authentication. Treat Admin API keys as backend credentials.
+7. **Debug Logging**: Only enable debug logging when actively troubleshooting; disable in production
 
 ## Related Documentation
 
