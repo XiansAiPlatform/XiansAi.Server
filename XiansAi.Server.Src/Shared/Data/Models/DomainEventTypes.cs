@@ -196,4 +196,70 @@ public static class DomainEventTypes
 
     /// <summary>A builtin webhook integration was created. (Deletion emits the generic integration.deleted event.)</summary>
     public const string IntegrationWebhookCreated = "integration.webhook.created";
+
+    /// <summary>
+    /// Canonical audit-log sentence for <paramref name="eventType"/>. Callers should pass a more
+    /// specific description (names, ids) when they have them; this is the fallback so a row is
+    /// never just a humanized event-type slug.
+    /// </summary>
+    public static string? Describe(string? eventType) => eventType switch
+    {
+        TenantCreated => "A new tenant was created.",
+        TenantUpdated => "A tenant's profile was updated.",
+        TenantEnabled => "A tenant was enabled.",
+        TenantDisabled => "A tenant was disabled.",
+        TenantDeleted => "A tenant was deleted.",
+        TenantOidcUpdated => "A tenant's OIDC configuration was created or updated.",
+        TenantOidcDeleted => "A tenant's OIDC configuration was deleted.",
+        TenantTemporalUpdated => "A tenant's Temporal configuration was created or updated.",
+        TenantTemporalReverted => "A tenant's Temporal configuration was reverted to the platform default.",
+        PlatformBootstrapped => "The platform was bootstrapped (first SysAdmin, tenant, and API key).",
+        UserCreated => "A new user account was created.",
+        UserTenantAdded => "An existing user was granted membership in a tenant.",
+        UserTenantRemoved => "A user's membership in a tenant was removed.",
+        UserUpdated => "A user's profile was updated.",
+        UserApproved => "A user's tenant membership was approved.",
+        UserUnapproved => "A user's tenant membership approval was revoked.",
+        UserRoleChanged => "A role was added to a user within a tenant.",
+        UserRoleRemoved => "A role was removed from a user within a tenant.",
+        UserSysAdminGranted => "A user was granted the system administrator flag.",
+        UserSysAdminRevoked => "A user's system administrator flag was revoked.",
+        UserEnabled => "A user account was enabled.",
+        UserDisabled => "A user account was disabled.",
+        UserDeleted => "A user account was permanently deleted.",
+        AgentRegistered => "An agent was registered for the first time.",
+        AgentDeleted => "An agent and its dependent resources were deleted.",
+        AgentDeploymentUpdated => "An agent deployment's configuration was updated.",
+        AgentOwnershipTransferred => "Ownership of an agent was transferred to another user.",
+        AgentAccessChanged => "An agent's owner / write / read access lists were changed.",
+        AgentTemplateDeployed => "A system template agent was deployed into a tenant.",
+        AgentTemplatePromoted => "A tenant-scoped agent was promoted into a new system-scoped template.",
+        TemplateUpdated => "A system-scoped template agent's metadata was updated.",
+        TemplateDeleted => "A system-scoped template agent was deleted.",
+        FlowDefinitionCreated => "A new workflow definition was registered.",
+        FlowDefinitionUpdated => "An existing workflow definition was updated.",
+        ActivationCreated => "An agent activation was created.",
+        ActivationUpdated => "An agent activation was updated.",
+        ActivationActivated => "An agent activation was activated and its workflows started.",
+        ActivationDeactivated => "An agent activation was deactivated.",
+        ActivationDeleted => "An agent activation was deleted.",
+        KnowledgeCreated => "A knowledge item was created.",
+        KnowledgeUpdated => "A knowledge item was updated.",
+        KnowledgeDeleted => "A knowledge item was deleted.",
+        SecretCreated => "A vault secret was created.",
+        SecretUpdated => "A vault secret was updated.",
+        SecretDeleted => "A vault secret was deleted.",
+        ApiKeyCreated => "An API key was created.",
+        ApiKeyRevoked => "An API key was revoked.",
+        ApiKeyRotated => "An API key was rotated.",
+        CertificateCreated => "A client certificate was issued.",
+        CertificateRevoked => "A client certificate was revoked.",
+        IntegrationCreated => "An app integration was created.",
+        IntegrationUpdated => "An app integration was updated.",
+        IntegrationDeleted => "An app integration was deleted.",
+        IntegrationEnabled => "An app integration was enabled.",
+        IntegrationDisabled => "An app integration was disabled.",
+        IntegrationWebhookCreated => "A builtin webhook integration was created.",
+        _ => null
+    };
 }

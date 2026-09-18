@@ -187,7 +187,14 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = validatedAgentName };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationCreated, metadata, tenantId, activation.Name);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationCreated,
+                metadata,
+                tenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{validatedAgentName}' was created for participant '{activation.ParticipantId}' by '{activation.CreatedBy}'.");
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -331,9 +338,27 @@ public class ActivationService : IActivationService
 
             _logger.LogInformation("Successfully updated activation {ActivationId}", LogSanitizer.Sanitize(activationId));
 
+            var changedFields = new List<string>();
+            if (isUpdatingName)
+            {
+                changedFields.Add(string.Equals(previousName, activation.Name, StringComparison.Ordinal)
+                    ? "name"
+                    : $"name '{previousName}' → '{activation.Name}'");
+            }
+            if (isUpdatingDescription) changedFields.Add("description");
+            if (isUpdatingParticipantId) changedFields.Add("participant");
+            if (isUpdatingWorkflowConfiguration) changedFields.Add("workflow configuration");
+
             var metadata = new { tenantId, activationId = activation.Id, name = activation.Name };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationUpdated, metadata, tenantId, activation.Name);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationUpdated,
+                metadata,
+                tenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was updated ({string.Join(", ", changedFields)}).");
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -580,7 +605,14 @@ public class ActivationService : IActivationService
 
                 var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds };
 
-                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationActivated, metadata, tenantId, activation.Name);
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ActivationActivated,
+                    metadata,
+                    tenantId,
+                    activation.Name,
+                    description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was activated. Started {startedCount} of {flowDefinitions.Count} workflows.");
 
                 return ServiceResult<AgentActivation>.Success(activation);
             }
@@ -693,7 +725,14 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationDeactivated, metadata, activation.TenantId, activation.Name);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationDeactivated,
+                metadata,
+                activation.TenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was deactivated. Cancelled {cleanup.WorkflowCleanup.CancelledCount}/{cleanup.WorkflowCleanup.TotalWorkflows} workflows and deleted {cleanup.ScheduleCleanup.DeletedCount}/{cleanup.ScheduleCleanup.TotalSchedules} schedules{(cleanup.Success ? "" : $" ({cleanup.WorkflowCleanup.FailedCount} workflow and {cleanup.ScheduleCleanup.FailedCount} schedule cleanup failures)")}.");
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -752,7 +791,14 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationDeleted, metadata, activation.TenantId, activation.Name);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationDeleted,
+                metadata,
+                activation.TenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was deleted from tenant '{activation.TenantId}'.");
 
             return ServiceResult<bool>.Success(true);
         }

@@ -216,7 +216,13 @@ public static class AdminOwnershipEndpoints
                     newOwner = newAdminUserId,
                     transferredBy = tenantContext.LoggedInUser
                 };
-                DomainEventEmitter.Emit(webhookEventPublisher, auditLogService, DomainEventTypes.AgentOwnershipTransferred, transferredMetadata, parsedTenant);
+                DomainEventEmitter.Emit(
+                    webhookEventPublisher,
+                    auditLogService,
+                    DomainEventTypes.AgentOwnershipTransferred,
+                    transferredMetadata,
+                    parsedTenant,
+                    description: $"Ownership of agent '{agentName}' ({agent.Id}) in tenant '{parsedTenant}' was transferred to '{newAdminUserId}' by '{tenantContext.LoggedInUser}'. Previous owner count: {previousOwners.Count}.");
 
                 return Results.Ok(new
                 {

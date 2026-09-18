@@ -48,7 +48,12 @@ public class DomainEventEmitterTests
             w => w.PublishAsync(DomainEventTypes.TenantCreated, metadata, "acme"),
             Times.Once);
         audit.Verify(
-            a => a.RecordEntryAsync(DomainEventTypes.TenantCreated, null, "activation-1", metadata, "acme"),
+            a => a.RecordEntryAsync(
+                DomainEventTypes.TenantCreated,
+                DomainEventTypes.Describe(DomainEventTypes.TenantCreated),
+                "activation-1",
+                metadata,
+                "acme"),
             Times.Once);
 
         Assert.False(webhookGate.Task.IsCompleted);
@@ -90,7 +95,48 @@ public class DomainEventEmitterTests
             Times.Once);
         audit.Verify(
             a => a.RecordEntryAsync(
-                DomainEventTypes.UserSysAdminGranted, null, null, metadata, AuditLogTenants.Platform),
+                DomainEventTypes.UserSysAdminGranted,
+                DomainEventTypes.Describe(DomainEventTypes.UserSysAdminGranted),
+                null,
+                metadata,
+                AuditLogTenants.Platform),
+            Times.Once);
+    }
+
+    [Fact]
+    public void Emit_UsesCallerDescription_WhenProvided()
+    {
+        var webhook = new Mock<IWebhookEventPublisher>();
+        webhook
+            .Setup(w => w.PublishAsync(It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<string?>()))
+            .Returns(Task.CompletedTask);
+
+        var audit = new Mock<IAuditLogService>();
+        audit
+            .Setup(a => a.RecordEntryAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<object?>(), It.IsAny<string?>()))
+            .ReturnsAsync(ServiceResult<AuditLogEntry>.Success(new AuditLogEntry
+            {
+                TenantId = "acme",
+                ParticipantId = "p",
+                LoggedInUser = "u",
+                Action = DomainEventTypes.TenantDisabled
+            }));
+
+        DomainEventEmitter.Emit(
+            webhook.Object,
+            audit.Object,
+            DomainEventTypes.TenantDisabled,
+            new { tenantId = "acme" },
+            "acme",
+            description: "Tenant 'Acme' (acme) was disabled.");
+
+        audit.Verify(
+            a => a.RecordEntryAsync(
+                DomainEventTypes.TenantDisabled,
+                "Tenant 'Acme' (acme) was disabled.",
+                null,
+                It.IsAny<object?>(),
+                "acme"),
             Times.Once);
     }
 }

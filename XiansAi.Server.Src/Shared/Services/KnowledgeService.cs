@@ -329,7 +329,16 @@ public class KnowledgeService : IKnowledgeService
             return Results.NotFound("Knowledge not found or could not be deleted");
 
         var deletedMetadata = new { tenantId = tenantIdToDelete, name = request.Name, agentName = request.Agent, systemScoped = existingKnowledge.SystemScoped };
-        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeDeleted, deletedMetadata, tenantIdToDelete, existingKnowledge.ActivationName);
+        DomainEventEmitter.Emit(
+            _webhookEventPublisher,
+            _auditLogService,
+            DomainEventTypes.KnowledgeDeleted,
+            deletedMetadata,
+            tenantIdToDelete,
+            existingKnowledge.ActivationName,
+            description: existingKnowledge.SystemScoped
+                ? $"System-scoped knowledge '{request.Name}' for agent '{request.Agent}' was deleted (all versions)."
+                : $"Knowledge '{request.Name}' for agent '{request.Agent}' was deleted (all versions{(string.IsNullOrWhiteSpace(existingKnowledge.ActivationName) ? "" : $", activation '{existingKnowledge.ActivationName}'")}).");
 
         return Results.Ok(new { message = "All versions deleted" });
     }
@@ -587,7 +596,16 @@ public class KnowledgeService : IKnowledgeService
             await _knowledgeRepository.CreateAsync(knowledge);
 
             var createdMetadata = new { tenantId = knowledge.TenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName = knowledge.Agent, activationName = knowledge.ActivationName, systemScoped = knowledge.SystemScoped, version = knowledge.Version, createdBy = knowledge.CreatedBy };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeCreated, createdMetadata, knowledge.TenantId, knowledge.ActivationName);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.KnowledgeCreated,
+                createdMetadata,
+                knowledge.TenantId,
+                knowledge.ActivationName,
+                description: knowledge.SystemScoped
+                    ? $"System-scoped knowledge '{knowledge.Name}' ({knowledge.Type}) for agent '{knowledge.Agent}' was created by '{knowledge.CreatedBy}'."
+                    : $"Knowledge '{knowledge.Name}' ({knowledge.Type}) for agent '{knowledge.Agent}' was created by '{knowledge.CreatedBy}'{(string.IsNullOrWhiteSpace(knowledge.ActivationName) ? "" : $" for activation '{knowledge.ActivationName}'")}.");
 
             return Results.Ok(knowledge);
         }
@@ -703,7 +721,14 @@ public class KnowledgeService : IKnowledgeService
         {
             var metadata = new { tenantId, knowledgeId = id, name = knowledge.Name, agentName = knowledge.Agent, activationName = knowledge.ActivationName };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeDeleted, metadata, tenantId, knowledge.ActivationName);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.KnowledgeDeleted,
+                metadata,
+                tenantId,
+                knowledge.ActivationName,
+                description: $"Knowledge '{knowledge.Name}' ({id}) for agent '{knowledge.Agent}' was deleted from tenant '{tenantId}'{(string.IsNullOrWhiteSpace(knowledge.ActivationName) ? "" : $" activation '{knowledge.ActivationName}'")}.");
         }
 
         return deleted;
@@ -720,7 +745,14 @@ public class KnowledgeService : IKnowledgeService
         if (deletedCount > 0)
         {
             var metadata = new { tenantId, agentName, activationName, deletedCount };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeDeleted, metadata, tenantId, activationName);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.KnowledgeDeleted,
+                metadata,
+                tenantId,
+                activationName,
+                description: $"All knowledge for agent '{agentName}' activation '{activationName}' in tenant '{tenantId}' was deleted ({deletedCount} items).");
         }
 
         return deletedCount;
@@ -771,7 +803,16 @@ public class KnowledgeService : IKnowledgeService
 
         var metadata = new { tenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName, activationName, systemScoped, version = knowledge.Version, createdBy };
 
-        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeCreated, metadata, tenantId, activationName);
+        DomainEventEmitter.Emit(
+            _webhookEventPublisher,
+            _auditLogService,
+            DomainEventTypes.KnowledgeCreated,
+            metadata,
+            tenantId,
+            activationName,
+            description: systemScoped
+                ? $"System-scoped knowledge '{knowledge.Name}' ({knowledge.Type}){(string.IsNullOrWhiteSpace(agentName) ? "" : $" for agent '{agentName}'")} was created by '{createdBy}'."
+                : $"Knowledge '{knowledge.Name}' ({knowledge.Type}){(string.IsNullOrWhiteSpace(agentName) ? "" : $" for agent '{agentName}'")} was created by '{createdBy}'{(string.IsNullOrWhiteSpace(activationName) ? "" : $" for activation '{activationName}'")}.");
 
         return knowledge;
     }
@@ -830,7 +871,14 @@ public class KnowledgeService : IKnowledgeService
 
         var metadata = new { tenantId, knowledgeId = updatedKnowledge.Id, name = updatedKnowledge.Name, type = updatedKnowledge.Type, agentName = updatedKnowledge.Agent, updatedBy };
 
-        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeUpdated, metadata, tenantId, updatedKnowledge.ActivationName);
+        DomainEventEmitter.Emit(
+            _webhookEventPublisher,
+            _auditLogService,
+            DomainEventTypes.KnowledgeUpdated,
+            metadata,
+            tenantId,
+            updatedKnowledge.ActivationName,
+            description: $"Knowledge '{updatedKnowledge.Name}' for agent '{updatedKnowledge.Agent}' was updated by '{updatedBy}' (new version created{(visible.HasValue ? $", visible={updatedKnowledge.Visible}" : "")}).");
  
 
         return updatedKnowledge;

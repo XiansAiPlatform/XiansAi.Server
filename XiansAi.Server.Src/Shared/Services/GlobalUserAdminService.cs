@@ -276,8 +276,17 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             await InvalidateCachesAsync(user);
             _logger.LogInformation("Global user {UserId} profile updated", LogSanitizer.Sanitize(userId));
 
+            var profileFields = new List<string>();
+            if (name != null) profileFields.Add("name");
+            if (email != null) profileFields.Add("email");
+
             var updatedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserUpdated, updatedMetadata);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.UserUpdated,
+                updatedMetadata,
+                description: $"User '{user.Email}' ({user.UserId}) profile was updated ({string.Join(", ", profileFields)}).");
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -322,7 +331,14 @@ public class GlobalUserAdminService : IGlobalUserAdminService
 
             var sysAdminEvent = isSysAdmin ? DomainEventTypes.UserSysAdminGranted : DomainEventTypes.UserSysAdminRevoked;
             var sysAdminMetadata = new { userId = user.UserId, email = user.Email, isSysAdmin };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, sysAdminEvent, sysAdminMetadata);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                sysAdminEvent,
+                sysAdminMetadata,
+                description: isSysAdmin
+                    ? $"System administrator flag was granted to user '{user.Email}' ({user.UserId})."
+                    : $"System administrator flag was revoked from user '{user.Email}' ({user.UserId}).");
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -374,7 +390,14 @@ public class GlobalUserAdminService : IGlobalUserAdminService
 
             var statusEvent = enabled ? DomainEventTypes.UserEnabled : DomainEventTypes.UserDisabled;
             var statusMetadata = new { userId = user.UserId, email = user.Email, enabled, reason, actingUserId };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, statusEvent, statusMetadata);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                statusEvent,
+                statusMetadata,
+                description: enabled
+                    ? $"User '{user.Email}' ({user.UserId}) was enabled by '{actingUserId}'."
+                    : $"User '{user.Email}' ({user.UserId}) was disabled by '{actingUserId}'. Reason: {user.LockedOutReason}.");
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -415,7 +438,12 @@ public class GlobalUserAdminService : IGlobalUserAdminService
                 LogSanitizer.Sanitize(actingUserId));
 
             var deletedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, actingUserId };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserDeleted, deletedMetadata);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.UserDeleted,
+                deletedMetadata,
+                description: $"User '{user.Email}' ({user.UserId}) was permanently deleted by '{actingUserId}'.");
 
             return ServiceResult<bool>.Success(true);
         }

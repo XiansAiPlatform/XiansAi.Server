@@ -151,7 +151,7 @@ public static class AdminAgentAccessEndpoints
             ApplyUserLevel(agent, request.UserId, level);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, "user-added");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, $"user '{request.UserId}' added as {level}");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("AddAgentAccessUser");
@@ -182,7 +182,7 @@ public static class AdminAgentAccessEndpoints
             ApplyUserLevel(agent, userId, level);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, "user-updated");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, $"user '{userId}' updated to {level}");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("UpdateAgentAccessUser");
@@ -204,7 +204,7 @@ public static class AdminAgentAccessEndpoints
             agent.RevokeReadAccess(userId);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, "user-removed");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, $"user '{userId}' removed from all access lists");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("RemoveAgentAccessUser");
@@ -328,6 +328,12 @@ public static class AdminAgentAccessEndpoints
             readAccess = agent.ReadAccess
         };
 
-        DomainEventEmitter.Emit(webhookEventPublisher, auditLogService, DomainEventTypes.AgentAccessChanged, metadata, agent.Tenant);
+        DomainEventEmitter.Emit(
+            webhookEventPublisher,
+            auditLogService,
+            DomainEventTypes.AgentAccessChanged,
+            metadata,
+            agent.Tenant,
+            description: $"Access list for agent '{agent.Name}' ({agent.Id}) in tenant '{agent.Tenant}' was changed: {change}.");
     }
 }
