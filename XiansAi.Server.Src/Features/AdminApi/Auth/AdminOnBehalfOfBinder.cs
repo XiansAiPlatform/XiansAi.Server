@@ -20,7 +20,7 @@ public static class AdminOnBehalfOfBinder
     public const string HeaderName = "X-On-Behalf-Of";
 
     /// <summary>
-    /// Matches <see cref="Shared.Data.Models.AuditLogEntry.ParticipantId"/>'s maximum stored length.
+    /// Matches the maximum length stored on audit log participant ids.
     /// </summary>
     public const int MaxLength = 200;
 
