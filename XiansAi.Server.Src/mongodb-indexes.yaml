@@ -565,9 +565,9 @@ audit_logs:
       tenant_id: asc
       created_at: desc
     background: true
-  - name: tenant_id_1_performed_by_1_created_at_-1
+  - name: tenant_id_1_participant_id_1_created_at_-1
     keys:
       tenant_id: asc
-      performed_by: asc
+      participant_id: asc
       created_at: desc
     background: true

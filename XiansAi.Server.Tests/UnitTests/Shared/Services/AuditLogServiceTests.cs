@@ -36,6 +36,15 @@ public class AuditLogServiceTests
     }
 
     [Fact]
+    public void ToDictionary_HumanizesSingleCharacterPropertyNames()
+    {
+        var details = AuditLogService.ToDictionary(new { A = 1, knowledgeId = 2 });
+
+        Assert.Equal(1, details["A"]);
+        Assert.Equal(2, details["Knowledge Id"]);
+    }
+
+    [Fact]
     public async Task RecordEntryAsync_DoesNotWaitForRepositoryWrite()
     {
         var writeStarted = new TaskCompletionSource();

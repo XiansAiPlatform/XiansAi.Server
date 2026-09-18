@@ -202,6 +202,7 @@ public class AuditLogService : IAuditLogService
         }
 
         var spaced = Regex.Replace(name, "(?<=[a-z0-9])(?=[A-Z])", " ");
-        return char.ToUpperInvariant(spaced[0]) + spaced[1..];
+        var first = char.ToUpperInvariant(spaced[0]);
+        return spaced.Length == 1 ? first.ToString() : first + spaced[1..];
     }
 }
