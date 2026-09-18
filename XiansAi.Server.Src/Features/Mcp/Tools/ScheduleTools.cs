@@ -88,7 +88,7 @@ public sealed class ScheduleTools(
     }
 
     [McpServerTool(Name = "list_workflows", ReadOnly = true)]
-    [Description("Discover this agent's registered workflow types and ordered input parameters before creating a schedule. Registration does not guarantee an agent worker is currently running.")]
+    [Description("List the agent's registered workflow types and ordered input parameters; workflows define executable behavior, not schedules or past runs. Workflow definitions belong to the agent, while schedules and saved data belong to an activation. Use the exact workflow type and ordered arguments with create_schedule for the target activation. Registration does not guarantee an agent worker is currently running.")]
     public async Task<object[]> ListWorkflows(McpTarget target)
     {
         var agent = await AuthorizeAsync(target, false);

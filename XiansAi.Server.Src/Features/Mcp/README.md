@@ -8,6 +8,8 @@ Runs inside the server's `WebApi` and `All` modes using Streamable HTTP.
 
 ## Tools
 
+Discovery follows tenant → agent → activation. Agents define workflows; activations provide configuration and scope schedules/data. Tool descriptions guide clients through this hierarchy. `list_tenants` returns only the authenticated tenant's identifier, not a profile.
+
 | Tool | Purpose |
 | --- | --- |
 | `list_tenants` | Discover the authenticated tenant. |

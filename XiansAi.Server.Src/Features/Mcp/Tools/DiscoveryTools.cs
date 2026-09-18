@@ -17,12 +17,12 @@ public sealed class DiscoveryTools(ITenantContext tenantContext, IAgentRepositor
     }
 
     [McpServerTool(Name = "list_tenants", ReadOnly = true)]
-    [Description("List the tenant selected by this authenticated connection. A tool argument cannot change authenticated tenant context; SysAdmins can select another tenant with the X-Tenant-Id connection header.")]
+    [Description("Return the authenticated tenant's identifier, not a tenant profile or all platform tenants. A tenant is a workspace containing agents and their activations. To explore its contents, call list_agents, then list_activations; use an activation target with list_workflows, list_schedules, and list_data_types. These tools do not expose tenant profile attributes. Tool arguments cannot change the authenticated tenant; SysAdmins can select another tenant with the X-Tenant-Id connection header.")]
     public string[] ListTenants() => [tenantContext.TenantId];
 
     [McpServerTool(Name = "list_agents", ReadOnly = true)]
-    [Description("Discover accessible agents in the authenticated tenant, including system templates.")]
-    public async Task<object[]> ListAgents(string tenantId)
+    [Description("List accessible agent names in the authenticated tenant, including system templates. An agent defines behavior and registered workflow types; it can have multiple configured instances called activations. To explore a returned agent, call list_activations with its exact name.")]
+    public async Task<object[]> ListAgents([Description("Exact authenticated tenant identifier returned by list_tenants.")] string tenantId)
     {
         AuthorizeTenant(tenantId);
         var tenantAgents = await agents.GetAgentsWithPermissionAsync(tenantContext.LoggedInUser, tenantId);
@@ -33,8 +33,10 @@ public sealed class DiscoveryTools(ITenantContext tenantContext, IAgentRepositor
     }
 
     [McpServerTool(Name = "list_activations", ReadOnly = true)]
-    [Description("Discover activations of an accessible agent in the authenticated tenant.")]
-    public async Task<object[]> ListActivations(string tenantId, string agentName)
+    [Description("List activation names for an accessible agent in the authenticated tenant. An activation is a configured instance of an agent, with its own knowledge overrides, schedules, and saved data. Combine its exact name with tenantId and agentName to form the target for list_workflows, list_schedules, list_data_types, and other schedule/data tools. Activation existence does not guarantee a worker is running.")]
+    public async Task<object[]> ListActivations(
+        [Description("Exact authenticated tenant identifier returned by list_tenants.")] string tenantId,
+        [Description("Exact agent name returned by list_agents.")] string agentName)
     {
         AuthorizeTenant(tenantId);
         var access = await permissions.HasReadPermission(agentName);
