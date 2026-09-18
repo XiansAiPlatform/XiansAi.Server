@@ -39,6 +39,8 @@ public interface IAdminAuditLogService
 /// <summary>
 /// AdminApi-facing read access to the audit log (who did what, and when), scoped to a
 /// tenant resolved authoritatively from the route rather than the caller's own token.
+/// Pass <see cref="Shared.Auditing.AuditLogTenants.Platform"/> to read platform-scoped events
+/// that must never appear in a customer tenant's audit view.
 /// </summary>
 public class AdminAuditLogService : IAdminAuditLogService
 {

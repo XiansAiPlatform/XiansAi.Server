@@ -43,16 +43,16 @@ public class AuditLogServiceTests
     [Fact]
     public async Task RecordEntryAsync_UsesExplicitTenantId_InsteadOfAmbientContext()
     {
-        AuditLogEntry? captured = null;
-        var service = CreateService(httpContext: null, onCreate: entry => captured = entry);
+        var service = CreateService(httpContext: null);
 
         var result = await service.RecordEntryAsync(
             FallbackAction,
             tenantId: AuditLogTenants.Platform);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(AuditLogTenants.Platform, captured!.TenantId);
-        Assert.Equal("user-1", captured.LoggedInUser);
+        Assert.Equal(AuditLogTenants.Platform, result.Data!.TenantId);
+        Assert.Equal("user-1", result.Data.LoggedInUser);
+        Assert.NotEqual("test-tenant", result.Data.TenantId);
     }
 
     [Fact]

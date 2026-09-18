@@ -126,6 +126,11 @@ public interface IGlobalUserAdminService
     Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId);
 }
 
+/// <summary>
+/// Tenant-independent user administration. Audit events from this service omit a tenant id so
+/// <see cref="DomainEventEmitter"/> records them against <c>AuditLogTenants.Platform</c> instead of
+/// the acting SysAdmin's ambient tenant.
+/// </summary>
 public class GlobalUserAdminService : IGlobalUserAdminService
 {
     private const int MaxPageSize = 100;
