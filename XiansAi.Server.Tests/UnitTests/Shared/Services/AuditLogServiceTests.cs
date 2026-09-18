@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -35,6 +36,22 @@ public class AuditLogServiceTests
         Assert.Equal(FallbackAction, captured.Action);
         Assert.Equal(string.Empty, captured.Description);
         Assert.Equal("participant-1", captured.ParticipantId);
+        Assert.Equal("user-1", captured.LoggedInUser);
+        Assert.Equal("test-tenant", captured.TenantId);
+    }
+
+    [Fact]
+    public async Task RecordEntryAsync_UsesExplicitTenantId_InsteadOfAmbientContext()
+    {
+        AuditLogEntry? captured = null;
+        var service = CreateService(httpContext: null, onCreate: entry => captured = entry);
+
+        var result = await service.RecordEntryAsync(
+            FallbackAction,
+            tenantId: AuditLogTenants.Platform);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AuditLogTenants.Platform, captured!.TenantId);
         Assert.Equal("user-1", captured.LoggedInUser);
     }
 

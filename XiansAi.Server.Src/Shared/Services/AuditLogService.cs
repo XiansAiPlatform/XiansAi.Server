@@ -16,12 +16,16 @@ public interface IAuditLogService
     /// Snapshots the current request's identity and endpoint metadata, then writes the audit row
     /// in the background. The returned task completes as soon as the document is built and
     /// validated; a slow or failed Mongo insert cannot delay or fail the caller.
+    /// When <paramref name="tenantId"/> is omitted, the ambient <c>ITenantContext.TenantId</c>
+    /// is used. Platform-scoped actions must pass <see cref="Shared.Auditing.AuditLogTenants.Platform"/>
+    /// so the row is not disclosed through any customer tenant's audit view.
     /// </summary>
     Task<ServiceResult<AuditLogEntry>> RecordEntryAsync(
         string action,
         string? description = null,
         string? activationName = null,
-        object? details = null);
+        object? details = null,
+        string? tenantId = null);
 
     Task<ServiceResult<(IEnumerable<AuditLogEntry> entries, long totalCount)>> GetEntriesAsync(
         string? performedBy = null,
@@ -64,7 +68,8 @@ public class AuditLogService : IAuditLogService
         string action,
         string? description = null,
         string? activationName = null,
-        object? details = null)
+        object? details = null,
+        string? tenantId = null)
     {
         try
         {
@@ -75,6 +80,9 @@ public class AuditLogService : IAuditLogService
             var httpContext = _httpContextAccessor.HttpContext;
             var resolvedAction = httpContext?.GetEndpointName() ?? action;
             var resolvedDescription = description ?? httpContext?.GetEndpointSummary() ?? string.Empty;
+            var resolvedTenantId = string.IsNullOrWhiteSpace(tenantId)
+                ? _tenantContext.TenantId
+                : tenantId;
 
             if (string.IsNullOrWhiteSpace(resolvedAction))
             {
@@ -83,7 +91,7 @@ public class AuditLogService : IAuditLogService
 
             var entry = new AuditLogEntry
             {
-                TenantId = _tenantContext.TenantId,
+                TenantId = resolvedTenantId,
                 ParticipantId = _tenantContext.ParticipantId,
                 LoggedInUser = _tenantContext.LoggedInUser,
                 Action = resolvedAction,

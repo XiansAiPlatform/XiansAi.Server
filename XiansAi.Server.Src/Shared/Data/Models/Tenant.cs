@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
+using Shared.Auditing;
 using Shared.Data.Models.Validation;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
@@ -254,6 +255,12 @@ public class Tenant : ModelValidatorBase<Tenant>
     public static string SanitizeAndValidateNewTenantId(string tenantId)
     {
         var sanitizedTenantId = SanitizeAndValidateTenantId(tenantId);
+
+        if (AuditLogTenants.IsPlatform(sanitizedTenantId))
+        {
+            throw new ValidationException(
+                $"Tenant ID '{AuditLogTenants.Platform}' is reserved for platform audit records.");
+        }
 
         var lowercaseTenantId = sanitizedTenantId.ToLowerInvariant();
         if (!string.Equals(sanitizedTenantId, lowercaseTenantId, StringComparison.Ordinal))
