@@ -245,6 +245,40 @@ public class AdminDataServiceTests
         _documents.Verify(r => r.UpdateAsync(It.IsAny<Document>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UpdateDataAsync_Does_Not_Blank_Existing_Key(string blankKey)
+    {
+        var recordId = ObjectId.GenerateNewId().ToString();
+        var existing = new Document
+        {
+            Id = recordId,
+            TenantId = "tenant-a",
+            AgentId = "CustomerSupportAgent",
+            Type = "Companies",
+            Key = "acme-2026-01"
+        };
+
+        _documents.Setup(r => r.GetByIdAsync(recordId)).ReturnsAsync(existing);
+
+        Document? captured = null;
+        _documents.Setup(r => r.UpdateAsync(It.IsAny<Document>()))
+            .Callback<Document>(d => captured = d)
+            .ReturnsAsync(true);
+
+        var result = await _service.UpdateDataAsync("tenant-a", recordId, new AdminDataUpdateRequest
+        {
+            Key = blankKey,
+            Content = JsonSerializer.SerializeToElement(new { status = "Updated" })
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(captured);
+        Assert.Equal("acme-2026-01", captured!.Key);
+        _documents.Verify(r => r.GetByKeyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+    }
+
     private void SetupAgent(string tenantId, string agentName)
     {
         _agents.Setup(r => r.GetByNameInternalAsync(agentName, tenantId))

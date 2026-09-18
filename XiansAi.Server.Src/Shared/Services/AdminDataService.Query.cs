@@ -20,7 +20,11 @@ public partial class AdminDataService
         {
             _logger.LogInformation(
                 "Getting data schema - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, Range: {StartDate} to {EndDate}",
-                request.TenantId, request.AgentName, request.ActivationName, request.StartDate, request.EndDate);
+                LogSanitizer.Sanitize(request.TenantId),
+                LogSanitizer.Sanitize(request.AgentName),
+                LogSanitizer.Sanitize(request.ActivationName),
+                request.StartDate,
+                request.EndDate);
 
             var documentTypes = await _documentRepository.GetDistinctTypesAsync(request.TenantId, request.AgentName, request.ActivationName);
 
@@ -66,7 +70,14 @@ public partial class AdminDataService
         {
             _logger.LogInformation(
                 "Getting data - TenantId: {TenantId}, AgentName: {AgentName}, DataType: {DataType}, ActivationName: {ActivationName}, Range: {StartDate} to {EndDate}, Skip: {Skip}, Limit: {Limit}",
-                request.TenantId, request.AgentName, request.DataType, request.ActivationName, request.StartDate, request.EndDate, request.Skip, request.Limit);
+                LogSanitizer.Sanitize(request.TenantId),
+                LogSanitizer.Sanitize(request.AgentName),
+                LogSanitizer.Sanitize(request.DataType),
+                LogSanitizer.Sanitize(request.ActivationName),
+                request.StartDate,
+                request.EndDate,
+                request.Skip,
+                request.Limit);
 
             var queryFilter = new DocumentQueryFilter
             {
@@ -107,7 +118,7 @@ public partial class AdminDataService
 
             _logger.LogInformation(
                 "Data retrieved successfully - AgentName: {AgentName}, DataType: {DataType}, Total: {Total}, Returned: {Count}",
-                request.AgentName, request.DataType, totalCount, dataItems.Count);
+                LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(request.DataType), totalCount, dataItems.Count);
 
             return ServiceResult<AdminDataListResponse>.Success(response);
         }
@@ -132,7 +143,12 @@ public partial class AdminDataService
         {
             _logger.LogInformation(
                 "Deleting data - TenantId: {TenantId}, AgentName: {AgentName}, DataType: {DataType}, ActivationName: {ActivationName}, Range: {StartDate} to {EndDate}",
-                request.TenantId, request.AgentName, request.DataType, request.ActivationName, request.StartDate, request.EndDate);
+                LogSanitizer.Sanitize(request.TenantId),
+                LogSanitizer.Sanitize(request.AgentName),
+                LogSanitizer.Sanitize(request.DataType),
+                LogSanitizer.Sanitize(request.ActivationName),
+                request.StartDate,
+                request.EndDate);
 
             var queryFilter = new DocumentQueryFilter
             {
@@ -163,7 +179,7 @@ public partial class AdminDataService
 
             _logger.LogInformation(
                 "Data deletion completed successfully - AgentName: {AgentName}, DataType: {DataType}, DeletedCount: {DeletedCount}",
-                request.AgentName, request.DataType, deletedCount);
+                LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(request.DataType), deletedCount);
 
             return ServiceResult<AdminDataDeleteResponse>.Success(response);
         }
@@ -242,7 +258,7 @@ public partial class AdminDataService
 
     public async Task<ServiceResult<int>> DeleteDocumentsByActivationAsync(string tenantId, string agentName, string activationName)
     {
-        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        if (string.IsNullOrWhiteSpace(tenantId) || string.IsNullOrWhiteSpace(agentName) || string.IsNullOrWhiteSpace(activationName))
         {
             return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
         }
@@ -277,7 +293,7 @@ public partial class AdminDataService
             return ServiceResult<AdminDataSchemaResponse>.BadRequest(tenantError);
         }
 
-        if (string.IsNullOrEmpty(request.AgentName))
+        if (string.IsNullOrWhiteSpace(request.AgentName))
         {
             return ServiceResult<AdminDataSchemaResponse>.BadRequest("AgentName is required");
         }
@@ -304,12 +320,12 @@ public partial class AdminDataService
             return ServiceResult<AdminDataListResponse>.BadRequest(tenantError);
         }
 
-        if (string.IsNullOrEmpty(request.AgentName))
+        if (string.IsNullOrWhiteSpace(request.AgentName))
         {
             return ServiceResult<AdminDataListResponse>.BadRequest("AgentName is required");
         }
 
-        if (string.IsNullOrEmpty(request.DataType))
+        if (string.IsNullOrWhiteSpace(request.DataType))
         {
             return ServiceResult<AdminDataListResponse>.BadRequest("DataType is required");
         }
@@ -346,12 +362,12 @@ public partial class AdminDataService
             return ServiceResult<AdminDataDeleteResponse>.BadRequest(tenantError);
         }
 
-        if (string.IsNullOrEmpty(request.AgentName))
+        if (string.IsNullOrWhiteSpace(request.AgentName))
         {
             return ServiceResult<AdminDataDeleteResponse>.BadRequest("AgentName is required");
         }
 
-        if (string.IsNullOrEmpty(request.DataType))
+        if (string.IsNullOrWhiteSpace(request.DataType))
         {
             return ServiceResult<AdminDataDeleteResponse>.BadRequest("DataType is required");
         }
@@ -378,7 +394,7 @@ public partial class AdminDataService
             return ServiceResult<AdminDataDeleteRecordResponse>.BadRequest(tenantError);
         }
 
-        if (string.IsNullOrEmpty(request.RecordId))
+        if (string.IsNullOrWhiteSpace(request.RecordId))
         {
             return ServiceResult<AdminDataDeleteRecordResponse>.BadRequest("RecordId is required");
         }

@@ -63,7 +63,11 @@ public partial class AdminDataService : IAdminDataService
 
         try
         {
-            var agent = await _agentRepository.GetByNameInternalAsync(request.AgentName, tenantId);
+            var agentTask = _agentRepository.GetByNameInternalAsync(request.AgentName, tenantId);
+            var existingByKeyTask = _documentRepository.GetByKeyAsync(request.DataType, request.Key, tenantId);
+            await Task.WhenAll(agentTask, existingByKeyTask);
+
+            var agent = await agentTask;
             if (agent == null)
             {
                 _logger.LogWarning(
@@ -72,7 +76,7 @@ public partial class AdminDataService : IAdminDataService
                 return ServiceResult<AdminDataItemResponse>.NotFound("Agent not found");
             }
 
-            var existingByKey = await _documentRepository.GetByKeyAsync(request.DataType, request.Key, tenantId);
+            var existingByKey = await existingByKeyTask;
             if (existingByKey != null)
             {
                 _logger.LogWarning(
@@ -136,7 +140,7 @@ public partial class AdminDataService : IAdminDataService
         try
         {
             var newType = string.IsNullOrWhiteSpace(request.DataType) ? existing.Type : request.DataType;
-            var newKey = request.Key ?? existing.Key;
+            var newKey = string.IsNullOrWhiteSpace(request.Key) ? existing.Key : request.Key;
 
             if (!string.Equals(newType, existing.Type, StringComparison.Ordinal) ||
                 !string.Equals(newKey, existing.Key, StringComparison.Ordinal))
@@ -183,7 +187,7 @@ public partial class AdminDataService : IAdminDataService
             existing.Type = request.DataType;
         }
 
-        if (request.Key != null)
+        if (!string.IsNullOrWhiteSpace(request.Key))
         {
             existing.Key = request.Key;
         }

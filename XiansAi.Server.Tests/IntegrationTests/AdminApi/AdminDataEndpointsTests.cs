@@ -250,13 +250,132 @@ public class AdminDataEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal("Updated", updated.Content.GetProperty("status").GetString());
     }
 
-    private async Task<AdminDataItemResponse> CreateRecordAsync(string tenantId, string agentName)
+    [Fact]
+    public async Task GetRecord_ReturnsCreatedRecord()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var created = await CreateRecordAsync(tenantId, agent.Name);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/data/{created.Id}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var fetched = await ReadAsJsonAsync<AdminDataItemResponse>(response);
+        Assert.NotNull(fetched);
+        Assert.Equal(created.Id, fetched!.Id);
+        Assert.Equal(created.Key, fetched.Key);
+        Assert.Equal("Companies", fetched.Type);
+        Assert.Equal(agent.Name, fetched.AgentName);
+        Assert.Equal("Completed", fetched.Content.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task GetRecord_RecordFromOtherTenant_ReturnsNotFound()
+    {
+        var tenantA = $"test-tenant-{Guid.NewGuid()}";
+        var tenantB = $"test-tenant-{Guid.NewGuid()}";
+        await CreateTestTenantAsync(tenantA);
+        await CreateTestTenantAsync(tenantB);
+
+        await ConfigureAdminApiClientAsync(tenantA);
+        var agentA = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantA);
+        var created = await CreateRecordAsync(tenantA, agentA.Name);
+
+        await ConfigureAdminApiClientAsync(tenantB);
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantB}/data/{created.Id}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateData_TypeKeyCollision_ReturnsConflict()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var takenKey = $"taken-{Guid.NewGuid()}";
+        await CreateRecordAsync(tenantId, agent.Name, takenKey);
+        var other = await CreateRecordAsync(tenantId, agent.Name, $"other-{Guid.NewGuid()}");
+
+        var response = await PutAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data/{other.Id}", new
+        {
+            key = takenKey
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateData_OmittingContent_LeavesContentUnchanged()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var created = await CreateRecordAsync(tenantId, agent.Name);
+
+        var updateResponse = await PutAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data/{created.Id}", new
+        {
+            metadata = new Dictionary<string, object> { ["city"] = "Bergen" }
+        });
+
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updated = await ReadAsJsonAsync<AdminDataItemResponse>(updateResponse);
+        Assert.NotNull(updated);
+        Assert.Equal("Completed", updated!.Content.GetProperty("status").GetString());
+        Assert.Equal("Bergen", updated.Metadata!["city"].ToString());
+        Assert.Equal(created.Key, updated.Key);
+
+        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/data/{created.Id}");
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        var fetched = await ReadAsJsonAsync<AdminDataItemResponse>(getResponse);
+        Assert.Equal("Completed", fetched!.Content.GetProperty("status").GetString());
+        Assert.Equal("Bergen", fetched.Metadata!["city"].ToString());
+    }
+
+    [Fact]
+    public async Task SchemaListAndDelete_StillWorkAfterServiceSplit()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var created = await CreateRecordAsync(tenantId, agent.Name);
+
+        var schemaResponse = await GetAsync(SchemaUrl(tenantId, agent.Name));
+        Assert.Equal(HttpStatusCode.OK, schemaResponse.StatusCode);
+        var schema = await ReadAsJsonAsync<AdminDataSchemaResponse>(schemaResponse);
+        Assert.NotNull(schema);
+        Assert.Contains("Companies", schema!.Types);
+
+        var listResponse = await GetAsync(ListUrl(tenantId, agent.Name, "Companies"));
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        var list = await ReadAsJsonAsync<AdminDataListResponse>(listResponse);
+        Assert.NotNull(list);
+        Assert.Contains(list!.Data, item => item.Id == created.Id);
+
+        var deleteResponse = await DeleteAsync(ListUrl(tenantId, agent.Name, "Companies"));
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        var deleted = await ReadAsJsonAsync<AdminDataDeleteResponse>(deleteResponse);
+        Assert.NotNull(deleted);
+        Assert.True(deleted!.DeletedCount >= 1);
+
+        var listAfterDelete = await GetAsync(ListUrl(tenantId, agent.Name, "Companies"));
+        Assert.Equal(HttpStatusCode.OK, listAfterDelete.StatusCode);
+        var emptyList = await ReadAsJsonAsync<AdminDataListResponse>(listAfterDelete);
+        Assert.DoesNotContain(emptyList!.Data, item => item.Id == created.Id);
+    }
+
+    private async Task<AdminDataItemResponse> CreateRecordAsync(string tenantId, string agentName, string? key = null)
     {
         var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data", new
         {
             agentName,
             dataType = "Companies",
-            key = $"acme-{Guid.NewGuid()}",
+            key = key ?? $"acme-{Guid.NewGuid()}",
             content = new { status = "Completed" },
             metadata = new Dictionary<string, object> { ["city"] = "Oslo" }
         });
@@ -272,5 +391,12 @@ public class AdminDataEndpointsTests : AdminApiIntegrationTestBase
         var start = Uri.EscapeDataString(DateTime.UtcNow.AddHours(-1).ToString("O"));
         var end = Uri.EscapeDataString(DateTime.UtcNow.AddHours(1).ToString("O"));
         return $"/api/v1/admin/tenants/{tenantId}/data?startDate={start}&endDate={end}&agentName={Uri.EscapeDataString(agentName)}&dataType={Uri.EscapeDataString(dataType)}";
+    }
+
+    private static string SchemaUrl(string tenantId, string agentName)
+    {
+        var start = Uri.EscapeDataString(DateTime.UtcNow.AddHours(-1).ToString("O"));
+        var end = Uri.EscapeDataString(DateTime.UtcNow.AddHours(1).ToString("O"));
+        return $"/api/v1/admin/tenants/{tenantId}/data/schema?startDate={start}&endDate={end}&agentName={Uri.EscapeDataString(agentName)}";
     }
 }
