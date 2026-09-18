@@ -275,7 +275,13 @@ public class AgentDeletionService : IAgentDeletionService
                 deletedActivations = result.DeletedActivations,
             };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentDeleted, metadata, tenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.AgentDeleted,
+                metadata,
+                tenantId,
+                description: $"Agent '{agent.Name}' ({agent.Id}) was deleted from tenant '{tenantId}', including {result.DeletedActivations} activations, {result.DeletedKnowledgeItems} knowledge items, {result.DeletedFlowDefinitions} workflow definitions, {result.RevokedApiKeys} API keys, {result.DeletedDocuments} documents, {result.DeletedLogs} logs, {result.DeletedSchedules} schedules, and {result.DeletedUsageEvents} usage events.");
 
             return ServiceResult<AgentDeletionResult>.Success(result);
         }

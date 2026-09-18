@@ -113,7 +113,13 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
                 actor,
                 hasTls = !string.IsNullOrEmpty(certificate)
             };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantTemporalUpdated, metadata, tenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.TenantTemporalUpdated,
+                metadata,
+                tenantId,
+                description: $"Temporal configuration for tenant '{tenantId}' was updated by '{actor}' (server '{serverUrl}', namespace '{@namespace}', TLS {(string.IsNullOrEmpty(certificate) ? "disabled" : "enabled")}).");
 
             return ServiceResult<bool>.Success(true);
         }
@@ -138,7 +144,13 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
                 return ServiceResult<bool>.NotFound("No configuration found");
             }
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantTemporalReverted, new { tenantId, actor }, tenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.TenantTemporalReverted,
+                new { tenantId, actor },
+                tenantId,
+                description: $"Temporal configuration for tenant '{tenantId}' was reverted to the platform default by '{actor}'.");
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)

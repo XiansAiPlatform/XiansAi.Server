@@ -63,7 +63,11 @@ public class GlobalUserAdminServiceDeleteTests
             Times.Once);
         _audit.Verify(
             x => x.RecordEntryAsync(
-                DomainEventTypes.UserDeleted, null, null, It.IsAny<object?>(), AuditLogTenants.Platform),
+                DomainEventTypes.UserDeleted,
+                "User 'target-user@example.com' (target-user) was permanently deleted by 'acting-admin'.",
+                null,
+                It.IsAny<object?>(),
+                AuditLogTenants.Platform),
             Times.Once);
     }
 

@@ -67,7 +67,14 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy };
 
-                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyCreated, metadata, tenantId, activationName);
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ApiKeyCreated,
+                    metadata,
+                    tenantId,
+                    activationName,
+                    description: DescribeApiKey(result.meta, "created", createdBy));
 
                 return ServiceResult<(string, ApiKey)>.Success(result);
             }
@@ -104,7 +111,15 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = id, name = existingKey?.Name };
 
-                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyRevoked, metadata, tenantId);
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ApiKeyRevoked,
+                    metadata,
+                    tenantId,
+                    description: existingKey == null
+                        ? $"API key '{id}' was revoked in tenant '{tenantId}'."
+                        : DescribeApiKey(existingKey, "revoked"));
 
                 return ServiceResult<bool>.Success(true);
             }
@@ -178,7 +193,13 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name };
 
-                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyRotated, metadata, tenantId);
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ApiKeyRotated,
+                    metadata,
+                    tenantId,
+                    description: DescribeApiKey(rotated.Value.meta, "rotated"));
 
                 return ServiceResult<(string, ApiKey)?>.Success(rotated);
             }
@@ -352,6 +373,25 @@ namespace Shared.Services
             using var sha256 = SHA256.Create();
             var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
             return Convert.ToBase64String(hash);
+        }
+
+        private static string DescribeApiKey(ApiKey key, string verb, string? actor = null)
+        {
+            var type = string.IsNullOrWhiteSpace(key.Type) ? "unspecified type" : key.Type;
+            var description = $"API key '{key.Name}' ({type}, id '{key.Id}') was {verb} in tenant '{key.TenantId}'";
+            if (!string.IsNullOrWhiteSpace(actor))
+                description += $" by '{actor}'";
+
+            var scope = new List<string>();
+            if (!string.IsNullOrWhiteSpace(key.AgentName)) scope.Add($"agent '{key.AgentName}'");
+            if (!string.IsNullOrWhiteSpace(key.ActivationName)) scope.Add($"activation '{key.ActivationName}'");
+            if (!string.IsNullOrWhiteSpace(key.WorkflowName)) scope.Add($"workflow '{key.WorkflowName}'");
+            if (!string.IsNullOrWhiteSpace(key.WebhookName)) scope.Add($"webhook '{key.WebhookName}'");
+            if (!string.IsNullOrWhiteSpace(key.ParticipantId)) scope.Add($"participant '{key.ParticipantId}'");
+            if (scope.Count > 0)
+                description += $" for {string.Join(", ", scope)}";
+
+            return description + ".";
         }
 
         private async Task InvalidateApiKeyCachesAsync(string tenantId, string hashedKey)

@@ -194,6 +194,9 @@ public class AdminAgentService : IAdminAgentService
                 return ServiceResult<Agent>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant '{tenantId}'");
             }
 
+            var originalName = agent.Name;
+            var changedFields = new List<string>();
+
             // Update fields if provided
             if (!string.IsNullOrWhiteSpace(request.Name) && request.Name != agent.Name)
             {
@@ -209,21 +212,25 @@ public class AdminAgentService : IAdminAgentService
                     return ServiceResult<Agent>.Conflict($"Agent with name '{validatedNewName}' already exists in tenant");
                 }
                 agent.Name = validatedNewName;
+                changedFields.Add($"name '{originalName}' → '{validatedNewName}'");
             }
 
             if (request.Description != null)
             {
                 agent.Description = request.Description;
+                changedFields.Add("description");
             }
 
             if (request.OnboardingJson != null)
             {
                 agent.OnboardingJson = request.OnboardingJson;
+                changedFields.Add("onboarding");
             }
 
             if (request.SamplePrompts != null)
             {
                 agent.SamplePrompts = request.SamplePrompts;
+                changedFields.Add($"sample prompts ({request.SamplePrompts.Count})");
             }
 
             var updated = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
@@ -237,7 +244,15 @@ public class AdminAgentService : IAdminAgentService
 
             var metadata = new { tenantId, agentId = agent.Id, agentName = agent.Name };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentDeploymentUpdated, metadata, tenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.AgentDeploymentUpdated,
+                metadata,
+                tenantId,
+                description: changedFields.Count == 0
+                    ? $"Deployment configuration for agent '{agent.Name}' ({agent.Id}) in tenant '{tenantId}' was updated."
+                    : $"Deployment configuration for agent '{agent.Name}' ({agent.Id}) in tenant '{tenantId}' was updated ({string.Join(", ", changedFields)}).");
 
             return ServiceResult<Agent>.Success(agent);
         }

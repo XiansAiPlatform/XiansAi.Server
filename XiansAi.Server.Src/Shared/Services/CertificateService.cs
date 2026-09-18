@@ -152,7 +152,13 @@ public class CertificateService
         if (revoked)
         {
             var revokedMetadata = new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.CertificateRevoked, revokedMetadata, cert.TenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.CertificateRevoked,
+                revokedMetadata,
+                cert.TenantId,
+                description: $"Client certificate '{thumbprint}' issued to '{cert.IssuedTo}' in tenant '{cert.TenantId}' was revoked{(string.IsNullOrWhiteSpace(reason) ? "" : $". Reason: {reason}")}.");
         }
 
         return revoked;
@@ -192,7 +198,13 @@ public class CertificateService
             var base64String = Convert.ToBase64String(certBytes);
 
             var createdMetadata = new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.CertificateCreated, createdMetadata, _tenantContext.TenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.CertificateCreated,
+                createdMetadata,
+                _tenantContext.TenantId,
+                description: $"Client certificate '{cert.Thumbprint}' was issued to '{targetUserId}' in tenant '{_tenantContext.TenantId}'{(revokePrevious ? ", previous certificates revoked" : "")}{(string.IsNullOrWhiteSpace(friendlyName) ? "" : $", friendly name '{friendlyName}'")}.");
 
             return Results.Ok(new { certificate = base64String });
         }

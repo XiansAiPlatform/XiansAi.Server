@@ -272,7 +272,15 @@ public class TenantOidcConfigService : ITenantOidcConfigService
 
             var metadata = new { tenantId, created = existing == null, actorUserId };
 
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantOidcUpdated, metadata, tenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.TenantOidcUpdated,
+                metadata,
+                tenantId,
+                description: existing == null
+                    ? $"OIDC configuration for tenant '{tenantId}' was created by '{actorUserId}'."
+                    : $"OIDC configuration for tenant '{tenantId}' was updated by '{actorUserId}'.");
 
             return ServiceResult<bool>.Success(true);
         }
@@ -300,7 +308,13 @@ public class TenantOidcConfigService : ITenantOidcConfigService
 
                 var metadata = new { tenantId };
 
-                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantOidcDeleted, metadata, tenantId);
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.TenantOidcDeleted,
+                    metadata,
+                    tenantId,
+                    description: $"OIDC configuration for tenant '{tenantId}' was deleted.");
             }
             
             return removed ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");

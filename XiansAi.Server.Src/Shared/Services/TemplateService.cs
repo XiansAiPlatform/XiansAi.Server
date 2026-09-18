@@ -257,7 +257,12 @@ public class TemplateService : ITemplateService
                 LogSanitizer.Sanitize(agentName), deletedDefinitionsCount, deletedKnowledgeCount);
 
             var deletedMetadata = new { templateId = agent.Id, name = agent.Name };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TemplateDeleted, deletedMetadata);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.TemplateDeleted,
+                deletedMetadata,
+                description: $"System template '{agent.Name}' ({agent.Id}) was deleted along with {deletedDefinitionsCount} workflow definitions and {deletedKnowledgeCount} knowledge items.");
 
             return ServiceResult<bool>.Success(true);
         }
@@ -480,7 +485,13 @@ public class TemplateService : ITemplateService
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
 
             var deployedMetadata = new { tenantId, templateName = agentName, agentId = newAgent.Id, agentName = newAgent.Name, createdBy, definitionsCount = clonedDefinitionsCount };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentTemplateDeployed, deployedMetadata, tenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.AgentTemplateDeployed,
+                deployedMetadata,
+                tenantId,
+                description: $"Template '{agentName}' was deployed to tenant '{tenantId}' as agent '{newAgent.Name}' ({newAgent.Id}) by '{createdBy}' ({clonedDefinitionsCount} workflow definitions cloned).");
 
             return ServiceResult<Agent>.Success(newAgent);
         }
@@ -627,7 +638,13 @@ public class TemplateService : ITemplateService
                 createdBy,
                 definitionsCount = clonedDefinitionsCount
             };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentTemplatePromoted, promotedMetadata, tenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.AgentTemplatePromoted,
+                promotedMetadata,
+                tenantId,
+                description: $"Agent '{agentName}' in tenant '{tenantId}' was promoted to a system template ({newTemplate.Id}) by '{createdBy}' ({clonedDefinitionsCount} workflow definitions cloned).");
 
             return ServiceResult<Agent>.Success(newTemplate);
         }
@@ -880,34 +897,41 @@ public class TemplateService : ITemplateService
     {
         try
         {
+            var changedFields = new List<string>();
             if (description != null)
             {
                 template.Description = description;
+                changedFields.Add("description");
             }
 
             if (onboardingJson != null)
             {
                 template.OnboardingJson = onboardingJson;
+                changedFields.Add("onboarding");
             }
 
             if (ownerAccess != null)
             {
                 template.OwnerAccess = ownerAccess;
+                changedFields.Add($"owner access ({ownerAccess.Count})");
             }
 
             if (readAccess != null)
             {
                 template.ReadAccess = readAccess;
+                changedFields.Add($"read access ({readAccess.Count})");
             }
 
             if (writeAccess != null)
             {
                 template.WriteAccess = writeAccess;
+                changedFields.Add($"write access ({writeAccess.Count})");
             }
 
             if (samplePrompts != null)
             {
                 template.SamplePrompts = samplePrompts;
+                changedFields.Add($"sample prompts ({samplePrompts.Count})");
             }
 
             var updated = await _agentRepository.UpdateInternalAsync(template.Id, template);
@@ -920,7 +944,14 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Successfully updated system-scoped agent template {TemplateId}", LogSanitizer.Sanitize(template.Id));
 
             var updatedMetadata = new { templateId = template.Id, name = template.Name };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TemplateUpdated, updatedMetadata);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.TemplateUpdated,
+                updatedMetadata,
+                description: changedFields.Count == 0
+                    ? $"System template '{template.Name}' ({template.Id}) was updated."
+                    : $"System template '{template.Name}' ({template.Id}) was updated ({string.Join(", ", changedFields)}).");
 
             return ServiceResult<Agent>.Success(template);
         }

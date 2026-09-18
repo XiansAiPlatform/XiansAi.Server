@@ -162,7 +162,13 @@ public class BootstrapService : IBootstrapService
                 LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(resolvedTenantId));
 
             var bootstrappedMetadata = new { tenantId = resolvedTenantId, userId = email };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.PlatformBootstrapped, bootstrappedMetadata, resolvedTenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.PlatformBootstrapped,
+                bootstrappedMetadata,
+                resolvedTenantId,
+                description: $"Platform was bootstrapped with SysAdmin '{email}' on tenant '{resolvedTenantId}' and an initial API key was minted.");
 
             return ServiceResult<BootstrapResponse>.Success(new BootstrapResponse
             {

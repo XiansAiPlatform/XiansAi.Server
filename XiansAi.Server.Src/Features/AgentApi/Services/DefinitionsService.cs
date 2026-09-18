@@ -251,7 +251,13 @@ public class DefinitionsService : IDefinitionsService
                 _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
                 var updatedMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
-                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.FlowDefinitionUpdated, updatedMetadata, _tenantContext.TenantId);
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.FlowDefinitionUpdated,
+                    updatedMetadata,
+                    _tenantContext.TenantId,
+                    description: $"Workflow definition '{definition.WorkflowType}' for agent '{request.Agent}' was updated because its hash changed (system-scoped: {request.SystemScoped}).");
 
                 return Results.Ok("Definition deleted and recreated successfully");
             }
@@ -264,7 +270,13 @@ public class DefinitionsService : IDefinitionsService
         _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
         var createdMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
-        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.FlowDefinitionCreated, createdMetadata, _tenantContext.TenantId);
+        DomainEventEmitter.Emit(
+            _webhookEventPublisher,
+            _auditLogService,
+            DomainEventTypes.FlowDefinitionCreated,
+            createdMetadata,
+            _tenantContext.TenantId,
+            description: $"Workflow definition '{definition.WorkflowType}' for agent '{request.Agent}' was registered (system-scoped: {request.SystemScoped}).");
 
         return Results.Ok("New definition created successfully");
     }
@@ -352,7 +364,15 @@ public class DefinitionsService : IDefinitionsService
         if (existingAgent == null)
         {
             var registeredMetadata = new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy };
-            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentRegistered, registeredMetadata, _tenantContext.TenantId);
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.AgentRegistered,
+                registeredMetadata,
+                _tenantContext.TenantId,
+                description: agent.SystemScoped
+                    ? $"System-scoped agent '{agent.Name}' ({agent.Id}) was registered by '{agent.CreatedBy}'."
+                    : $"Agent '{agent.Name}' ({agent.Id}) was registered in tenant '{_tenantContext.TenantId}' by '{agent.CreatedBy}'.");
         }
         
         return Results.Ok(new 
