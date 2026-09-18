@@ -94,7 +94,7 @@ public static class AdminAgentActivationEndpoints
             [FromServices] IActivationService activationService,
             [FromServices] ITenantContext tenantContext) =>
         {
-            
+
             var result = await activationService.ActivateAgentAsync(activationId, tenantId, request?.WorkflowConfiguration);
             if (!result.IsSuccess)
             {

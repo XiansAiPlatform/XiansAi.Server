@@ -153,7 +153,7 @@ public class CapabilityMatrixService : ICapabilityMatrixService
             await _cache.RemoveAsync(CacheKey);
 
             await RecordChangeAsync(
-                WebhookEventTypes.CapabilityMatrixUpdated,
+                DomainEventTypes.CapabilityMatrixUpdated,
                 action,
                 previous?.AllowedRoles ?? declared.DefaultRoles,
                 allowedRoles,
@@ -184,7 +184,7 @@ public class CapabilityMatrixService : ICapabilityMatrixService
             await _cache.RemoveAsync(CacheKey);
 
             await RecordChangeAsync(
-                WebhookEventTypes.CapabilityMatrixDeleted,
+                DomainEventTypes.CapabilityMatrixDeleted,
                 action,
                 deleted.AllowedRoles,
                 declared.DefaultRoles,

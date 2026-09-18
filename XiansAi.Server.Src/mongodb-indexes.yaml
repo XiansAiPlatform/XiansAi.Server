@@ -564,3 +564,22 @@ admin_capability_matrix:
     keys:
       action: asc
     unique: true
+
+audit_logs:
+  - name: tenant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      created_at: desc
+    background: true
+  - name: tenant_id_1_participant_id_1_created_at_-1
+    keys:
+      tenant_id: asc
+      participant_id: asc
+      created_at: desc
+    background: true
+  - name: tenant_id_1_activation_name_1_created_at_-1
+    keys:
+      tenant_id: asc
+      activation_name: asc
+      created_at: desc
+    background: true

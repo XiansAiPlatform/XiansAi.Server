@@ -224,7 +224,7 @@ public class CapabilityMatrixServiceTests
 
         _repository.Verify(x => x.GetAllAsync(), Times.Never);
         _webhooks.Verify(
-            x => x.PublishAsync(WebhookEventTypes.CapabilityMatrixUpdated, It.IsAny<object>(), null),
+            x => x.PublishAsync(DomainEventTypes.CapabilityMatrixUpdated, It.IsAny<object>(), null),
             Times.Once);
     }
 

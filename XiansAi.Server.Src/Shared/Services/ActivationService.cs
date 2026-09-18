@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data.Models;
@@ -66,6 +67,7 @@ public class ActivationService : IActivationService
     private readonly IMessageService _messageService;
     private readonly IAdminMetricsService _metricsService;
     private readonly IFeedbackService _feedbackService;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -83,6 +85,7 @@ public class ActivationService : IActivationService
         IMessageService messageService,
         IAdminMetricsService metricsService,
         IFeedbackService feedbackService,
+        IAuditLogService auditLogService,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -99,6 +102,7 @@ public class ActivationService : IActivationService
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _metricsService = metricsService ?? throw new ArgumentNullException(nameof(metricsService));
         _feedbackService = feedbackService ?? throw new ArgumentNullException(nameof(feedbackService));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -106,8 +110,8 @@ public class ActivationService : IActivationService
     /// Creates a new agent activation record in the database.
     /// </summary>
     public async Task<ServiceResult<AgentActivation>> CreateActivationAsync(
-        CreateActivationRequest request, 
-        string userId, 
+        CreateActivationRequest request,
+        string userId,
         string tenantId)
     {
         try
@@ -125,12 +129,22 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.BadRequest("AgentName is required");
             }
 
+            string validatedAgentName;
+            try
+            {
+                validatedAgentName = Agent.SanitizeAndValidateName(request.AgentName);
+            }
+            catch (ValidationException ex)
+            {
+                return ServiceResult<AgentActivation>.BadRequest(ex.Message);
+            }
+
             // Verify that the agent exists
-            var agent = await _agentRepository.GetByNameInternalAsync(request.AgentName, tenantId);
+            var agent = await _agentRepository.GetByNameInternalAsync(validatedAgentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant");
             }
 
             // Defense-in-depth: GetByNameInternalAsync already scopes by tenant, but never
@@ -139,15 +153,15 @@ public class ActivationService : IActivationService
             {
                 _logger.LogWarning(
                     "Tenant {TenantId} attempted to create activation for agent {AgentName} belonging to tenant {OwnerTenant}",
-                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(agent.Tenant));
-                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(agent.Tenant));
+                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant");
             }
 
             var activation = new AgentActivation
             {
                 Id = ObjectId.GenerateNewId().ToString(),
                 Name = request.Name,
-                AgentName = request.AgentName,
+                AgentName = validatedAgentName,
                 Description = request.Description,
                 ParticipantId = request.ParticipantId,
                 CreatedBy = userId,
@@ -171,10 +185,16 @@ public class ActivationService : IActivationService
 
             _logger.LogInformation("Successfully created activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.ActivationCreated,
-                new { tenantId, activationId = activation.Id, name = activation.Name, agentName = request.AgentName },
-                tenantId);
+            var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = validatedAgentName };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationCreated,
+                metadata,
+                tenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{validatedAgentName}' was created for participant '{activation.ParticipantId}' by '{activation.CreatedBy}'.");
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -318,10 +338,27 @@ public class ActivationService : IActivationService
 
             _logger.LogInformation("Successfully updated activation {ActivationId}", LogSanitizer.Sanitize(activationId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.ActivationUpdated,
-                new { tenantId, activationId = activation.Id, name = activation.Name },
-                tenantId);
+            var changedFields = new List<string>();
+            if (isUpdatingName)
+            {
+                changedFields.Add(string.Equals(previousName, activation.Name, StringComparison.Ordinal)
+                    ? "name"
+                    : $"name '{previousName}' → '{activation.Name}'");
+            }
+            if (isUpdatingDescription) changedFields.Add("description");
+            if (isUpdatingParticipantId) changedFields.Add("participant");
+            if (isUpdatingWorkflowConfiguration) changedFields.Add("workflow configuration");
+
+            var metadata = new { tenantId, activationId = activation.Id, name = activation.Name };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationUpdated,
+                metadata,
+                tenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was updated ({string.Join(", ", changedFields)}).");
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -404,7 +441,7 @@ public class ActivationService : IActivationService
     /// Activates an agent by starting a workflow in Temporal.
     /// </summary>
     public async Task<ServiceResult<AgentActivation>> ActivateAgentAsync(
-        string activationId, 
+        string activationId,
         string tenantId,
         ActivationWorkflowConfiguration? workflowConfiguration = null)
     {
@@ -566,10 +603,16 @@ public class ActivationService : IActivationService
                 _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}", 
                     startedCount, flowDefinitions.Count, LogSanitizer.Sanitize(activationId));
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.ActivationActivated,
-                    new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds },
-                    tenantId);
+                var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds };
+
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ActivationActivated,
+                    metadata,
+                    tenantId,
+                    activation.Name,
+                    description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was activated. Started {startedCount} of {flowDefinitions.Count} workflows.");
 
                 return ServiceResult<AgentActivation>.Success(activation);
             }
@@ -597,7 +640,7 @@ public class ActivationService : IActivationService
     /// - Deletes all schedules
     /// </summary>
     public async Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(
-        string activationId, 
+        string activationId,
         string tenantId)
     {
         try
@@ -680,10 +723,16 @@ public class ActivationService : IActivationService
                 cleanup.WorkflowCleanup.TotalWorkflows,
                 cleanup.ScheduleCleanup.TotalSchedules);
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.ActivationDeactivated,
-                new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName },
-                activation.TenantId);
+            var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationDeactivated,
+                metadata,
+                activation.TenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was deactivated. Cancelled {cleanup.WorkflowCleanup.CancelledCount}/{cleanup.WorkflowCleanup.TotalWorkflows} workflows and deleted {cleanup.ScheduleCleanup.DeletedCount}/{cleanup.ScheduleCleanup.TotalSchedules} schedules{(cleanup.Success ? "" : $" ({cleanup.WorkflowCleanup.FailedCount} workflow and {cleanup.ScheduleCleanup.FailedCount} schedule cleanup failures)")}.");
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -740,10 +789,16 @@ public class ActivationService : IActivationService
 
             _logger.LogInformation("Successfully deleted activation {ActivationId}", LogSanitizer.Sanitize(activationId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.ActivationDeleted,
-                new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName },
-                activation.TenantId);
+            var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.ActivationDeleted,
+                metadata,
+                activation.TenantId,
+                activation.Name,
+                description: $"Activation '{activation.Name}' ({activation.Id}) for agent '{activation.AgentName}' was deleted from tenant '{activation.TenantId}'.");
 
             return ServiceResult<bool>.Success(true);
         }

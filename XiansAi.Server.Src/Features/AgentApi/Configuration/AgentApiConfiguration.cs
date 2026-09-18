@@ -7,6 +7,7 @@ using Shared.Utils;
 using Shared.Services;
 using Shared.Auth;
 using Features.WebApi.Services;
+using Shared.Providers;
 
 namespace Features.AgentApi.Configuration;
 
@@ -40,9 +41,16 @@ public static class AgentApiConfiguration
     
     public static WebApplicationBuilder AddAgentApiAuth(this WebApplicationBuilder builder)
     {
-        // Register certificate validation cache with memory-based caching for performance
-        // Uses IMemoryCache with size limits to prevent DoS attacks
-        builder.Services.AddScoped<ICertificateValidationCache, MemoryCertificateValidationCache>();
+        // Certificate validation is invalidated when the resolved account is disabled, so it
+        // should also respect Cache:Provider=noop.
+        if (CacheProviderFactory.IsNoOpProvider(builder.Configuration))
+        {
+            builder.Services.AddScoped<ICertificateValidationCache, NoOpCertificateValidationCache>();
+        }
+        else
+        {
+            builder.Services.AddScoped<ICertificateValidationCache, MemoryCertificateValidationCache>();
+        }
         
         // Add certificate authentication scheme
         builder.Services.AddAuthentication()

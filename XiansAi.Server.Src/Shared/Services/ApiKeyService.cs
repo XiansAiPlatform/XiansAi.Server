@@ -33,7 +33,9 @@ namespace Shared.Services
         private readonly IMemoryCache _cache;
         private readonly IWebhookEventPublisher _webhookEventPublisher;
         private readonly ICacheInvalidationBus _invalidationBus;
-        
+        private readonly IAuditLogService _auditLogService;
+        private readonly ICacheOperationMode _cacheMode;
+
         // Cache configuration
         private static readonly TimeSpan ApiKeyCacheExpiration = TimeSpan.FromMinutes(15);
         private static readonly string CacheKeyPrefix = "apikey:";
@@ -43,13 +45,17 @@ namespace Shared.Services
             ILogger<ApiKeyService> logger,
             IMemoryCache cache,
             IWebhookEventPublisher webhookEventPublisher,
-            ICacheInvalidationBus invalidationBus)
+            ICacheInvalidationBus invalidationBus,
+            IAuditLogService auditLogService,
+            ICacheOperationMode cacheMode)
         {
             _apiKeyRepository = apiKeyRepository;
             _logger = logger;
             _cache = cache;
             _webhookEventPublisher = webhookEventPublisher;
             _invalidationBus = invalidationBus;
+            _auditLogService = auditLogService;
+            _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
         }
 
         public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
@@ -59,10 +65,16 @@ namespace Shared.Services
             {
                 var result = await _apiKeyRepository.CreateAsync(tenantId, name, createdBy, agentName, activationName, type, workflowName, participantId, timeoutInSeconds, webhookName);
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.ApiKeyCreated,
-                    new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy },
-                    tenantId);
+                var metadata = new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy };
+
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ApiKeyCreated,
+                    metadata,
+                    tenantId,
+                    activationName,
+                    description: DescribeApiKey(result.meta, "created", createdBy));
 
                 return ServiceResult<(string, ApiKey)>.Success(result);
             }
@@ -85,11 +97,11 @@ namespace Shared.Services
             {
                 // Get the API key first to invalidate its cache entry
                 var existingKey = await _apiKeyRepository.GetByIdAsync(id, tenantId);
-                
+
                 var ok = await _apiKeyRepository.RevokeAsync(id, tenantId);
                 if (!ok)
                     return ServiceResult<bool>.NotFound("API key not found.");
-                
+
                 // Invalidate cache entry if the key existed
                 if (existingKey != null)
                 {
@@ -97,10 +109,17 @@ namespace Shared.Services
                     _logger.LogDebug("Invalidated cache for revoked API key {ApiKeyId} in tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 }
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.ApiKeyRevoked,
-                    new { tenantId, apiKeyId = id, name = existingKey?.Name },
-                    tenantId);
+                var metadata = new { tenantId, apiKeyId = id, name = existingKey?.Name };
+
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ApiKeyRevoked,
+                    metadata,
+                    tenantId,
+                    description: existingKey == null
+                        ? $"API key '{id}' was revoked in tenant '{tenantId}'."
+                        : DescribeApiKey(existingKey, "revoked"));
 
                 return ServiceResult<bool>.Success(true);
             }
@@ -172,10 +191,15 @@ namespace Shared.Services
                 
                 // The new key will be cached on first use by GetApiKeyByRawKeyAsync
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.ApiKeyRotated,
-                    new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name },
-                    tenantId);
+                var metadata = new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name };
+
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.ApiKeyRotated,
+                    metadata,
+                    tenantId,
+                    description: DescribeApiKey(rotated.Value.meta, "rotated"));
 
                 return ServiceResult<(string, ApiKey)?>.Success(rotated);
             }
@@ -233,21 +257,28 @@ namespace Shared.Services
         {
             try
             {
+                // Invalidated on revoke/rotate/delete, so an explicit Cache:Provider=noop skips
+                // caching entirely rather than hashing the key just to look up a cache we won't use.
+                if (_cacheMode.IsNoOp)
+                {
+                    _logger.LogDebug("Cache disabled (no-op provider); fetching API key for tenant {TenantId} from database", LogSanitizer.Sanitize(tenantId));
+                    return await _apiKeyRepository.GetByRawKeyAsync(rawKey, tenantId);
+                }
+
                 // Generate cache key using hashed API key for security
                 var hashedKey = HashApiKey(rawKey);
                 var cacheKey = $"{CacheKeyPrefix}{tenantId}:{hashedKey}";
-                
-                // Try to get from cache first
+
                 if (_cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
                 {
                     _logger.LogDebug("Retrieved API key for tenant {TenantId} from cache", LogSanitizer.Sanitize(tenantId));
                     return cachedApiKey;
                 }
-                
+
                 // Cache miss - fetch from database
                 _logger.LogDebug("Cache miss for tenant {TenantId} API key, fetching from database", LogSanitizer.Sanitize(tenantId));
                 var apiKey = await _apiKeyRepository.GetByRawKeyAsync(rawKey, tenantId);
-                
+
                 // Cache the result (including null results to prevent repeated DB hits for invalid keys)
                 if (apiKey != null)
                 {
@@ -255,7 +286,7 @@ namespace Shared.Services
                         .SetAbsoluteExpiration(ApiKeyCacheExpiration)
                         .SetSize(1);
                     _cache.Set(cacheKey, apiKey, cacheOptions);
-                    _logger.LogDebug("Cached API key for tenant {TenantId} with {CacheExpiration} expiration", 
+                    _logger.LogDebug("Cached API key for tenant {TenantId} with {CacheExpiration} expiration",
                         tenantId, ApiKeyCacheExpiration);
                 }
                 else
@@ -267,7 +298,7 @@ namespace Shared.Services
                     _cache.Set(cacheKey, (ApiKey?)null, cacheOptions);
                     _logger.LogDebug("Cached null API key result for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
                 }
-                
+
                 return apiKey;
             }
             catch (Exception ex)
@@ -282,21 +313,28 @@ namespace Shared.Services
         {
             try
             {
+                // Invalidated on revoke/rotate/delete, so an explicit Cache:Provider=noop skips
+                // caching entirely rather than hashing the key just to look up a cache we won't use.
+                if (_cacheMode.IsNoOp)
+                {
+                    _logger.LogDebug("Cache disabled (no-op provider); fetching API key from database");
+                    return await _apiKeyRepository.GetByRawKeyAsync(rawKey);
+                }
+
                 // Generate cache key using only the hashed API key (no tenant scoping needed for auth)
                 var hashedKey = HashApiKey(rawKey);
                 var cacheKey = $"{CacheKeyPrefix}auth:{hashedKey}";
-                
-                // Try to get from cache first
+
                 if (_cache.TryGetValue(cacheKey, out ApiKey? cachedApiKey))
                 {
                     _logger.LogDebug("Retrieved API key from cache (tenant-agnostic lookup)");
                     return cachedApiKey;
                 }
-                
+
                 // Cache miss - fetch from database
                 _logger.LogDebug("Cache miss for API key, fetching from database");
                 var apiKey = await _apiKeyRepository.GetByRawKeyAsync(rawKey);
-                
+
                 // Cache the result (including null results to prevent repeated DB hits for invalid keys)
                 if (apiKey != null)
                 {
@@ -335,6 +373,25 @@ namespace Shared.Services
             using var sha256 = SHA256.Create();
             var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
             return Convert.ToBase64String(hash);
+        }
+
+        private static string DescribeApiKey(ApiKey key, string verb, string? actor = null)
+        {
+            var type = string.IsNullOrWhiteSpace(key.Type) ? "unspecified type" : key.Type;
+            var description = $"API key '{key.Name}' ({type}, id '{key.Id}') was {verb} in tenant '{key.TenantId}'";
+            if (!string.IsNullOrWhiteSpace(actor))
+                description += $" by '{actor}'";
+
+            var scope = new List<string>();
+            if (!string.IsNullOrWhiteSpace(key.AgentName)) scope.Add($"agent '{key.AgentName}'");
+            if (!string.IsNullOrWhiteSpace(key.ActivationName)) scope.Add($"activation '{key.ActivationName}'");
+            if (!string.IsNullOrWhiteSpace(key.WorkflowName)) scope.Add($"workflow '{key.WorkflowName}'");
+            if (!string.IsNullOrWhiteSpace(key.WebhookName)) scope.Add($"webhook '{key.WebhookName}'");
+            if (!string.IsNullOrWhiteSpace(key.ParticipantId)) scope.Add($"participant '{key.ParticipantId}'");
+            if (scope.Count > 0)
+                description += $" for {string.Join(", ", scope)}";
+
+            return description + ".";
         }
 
         private async Task InvalidateApiKeyCachesAsync(string tenantId, string hashedKey)

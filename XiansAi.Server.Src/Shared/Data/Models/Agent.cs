@@ -15,7 +15,7 @@ public class Agent : ModelValidatorBase<Agent>
 
     [BsonElement("name")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Agent name must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Agent name contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeNamePattern, ErrorMessage = "Agent name contains invalid characters")]
     public required string Name { get; set; }
 
     [BsonElement("tenant")]
@@ -261,10 +261,11 @@ public class Agent : ModelValidatorBase<Agent>
         if (string.IsNullOrWhiteSpace(agentName))
             throw new ValidationException("Agent name is required");
 
-        // Sanitize the agent name
         var sanitizedName = SanitizeName(agentName);
 
-        // Validate the agent name format
+        if (!ValidationHelpers.IsValidLength(sanitizedName, 1, 100))
+            throw new ValidationException("Agent name must be between 1 and 100 characters");
+
         if (!ValidationHelpers.IsValidPattern(sanitizedName, ValidationHelpers.Patterns.AgentNamePattern))
             throw new ValidationException("Invalid agent name format");
 

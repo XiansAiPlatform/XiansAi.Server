@@ -11,13 +11,14 @@ public class IncomingOriginCacheTests
     private const string TenantId = "tenant-a";
     private const string ThreadId = "68b1f0c2a1b2c3d4e5f60718";
 
-    private static IncomingOriginCache BuildCache(ICacheInvalidationBus? invalidationBus = null)
+    private static IncomingOriginCache BuildCache(ICacheInvalidationBus? invalidationBus = null, bool isNoOp = false)
     {
         var bus = invalidationBus ?? new NoOpCacheInvalidationBus();
         return new IncomingOriginCache(
             new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
             NullLogger<IncomingOriginCache>.Instance,
-            new Lazy<ICacheInvalidationBus>(() => bus));
+            new Lazy<ICacheInvalidationBus>(() => bus),
+            new CacheOperationMode(isNoOp));
     }
 
     [Fact]
@@ -72,6 +73,17 @@ public class IncomingOriginCacheTests
         Assert.NotNull(cached);
         Assert.Null(cached!.Origin);
         Assert.Null(cached.Data);
+    }
+
+    [Fact]
+    public void Get_ReturnsNullEvenAfterSet_WhenNoOp()
+    {
+        var cache = BuildCache(isNoOp: true);
+
+        cache.Set(TenantId, ThreadId, "topic1", new IncomingOriginData("app:slack", null));
+
+        // Nothing was actually stored, so the write is invisible to a later read.
+        Assert.Null(cache.Get(TenantId, ThreadId, "topic1"));
     }
 
     [Fact]

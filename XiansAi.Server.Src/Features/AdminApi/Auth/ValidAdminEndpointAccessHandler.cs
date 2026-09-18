@@ -65,6 +65,7 @@ namespace Features.AdminApi.Auth
             if (IsContextAlreadyPopulatedByAuth(_tenantContext))
             {
                 _logger.LogDebug("AdminApi authorization: TenantContext already populated by authentication - skipping redundant resolution");
+                AdminOnBehalfOfBinder.Apply(_httpContextAccessor.HttpContext?.Request, _tenantContext, _logger);
                 context.Succeed(requirement);
                 return;
             }
@@ -144,6 +145,7 @@ namespace Features.AdminApi.Auth
                 _tenantContext.UserRoles = userRoles.ToArray();
                 _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
                 _tenantContext.Authorization = accessToken;
+                AdminOnBehalfOfBinder.Apply(httpContext?.Request, _tenantContext, _logger);
 
                 _logger.LogInformation("Successfully authorized AdminApi Endpoint Connection: User={UserId}, Tenant={TenantId}, Roles={Roles}",
                     LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));

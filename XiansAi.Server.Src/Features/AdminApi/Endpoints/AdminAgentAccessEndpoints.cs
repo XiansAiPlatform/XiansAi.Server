@@ -140,6 +140,7 @@ public static class AdminAgentAccessEndpoints
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
             [FromServices] IWebhookEventPublisher webhookEventPublisher,
+            [FromServices] IAuditLogService auditLogService,
             [FromServices] ILogger<IAgentRepository> logger) =>
         {
             var (agent, error) = await ResolveAgentAsync(agentRepository, agentId, tenantId);
@@ -156,7 +157,7 @@ public static class AdminAgentAccessEndpoints
             ApplyUserLevel(agent, request.UserId, level);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            await PublishAccessChangedAsync(webhookEventPublisher, agent, "user-added");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, $"user '{request.UserId}' added as {level}");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("AddAgentAccessUser")
@@ -171,6 +172,7 @@ public static class AdminAgentAccessEndpoints
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
             [FromServices] IWebhookEventPublisher webhookEventPublisher,
+            [FromServices] IAuditLogService auditLogService,
             [FromServices] ILogger<IAgentRepository> logger) =>
         {
             var (agent, error) = await ResolveAgentAsync(agentRepository, agentId, tenantId);
@@ -187,7 +189,7 @@ public static class AdminAgentAccessEndpoints
             ApplyUserLevel(agent, userId, level);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            await PublishAccessChangedAsync(webhookEventPublisher, agent, "user-updated");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, $"user '{userId}' updated to {level}");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("UpdateAgentAccessUser")
@@ -199,7 +201,8 @@ public static class AdminAgentAccessEndpoints
             string agentId,
             string userId,
             [FromServices] IAgentRepository agentRepository,
-            [FromServices] IWebhookEventPublisher webhookEventPublisher) =>
+            [FromServices] IWebhookEventPublisher webhookEventPublisher,
+            [FromServices] IAuditLogService auditLogService) =>
         {
             var (agent, error) = await ResolveAgentAsync(agentRepository, agentId, tenantId);
             if (error != null) return error;
@@ -209,7 +212,7 @@ public static class AdminAgentAccessEndpoints
             agent.RevokeReadAccess(userId);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            await PublishAccessChangedAsync(webhookEventPublisher, agent, "user-removed");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, $"user '{userId}' removed from all access lists");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("RemoveAgentAccessUser")
@@ -317,21 +320,29 @@ public static class AdminAgentAccessEndpoints
             string.Equals(membership.Tenant, tenantId, StringComparison.OrdinalIgnoreCase)
             && membership.IsApproved);
 
-    private static async Task PublishAccessChangedAsync(
-        IWebhookEventPublisher webhookEventPublisher, Agent agent, string change)
+    private static void PublishAccessChanged(
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
+        Agent agent,
+        string change)
     {
-        await webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.AgentAccessChanged,
-            new
-            {
-                tenantId = agent.Tenant,
-                agentId = agent.Id,
-                agentName = agent.Name,
-                change,
-                ownerAccess = agent.OwnerAccess,
-                writeAccess = agent.WriteAccess,
-                readAccess = agent.ReadAccess
-            },
-            agent.Tenant);
+        var metadata = new
+        {
+            tenantId = agent.Tenant,
+            agentId = agent.Id,
+            agentName = agent.Name,
+            change,
+            ownerAccess = agent.OwnerAccess,
+            writeAccess = agent.WriteAccess,
+            readAccess = agent.ReadAccess
+        };
+
+        DomainEventEmitter.Emit(
+            webhookEventPublisher,
+            auditLogService,
+            DomainEventTypes.AgentAccessChanged,
+            metadata,
+            agent.Tenant,
+            description: $"Access list for agent '{agent.Name}' ({agent.Id}) in tenant '{agent.Tenant}' was changed: {change}.");
     }
 }

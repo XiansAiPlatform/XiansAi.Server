@@ -17,12 +17,14 @@ public class ApiKeyServiceCacheInvalidationTests
     private readonly Mock<IApiKeyRepository> _repository = new();
     private readonly Mock<ICacheInvalidationBus> _bus = new();
 
-    private ApiKeyService BuildService() => new(
+    private ApiKeyService BuildService(bool isNoOp = false) => new(
         _repository.Object,
         NullLogger<ApiKeyService>.Instance,
         new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
         Mock.Of<IWebhookEventPublisher>(),
-        _bus.Object);
+        _bus.Object,
+        Mock.Of<IAuditLogService>(),
+        new CacheOperationMode(isNoOp));
 
     private static ApiKey ExistingKey() => new()
     {
@@ -100,5 +102,30 @@ public class ApiKeyServiceCacheInvalidationTests
                 envelope.Keys.Contains("apikey:tenant-b:second-hash") &&
                 envelope.Keys.Contains("apikey:auth:second-hash")),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetApiKeyByRawKeyAsync_WithTenant_BypassesCache_WhenNoOp()
+    {
+        _repository.Setup(x => x.GetByRawKeyAsync("raw-key", TenantId)).ReturnsAsync(ExistingKey());
+        var service = BuildService(isNoOp: true);
+
+        await service.GetApiKeyByRawKeyAsync("raw-key", TenantId);
+        await service.GetApiKeyByRawKeyAsync("raw-key", TenantId);
+
+        // Every call re-reads from the repository instead of serving a cached result.
+        _repository.Verify(x => x.GetByRawKeyAsync("raw-key", TenantId), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task GetApiKeyByRawKeyAsync_TenantAgnostic_BypassesCache_WhenNoOp()
+    {
+        _repository.Setup(x => x.GetByRawKeyAsync("raw-key")).ReturnsAsync(ExistingKey());
+        var service = BuildService(isNoOp: true);
+
+        await service.GetApiKeyByRawKeyAsync("raw-key");
+        await service.GetApiKeyByRawKeyAsync("raw-key");
+
+        _repository.Verify(x => x.GetByRawKeyAsync("raw-key"), Times.Exactly(2));
     }
 }

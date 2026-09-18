@@ -45,6 +45,7 @@ public class TenantCacheService : ITenantCacheService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TenantCacheService> _logger;
     private readonly ICacheInvalidationBus _invalidationBus;
+    private readonly ICacheOperationMode _cacheMode;
     private readonly TimeSpan _tenantCacheExpiration;
     private readonly TimeSpan _nullResultCacheExpiration;
 
@@ -53,12 +54,14 @@ public class TenantCacheService : ITenantCacheService
         IServiceScopeFactory scopeFactory,
         IConfiguration configuration,
         ILogger<TenantCacheService> logger,
-        ICacheInvalidationBus invalidationBus)
+        ICacheInvalidationBus invalidationBus,
+        ICacheOperationMode cacheMode)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _invalidationBus = invalidationBus ?? throw new ArgumentNullException(nameof(invalidationBus));
+        _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
 
         var expirationMinutes = configuration.GetValue<int>("TenantCache:ExpirationMinutes", 5);
         var nullResultExpirationMinutes = configuration.GetValue<int>("TenantCache:NullResultExpirationMinutes", 2);
@@ -75,6 +78,14 @@ public class TenantCacheService : ITenantCacheService
 
         var cacheKey = $"{CacheKeyPrefix}{tenantId}";
 
+        // Nothing is cached in this mode, so there is no shared state to protect — skip the
+        // per-key lock entirely instead of serializing concurrent lookups for no benefit.
+        if (_cacheMode.IsNoOp)
+        {
+            _logger.LogDebug("Fetching tenant {TenantId} from database (no-op cache provider)", tenantId);
+            return (await FetchFromDatabaseAsync(tenantId, cancellationToken))?.ShallowCopy();
+        }
+
         var semaphore = _keyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
 
         var acquired = false;
@@ -83,14 +94,13 @@ public class TenantCacheService : ITenantCacheService
             await semaphore.WaitAsync(cancellationToken);
             acquired = true;
 
+            // Invalidated on tenant updates, so skip caching when Cache:Provider=noop.
             if (!bypassCache && _cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
                 return cachedHolder?.Tenant?.ShallowCopy();
 
             _logger.LogDebug("Fetching tenant {TenantId} from database (bypassCache: {BypassCache})", tenantId, bypassCache);
 
-            using var scope = _scopeFactory.CreateScope();
-            var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
-            var tenant = await repo.GetByTenantIdAsync(tenantId, cancellationToken);
+            var tenant = await FetchFromDatabaseAsync(tenantId, cancellationToken);
 
             var expiration = tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration;
             var holder = new TenantCacheHolder(tenant);
@@ -110,6 +120,13 @@ public class TenantCacheService : ITenantCacheService
         {
             if (acquired) semaphore.Release();
         }
+    }
+
+    private async Task<Tenant?> FetchFromDatabaseAsync(string tenantId, CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
+        return await repo.GetByTenantIdAsync(tenantId, cancellationToken);
     }
 
     public void InvalidateTenant(string tenantId)

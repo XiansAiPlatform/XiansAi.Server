@@ -32,6 +32,7 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IAdminStatsService, AdminStatsService>();
         builder.Services.AddScoped<IFeedbackQueryService, FeedbackQueryService>();
         builder.Services.AddScoped<IAdminLogsService, AdminLogsService>();
+        builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
         builder.Services.AddScoped<IAdminMetricsService, AdminMetricsService>();
         builder.Services.AddScoped<IAdminDataService, AdminDataService>();
         builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
@@ -159,6 +160,7 @@ public static class AdminApiConfiguration
         AdminGlobalUserEndpoints.MapAdminGlobalUserEndpoints(adminApiGroup);
         AdminStatsEndpoints.MapAdminStatsEndpoints(adminApiGroup);
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);
+        AdminAuditLogEndpoints.MapAdminAuditLogEndpoints(adminApiGroup);
         AdminMetricsEndpoints.MapAdminMetricsEndpoints(adminApiGroup);
         AdminDataEndpoints.MapAdminDataEndpoints(adminApiGroup);
         AdminAppIntegrationEndpoints.MapAdminAppIntegrationEndpoints(adminApiGroup);

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Shared.Data.Models.Validation;
@@ -7,6 +8,31 @@ namespace Shared.Data.Models.Validation;
 /// </summary>
 public static class ValidationHelpers
 {
+    /// <summary>
+    /// Human-facing names (agents, activations, workflows, activities).
+    /// Intentionally allows any Unicode letter/digit/combining mark so names
+    /// can be written in Norwegian and other languages, not only Latin-1/Nordic
+    /// blocks. Lookups compare the NFC-normalized string, so visually similar
+    /// letters from different scripts (e.g. Latin A vs Cyrillic А) are distinct
+    /// identifiers. Invisible format characters (ZWSP, ZWJ) and markup
+    /// (&lt; &gt; " ') are still rejected.
+    /// </summary>
+    public const string UnicodeSafeNamePattern = @"^[\p{L}\p{M}\p{N}\s._@|+\-:/\\,#=]+$";
+
+    /// <summary>
+    /// Same as <see cref="UnicodeSafeNamePattern"/> plus apostrophes used in workflow type names.
+    /// </summary>
+    public const string UnicodeSafeWorkflowTypePattern = @"^[\p{L}\p{M}\p{N}\s._@|+\-:/\\,#='’]+$";
+
+    /// <summary>
+    /// Values interpolated into Temporal Query Language filters.
+    /// Same Unicode letter scope as <see cref="UnicodeSafeNamePattern"/> so
+    /// international agent names can be queried. Quotes and operators that
+    /// would break TQL are still rejected; values are quote-wrapped at the
+    /// call site.
+    /// </summary>
+    public const string TqlSafeValuePattern = @"^[\p{L}\p{M}\p{N}\-_.@ ]{1,256}$";
+
     // Common regex patterns for validation
     public static class Patterns
     {
@@ -17,12 +43,13 @@ public static class ValidationHelpers
         public static readonly Regex SafeDomain = new(@"^[a-zA-Z0-9._-]{1,100}$", RegexOptions.Compiled);
         public static readonly Regex SafeTenantId = new(@"^[a-zA-Z0-9._-]{1,100}$", RegexOptions.Compiled);
         public static readonly Regex SafeBase64 = new(@"^[A-Za-z0-9+/]*={0,2}$", RegexOptions.Compiled);
-        public static readonly Regex AgentNamePattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", RegexOptions.Compiled); 
-        public static readonly Regex WorkflowIdPattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", RegexOptions.Compiled);
-        public static readonly Regex ActivityIdPattern=  new(@"^[0-9]+$", RegexOptions.Compiled);
-        public static readonly Regex CertificateThumbprintPattern=  new(@"^[a-fA-F0-9]{40}$", RegexOptions.Compiled);
+        public static readonly Regex AgentNamePattern = new(UnicodeSafeNamePattern, RegexOptions.Compiled);
+        public static readonly Regex WorkflowIdPattern = new(UnicodeSafeNamePattern, RegexOptions.Compiled);
+        public static readonly Regex ActivityIdPattern = new(@"^[0-9]+$", RegexOptions.Compiled);
+        public static readonly Regex CertificateThumbprintPattern = new(@"^[a-fA-F0-9]{40}$", RegexOptions.Compiled);
         public static readonly Regex TimezonePattern = new(@"^[A-Za-z_]+/[A-Za-z_]+$", RegexOptions.Compiled);
-        public static readonly Regex WorkflowTypePattern=  new(@"^[a-zA-Z0-9\s._@|+\-:/\\,#='’]+$", RegexOptions.Compiled);
+        public static readonly Regex WorkflowTypePattern = new(UnicodeSafeWorkflowTypePattern, RegexOptions.Compiled);
+        public static readonly Regex SafeTqlValue = new(TqlSafeValuePattern, RegexOptions.Compiled);
     }
 
     // Add these private static readonly Regex fields for sanitization:
@@ -30,18 +57,22 @@ public static class ValidationHelpers
     private static readonly Regex MultiWhitespace = new Regex(@"\s+", RegexOptions.Compiled);
 
     /// <summary>
-    /// Sanitizes a string by removing control characters and normalizing whitespace
+    /// Sanitizes a string by removing control characters, normalizing whitespace,
+    /// and converting to Unicode NFC so composed characters (e.g. å) compare consistently.
     /// </summary>
     public static string SanitizeString(string? input)
     {
         if (string.IsNullOrEmpty(input))
             return string.Empty;
 
-        // Use compiled regexes for better performance
         var sanitized = ControlChars.Replace(input, "");
         sanitized = MultiWhitespace.Replace(sanitized, " ");
+        sanitized = sanitized.Trim();
 
-        return sanitized.Trim();
+        if (sanitized.Length == 0)
+            return string.Empty;
+
+        return sanitized.Normalize(NormalizationForm.FormC);
     }
 
     /// <summary>

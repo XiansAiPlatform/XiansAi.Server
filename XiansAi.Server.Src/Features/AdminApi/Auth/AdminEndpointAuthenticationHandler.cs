@@ -159,6 +159,7 @@ namespace Features.AdminApi.Auth
                         _tenantContext.UserRoles = userRoles.ToArray();
                         _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
                         _tenantContext.Authorization = accessToken;
+                        AdminOnBehalfOfBinder.Apply(Request, _tenantContext, _logger);
 
                         _logger.LogInformation("Successfully authenticated AdminApi connection: User={UserId}, Tenant={TenantId}, Roles={Roles}",
                             LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));

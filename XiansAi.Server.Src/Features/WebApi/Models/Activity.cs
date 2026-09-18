@@ -19,7 +19,7 @@ public class Activity : ModelValidatorBase<Activity>
 
     [BsonElement("activity_name")]
      [StringLength(100, MinimumLength = 1, ErrorMessage = "Activity name must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Activity name contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeNamePattern, ErrorMessage = "Activity name contains invalid characters")]
     public string? ActivityName { get; set; }
 
     [BsonElement("started_time")]
@@ -36,17 +36,17 @@ public class Activity : ModelValidatorBase<Activity>
 
     [BsonElement("workflow_id")]
      [StringLength(50, MinimumLength = 1, ErrorMessage = "Workflow ID must be between 1 and 50 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Workflow ID contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeNamePattern, ErrorMessage = "Workflow ID contains invalid characters")]
     public string? WorkflowId { get; set; }
 
     [BsonElement("workflow_type")]
      [StringLength(100, MinimumLength = 1, ErrorMessage = "Workflow type must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Workflow type contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeWorkflowTypePattern, ErrorMessage = "Workflow type contains invalid characters")]
     public string? WorkflowType { get; set; }
 
     [BsonElement("task_queue")]
  [StringLength(50, MinimumLength = 1, ErrorMessage = "Task queue must be between 1 and 50 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Task queue contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeNamePattern, ErrorMessage = "Task queue contains invalid characters")]
         public string? TaskQueue { get; set; }
 
     [Obsolete("Maintained for backward compatibility only. Use AgentToolNames instead.")]
