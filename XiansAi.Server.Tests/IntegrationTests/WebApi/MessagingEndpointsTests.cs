@@ -250,7 +250,7 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
             Direction = direction,
             Text = content,
             Scope = normalizedScope,
-            Status = MessageStatus.DeliveredToWorkflow,
+            Status = MessageStatus.Read,
             Data = new Dictionary<string, object>
             {
                 ["testProperty"] = "testValue"

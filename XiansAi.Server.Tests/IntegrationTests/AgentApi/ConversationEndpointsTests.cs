@@ -354,7 +354,7 @@ public class ConversationEndpointsTests : IntegrationTestBase, IClassFixture<Mon
             CreatedBy = TestUserId,
             Direction = MessageDirection.Incoming,
             Text = content,
-            Status = MessageStatus.DeliveredToWorkflow,
+            Status = MessageStatus.Read,
             Hint = hint,
             TaskId = taskId,
             Scope = scope,
