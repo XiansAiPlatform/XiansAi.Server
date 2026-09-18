@@ -1,6 +1,8 @@
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Services;
 
 namespace Shared.Repositories;
 
@@ -28,17 +30,25 @@ public interface IAuditLogRepository
 public class AuditLogRepository : IAuditLogRepository
 {
     private const string CollectionName = "audit_logs";
-    private readonly IMongoCollection<AuditLogEntry> _auditLogs;
+    private const string PerformedByCacheKeyPrefix = "auditlog:performed-by:";
+    private const string ActivationNamesCacheKeyPrefix = "auditlog:activation-names:";
+    private const int MaxDistinctOptions = 200;
+    private static readonly TimeSpan DistinctOptionsCacheDuration = TimeSpan.FromMinutes(2);
 
-    public AuditLogRepository(IMongoDbClientService mongoDbClientService)
+    private readonly IMongoCollection<AuditLogEntry> _auditLogs;
+    private readonly IAsyncResultCache _cache;
+
+    public AuditLogRepository(IMongoDbClientService mongoDbClientService, IAsyncResultCache cache)
     {
         ArgumentNullException.ThrowIfNull(mongoDbClientService);
         _auditLogs = mongoDbClientService.GetCollection<AuditLogEntry>(CollectionName);
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     }
 
     public async Task CreateAsync(AuditLogEntry entry)
     {
         await _auditLogs.InsertOneAsync(entry);
+        InvalidateDistinctCaches(entry.TenantId);
     }
 
     public async Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
@@ -90,21 +100,69 @@ public class AuditLogRepository : IAuditLogRepository
         return (entries, totalCount);
     }
 
-    public async Task<IEnumerable<string>> GetDistinctPerformedByAsync(string tenantId)
+    public Task<IEnumerable<string>> GetDistinctPerformedByAsync(string tenantId) =>
+        GetCachedDistinctAsync(PerformedByCacheKeyPrefix, tenantId, "participant_id");
+
+    public Task<IEnumerable<string>> GetDistinctActivationNamesAsync(string tenantId) =>
+        GetCachedDistinctAsync(ActivationNamesCacheKeyPrefix, tenantId, "activation_name");
+
+    private async Task<IEnumerable<string>> GetCachedDistinctAsync(
+        string cacheKeyPrefix, string tenantId, string fieldName)
     {
-        var filter = Builders<AuditLogEntry>.Filter.Eq(x => x.TenantId, tenantId);
-        var values = await _auditLogs.Distinct(x => x.ParticipantId, filter).ToListAsync();
-        return values
-            .Where(v => !string.IsNullOrWhiteSpace(v))
-            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase);
+        var values = await _cache.GetOrAddAsync(
+            cacheKeyPrefix + tenantId,
+            _ => LoadDistinctValuesAsync(tenantId, fieldName),
+            DistinctOptionsCacheDuration);
+
+        return values;
     }
 
-    public async Task<IEnumerable<string>> GetDistinctActivationNamesAsync(string tenantId)
+    /// <summary>
+    /// Distinct values for a dropdown: empty values are excluded in the query, results are sorted
+    /// and capped so a tenant with a large audit history cannot return an unbounded scan.
+    /// </summary>
+    private async Task<List<string>> LoadDistinctValuesAsync(string tenantId, string fieldName)
     {
-        var filter = Builders<AuditLogEntry>.Filter.Eq(x => x.TenantId, tenantId);
-        var values = await _auditLogs.Distinct(x => x.ActivationName, filter).ToListAsync();
-        return values
-            .Where(v => !string.IsNullOrWhiteSpace(v))
-            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)!;
+        var pipeline = new[]
+        {
+            new BsonDocument("$match", new BsonDocument
+            {
+                { "tenant_id", tenantId },
+                { fieldName, new BsonDocument("$nin", new BsonArray { BsonNull.Value, string.Empty }) }
+            }),
+            new BsonDocument("$group", new BsonDocument("_id", "$" + fieldName)),
+            new BsonDocument("$sort", new BsonDocument("_id", 1)),
+            new BsonDocument("$limit", MaxDistinctOptions)
+        };
+
+        var results = await _auditLogs.Aggregate<BsonDocument>(pipeline).ToListAsync();
+        return results
+            .Select(AsNonEmptyId)
+            .Where(value => value != null)
+            .Cast<string>()
+            .ToList();
+    }
+
+    private static string? AsNonEmptyId(BsonDocument document)
+    {
+        var value = document.GetValue("_id", BsonNull.Value);
+        if (!value.IsString)
+        {
+            return null;
+        }
+
+        var text = value.AsString;
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private void InvalidateDistinctCaches(string? tenantId)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            return;
+        }
+
+        _cache.Remove(PerformedByCacheKeyPrefix + tenantId);
+        _cache.Remove(ActivationNamesCacheKeyPrefix + tenantId);
     }
 }

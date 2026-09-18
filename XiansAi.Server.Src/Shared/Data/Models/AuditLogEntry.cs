@@ -58,10 +58,41 @@ public class AuditLogEntry : ModelValidatorBase<AuditLogEntry>
             Action = ValidationHelpers.SanitizeString(Action),
             ActivationName = string.IsNullOrEmpty(ActivationName) ? ActivationName : ValidationHelpers.SanitizeString(ActivationName),
             Description = string.IsNullOrEmpty(Description) ? Description : ValidationHelpers.SanitizeString(Description),
-            Details = Details,
+            Details = SanitizeDetails(Details),
             CreatedAt = CreatedAt
         };
     }
+
+    private static Dictionary<string, object?>? SanitizeDetails(Dictionary<string, object?>? details)
+    {
+        if (details == null)
+        {
+            return null;
+        }
+
+        var sanitized = new Dictionary<string, object?>(details.Count);
+        foreach (var (key, value) in details)
+        {
+            var sanitizedKey = ValidationHelpers.SanitizeString(key);
+            if (string.IsNullOrEmpty(sanitizedKey))
+            {
+                continue;
+            }
+
+            sanitized[sanitizedKey] = SanitizeDetailValue(value);
+        }
+
+        return sanitized;
+    }
+
+    private static object? SanitizeDetailValue(object? value) =>
+        value switch
+        {
+            null => null,
+            string text => ValidationHelpers.SanitizeString(text),
+            Dictionary<string, object?> nested => SanitizeDetails(nested),
+            _ => value
+        };
 
     public override AuditLogEntry SanitizeAndValidate()
     {

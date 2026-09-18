@@ -7,6 +7,7 @@ using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Utils.Services;
 using Xunit;
 
 namespace Tests.UnitTests.Shared.Services;
@@ -36,6 +37,59 @@ public class AuditLogServiceTests
     }
 
     [Fact]
+    public void Constructor_Throws_WhenRequiredDependenciesAreNull()
+    {
+        var repository = Mock.Of<IAuditLogRepository>();
+        var tenantContext = Mock.Of<ITenantContext>();
+        var accessor = Mock.Of<IHttpContextAccessor>();
+        var logger = NullLogger<AuditLogService>.Instance;
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new AuditLogService(null!, tenantContext, accessor, logger));
+        Assert.Throws<ArgumentNullException>(() =>
+            new AuditLogService(repository, null!, accessor, logger));
+        Assert.Throws<ArgumentNullException>(() =>
+            new AuditLogService(repository, tenantContext, null!, logger));
+        Assert.Throws<ArgumentNullException>(() =>
+            new AuditLogService(repository, tenantContext, accessor, null!));
+    }
+
+    [Fact]
+    public async Task RecordEntryAsync_ReturnsBadRequest_WhenActionIsEmpty()
+    {
+        var service = CreateService(httpContext: null);
+
+        var result = await service.RecordEntryAsync("   ");
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task RecordEntryAsync_SanitizesDetailKeysAndStringValues()
+    {
+        AuditLogEntry? captured = null;
+        var service = CreateService(
+            httpContext: null,
+            onCreate: entry => captured = entry);
+
+        var result = await service.RecordEntryAsync(
+            FallbackAction,
+            details: new Dictionary<string, object?>
+            {
+                ["  Tenant Id "] = " acme\u0001 ",
+                ["Count"] = 3,
+                ["\u0001"] = "dropped"
+            });
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(captured);
+        Assert.Equal("acme", captured!.Details!["Tenant Id"]);
+        Assert.Equal(3, captured.Details["Count"]);
+        Assert.False(captured.Details.ContainsKey(""));
+    }
+
+    [Fact]
     public void ToDictionary_HumanizesSingleCharacterPropertyNames()
     {
         var details = AuditLogService.ToDictionary(new { A = 1, knowledgeId = 2 });
@@ -50,28 +104,13 @@ public class AuditLogServiceTests
         var writeStarted = new TaskCompletionSource();
         var writeMayFinish = new TaskCompletionSource();
 
-        var repository = new Mock<IAuditLogRepository>();
-        repository
-            .Setup(r => r.CreateAsync(It.IsAny<AuditLogEntry>()))
-            .Returns(async () =>
+        var service = CreateService(
+            httpContext: null,
+            createReturns: async () =>
             {
                 writeStarted.TrySetResult();
                 await writeMayFinish.Task;
             });
-
-        var tenantContext = new Mock<ITenantContext>();
-        tenantContext.Setup(c => c.TenantId).Returns("test-tenant");
-        tenantContext.Setup(c => c.ParticipantId).Returns("participant-1");
-        tenantContext.Setup(c => c.LoggedInUser).Returns("user-1");
-
-        var accessor = new Mock<IHttpContextAccessor>();
-        accessor.Setup(a => a.HttpContext).Returns((HttpContext?)null);
-
-        var service = new AuditLogService(
-            repository.Object,
-            tenantContext.Object,
-            accessor.Object,
-            NullLogger<AuditLogService>.Instance);
 
         var result = await service.RecordEntryAsync(FallbackAction);
 
@@ -85,11 +124,28 @@ public class AuditLogServiceTests
     private static async Task<AuditLogEntry> RecordAsync(HttpContext? httpContext)
     {
         AuditLogEntry? captured = null;
+        var service = CreateService(httpContext, onCreate: entry => captured = entry);
+
+        var result = await service.RecordEntryAsync(FallbackAction);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(captured);
+        return captured!;
+    }
+
+    private static AuditLogService CreateService(
+        HttpContext? httpContext,
+        Action<AuditLogEntry>? onCreate = null,
+        Func<Task>? createReturns = null)
+    {
         var repository = new Mock<IAuditLogRepository>();
-        repository
-            .Setup(r => r.CreateAsync(It.IsAny<AuditLogEntry>()))
-            .Callback<AuditLogEntry>(entry => captured = entry)
-            .Returns(Task.CompletedTask);
+        var setup = repository.Setup(r => r.CreateAsync(It.IsAny<AuditLogEntry>()));
+        if (onCreate != null)
+        {
+            setup.Callback(onCreate);
+        }
+
+        setup.Returns((AuditLogEntry _) => createReturns != null ? createReturns() : Task.CompletedTask);
 
         var tenantContext = new Mock<ITenantContext>();
         tenantContext.Setup(c => c.TenantId).Returns("test-tenant");
@@ -99,17 +155,11 @@ public class AuditLogServiceTests
         var accessor = new Mock<IHttpContextAccessor>();
         accessor.Setup(a => a.HttpContext).Returns(httpContext);
 
-        var service = new AuditLogService(
+        return new AuditLogService(
             repository.Object,
             tenantContext.Object,
             accessor.Object,
             NullLogger<AuditLogService>.Instance);
-
-        var result = await service.RecordEntryAsync(FallbackAction);
-
-        Assert.True(result.IsSuccess);
-        Assert.NotNull(captured);
-        return captured!;
     }
 
     private static DefaultHttpContext HttpContextWithEndpoint(string name, string summary)

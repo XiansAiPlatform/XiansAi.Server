@@ -48,8 +48,7 @@ public static class OidcConfigEndpoints
 
         group.MapDelete("/", async (
             [FromServices] ITenantOidcConfigService service,
-            [FromServices] ITenantContext tenantContext,
-            HttpContext ctx) =>
+            [FromServices] ITenantContext tenantContext) =>
         {
             var tenantId = tenantContext.TenantId;
             if (string.IsNullOrWhiteSpace(tenantId)) return Results.BadRequest("Tenant is not resolved");
