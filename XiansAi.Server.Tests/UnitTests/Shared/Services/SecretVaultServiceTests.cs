@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Providers;
 using Shared.Repositories;
@@ -23,8 +22,6 @@ public class SecretVaultServiceTests
         _service = new SecretVaultService(_repo.Object, _store, _webhookEventPublisher.Object, Mock.Of<IAuditLogService>(), NullLogger<SecretVaultService>.Instance);
     }
 
-    private static Microsoft.AspNetCore.Http.HttpContext TestHttpContext() => new Microsoft.AspNetCore.Http.DefaultHttpContext();
-
     [Fact]
     public async Task CreateAsync_Persists_Metadata_And_Value()
     {
@@ -36,7 +33,7 @@ public class SecretVaultServiceTests
 
         var input = new SecretVaultCreateInput("api-key", "supersecret", "tenant-a", null, null, null, null);
 
-        var result = await _service.CreateAsync(input, "alice", TestHttpContext());
+        var result = await _service.CreateAsync(input, "alice");
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(captured);
@@ -57,7 +54,7 @@ public class SecretVaultServiceTests
         _repo.Setup(r => r.ExistsByKeyAsync("dup", null)).ReturnsAsync(true);
 
         var input = new SecretVaultCreateInput("dup", "v", null, null, null, null, null);
-        var result = await _service.CreateAsync(input, "alice", TestHttpContext());
+        var result = await _service.CreateAsync(input, "alice");
 
         Assert.Equal(StatusCode.Conflict, result.StatusCode);
         Assert.Empty(_store.Snapshot());
@@ -72,7 +69,7 @@ public class SecretVaultServiceTests
 
         var input = new SecretVaultCreateInput("api-key", "supersecret", null, null, null, null, null);
 
-        var result = await _service.CreateAsync(input, "alice", TestHttpContext());
+        var result = await _service.CreateAsync(input, "alice");
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.InternalServerError, result.StatusCode);
@@ -85,8 +82,8 @@ public class SecretVaultServiceTests
         var emptyKey = new SecretVaultCreateInput("", "v", null, null, null, null, null);
         var emptyValue = new SecretVaultCreateInput("k", "", null, null, null, null, null);
 
-        Assert.Equal(StatusCode.BadRequest, (await _service.CreateAsync(emptyKey, "alice", TestHttpContext())).StatusCode);
-        Assert.Equal(StatusCode.BadRequest, (await _service.CreateAsync(emptyValue, "alice", TestHttpContext())).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.CreateAsync(emptyKey, "alice")).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.CreateAsync(emptyValue, "alice")).StatusCode);
     }
 
     [Fact]
@@ -124,8 +121,7 @@ public class SecretVaultServiceTests
         var result = await _service.UpdateAsync(
             entity.Id,
             new SecretVaultUpdateInput("rotated", null, null, null, null, null),
-            "bob",
-            TestHttpContext());
+            "bob");
 
         Assert.True(result.IsSuccess);
         Assert.Equal("rotated", await _store.GetAsync(entity.Id));
@@ -143,8 +139,7 @@ public class SecretVaultServiceTests
         var result = await _service.UpdateAsync(
             entity.Id,
             new SecretVaultUpdateInput(null, null, null, null, "act-1", null),
-            "bob",
-            TestHttpContext());
+            "bob");
 
         Assert.True(result.IsSuccess);
         Assert.Equal("kept", await _store.GetAsync(entity.Id));
@@ -158,7 +153,7 @@ public class SecretVaultServiceTests
         _repo.Setup(r => r.GetByIdAsync(entity.Id)).ReturnsAsync(entity);
         _repo.Setup(r => r.DeleteAsync(entity.Id)).ReturnsAsync(true);
 
-        var result = await _service.DeleteAsync(entity.Id, TestHttpContext());
+        var result = await _service.DeleteAsync(entity.Id);
 
         Assert.True(result.IsSuccess);
         Assert.Null(await _store.GetAsync(entity.Id));
@@ -171,7 +166,7 @@ public class SecretVaultServiceTests
         _repo.Setup(r => r.DeleteAsync("missing")).ReturnsAsync(false);
         await _store.SetAsync("missing", "should-stay");
 
-        var result = await _service.DeleteAsync("missing", TestHttpContext());
+        var result = await _service.DeleteAsync("missing");
 
         Assert.Equal(StatusCode.NotFound, result.StatusCode);
         Assert.Equal("should-stay", await _store.GetAsync("missing"));

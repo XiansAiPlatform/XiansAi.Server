@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Providers.Auth;
@@ -78,8 +77,6 @@ public class TenantAssignmentByEmailTests
         Mock.Of<IAuditLogService>(),
         NullLogger<TenantParticipantUserService>.Instance);
 
-    private static Microsoft.AspNetCore.Http.HttpContext TestHttpContext() => new Microsoft.AspNetCore.Http.DefaultHttpContext();
-
     [Fact]
     public async Task AddTenantToUserIfExist_RefusesAnAddressHeldByMoreThanOneAccount()
     {
@@ -138,7 +135,7 @@ public class TenantAssignmentByEmailTests
         EmailIsHeldBy(Account("the-only-subject"));
 
         var result = await BuildParticipantService()
-            .CreateAsync(TenantId, Email, "Test User", SystemRoles.TenantParticipant, TestHttpContext());
+            .CreateAsync(TenantId, Email, "Test User", SystemRoles.TenantParticipant);
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(
@@ -156,7 +153,7 @@ public class TenantAssignmentByEmailTests
         EmailIsHeldBy(Account("the-only-subject"));
 
         var result = await BuildParticipantService()
-            .CreateAsync(TenantId, Email, name: null, SystemRoles.TenantParticipant, TestHttpContext());
+            .CreateAsync(TenantId, Email, name: null, SystemRoles.TenantParticipant);
 
         Assert.True(result.IsSuccess);
     }
@@ -168,7 +165,7 @@ public class TenantAssignmentByEmailTests
         EmailIsHeldBy(TwoAccountsForOnePerson());
 
         var result = await BuildParticipantService()
-            .CreateAsync(TenantId, Email, "Test User", SystemRoles.TenantAdmin, TestHttpContext());
+            .CreateAsync(TenantId, Email, "Test User", SystemRoles.TenantAdmin);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Conflict, result.StatusCode);
@@ -181,7 +178,7 @@ public class TenantAssignmentByEmailTests
         EmailIsHeldBy(Account("the-only-subject", isLockedOut: true));
 
         var result = await BuildParticipantService()
-            .CreateAsync(TenantId, Email, "Test User", SystemRoles.TenantParticipant, TestHttpContext());
+            .CreateAsync(TenantId, Email, "Test User", SystemRoles.TenantParticipant);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Conflict, result.StatusCode);
@@ -194,8 +191,7 @@ public class TenantAssignmentByEmailTests
         AccountExists(Account("the-only-subject"));
 
         var result = await BuildParticipantService().CreateAsync(
-            TenantId, email: null, name: null, SystemRoles.TenantParticipant,
-            TestHttpContext(), userId: "the-only-subject");
+            TenantId, email: null, name: null, SystemRoles.TenantParticipant, userId: "the-only-subject");
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(
@@ -209,7 +205,7 @@ public class TenantAssignmentByEmailTests
     public async Task ParticipantCreate_RefusesAnAddressInPlaceOfAUserId()
     {
         var result = await BuildParticipantService().CreateAsync(
-            TenantId, email: null, name: null, SystemRoles.TenantParticipant, TestHttpContext(), userId: Email);
+            TenantId, email: null, name: null, SystemRoles.TenantParticipant, userId: Email);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
@@ -222,8 +218,7 @@ public class TenantAssignmentByEmailTests
         _userRepo.Setup(x => x.GetByUserIdAsync("no-such-subject")).ReturnsAsync((User?)null);
 
         var result = await BuildParticipantService().CreateAsync(
-            TenantId, email: null, name: null, SystemRoles.TenantParticipant,
-            TestHttpContext(), userId: "no-such-subject");
+            TenantId, email: null, name: null, SystemRoles.TenantParticipant, userId: "no-such-subject");
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.NotFound, result.StatusCode);
@@ -235,8 +230,7 @@ public class TenantAssignmentByEmailTests
         AccountExists(Account("the-only-subject", isLockedOut: true));
 
         var result = await BuildParticipantService().CreateAsync(
-            TenantId, email: null, name: null, SystemRoles.TenantParticipant,
-            TestHttpContext(), userId: "the-only-subject");
+            TenantId, email: null, name: null, SystemRoles.TenantParticipant, userId: "the-only-subject");
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Conflict, result.StatusCode);

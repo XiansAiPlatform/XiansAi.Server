@@ -111,12 +111,11 @@ public static class AdminAppIntegrationEndpoints
         webhookGroup.MapPost("", async (
             string tenantId,
             [FromBody] CreateBuiltinWebhookRequest request,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService,
             [FromServices] ITenantContext tenantContext) =>
         {
             var createdBy = tenantContext.LoggedInUser ?? "system";
-            var result = await integrationService.CreateBuiltinWebhookAsync(request, tenantId, createdBy, httpContext);
+            var result = await integrationService.CreateBuiltinWebhookAsync(request, tenantId, createdBy);
             return result.ToHttpResult();
         })
         .WithName("CreateWebhook")
@@ -150,10 +149,9 @@ public static class AdminAppIntegrationEndpoints
             string tenantId,
             string agentName,
             string activationId,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService) =>
         {
-            var result = await integrationService.DeleteBuiltinWebhooksByAgentAndActivationAsync(tenantId, agentName, activationId, httpContext);
+            var result = await integrationService.DeleteBuiltinWebhooksByAgentAndActivationAsync(tenantId, agentName, activationId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -168,10 +166,9 @@ public static class AdminAppIntegrationEndpoints
         webhookGroup.MapDelete("{integrationId}", async (
             string tenantId,
             string integrationId,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService) =>
         {
-            var result = await integrationService.DeleteBuiltinWebhookAsync(integrationId, tenantId, httpContext);
+            var result = await integrationService.DeleteBuiltinWebhookAsync(integrationId, tenantId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -220,12 +217,11 @@ public static class AdminAppIntegrationEndpoints
         integrationGroup.MapPost("", async (
             string tenantId,
             [FromBody] CreateAppIntegrationRequest request,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService,
             [FromServices] ITenantContext tenantContext) =>
         {
             var userId = tenantContext.LoggedInUser ?? "system";
-            var result = await integrationService.CreateIntegrationAsync(request, tenantId, userId, httpContext);
+            var result = await integrationService.CreateIntegrationAsync(request, tenantId, userId);
             return result.ToHttpResult();
         })
         .WithName("CreateAppIntegration")
@@ -236,13 +232,12 @@ public static class AdminAppIntegrationEndpoints
             string tenantId,
             string integrationId,
             [FromBody] UpdateAppIntegrationRequest request,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService,
             [FromServices] ITenantContext tenantContext) =>
         {
             var userId = tenantContext.LoggedInUser ?? "system";
             var result = await integrationService.UpdateIntegrationAsync(
-                integrationId, request, tenantId, userId, httpContext);
+                integrationId, request, tenantId, userId);
             return result.ToHttpResult();
         })
         .WithName("UpdateAppIntegration")
@@ -252,10 +247,9 @@ public static class AdminAppIntegrationEndpoints
         integrationGroup.MapDelete("/{integrationId}", async (
             string tenantId,
             string integrationId,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService) =>
         {
-            var result = await integrationService.DeleteIntegrationAsync(integrationId, tenantId, httpContext);
+            var result = await integrationService.DeleteIntegrationAsync(integrationId, tenantId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -269,12 +263,11 @@ public static class AdminAppIntegrationEndpoints
         integrationGroup.MapPost("/{integrationId}/enable", async (
             string tenantId,
             string integrationId,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService,
             [FromServices] ITenantContext tenantContext) =>
         {
             var userId = tenantContext.LoggedInUser ?? "system";
-            var result = await integrationService.EnableIntegrationAsync(integrationId, tenantId, userId, httpContext);
+            var result = await integrationService.EnableIntegrationAsync(integrationId, tenantId, userId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -292,12 +285,11 @@ public static class AdminAppIntegrationEndpoints
         integrationGroup.MapPost("/{integrationId}/disable", async (
             string tenantId,
             string integrationId,
-            HttpContext httpContext,
             [FromServices] IAppIntegrationService integrationService,
             [FromServices] ITenantContext tenantContext) =>
         {
             var userId = tenantContext.LoggedInUser ?? "system";
-            var result = await integrationService.DisableIntegrationAsync(integrationId, tenantId, userId, httpContext);
+            var result = await integrationService.DisableIntegrationAsync(integrationId, tenantId, userId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();

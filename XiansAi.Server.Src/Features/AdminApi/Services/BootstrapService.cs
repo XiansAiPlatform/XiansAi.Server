@@ -38,8 +38,7 @@ public interface IBootstrapService
     /// </summary>
     /// <param name="email">Email used as both the user id and email of the SysAdmin.</param>
     /// <param name="tenantId">Optional tenant id. Defaults to the platform default tenant.</param>
-    /// <param name="httpContext">The current HTTP context, used to derive the audit log action/description.</param>
-    Task<ServiceResult<BootstrapResponse>> BootstrapAsync(string email, string? tenantId, HttpContext httpContext);
+    Task<ServiceResult<BootstrapResponse>> BootstrapAsync(string email, string? tenantId);
 }
 
 /// <summary>
@@ -71,7 +70,7 @@ public class BootstrapService : IBootstrapService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<BootstrapResponse>> BootstrapAsync(string email, string? tenantId, HttpContext httpContext)
+    public async Task<ServiceResult<BootstrapResponse>> BootstrapAsync(string email, string? tenantId)
     {
         try
         {
@@ -133,7 +132,7 @@ public class BootstrapService : IBootstrapService
             }
 
             // 7. Mint an API key owned by the new SysAdmin
-            var apiKeyResult = await _apiKeyService.CreateApiKeyAsync(resolvedTenantId, BootstrapApiKeyName, email, httpContext);
+            var apiKeyResult = await _apiKeyService.CreateApiKeyAsync(resolvedTenantId, BootstrapApiKeyName, email);
             if (!apiKeyResult.IsSuccess)
             {
                 // The platform is still bootstrapped (SysAdmin exists); the admin can mint a key from the UI.

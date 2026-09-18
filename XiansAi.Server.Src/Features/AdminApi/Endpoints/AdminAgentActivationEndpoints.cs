@@ -62,12 +62,11 @@ public static class AdminAgentActivationEndpoints
         activationGroup.MapPost("", async (
             string tenantId,
             [FromBody] CreateActivationRequest request,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService,
             [FromServices] ITenantContext tenantContext) =>
         {
             var userId = tenantContext.LoggedInUser ?? "system";
-            var result = await activationService.CreateActivationAsync(request, userId, tenantId, httpContext);
+            var result = await activationService.CreateActivationAsync(request, userId, tenantId);
             return result.ToHttpResult();
         })
         .WithName("CreateActivation")
@@ -78,10 +77,9 @@ public static class AdminAgentActivationEndpoints
             string tenantId,
             string activationId,
             [FromBody] UpdateActivationRequest request,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService) =>
         {
-            var result = await activationService.UpdateActivationAsync(activationId, request, tenantId, httpContext);
+            var result = await activationService.UpdateActivationAsync(activationId, request, tenantId);
             return result.ToHttpResult();
         })
         .WithName("UpdateActivation")
@@ -92,12 +90,11 @@ public static class AdminAgentActivationEndpoints
             string tenantId,
             string activationId,
             [FromBody] ActivateAgentRequest? request,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService,
             [FromServices] ITenantContext tenantContext) =>
         {
 
-            var result = await activationService.ActivateAgentAsync(activationId, tenantId, httpContext, request?.WorkflowConfiguration);
+            var result = await activationService.ActivateAgentAsync(activationId, tenantId, request?.WorkflowConfiguration);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -117,11 +114,10 @@ public static class AdminAgentActivationEndpoints
         activationGroup.MapPost("/{activationId}/deactivate", async (
             string tenantId,
             string activationId,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService,
             [FromServices] ITenantContext tenantContext) =>
         {
-            var result = await activationService.DeactivateAgentAsync(activationId, tenantId, httpContext);
+            var result = await activationService.DeactivateAgentAsync(activationId, tenantId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -139,7 +135,6 @@ public static class AdminAgentActivationEndpoints
         activationGroup.MapDelete("/{activationId}", async (
             string tenantId,
             string activationId,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService) =>
         {
             // Verify the activation belongs to the caller's tenant before deleting.
@@ -155,7 +150,7 @@ public static class AdminAgentActivationEndpoints
                 return Results.NotFound(new { message = "Activation not found in the specified tenant" });
             }
 
-            var result = await activationService.DeleteActivationAsync(activationId, httpContext);
+            var result = await activationService.DeleteActivationAsync(activationId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();

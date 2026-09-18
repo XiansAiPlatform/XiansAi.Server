@@ -3,7 +3,6 @@ using MongoDB.Bson;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using MongoDB.Driver;
-using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -129,9 +128,9 @@ public class CreateAgentRequest
 
 public interface IDefinitionsService
 {
-    Task<IResult> CreateAsync(FlowDefinitionRequest request, HttpContext httpContext);
+    Task<IResult> CreateAsync(FlowDefinitionRequest request);
     Task<IResult> CheckHash(string workflowType, bool systemScoped, string hash);
-    Task<IResult> CreateAgentAsync(CreateAgentRequest request, HttpContext httpContext);
+    Task<IResult> CreateAgentAsync(CreateAgentRequest request);
 }
 
 public class DefinitionsService : IDefinitionsService
@@ -166,7 +165,7 @@ public class DefinitionsService : IDefinitionsService
         _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
-    public async Task<IResult> CreateAsync(FlowDefinitionRequest request, HttpContext httpContext)
+    public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
     {
         try
         {
@@ -253,12 +252,11 @@ public class DefinitionsService : IDefinitionsService
 
                 var updatedMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
                 await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.FlowDefinitionUpdated,
+                    DomainEventTypes.FlowDefinitionUpdated,
                     updatedMetadata,
                     _tenantContext.TenantId);
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.FlowDefinitionUpdated,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.FlowDefinitionUpdated,
                     activationName: null,
                     details: updatedMetadata);
 
@@ -274,12 +272,11 @@ public class DefinitionsService : IDefinitionsService
 
         var createdMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
         await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.FlowDefinitionCreated,
+            DomainEventTypes.FlowDefinitionCreated,
             createdMetadata,
             _tenantContext.TenantId);
         await _auditLogService.RecordEntryAsync(
-            action: httpContext.GetEndpointName() ?? WebhookEventTypes.FlowDefinitionCreated,
-            description: httpContext.GetEndpointSummary() ?? string.Empty,
+            action: DomainEventTypes.FlowDefinitionCreated,
             activationName: null,
             details: createdMetadata);
 
@@ -300,7 +297,7 @@ public class DefinitionsService : IDefinitionsService
         return Results.NotFound("Hash does not match");
     }
 
-    public async Task<IResult> CreateAgentAsync(CreateAgentRequest request, HttpContext httpContext)
+    public async Task<IResult> CreateAgentAsync(CreateAgentRequest request)
     {
         try
         {
@@ -370,12 +367,11 @@ public class DefinitionsService : IDefinitionsService
         {
             var registeredMetadata = new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentRegistered,
+                DomainEventTypes.AgentRegistered,
                 registeredMetadata,
                 _tenantContext.TenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.AgentRegistered,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.AgentRegistered,
                 activationName: null,
                 details: registeredMetadata);
         }

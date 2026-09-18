@@ -39,10 +39,9 @@ public static class DefinitionsEndpoints
             
         definitionsGroup.MapPost("", async (
             [FromBody] FlowDefinitionRequest request,
-            HttpContext httpContext,
             [FromServices] IDefinitionsService endpoint) =>
         {
-            return await endpoint.CreateAsync(request, httpContext);
+            return await endpoint.CreateAsync(request);
         })
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
@@ -67,10 +66,9 @@ public static class DefinitionsEndpoints
 
         definitionsGroup.MapPost("/agent", async (
             [FromBody] CreateAgentRequest request,
-            HttpContext httpContext,
             [FromServices] IDefinitionsService endpoint) =>
         {
-            return await endpoint.CreateAgentAsync(request, httpContext);
+            return await endpoint.CreateAgentAsync(request);
         })
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
@@ -81,10 +79,9 @@ public static class DefinitionsEndpoints
 
         definitionsGroup.MapPost("/deploy-template", async (
             [FromBody] DeployTemplateAgentRequest request,
-            HttpContext httpContext,
             [FromServices] ITemplateService service) =>
         {
-            var result = await service.DeployTemplate(request.AgentName, httpContext);
+            var result = await service.DeployTemplate(request.AgentName);
             return result.ToHttpResult();
         })
         .RequiresValidTenantAdmin()
@@ -99,10 +96,9 @@ public static class DefinitionsEndpoints
         definitionsGroup.MapDelete("/agent", async (
             [FromQuery] string agentName,
             [FromQuery] bool systemScoped,
-            HttpContext httpContext,
             [FromServices] IAgentDeletionService agentService) =>
         {
-            var result = await agentService.DeleteAgentAsync(agentName, systemScoped, httpContext);
+            var result = await agentService.DeleteAgentAsync(agentName, systemScoped);
             return result.ToHttpResult();
         })
         .RequiresValidTenantAdmin()

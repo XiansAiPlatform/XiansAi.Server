@@ -16,7 +16,6 @@ public static class AdminSecretVaultEndpoints
 
         group.MapPost("", async (
             [FromBody] SecretVaultCreateRequest request,
-            HttpContext httpContext,
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -44,7 +43,7 @@ public static class AdminSecretVaultEndpoints
                 effectiveUserId,
                 effectiveActivationName,
                 SecretVaultService.NormalizeAdditionalDataFromRequest(request.AdditionalData));
-            var result = await service.CreateAsync(input, actor, httpContext);
+            var result = await service.CreateAsync(input, actor);
             // Strip the secret value from the response — admin must never see it.
             return RedactValue(result).ToHttpResult();
         })
@@ -130,7 +129,6 @@ public static class AdminSecretVaultEndpoints
         group.MapPut("/{id}", async (
             string id,
             [FromBody] SecretVaultUpdateRequest request,
-            HttpContext httpContext,
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -163,7 +161,7 @@ public static class AdminSecretVaultEndpoints
                 effectiveUserId,
                 effectiveActivationName,
                 SecretVaultService.NormalizeAdditionalDataFromRequest(request.AdditionalData));
-            var result = await service.UpdateAsync(id, input, actor, httpContext);
+            var result = await service.UpdateAsync(id, input, actor);
             // Strip the secret value from the response — admin must never see it.
             return RedactValue(result).ToHttpResult();
         })
@@ -172,7 +170,6 @@ public static class AdminSecretVaultEndpoints
 
         group.MapDelete("/{id}", async (
             string id,
-            HttpContext httpContext,
             [FromServices] ISecretVaultService service,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -181,7 +178,7 @@ public static class AdminSecretVaultEndpoints
                 return getResult.ToHttpResult();
             if (getResult.Data != null && !SecretVaultScopeEnforcement.CanAccessSecretTenant(tenantContext, getResult.Data.TenantId))
                 return ServiceResult<bool>.Forbidden("Access denied. Secret is not in your tenant.").ToHttpResult();
-            var result = await service.DeleteAsync(id, httpContext);
+            var result = await service.DeleteAsync(id);
             return result.ToHttpResult();
         })
         .WithName("DeleteSecret")

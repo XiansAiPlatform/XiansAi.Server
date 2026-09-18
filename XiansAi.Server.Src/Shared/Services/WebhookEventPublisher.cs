@@ -23,7 +23,7 @@ public interface IWebhookEventPublisher
     /// write to the database happens in the background (best-effort, fire-and-forget) so the
     /// caller is never blocked by database latency.
     /// </summary>
-    /// <param name="eventType">One of the <see cref="WebhookEventTypes"/> constants.</param>
+    /// <param name="eventType">One of the <see cref="DomainEventTypes"/> constants.</param>
     /// <param name="data">Event-specific payload placed under the envelope's <c>data</c> field.</param>
     /// <param name="tenantId">Owning tenant, when applicable.</param>
     Task PublishAsync(string eventType, object? data, string? tenantId = null);

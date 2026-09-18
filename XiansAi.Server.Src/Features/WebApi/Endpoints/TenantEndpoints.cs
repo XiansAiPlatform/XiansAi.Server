@@ -18,7 +18,6 @@ public static class TenantEndpoints
         
 
         tenantsGroup.MapGet("/", async (
-            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
             var result = await endpoint.GetAllTenants();
@@ -30,7 +29,6 @@ public static class TenantEndpoints
         .WithDescription("Retrieves all tenant records").RequiresValidSysAdmin();
 
         tenantsGroup.MapGet("/list", async (
-            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
             var result = await endpoint.GetTenantIdList();
@@ -56,14 +54,13 @@ public static class TenantEndpoints
 
         tenantsGroup.MapPost("/", async (
             [FromBody] CreateTenantRequest request,
-            HttpContext httpContext,
             [FromServices] ITenantService endpoint,
             [FromServices] ILogger<ITenantService> logger) =>
         {
             logger.LogInformation("Endpoint received CreateTenantRequest - TenantId: {TenantId}, Name: {Name}, CreatedBy: {CreatedBy}", 
                 request.TenantId, request.Name, request.CreatedBy);
 
-            var result = await endpoint.CreateTenant(request, httpContext);
+            var result = await endpoint.CreateTenant(request);
             return result.ToHttpResult();
         })
         .WithName("Create Tenant")
@@ -74,10 +71,9 @@ public static class TenantEndpoints
         tenantsGroup.MapPut("/{id}", async (
             string id,
             [FromBody] UpdateTenantRequest request,
-            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.UpdateTenant(id, request, httpContext);
+            var result = await endpoint.UpdateTenant(id, request);
             return result.ToHttpResult();
         })
         .WithName("Update Tenant")
@@ -87,10 +83,9 @@ public static class TenantEndpoints
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
-            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
-            var result = await endpoint.DeleteTenant(id, httpContext);
+            var result = await endpoint.DeleteTenant(id);
             return result.ToHttpResult();
         })
         .WithName("Delete Tenant")

@@ -148,7 +148,7 @@ public class StaticOidcConfigService : ITenantOidcConfigService
     /// <summary>
     /// Not supported for static configuration.
     /// </summary>
-    public Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId, HttpContext httpContext)
+    public Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId)
     {
         return Task.FromResult(ServiceResult<bool>.BadRequest(
             "Upsert is not supported for static OIDC configuration. Update appsettings.json instead."));
@@ -157,7 +157,7 @@ public class StaticOidcConfigService : ITenantOidcConfigService
     /// <summary>
     /// Not supported for static configuration.
     /// </summary>
-    public Task<ServiceResult<bool>> DeleteAsync(string tenantId, HttpContext httpContext)
+    public Task<ServiceResult<bool>> DeleteAsync(string tenantId)
     {
         return Task.FromResult(ServiceResult<bool>.BadRequest(
             "Delete is not supported for static OIDC configuration. Update appsettings.json instead."));

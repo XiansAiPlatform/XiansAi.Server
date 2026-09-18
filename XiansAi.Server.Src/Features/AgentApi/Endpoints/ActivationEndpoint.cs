@@ -159,7 +159,6 @@ public static class ActivationEndpoints
 
         activationGroup.MapPost("", async (
             [FromBody] CreateActivationRequest request,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -175,7 +174,7 @@ public static class ActivationEndpoints
                 "Creating activation {Name} for agent {AgentName} in tenant {TenantId}",
                 LogSanitizer.Sanitize(request.Name), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(tenantId));
 
-            var result = await activationService.CreateActivationAsync(request, userId, tenantId, httpContext);
+            var result = await activationService.CreateActivationAsync(request, userId, tenantId);
             return result.ToHttpResult();
         })
         .WithName("Agent Create Activation")
@@ -190,7 +189,6 @@ public static class ActivationEndpoints
         activationGroup.MapPost("/{activationId}/activate", async (
             string activationId,
             [FromBody] ActivateAgentRequest? request,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -204,7 +202,7 @@ public static class ActivationEndpoints
                 "Activating activation {ActivationId} in tenant {TenantId}",
                 LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
 
-            var result = await activationService.ActivateAgentAsync(activationId, tenantId, httpContext, request?.WorkflowConfiguration);
+            var result = await activationService.ActivateAgentAsync(activationId, tenantId, request?.WorkflowConfiguration);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -228,7 +226,6 @@ public static class ActivationEndpoints
 
         activationGroup.MapPost("/{activationId}/deactivate", async (
             string activationId,
-            HttpContext httpContext,
             [FromServices] IActivationService activationService,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -242,7 +239,7 @@ public static class ActivationEndpoints
                 "Deactivating activation {ActivationId} in tenant {TenantId}",
                 LogSanitizer.Sanitize(activationId), LogSanitizer.Sanitize(tenantId));
 
-            var result = await activationService.DeactivateAgentAsync(activationId, tenantId, httpContext);
+            var result = await activationService.DeactivateAgentAsync(activationId, tenantId);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();

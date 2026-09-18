@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using Shared.Providers.Auth;
@@ -81,16 +80,15 @@ public interface ITenantParticipantUserService
     /// <paramref name="userId"/> is for.
     /// </summary>
     Task<ServiceResult<TenantParticipantUser>> CreateAsync(
-        string tenantId, string? email, string? name, string role, HttpContext httpContext, string? userId = null);
+        string tenantId, string? email, string? name, string role, string? userId = null);
     Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
-        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved,
-        HttpContext httpContext, bool callerIsSysAdmin = false);
-    Task<ServiceResult<bool>> DeleteAsync(string tenantId, string userId, HttpContext httpContext, bool callerIsSysAdmin = false);
+        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved, bool callerIsSysAdmin = false);
+    Task<ServiceResult<bool>> DeleteAsync(string tenantId, string userId, bool callerIsSysAdmin = false);
     /// <summary>
     /// Removes a single role from a user's tenant membership.
     /// If the user has no remaining roles in the tenant the membership is removed entirely.
     /// </summary>
-    Task<ServiceResult<bool>> RemoveRoleAsync(string tenantId, string userId, string role, HttpContext httpContext, bool callerIsSysAdmin = false);
+    Task<ServiceResult<bool>> RemoveRoleAsync(string tenantId, string userId, string role, bool callerIsSysAdmin = false);
 }
 
 public class TenantParticipantUserService : ITenantParticipantUserService
@@ -188,7 +186,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
     }
 
     public async Task<ServiceResult<TenantParticipantUser>> CreateAsync(
-        string tenantId, string? email, string? name, string role, HttpContext httpContext, string? userId = null)
+        string tenantId, string? email, string? name, string role, string? userId = null)
     {
         var normalizedRole = NormalizeTenantRole(role);
         if (normalizedRole == null)
@@ -200,7 +198,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         // one would risk handing that role to a different account than the caller meant.
         if (!string.IsNullOrWhiteSpace(userId))
         {
-            return await AddRoleToNamedAccountAsync(userId.Trim(), tenantId, normalizedRole, httpContext);
+            return await AddRoleToNamedAccountAsync(userId.Trim(), tenantId, normalizedRole);
         }
 
         var sanitizedEmail = ValidationHelpers.SanitizeAndValidateEmail(email ?? string.Empty);
@@ -226,7 +224,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         }
 
         if (lookup.Account != null)
-            return await AddTenantToExistingUserAsync(lookup.Account, tenantId, normalizedRole, httpContext);
+            return await AddTenantToExistingUserAsync(lookup.Account, tenantId, normalizedRole);
 
         // Only a new account needs a name; adding an existing one takes the name already on it.
         var sanitizedName = ValidationHelpers.SanitizeString(name ?? string.Empty);
@@ -258,12 +256,11 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             role = normalizedRole,
         };
         await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.UserCreated,
+            DomainEventTypes.UserCreated,
             createdMetadata,
             tenantId);
         await _auditLogService.RecordEntryAsync(
-            action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserCreated,
-            description: httpContext.GetEndpointSummary() ?? string.Empty,
+            action: DomainEventTypes.UserCreated,
             activationName: null,
             details: createdMetadata);
 
@@ -281,7 +278,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
     /// names exactly one account.
     /// </summary>
     private async Task<ServiceResult<TenantParticipantUser>> AddRoleToNamedAccountAsync(
-        string userId, string tenantId, string normalizedRole, HttpContext httpContext)
+        string userId, string tenantId, string normalizedRole)
     {
         if (userId.Contains('@'))
         {
@@ -296,11 +293,11 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             return ServiceResult<TenantParticipantUser>.NotFound($"User '{userId}' not found");
         }
 
-        return await AddTenantToExistingUserAsync(user, tenantId, normalizedRole, httpContext);
+        return await AddTenantToExistingUserAsync(user, tenantId, normalizedRole);
     }
 
     private async Task<ServiceResult<TenantParticipantUser>> AddTenantToExistingUserAsync(
-        User user, string tenantId, string normalizedRole, HttpContext httpContext)
+        User user, string tenantId, string normalizedRole)
     {
         // A disabled account cannot sign in, and the one kind most likely to be found by address is
         // a record created disabled because it collides with a system administrator. Granting it a
@@ -352,12 +349,11 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             role = normalizedRole,
         };
         await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.UserTenantAdded,
+            DomainEventTypes.UserTenantAdded,
             addedMetadata,
             tenantId);
         await _auditLogService.RecordEntryAsync(
-            action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserTenantAdded,
-            description: httpContext.GetEndpointSummary() ?? string.Empty,
+            action: DomainEventTypes.UserTenantAdded,
             activationName: null,
             details: addedMetadata);
 
@@ -365,8 +361,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
     }
 
     public async Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
-        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved,
-        HttpContext httpContext, bool callerIsSysAdmin = false)
+        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved, bool callerIsSysAdmin = false)
     {
         try
         {
@@ -441,27 +436,25 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             {
                 var updatedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
                 await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.UserUpdated,
+                    DomainEventTypes.UserUpdated,
                     updatedMetadata,
                     tenantId);
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserUpdated,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.UserUpdated,
                     activationName: null,
                     details: updatedMetadata);
             }
 
             if (isApproved.HasValue && isApproved.Value != wasApproved)
             {
-                var approvalEvent = isApproved.Value ? WebhookEventTypes.UserApproved : WebhookEventTypes.UserUnapproved;
+                var approvalEvent = isApproved.Value ? DomainEventTypes.UserApproved : DomainEventTypes.UserUnapproved;
                 var approvalMetadata = new { userId = user.UserId, email = user.Email, tenantId };
                 await _webhookEventPublisher.PublishAsync(
                     approvalEvent,
                     approvalMetadata,
                     tenantId);
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? approvalEvent,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: approvalEvent,
                     activationName: null,
                     details: approvalMetadata);
             }
@@ -477,12 +470,11 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                     roles = tr.Roles,
                 };
                 await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.UserRoleChanged,
+                    DomainEventTypes.UserRoleChanged,
                     roleChangedMetadata,
                     tenantId);
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserRoleChanged,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.UserRoleChanged,
                     activationName: null,
                     details: roleChangedMetadata);
             }
@@ -501,7 +493,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         }
     }
 
-    public async Task<ServiceResult<bool>> DeleteAsync(string tenantId, string userId, HttpContext httpContext, bool callerIsSysAdmin = false)
+    public async Task<ServiceResult<bool>> DeleteAsync(string tenantId, string userId, bool callerIsSysAdmin = false)
     {
         try
         {
@@ -529,12 +521,11 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
             var removedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserTenantRemoved,
+                DomainEventTypes.UserTenantRemoved,
                 removedMetadata,
                 tenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserTenantRemoved,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.UserTenantRemoved,
                 activationName: null,
                 details: removedMetadata);
 
@@ -548,7 +539,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         }
     }
 
-    public async Task<ServiceResult<bool>> RemoveRoleAsync(string tenantId, string userId, string role, HttpContext httpContext, bool callerIsSysAdmin = false)
+    public async Task<ServiceResult<bool>> RemoveRoleAsync(string tenantId, string userId, string role, bool callerIsSysAdmin = false)
     {
         try
         {
@@ -592,12 +583,11 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
             var roleRemovedMetadata = new { userId = user.UserId, email = user.Email, tenantId, role = normalizedRole };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserRoleRemoved,
+                DomainEventTypes.UserRoleRemoved,
                 roleRemovedMetadata,
                 tenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserRoleRemoved,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.UserRoleRemoved,
                 activationName: null,
                 details: roleRemovedMetadata);
 
@@ -605,12 +595,11 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             {
                 var tenantRemovedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
                 await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.UserTenantRemoved,
+                    DomainEventTypes.UserTenantRemoved,
                     tenantRemovedMetadata,
                     tenantId);
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserTenantRemoved,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.UserTenantRemoved,
                     activationName: null,
                     details: tenantRemovedMetadata);
             }

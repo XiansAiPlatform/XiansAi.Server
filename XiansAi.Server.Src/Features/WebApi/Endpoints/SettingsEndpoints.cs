@@ -15,11 +15,10 @@ public static class SettingsEndpoints
             .RequireAuthorization();
 
         settingsGroup.MapPost("/appserver/base64cert", (
-            HttpContext context,
             [FromServices] CertificateService endpoint,
             [FromQuery] bool revoke_previous = false) =>
         {
-            return endpoint.GenerateClientCertificateBase64(context, revoke_previous);
+            return endpoint.GenerateClientCertificateBase64(revoke_previous);
         })
         .WithName("Generate Client Certificate Base64")
         

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Providers;
 using Shared.Repositories;
@@ -75,11 +74,11 @@ public record SecretVaultMetadataResponse(
 
 public interface ISecretVaultService
 {
-    Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId, HttpContext httpContext);
+    Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId);
     Task<ServiceResult<SecretVaultGetResponse?>> GetByIdAsync(string id);
     Task<ServiceResult<List<SecretVaultListItem>>> ListAsync(string? tenantId, string? agentId, string? activationName);
-    Task<ServiceResult<SecretVaultGetResponse>> UpdateAsync(string id, SecretVaultUpdateInput input, string actorUserId, HttpContext httpContext);
-    Task<ServiceResult<bool>> DeleteAsync(string id, HttpContext httpContext);
+    Task<ServiceResult<SecretVaultGetResponse>> UpdateAsync(string id, SecretVaultUpdateInput input, string actorUserId);
+    Task<ServiceResult<bool>> DeleteAsync(string id);
     Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
 
     /// <summary>
@@ -124,7 +123,7 @@ public class SecretVaultService : ISecretVaultService
         _logger = logger;
     }
 
-    public async Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId, HttpContext httpContext)
+    public async Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId)
     {
         if (string.IsNullOrWhiteSpace(input.Key))
             return ServiceResult<SecretVaultGetResponse>.BadRequest("Key is required");
@@ -168,12 +167,11 @@ public class SecretVaultService : ISecretVaultService
 
             var createdMetadata = new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretCreated,
+                DomainEventTypes.SecretCreated,
                 createdMetadata,
                 entity.TenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.SecretCreated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.SecretCreated,
                 activationName: entity.ActivationName,
                 details: createdMetadata);
 
@@ -249,7 +247,7 @@ public class SecretVaultService : ISecretVaultService
         }
     }
 
-    public async Task<ServiceResult<SecretVaultGetResponse>> UpdateAsync(string id, SecretVaultUpdateInput input, string actorUserId, HttpContext httpContext)
+    public async Task<ServiceResult<SecretVaultGetResponse>> UpdateAsync(string id, SecretVaultUpdateInput input, string actorUserId)
     {
         if (string.IsNullOrWhiteSpace(id))
             return ServiceResult<SecretVaultGetResponse>.BadRequest("Id is required");
@@ -294,12 +292,11 @@ public class SecretVaultService : ISecretVaultService
 
             var updatedMetadata = new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretUpdated,
+                DomainEventTypes.SecretUpdated,
                 updatedMetadata,
                 entity.TenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.SecretUpdated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.SecretUpdated,
                 activationName: entity.ActivationName,
                 details: updatedMetadata);
 
@@ -314,7 +311,7 @@ public class SecretVaultService : ISecretVaultService
         }
     }
 
-    public async Task<ServiceResult<bool>> DeleteAsync(string id, HttpContext httpContext)
+    public async Task<ServiceResult<bool>> DeleteAsync(string id)
     {
         if (string.IsNullOrWhiteSpace(id))
             return ServiceResult<bool>.BadRequest("Id is required");
@@ -344,12 +341,11 @@ public class SecretVaultService : ISecretVaultService
 
             var deletedMetadata = new { tenantId = entity?.TenantId, secretId = id, key = entity?.Key, agentId = entity?.AgentId, userId = entity?.UserId, activationName = entity?.ActivationName };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretDeleted,
+                DomainEventTypes.SecretDeleted,
                 deletedMetadata,
                 entity?.TenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.SecretDeleted,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.SecretDeleted,
                 activationName: entity?.ActivationName,
                 details: deletedMetadata);
 

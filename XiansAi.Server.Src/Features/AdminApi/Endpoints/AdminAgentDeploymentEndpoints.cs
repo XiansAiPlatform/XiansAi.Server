@@ -54,10 +54,9 @@ public static class AdminAgentDeploymentEndpoints
             string tenantId,
             string agentName,
             [FromBody] UpdateAgentRequest request,
-            HttpContext httpContext,
             [FromServices] IAdminAgentService adminAgentService) =>
         {
-            var result = await adminAgentService.UpdateAgentDeploymentAsync(agentName, tenantId, request, httpContext);
+            var result = await adminAgentService.UpdateAgentDeploymentAsync(agentName, tenantId, request);
             return result.ToHttpResult();
         })
         .WithName("UpdateAgentDeployment")
@@ -67,11 +66,10 @@ public static class AdminAgentDeploymentEndpoints
         adminAgentGroup.MapDelete("/{agentName}", async (
             string tenantId,
             string agentName,
-            HttpContext httpContext,
             [FromQuery] bool forceDelete = false,
             [FromServices] IAdminAgentService adminAgentService = null!) =>
         {
-            var result = await adminAgentService.DeleteAgentDeploymentAsync(agentName, tenantId, httpContext, forceDelete);
+            var result = await adminAgentService.DeleteAgentDeploymentAsync(agentName, tenantId, forceDelete);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();

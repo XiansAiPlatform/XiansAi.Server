@@ -65,7 +65,6 @@ public static class AdminTemplateEndpoints
         adminTemplateGroup.MapPatch("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
             [FromBody] UpdateAgentTemplateRequest request,
-            HttpContext httpContext,
             [FromServices] ITemplateService templateService,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -84,7 +83,6 @@ public static class AdminTemplateEndpoints
                 request.OwnerAccess,
                 request.ReadAccess,
                 request.WriteAccess,
-                httpContext,
                 request.SamplePrompts);
             return result.ToHttpResult();
         })
@@ -94,7 +92,6 @@ public static class AdminTemplateEndpoints
         // Delete Agent Template
         adminTemplateGroup.MapDelete("/agentTemplates/{templateObjectId}", async (
             string templateObjectId,
-            HttpContext httpContext,
             [FromQuery] bool cleanActivations = false,
             [FromServices] ITemplateService templateService = null!,
             [FromServices] ITenantContext tenantContext = null!) =>
@@ -115,7 +112,7 @@ public static class AdminTemplateEndpoints
             }
 
             var template = templateResult.Data!;
-            var result = await templateService.DeleteSystemScopedAgent(template.Name, httpContext, cleanActivations);
+            var result = await templateService.DeleteSystemScopedAgent(template.Name, cleanActivations);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -150,7 +147,6 @@ public static class AdminTemplateEndpoints
         adminTemplateGroup.MapPost("/agentTemplates/{templateObjectId}/deploy", async (
             string templateObjectId,
             [FromQuery] string tenantId,
-            HttpContext httpContext,
             [FromServices] ITemplateService templateService,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -173,7 +169,7 @@ public static class AdminTemplateEndpoints
 
             var template = templateResult.Data!;
             var agentName = template.Name;
-            var result = await templateService.DeployTemplateToTenant(agentName, tenantId, tenantContext.LoggedInUser, httpContext);
+            var result = await templateService.DeployTemplateToTenant(agentName, tenantId, tenantContext.LoggedInUser);
             return result.ToHttpResult();
         })
         .WithName("DeployTemplateToTenant")
@@ -204,7 +200,6 @@ public static class AdminTemplateEndpoints
         adminTemplateGroup.MapPatch("/agentTemplates/by-name/{templateAgentName}", async (
             string templateAgentName,
             [FromBody] UpdateAgentTemplateRequest request,
-            HttpContext httpContext,
             [FromServices] ITemplateService templateService,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -223,7 +218,6 @@ public static class AdminTemplateEndpoints
                 request.OwnerAccess,
                 request.ReadAccess,
                 request.WriteAccess,
-                httpContext,
                 request.SamplePrompts);
             return result.ToHttpResult();
         })
@@ -233,7 +227,6 @@ public static class AdminTemplateEndpoints
         // Delete Agent Template by Name
         adminTemplateGroup.MapDelete("/agentTemplates/by-name/{templateAgentName}", async (
             string templateAgentName,
-            HttpContext httpContext,
             [FromQuery] bool cleanActivations = false,
             [FromServices] ITemplateService templateService = null!,
             [FromServices] ITenantContext tenantContext = null!) =>
@@ -253,7 +246,7 @@ public static class AdminTemplateEndpoints
                 return templateResult.ToHttpResult();
             }
 
-            var result = await templateService.DeleteSystemScopedAgent(templateResult.Data!.Name, httpContext, cleanActivations);
+            var result = await templateService.DeleteSystemScopedAgent(templateResult.Data!.Name, cleanActivations);
             if (!result.IsSuccess)
             {
                 return result.ToHttpResult();
@@ -288,7 +281,6 @@ public static class AdminTemplateEndpoints
         adminTemplateGroup.MapPost("/agentTemplates/by-name/{templateAgentName}/deploy", async (
             string templateAgentName,
             [FromQuery] string tenantId,
-            HttpContext httpContext,
             [FromServices] ITemplateService templateService,
             [FromServices] ITenantContext tenantContext) =>
         {
@@ -302,7 +294,7 @@ public static class AdminTemplateEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
-            var result = await templateService.DeployTemplateToTenant(templateAgentName, tenantId, tenantContext.LoggedInUser, httpContext);
+            var result = await templateService.DeployTemplateToTenant(templateAgentName, tenantId, tenantContext.LoggedInUser);
             return result.ToHttpResult();
         })
         .WithName("DeployTemplateToTenantByName")

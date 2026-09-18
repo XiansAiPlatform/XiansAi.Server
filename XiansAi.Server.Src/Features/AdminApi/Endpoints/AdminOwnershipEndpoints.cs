@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Shared.Repositories;
-using Shared.Auditing;
 using Shared.Auth;
 using System.ComponentModel.DataAnnotations;
 using Features.AdminApi.Utils;
@@ -101,7 +100,6 @@ public static class AdminOwnershipEndpoints
             string tenantId,
             string agentId,
             [FromBody] TransferOwnershipRequest request,
-            HttpContext httpContext,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
             [FromServices] IWebhookEventPublisher webhookEventPublisher,
@@ -219,12 +217,11 @@ public static class AdminOwnershipEndpoints
                     transferredBy = tenantContext.LoggedInUser
                 };
                 await webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.AgentOwnershipTransferred,
+                    DomainEventTypes.AgentOwnershipTransferred,
                     transferredMetadata,
                     parsedTenant);
                 await auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.AgentOwnershipTransferred,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.AgentOwnershipTransferred,
                     activationName: null,
                     details: transferredMetadata);
 

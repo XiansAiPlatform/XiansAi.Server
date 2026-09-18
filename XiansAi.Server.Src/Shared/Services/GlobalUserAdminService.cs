@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Data.Models.Validation;
 using Shared.Providers.Auth;
@@ -121,10 +120,10 @@ public interface IGlobalUserAdminService
 {
     Task<ServiceResult<GlobalUserListResult>> ListUsersAsync(UserFilter filter);
     Task<ServiceResult<GlobalUserDetail>> GetUserWithMembershipsAsync(string userId);
-    Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email, HttpContext httpContext);
-    Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin, HttpContext httpContext);
-    Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId, HttpContext httpContext);
-    Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId, HttpContext httpContext);
+    Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email);
+    Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin);
+    Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId);
+    Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId);
 }
 
 public class GlobalUserAdminService : IGlobalUserAdminService
@@ -233,7 +232,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email, HttpContext httpContext)
+    public async Task<ServiceResult<GlobalUserDetail>> UpdateProfileAsync(string userId, string? name, string? email)
     {
         try
         {
@@ -274,11 +273,10 @@ public class GlobalUserAdminService : IGlobalUserAdminService
 
             var updatedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserUpdated,
+                DomainEventTypes.UserUpdated,
                 updatedMetadata);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserUpdated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.UserUpdated,
                 activationName: null,
                 details: updatedMetadata);
 
@@ -291,7 +289,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin, HttpContext httpContext)
+    public async Task<ServiceResult<GlobalUserDetail>> SetSysAdminAsync(string userId, bool isSysAdmin)
     {
         try
         {
@@ -323,14 +321,13 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogInformation("SysAdmin flag for user {UserId} set to {Value}",
                 LogSanitizer.Sanitize(userId), isSysAdmin);
 
-            var sysAdminEvent = isSysAdmin ? WebhookEventTypes.UserSysAdminGranted : WebhookEventTypes.UserSysAdminRevoked;
+            var sysAdminEvent = isSysAdmin ? DomainEventTypes.UserSysAdminGranted : DomainEventTypes.UserSysAdminRevoked;
             var sysAdminMetadata = new { userId = user.UserId, email = user.Email, isSysAdmin };
             await _webhookEventPublisher.PublishAsync(
                 sysAdminEvent,
                 sysAdminMetadata);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? sysAdminEvent,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: sysAdminEvent,
                 activationName: null,
                 details: sysAdminMetadata);
 
@@ -343,7 +340,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId, HttpContext httpContext)
+    public async Task<ServiceResult<GlobalUserDetail>> SetStatusAsync(string userId, bool enabled, string? reason, string actingUserId)
     {
         try
         {
@@ -382,14 +379,13 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogInformation("User {UserId} {Action}",
                 LogSanitizer.Sanitize(userId), enabled ? "enabled" : "disabled");
 
-            var statusEvent = enabled ? WebhookEventTypes.UserEnabled : WebhookEventTypes.UserDisabled;
+            var statusEvent = enabled ? DomainEventTypes.UserEnabled : DomainEventTypes.UserDisabled;
             var statusMetadata = new { userId = user.UserId, email = user.Email, enabled, reason, actingUserId };
             await _webhookEventPublisher.PublishAsync(
                 statusEvent,
                 statusMetadata);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? statusEvent,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: statusEvent,
                 activationName: null,
                 details: statusMetadata);
 
@@ -402,7 +398,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         }
     }
 
-    public async Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId, HttpContext httpContext)
+    public async Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId)
     {
         try
         {
@@ -433,11 +429,10 @@ public class GlobalUserAdminService : IGlobalUserAdminService
 
             var deletedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, actingUserId };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserDeleted,
+                DomainEventTypes.UserDeleted,
                 deletedMetadata);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.UserDeleted,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.UserDeleted,
                 activationName: null,
                 details: deletedMetadata);
 

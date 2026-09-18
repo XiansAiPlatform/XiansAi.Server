@@ -1,6 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
 using System.ComponentModel.DataAnnotations;
-using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Features.AgentApi.Repositories;
@@ -138,7 +137,7 @@ public class CertificateService
     /// within their tenant. Returns false when not found or ownership does not match.
     /// The validation cache is invalidated before deletion so in-flight auth attempts fail immediately.
     /// </summary>
-    public async Task<bool> RevokeCertificateAsync(string thumbprint, string reason, string targetUserId, HttpContext httpContext)
+    public async Task<bool> RevokeCertificateAsync(string thumbprint, string reason, string targetUserId)
     {
         var cert = await _certificateRepository.GetByThumbprintAsync(thumbprint);
         if (cert == null
@@ -154,12 +153,11 @@ public class CertificateService
         {
             var revokedMetadata = new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.CertificateRevoked,
+                DomainEventTypes.CertificateRevoked,
                 revokedMetadata,
                 cert.TenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.CertificateRevoked,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.CertificateRevoked,
                 activationName: null,
                 details: revokedMetadata);
         }
@@ -171,11 +169,11 @@ public class CertificateService
     /// Generates a certificate for the calling user (reads <c>LoggedInUser</c> from tenant context).
     /// Used by the WebAPI; admin callers should use the overload that accepts an explicit userId.
     /// </summary>
-    public async Task<IResult> GenerateClientCertificateBase64(HttpContext httpContext, bool revokePrevious = false)
+    public async Task<IResult> GenerateClientCertificateBase64(bool revokePrevious = false)
     {
         var userId = _tenantContext.LoggedInUser
             ?? throw new UnauthorizedAccessException("User not authenticated");
-        return await GenerateClientCertificateBase64ForUser(userId, httpContext, revokePrevious);
+        return await GenerateClientCertificateBase64ForUser(userId, revokePrevious);
     }
 
     /// <summary>
@@ -184,7 +182,7 @@ public class CertificateService
     /// for identification in UIs; it does not affect the X.509 subject.
     /// </summary>
     public async Task<IResult> GenerateClientCertificateBase64ForUser(
-        string targetUserId, HttpContext httpContext, bool revokePrevious = false, string? friendlyName = null)
+        string targetUserId, bool revokePrevious = false, string? friendlyName = null)
     {
         try
         {
@@ -202,12 +200,11 @@ public class CertificateService
 
             var createdMetadata = new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.CertificateCreated,
+                DomainEventTypes.CertificateCreated,
                 createdMetadata,
                 _tenantContext.TenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.CertificateCreated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.CertificateCreated,
                 activationName: null,
                 details: createdMetadata);
 

@@ -2,7 +2,6 @@ using Features.AdminApi.Constants;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Auth;
-using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Utils.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -334,7 +333,6 @@ The tenantId is taken from the URL path. The agent is verified to exist in the t
             string knowledgeId,
             string level,
             [FromQuery] string? activationName,
-            HttpContext httpContext,
             [FromServices] IKnowledgeService knowledgeService,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext) =>
@@ -448,7 +446,6 @@ The tenantId is taken from the URL path. The agent is verified to exist in the t
                     originalKnowledge.Type,
                     newTenantId!,
                     tenantContext.LoggedInUser,
-                    httpContext,
                     originalKnowledge.Agent,
                     originalKnowledge.Version,
                     newActivationName,
@@ -592,7 +589,6 @@ Same as the original knowledge item. User must have permission to modify the age
             string tenantId,
             [FromQuery] string agentName,
             [FromBody] CreateKnowledgeRequest request,
-            HttpContext httpContext,
             [FromServices] IKnowledgeService knowledgeService,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext,
@@ -650,7 +646,6 @@ Same as the original knowledge item. User must have permission to modify the age
                     request.Type,
                     actualTenantId,
                     tenantContext.LoggedInUser,
-                    httpContext,
                     agentName,
                     request.Version,
                     activationName,
@@ -787,7 +782,6 @@ Returns the created knowledge object with all properties including auto-generate
             string tenantId,
             string knowledgeId,
             [FromBody] UpdateKnowledgeRequest request,
-            HttpContext httpContext,
             [FromServices] IKnowledgeService knowledgeService,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext) =>
@@ -842,7 +836,6 @@ Returns the created knowledge object with all properties including auto-generate
                     request.Type,
                     tenantId,
                     tenantContext.LoggedInUser,
-                    httpContext,
                     version: null,  // Always let service calculate version from content
                     description: request.Description,
                     visible: request.Visible
@@ -881,7 +874,6 @@ Returns the created knowledge object with all properties including auto-generate
         adminKnowledgeGroup.MapDelete("/{knowledgeId}", async (
             string tenantId,
             string knowledgeId,
-            HttpContext httpContext,
             [FromServices] IKnowledgeService knowledgeService,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext) =>
@@ -919,7 +911,7 @@ Returns the created knowledge object with all properties including auto-generate
                 }
 
                 // Use service to delete knowledge
-                var result = await knowledgeService.DeleteByIdForTenantAsync(knowledgeId, tenantId, httpContext);
+                var result = await knowledgeService.DeleteByIdForTenantAsync(knowledgeId, tenantId);
                 if (!result)
                 {
                     return Results.Json(new { error = "NotFound", message = "Knowledge not found or could not be deleted" }, statusCode: 404);
@@ -1015,7 +1007,6 @@ Returns the created knowledge object with all properties including auto-generate
             string name,
             string level,
             [FromQuery] string agentName,
-            HttpContext httpContext,
             [FromServices] IKnowledgeService knowledgeService,
             [FromServices] IAgentRepository agentRepository,
             [FromServices] ITenantContext tenantContext,
@@ -1100,7 +1091,7 @@ Returns the created knowledge object with all properties including auto-generate
                 int deletedCount = 0;
                 foreach (var version in versionsToDelete)
                 {
-                    var deleted = await knowledgeService.DeleteByIdForTenantAsync(version.Id, tenantId, httpContext);
+                    var deleted = await knowledgeService.DeleteByIdForTenantAsync(version.Id, tenantId);
                     if (deleted)
                     {
                         deletedCount++;

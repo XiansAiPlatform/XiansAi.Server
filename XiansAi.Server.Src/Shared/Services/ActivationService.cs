@@ -1,6 +1,5 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
-using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -12,13 +11,13 @@ namespace Shared.Services;
 
 public interface IActivationService
 {
-    Task<ServiceResult<AgentActivation>> CreateActivationAsync(CreateActivationRequest request, string userId, string tenantId, HttpContext httpContext);
-    Task<ServiceResult<AgentActivation>> UpdateActivationAsync(string activationId, UpdateActivationRequest request, string tenantId, HttpContext httpContext);
+    Task<ServiceResult<AgentActivation>> CreateActivationAsync(CreateActivationRequest request, string userId, string tenantId);
+    Task<ServiceResult<AgentActivation>> UpdateActivationAsync(string activationId, UpdateActivationRequest request, string tenantId);
     Task<ServiceResult<AgentActivation>> GetActivationByIdAsync(string id);
     Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId, string? agentName = null);
-    Task<ServiceResult<AgentActivation>> ActivateAgentAsync(string activationId, string tenantId, HttpContext httpContext, ActivationWorkflowConfiguration? workflowConfiguration = null);
-    Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(string activationId, string tenantId, HttpContext httpContext);
-    Task<ServiceResult<bool>> DeleteActivationAsync(string activationId, HttpContext httpContext);
+    Task<ServiceResult<AgentActivation>> ActivateAgentAsync(string activationId, string tenantId, ActivationWorkflowConfiguration? workflowConfiguration = null);
+    Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(string activationId, string tenantId);
+    Task<ServiceResult<bool>> DeleteActivationAsync(string activationId);
 }
 
 public class CreateActivationRequest
@@ -112,8 +111,7 @@ public class ActivationService : IActivationService
     public async Task<ServiceResult<AgentActivation>> CreateActivationAsync(
         CreateActivationRequest request,
         string userId,
-        string tenantId,
-        HttpContext httpContext)
+        string tenantId)
     {
         try
         {
@@ -178,11 +176,10 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = request.AgentName };
 
-            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ActivationCreated, metadata, tenantId);
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationCreated, metadata, tenantId);
 
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.ActivationCreated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.ActivationCreated,
                 activationName: activation.Name,
                 details: metadata);
 
@@ -212,8 +209,7 @@ public class ActivationService : IActivationService
     public async Task<ServiceResult<AgentActivation>> UpdateActivationAsync(
         string activationId,
         UpdateActivationRequest request,
-        string tenantId,
-        HttpContext httpContext)
+        string tenantId)
     {
         try
         {
@@ -331,11 +327,10 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId, activationId = activation.Id, name = activation.Name };
 
-            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ActivationUpdated, metadata, tenantId);
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationUpdated, metadata, tenantId);
 
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.ActivationUpdated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.ActivationUpdated,
                 activationName: activation.Name,
                 details: metadata);
 
@@ -422,7 +417,6 @@ public class ActivationService : IActivationService
     public async Task<ServiceResult<AgentActivation>> ActivateAgentAsync(
         string activationId,
         string tenantId,
-        HttpContext httpContext,
         ActivationWorkflowConfiguration? workflowConfiguration = null)
     {
         try
@@ -585,11 +579,10 @@ public class ActivationService : IActivationService
 
                 var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds };
 
-                await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ActivationActivated, metadata, tenantId);
+                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationActivated, metadata, tenantId);
 
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.ActivationActivated,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.ActivationActivated,
                     activationName: activation.Name,
                     details: metadata);
 
@@ -620,8 +613,7 @@ public class ActivationService : IActivationService
     /// </summary>
     public async Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(
         string activationId,
-        string tenantId,
-        HttpContext httpContext)
+        string tenantId)
     {
         try
         {
@@ -705,11 +697,10 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
 
-            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ActivationDeactivated, metadata, activation.TenantId);
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationDeactivated, metadata, activation.TenantId);
 
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.ActivationDeactivated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.ActivationDeactivated,
                 activationName: activation.Name,
                 details: metadata);
 
@@ -727,7 +718,7 @@ public class ActivationService : IActivationService
     /// Deletes an activation from the database.
     /// Note: This will not cancel any running workflows. Deactivate first if needed.
     /// </summary>
-    public async Task<ServiceResult<bool>> DeleteActivationAsync(string activationId, HttpContext httpContext)
+    public async Task<ServiceResult<bool>> DeleteActivationAsync(string activationId)
     {
         try
         {
@@ -755,7 +746,7 @@ public class ActivationService : IActivationService
 
             // Clean up all data scoped to this activation (app integrations, messages, documents,
             // knowledge, logs, schedules, usage metrics, feedback) before removing the record itself.
-            await CleanupActivationDataAsync(activation, httpContext);
+            await CleanupActivationDataAsync(activation);
 
             var deleted = await _activationRepository.DeleteAsync(activationId);
             if (!deleted)
@@ -770,11 +761,10 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
 
-            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ActivationDeleted, metadata, activation.TenantId);
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationDeleted, metadata, activation.TenantId);
 
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.ActivationDeleted,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.ActivationDeleted,
                 activationName: activation.Name,
                 details: metadata);
 
@@ -794,7 +784,7 @@ public class ActivationService : IActivationService
     /// Each resource type is cleaned up independently — a failure in one does not block the others
     /// or the activation record deletion that follows.
     /// </summary>
-    private async Task CleanupActivationDataAsync(AgentActivation activation, HttpContext httpContext)
+    private async Task CleanupActivationDataAsync(AgentActivation activation)
     {
         var tenantId = activation.TenantId;
         var agentName = activation.AgentName;
@@ -851,7 +841,7 @@ public class ActivationService : IActivationService
         {
             // Note: only removes "builtin_webhook" platform integrations — Slack/Teams/Outlook/generic
             // webhook integrations tied to this activation are not covered by this method.
-            await _appIntegrationService.DeleteBuiltinWebhooksByAgentAndActivationAsync(tenantId, agentName, activationName, httpContext);
+            await _appIntegrationService.DeleteBuiltinWebhooksByAgentAndActivationAsync(tenantId, agentName, activationName);
         }
         catch (Exception ex)
         {

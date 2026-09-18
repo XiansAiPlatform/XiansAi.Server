@@ -7,16 +7,15 @@ using System.Security.Cryptography;
 using System.Text;
 using Shared.Utils;
 using Shared.Providers;
-using Shared.Auditing;
 namespace Shared.Services
 {
     public interface IApiKeyService
     {
-        Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, HttpContext httpContext, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null);
-        Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId, HttpContext httpContext);
+        Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null);
+        Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId);
         Task<ServiceResult<long>> DeleteAllApiKeysAsync();
         Task<ServiceResult<List<ApiKey>>> GetApiKeysAsync(string tenantId);
-        Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId, HttpContext httpContext);
+        Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId);
         Task<ServiceResult<ApiKey?>> GetApiKeyByIdAsync(string id, string tenantId);
         Task<ApiKey?> GetApiKeyByIdAsync(string id);
         Task<List<ApiKey>> GetWebhookApiKeysAsync(string tenantId, string? activationName = null, string? agentName = null);
@@ -56,7 +55,7 @@ namespace Shared.Services
             _auditLogService = auditLogService;
         }
 
-        public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, HttpContext httpContext, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
+        public async Task<ServiceResult<(string apiKey, ApiKey meta)>> CreateApiKeyAsync(string tenantId, string name, string createdBy, string? agentName = null, string? activationName = null, string? type = null, string? workflowName = null, string? participantId = null, int? timeoutInSeconds = null, string? webhookName = null)
         {
             _logger.LogInformation("Creating API key for tenant {TenantId} by {CreatedBy}", LogSanitizer.Sanitize(tenantId), LogSanitizer.RedactEmail(createdBy));
             try
@@ -65,11 +64,10 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy };
 
-                await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ApiKeyCreated, metadata, tenantId);
+                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ApiKeyCreated, metadata, tenantId);
 
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.ApiKeyCreated,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.ApiKeyCreated,
                     activationName: activationName,
                     details: metadata);
 
@@ -87,7 +85,7 @@ namespace Shared.Services
             }
         }
 
-        public async Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId, HttpContext httpContext)
+        public async Task<ServiceResult<bool>> RevokeApiKeyAsync(string id, string tenantId)
         {
             _logger.LogInformation("Revoking API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
             try
@@ -108,11 +106,10 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = id, name = existingKey?.Name };
 
-                await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ApiKeyRevoked, metadata, tenantId);
+                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ApiKeyRevoked, metadata, tenantId);
 
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.ApiKeyRevoked,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.ApiKeyRevoked,
                     activationName: null,
                     details: metadata);
 
@@ -165,7 +162,7 @@ namespace Shared.Services
             }
         }
 
-        public async Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId, HttpContext httpContext)
+        public async Task<ServiceResult<(string apiKey, ApiKey meta)?>> RotateApiKeyAsync(string id, string tenantId)
         {
             _logger.LogInformation("Rotating API key {ApiKeyId} for tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
             try
@@ -188,11 +185,10 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name };
 
-                await _webhookEventPublisher.PublishAsync(WebhookEventTypes.ApiKeyRotated, metadata, tenantId);
+                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ApiKeyRotated, metadata, tenantId);
 
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.ApiKeyRotated,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.ApiKeyRotated,
                     activationName: null,
                     details: metadata);
 

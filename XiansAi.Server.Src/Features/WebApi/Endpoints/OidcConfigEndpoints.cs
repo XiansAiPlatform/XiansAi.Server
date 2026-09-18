@@ -24,7 +24,7 @@ public static class OidcConfigEndpoints
             if (string.IsNullOrWhiteSpace(tenantId)) return Results.BadRequest("Tenant is not resolved");
             var actor = tenantContext.LoggedInUser ?? ctx.User?.Identity?.Name ?? "system";
             var jsonString = System.Text.Json.JsonSerializer.Serialize(jsonConfig);
-            var result = await service.UpsertAsync(tenantId, jsonString, actor, ctx);
+            var result = await service.UpsertAsync(tenantId, jsonString, actor);
             return result.ToHttpResult();
         })
         .WithName("UpsertOidcConfigCreate")
@@ -40,7 +40,7 @@ public static class OidcConfigEndpoints
             if (string.IsNullOrWhiteSpace(tenantId)) return Results.BadRequest("Tenant is not resolved");
             var actor = tenantContext.LoggedInUser ?? ctx.User?.Identity?.Name ?? "system";
             var jsonString = System.Text.Json.JsonSerializer.Serialize(jsonConfig);
-            var result = await service.UpsertAsync(tenantId, jsonString, actor, ctx);
+            var result = await service.UpsertAsync(tenantId, jsonString, actor);
             return result.ToHttpResult();
         })
         .WithName("UpsertOidcConfigUpdate")
@@ -53,7 +53,7 @@ public static class OidcConfigEndpoints
         {
             var tenantId = tenantContext.TenantId;
             if (string.IsNullOrWhiteSpace(tenantId)) return Results.BadRequest("Tenant is not resolved");
-            var result = await service.DeleteAsync(tenantId, ctx);
+            var result = await service.DeleteAsync(tenantId);
             return result.ToHttpResult();
         })
         .WithName("DeleteOidcConfig")

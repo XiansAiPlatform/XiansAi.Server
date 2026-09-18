@@ -1,3 +1,4 @@
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -13,7 +14,7 @@ public interface IAuditLogService
 {
     Task<ServiceResult<AuditLogEntry>> RecordEntryAsync(
         string action,
-        string? description,
+        string? description = null,
         string? activationName = null,
         object? details = null);
 
@@ -29,32 +30,42 @@ public interface IAuditLogService
 
 /// <summary>
 /// Records and queries the audit log of user/system actions (who did what, and when).
+/// Endpoint name/summary are read from the current request via <see cref="IHttpContextAccessor"/>
+/// so domain services do not take <c>HttpContext</c>. Caller identity comes from
+/// <see cref="ITenantContext"/>. Non-HTTP callers fall back to the action they pass in.
 /// </summary>
 public class AuditLogService : IAuditLogService
 {
     private readonly IAuditLogRepository _auditLogRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<AuditLogService> _logger;
 
     public AuditLogService(
         IAuditLogRepository auditLogRepository,
         ITenantContext tenantContext,
+        IHttpContextAccessor httpContextAccessor,
         ILogger<AuditLogService> logger)
     {
         _auditLogRepository = auditLogRepository ?? throw new ArgumentNullException(nameof(auditLogRepository));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<ServiceResult<AuditLogEntry>> RecordEntryAsync(
         string action,
-        string? description,
+        string? description = null,
         string? activationName = null,
         object? details = null)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(action))
+            var httpContext = _httpContextAccessor.HttpContext;
+            var resolvedAction = httpContext?.GetEndpointName() ?? action;
+            var resolvedDescription = description ?? httpContext?.GetEndpointSummary() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(resolvedAction))
             {
                 return ServiceResult<AuditLogEntry>.BadRequest("Action is required");
             }
@@ -64,8 +75,8 @@ public class AuditLogService : IAuditLogService
                 TenantId = _tenantContext.TenantId,
                 ParticipantId = _tenantContext.ParticipantId,
                 LoggedInUser = _tenantContext.LoggedInUser,
-                Action = action,
-                Description = description,
+                Action = resolvedAction,
+                Description = resolvedDescription,
                 ActivationName = activationName,
                 Details = ToDictionary(details) ?? []
             };

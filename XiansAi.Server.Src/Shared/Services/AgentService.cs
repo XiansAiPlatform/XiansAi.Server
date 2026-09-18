@@ -8,7 +8,6 @@ using Shared.Utils.Services;
 using Features.WebApi.Services;
 using System.Text.RegularExpressions;
 using Shared.Utils;
-using Shared.Auditing;
 
 namespace Shared.Services;
 
@@ -28,7 +27,7 @@ public class AgentDeletionResult
 
 public interface IAgentDeletionService
 {
-    Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, HttpContext httpContext, bool forceDelete = false);
+    Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, bool forceDelete = false);
 }
 
 /// <summary>
@@ -89,7 +88,7 @@ public class AgentDeletionService : IAgentDeletionService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, HttpContext httpContext, bool forceDelete = false)
+    public async Task<ServiceResult<AgentDeletionResult>> DeleteAgentAsync(string agentName, bool systemScoped, bool forceDelete = false)
     {
         try
         {
@@ -149,7 +148,7 @@ public class AgentDeletionService : IAgentDeletionService
                     {
                         if (activation.WorkflowIds != null && activation.WorkflowIds.Count > 0)
                         {
-                            var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId, httpContext);
+                            var deactivateResult = await _activationService.DeactivateAgentAsync(activation.Id, tenantId);
                             if (!deactivateResult.IsSuccess)
                             {
                                 failedActivations.Add($"Failed to deactivate '{activation.Name}': {deactivateResult.ErrorMessage}");
@@ -157,7 +156,7 @@ public class AgentDeletionService : IAgentDeletionService
                             }
                         }
 
-                        var deleteResult = await _activationService.DeleteActivationAsync(activation.Id, httpContext);
+                        var deleteResult = await _activationService.DeleteActivationAsync(activation.Id);
                         if (deleteResult.IsSuccess)
                         {
                             deletedActivations++;
@@ -276,11 +275,10 @@ public class AgentDeletionService : IAgentDeletionService
                 deletedActivations = result.DeletedActivations,
             };
 
-            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.AgentDeleted, metadata, tenantId);
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.AgentDeleted, metadata, tenantId);
 
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.AgentDeleted,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.AgentDeleted,
                 activationName: null,
                 details: metadata);
 

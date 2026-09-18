@@ -156,8 +156,8 @@ Delivery is **at-least-once**. A listener may occasionally receive the same even
 
 ## Currently emitted events
 
-The full catalog of event type constants lives in `WebhookEventTypes`
-(`Shared/Data/Models/WebhookDelivery.cs`). Events are published from shared services (so they fire
+The full catalog of event type constants lives in `DomainEventTypes`
+(`Shared/Data/Models/DomainEventTypes.cs`). Events are published from shared services (so they fire
 regardless of whether the action came via the Admin API, Agent API or Web API) wherever possible.
 
 High-volume telemetry — per-message conversation writes, agent logs, activity history, usage
@@ -228,13 +228,14 @@ overwhelming listeners.
 
 ## Adding a new event
 
-1. Add a constant to `WebhookEventTypes` (`Shared/Data/Models/WebhookDelivery.cs`).
+1. Add a constant to `DomainEventTypes` (`Shared/Data/Models/DomainEventTypes.cs`).
 2. Inject `IWebhookEventPublisher` into the relevant service and call `PublishAsync(...)` after
    the operation succeeds.
 
 ## Implementation
 
 - Options: `Shared/Configuration/Options/WebhooksOptions.cs`
+- Event type catalog: `Shared/Data/Models/DomainEventTypes.cs`
 - Model / outbox document: `Shared/Data/Models/WebhookDelivery.cs`
 - Repository (outbox + atomic claim): `Shared/Repositories/WebhookDeliveryRepository.cs`
 - Publisher: `Shared/Services/WebhookEventPublisher.cs`

@@ -7,7 +7,6 @@ using Shared.Utils;
 using System.Security;
 using System.Text.Json.Serialization;
 using Shared.Utils.Services;
-using Shared.Auditing;
 
 namespace Shared.Services;
 
@@ -110,16 +109,16 @@ public interface IKnowledgeService
     Task<IResult> GetById(string id);
     Task<IResult> GetVersions(string name, string? agent);
     Task<IResult> DeleteById(string id);
-    Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request, HttpContext httpContext);
+    Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request);
     Task<IResult> GetLatestAll(string agent);
-    Task<IResult> Create(KnowledgeRequest request, HttpContext httpContext);
+    Task<IResult> Create(KnowledgeRequest request);
     Task<IResult> GetLatestByAgent(string agent);
     
     // Admin methods that accept explicit tenantId
     Task<List<Knowledge>> GetAllForTenantAsync(string tenantId, List<string>? agentNames = null);
     Task<Knowledge?> GetByIdForTenantAsync(string id, string tenantId);
     Task<List<Knowledge>> GetVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
-    Task<bool> DeleteByIdForTenantAsync(string id, string tenantId, HttpContext httpContext);
+    Task<bool> DeleteByIdForTenantAsync(string id, string tenantId);
     Task<bool> DeleteAllVersionsForTenantAsync(string name, string tenantId, string? agentName = null);
     Task<long> DeleteAllByAgentAndActivationForTenantAsync(string tenantId, string agentName, string activationName);
     /// <summary>
@@ -127,8 +126,8 @@ public interface IKnowledgeService
     /// shared across all of the agent's activations, as opposed to activation-scoped knowledge.
     /// </summary>
     Task<long> DeleteOrganizationLevelByAgentForTenantAsync(string tenantId, string agentName);
-    Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, HttpContext httpContext, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false, string? description = null, bool visible = true);
-    Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, HttpContext httpContext, string? version = null, string? description = null, bool? visible = null);
+    Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false, string? description = null, bool visible = true);
+    Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, string? version = null, string? description = null, bool? visible = null);
 }
 
 public class KnowledgeService : IKnowledgeService
@@ -274,7 +273,7 @@ public class KnowledgeService : IKnowledgeService
         }
     }
 
-    public async Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request, HttpContext httpContext)
+    public async Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request)
     {
         // First, try to get tenant-scoped knowledge
         var existingKnowledge = string.IsNullOrEmpty(_tenantContext.TenantId) 
@@ -331,12 +330,11 @@ public class KnowledgeService : IKnowledgeService
 
         var deletedMetadata = new { tenantId = tenantIdToDelete, name = request.Name, agentName = request.Agent, systemScoped = existingKnowledge.SystemScoped };
         await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.KnowledgeDeleted,
+            DomainEventTypes.KnowledgeDeleted,
             deletedMetadata,
             tenantIdToDelete);
         await _auditLogService.RecordEntryAsync(
-            action: httpContext.GetEndpointName() ?? WebhookEventTypes.KnowledgeDeleted,
-            description: httpContext.GetEndpointSummary() ?? string.Empty,
+            action: DomainEventTypes.KnowledgeDeleted,
             activationName: existingKnowledge.ActivationName,
             details: deletedMetadata);
 
@@ -515,7 +513,7 @@ public class KnowledgeService : IKnowledgeService
         return ServiceResult<Knowledge>.Success(knowledge);
     }
 
-    public async Task<IResult> Create(KnowledgeRequest request, HttpContext httpContext)
+    public async Task<IResult> Create(KnowledgeRequest request)
     {
         // Validate that non-system knowledge has a tenant ID
         if (!request.SystemScoped && string.IsNullOrWhiteSpace(_tenantContext.TenantId))
@@ -597,12 +595,11 @@ public class KnowledgeService : IKnowledgeService
 
             var createdMetadata = new { tenantId = knowledge.TenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName = knowledge.Agent, activationName = knowledge.ActivationName, systemScoped = knowledge.SystemScoped, version = knowledge.Version, createdBy = knowledge.CreatedBy };
             await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.KnowledgeCreated,
+                DomainEventTypes.KnowledgeCreated,
                 createdMetadata,
                 knowledge.TenantId);
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.KnowledgeCreated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.KnowledgeCreated,
                 activationName: knowledge.ActivationName,
                 details: createdMetadata);
 
@@ -704,7 +701,7 @@ public class KnowledgeService : IKnowledgeService
         return await _knowledgeRepository.GetByNameAsync<Knowledge>(name, agentName, tenantId);
     }
 
-    public async Task<bool> DeleteByIdForTenantAsync(string id, string tenantId, HttpContext httpContext)
+    public async Task<bool> DeleteByIdForTenantAsync(string id, string tenantId)
     {
         var knowledge = await _knowledgeRepository.GetByIdAsync<Knowledge>(id);
 
@@ -720,11 +717,10 @@ public class KnowledgeService : IKnowledgeService
         {
             var metadata = new { tenantId, knowledgeId = id, name = knowledge.Name, agentName = knowledge.Agent, activationName = knowledge.ActivationName };
 
-            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.KnowledgeDeleted, metadata, tenantId);
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeDeleted, metadata, tenantId);
 
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.KnowledgeDeleted,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.KnowledgeDeleted,
                 activationName: knowledge.ActivationName,
                 details: metadata);
         }
@@ -753,7 +749,6 @@ public class KnowledgeService : IKnowledgeService
         string type,
         string? tenantId,
         string createdBy,
-        HttpContext httpContext,
         string? agentName = null,
         string? version = null,
         string? activationName = null,
@@ -788,11 +783,10 @@ public class KnowledgeService : IKnowledgeService
 
         var metadata = new { tenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName, activationName, systemScoped, version = knowledge.Version, createdBy };
 
-        await _webhookEventPublisher.PublishAsync(WebhookEventTypes.KnowledgeCreated, metadata, tenantId);
+        await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeCreated, metadata, tenantId);
 
         await _auditLogService.RecordEntryAsync(
-            action: httpContext.GetEndpointName() ?? WebhookEventTypes.KnowledgeCreated,
-            description: httpContext.GetEndpointSummary() ?? string.Empty,
+            action: DomainEventTypes.KnowledgeCreated,
             activationName: activationName,
             details: metadata);
 
@@ -805,7 +799,6 @@ public class KnowledgeService : IKnowledgeService
         string type,
         string tenantId,
         string updatedBy,
-        HttpContext httpContext,
         string? version = null,
         string? description = null,
         bool? visible = null)
@@ -854,11 +847,10 @@ public class KnowledgeService : IKnowledgeService
 
         var metadata = new { tenantId, knowledgeId = updatedKnowledge.Id, name = updatedKnowledge.Name, type = updatedKnowledge.Type, agentName = updatedKnowledge.Agent, updatedBy };
 
-        await _webhookEventPublisher.PublishAsync(WebhookEventTypes.KnowledgeUpdated, metadata, tenantId);
+        await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeUpdated, metadata, tenantId);
 
         await _auditLogService.RecordEntryAsync(
-            action: httpContext.GetEndpointName() ?? WebhookEventTypes.KnowledgeUpdated,
-            description: httpContext.GetEndpointSummary() ?? String.Empty,
+            action: DomainEventTypes.KnowledgeUpdated,
             activationName: updatedKnowledge.ActivationName,
             details: metadata);
  

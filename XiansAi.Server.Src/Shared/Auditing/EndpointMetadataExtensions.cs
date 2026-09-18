@@ -4,8 +4,7 @@ namespace Shared.Auditing;
 
 /// <summary>
 /// Reads an endpoint's own <c>.WithName(...)</c> / <c>.WithSummary(...)</c> metadata back out of
-/// the current request, so a handler can forward that same text into a service call (e.g. as an
-/// audit action/description) without retyping it as a separate literal.
+/// the current request. Used by <c>AuditLogService</c> so domain services do not take HttpContext.
 /// </summary>
 public static class EndpointMetadataExtensions
 {

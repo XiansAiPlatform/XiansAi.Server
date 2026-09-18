@@ -153,7 +153,6 @@ public static class AdminTenantEndpoints
             string tenantId,
             string key,
             [FromBody] UpsertTenantMetadataRequest request,
-            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -166,7 +165,7 @@ public static class AdminTenantEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
-            var result = await tenantService.UpsertTenantMetadata(tenantId, key, request, httpContext);
+            var result = await tenantService.UpsertTenantMetadata(tenantId, key, request);
             return result.ToHttpResult();
         })
         .WithName("UpsertTenantMetadata")
@@ -179,7 +178,6 @@ public static class AdminTenantEndpoints
         adminTenantGroup.MapDelete("/{tenantId}/metadata/{key}", async (
             string tenantId,
             string key,
-            HttpContext httpContext,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ITenantService tenantService,
             [FromServices] ILogger<ITenantService> logger) =>
@@ -192,7 +190,7 @@ public static class AdminTenantEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
-            var result = await tenantService.DeleteTenantMetadata(tenantId, key, httpContext);
+            var result = await tenantService.DeleteTenantMetadata(tenantId, key);
             return result.ToHttpResult();
         })
         .WithName("DeleteTenantMetadata")
@@ -283,7 +281,7 @@ public static class AdminTenantEndpoints
                 return tenantResult.ToHttpResult();
             }
 
-            var result = await tenantService.UpdateTenantTheme(tenantResult.Data.Id, request.Theme, httpContext);
+            var result = await tenantService.UpdateTenantTheme(tenantResult.Data.Id, request.Theme);
             return result.ToHttpResult();
         })
         .WithName("SetTenantTheme")
@@ -302,7 +300,7 @@ public static class AdminTenantEndpoints
                 return tenantResult.ToHttpResult();
             }
 
-            var result = await tenantService.UpdateTenantTheme(tenantResult.Data.Id, null, httpContext);
+            var result = await tenantService.UpdateTenantTheme(tenantResult.Data.Id, null);
             return result.ToHttpResult();
         })
         .WithName("ClearTenantTheme")
@@ -325,7 +323,7 @@ public static class AdminTenantEndpoints
                 return tenantResult.ToHttpResult();
             }
 
-            var result = await tenantService.UpdateTenantLogo(tenantResult.Data.Id, request, httpContext);
+            var result = await tenantService.UpdateTenantLogo(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
                 TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
@@ -348,7 +346,7 @@ public static class AdminTenantEndpoints
                 return tenantResult.ToHttpResult();
             }
 
-            var result = await tenantService.UpdateTenantLogo(tenantResult.Data.Id, null, httpContext);
+            var result = await tenantService.UpdateTenantLogo(tenantResult.Data.Id, null);
             return result.ToHttpResult();
         })
         .WithName("ClearTenantLogo")
@@ -373,7 +371,7 @@ public static class AdminTenantEndpoints
             }
 
             var createdBy = tenantContext.LoggedInUser ?? "system";
-            var result = await tenantService.CreateTenant(request, httpContext, createdBy);
+            var result = await tenantService.CreateTenant(request, createdBy);
             if (result.IsSuccess && result.Data != null)
             {
                 TenantLogoHelper.ApplyLogoUrl(result.Data.Tenant, httpContext, linkGenerator);
@@ -410,7 +408,7 @@ public static class AdminTenantEndpoints
             }
             
             // Use the ObjectId for the update operation
-            var result = await tenantService.UpdateTenant(tenantResult.Data.Id, request, httpContext);
+            var result = await tenantService.UpdateTenant(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
                 TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
@@ -445,7 +443,7 @@ public static class AdminTenantEndpoints
             }
             
             // Use the ObjectId for the delete operation
-            var result = await tenantService.DeleteTenant(tenantResult.Data.Id, httpContext);
+            var result = await tenantService.DeleteTenant(tenantResult.Data.Id);
             return result.ToHttpResult();
         })
         .WithName("DeleteTenant")
@@ -581,10 +579,9 @@ public static class AdminTenantEndpoints
         // Remove the tenant's OIDC configuration.
         oidcGroup.MapDelete("", async (
             string tenantId,
-            HttpContext httpContext,
             [FromServices] ITenantOidcConfigService service) =>
         {
-            var result = await service.DeleteAsync(tenantId, httpContext);
+            var result = await service.DeleteAsync(tenantId);
             return result.ToHttpResult();
         })
         .WithName("AdminDeleteTenantOidcConfig")
@@ -607,7 +604,6 @@ public static class AdminTenantEndpoints
     private static async Task<IResult> UpsertTenantOidcConfig(
         string tenantId,
         [FromBody] JsonObject? config,
-        HttpContext httpContext,
         [FromServices] ITenantOidcConfigService service,
         [FromServices] ITenantContext tenantContext)
     {
@@ -621,7 +617,7 @@ public static class AdminTenantEndpoints
         config["tenantId"] = tenantId;
 
         var actor = tenantContext.LoggedInUser ?? "system";
-        var result = await service.UpsertAsync(tenantId, config.ToJsonString(), actor, httpContext);
+        var result = await service.UpsertAsync(tenantId, config.ToJsonString(), actor);
         return result.ToHttpResult();
     }
 

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Security.Cryptography;
-using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -51,8 +50,8 @@ public class TenantOidcRules
 public interface ITenantOidcConfigService
 {
     Task<ServiceResult<TenantOidcRules?>> GetForTenantAsync(string tenantId);
-    Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId, HttpContext httpContext);
-    Task<ServiceResult<bool>> DeleteAsync(string tenantId, HttpContext httpContext);
+    Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId);
+    Task<ServiceResult<bool>> DeleteAsync(string tenantId);
     Task<ServiceResult<List<(string tenantId, TenantOidcRules? rules)>>> GetAllAsync();
 }
 
@@ -182,7 +181,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         }
     }
 
-    public async Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId, HttpContext httpContext)
+    public async Task<ServiceResult<bool>> UpsertAsync(string tenantId, string jsonConfig, string actorUserId)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             return ServiceResult<bool>.BadRequest("tenantId is required");
@@ -259,11 +258,10 @@ public class TenantOidcConfigService : ITenantOidcConfigService
 
             var metadata = new { tenantId, created = existing == null, actorUserId };
 
-            await _webhookEventPublisher.PublishAsync(WebhookEventTypes.TenantOidcUpdated, metadata, tenantId);
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.TenantOidcUpdated, metadata, tenantId);
 
             await _auditLogService.RecordEntryAsync(
-                action: httpContext.GetEndpointName() ?? WebhookEventTypes.TenantOidcUpdated,
-                description: httpContext.GetEndpointSummary() ?? string.Empty,
+                action: DomainEventTypes.TenantOidcUpdated,
                 activationName: null,
                 details: metadata);
 
@@ -276,7 +274,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
         }
     }
 
-    public async Task<ServiceResult<bool>> DeleteAsync(string tenantId, HttpContext httpContext)
+    public async Task<ServiceResult<bool>> DeleteAsync(string tenantId)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             return ServiceResult<bool>.BadRequest("tenantId is required");
@@ -293,11 +291,10 @@ public class TenantOidcConfigService : ITenantOidcConfigService
 
                 var metadata = new { tenantId };
 
-                await _webhookEventPublisher.PublishAsync(WebhookEventTypes.TenantOidcDeleted, metadata, tenantId);
+                await _webhookEventPublisher.PublishAsync(DomainEventTypes.TenantOidcDeleted, metadata, tenantId);
 
                 await _auditLogService.RecordEntryAsync(
-                    action: httpContext.GetEndpointName() ?? WebhookEventTypes.TenantOidcDeleted,
-                    description: httpContext.GetEndpointSummary() ?? string.Empty,
+                    action: DomainEventTypes.TenantOidcDeleted,
                     activationName: null,
                     details: metadata);
             }
