@@ -25,9 +25,9 @@ public sealed class ScheduleTools(
 {
     private static string Prefix(McpTarget target) => $"{target.TenantId}:{target.AgentName}:{target.ActivationName}:";
 
-    private static bool BelongsToTarget(ScheduleModel schedule, McpTarget target) =>
-        schedule.Id.StartsWith(Prefix(target), StringComparison.Ordinal) &&
-        schedule.Id.LastIndexOf(':') == Prefix(target).Length - 1 &&
+    private static bool BelongsToTarget(ScheduleModel schedule, McpTarget target, string prefix) =>
+        schedule.Id.StartsWith(prefix, StringComparison.Ordinal) &&
+        schedule.Id.LastIndexOf(':') == prefix.Length - 1 &&
         schedule.TenantId == target.TenantId && schedule.AgentName == target.AgentName &&
         schedule.Metadata.TryGetValue("idPostfix", out var activation) &&
         activation is string name && name == target.ActivationName;
@@ -58,6 +58,7 @@ public sealed class ScheduleTools(
 
     private static T Result<T>(ServiceResult<T> result)
     {
+        if ((int)result.StatusCode >= 500) throw new McpException("Schedule operation failed.");
         if (!result.IsSuccess) throw new McpException(result.ErrorMessage ?? "Schedule operation failed.");
         return result.Data!;
     }
@@ -65,10 +66,11 @@ public sealed class ScheduleTools(
     private async Task AuthorizeScheduleAsync(McpTarget target, string scheduleId)
     {
         await AuthorizeAsync(target, true);
-        if (!scheduleId.StartsWith(Prefix(target), StringComparison.Ordinal))
+        var prefix = Prefix(target);
+        if (!scheduleId.StartsWith(prefix, StringComparison.Ordinal))
             throw new McpException("Schedule does not belong to this activation. Use an exact ID from list_schedules.");
         var schedule = Result(await schedules.GetScheduleByIdAsync(scheduleId));
-        if (!BelongsToTarget(schedule, target))
+        if (!BelongsToTarget(schedule, target, prefix))
             throw new McpException("Schedule access denied.");
     }
 
@@ -78,10 +80,11 @@ public sealed class ScheduleTools(
     {
         await AuthorizeAsync(target, false);
         if (page < 0) throw new McpException("Page must be non-negative.");
+        var prefix = Prefix(target);
         return Result(await schedules.GetSchedulesAsync(new ScheduleFilterRequest
         {
-            AgentName = target.AgentName, SearchTerm = Prefix(target), PageSize = 100, PageToken = page.ToString()
-        })).Where(schedule => BelongsToTarget(schedule, target)).ToList();
+            AgentName = target.AgentName, SearchTerm = prefix, PageSize = 100, PageToken = page.ToString()
+        })).Where(schedule => BelongsToTarget(schedule, target, prefix)).ToList();
     }
 
     [McpServerTool(Name = "list_workflows", ReadOnly = true)]
@@ -138,10 +141,11 @@ public sealed class ScheduleTools(
     }
 
     [McpServerTool(Name = "delete_schedule", Destructive = true)]
-    [Description("Delete a schedule using its exact ID from list_schedules.")]
-    public async Task<bool> DeleteSchedule(McpTarget target, string scheduleId)
+    [Description("Delete a schedule using its exact ID from list_schedules. Set confirmed=true only after the user explicitly approves deletion.")]
+    public async Task<bool> DeleteSchedule(McpTarget target, string scheduleId, bool confirmed = false)
     {
         await AuthorizeScheduleAsync(target, scheduleId);
+        if (!confirmed) throw new McpException("Explicit user confirmation is required before permanent deletion.");
         return Result(await schedules.DeleteScheduleByIdAsync(scheduleId));
     }
 

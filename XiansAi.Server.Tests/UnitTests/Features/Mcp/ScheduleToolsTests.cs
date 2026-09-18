@@ -391,4 +391,37 @@ public class ScheduleToolsTests
         _schedules.Verify(x => x.ResumeScheduleAsync(It.IsAny<string>()), Times.Never);
         _schedules.Verify(x => x.DeleteScheduleByIdAsync(It.IsAny<string>()), Times.Never);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScheduleDeletionRequiresConfirmation(bool confirmed)
+    {
+        AllowScheduleAccess();
+        const string id = "tenant:agent:activation:test";
+        _schedules.Setup(x => x.DeleteScheduleByIdAsync(id)).ReturnsAsync(ServiceResult<bool>.Success(true));
+        if (!confirmed)
+        {
+            var error = await Assert.ThrowsAsync<McpException>(() => Tools().DeleteSchedule(_target, id));
+            Assert.Contains("confirmation", error.Message);
+            _schedules.Verify(x => x.DeleteScheduleByIdAsync(It.IsAny<string>()), Times.Never);
+            return;
+        }
+        Assert.True(await Tools().DeleteSchedule(_target, id, true));
+        _schedules.Verify(x => x.DeleteScheduleByIdAsync(id), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(400, "actionable error")]
+    [InlineData(404, "actionable error")]
+    [InlineData(500, "Schedule operation failed.")]
+    [InlineData(503, "Schedule operation failed.")]
+    public async Task ScheduleErrorsMaskServerFailuresButPreserveClientErrors(int status, string expected)
+    {
+        AllowAccess();
+        _schedules.Setup(x => x.GetSchedulesAsync(It.IsAny<ScheduleFilterRequest>()))
+            .ReturnsAsync(ServiceResult<List<ScheduleModel>>.Failure("actionable error", (StatusCode)status));
+        var error = await Assert.ThrowsAsync<McpException>(() => Tools().ListSchedules(_target));
+        Assert.Equal(expected, error.Message);
+    }
 }

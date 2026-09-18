@@ -398,10 +398,9 @@ public class AdminDataService : IAdminDataService
             }
 
             // Delete the record
-            bool deleted;
-            if (scopedFilter is not null)
-                deleted = await _documentRepository.DeleteByFilterAsync(request.TenantId, scopedFilter) == 1;
-            else deleted = await _documentRepository.DeleteAsync(request.RecordId, request.TenantId);
+            var deleted = scopedFilter is not null
+                ? await _documentRepository.DeleteByFilterAsync(request.TenantId, scopedFilter) == 1
+                : await _documentRepository.DeleteAsync(request.RecordId, request.TenantId);
 
             var response = new AdminDataDeleteRecordResponse
             {

@@ -261,4 +261,39 @@ public class DataToolsTests
             state.ToString()!.Contains("User=user") && state.ToString()!.Contains("Tenant=tenant") &&
             state.ToString()!.Contains("Completed=" + completed) && state.ToString()!.Contains("DeletedCount=" + count)),
         It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+
+    [Theory]
+    [InlineData(400, "actionable error")]
+    [InlineData(404, "actionable error")]
+    [InlineData(500, "Data operation failed.")]
+    [InlineData(503, "Data operation failed.")]
+    public async Task DataErrorsMaskServerFailuresButPreserveClientErrors(int status, string expected)
+    {
+        _data.Setup(x => x.GetDataAsync(It.IsAny<AdminDataListRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ServiceResult<AdminDataListResponse>.Failure("actionable error", (StatusCode)status));
+        var error = await Assert.ThrowsAsync<McpException>(() => Tools().ListDataRecords(_target, "reports",
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow));
+        Assert.Equal(expected, error.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task BulkDeleteRejectsEmptyDataTypeAndAudits(string dataType)
+    {
+        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteDataRecords(_target, dataType,
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow, true));
+        _data.VerifyNoOtherCalls();
+        VerifyAudit(false, 0);
+    }
+
+    [Fact]
+    public async Task BulkDeleteRejectsNullTargetAndAudits()
+    {
+        var error = await Assert.ThrowsAsync<McpException>(() => Tools().DeleteDataRecords(null!, "reports",
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow, true));
+        Assert.Equal("Target is required.", error.Message);
+        _data.VerifyNoOtherCalls();
+        VerifyAudit(false, 0);
+    }
 }

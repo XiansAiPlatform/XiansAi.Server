@@ -17,7 +17,7 @@ Runs inside the server's `WebApi` and `All` modes using Streamable HTTP.
 | `list_schedules` | List activation schedules, 100 per zero-based page. |
 | `create_schedule` | Start a registered workflow on a cron schedule with ordered JSON arguments. |
 | `update_schedule_timing` | Change cron/timezone, keeping inputs and pause state. |
-| `delete_schedule` | Delete by exact schedule ID. |
+| `delete_schedule` | Delete by exact schedule ID after confirmation. |
 | `pause_schedule` | Suspend future runs. |
 | `resume_schedule` | Resume future runs. |
 | `list_data_types` | Discover record categories in the activation. |

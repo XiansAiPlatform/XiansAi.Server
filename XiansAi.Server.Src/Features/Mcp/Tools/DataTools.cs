@@ -45,6 +45,7 @@ public sealed class DataTools(
 
     private static T Result<T>(ServiceResult<T> result)
     {
+        if ((int)result.StatusCode >= 500) throw new McpException("Data operation failed.");
         if (!result.IsSuccess) throw new McpException(result.ErrorMessage ?? "Data operation failed.");
         return result.Data!;
     }
@@ -128,6 +129,7 @@ public sealed class DataTools(
         var deletedCount = 0;
         try
         {
+            if (target is null) throw new McpException("Target is required.");
             await AuthorizeAsync(target, true);
             RequireConfirmation(confirmed);
             if (string.IsNullOrWhiteSpace(dataType)) throw new McpException("Data type is required.");
