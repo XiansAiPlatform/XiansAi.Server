@@ -104,6 +104,7 @@ public class AdminCapabilityMigratedRoutesTests : AdminApiIntegrationTestBase
         ("webhooks.list", t => GetAsync($"/api/v1/admin/tenants/{t}/webhooks")),
         ("integrations.list", t => GetAsync($"/api/v1/admin/tenants/{t}/integrations")),
         ("secrets.list", _ => GetAsync("/api/v1/admin/secrets")),
+        ("auditLogs.list", t => GetAsync($"/api/v1/admin/tenants/{t}/audit-logs")),
 
         // Also migrated off TenantAdminOrSysAdminOnlyFilter, but as NonDelegable (fixed
         // TenantAdmin-or-SysAdmin, not runtime-editable) rather than an ordinary delegable action —

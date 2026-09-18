@@ -207,6 +207,9 @@ public static class CapabilityActions
     public const string TenantSecretsUpdate = "tenant.secrets.update";
     public const string TenantSecretsDelete = "tenant.secrets.delete";
 
+    // AdminAuditLogEndpoints: /tenants/{tenantId}/audit-logs
+    public const string TenantAuditLogAccess = "tenant.auditLog.access";
+
     // AdminAgentAccessEndpoints, AdminOwnershipEndpoints (GetOwnership only), AdminTemplateEndpoints —
     // three groups that also came off TenantAdminOrSysAdminOnlyFilter, like the agent-certificates,
     // admin-apikeys, webhooks, integrations, integration-metadata, and secrets actions above. Unlike
@@ -533,6 +536,9 @@ public static class CapabilityActions
             "Update a secret's value in the tenant's secret vault."),
         new(TenantSecretsDelete, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Delete a secret from the tenant's secret vault."),
+
+        new(TenantAuditLogAccess, [SystemRoles.TenantAdmin],
+            "Read the tenant's admin-action audit trail (list entries, performed-by and activation-name filter options)."),
 
         new(TenantAgentAccessAccess, [SystemRoles.TenantAdmin],
             "Manage per-agent and per-tenant agent access lists.",
