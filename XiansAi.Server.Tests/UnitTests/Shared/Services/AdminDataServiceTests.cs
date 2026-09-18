@@ -56,6 +56,7 @@ public class AdminDataServiceTests
     [InlineData(null, "Companies", "key-1", true, "AgentName is required")]
     [InlineData("Agent", null, "key-1", true, "DataType is required")]
     [InlineData("Agent", "Companies", null, true, "Key is required")]
+    [InlineData("Agent", "Companies", "   ", true, "Key is required")]
     [InlineData("Agent", "Companies", "key-1", false, "Content is required")]
     public async Task CreateDataAsync_Rejects_Missing_Fields(
         string? agentName,
@@ -136,6 +137,18 @@ public class AdminDataServiceTests
         Assert.Equal("Companies", result.Data.Type);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GetRecordAsync_Rejects_Blank_Tenant(string tenantId)
+    {
+        var result = await _service.GetRecordAsync(tenantId, ObjectId.GenerateNewId().ToString());
+
+        Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+        Assert.Equal("TenantId is required", result.ErrorMessage);
+        _documents.Verify(r => r.GetByIdAsync(It.IsAny<string>()), Times.Never);
+    }
+
     [Fact]
     public async Task GetRecordAsync_Returns_NotFound_For_Other_Tenant()
     {
@@ -153,6 +166,19 @@ public class AdminDataServiceTests
         var result = await _service.GetRecordAsync("tenant-a", recordId);
 
         Assert.Equal(StatusCode.NotFound, result.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UpdateDataAsync_Rejects_Blank_Tenant(string tenantId)
+    {
+        var result = await _service.UpdateDataAsync(tenantId, ObjectId.GenerateNewId().ToString(), new AdminDataUpdateRequest());
+
+        Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+        Assert.Equal("TenantId is required", result.ErrorMessage);
+        _documents.Verify(r => r.GetByIdAsync(It.IsAny<string>()), Times.Never);
+        _documents.Verify(r => r.UpdateAsync(It.IsAny<Document>()), Times.Never);
     }
 
     [Fact]

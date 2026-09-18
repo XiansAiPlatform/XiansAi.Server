@@ -135,6 +135,14 @@ public class AdminDataEndpointsTests : AdminApiIntegrationTestBase
         });
         Assert.Equal(HttpStatusCode.BadRequest, missingType.StatusCode);
 
+        var missingKey = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data", new
+        {
+            agentName = agent.Name,
+            dataType = "Companies",
+            content = new { status = "Completed" }
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, missingKey.StatusCode);
+
         var missingContent = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data", new
         {
             agentName = agent.Name,
@@ -190,6 +198,41 @@ public class AdminDataEndpointsTests : AdminApiIntegrationTestBase
         var fetched = await ReadAsJsonAsync<AdminDataItemResponse>(getResponse);
         Assert.Equal("Updated", fetched!.Content.GetProperty("status").GetString());
         Assert.Equal("Bergen", fetched.Metadata!["city"].ToString());
+    }
+
+    [Fact]
+    public async Task UpdateData_UpdatesParticipantActivationAndExpiry()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var created = await CreateRecordAsync(tenantId, agent.Name);
+        var expiresAt = DateTime.UtcNow.AddDays(7);
+
+        var updateResponse = await PutAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data/{created.Id}", new
+        {
+            participantId = "user@example.com",
+            activationName = "email-responder",
+            expiresAt
+        });
+
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updated = await ReadAsJsonAsync<AdminDataItemResponse>(updateResponse);
+        Assert.NotNull(updated);
+        Assert.Equal("user@example.com", updated!.ParticipantId);
+        Assert.Equal("email-responder", updated.ActivationName);
+        Assert.NotNull(updated.ExpiresAt);
+        Assert.Equal(expiresAt, updated.ExpiresAt!.Value, TimeSpan.FromSeconds(1));
+        Assert.Equal("Completed", updated.Content.GetProperty("status").GetString());
+
+        var getResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/data/{created.Id}");
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        var fetched = await ReadAsJsonAsync<AdminDataItemResponse>(getResponse);
+        Assert.Equal("user@example.com", fetched!.ParticipantId);
+        Assert.Equal("email-responder", fetched.ActivationName);
+        Assert.NotNull(fetched.ExpiresAt);
+        Assert.Equal(expiresAt, fetched.ExpiresAt!.Value, TimeSpan.FromSeconds(1));
     }
 
     [Fact]
