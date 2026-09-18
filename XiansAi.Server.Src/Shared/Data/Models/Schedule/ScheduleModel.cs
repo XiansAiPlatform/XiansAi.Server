@@ -7,6 +7,9 @@ namespace Shared.Models.Schedule;
 /// </summary>
 public class ScheduleModel
 {
+    /// <summary>Ordered workflow arguments, included only in authorized schedule details.</summary>
+    public IReadOnlyList<System.Text.Json.JsonElement>? WorkflowInput { get; set; }
+
     /// <summary>
     /// Unique identifier for the schedule
     /// </summary>
