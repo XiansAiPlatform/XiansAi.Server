@@ -16,25 +16,48 @@ namespace Tests.UnitTests.Shared.Services;
 public class AuditLogServiceTests
 {
     private const string FallbackAction = "TenantCreated";
+    private const string EventTypeAction = "activation.deactivated";
     private const string EndpointAction = "CreateTenant";
     private const string EndpointSummary = "Creates a new tenant";
 
     [Fact]
-    public async Task RecordEntryAsync_UsesEndpointMetadata_WhenHttpContextIsPresent()
+    public async Task RecordEntryAsync_KeepsCallerAction_WhenHttpContextIsPresent()
     {
-        var captured = await RecordAsync(httpContext: HttpContextWithEndpoint(EndpointAction, EndpointSummary));
+        var captured = await RecordAsync(
+            action: EventTypeAction,
+            httpContext: HttpContextWithEndpoint(EndpointAction, EndpointSummary));
+
+        Assert.Equal(EventTypeAction, captured.Action);
+        Assert.Equal(EndpointSummary, captured.Description);
+    }
+
+    [Fact]
+    public async Task RecordEntryAsync_UsesEndpointName_WhenCallerActionIsBlank()
+    {
+        var captured = await RecordAsync(
+            action: "  ",
+            httpContext: HttpContextWithEndpoint(EndpointAction, EndpointSummary));
 
         Assert.Equal(EndpointAction, captured.Action);
         Assert.Equal(EndpointSummary, captured.Description);
     }
 
     [Fact]
+    public async Task RecordEntryAsync_HumanizesEventType_WhenDescriptionAndSummaryAreMissing()
+    {
+        var captured = await RecordAsync(action: EventTypeAction, httpContext: null);
+
+        Assert.Equal(EventTypeAction, captured.Action);
+        Assert.Equal("Activation deactivated", captured.Description);
+    }
+
+    [Fact]
     public async Task RecordEntryAsync_UsesFallbackAction_WhenHttpContextIsNull()
     {
-        var captured = await RecordAsync(httpContext: null);
+        var captured = await RecordAsync(action: FallbackAction, httpContext: null);
 
         Assert.Equal(FallbackAction, captured.Action);
-        Assert.Equal(string.Empty, captured.Description);
+        Assert.Equal("Tenant Created", captured.Description);
         Assert.Equal("participant-1", captured.ParticipantId);
         Assert.Equal("user-1", captured.LoggedInUser);
         Assert.Equal("test-tenant", captured.TenantId);
@@ -140,12 +163,12 @@ public class AuditLogServiceTests
         writeMayFinish.SetResult();
     }
 
-    private static async Task<AuditLogEntry> RecordAsync(HttpContext? httpContext)
+    private static async Task<AuditLogEntry> RecordAsync(string action, HttpContext? httpContext)
     {
         AuditLogEntry? captured = null;
         var service = CreateService(httpContext, onCreate: entry => captured = entry);
 
-        var result = await service.RecordEntryAsync(FallbackAction);
+        var result = await service.RecordEntryAsync(action);
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(captured);

@@ -39,9 +39,10 @@ public interface IAuditLogService
 
 /// <summary>
 /// Records and queries the audit log of user/system actions (who did what, and when).
-/// Endpoint name/summary are read from the current request via <see cref="IHttpContextAccessor"/>
-/// so domain services do not take <c>HttpContext</c>. Caller identity comes from
-/// <see cref="ITenantContext"/>. Non-HTTP callers fall back to the action they pass in.
+/// Caller identity comes from <see cref="ITenantContext"/>. The action is the value the
+/// caller passes (typically a <c>DomainEventTypes</c> constant) so rows match outbound
+/// webhooks; endpoint name is only used when that is blank. Description is the caller's
+/// text, else the endpoint <c>.WithSummary(...)</c>, else a humanized action.
 /// Recording never blocks on the database: the document is built on the caller's thread and
 /// persisted in the background (best-effort, same contract as webhook publishing).
 /// </summary>
@@ -78,8 +79,15 @@ public class AuditLogService : IAuditLogService
             // Mongo write is then fired in the background so a slow or failed insert cannot
             // delay or break the originating business operation (same contract as webhooks).
             var httpContext = _httpContextAccessor.HttpContext;
-            var resolvedAction = httpContext?.GetEndpointName() ?? action;
-            var resolvedDescription = description ?? httpContext?.GetEndpointSummary() ?? string.Empty;
+            // DomainEventEmitter always passes a DomainEventTypes constant. That value must win so
+            // audit rows match outbound webhooks. Endpoint name/summary are only fallbacks for
+            // callers that do not pass an event type, and for a human-readable description when
+            // the endpoint has .WithSummary(...). Most Admin API routes do not.
+            var resolvedAction = FirstNonBlank(action, httpContext?.GetEndpointName());
+            var resolvedDescription = FirstNonBlank(
+                description,
+                httpContext?.GetEndpointSummary(),
+                Describe(resolvedAction)) ?? string.Empty;
             var resolvedTenantId = string.IsNullOrWhiteSpace(tenantId)
                 ? _tenantContext.TenantId
                 : tenantId;
@@ -157,6 +165,40 @@ public class AuditLogService : IAuditLogService
             _logger.LogError(ex, "Error retrieving audit log entries");
             return ServiceResult<(IEnumerable<AuditLogEntry> entries, long totalCount)>.InternalServerError("An error occurred while retrieving audit log entries");
         }
+    }
+
+    private static string? FirstNonBlank(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Fallback description when the caller and the endpoint both omit one.
+    /// Dotted event types become a short sentence ("activation.deactivated" →
+    /// "Activation deactivated"); otherwise PascalCase names are spaced.
+    /// </summary>
+    private static string? Describe(string? action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return null;
+        }
+
+        if (action.Contains('.', StringComparison.Ordinal))
+        {
+            var spaced = action.Replace('.', ' ');
+            return char.ToUpperInvariant(spaced[0]) + spaced[1..];
+        }
+
+        return Humanize(action);
     }
 
     private static (int page, int pageSize) NormalizePaging(int page, int pageSize)
