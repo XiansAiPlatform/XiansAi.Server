@@ -255,14 +255,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             tenantId,
             role = normalizedRole,
         };
-        await _webhookEventPublisher.PublishAsync(
-            DomainEventTypes.UserCreated,
-            createdMetadata,
-            tenantId);
-        await _auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.UserCreated,
-            activationName: null,
-            details: createdMetadata);
+        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserCreated, createdMetadata, tenantId);
 
         return ServiceResult<TenantParticipantUser>.Success(
             ToTenantUserDto(
@@ -348,14 +341,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             tenantId,
             role = normalizedRole,
         };
-        await _webhookEventPublisher.PublishAsync(
-            DomainEventTypes.UserTenantAdded,
-            addedMetadata,
-            tenantId);
-        await _auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.UserTenantAdded,
-            activationName: null,
-            details: addedMetadata);
+        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserTenantAdded, addedMetadata, tenantId);
 
         return ServiceResult<TenantParticipantUser>.Success(MapToTenantUser(user, tenantId)!, StatusCode.Created);
     }
@@ -435,28 +421,14 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             if (profileChanged)
             {
                 var updatedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
-                await _webhookEventPublisher.PublishAsync(
-                    DomainEventTypes.UserUpdated,
-                    updatedMetadata,
-                    tenantId);
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.UserUpdated,
-                    activationName: null,
-                    details: updatedMetadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserUpdated, updatedMetadata, tenantId);
             }
 
             if (isApproved.HasValue && isApproved.Value != wasApproved)
             {
                 var approvalEvent = isApproved.Value ? DomainEventTypes.UserApproved : DomainEventTypes.UserUnapproved;
                 var approvalMetadata = new { userId = user.UserId, email = user.Email, tenantId };
-                await _webhookEventPublisher.PublishAsync(
-                    approvalEvent,
-                    approvalMetadata,
-                    tenantId);
-                await _auditLogService.RecordEntryAsync(
-                    action: approvalEvent,
-                    activationName: null,
-                    details: approvalMetadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, approvalEvent, approvalMetadata, tenantId);
             }
 
             if (addedRole != null)
@@ -469,14 +441,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                     role = addedRole,
                     roles = tr.Roles,
                 };
-                await _webhookEventPublisher.PublishAsync(
-                    DomainEventTypes.UserRoleChanged,
-                    roleChangedMetadata,
-                    tenantId);
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.UserRoleChanged,
-                    activationName: null,
-                    details: roleChangedMetadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserRoleChanged, roleChangedMetadata, tenantId);
             }
 
             var mapped = MapToTenantUser(user, tenantId);
@@ -520,14 +485,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             await InvalidateCachesAsync(userId, tenantId);
 
             var removedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.UserTenantRemoved,
-                removedMetadata,
-                tenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.UserTenantRemoved,
-                activationName: null,
-                details: removedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserTenantRemoved, removedMetadata, tenantId);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -582,26 +540,12 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                 normalizedRole, LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
 
             var roleRemovedMetadata = new { userId = user.UserId, email = user.Email, tenantId, role = normalizedRole };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.UserRoleRemoved,
-                roleRemovedMetadata,
-                tenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.UserRoleRemoved,
-                activationName: null,
-                details: roleRemovedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserRoleRemoved, roleRemovedMetadata, tenantId);
 
             if (membershipRemoved)
             {
                 var tenantRemovedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
-                await _webhookEventPublisher.PublishAsync(
-                    DomainEventTypes.UserTenantRemoved,
-                    tenantRemovedMetadata,
-                    tenantId);
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.UserTenantRemoved,
-                    activationName: null,
-                    details: tenantRemovedMetadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserTenantRemoved, tenantRemovedMetadata, tenantId);
             }
 
             return ServiceResult<bool>.Success(true);

@@ -12,6 +12,11 @@ namespace Shared.Services;
 
 public interface IAuditLogService
 {
+    /// <summary>
+    /// Snapshots the current request's identity and endpoint metadata, then writes the audit row
+    /// in the background. The returned task completes as soon as the document is built and
+    /// validated; a slow or failed Mongo insert cannot delay or fail the caller.
+    /// </summary>
     Task<ServiceResult<AuditLogEntry>> RecordEntryAsync(
         string action,
         string? description = null,
@@ -33,6 +38,8 @@ public interface IAuditLogService
 /// Endpoint name/summary are read from the current request via <see cref="IHttpContextAccessor"/>
 /// so domain services do not take <c>HttpContext</c>. Caller identity comes from
 /// <see cref="ITenantContext"/>. Non-HTTP callers fall back to the action they pass in.
+/// Recording never blocks on the database: the document is built on the caller's thread and
+/// persisted in the background (best-effort, same contract as webhook publishing).
 /// </summary>
 public class AuditLogService : IAuditLogService
 {
@@ -53,7 +60,7 @@ public class AuditLogService : IAuditLogService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<AuditLogEntry>> RecordEntryAsync(
+    public Task<ServiceResult<AuditLogEntry>> RecordEntryAsync(
         string action,
         string? description = null,
         string? activationName = null,
@@ -61,13 +68,17 @@ public class AuditLogService : IAuditLogService
     {
         try
         {
+            // Snapshot identity and endpoint metadata on the caller's thread: HttpContext and
+            // ITenantContext are only valid here. Building the document is CPU-only work; the
+            // Mongo write is then fired in the background so a slow or failed insert cannot
+            // delay or break the originating business operation (same contract as webhooks).
             var httpContext = _httpContextAccessor.HttpContext;
             var resolvedAction = httpContext?.GetEndpointName() ?? action;
             var resolvedDescription = description ?? httpContext?.GetEndpointSummary() ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(resolvedAction))
             {
-                return ServiceResult<AuditLogEntry>.BadRequest("Action is required");
+                return Task.FromResult(ServiceResult<AuditLogEntry>.BadRequest("Action is required"));
             }
 
             var entry = new AuditLogEntry
@@ -83,19 +94,35 @@ public class AuditLogService : IAuditLogService
 
             var sanitized = entry.SanitizeAndValidate();
 
-            await _auditLogRepository.CreateAsync(sanitized);
+            _ = PersistEntryAsync(sanitized, action);
 
-            return ServiceResult<AuditLogEntry>.Success(sanitized, StatusCode.Created);
+            return Task.FromResult(ServiceResult<AuditLogEntry>.Success(sanitized, StatusCode.Created));
         }
         catch (ValidationException ex)
         {
             _logger.LogWarning("Validation failed while recording audit log entry: {Message}", ex.Message);
-            return ServiceResult<AuditLogEntry>.BadRequest($"Validation failed: {ex.Message}");
+            return Task.FromResult(ServiceResult<AuditLogEntry>.BadRequest($"Validation failed: {ex.Message}"));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error recording audit log entry for action {Action}", LogSanitizer.Sanitize(action));
-            return ServiceResult<AuditLogEntry>.InternalServerError("An error occurred while recording the audit log entry");
+            return Task.FromResult(ServiceResult<AuditLogEntry>.InternalServerError("An error occurred while recording the audit log entry"));
+        }
+    }
+
+    /// <summary>
+    /// Writes the audit row off the request path. Safe to use the injected repository here because
+    /// it holds no per-request state (only a thread-safe, long-lived Mongo collection).
+    /// </summary>
+    private async Task PersistEntryAsync(AuditLogEntry entry, string action)
+    {
+        try
+        {
+            await _auditLogRepository.CreateAsync(entry);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error recording audit log entry for action {Action}", LogSanitizer.Sanitize(action));
         }
     }
 

@@ -67,12 +67,7 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy };
 
-                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ApiKeyCreated, metadata, tenantId);
-
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.ApiKeyCreated,
-                    activationName: activationName,
-                    details: metadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyCreated, metadata, tenantId, activationName);
 
                 return ServiceResult<(string, ApiKey)>.Success(result);
             }
@@ -109,12 +104,7 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = id, name = existingKey?.Name };
 
-                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ApiKeyRevoked, metadata, tenantId);
-
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.ApiKeyRevoked,
-                    activationName: null,
-                    details: metadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyRevoked, metadata, tenantId);
 
                 return ServiceResult<bool>.Success(true);
             }
@@ -188,12 +178,7 @@ namespace Shared.Services
 
                 var metadata = new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name };
 
-                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ApiKeyRotated, metadata, tenantId);
-
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.ApiKeyRotated,
-                    activationName: null,
-                    details: metadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyRotated, metadata, tenantId);
 
                 return ServiceResult<(string, ApiKey)?>.Success(rotated);
             }

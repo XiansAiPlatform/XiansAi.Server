@@ -272,12 +272,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
 
             var metadata = new { tenantId, created = existing == null, actorUserId };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.TenantOidcUpdated, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.TenantOidcUpdated,
-                activationName: null,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantOidcUpdated, metadata, tenantId);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -305,12 +300,7 @@ public class TenantOidcConfigService : ITenantOidcConfigService
 
                 var metadata = new { tenantId };
 
-                await _webhookEventPublisher.PublishAsync(DomainEventTypes.TenantOidcDeleted, metadata, tenantId);
-
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.TenantOidcDeleted,
-                    activationName: null,
-                    details: metadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantOidcDeleted, metadata, tenantId);
             }
             
             return removed ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");

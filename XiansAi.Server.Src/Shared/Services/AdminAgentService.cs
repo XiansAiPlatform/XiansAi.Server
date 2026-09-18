@@ -237,12 +237,7 @@ public class AdminAgentService : IAdminAgentService
 
             var metadata = new { tenantId, agentId = agent.Id, agentName = agent.Name };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.AgentDeploymentUpdated, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.AgentDeploymentUpdated,
-                activationName: null,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentDeploymentUpdated, metadata, tenantId);
 
             return ServiceResult<Agent>.Success(agent);
         }

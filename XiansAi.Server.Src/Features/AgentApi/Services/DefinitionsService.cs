@@ -251,14 +251,7 @@ public class DefinitionsService : IDefinitionsService
                 _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
                 var updatedMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
-                await _webhookEventPublisher.PublishAsync(
-                    DomainEventTypes.FlowDefinitionUpdated,
-                    updatedMetadata,
-                    _tenantContext.TenantId);
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.FlowDefinitionUpdated,
-                    activationName: null,
-                    details: updatedMetadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.FlowDefinitionUpdated, updatedMetadata, _tenantContext.TenantId);
 
                 return Results.Ok("Definition deleted and recreated successfully");
             }
@@ -271,14 +264,7 @@ public class DefinitionsService : IDefinitionsService
         _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
         var createdMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
-        await _webhookEventPublisher.PublishAsync(
-            DomainEventTypes.FlowDefinitionCreated,
-            createdMetadata,
-            _tenantContext.TenantId);
-        await _auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.FlowDefinitionCreated,
-            activationName: null,
-            details: createdMetadata);
+        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.FlowDefinitionCreated, createdMetadata, _tenantContext.TenantId);
 
         return Results.Ok("New definition created successfully");
     }
@@ -366,14 +352,7 @@ public class DefinitionsService : IDefinitionsService
         if (existingAgent == null)
         {
             var registeredMetadata = new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.AgentRegistered,
-                registeredMetadata,
-                _tenantContext.TenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.AgentRegistered,
-                activationName: null,
-                details: registeredMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentRegistered, registeredMetadata, _tenantContext.TenantId);
         }
         
         return Results.Ok(new 

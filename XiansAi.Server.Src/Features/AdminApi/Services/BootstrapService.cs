@@ -162,14 +162,7 @@ public class BootstrapService : IBootstrapService
                 LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(resolvedTenantId));
 
             var bootstrappedMetadata = new { tenantId = resolvedTenantId, userId = email };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.PlatformBootstrapped,
-                bootstrappedMetadata,
-                resolvedTenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.PlatformBootstrapped,
-                activationName: null,
-                details: bootstrappedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.PlatformBootstrapped, bootstrappedMetadata, resolvedTenantId);
 
             return ServiceResult<BootstrapResponse>.Success(new BootstrapResponse
             {

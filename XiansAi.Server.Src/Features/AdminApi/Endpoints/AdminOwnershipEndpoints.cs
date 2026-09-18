@@ -216,14 +216,7 @@ public static class AdminOwnershipEndpoints
                     newOwner = newAdminUserId,
                     transferredBy = tenantContext.LoggedInUser
                 };
-                await webhookEventPublisher.PublishAsync(
-                    DomainEventTypes.AgentOwnershipTransferred,
-                    transferredMetadata,
-                    parsedTenant);
-                await auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.AgentOwnershipTransferred,
-                    activationName: null,
-                    details: transferredMetadata);
+                DomainEventEmitter.Emit(webhookEventPublisher, auditLogService, DomainEventTypes.AgentOwnershipTransferred, transferredMetadata, parsedTenant);
 
                 return Results.Ok(new
                 {

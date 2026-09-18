@@ -257,13 +257,7 @@ public class TemplateService : ITemplateService
                 LogSanitizer.Sanitize(agentName), deletedDefinitionsCount, deletedKnowledgeCount);
 
             var deletedMetadata = new { templateId = agent.Id, name = agent.Name };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.TemplateDeleted,
-                deletedMetadata);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.TemplateDeleted,
-                activationName: null,
-                details: deletedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TemplateDeleted, deletedMetadata);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -486,14 +480,7 @@ public class TemplateService : ITemplateService
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
 
             var deployedMetadata = new { tenantId, templateName = agentName, agentId = newAgent.Id, agentName = newAgent.Name, createdBy, definitionsCount = clonedDefinitionsCount };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.AgentTemplateDeployed,
-                deployedMetadata,
-                tenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.AgentTemplateDeployed,
-                activationName: null,
-                details: deployedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentTemplateDeployed, deployedMetadata, tenantId);
 
             return ServiceResult<Agent>.Success(newAgent);
         }
@@ -640,14 +627,7 @@ public class TemplateService : ITemplateService
                 createdBy,
                 definitionsCount = clonedDefinitionsCount
             };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.AgentTemplatePromoted,
-                promotedMetadata,
-                tenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.AgentTemplatePromoted,
-                activationName: null,
-                details: promotedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentTemplatePromoted, promotedMetadata, tenantId);
 
             return ServiceResult<Agent>.Success(newTemplate);
         }
@@ -940,13 +920,7 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Successfully updated system-scoped agent template {TemplateId}", LogSanitizer.Sanitize(template.Id));
 
             var updatedMetadata = new { templateId = template.Id, name = template.Name };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.TemplateUpdated,
-                updatedMetadata);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.TemplateUpdated,
-                activationName: null,
-                details: updatedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TemplateUpdated, updatedMetadata);
 
             return ServiceResult<Agent>.Success(template);
         }

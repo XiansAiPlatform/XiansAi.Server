@@ -113,7 +113,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
                 actor,
                 hasTls = !string.IsNullOrEmpty(certificate)
             };
-            await RecordAsync(DomainEventTypes.TenantTemporalUpdated, tenantId, metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantTemporalUpdated, metadata, tenantId);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -138,7 +138,7 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
                 return ServiceResult<bool>.NotFound("No configuration found");
             }
 
-            await RecordAsync(DomainEventTypes.TenantTemporalReverted, tenantId, new { tenantId, actor });
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantTemporalReverted, new { tenantId, actor }, tenantId);
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -227,12 +227,6 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
             // Temporal server may take a moment to be ready to accept search attribute registration after namespace creation.
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
-    }
-
-    private async Task RecordAsync(string action, string tenantId, object details)
-    {
-        await _webhookEventPublisher.PublishAsync(action, details, tenantId);
-        await _auditLogService.RecordEntryAsync(action: action, activationName: null, details: details);
     }
 
     private static async Task DisposeAsync(TemporalClient? client)

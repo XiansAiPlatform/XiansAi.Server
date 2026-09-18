@@ -151,7 +151,7 @@ public static class AdminAgentAccessEndpoints
             ApplyUserLevel(agent, request.UserId, level);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            await PublishAccessChangedAsync(webhookEventPublisher, auditLogService, agent, "user-added");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, "user-added");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("AddAgentAccessUser");
@@ -182,7 +182,7 @@ public static class AdminAgentAccessEndpoints
             ApplyUserLevel(agent, userId, level);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            await PublishAccessChangedAsync(webhookEventPublisher, auditLogService, agent, "user-updated");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, "user-updated");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("UpdateAgentAccessUser");
@@ -204,7 +204,7 @@ public static class AdminAgentAccessEndpoints
             agent.RevokeReadAccess(userId);
             await agentRepository.UpdateInternalAsync(agent.Id, agent);
 
-            await PublishAccessChangedAsync(webhookEventPublisher, auditLogService, agent, "user-removed");
+            PublishAccessChanged(webhookEventPublisher, auditLogService, agent, "user-removed");
             return Results.Ok(ToAccessResponse(agent));
         })
         .WithName("RemoveAgentAccessUser");
@@ -311,7 +311,7 @@ public static class AdminAgentAccessEndpoints
             string.Equals(membership.Tenant, tenantId, StringComparison.OrdinalIgnoreCase)
             && membership.IsApproved);
 
-    private static async Task PublishAccessChangedAsync(
+    private static void PublishAccessChanged(
         IWebhookEventPublisher webhookEventPublisher,
         IAuditLogService auditLogService,
         Agent agent,
@@ -328,14 +328,6 @@ public static class AdminAgentAccessEndpoints
             readAccess = agent.ReadAccess
         };
 
-        await webhookEventPublisher.PublishAsync(
-            DomainEventTypes.AgentAccessChanged,
-            metadata,
-            agent.Tenant);
-
-        await auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.AgentAccessChanged,
-            activationName: null,
-            details: metadata);
+        DomainEventEmitter.Emit(webhookEventPublisher, auditLogService, DomainEventTypes.AgentAccessChanged, metadata, agent.Tenant);
     }
 }

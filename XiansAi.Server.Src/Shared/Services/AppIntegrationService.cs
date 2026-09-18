@@ -358,12 +358,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             var metadata = new { tenantId, integrationId = id, name = integration.Name, platformId = integration.PlatformId, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.IntegrationCreated, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.IntegrationCreated,
-                activationName: integration.ActivationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.IntegrationCreated, metadata, tenantId, integration.ActivationName);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -508,12 +503,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.IntegrationUpdated, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.IntegrationUpdated,
-                activationName: existing.ActivationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.IntegrationUpdated, metadata, tenantId, existing.ActivationName);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -554,12 +544,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.IntegrationDeleted, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.IntegrationDeleted,
-                activationName: existing.ActivationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.IntegrationDeleted, metadata, tenantId, existing.ActivationName);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -702,12 +687,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             var metadata = new { tenantId, integrationId = id, name = integration.Name, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.IntegrationWebhookCreated, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.IntegrationWebhookCreated,
-                activationName: integration.ActivationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.IntegrationWebhookCreated, metadata, tenantId, integration.ActivationName);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -847,12 +827,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.IntegrationEnabled, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.IntegrationEnabled,
-                activationName: existing.ActivationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.IntegrationEnabled, metadata, tenantId, existing.ActivationName);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -903,12 +878,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.IntegrationDisabled, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.IntegrationDisabled,
-                activationName: existing.ActivationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.IntegrationDisabled, metadata, tenantId, existing.ActivationName);
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }

@@ -329,14 +329,7 @@ public class KnowledgeService : IKnowledgeService
             return Results.NotFound("Knowledge not found or could not be deleted");
 
         var deletedMetadata = new { tenantId = tenantIdToDelete, name = request.Name, agentName = request.Agent, systemScoped = existingKnowledge.SystemScoped };
-        await _webhookEventPublisher.PublishAsync(
-            DomainEventTypes.KnowledgeDeleted,
-            deletedMetadata,
-            tenantIdToDelete);
-        await _auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.KnowledgeDeleted,
-            activationName: existingKnowledge.ActivationName,
-            details: deletedMetadata);
+        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeDeleted, deletedMetadata, tenantIdToDelete, existingKnowledge.ActivationName);
 
         return Results.Ok(new { message = "All versions deleted" });
     }
@@ -594,14 +587,7 @@ public class KnowledgeService : IKnowledgeService
             await _knowledgeRepository.CreateAsync(knowledge);
 
             var createdMetadata = new { tenantId = knowledge.TenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName = knowledge.Agent, activationName = knowledge.ActivationName, systemScoped = knowledge.SystemScoped, version = knowledge.Version, createdBy = knowledge.CreatedBy };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.KnowledgeCreated,
-                createdMetadata,
-                knowledge.TenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.KnowledgeCreated,
-                activationName: knowledge.ActivationName,
-                details: createdMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeCreated, createdMetadata, knowledge.TenantId, knowledge.ActivationName);
 
             return Results.Ok(knowledge);
         }
@@ -717,12 +703,7 @@ public class KnowledgeService : IKnowledgeService
         {
             var metadata = new { tenantId, knowledgeId = id, name = knowledge.Name, agentName = knowledge.Agent, activationName = knowledge.ActivationName };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeDeleted, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.KnowledgeDeleted,
-                activationName: knowledge.ActivationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeDeleted, metadata, tenantId, knowledge.ActivationName);
         }
 
         return deleted;
@@ -739,11 +720,7 @@ public class KnowledgeService : IKnowledgeService
         if (deletedCount > 0)
         {
             var metadata = new { tenantId, agentName, activationName, deletedCount };
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeDeleted, metadata, tenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.KnowledgeDeleted,
-                activationName: activationName,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeDeleted, metadata, tenantId, activationName);
         }
 
         return deletedCount;
@@ -794,12 +771,7 @@ public class KnowledgeService : IKnowledgeService
 
         var metadata = new { tenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName, activationName, systemScoped, version = knowledge.Version, createdBy };
 
-        await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeCreated, metadata, tenantId);
-
-        await _auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.KnowledgeCreated,
-            activationName: activationName,
-            details: metadata);
+        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeCreated, metadata, tenantId, activationName);
 
         return knowledge;
     }
@@ -858,12 +830,7 @@ public class KnowledgeService : IKnowledgeService
 
         var metadata = new { tenantId, knowledgeId = updatedKnowledge.Id, name = updatedKnowledge.Name, type = updatedKnowledge.Type, agentName = updatedKnowledge.Agent, updatedBy };
 
-        await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeUpdated, metadata, tenantId);
-
-        await _auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.KnowledgeUpdated,
-            activationName: updatedKnowledge.ActivationName,
-            details: metadata);
+        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.KnowledgeUpdated, metadata, tenantId, updatedKnowledge.ActivationName);
  
 
         return updatedKnowledge;

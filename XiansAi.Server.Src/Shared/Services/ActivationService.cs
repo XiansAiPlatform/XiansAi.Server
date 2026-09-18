@@ -187,12 +187,7 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = validatedAgentName };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationCreated, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.ActivationCreated,
-                activationName: activation.Name,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationCreated, metadata, tenantId, activation.Name);
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -338,12 +333,7 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId, activationId = activation.Id, name = activation.Name };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationUpdated, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.ActivationUpdated,
-                activationName: activation.Name,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationUpdated, metadata, tenantId, activation.Name);
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -590,12 +580,7 @@ public class ActivationService : IActivationService
 
                 var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds };
 
-                await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationActivated, metadata, tenantId);
-
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.ActivationActivated,
-                    activationName: activation.Name,
-                    details: metadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationActivated, metadata, tenantId, activation.Name);
 
                 return ServiceResult<AgentActivation>.Success(activation);
             }
@@ -708,12 +693,7 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationDeactivated, metadata, activation.TenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.ActivationDeactivated,
-                activationName: activation.Name,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationDeactivated, metadata, activation.TenantId, activation.Name);
 
             return ServiceResult<AgentActivation>.Success(activation);
         }
@@ -772,12 +752,7 @@ public class ActivationService : IActivationService
 
             var metadata = new { tenantId = activation.TenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationDeleted, metadata, activation.TenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.ActivationDeleted,
-                activationName: activation.Name,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ActivationDeleted, metadata, activation.TenantId, activation.Name);
 
             return ServiceResult<bool>.Success(true);
         }

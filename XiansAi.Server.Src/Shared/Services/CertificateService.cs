@@ -152,14 +152,7 @@ public class CertificateService
         if (revoked)
         {
             var revokedMetadata = new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.CertificateRevoked,
-                revokedMetadata,
-                cert.TenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.CertificateRevoked,
-                activationName: null,
-                details: revokedMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.CertificateRevoked, revokedMetadata, cert.TenantId);
         }
 
         return revoked;
@@ -199,14 +192,7 @@ public class CertificateService
             var base64String = Convert.ToBase64String(certBytes);
 
             var createdMetadata = new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName };
-            await _webhookEventPublisher.PublishAsync(
-                DomainEventTypes.CertificateCreated,
-                createdMetadata,
-                _tenantContext.TenantId);
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.CertificateCreated,
-                activationName: null,
-                details: createdMetadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.CertificateCreated, createdMetadata, _tenantContext.TenantId);
 
             return Results.Ok(new { certificate = base64String });
         }

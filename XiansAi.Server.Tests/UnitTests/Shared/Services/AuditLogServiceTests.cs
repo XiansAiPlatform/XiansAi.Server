@@ -35,6 +35,44 @@ public class AuditLogServiceTests
         Assert.Equal(string.Empty, captured.Description);
     }
 
+    [Fact]
+    public async Task RecordEntryAsync_DoesNotWaitForRepositoryWrite()
+    {
+        var writeStarted = new TaskCompletionSource();
+        var writeMayFinish = new TaskCompletionSource();
+
+        var repository = new Mock<IAuditLogRepository>();
+        repository
+            .Setup(r => r.CreateAsync(It.IsAny<AuditLogEntry>()))
+            .Returns(async () =>
+            {
+                writeStarted.TrySetResult();
+                await writeMayFinish.Task;
+            });
+
+        var tenantContext = new Mock<ITenantContext>();
+        tenantContext.Setup(c => c.TenantId).Returns("test-tenant");
+        tenantContext.Setup(c => c.ParticipantId).Returns("participant-1");
+        tenantContext.Setup(c => c.LoggedInUser).Returns("user-1");
+
+        var accessor = new Mock<IHttpContextAccessor>();
+        accessor.Setup(a => a.HttpContext).Returns((HttpContext?)null);
+
+        var service = new AuditLogService(
+            repository.Object,
+            tenantContext.Object,
+            accessor.Object,
+            NullLogger<AuditLogService>.Instance);
+
+        var result = await service.RecordEntryAsync(FallbackAction);
+
+        Assert.True(result.IsSuccess);
+        await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(writeMayFinish.Task.IsCompleted);
+
+        writeMayFinish.SetResult();
+    }
+
     private static async Task<AuditLogEntry> RecordAsync(HttpContext? httpContext)
     {
         AuditLogEntry? captured = null;

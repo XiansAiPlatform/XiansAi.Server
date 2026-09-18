@@ -275,12 +275,7 @@ public class AgentDeletionService : IAgentDeletionService
                 deletedActivations = result.DeletedActivations,
             };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.AgentDeleted, metadata, tenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.AgentDeleted,
-                activationName: null,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentDeleted, metadata, tenantId);
 
             return ServiceResult<AgentDeletionResult>.Success(result);
         }

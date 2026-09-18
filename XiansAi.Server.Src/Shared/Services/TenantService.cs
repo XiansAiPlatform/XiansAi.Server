@@ -675,12 +675,7 @@ public class TenantService : ITenantService
                 createdBy = validatedTenant.CreatedBy,
             };
 
-            await _webhookEventPublisher.PublishAsync(DomainEventTypes.TenantCreated, metadata, validatedTenant.TenantId);
-
-            await _auditLogService.RecordEntryAsync(
-                action: DomainEventTypes.TenantCreated,
-                activationName: null,
-                details: metadata);
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantCreated, metadata, validatedTenant.TenantId);
 
             var result = new TenantCreatedResult
             {
@@ -783,12 +778,7 @@ public class TenantService : ITenantService
                 var enabledEvent = request.Enabled.Value ? DomainEventTypes.TenantEnabled : DomainEventTypes.TenantDisabled;
                 var metadata = new { tenantId = existingTenant.TenantId, id = existingTenant.Id };
 
-                await _webhookEventPublisher.PublishAsync(enabledEvent, metadata, existingTenant.TenantId);
-
-                await _auditLogService.RecordEntryAsync(
-                    action: enabledEvent,
-                    activationName: null,
-                    details: metadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, enabledEvent, metadata, existingTenant.TenantId);
             }
 
             return result;
@@ -932,12 +922,7 @@ public class TenantService : ITenantService
             enabled = validatedTenant.Enabled,
         };
 
-        await _webhookEventPublisher.PublishAsync(DomainEventTypes.TenantUpdated, metadata, validatedTenant.TenantId);
-
-        await _auditLogService.RecordEntryAsync(
-            action: DomainEventTypes.TenantUpdated,
-            activationName: null,
-            details: metadata);
+        DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantUpdated, metadata, validatedTenant.TenantId);
 
         return ServiceResult<Tenant>.Success(validatedTenant);
     }
@@ -974,12 +959,7 @@ public class TenantService : ITenantService
 
                 var metadata = new { tenantId = existingTenant.TenantId, id = existingTenant.Id, name = existingTenant.Name };
 
-                await _webhookEventPublisher.PublishAsync(DomainEventTypes.TenantDeleted, metadata, existingTenant.TenantId);
-
-                await _auditLogService.RecordEntryAsync(
-                    action: DomainEventTypes.TenantDeleted,
-                    activationName: null,
-                    details: metadata);
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TenantDeleted, metadata, existingTenant.TenantId);
 
                 return ServiceResult<bool>.Success(true);
             }
