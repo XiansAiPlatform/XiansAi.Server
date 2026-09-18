@@ -1,620 +1,305 @@
 using Features.AgentApi.Repositories;
-using Shared.Utils.Services;
-using System.Text.Json;
-using MongoDB.Bson;
+using Shared.Auth;
+using Shared.Data.Models;
+using Shared.Repositories;
 using Shared.Utils;
+using Shared.Utils.Services;
 
 namespace Shared.Services;
 
 /// <summary>
-/// Request models for AdminData operations.
-/// </summary>
-public class AdminDataSchemaRequest
-{
-    public string TenantId { get; set; } = string.Empty;
-    public DateTime StartDate { get; set; }
-    public DateTime EndDate { get; set; }
-    public string AgentName { get; set; } = string.Empty;
-    public string? ActivationName { get; set; }
-}
-
-public class AdminDataListRequest
-{
-    public string TenantId { get; set; } = string.Empty;
-    public DateTime StartDate { get; set; }
-    public DateTime EndDate { get; set; }
-    public string AgentName { get; set; } = string.Empty;
-    public string? ActivationName { get; set; }
-    public string DataType { get; set; } = string.Empty;
-    public int Skip { get; set; } = 0;
-    public int Limit { get; set; } = 100;
-}
-
-public class AdminDataDeleteRequest
-{
-    public string TenantId { get; set; } = string.Empty;
-    public DateTime StartDate { get; set; }
-    public DateTime EndDate { get; set; }
-    public string AgentName { get; set; } = string.Empty;
-    public string? ActivationName { get; set; }
-    public string DataType { get; set; } = string.Empty;
-}
-
-public class AdminDataDeleteRecordRequest
-{
-    public string TenantId { get; set; } = string.Empty;
-    public string RecordId { get; set; } = string.Empty;
-}
-
-/// <summary>
-/// Response models for AdminData operations.
-/// </summary>
-public class AdminDataSchemaResponse
-{
-    public AdminDataPeriod Period { get; set; } = new();
-    public AdminDataFilters Filters { get; set; } = new();
-    public List<string> Types { get; set; } = new();
-}
-
-public class AdminDataPeriod
-{
-    public DateTime StartDate { get; set; }
-    public DateTime EndDate { get; set; }
-}
-
-public class AdminDataFilters
-{
-    public string? AgentName { get; set; }
-    public string? ActivationName { get; set; }
-}
-
-public class AdminDataListResponse
-{
-    public List<AdminDataItemResponse> Data { get; set; } = new();
-    public int Total { get; set; }
-    public int Skip { get; set; }
-    public int Limit { get; set; }
-}
-
-public class AdminDataItemResponse
-{
-    public string Id { get; set; } = string.Empty;
-    public string Key { get; set; } = string.Empty;
-    public string? ParticipantId { get; set; }
-    public JsonElement Content { get; set; }
-    public Dictionary<string, object>? Metadata { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-    public DateTime? ExpiresAt { get; set; }
-}
-
-public class AdminDataDeleteResponse
-{
-    public int DeletedCount { get; set; }
-    public AdminDataPeriod Period { get; set; } = new();
-    public AdminDataFilters Filters { get; set; } = new();
-    public string DataType { get; set; } = string.Empty;
-}
-
-public class AdminDataDeleteRecordResponse
-{
-    public bool Deleted { get; set; }
-    public string RecordId { get; set; } = string.Empty;
-    public AdminDataItemResponse? DeletedRecord { get; set; }
-}
-
-/// <summary>
-/// Service interface for admin data operations.
-/// </summary>
-public interface IAdminDataService
-{
-    /// <summary>
-    /// Get available data schema (types) for the specified filters.
-    /// </summary>
-    Task<ServiceResult<AdminDataSchemaResponse>> GetDataSchemaAsync(
-        AdminDataSchemaRequest request,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Get paginated data for the specified filters.
-    /// </summary>
-    Task<ServiceResult<AdminDataListResponse>> GetDataAsync(
-        AdminDataListRequest request,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete all data records of a specific type within the specified filters and date range.
-    /// </summary>
-    Task<ServiceResult<AdminDataDeleteResponse>> DeleteDataAsync(
-        AdminDataDeleteRequest request,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete a specific data record by its ID.
-    /// </summary>
-    Task<ServiceResult<AdminDataDeleteRecordResponse>> DeleteRecordAsync(
-        AdminDataDeleteRecordRequest request,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete all documents (every type, no date restriction) for a given agent activation.
-    /// </summary>
-    Task<ServiceResult<int>> DeleteDocumentsByActivationAsync(string tenantId, string agentName, string activationName);
-}
-
-/// <summary>
 /// Service for admin data operations.
 /// Provides access to document data for admin dashboards and analytics.
+/// Tenant isolation is enforced on every read and write; identity fields are never taken from the body.
 /// </summary>
-public class AdminDataService : IAdminDataService
+public partial class AdminDataService : IAdminDataService
 {
     private readonly IDocumentRepository _documentRepository;
+    private readonly IAgentRepository _agentRepository;
+    private readonly ITenantContext _tenantContext;
     private readonly ILogger<AdminDataService> _logger;
 
-    // Validation constants
     private const int MaxDateRangeDays = 365;
     private const int MaxLimit = 1000;
 
     public AdminDataService(
         IDocumentRepository documentRepository,
+        IAgentRepository agentRepository,
+        ITenantContext tenantContext,
         ILogger<AdminDataService> logger)
     {
         _documentRepository = documentRepository ?? throw new ArgumentNullException(nameof(documentRepository));
+        _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ServiceResult<AdminDataSchemaResponse>> GetDataSchemaAsync(
-        AdminDataSchemaRequest request,
+    public async Task<ServiceResult<AdminDataItemResponse>> GetRecordAsync(
+        string tenantId,
+        string recordId,
         CancellationToken cancellationToken = default)
     {
-        // Validate request
-        var validationResult = ValidateSchemaRequest(request);
-        if (!validationResult.IsSuccess)
+        var loaded = await LoadTenantDocumentAsync(tenantId, recordId);
+        if (!loaded.IsSuccess)
         {
-            return validationResult;
+            return ServiceResult<AdminDataItemResponse>.Failure(
+                loaded.ErrorMessage ?? "Record not found",
+                loaded.StatusCode);
+        }
+
+        return ServiceResult<AdminDataItemResponse>.Success(AdminDataMapper.ToItemResponse(loaded.Data!));
+    }
+
+    public async Task<ServiceResult<AdminDataItemResponse>> CreateDataAsync(
+        string tenantId,
+        AdminDataCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var validationError = ValidateCreateRequest(tenantId, request);
+        if (validationError != null)
+        {
+            return ServiceResult<AdminDataItemResponse>.BadRequest(validationError);
         }
 
         try
         {
-            _logger.LogInformation(
-                "Getting data schema - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, Range: {StartDate} to {EndDate}",
-                request.TenantId, request.AgentName, request.ActivationName, request.StartDate, request.EndDate);
-
-            // Get all available document types for the agent (filtered by activation name if provided)
-            var documentTypes = await _documentRepository.GetDistinctTypesAsync(request.TenantId, request.AgentName, request.ActivationName);
-
-            var response = new AdminDataSchemaResponse
+            var agent = await _agentRepository.GetByNameInternalAsync(request.AgentName, tenantId);
+            if (agent == null)
             {
-                Period = new AdminDataPeriod
-                {
-                    StartDate = request.StartDate,
-                    EndDate = request.EndDate
-                },
-                Filters = new AdminDataFilters
-                {
-                    AgentName = request.AgentName,
-                    ActivationName = request.ActivationName
-                },
-                Types = documentTypes
+                _logger.LogWarning(
+                    "Create data rejected - agent not found. TenantId: {TenantId}, AgentName: {AgentName}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.AgentName));
+                return ServiceResult<AdminDataItemResponse>.NotFound("Agent not found");
+            }
+
+            var existingByKey = await _documentRepository.GetByKeyAsync(request.DataType, request.Key, tenantId);
+            if (existingByKey != null)
+            {
+                _logger.LogWarning(
+                    "Create data rejected - duplicate type/key. TenantId: {TenantId}, DataType: {DataType}, Key: {Key}",
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.DataType), LogSanitizer.Sanitize(request.Key));
+                return ServiceResult<AdminDataItemResponse>.Conflict("A record with the same type and key already exists");
+            }
+
+            var actor = _tenantContext.LoggedInUser ?? "system";
+            var document = new Document
+            {
+                TenantId = tenantId,
+                AgentId = request.AgentName,
+                Type = request.DataType,
+                Key = request.Key,
+                ActivationName = request.ActivationName,
+                ParticipantId = request.ParticipantId,
+                WorkflowId = request.WorkflowId,
+                ContentType = "JsonElement",
+                Content = AdminDataMapper.ToBsonValue(request.Content),
+                Metadata = AdminDataMapper.ToBsonDocument(request.Metadata),
+                ExpiresAt = request.ExpiresAt,
+                CreatedBy = actor,
+                UpdatedBy = actor
             };
 
-            _logger.LogInformation(
-                "Data schema retrieved successfully - AgentName: {AgentName}, Types: {TypeCount}",
-                LogSanitizer.Sanitize(request.AgentName), documentTypes.Count);
+            document = await _documentRepository.CreateAsync(document);
 
-            return ServiceResult<AdminDataSchemaResponse>.Success(response);
+            _logger.LogInformation(
+                "Data record created - RecordId: {RecordId}, TenantId: {TenantId}, AgentName: {AgentName}, DataType: {DataType}",
+                LogSanitizer.Sanitize(document.Id), LogSanitizer.Sanitize(tenantId),
+                LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(request.DataType));
+
+            return ServiceResult<AdminDataItemResponse>.Success(
+                AdminDataMapper.ToItemResponse(document),
+                StatusCode.Created);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve data schema. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
-            return ServiceResult<AdminDataSchemaResponse>.InternalServerError("Failed to retrieve data schema");
+            _logger.LogError(ex, "Failed to create data record. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<AdminDataItemResponse>.InternalServerError("Failed to create data record");
         }
     }
 
-    public async Task<ServiceResult<AdminDataListResponse>> GetDataAsync(
-        AdminDataListRequest request,
+    public async Task<ServiceResult<AdminDataItemResponse>> UpdateDataAsync(
+        string tenantId,
+        string recordId,
+        AdminDataUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
-        // Validate request
-        var validationResult = ValidateDataRequest(request);
-        if (!validationResult.IsSuccess)
+        var loaded = await LoadTenantDocumentAsync(tenantId, recordId);
+        if (!loaded.IsSuccess)
         {
-            return validationResult;
+            return ServiceResult<AdminDataItemResponse>.Failure(
+                loaded.ErrorMessage ?? "Record not found",
+                loaded.StatusCode);
         }
+
+        var existing = loaded.Data!;
 
         try
         {
-            _logger.LogInformation(
-                "Getting data - TenantId: {TenantId}, AgentName: {AgentName}, DataType: {DataType}, ActivationName: {ActivationName}, Range: {StartDate} to {EndDate}, Skip: {Skip}, Limit: {Limit}",
-                request.TenantId, request.AgentName, request.DataType, request.ActivationName, request.StartDate, request.EndDate, request.Skip, request.Limit);
+            var newType = string.IsNullOrWhiteSpace(request.DataType) ? existing.Type : request.DataType;
+            var newKey = request.Key ?? existing.Key;
 
-            // Build query filter
-            var queryFilter = new DocumentQueryFilter
+            if (!string.Equals(newType, existing.Type, StringComparison.Ordinal) ||
+                !string.Equals(newKey, existing.Key, StringComparison.Ordinal))
             {
-                AgentId = request.AgentName,
-                Type = request.DataType,
-                ActivationName = request.ActivationName,
-                CreatedAfter = request.StartDate,
-                CreatedBefore = request.EndDate,
-                Skip = request.Skip,
-                Limit = request.Limit,
-                SortBy = "CreatedAt",
-                SortDescending = true
-            };
+                if (!string.IsNullOrWhiteSpace(newType) && !string.IsNullOrWhiteSpace(newKey))
+                {
+                    var colliding = await _documentRepository.GetByKeyAsync(newType, newKey, tenantId);
+                    if (colliding != null && colliding.Id != existing.Id)
+                    {
+                        return ServiceResult<AdminDataItemResponse>.Conflict(
+                            "A record with the same type and key already exists");
+                    }
+                }
+            }
 
-            // Get documents and count in parallel
-            var documentsTask = _documentRepository.QueryAsync(request.TenantId, queryFilter);
-            var countTask = _documentRepository.CountAsync(request.TenantId, new DocumentQueryFilter
+            ApplyUpdate(existing, request);
+            existing.UpdatedBy = _tenantContext.LoggedInUser ?? "system";
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            var updated = await _documentRepository.UpdateAsync(existing);
+            if (!updated)
             {
-                AgentId = request.AgentName,
-                Type = request.DataType,
-                ActivationName = request.ActivationName,
-                CreatedAfter = request.StartDate,
-                CreatedBefore = request.EndDate
-            });
-
-            await Task.WhenAll(documentsTask, countTask);
-
-            var documents = documentsTask.Result;
-            var totalCount = countTask.Result;
-
-            // Convert documents to response format
-            var dataItems = documents.Select(ConvertToDataItemResponse).ToList();
-
-            var response = new AdminDataListResponse
-            {
-                Data = dataItems,
-                Total = (int)totalCount,
-                Skip = request.Skip,
-                Limit = request.Limit
-            };
+                return ServiceResult<AdminDataItemResponse>.InternalServerError("Failed to update data record");
+            }
 
             _logger.LogInformation(
-                "Data retrieved successfully - AgentName: {AgentName}, DataType: {DataType}, Total: {Total}, Returned: {Count}",
-                request.AgentName, request.DataType, totalCount, dataItems.Count);
+                "Data record updated - RecordId: {RecordId}, TenantId: {TenantId}, AgentName: {AgentName}",
+                LogSanitizer.Sanitize(recordId), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(existing.AgentId));
 
-            return ServiceResult<AdminDataListResponse>.Success(response);
+            return ServiceResult<AdminDataItemResponse>.Success(AdminDataMapper.ToItemResponse(existing));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve data. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
-            return ServiceResult<AdminDataListResponse>.InternalServerError("Failed to retrieve data");
+            _logger.LogError(ex, "Failed to update data record. RecordId: {RecordId}, Error: {ErrorMessage}",
+                LogSanitizer.Sanitize(recordId), LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<AdminDataItemResponse>.InternalServerError("Failed to update data record");
         }
     }
 
-    public async Task<ServiceResult<AdminDataDeleteResponse>> DeleteDataAsync(
-        AdminDataDeleteRequest request,
-        CancellationToken cancellationToken = default)
+    private static void ApplyUpdate(Document existing, AdminDataUpdateRequest request)
     {
-        // Validate request
-        var validationResult = ValidateDeleteRequest(request);
-        if (!validationResult.IsSuccess)
+        if (!string.IsNullOrWhiteSpace(request.DataType))
         {
-            return validationResult;
+            existing.Type = request.DataType;
+        }
+
+        if (request.Key != null)
+        {
+            existing.Key = request.Key;
+        }
+
+        if (AdminDataMapper.HasJsonContent(request.Content))
+        {
+            existing.Content = AdminDataMapper.ToBsonValue(request.Content);
+        }
+
+        if (request.Metadata != null)
+        {
+            existing.Metadata = AdminDataMapper.ToBsonDocument(request.Metadata);
+        }
+
+        if (request.ParticipantId != null)
+        {
+            existing.ParticipantId = request.ParticipantId;
+        }
+
+        if (request.ActivationName != null)
+        {
+            existing.ActivationName = request.ActivationName;
+        }
+
+        if (request.ExpiresAt.HasValue)
+        {
+            existing.ExpiresAt = request.ExpiresAt;
+        }
+    }
+
+    private async Task<ServiceResult<Document>> LoadTenantDocumentAsync(string tenantId, string recordId)
+    {
+        var tenantError = ValidateTenantId(tenantId);
+        if (tenantError != null)
+        {
+            return ServiceResult<Document>.BadRequest(tenantError);
+        }
+
+        if (string.IsNullOrWhiteSpace(recordId))
+        {
+            return ServiceResult<Document>.BadRequest("RecordId is required");
         }
 
         try
         {
-            _logger.LogInformation(
-                "Deleting data - TenantId: {TenantId}, AgentName: {AgentName}, DataType: {DataType}, ActivationName: {ActivationName}, Range: {StartDate} to {EndDate}",
-                request.TenantId, request.AgentName, request.DataType, request.ActivationName, request.StartDate, request.EndDate);
-
-            // Build query filter for deletion
-            var queryFilter = new DocumentQueryFilter
+            var existing = await _documentRepository.GetByIdAsync(recordId);
+            if (existing == null || existing.TenantId != tenantId)
             {
-                AgentId = request.AgentName,
-                Type = request.DataType,
-                ActivationName = request.ActivationName,
-                CreatedAfter = request.StartDate,
-                CreatedBefore = request.EndDate
-            };
-
-            // Delete documents matching the filter
-            var deletedCount = await _documentRepository.DeleteByFilterAsync(request.TenantId, queryFilter);
-
-            var response = new AdminDataDeleteResponse
-            {
-                DeletedCount = deletedCount,
-                Period = new AdminDataPeriod
+                if (existing == null)
                 {
-                    StartDate = request.StartDate,
-                    EndDate = request.EndDate
-                },
-                Filters = new AdminDataFilters
-                {
-                    AgentName = request.AgentName,
-                    ActivationName = request.ActivationName
-                },
-                DataType = request.DataType
-            };
-
-            _logger.LogInformation(
-                "Data deletion completed successfully - AgentName: {AgentName}, DataType: {DataType}, DeletedCount: {DeletedCount}",
-                request.AgentName, request.DataType, deletedCount);
-
-            return ServiceResult<AdminDataDeleteResponse>.Success(response);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete data. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
-            return ServiceResult<AdminDataDeleteResponse>.InternalServerError("Failed to delete data");
-        }
-    }
-
-    public async Task<ServiceResult<AdminDataDeleteRecordResponse>> DeleteRecordAsync(
-        AdminDataDeleteRecordRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        // Validate request
-        var validationResult = ValidateDeleteRecordRequest(request);
-        if (!validationResult.IsSuccess)
-        {
-            return validationResult;
-        }
-
-        try
-        {
-            _logger.LogInformation(
-                "Deleting record - TenantId: {TenantId}, RecordId: {RecordId}",
-                LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(request.RecordId));
-
-            // First, get the record to return it in the response (for confirmation)
-            var existingRecord = await _documentRepository.GetByIdAsync(request.RecordId);
-            
-            // Check if record exists and belongs to the tenant
-            if (existingRecord == null || existingRecord.TenantId != request.TenantId)
-            {
-                if (existingRecord == null)
-                {
-                    _logger.LogWarning("Record not found - RecordId: {RecordId}, TenantId: {TenantId}", 
-                        LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId));
+                    _logger.LogWarning("Record not found - RecordId: {RecordId}, TenantId: {TenantId}",
+                        LogSanitizer.Sanitize(recordId), LogSanitizer.Sanitize(tenantId));
                 }
                 else
                 {
-                    _logger.LogWarning("Access denied - Record belongs to different tenant. RecordId: {RecordId}, RequestedTenant: {TenantId}, ActualTenant: {ActualTenantId}", 
-                        LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(existingRecord.TenantId));
+                    _logger.LogWarning(
+                        "Access denied - Record belongs to different tenant. RecordId: {RecordId}, RequestedTenant: {TenantId}, ActualTenant: {ActualTenantId}",
+                        LogSanitizer.Sanitize(recordId), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(existing.TenantId));
                 }
 
-                // Return a not found response (the endpoint will handle the structured response)
-                return ServiceResult<AdminDataDeleteRecordResponse>.NotFound("Record not found");
+                return ServiceResult<Document>.NotFound("Record not found");
             }
 
-            // Delete the record
-            var deleted = await _documentRepository.DeleteAsync(request.RecordId, request.TenantId);
-
-            var response = new AdminDataDeleteRecordResponse
-            {
-                Deleted = deleted,
-                RecordId = request.RecordId,
-                DeletedRecord = deleted ? ConvertToDataItemResponse(existingRecord) : null
-            };
-
-            if (deleted)
-            {
-                _logger.LogInformation(
-                    "Record deleted successfully - RecordId: {RecordId}, TenantId: {TenantId}, AgentName: {AgentName}, DataType: {DataType}",
-                    LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(existingRecord.AgentId), LogSanitizer.Sanitize(existingRecord.Type));
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "Record deletion failed - RecordId: {RecordId}, TenantId: {TenantId}",
-                    LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(request.TenantId));
-            }
-
-            return ServiceResult<AdminDataDeleteRecordResponse>.Success(response);
+            return ServiceResult<Document>.Success(existing);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete record. RecordId: {RecordId}, Error: {ErrorMessage}", 
-                LogSanitizer.Sanitize(request.RecordId), LogSanitizer.Sanitize(ex.Message));
-            return ServiceResult<AdminDataDeleteRecordResponse>.InternalServerError("Failed to delete record");
+            _logger.LogError(ex, "Failed to load record. RecordId: {RecordId}, Error: {ErrorMessage}",
+                LogSanitizer.Sanitize(recordId), LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Document>.InternalServerError("Failed to load data record");
         }
     }
 
-    public async Task<ServiceResult<int>> DeleteDocumentsByActivationAsync(string tenantId, string agentName, string activationName)
+    private static string? ValidateCreateRequest(string tenantId, AdminDataCreateRequest request)
     {
-        if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(agentName) || string.IsNullOrEmpty(activationName))
+        var tenantError = ValidateTenantId(tenantId);
+        if (tenantError != null)
         {
-            return ServiceResult<int>.BadRequest("TenantId, AgentName, and ActivationName are required");
+            return tenantError;
         }
 
-        try
+        if (string.IsNullOrWhiteSpace(request.AgentName))
         {
-            var deletedCount = await _documentRepository.DeleteByFilterAsync(tenantId, new DocumentQueryFilter
-            {
-                AgentId = agentName,
-                ActivationName = activationName
-            });
-
-            _logger.LogInformation(
-                "Deleted {DeletedCount} document(s) for agent {AgentName}, activation {ActivationName}",
-                deletedCount, LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
-
-            return ServiceResult<int>.Success(deletedCount);
+            return "AgentName is required";
         }
-        catch (Exception ex)
+
+        if (string.IsNullOrWhiteSpace(request.DataType))
         {
-            _logger.LogError(ex, "Error deleting documents for tenant {TenantId}, agent {AgentName}, activation {ActivationName}",
-                LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(activationName));
-            return ServiceResult<int>.InternalServerError("An error occurred while deleting documents");
+            return "DataType is required";
         }
+
+        if (string.IsNullOrWhiteSpace(request.Key))
+        {
+            return "Key is required";
+        }
+
+        if (!AdminDataMapper.HasJsonContent(request.Content))
+        {
+            return "Content is required";
+        }
+
+        return null;
     }
 
-    /// <summary>
-    /// Validates the schema request parameters.
-    /// </summary>
-    private ServiceResult<AdminDataSchemaResponse> ValidateSchemaRequest(AdminDataSchemaRequest request)
+    private static string? ValidateTenantId(string tenantId)
     {
-        if (string.IsNullOrEmpty(request.TenantId))
+        if (string.IsNullOrEmpty(tenantId))
         {
-            return ServiceResult<AdminDataSchemaResponse>.BadRequest("TenantId is required");
+            return "TenantId is required";
         }
 
-        if (request.TenantId == "undefined" || request.TenantId == "null")
+        if (tenantId == "undefined" || tenantId == "null")
         {
-            return ServiceResult<AdminDataSchemaResponse>.BadRequest("Invalid TenantId provided");
+            return "Invalid TenantId provided";
         }
 
-        if (string.IsNullOrEmpty(request.AgentName))
-        {
-            return ServiceResult<AdminDataSchemaResponse>.BadRequest("AgentName is required");
-        }
-
-        if (request.StartDate >= request.EndDate)
-        {
-            return ServiceResult<AdminDataSchemaResponse>.BadRequest("StartDate must be before EndDate");
-        }
-
-        var dateRange = request.EndDate - request.StartDate;
-        if (dateRange.TotalDays > MaxDateRangeDays)
-        {
-            return ServiceResult<AdminDataSchemaResponse>.BadRequest($"Date range cannot exceed {MaxDateRangeDays} days");
-        }
-
-        return ServiceResult<AdminDataSchemaResponse>.Success(new AdminDataSchemaResponse());
-    }
-
-    /// <summary>
-    /// Validates the data request parameters.
-    /// </summary>
-    private ServiceResult<AdminDataListResponse> ValidateDataRequest(AdminDataListRequest request)
-    {
-        if (string.IsNullOrEmpty(request.TenantId))
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest("TenantId is required");
-        }
-
-        if (request.TenantId == "undefined" || request.TenantId == "null")
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest("Invalid TenantId provided");
-        }
-
-        if (string.IsNullOrEmpty(request.AgentName))
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest("AgentName is required");
-        }
-
-        if (string.IsNullOrEmpty(request.DataType))
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest("DataType is required");
-        }
-
-        if (request.StartDate >= request.EndDate)
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest("StartDate must be before EndDate");
-        }
-
-        var dateRange = request.EndDate - request.StartDate;
-        if (dateRange.TotalDays > MaxDateRangeDays)
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest($"Date range cannot exceed {MaxDateRangeDays} days");
-        }
-
-        if (request.Skip < 0)
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest("Skip cannot be negative");
-        }
-
-        if (request.Limit <= 0 || request.Limit > MaxLimit)
-        {
-            return ServiceResult<AdminDataListResponse>.BadRequest($"Limit must be between 1 and {MaxLimit}");
-        }
-
-        return ServiceResult<AdminDataListResponse>.Success(new AdminDataListResponse());
-    }
-
-    /// <summary>
-    /// Validates the delete request parameters.
-    /// </summary>
-    private ServiceResult<AdminDataDeleteResponse> ValidateDeleteRequest(AdminDataDeleteRequest request)
-    {
-        if (string.IsNullOrEmpty(request.TenantId))
-        {
-            return ServiceResult<AdminDataDeleteResponse>.BadRequest("TenantId is required");
-        }
-
-        if (request.TenantId == "undefined" || request.TenantId == "null")
-        {
-            return ServiceResult<AdminDataDeleteResponse>.BadRequest("Invalid TenantId provided");
-        }
-
-        if (string.IsNullOrEmpty(request.AgentName))
-        {
-            return ServiceResult<AdminDataDeleteResponse>.BadRequest("AgentName is required");
-        }
-
-        if (string.IsNullOrEmpty(request.DataType))
-        {
-            return ServiceResult<AdminDataDeleteResponse>.BadRequest("DataType is required");
-        }
-
-        if (request.StartDate >= request.EndDate)
-        {
-            return ServiceResult<AdminDataDeleteResponse>.BadRequest("StartDate must be before EndDate");
-        }
-
-        var dateRange = request.EndDate - request.StartDate;
-        if (dateRange.TotalDays > MaxDateRangeDays)
-        {
-            return ServiceResult<AdminDataDeleteResponse>.BadRequest($"Date range cannot exceed {MaxDateRangeDays} days");
-        }
-
-        return ServiceResult<AdminDataDeleteResponse>.Success(new AdminDataDeleteResponse());
-    }
-
-    /// <summary>
-    /// Validates the delete record request parameters.
-    /// </summary>
-    private ServiceResult<AdminDataDeleteRecordResponse> ValidateDeleteRecordRequest(AdminDataDeleteRecordRequest request)
-    {
-        if (string.IsNullOrEmpty(request.TenantId))
-        {
-            return ServiceResult<AdminDataDeleteRecordResponse>.BadRequest("TenantId is required");
-        }
-
-        if (request.TenantId == "undefined" || request.TenantId == "null")
-        {
-            return ServiceResult<AdminDataDeleteRecordResponse>.BadRequest("Invalid TenantId provided");
-        }
-
-        if (string.IsNullOrEmpty(request.RecordId))
-        {
-            return ServiceResult<AdminDataDeleteRecordResponse>.BadRequest("RecordId is required");
-        }
-
-        return ServiceResult<AdminDataDeleteRecordResponse>.Success(new AdminDataDeleteRecordResponse());
-    }
-
-    /// <summary>
-    /// Converts a Document entity to AdminDataItemResponse.
-    /// </summary>
-    private AdminDataItemResponse ConvertToDataItemResponse(Shared.Data.Models.Document document)
-    {
-        JsonElement content = default;
-        if (document.Content != null && !document.Content.IsBsonNull)
-        {
-            var contentJson = document.Content.ToJson();
-            content = JsonSerializer.Deserialize<JsonElement>(contentJson);
-        }
-
-        Dictionary<string, object>? metadata = null;
-        if (document.Metadata != null && !document.Metadata.IsBsonNull)
-        {
-            var metadataJson = document.Metadata.ToJson();
-            metadata = JsonSerializer.Deserialize<Dictionary<string, object>>(metadataJson);
-        }
-
-        return new AdminDataItemResponse
-        {
-            Id = document.Id,
-            Key = document.Key ?? string.Empty,
-            ParticipantId = document.ParticipantId,
-            Content = content,
-            Metadata = metadata,
-            CreatedAt = document.CreatedAt,
-            UpdatedAt = document.UpdatedAt,
-            ExpiresAt = document.ExpiresAt
-        };
+        return null;
     }
 }
