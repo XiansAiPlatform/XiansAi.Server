@@ -29,10 +29,12 @@ public class AdminDataServiceTests
             NullLogger<AdminDataService>.Instance);
     }
 
-    [Fact]
-    public async Task CreateDataAsync_Rejects_Empty_Tenant()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateDataAsync_Rejects_Empty_Tenant(string tenantId)
     {
-        var result = await _service.CreateDataAsync("", ValidCreateRequest());
+        var result = await _service.CreateDataAsync(tenantId, ValidCreateRequest());
 
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
         Assert.Equal("TenantId is required", result.ErrorMessage);

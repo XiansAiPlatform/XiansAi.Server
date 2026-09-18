@@ -294,7 +294,7 @@ public partial class AdminDataService : IAdminDataService
 
     private static string? ValidateTenantId(string tenantId)
     {
-        if (string.IsNullOrEmpty(tenantId))
+        if (string.IsNullOrWhiteSpace(tenantId))
         {
             return "TenantId is required";
         }
