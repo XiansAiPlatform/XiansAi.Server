@@ -23,19 +23,22 @@ public class CertificateService
     private readonly CertificateGenerator _certificateGenerator;
     private readonly ICertificateRepository _certificateRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
 
     public CertificateService(
         ILogger<CertificateService> logger,
         ITenantContext tenantContext,
         CertificateGenerator certificateGenerator,
         ICertificateRepository certificateRepository,
-        IWebhookEventPublisher webhookEventPublisher)
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _certificateGenerator = certificateGenerator;
         _certificateRepository = certificateRepository;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
     }
 
     public async Task<FlowServerSettings> GetFlowServerSettingsAsync()
@@ -148,10 +151,8 @@ public class CertificateService
 
         if (revoked)
         {
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.CertificateRevoked,
-                new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason },
-                cert.TenantId);
+            var revokedMetadata = new { tenantId = cert.TenantId, thumbprint, issuedTo = cert.IssuedTo, reason };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.CertificateRevoked, revokedMetadata, cert.TenantId);
         }
 
         return revoked;
@@ -190,10 +191,8 @@ public class CertificateService
             var certBytes = cert.Export(X509ContentType.Cert);
             var base64String = Convert.ToBase64String(certBytes);
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.CertificateCreated,
-                new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName },
-                _tenantContext.TenantId);
+            var createdMetadata = new { tenantId = _tenantContext.TenantId, thumbprint = cert.Thumbprint, issuedTo = targetUserId, friendlyName };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.CertificateCreated, createdMetadata, _tenantContext.TenantId);
 
             return Results.Ok(new { certificate = base64String });
         }

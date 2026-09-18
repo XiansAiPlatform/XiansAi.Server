@@ -48,6 +48,7 @@ public class AgentDeletionService : IAgentDeletionService
     private readonly IActivationService _activationService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IActivationValidationService _activationValidationService;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<AgentService> _logger;
 
     private IMongoCollection<BsonDocument> LogsCollection => _databaseService.GetDatabaseAsync().Result.GetCollection<BsonDocument>("logs");
@@ -67,6 +68,7 @@ public class AgentDeletionService : IAgentDeletionService
         IActivationService activationService,
         IWebhookEventPublisher webhookEventPublisher,
         IActivationValidationService activationValidationService,
+        IAuditLogService auditLogService,
         ILogger<AgentService> logger)
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -82,6 +84,7 @@ public class AgentDeletionService : IAgentDeletionService
         _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -260,20 +263,19 @@ public class AgentDeletionService : IAgentDeletionService
 
             result.Message = "Agent and associated resources deleted";
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentDeleted,
-                new
-                {
-                    tenantId,
-                    agentId = agent.Id,
-                    agentName = agent.Name,
-                    systemScoped,
-                    deletedFlowDefinitions = result.DeletedFlowDefinitions,
-                    deletedKnowledgeItems = result.DeletedKnowledgeItems,
-                    revokedApiKeys = result.RevokedApiKeys,
-                    deletedActivations = result.DeletedActivations,
-                },
-                tenantId);
+            var metadata = new
+            {
+                tenantId,
+                agentId = agent.Id,
+                agentName = agent.Name,
+                systemScoped,
+                deletedFlowDefinitions = result.DeletedFlowDefinitions,
+                deletedKnowledgeItems = result.DeletedKnowledgeItems,
+                revokedApiKeys = result.RevokedApiKeys,
+                deletedActivations = result.DeletedActivations,
+            };
+
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentDeleted, metadata, tenantId);
 
             return ServiceResult<AgentDeletionResult>.Success(result);
         }

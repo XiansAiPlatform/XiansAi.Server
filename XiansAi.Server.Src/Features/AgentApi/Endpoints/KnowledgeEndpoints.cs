@@ -96,7 +96,7 @@ public static class KnowledgeEndpoints
             [FromServices] IKnowledgeService service) =>
         {
             _logger.LogInformation("Deleting knowledge with name: {Name}, agent: {Agent}", LogSanitizer.Sanitize(name), LogSanitizer.Sanitize(agent));
-            var deleteRequest = new DeleteAllVersionsRequest 
+            var deleteRequest = new DeleteAllVersionsRequest
             {
                 Name = name,
                 Agent = agent

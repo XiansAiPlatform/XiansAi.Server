@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Shared.Auditing;
 using Shared.Data.Models;
 using Xunit;
 
@@ -37,6 +38,15 @@ public class TenantIdValidationTests
     public void SanitizeAndValidateNewTenantId_RejectsBlankId()
     {
         Assert.Throws<ValidationException>(() => Tenant.SanitizeAndValidateNewTenantId("   "));
+    }
+
+    [Fact]
+    public void SanitizeAndValidateNewTenantId_RejectsPlatformAuditReservedId()
+    {
+        var exception = Assert.Throws<ValidationException>(
+            () => Tenant.SanitizeAndValidateNewTenantId(AuditLogTenants.Platform));
+
+        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

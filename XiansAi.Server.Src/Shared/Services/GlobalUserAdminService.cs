@@ -126,6 +126,11 @@ public interface IGlobalUserAdminService
     Task<ServiceResult<bool>> DeleteUserAsync(string userId, string actingUserId);
 }
 
+/// <summary>
+/// Tenant-independent user administration. Audit events from this service omit a tenant id so
+/// <see cref="DomainEventEmitter"/> records them against <c>AuditLogTenants.Platform</c> instead of
+/// the acting SysAdmin's ambient tenant.
+/// </summary>
 public class GlobalUserAdminService : IGlobalUserAdminService
 {
     private const int MaxPageSize = 100;
@@ -143,6 +148,7 @@ public class GlobalUserAdminService : IGlobalUserAdminService
     private readonly ITenantCacheService _tenantCacheService;
     private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<GlobalUserAdminService> _logger;
 
     public GlobalUserAdminService(
@@ -150,12 +156,14 @@ public class GlobalUserAdminService : IGlobalUserAdminService
         ITenantCacheService tenantCacheService,
         IUserAuthorizationInvalidator authorizationInvalidator,
         IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<GlobalUserAdminService> logger)
     {
         _userRepository = userRepository;
         _tenantCacheService = tenantCacheService;
         _authorizationInvalidator = authorizationInvalidator;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -268,9 +276,8 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             await InvalidateCachesAsync(user);
             _logger.LogInformation("Global user {UserId} profile updated", LogSanitizer.Sanitize(userId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserUpdated,
-                new { userId = user.UserId, email = user.Email, name = user.Name });
+            var updatedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserUpdated, updatedMetadata);
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -313,9 +320,9 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogInformation("SysAdmin flag for user {UserId} set to {Value}",
                 LogSanitizer.Sanitize(userId), isSysAdmin);
 
-            await _webhookEventPublisher.PublishAsync(
-                isSysAdmin ? WebhookEventTypes.UserSysAdminGranted : WebhookEventTypes.UserSysAdminRevoked,
-                new { userId = user.UserId, email = user.Email, isSysAdmin });
+            var sysAdminEvent = isSysAdmin ? DomainEventTypes.UserSysAdminGranted : DomainEventTypes.UserSysAdminRevoked;
+            var sysAdminMetadata = new { userId = user.UserId, email = user.Email, isSysAdmin };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, sysAdminEvent, sysAdminMetadata);
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -365,9 +372,9 @@ public class GlobalUserAdminService : IGlobalUserAdminService
             _logger.LogInformation("User {UserId} {Action}",
                 LogSanitizer.Sanitize(userId), enabled ? "enabled" : "disabled");
 
-            await _webhookEventPublisher.PublishAsync(
-                enabled ? WebhookEventTypes.UserEnabled : WebhookEventTypes.UserDisabled,
-                new { userId = user.UserId, email = user.Email, enabled, reason, actingUserId });
+            var statusEvent = enabled ? DomainEventTypes.UserEnabled : DomainEventTypes.UserDisabled;
+            var statusMetadata = new { userId = user.UserId, email = user.Email, enabled, reason, actingUserId };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, statusEvent, statusMetadata);
 
             return ServiceResult<GlobalUserDetail>.Success(await ToDetailAsync(user));
         }
@@ -407,9 +414,8 @@ public class GlobalUserAdminService : IGlobalUserAdminService
                 LogSanitizer.Sanitize(userId),
                 LogSanitizer.Sanitize(actingUserId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserDeleted,
-                new { userId = user.UserId, email = user.Email, name = user.Name, actingUserId });
+            var deletedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, actingUserId };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.UserDeleted, deletedMetadata);
 
             return ServiceResult<bool>.Success(true);
         }

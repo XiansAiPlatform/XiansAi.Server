@@ -51,6 +51,7 @@ public class AdminAgentService : IAdminAgentService
     private readonly ILogger<AdminAgentService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
 
     public AdminAgentService(
         IAgentRepository agentRepository,
@@ -58,7 +59,8 @@ public class AdminAgentService : IAdminAgentService
         IAgentDeletionService agentDeletionService,
         ILogger<AdminAgentService> logger,
         ITenantContext tenantContext,
-        IWebhookEventPublisher webhookEventPublisher
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -67,6 +69,7 @@ public class AdminAgentService : IAdminAgentService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     /// <summary>
@@ -232,10 +235,9 @@ public class AdminAgentService : IAdminAgentService
 
             _logger.LogInformation("Successfully updated agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentDeploymentUpdated,
-                new { tenantId, agentId = agent.Id, agentName = agent.Name },
-                tenantId);
+            var metadata = new { tenantId, agentId = agent.Id, agentName = agent.Name };
+
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentDeploymentUpdated, metadata, tenantId);
 
             return ServiceResult<Agent>.Success(agent);
         }

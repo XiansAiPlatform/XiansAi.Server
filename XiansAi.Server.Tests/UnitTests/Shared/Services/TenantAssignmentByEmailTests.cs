@@ -74,6 +74,7 @@ public class TenantAssignmentByEmailTests
         Mock.Of<IUserTenantService>(),
         _authorizationInvalidator.Object,
         Mock.Of<IWebhookEventPublisher>(),
+        Mock.Of<IAuditLogService>(),
         NullLogger<TenantParticipantUserService>.Instance);
 
     [Fact]
@@ -190,8 +191,7 @@ public class TenantAssignmentByEmailTests
         AccountExists(Account("the-only-subject"));
 
         var result = await BuildParticipantService().CreateAsync(
-            TenantId, email: null, name: null, SystemRoles.TenantParticipant,
-            userId: "the-only-subject");
+            TenantId, email: null, name: null, SystemRoles.TenantParticipant, userId: "the-only-subject");
 
         Assert.True(result.IsSuccess);
         _userRepo.Verify(
@@ -218,8 +218,7 @@ public class TenantAssignmentByEmailTests
         _userRepo.Setup(x => x.GetByUserIdAsync("no-such-subject")).ReturnsAsync((User?)null);
 
         var result = await BuildParticipantService().CreateAsync(
-            TenantId, email: null, name: null, SystemRoles.TenantParticipant,
-            userId: "no-such-subject");
+            TenantId, email: null, name: null, SystemRoles.TenantParticipant, userId: "no-such-subject");
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.NotFound, result.StatusCode);
@@ -231,8 +230,7 @@ public class TenantAssignmentByEmailTests
         AccountExists(Account("the-only-subject", isLockedOut: true));
 
         var result = await BuildParticipantService().CreateAsync(
-            TenantId, email: null, name: null, SystemRoles.TenantParticipant,
-            userId: "the-only-subject");
+            TenantId, email: null, name: null, SystemRoles.TenantParticipant, userId: "the-only-subject");
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.Conflict, result.StatusCode);

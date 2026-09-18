@@ -103,6 +103,7 @@ public static class AdminOwnershipEndpoints
             [FromServices] IAgentRepository agentRepository,
             [FromServices] IUserRepository userRepository,
             [FromServices] IWebhookEventPublisher webhookEventPublisher,
+            [FromServices] IAuditLogService auditLogService,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ILogger<IUserRepository> logger) =>
         {
@@ -206,18 +207,16 @@ public static class AdminOwnershipEndpoints
                     return Results.Problem("Failed to transfer ownership");
                 }
 
-                await webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.AgentOwnershipTransferred,
-                    new
-                    {
-                        tenantId = parsedTenant,
-                        agentId = agent.Id,
-                        agentName,
-                        previousOwners,
-                        newOwner = newAdminUserId,
-                        transferredBy = tenantContext.LoggedInUser
-                    },
-                    parsedTenant);
+                var transferredMetadata = new
+                {
+                    tenantId = parsedTenant,
+                    agentId = agent.Id,
+                    agentName,
+                    previousOwners,
+                    newOwner = newAdminUserId,
+                    transferredBy = tenantContext.LoggedInUser
+                };
+                DomainEventEmitter.Emit(webhookEventPublisher, auditLogService, DomainEventTypes.AgentOwnershipTransferred, transferredMetadata, parsedTenant);
 
                 return Results.Ok(new
                 {

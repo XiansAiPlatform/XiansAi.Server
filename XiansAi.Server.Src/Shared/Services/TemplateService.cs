@@ -62,6 +62,7 @@ public class TemplateService : ITemplateService
     private readonly IActivationValidationService _activationValidationService;
     private readonly IActivationRepository _activationRepository;
     private readonly IActivationService _activationService;
+    private readonly IAuditLogService _auditLogService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TemplateService"/> class.
@@ -75,6 +76,7 @@ public class TemplateService : ITemplateService
     /// <param name="activationValidationService">Service used to invalidate cached workflow-type lookups.</param>
     /// <param name="activationRepository">Repository for agent activation operations.</param>
     /// <param name="activationService">Service for deactivating and deleting agent activations.</param>
+    /// <param name="auditLogService">Service used to record audit log entries.</param>
     public TemplateService(
         IAgentRepository agentRepository,
         IFlowDefinitionRepository flowDefinitionRepository,
@@ -84,7 +86,8 @@ public class TemplateService : ITemplateService
         IWebhookEventPublisher webhookEventPublisher,
         IActivationValidationService activationValidationService,
         IActivationRepository activationRepository,
-        IActivationService activationService
+        IActivationService activationService,
+        IAuditLogService auditLogService
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -96,6 +99,7 @@ public class TemplateService : ITemplateService
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
         _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     /// <summary>
@@ -134,7 +138,7 @@ public class TemplateService : ITemplateService
     /// This is a wrapper method that uses the current tenant context.
     /// </summary>
     /// <param name="agentName">The name of the system-scoped agent to deploy.</param>
-    /// <returns>A service result containing the newly created agent.</returns>
+        /// <returns>A service result containing the newly created agent.</returns>
     public async Task<ServiceResult<Agent>> DeployTemplate(string agentName)
     {
         // Validate tenant context
@@ -185,7 +189,7 @@ public class TemplateService : ITemplateService
     /// This operation is only available to system administrators.
     /// </summary>
     /// <param name="agentName">The name of the system-scoped agent to delete.</param>
-    /// <param name="cleanActivations">When true, also force-deletes all activations (with cascading data) across every tenant deployment of this template.</param>
+        /// <param name="cleanActivations">When true, also force-deletes all activations (with cascading data) across every tenant deployment of this template.</param>
     /// <returns>A service result indicating success or failure.</returns>
     public async Task<ServiceResult<bool>> DeleteSystemScopedAgent(string agentName, bool cleanActivations = false)
     {
@@ -252,9 +256,8 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Successfully deleted system-scoped agent {AgentName} with {DefinitionsCount} flow definitions and {KnowledgeCount} knowledge items", 
                 LogSanitizer.Sanitize(agentName), deletedDefinitionsCount, deletedKnowledgeCount);
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.TemplateDeleted,
-                new { templateId = agent.Id, name = agent.Name });
+            var deletedMetadata = new { templateId = agent.Id, name = agent.Name };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TemplateDeleted, deletedMetadata);
 
             return ServiceResult<bool>.Success(true);
         }
@@ -366,7 +369,7 @@ public class TemplateService : ITemplateService
     /// <param name="agentName">The name of the system-scoped agent to deploy.</param>
     /// <param name="tenantId">The tenant ID to deploy the template to.</param>
     /// <param name="createdBy">The user ID creating the deployment.</param>
-    /// <param name="onboardingJson">Optional onboarding JSON to override the template's onboarding JSON.</param>
+        /// <param name="onboardingJson">Optional onboarding JSON to override the template's onboarding JSON.</param>
     /// <returns>A service result containing the newly created agent.</returns>
     public async Task<ServiceResult<Agent>> DeployTemplateToTenant(string agentName, string tenantId, string createdBy, string? onboardingJson = null)
     {
@@ -476,10 +479,8 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Successfully deployed template agent {AgentName} to tenant {TenantId} with {DefinitionsCount} flow definitions by user {CreatedBy}", 
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentTemplateDeployed,
-                new { tenantId, templateName = agentName, agentId = newAgent.Id, agentName = newAgent.Name, createdBy, definitionsCount = clonedDefinitionsCount },
-                tenantId);
+            var deployedMetadata = new { tenantId, templateName = agentName, agentId = newAgent.Id, agentName = newAgent.Name, createdBy, definitionsCount = clonedDefinitionsCount };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentTemplateDeployed, deployedMetadata, tenantId);
 
             return ServiceResult<Agent>.Success(newAgent);
         }
@@ -617,6 +618,16 @@ public class TemplateService : ITemplateService
 
             _logger.LogInformation("Successfully promoted agent {AgentName} from tenant {TenantId} to a system template with {DefinitionsCount} flow definitions by user {CreatedBy}",
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
+
+            var promotedMetadata = new
+            {
+                tenantId,
+                agentName,
+                templateId = newTemplate.Id,
+                createdBy,
+                definitionsCount = clonedDefinitionsCount
+            };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.AgentTemplatePromoted, promotedMetadata, tenantId);
 
             return ServiceResult<Agent>.Success(newTemplate);
         }
@@ -826,7 +837,7 @@ public class TemplateService : ITemplateService
     /// <param name="ownerAccess">Optional owner access list to update.</param>
     /// <param name="readAccess">Optional read access list to update.</param>
     /// <param name="writeAccess">Optional write access list to update.</param>
-    /// <param name="samplePrompts">Optional sample prompts list to update.</param>
+        /// <param name="samplePrompts">Optional sample prompts list to update.</param>
     /// <returns>A service result containing the updated template agent.</returns>
     public async Task<ServiceResult<Agent>> UpdateSystemScopedAgentAsync(string templateObjectId, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null)
     {
@@ -848,7 +859,7 @@ public class TemplateService : ITemplateService
     /// <param name="ownerAccess">Optional owner access list to update.</param>
     /// <param name="readAccess">Optional read access list to update.</param>
     /// <param name="writeAccess">Optional write access list to update.</param>
-    /// <param name="samplePrompts">Optional sample prompts list to update.</param>
+        /// <param name="samplePrompts">Optional sample prompts list to update.</param>
     /// <returns>A service result containing the updated template agent.</returns>
     public async Task<ServiceResult<Agent>> UpdateSystemScopedAgentByNameAsync(string templateAgentName, string? description, string? onboardingJson, List<string>? ownerAccess, List<string>? readAccess, List<string>? writeAccess, List<string>? samplePrompts = null)
     {
@@ -908,9 +919,8 @@ public class TemplateService : ITemplateService
 
             _logger.LogInformation("Successfully updated system-scoped agent template {TemplateId}", LogSanitizer.Sanitize(template.Id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.TemplateUpdated,
-                new { templateId = template.Id, name = template.Name });
+            var updatedMetadata = new { templateId = template.Id, name = template.Name };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.TemplateUpdated, updatedMetadata);
 
             return ServiceResult<Agent>.Success(template);
         }

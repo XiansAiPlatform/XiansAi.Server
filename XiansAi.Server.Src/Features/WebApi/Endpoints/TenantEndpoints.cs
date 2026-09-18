@@ -18,7 +18,6 @@ public static class TenantEndpoints
         
 
         tenantsGroup.MapGet("/", async (
-            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
             var result = await endpoint.GetAllTenants();
@@ -30,7 +29,6 @@ public static class TenantEndpoints
         .WithDescription("Retrieves all tenant records").RequiresValidSysAdmin();
 
         tenantsGroup.MapGet("/list", async (
-            HttpContext httpContext,
             [FromServices] ITenantService endpoint) =>
         {
             var result = await endpoint.GetTenantIdList();
@@ -61,7 +59,7 @@ public static class TenantEndpoints
         {
             logger.LogInformation("Endpoint received CreateTenantRequest - TenantId: {TenantId}, Name: {Name}, CreatedBy: {CreatedBy}", 
                 request.TenantId, request.Name, request.CreatedBy);
-            
+
             var result = await endpoint.CreateTenant(request);
             return result.ToHttpResult();
         })

@@ -65,7 +65,8 @@ public class TenantServiceMetadataTests
             _protector,
             _activationRepository.Object,
             _activationService.Object,
-            _knowledgeRepository.Object);
+            _knowledgeRepository.Object,
+            Mock.Of<IAuditLogService>());
     }
 
     private static Tenant CreateStoredTenant(List<TenantMetadata>? metadata = null)

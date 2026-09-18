@@ -106,17 +106,20 @@ public class SecretVaultService : ISecretVaultService
     private readonly ISecretVaultRepository _repository;
     private readonly ISecretStoreProvider _secretStore;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<SecretVaultService> _logger;
 
     public SecretVaultService(
         ISecretVaultRepository repository,
         ISecretStoreProvider secretStore,
         IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<SecretVaultService> logger)
     {
         _repository = repository;
         _secretStore = secretStore;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -162,10 +165,8 @@ public class SecretVaultService : ISecretVaultService
                 "Secret vault entry created. id={SecretId} key={Key} tenant={TenantId} actor={Actor} provider={Provider}",
                 LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(input.Key), LogSanitizer.Sanitize(entity.TenantId ?? "*"), LogSanitizer.Sanitize(actorUserId), LogSanitizer.Sanitize(_secretStore.Name));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretCreated,
-                new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId },
-                entity.TenantId);
+            var createdMetadata = new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.SecretCreated, createdMetadata, entity.TenantId, entity.ActivationName);
 
             return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, input.Value), StatusCode.Ok);
         }
@@ -282,10 +283,8 @@ public class SecretVaultService : ISecretVaultService
                 "Secret vault entry updated. id={SecretId} key={Key} tenant={TenantId} actor={Actor} valueChanged={ValueChanged} provider={Provider}",
                 LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(entity.Key), LogSanitizer.Sanitize(entity.TenantId ?? "*"), LogSanitizer.Sanitize(actorUserId), updatedValue != null, LogSanitizer.Sanitize(_secretStore.Name));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretUpdated,
-                new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId },
-                entity.TenantId);
+            var updatedMetadata = new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.SecretUpdated, updatedMetadata, entity.TenantId, entity.ActivationName);
 
             // For the response value: prefer the just-set value to avoid an extra round-trip to the store.
             var responseValue = updatedValue ?? await _secretStore.GetAsync(entity.Id) ?? string.Empty;
@@ -326,10 +325,8 @@ public class SecretVaultService : ISecretVaultService
 
             _logger.LogInformation("Secret vault entry deleted. id={SecretId} provider={Provider}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(_secretStore.Name));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretDeleted,
-                new { tenantId = entity?.TenantId, secretId = id, key = entity?.Key, agentId = entity?.AgentId, userId = entity?.UserId, activationName = entity?.ActivationName },
-                entity?.TenantId);
+            var deletedMetadata = new { tenantId = entity?.TenantId, secretId = id, key = entity?.Key, agentId = entity?.AgentId, userId = entity?.UserId, activationName = entity?.ActivationName };
+            DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.SecretDeleted, deletedMetadata, entity?.TenantId, entity?.ActivationName);
 
             return ServiceResult<bool>.Success(true);
         }

@@ -33,6 +33,7 @@ namespace Shared.Services
         private readonly IMemoryCache _cache;
         private readonly IWebhookEventPublisher _webhookEventPublisher;
         private readonly ICacheInvalidationBus _invalidationBus;
+        private readonly IAuditLogService _auditLogService;
         private readonly ICacheOperationMode _cacheMode;
 
         // Cache configuration
@@ -45,6 +46,7 @@ namespace Shared.Services
             IMemoryCache cache,
             IWebhookEventPublisher webhookEventPublisher,
             ICacheInvalidationBus invalidationBus,
+            IAuditLogService auditLogService,
             ICacheOperationMode cacheMode)
         {
             _apiKeyRepository = apiKeyRepository;
@@ -52,6 +54,7 @@ namespace Shared.Services
             _cache = cache;
             _webhookEventPublisher = webhookEventPublisher;
             _invalidationBus = invalidationBus;
+            _auditLogService = auditLogService;
             _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
         }
 
@@ -62,10 +65,9 @@ namespace Shared.Services
             {
                 var result = await _apiKeyRepository.CreateAsync(tenantId, name, createdBy, agentName, activationName, type, workflowName, participantId, timeoutInSeconds, webhookName);
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.ApiKeyCreated,
-                    new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy },
-                    tenantId);
+                var metadata = new { tenantId, apiKeyId = result.meta.Id, name = result.meta.Name, agentName, activationName, type, createdBy };
+
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyCreated, metadata, tenantId, activationName);
 
                 return ServiceResult<(string, ApiKey)>.Success(result);
             }
@@ -88,11 +90,11 @@ namespace Shared.Services
             {
                 // Get the API key first to invalidate its cache entry
                 var existingKey = await _apiKeyRepository.GetByIdAsync(id, tenantId);
-                
+
                 var ok = await _apiKeyRepository.RevokeAsync(id, tenantId);
                 if (!ok)
                     return ServiceResult<bool>.NotFound("API key not found.");
-                
+
                 // Invalidate cache entry if the key existed
                 if (existingKey != null)
                 {
@@ -100,10 +102,9 @@ namespace Shared.Services
                     _logger.LogDebug("Invalidated cache for revoked API key {ApiKeyId} in tenant {TenantId}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(tenantId));
                 }
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.ApiKeyRevoked,
-                    new { tenantId, apiKeyId = id, name = existingKey?.Name },
-                    tenantId);
+                var metadata = new { tenantId, apiKeyId = id, name = existingKey?.Name };
+
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyRevoked, metadata, tenantId);
 
                 return ServiceResult<bool>.Success(true);
             }
@@ -175,10 +176,9 @@ namespace Shared.Services
                 
                 // The new key will be cached on first use by GetApiKeyByRawKeyAsync
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.ApiKeyRotated,
-                    new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name },
-                    tenantId);
+                var metadata = new { tenantId, apiKeyId = id, name = rotated.Value.meta.Name };
+
+                DomainEventEmitter.Emit(_webhookEventPublisher, _auditLogService, DomainEventTypes.ApiKeyRotated, metadata, tenantId);
 
                 return ServiceResult<(string, ApiKey)?>.Success(rotated);
             }
