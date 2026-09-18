@@ -278,7 +278,7 @@ public class OutboundFileTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
             CreatedBy = "test-user-id",
             Direction = MessageDirection.Incoming,
             Text = "please send the file",
-            Status = MessageStatus.DeliveredToWorkflow,
+            Status = MessageStatus.Read,
             Origin = "app:slack:int-1",
             Data = new BsonDocument
             {

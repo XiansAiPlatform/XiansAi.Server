@@ -24,8 +24,8 @@ public enum MessageDirection
 
 public enum MessageStatus
 {
-    FailedToDeliverToWorkflow,
-    DeliveredToWorkflow,
+    Unread,
+    Read,
 }
 
 public enum MessageType
@@ -244,6 +244,17 @@ public interface IConversationRepository
     Task<List<ConversationMessage>> GetMessagesByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize, string? scope = null, string sortOrder = "desc");
     Task<bool> DeleteMessagesByThreadIdAsync(string threadId);
     Task<bool> DeleteMessagesByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope);
+
+    /// <summary>
+    /// Marks every message in the thread with CreatedAt &lt;= <paramref name="cutoff"/> as read.
+    /// Messages already marked read are left untouched. Returns the number of messages updated.
+    /// </summary>
+    Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff);
+
+    /// <summary>
+    /// Counts messages in the thread that are not yet marked as read (missing/null status counts as unread).
+    /// </summary>
+    Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId);
 
     /// <summary>
     /// Collects GridFS file ids referenced by File-type messages matching the given
@@ -898,6 +909,40 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             _logger.LogError(ex, "Error deleting messages for thread {ThreadId}", LogSanitizer.Sanitize(threadId));
             throw;
         }
+    }
+
+    public async Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId),
+                Builders<ConversationMessage>.Filter.Lte(x => x.CreatedAt, cutoff),
+                Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read));
+
+            var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
+
+            var result = await _messagesCollection.UpdateManyAsync(filter, update);
+
+            _logger.LogInformation("Marked {Count} messages as read in thread {ThreadId} up to {Cutoff}",
+                result.ModifiedCount, LogSanitizer.Sanitize(threadId), cutoff);
+
+            return result.ModifiedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "MarkThreadMessagesAsRead");
+    }
+
+    public async Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<ConversationMessage>.Filter.And(
+                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId),
+                Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read));
+
+            return await _messagesCollection.CountDocumentsAsync(filter);
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetUnreadMessageCount");
     }
 
     public async Task<List<string>> GetFileIdsByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope)

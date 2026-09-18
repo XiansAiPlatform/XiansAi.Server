@@ -40,6 +40,17 @@ public class AdminSendMessageRequest
 }
 
 /// <summary>
+/// Request model for marking a thread's messages as read, up to a cutoff point given as
+/// either an explicit timestamp or a messageId (whose CreatedAt becomes the cutoff).
+/// Exactly one of Timestamp or MessageId must be provided.
+/// </summary>
+public class AdminMarkThreadReadRequest
+{
+    public DateTime? Timestamp { get; set; }
+    public string? MessageId { get; set; }
+}
+
+/// <summary>
 /// A single file attachment for a File-type message.
 /// </summary>
 public class FileAttachment
@@ -658,6 +669,20 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetHistoryForAdminApi")
+        ;
+
+        // Mark all messages in a thread as read, up to a (threadId, timestamp) or (threadId, messageId) cutoff.
+        // Returns how many messages were just marked, plus how many remain unread in the thread.
+        adminMessagingGroup.MapPost("/threads/{threadId}/read", async (
+            string tenantId,
+            string threadId,
+            [FromBody] AdminMarkThreadReadRequest request,
+            [FromServices] IMessageService messageService) =>
+        {
+            var result = await messageService.MarkThreadAsReadAsync(threadId, request.Timestamp, request.MessageId);
+            return result.ToHttpResult();
+        })
+        .WithName("MarkThreadReadForAdminApi")
         ;
 
         // Delete messages by topic for a specific agent activation and participant
