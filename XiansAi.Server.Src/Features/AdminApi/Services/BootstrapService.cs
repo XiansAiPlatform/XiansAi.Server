@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson;
+using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -54,6 +55,9 @@ public class BootstrapService : IBootstrapService
     private readonly ITenantRepository _tenantRepository;
     private readonly IUserManagementService _userManagementService;
     private readonly IApiKeyService _apiKeyService;
+    private readonly ITenantContext _tenantContext;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<BootstrapService> _logger;
 
     public BootstrapService(
@@ -61,12 +65,18 @@ public class BootstrapService : IBootstrapService
         ITenantRepository tenantRepository,
         IUserManagementService userManagementService,
         IApiKeyService apiKeyService,
+        ITenantContext tenantContext,
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<BootstrapService> logger)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _userManagementService = userManagementService ?? throw new ArgumentNullException(nameof(userManagementService));
         _apiKeyService = apiKeyService ?? throw new ArgumentNullException(nameof(apiKeyService));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -131,6 +141,12 @@ public class BootstrapService : IBootstrapService
                     purgeResult.Data);
             }
 
+            // Anonymous bootstrap has no auth-populated tenant context. Set it so subsequent
+            // audit/webhook writes (API key create and the bootstrap event itself) have an actor.
+            _tenantContext.TenantId = resolvedTenantId;
+            _tenantContext.LoggedInUser = email;
+            _tenantContext.ParticipantId = email;
+
             // 7. Mint an API key owned by the new SysAdmin
             var apiKeyResult = await _apiKeyService.CreateApiKeyAsync(resolvedTenantId, BootstrapApiKeyName, email);
             if (!apiKeyResult.IsSuccess)
@@ -144,6 +160,16 @@ public class BootstrapService : IBootstrapService
 
             _logger.LogInformation("Platform bootstrapped with SysAdmin {Email} on tenant {TenantId}",
                 LogSanitizer.RedactEmail(email), LogSanitizer.Sanitize(resolvedTenantId));
+
+            var bootstrappedMetadata = new { tenantId = resolvedTenantId, userId = email };
+            await _webhookEventPublisher.PublishAsync(
+                DomainEventTypes.PlatformBootstrapped,
+                bootstrappedMetadata,
+                resolvedTenantId);
+            await _auditLogService.RecordEntryAsync(
+                action: DomainEventTypes.PlatformBootstrapped,
+                activationName: null,
+                details: bootstrappedMetadata);
 
             return ServiceResult<BootstrapResponse>.Success(new BootstrapResponse
             {

@@ -735,7 +735,18 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<long> DeleteAllByAgentAndActivationForTenantAsync(string tenantId, string agentName, string activationName)
     {
-        return await _knowledgeRepository.DeleteAllByAgentAndActivationAsync<Knowledge>(agentName, tenantId, activationName);
+        var deletedCount = await _knowledgeRepository.DeleteAllByAgentAndActivationAsync<Knowledge>(agentName, tenantId, activationName);
+        if (deletedCount > 0)
+        {
+            var metadata = new { tenantId, agentName, activationName, deletedCount };
+            await _webhookEventPublisher.PublishAsync(DomainEventTypes.KnowledgeDeleted, metadata, tenantId);
+            await _auditLogService.RecordEntryAsync(
+                action: DomainEventTypes.KnowledgeDeleted,
+                activationName: activationName,
+                details: metadata);
+        }
+
+        return deletedCount;
     }
 
     public async Task<long> DeleteOrganizationLevelByAgentForTenantAsync(string tenantId, string agentName)

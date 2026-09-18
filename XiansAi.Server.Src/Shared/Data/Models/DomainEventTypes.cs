@@ -34,6 +34,15 @@ public static class DomainEventTypes
     /// <summary>A tenant's OIDC configuration was deleted.</summary>
     public const string TenantOidcDeleted = "tenant.oidc.deleted";
 
+    /// <summary>A tenant's Temporal (flow-server) configuration was created or updated.</summary>
+    public const string TenantTemporalUpdated = "tenant.temporal.updated";
+
+    /// <summary>A tenant's Temporal (flow-server) configuration was reverted to the platform default.</summary>
+    public const string TenantTemporalReverted = "tenant.temporal.reverted";
+
+    /// <summary>The platform was bootstrapped (first SysAdmin, tenant, and API key).</summary>
+    public const string PlatformBootstrapped = "platform.bootstrapped";
+
     // ----- User lifecycle (tenant-scoped and global) -----
 
     /// <summary>A brand-new user account was created.</summary>
@@ -91,6 +100,9 @@ public static class DomainEventTypes
 
     /// <summary>A system template agent was deployed into a tenant.</summary>
     public const string AgentTemplateDeployed = "agent.template.deployed";
+
+    /// <summary>A tenant-scoped agent was promoted into a new system-scoped template.</summary>
+    public const string AgentTemplatePromoted = "agent.template.promoted";
 
     /// <summary>A system-scoped template agent's metadata was updated.</summary>
     public const string TemplateUpdated = "template.updated";

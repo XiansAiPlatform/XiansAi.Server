@@ -1,4 +1,5 @@
 using Google.Protobuf.WellKnownTypes;
+using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
@@ -32,15 +33,21 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
     private readonly ILogger<TenantTemporalConfigService> _logger;
     private readonly ITenantTemporalConfigRepository _repository;
     private readonly ITemporalGatewayService _temporalGatewayService;
+    private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
 
     public TenantTemporalConfigService(
         ITenantTemporalConfigRepository repository,
         ITemporalGatewayService temporalGatewayService,
-        ILogger<TenantTemporalConfigService> logger)
+        ILogger<TenantTemporalConfigService> logger,
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _temporalGatewayService = temporalGatewayService ?? throw new ArgumentNullException(nameof(temporalGatewayService));
+        _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     public async Task<ServiceResult<UpsertTenantTemporalConfigRequest?>> GetForTenantAsync(string tenantId)
@@ -97,6 +104,17 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
 
             await _repository.UpsertAsync(tenantId, serverUrl, @namespace, certificate, privateKey, actor);
             await _temporalGatewayService.RemoveClients(tenantId);
+
+            var metadata = new
+            {
+                tenantId,
+                serverUrl,
+                Namespace = @namespace,
+                actor,
+                hasTls = !string.IsNullOrEmpty(certificate)
+            };
+            await RecordAsync(DomainEventTypes.TenantTemporalUpdated, tenantId, metadata);
+
             return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
@@ -115,7 +133,13 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
         {
             var reverted = await _repository.RevertAsync(tenantId, actor);
             await _temporalGatewayService.RemoveClients(tenantId);
-            return reverted ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound("No configuration found");
+            if (!reverted)
+            {
+                return ServiceResult<bool>.NotFound("No configuration found");
+            }
+
+            await RecordAsync(DomainEventTypes.TenantTemporalReverted, tenantId, new { tenantId, actor });
+            return ServiceResult<bool>.Success(true);
         }
         catch (Exception ex)
         {
@@ -203,6 +227,12 @@ public class TenantTemporalConfigService : ITenantTemporalConfigService
             // Temporal server may take a moment to be ready to accept search attribute registration after namespace creation.
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
+    }
+
+    private async Task RecordAsync(string action, string tenantId, object details)
+    {
+        await _webhookEventPublisher.PublishAsync(action, details, tenantId);
+        await _auditLogService.RecordEntryAsync(action: action, activationName: null, details: details);
     }
 
     private static async Task DisposeAsync(TemporalClient? client)

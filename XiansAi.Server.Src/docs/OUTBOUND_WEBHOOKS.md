@@ -174,6 +174,9 @@ overwhelming listeners.
 | `tenant.deleted` | A tenant is deleted. |
 | `tenant.oidc.updated` | A tenant's OIDC config is created or updated. |
 | `tenant.oidc.deleted` | A tenant's OIDC config is deleted. |
+| `tenant.temporal.updated` | A tenant's Temporal (flow-server) config is created or updated. Certificates are never included. |
+| `tenant.temporal.reverted` | A tenant's Temporal config is reverted to the platform default. |
+| `platform.bootstrapped` | The platform is bootstrapped (first SysAdmin, tenant, and API key). |
 
 ### Users
 
@@ -198,6 +201,7 @@ overwhelming listeners.
 | `agent.deployment.updated` | An agent deployment's config is updated (Admin API). |
 | `agent.ownership.transferred` | Agent ownership is transferred to another user. |
 | `agent.template.deployed` | A system template agent is deployed into a tenant. |
+| `agent.template.promoted` | A tenant-scoped agent is promoted into a new system-scoped template. |
 | `template.updated` / `template.deleted` | A system-scoped template agent is updated/deleted. |
 | `flow.definition.created` / `flow.definition.updated` | A workflow definition is registered or changes hash. |
 
@@ -213,7 +217,7 @@ overwhelming listeners.
 
 | Event type | Emitted when |
 | --- | --- |
-| `knowledge.created` / `knowledge.updated` / `knowledge.deleted` | Knowledge items change (Admin or Agent API). |
+| `knowledge.created` / `knowledge.updated` / `knowledge.deleted` | Knowledge items change (Admin or Agent API), including bulk delete of an activation's knowledge. |
 | `secret.created` / `secret.updated` / `secret.deleted` | Vault secrets change (values are never included). |
 | `apikey.created` / `apikey.revoked` / `apikey.rotated` | API keys change. |
 | `certificate.created` / `certificate.revoked` | Client certificates are issued/revoked. |

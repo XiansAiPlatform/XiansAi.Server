@@ -632,6 +632,23 @@ public class TemplateService : ITemplateService
             _logger.LogInformation("Successfully promoted agent {AgentName} from tenant {TenantId} to a system template with {DefinitionsCount} flow definitions by user {CreatedBy}",
                 LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId), clonedDefinitionsCount, LogSanitizer.Sanitize(createdBy));
 
+            var promotedMetadata = new
+            {
+                tenantId,
+                agentName,
+                templateId = newTemplate.Id,
+                createdBy,
+                definitionsCount = clonedDefinitionsCount
+            };
+            await _webhookEventPublisher.PublishAsync(
+                DomainEventTypes.AgentTemplatePromoted,
+                promotedMetadata,
+                tenantId);
+            await _auditLogService.RecordEntryAsync(
+                action: DomainEventTypes.AgentTemplatePromoted,
+                activationName: null,
+                details: promotedMetadata);
+
             return ServiceResult<Agent>.Success(newTemplate);
         }
         catch (Exception ex)
