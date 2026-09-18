@@ -16,13 +16,13 @@ public partial class FlowDefinition : ModelValidatorBase<FlowDefinition>
     [BsonElement("workflow_type")]
     [Required(ErrorMessage = "Workflow type is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Workflow type must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#='’]+$", ErrorMessage = "Workflow type contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeWorkflowTypePattern, ErrorMessage = "Workflow type contains invalid characters")]
     public required string WorkflowType { get; set; }
 
     [BsonElement("agent")]
     [Required(ErrorMessage = "Agent is required")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Agent must be between 1 and 100 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@|+\-:/\\,#=]+$", ErrorMessage = "Agent contains invalid characters")]
+    [RegularExpression(ValidationHelpers.UnicodeSafeNamePattern, ErrorMessage = "Agent contains invalid characters")]
     public required string Agent { get; set; }
 
     [BsonElement("name")]

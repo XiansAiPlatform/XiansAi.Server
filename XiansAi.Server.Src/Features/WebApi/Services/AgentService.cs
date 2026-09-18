@@ -181,10 +181,10 @@ public class AgentService : IAgentService
                 _logger.LogWarning("Invalid agent name provided for deletion");
                 return ServiceResult<AgentDeleteResult>.BadRequest("Agent name is required");
             }
-            var validatedgentName = Agent.SanitizeAndValidateName(agentName);
+            var validatedAgentName = Agent.SanitizeAndValidateName(agentName);
 
             // Check if user has owner permission using PermissionsService
-            var ownerPermissionResult = await _permissionsService.HasOwnerPermission(validatedgentName);
+            var ownerPermissionResult = await _permissionsService.HasOwnerPermission(validatedAgentName);
             if (!ownerPermissionResult.IsSuccess)
             {
                 if (ownerPermissionResult.StatusCode == StatusCode.NotFound)
@@ -197,12 +197,12 @@ public class AgentService : IAgentService
             if (!ownerPermissionResult.Data)
             {
                 _logger.LogWarning("User {UserId} attempted to delete agent {AgentName} without owner permission",
-                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(agentName));
+                    LogSanitizer.Sanitize(_tenantContext.LoggedInUser), LogSanitizer.Sanitize(validatedAgentName));
                 return ServiceResult<AgentDeleteResult>.Forbidden("You must have owner permission to delete this agent");
             }
 
             // Get the agent to retrieve its ID for deletion
-            var agent = await _agentRepository.GetByNameInternalAsync(agentName, _tenantContext.TenantId);
+            var agent = await _agentRepository.GetByNameInternalAsync(validatedAgentName, _tenantContext.TenantId);
             if (agent == null)
             {
                 _logger.LogWarning("Agent {AgentName} not found for deletion", LogSanitizer.Sanitize(agentName));

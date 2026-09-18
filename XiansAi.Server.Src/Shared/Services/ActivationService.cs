@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data.Models;
@@ -128,12 +129,22 @@ public class ActivationService : IActivationService
                 return ServiceResult<AgentActivation>.BadRequest("AgentName is required");
             }
 
+            string validatedAgentName;
+            try
+            {
+                validatedAgentName = Agent.SanitizeAndValidateName(request.AgentName);
+            }
+            catch (ValidationException ex)
+            {
+                return ServiceResult<AgentActivation>.BadRequest(ex.Message);
+            }
+
             // Verify that the agent exists
-            var agent = await _agentRepository.GetByNameInternalAsync(request.AgentName, tenantId);
+            var agent = await _agentRepository.GetByNameInternalAsync(validatedAgentName, tenantId);
             if (agent == null)
             {
-                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(tenantId));
-                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
+                _logger.LogWarning("Agent with name {AgentName} not found in tenant {TenantId}", LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(tenantId));
+                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant");
             }
 
             // Defense-in-depth: GetByNameInternalAsync already scopes by tenant, but never
@@ -142,15 +153,15 @@ public class ActivationService : IActivationService
             {
                 _logger.LogWarning(
                     "Tenant {TenantId} attempted to create activation for agent {AgentName} belonging to tenant {OwnerTenant}",
-                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(request.AgentName), LogSanitizer.Sanitize(agent.Tenant));
-                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{request.AgentName}' not found in tenant");
+                    LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(validatedAgentName), LogSanitizer.Sanitize(agent.Tenant));
+                return ServiceResult<AgentActivation>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant");
             }
 
             var activation = new AgentActivation
             {
                 Id = ObjectId.GenerateNewId().ToString(),
                 Name = request.Name,
-                AgentName = request.AgentName,
+                AgentName = validatedAgentName,
                 Description = request.Description,
                 ParticipantId = request.ParticipantId,
                 CreatedBy = userId,
@@ -174,7 +185,7 @@ public class ActivationService : IActivationService
 
             _logger.LogInformation("Successfully created activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
 
-            var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = request.AgentName };
+            var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = validatedAgentName };
 
             await _webhookEventPublisher.PublishAsync(DomainEventTypes.ActivationCreated, metadata, tenantId);
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Cache Provider Pattern in XiansAi.Server provides a simple, configuration-based caching system that selects the appropriate cache provider based on application settings. The system supports Redis for distributed caching and in-memory caching for development or single-instance scenarios.
+The Cache Provider Pattern in XiansAi.Server provides a simple, configuration-based caching system that selects the appropriate cache provider based on application settings. The system supports Redis for distributed caching, in-memory caching for development or single-instance scenarios (the default), and a no-op provider that disables caching entirely.
 
 ## Architecture
 
@@ -13,6 +13,7 @@ Shared/Providers/Cache/
 ├── ICacheProvider.cs              # Main cache abstraction
 ├── RedisCacheProvider.cs          # Redis implementation
 ├── InMemoryCacheProvider.cs       # In-memory implementation
+├── NoOpCacheProvider.cs           # No-op implementation (explicit opt-out of caching)
 ├── CacheProviderFactory.cs        # Simple factory with configuration-based selection
 ├── ICacheInvalidationBus.cs       # Cross-replica invalidation publish API
 ├── RedisCacheInvalidationBus.cs   # Redis pub/sub transport (redis provider only)
@@ -53,6 +54,15 @@ public interface ICacheProvider
 - **Development/Testing**: Useful for development and testing scenarios
 - **No Dependencies**: Always available
 
+#### No-Op Provider
+
+- **Always a Miss**: `GetAsync` always returns `default`/not-found, `SetAsync` always returns `false` — nothing is ever actually cached
+- **No State**: Holds nothing in memory; there is nothing to invalidate or grow unbounded
+- **Caller Falls Through**: Every call forces the caller to read from its real source (e.g. the database)
+- **Explicit Opt-Out**: Select `Cache:Provider=noop` when a deployment should not cache at all (e.g. to rule out caching while debugging, or for data that must always be read fresh)
+- **Not the Default**: Leaving `Cache:Provider` unset still registers the in-memory provider; `noop` must be chosen explicitly
+- **Not safe for consumers that treat the cache as storage, not a performance optimization**: `ICacheProvider` is meant to be an optional speed-up — every caller should have a real fallback when a value isn't cached. `AuthorizationCacheService.CacheAuthorization` doesn't: it writes a short-lived auth handoff payload and treats a failed `SetAsync` as a hard error (it throws), because that payload has no other home for a later request to read it back from. Under `noop`, `SetAsync` always returns `false`, so this call always fails. Audit any `ICacheProvider` consumer with similar store-not-cache semantics before enabling `noop` in an environment that exercises it.
+
 ### 3. Cross-Replica Invalidation (`ICacheInvalidationBus`)
 
 When `Cache:Provider=redis`, services publish `CacheInvalidationEnvelope` messages through `ICacheInvalidationBus` whenever auth or messaging L1 caches should be cleared (user disable, API key revoke, tenant change, activation deactivate, thread origin updates, and similar). `RedisCacheInvalidationBus` sends envelopes over Redis pub/sub (`xians:cache:invalidate`); each replica subscribes and forwards received envelopes to `ICacheInvalidationApplicator`, which evicts the matching keys from that instance's in-memory caches.
@@ -86,6 +96,7 @@ Synchronous `/converse` flows use `IPendingRequestCoordinator` so a waiter on on
 |----------|------------------|-------------------|
 | Redis | `"redis"` | `Cache:Redis:ConnectionString` |
 | In-Memory | `"memory"` or `"inmemory"` | None |
+| No-Op | `"noop"` | None |
 
 ### Redis Configuration Examples
 
@@ -167,6 +178,18 @@ HMAC / shared-secret checks on invalidation and completion envelopes are a possi
   }
 }
 ```
+
+### No-Op Configuration
+
+```json
+{
+  "Cache": {
+    "Provider": "noop"
+  }
+}
+```
+
+Note this must be set explicitly — leaving `Cache:Provider` unset still defaults to `memory`.
 
 ## Usage
 

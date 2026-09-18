@@ -141,6 +141,26 @@ public class AgentEndpointsTests : WebApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task GetDefinitionsBasic_WithNorwegianAgentName_ReturnsDefinitions()
+    {
+        const string agentName = "Kjøpsassistent";
+        await CreateTestAgentAsync(agentName);
+        await CreateTestFlowDefinitionAsync(agentName, "TestWorkflow");
+
+        var encodedName = Uri.EscapeDataString(agentName);
+        var response = await GetAsync($"/api/client/agents/{encodedName}/definitions/basic");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var definitions = await response.Content.ReadFromJsonAsync<List<FlowDefinition>>();
+
+        Assert.NotNull(definitions);
+        Assert.Single(definitions);
+        Assert.Equal(agentName, definitions.First().Agent);
+        Assert.Equal("TestWorkflow", definitions.First().WorkflowType);
+    }
+
+    [Fact]
     public async Task GetDefinitionsBasic_WithEmptyAgentName_ReturnsBadRequest()
     {
         // Act

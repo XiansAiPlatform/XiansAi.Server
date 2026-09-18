@@ -20,6 +20,8 @@ public class LogRequest
     public string? Exception { get; set; }
     public string? ParticipantId { get; set; }
     public string? TenantId { get; set; }
+    public string? TraceId { get; set; }
+    public string? SpanId { get; set; }
 }
 
 public interface ILogsService
@@ -83,6 +85,8 @@ public class LogsService : ILogsService
                     Activation = request.Activation,
                     Exception = request.Exception,
                     ParticipantId = request.ParticipantId,
+                    TraceId = request.TraceId,
+                    SpanId = request.SpanId,
                     CreatedAt = DateTime.UtcNow
                 };
                 logs.Add(log);
@@ -138,6 +142,8 @@ public class LogsService : ILogsService
                 Activation = request.Activation,
                 Exception = request.Exception,
                 ParticipantId = request.ParticipantId,
+                TraceId = request.TraceId,
+                SpanId = request.SpanId,
                 CreatedAt = DateTime.UtcNow
             };
 

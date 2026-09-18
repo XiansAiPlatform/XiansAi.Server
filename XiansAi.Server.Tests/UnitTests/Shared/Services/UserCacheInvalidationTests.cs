@@ -93,7 +93,7 @@ public class UserCacheInvalidationTests
         var index = BuildIndex();
         _userRepo.Setup(x => x.GetUserRolesAsync(UserId, It.IsAny<string>()))
             .ReturnsAsync(new List<string> { SystemRoles.TenantAdmin });
-        var roleCache = new RoleCacheService(_cache, _userRepo.Object, index);
+        var roleCache = new RoleCacheService(_cache, _userRepo.Object, index, new CacheOperationMode(isNoOp: false));
         await roleCache.GetUserRolesAsync(UserId, TenantId);
         await roleCache.GetUserRolesAsync(UserId, "other-tenant");
 
@@ -105,6 +105,25 @@ public class UserCacheInvalidationTests
         await roleCache.GetUserRolesAsync(UserId, TenantId);
         await roleCache.GetUserRolesAsync(UserId, "other-tenant");
         _userRepo.Verify(x => x.GetUserRolesAsync(UserId, It.IsAny<string>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task RoleCache_BypassesCacheButStillFiltersParticipantRoles_WhenNoOp()
+    {
+        var index = BuildIndex();
+        _userRepo.Setup(x => x.GetUserRolesAsync(UserId, TenantId))
+            .ReturnsAsync(new List<string> { SystemRoles.TenantAdmin, SystemRoles.TenantParticipant });
+        var roleCache = new RoleCacheService(_cache, _userRepo.Object, index, new CacheOperationMode(isNoOp: true));
+
+        var first = await roleCache.GetUserRolesAsync(UserId, TenantId);
+        var second = await roleCache.GetUserRolesAsync(UserId, TenantId);
+
+        // The participant-role filter must still apply even though nothing is cached.
+        Assert.Equal(new[] { SystemRoles.TenantAdmin }, first);
+        Assert.Equal(new[] { SystemRoles.TenantAdmin }, second);
+
+        // Every call re-reads from the repository instead of serving a cached result.
+        _userRepo.Verify(x => x.GetUserRolesAsync(UserId, TenantId), Times.Exactly(2));
     }
 
     [Fact]

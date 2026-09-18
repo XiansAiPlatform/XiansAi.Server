@@ -1,9 +1,21 @@
 namespace Shared.Data;
 
+/// <summary>
+/// The database engine behind the MongoDB wire protocol. Azure DocumentDB (pg_documentdb) is
+/// mostly compatible but has known aggregation bugs (e.g. $dateTrunc for day/week units) that
+/// require alternative query shapes. Set via MongoDB__Provider=DocumentDB on Azure deployments.
+/// </summary>
+public enum MongoProvider
+{
+    MongoDB,
+    DocumentDB
+}
+
 public interface IMongoDBConfig
 {
     string ConnectionString { get; set; }
     string DatabaseName { get; set; }
+    MongoProvider Provider { get; set; }
     
     // Connection Pool Settings
     int MaxConnectionPoolSize { get; set; }
@@ -29,6 +41,9 @@ public class MongoDBConfig: IMongoDBConfig
 {
     public required string ConnectionString { get; set; }
     public required string DatabaseName { get; set; }
+
+    // Engine behind the wire protocol. Defaults to real MongoDB; set to DocumentDB for Azure DocumentDB.
+    public MongoProvider Provider { get; set; } = MongoProvider.MongoDB;
     
     // Connection Pool Settings - Default values optimized for Cosmos DB.
     // MinConnectionPoolSize keeps sockets ready so requests after an idle gap skip the handshake.

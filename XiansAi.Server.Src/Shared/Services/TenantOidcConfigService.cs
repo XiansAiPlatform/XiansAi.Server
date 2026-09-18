@@ -127,16 +127,30 @@ public class TenantOidcConfigService : ITenantOidcConfigService
             {
                 if (result.Data != null)
                 {
-                    await _cache.SetAsync(cacheKey, result.Data, CacheExpiration);
-                    _logger.LogDebug("Cached OIDC config for tenant {TenantId} with {CacheExpiration} expiration", 
-                        tenantId, CacheExpiration);
+                    var stored = await _cache.SetAsync(cacheKey, result.Data, CacheExpiration);
+                    if (stored)
+                    {
+                        _logger.LogDebug("Cached OIDC config for tenant {TenantId} with {CacheExpiration} expiration",
+                            LogSanitizer.Sanitize(tenantId), CacheExpiration);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Cache set ignored for tenant {TenantId} OIDC config (no-op provider)", LogSanitizer.Sanitize(tenantId));
+                    }
                 }
                 else
                 {
                     // Cache null results to avoid repeated database hits for non-existent configs
-                    await _cache.SetAsync(nullCacheKey, true, CacheExpiration);
-                    _logger.LogDebug("Cached null OIDC config for tenant {TenantId} with {CacheExpiration} expiration", 
-                        tenantId, CacheExpiration);
+                    var stored = await _cache.SetAsync(nullCacheKey, true, CacheExpiration);
+                    if (stored)
+                    {
+                        _logger.LogDebug("Cached null OIDC config for tenant {TenantId} with {CacheExpiration} expiration",
+                            LogSanitizer.Sanitize(tenantId), CacheExpiration);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Cache set ignored for null tenant {TenantId} OIDC config (no-op provider)", LogSanitizer.Sanitize(tenantId));
+                    }
                 }
             }
             // Don't cache error results - let them retry on next request

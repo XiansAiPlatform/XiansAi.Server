@@ -1,6 +1,6 @@
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using Shared.Auth;
+using Shared.Data.Models.Validation;
 using Shared.Utils;
 using Temporalio.Client;
 using Temporalio.Converters;
@@ -721,12 +721,9 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// Uses an allowlist to prevent keyword-based injection (e.g. "x AND TenantId = y").
     /// Throws ArgumentException if the value fails validation.
     /// </summary>
-    private static readonly Regex SafeTqlValuePattern =
-        new(@"^[a-zA-Z0-9\-_.@ ]{1,256}$", RegexOptions.Compiled);
-
     private static void ValidateTqlValue(string value)
     {
-        if (!SafeTqlValuePattern.IsMatch(value))
+        if (!ValidationHelpers.IsValidPattern(value, ValidationHelpers.Patterns.SafeTqlValue))
             throw new ArgumentException("Filter value contains invalid characters.");
     }
 
