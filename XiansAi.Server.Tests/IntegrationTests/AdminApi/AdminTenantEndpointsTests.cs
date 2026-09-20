@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Shared.Auth;
 using Shared.Data.Models;
 using Xunit;
 using Tests.TestUtils;
@@ -715,5 +716,124 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
             }
         }
         return null;
+    }
+
+    [Fact]
+    public async Task SetAndClearTenantTheme_RoundTripsMongo()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var set = await PutAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/theme", new { theme = "fjord" });
+        Assert.Equal(HttpStatusCode.OK, set.StatusCode);
+
+        var get = await GetAsync($"/api/v1/admin/tenants/{tenantId}/theme");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        using (var json = JsonDocument.Parse(await get.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal("fjord", json.RootElement.GetProperty("theme").GetString());
+        }
+
+        var clear = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/theme");
+        Assert.Equal(HttpStatusCode.OK, clear.StatusCode);
+
+        var afterClear = await GetAsync($"/api/v1/admin/tenants/{tenantId}/theme");
+        Assert.Equal(HttpStatusCode.OK, afterClear.StatusCode);
+        using var cleared = JsonDocument.Parse(await afterClear.Content.ReadAsStringAsync());
+        if (cleared.RootElement.TryGetProperty("theme", out var theme))
+        {
+            Assert.True(theme.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+                || string.IsNullOrEmpty(theme.GetString()));
+        }
+    }
+
+    [Fact]
+    public async Task SetAndClearTenantLogo_RoundTripsMongo()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var set = await PutAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/logo", new
+        {
+            imgBase64 = OnePixelPngBase64,
+            width = 1,
+            height = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, set.StatusCode);
+
+        var get = await GetAsync($"/api/v1/admin/tenants/{tenantId}/logo");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        Assert.Equal("image/png", get.Content.Headers.ContentType?.MediaType);
+
+        var clear = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/logo");
+        Assert.Equal(HttpStatusCode.OK, clear.StatusCode);
+
+        var afterClear = await GetAsync($"/api/v1/admin/tenants/{tenantId}/logo");
+        Assert.Equal(HttpStatusCode.NotFound, afterClear.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetOidcConfigTemplate_ReturnsSampleForTenant()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/oidc-config/template");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(tenantId, body);
+        Assert.Contains("providers", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetOidcConfig_WhenUnset_ReturnsOk()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/oidc-config");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateOidcConfig_WithoutBody_ReturnsBadRequest()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/oidc-config", (object?)null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetOidcConfig_AsTenantAdmin_ReturnsForbidden()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId, SystemRoles.TenantAdmin);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/oidc-config");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetTemporalConfig_WhenUnset_ReturnsOk()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/temporal-config");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }

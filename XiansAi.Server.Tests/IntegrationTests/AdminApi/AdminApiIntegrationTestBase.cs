@@ -6,8 +6,11 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using Shared.Auth;
+using Shared.Data;
 using Shared.Data.Models;
+using Shared.Data.Models.Usage;
 using Shared.Repositories;
+using Microsoft.Extensions.Logging;
 using Tests.IntegrationTests.WebApi;
 using Tests.TestUtils;
 
@@ -225,7 +228,8 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
         string content,
         string tenantId,
         string type = "text",
-        DateTime? createdAt = null)
+        DateTime? createdAt = null,
+        string? activationName = null)
     {
         using var scope = _factory.Services.CreateScope();
         var knowledgeRepository = scope.ServiceProvider.GetRequiredService<IKnowledgeRepository>();
@@ -240,7 +244,8 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
             TenantId = tenantId,
             CreatedBy = _adminUserId ?? "test-admin",
             CreatedAt = createdAt ?? DateTime.UtcNow,
-            Version = ObjectId.GenerateNewId().ToString()
+            Version = ObjectId.GenerateNewId().ToString(),
+            ActivationName = activationName
         };
 
         await knowledgeRepository.CreateAsync(knowledge);
@@ -301,7 +306,12 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
     /// <summary>
     /// Creates a test agent activation.
     /// </summary>
-    protected async Task<AgentActivation> CreateTestActivationAsync(string agentName, string tenantId, string? userId = null)
+    protected async Task<AgentActivation> CreateTestActivationAsync(
+        string agentName,
+        string tenantId,
+        string? userId = null,
+        bool isActive = false,
+        string? name = null)
     {
         using var scope = _factory.Services.CreateScope();
         var activationRepository = scope.ServiceProvider.GetRequiredService<IActivationRepository>();
@@ -311,16 +321,178 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
         var activation = new AgentActivation
         {
             Id = ObjectId.GenerateNewId().ToString(),
-            Name = $"test-activation-{Guid.NewGuid()}",
+            Name = name ?? $"test-activation-{Guid.NewGuid()}",
             AgentName = agentName,
             TenantId = tenantId,
             CreatedBy = ownerUserId,
             CreatedAt = DateTime.UtcNow,
-            WorkflowIds = new List<string>()
+            WorkflowIds = new List<string>(),
+            Active = isActive ? true : null,
+            ActivatedAt = isActive ? DateTime.UtcNow : null
         };
 
         await activationRepository.CreateAsync(activation);
         return activation;
+    }
+
+    protected async Task<FlowDefinition> CreateBuiltInFlowDefinitionAsync(
+        string agentName,
+        string tenantId,
+        string flowName = "Chat")
+    {
+        using var scope = _factory.Services.CreateScope();
+        var flowDefinitionRepository = scope.ServiceProvider.GetRequiredService<IFlowDefinitionRepository>();
+
+        var definition = new FlowDefinition
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            WorkflowType = $"{agentName}:{flowName}",
+            Agent = agentName,
+            Hash = Guid.NewGuid().ToString("N"),
+            ActivityDefinitions = new List<ActivityDefinition>(),
+            ParameterDefinitions = new List<ParameterDefinition>(),
+            CreatedBy = _adminUserId ?? "test-admin",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Tenant = tenantId,
+            SystemScoped = false,
+            Activable = true,
+            IsBuiltIn = true
+        };
+
+        await flowDefinitionRepository.CreateAsync(definition);
+        return definition;
+    }
+
+    protected async Task<(string ThreadId, string WorkflowId, string WorkflowType, ConversationMessage Message)> SeedConversationAsync(
+        string tenantId,
+        string agentName,
+        string activationName,
+        string participantId,
+        string text = "hello from admin tests",
+        string? topic = null,
+        MessageDirection direction = MessageDirection.Incoming)
+    {
+        var workflowType = $"{agentName}:Chat";
+        var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, "Chat", activationName);
+        var normalizedParticipant = participantId.ToLowerInvariant();
+
+        using var scope = _factory.Services.CreateScope();
+        var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+
+        var threadId = await conversationRepository.CreateOrGetThreadIdAsync(new ConversationThread
+        {
+            TenantId = tenantId,
+            WorkflowId = workflowId,
+            WorkflowType = workflowType,
+            Agent = agentName,
+            ParticipantId = normalizedParticipant,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CreatedBy = _adminUserId ?? "test-admin",
+            Status = ConversationThreadStatus.Active
+        });
+
+        var message = new ConversationMessage
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            ThreadId = threadId,
+            TenantId = tenantId,
+            ParticipantId = normalizedParticipant,
+            WorkflowId = workflowId,
+            WorkflowType = workflowType,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = _adminUserId ?? "test-admin",
+            Direction = direction,
+            Text = text,
+            Status = MessageStatus.DeliveredToWorkflow,
+            Scope = topic,
+            MessageType = MessageType.Chat
+        };
+        await conversationRepository.SaveMessageAsync(message);
+
+        return (threadId, workflowId, workflowType, message);
+    }
+
+    protected async Task<AuditLogEntry> SeedAuditLogAsync(
+        string tenantId,
+        string action,
+        string performedBy,
+        string? activationName = null)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var auditLogRepository = scope.ServiceProvider.GetRequiredService<IAuditLogRepository>();
+
+        var entry = new AuditLogEntry
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            TenantId = tenantId,
+            ParticipantId = performedBy,
+            LoggedInUser = performedBy,
+            Action = action,
+            Description = $"{action} performed in tests",
+            ActivationName = activationName,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await auditLogRepository.CreateAsync(entry);
+        return entry;
+    }
+
+    protected async Task SeedLogAsync(
+        string tenantId,
+        string agentName,
+        string activationName,
+        string workflowId,
+        string message = "admin integration log")
+    {
+        using var scope = _factory.Services.CreateScope();
+        var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        var mongoDatabase = await databaseService.GetDatabaseAsync();
+        var collection = mongoDatabase.GetCollection<Features.WebApi.Models.Log>("logs");
+
+        await collection.InsertOneAsync(new Features.WebApi.Models.Log
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            TenantId = tenantId,
+            CreatedAt = DateTime.UtcNow,
+            Level = LogLevel.Information,
+            Message = message,
+            WorkflowId = workflowId,
+            WorkflowRunId = ObjectId.GenerateNewId().ToString(),
+            WorkflowType = $"{agentName}:Chat",
+            Agent = agentName,
+            Activation = activationName,
+            ParticipantId = "user@example.com"
+        });
+    }
+
+    protected async Task SeedUsageMetricAsync(
+        string tenantId,
+        string agentName,
+        string activationName,
+        string category = "llm",
+        string type = "tokens",
+        double value = 42)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var usageRepository = scope.ServiceProvider.GetRequiredService<IUsageEventRepository>();
+
+        await usageRepository.InsertBatchAsync(
+        [
+            new UsageMetric
+            {
+                TenantId = tenantId,
+                AgentName = agentName,
+                ActivationName = activationName,
+                ParticipantId = "user@example.com",
+                Category = category,
+                Type = type,
+                Value = value,
+                Unit = "count",
+                CreatedAt = DateTime.UtcNow
+            }
+        ]);
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using MongoDB.Bson;
+using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -238,5 +239,42 @@ public class AdminAgentEndpointsTests : AdminApiIntegrationTestBase
 
         var deleteAfterCleanup = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/agentDeployments/{agent.Name}");
         Assert.Equal(HttpStatusCode.OK, deleteAfterCleanup.StatusCode);
+    }
+
+    [Fact]
+    public async Task PromoteAgentToTemplate_CreatesSystemScopedCopy()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"agent-{Guid.NewGuid()}", tenantId);
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/agentDeployments/{Uri.EscapeDataString(agent.Name)}/promote-to-template",
+            new { });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var template = await ReadAsJsonAsync<Agent>(response);
+        Assert.NotNull(template);
+        Assert.True(template!.SystemScoped);
+        Assert.Equal(agent.Name, template.Name);
+
+        var byName = await GetAsync($"/api/v1/admin/agentTemplates/by-name/{Uri.EscapeDataString(agent.Name)}");
+        Assert.Equal(HttpStatusCode.OK, byName.StatusCode);
+    }
+
+    [Fact]
+    public async Task PromoteAgentToTemplate_AsTenantAdmin_ReturnsForbidden()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId, SystemRoles.TenantAdmin);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"agent-{Guid.NewGuid()}", tenantId);
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/agentDeployments/{Uri.EscapeDataString(agent.Name)}/promote-to-template",
+            new { });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }

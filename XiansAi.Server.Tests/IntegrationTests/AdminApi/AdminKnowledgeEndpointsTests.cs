@@ -198,4 +198,96 @@ public class AdminKnowledgeEndpointsTests : AdminApiIntegrationTestBase
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task GetLatestKnowledge_ReturnsTenantScopedItem()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        await CreateTestKnowledgeAsync("playbook", agent.Name, "tenant copy", tenantId);
+
+        var response = await GetAsync(
+            $"/api/v1/admin/tenants/{tenantId}/knowledge/latest?name=playbook&agentName={Uri.EscapeDataString(agent.Name)}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var latest = await ReadAsJsonAsync<Knowledge>(response);
+        Assert.Equal("playbook", latest!.Name);
+        Assert.Equal("tenant copy", latest.Content);
+    }
+
+    [Fact]
+    public async Task GetLatestKnowledge_WithMissingName_ReturnsBadRequest()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+
+        var response = await GetAsync(
+            $"/api/v1/admin/tenants/{tenantId}/knowledge/latest?agentName={Uri.EscapeDataString(agent.Name)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OverrideKnowledge_AtActivation_CreatesMoreSpecificCopy()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var knowledge = await CreateTestKnowledgeAsync("playbook", agent.Name, "tenant copy", tenantId);
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}/override/activation?activationName=front-desk",
+            new { });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await ReadAsJsonAsync<Knowledge>(response);
+        Assert.Equal("front-desk", created!.ActivationName);
+        Assert.Equal("playbook", created.Name);
+        Assert.NotEqual(knowledge.Id, created.Id);
+
+        var latest = await GetAsync(
+            $"/api/v1/admin/tenants/{tenantId}/knowledge/latest?name=playbook&agentName={Uri.EscapeDataString(agent.Name)}&activationName=front-desk");
+        Assert.Equal(HttpStatusCode.OK, latest.StatusCode);
+        var resolved = await ReadAsJsonAsync<Knowledge>(latest);
+        Assert.Equal(created.Id, resolved!.Id);
+    }
+
+    [Fact]
+    public async Task OverrideKnowledge_WithInvalidLevel_ReturnsBadRequest()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var knowledge = await CreateTestKnowledgeAsync("playbook", agent.Name, "tenant copy", tenantId);
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}/override/system",
+            new { });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteKnowledgeByActivation_RemovesActivationScopedItems()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var knowledge = await CreateTestKnowledgeAsync(
+            "playbook", agent.Name, "activation copy", tenantId, activationName: "front-desk");
+
+        var response = await DeleteAsync(
+            $"/api/v1/admin/tenants/{tenantId}/knowledge/agents/{Uri.EscapeDataString(agent.Name)}/activation/front-desk");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var getAfterDelete = await GetAsync($"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledge.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
+    }
 }
