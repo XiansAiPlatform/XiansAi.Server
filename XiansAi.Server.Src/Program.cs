@@ -65,7 +65,7 @@ public class Program
             
             // Build and run the application
             var builder = CreateApplicationBuilder(args, commandLineArgs.ServiceType, loggerFactory);
-            var app = await ConfigureApplication(builder, commandLineArgs.ServiceType, loggerFactory);
+            var app = await ConfigureApplication(builder, commandLineArgs.ServiceType);
             
             // Run the app
             _logger.LogInformation("Application configured successfully, starting server");
@@ -245,12 +245,16 @@ public class Program
     /// <summary>
     /// Configures the web application with appropriate middleware and endpoints.
     /// </summary>
-    private static async Task<WebApplication> ConfigureApplication(WebApplicationBuilder builder, ServiceType serviceType, ILoggerFactory loggerFactory)
+    private static async Task<WebApplication> ConfigureApplication(WebApplicationBuilder builder, ServiceType serviceType)
     {
         var app = builder.Build();
 
         // Configure shared middleware
         app.UseSharedMiddleware();
+
+        // Resolved post-build so it reads Logging:Console:LogLevel:* configuration - the pre-build
+        // factory in Main has no IConfiguration to bind to and would silently ignore those settings.
+        var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
 
         // Configure service-specific endpoints and middleware
         ConfigureEndpointsByType(app, serviceType, loggerFactory);

@@ -96,7 +96,7 @@ public static class AgentApiConfiguration
         ActivityHistoryEndpoints.MapActivityHistoryEndpoints(app, loggerFactory);
         DefinitionsEndpoints.MapDefinitionsEndpoints(app, loggerFactory);
         EventsEndpoints.MapEventsEndpoints(app, loggerFactory);
-        ConversationEndpoints.MapConversationEndpoints(app);
+        ConversationEndpoints.MapConversationEndpoints(app, loggerFactory);
         LogsEndpoints.MapLogsEndpoints(app, loggerFactory);
         SettingsEndpoints.MapSettingsEndpoints(app);
         DocumentEndpoints.MapDocumentEndpoints(app, loggerFactory);
