@@ -58,7 +58,6 @@ public class AzureOpenAILlmProvider : ILlmProvider
     /// <returns>The model</returns>
     public string GetModel()
     {
-        Console.WriteLine("FROM CONFIG" + _config.Model);
         return _config.Model;
     }
 

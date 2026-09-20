@@ -24,7 +24,7 @@ namespace Features.AgentApi.Endpoints
 
     public static class ConversationEndpoints
     {
-        private static readonly ILogger<ConversationHistoryQuery> _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<ConversationHistoryQuery>();
+        private static ILogger<ConversationHistoryQuery> _logger = null!;
         private static void SetAuthorizationFromHeader(HandoffRequest request, HttpContext context)
         {
             if (request.Authorization == null)
@@ -39,8 +39,10 @@ namespace Features.AgentApi.Endpoints
             }
         }
 
-        public static void MapConversationEndpoints(WebApplication app)
+        public static void MapConversationEndpoints(WebApplication app, ILoggerFactory loggerFactory)
         {
+            _logger = loggerFactory.CreateLogger<ConversationHistoryQuery>();
+
             var group = app.MapGroup("/api/agent/conversation")
                 .WithTags("AgentAPI - Conversation")
                 .RequiresCertificate()
