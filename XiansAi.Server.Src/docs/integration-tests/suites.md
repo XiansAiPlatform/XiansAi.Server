@@ -41,9 +41,9 @@ await CreateTestTenantAsync(tenantId);
 
 ## Admin API (Temporal)
 
-See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`.
+See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`.
 
-The Echo class is the only test that authors a real agent with Xians.Lib. See [Lib agent workflows](./lib-agent-workflows.md).
+Lib-backed cycles (Echo chat/SSE, Knowledge overrides) are documented in [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Web API
 

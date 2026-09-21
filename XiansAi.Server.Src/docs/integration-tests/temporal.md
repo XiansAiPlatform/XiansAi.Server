@@ -81,6 +81,10 @@ Starts workflows through Admin HTTP (and a stub worker where a query/signal must
 
 System Echo agent authored with Xians.Lib (supervisor + `ReplyAsync($"Echo: …")`), then Admin deploy / activate / chat / teardown. Details, queues, and the workflow type Lib starts: [Lib agent workflows](./lib-agent-workflows.md).
 
+### `AdminApiTemporalKnowledgeAgentLifecycleTests`
+
+System Knowledge agent authored with Xians.Lib (supervisor replies with `GetAsync("playbook")`). Admin tenant override, second tenant still sees system original; activation override, second agent and second activation still see the less-specific copy. Same host as Echo: [Lib agent workflows](./lib-agent-workflows.md).
+
 ## Seeding Temporal tests
 
 Use the Temporal base helpers rather than starting workflows with the Temporal client unless the case is specifically about schedules or HITL (those helpers exist too):

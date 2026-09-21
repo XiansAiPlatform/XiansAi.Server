@@ -14,7 +14,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 [Collection(AdminApiTemporalCollection.Name)]
-public abstract class AdminApiTemporalIntegrationTestBase : AdminApiIntegrationTestBase
+public abstract partial class AdminApiTemporalIntegrationTestBase : AdminApiIntegrationTestBase
 {
     protected readonly TemporalFixture Temporal;
 

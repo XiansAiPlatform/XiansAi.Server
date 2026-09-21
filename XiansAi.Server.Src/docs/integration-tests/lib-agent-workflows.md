@@ -1,8 +1,40 @@
 # Lib agent workflows
 
-Most Temporal Admin tests use an in-process [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs). One test instead authors a real agent with sibling [Xians.Lib](../../../../XiansAi.Lib/Xians.Lib) — the same SDK production agents use — then drives that agent through Admin HTTP.
+Most Temporal Admin tests use an in-process [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs). Lib-backed cycles instead author a real agent with sibling [Xians.Lib](../../../../XiansAi.Lib/Xians.Lib) — the same SDK production agents use — then drive it through Admin HTTP.
 
-That test is [`AdminApiTemporalEchoAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalEchoAgentLifecycleTests.cs). Local Temporal setup for the collection is in [Temporal tests](./temporal.md).
+Local Temporal setup for the collection is in [Temporal tests](./temporal.md). Shared host: [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs). Shared Admin HTTP: [`AdminApiTemporalLibAgentSupport`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalLibAgentSupport.cs).
+
+| Cycle | Test | What it proves |
+| --- | --- | --- |
+| Echo | [`AdminApiTemporalEchoAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalEchoAgentLifecycleTests.cs) | Template → deploy → chat, plus live SSE/SignalR |
+| Knowledge | [`AdminApiTemporalKnowledgeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeAgentLifecycleTests.cs) | System knowledge upload, tenant override, activation override, isolation |
+
+```bash
+dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
+dotnet test --filter "FullyQualifiedName~KnowledgeAgent_SystemUpload_TenantAndActivationOverridesIsolate"
+```
+
+The tests project references `../../XiansAi.Lib/Xians.Lib/Xians.Lib.csproj`. Clone that repo next to this one or restore fails for the whole test project.
+
+## Shared host
+
+Every Lib cycle starts the same way so a new agent does not copy loopback / certificate / worker shutdown:
+
+```csharp
+await using var host = await LibAgentWorkflowHost.StartAsync(
+    _factory.Server, Temporal.TargetHost, Temporal.Namespace, tenantId, _adminUserId!);
+
+var agent = host.RegisterTemplate(agentName, description);
+// define workflows / upload knowledge
+await host.StartWorkersAsync(agent);
+await WaitForTemplateAsync(agentName);
+await DeployLibTemplateAsync(tenantId, agentName);
+var activationId = await ActivateLibAgentAsync(tenantId, agentName, "front-desk");
+```
+
+The host resets Lib statics, binds `TestServerLoopback`, initializes `XiansPlatform` with a PFX key and **knowledge cache disabled** (so Admin overrides are visible on the next chat), and stops workers on dispose.
+
+Register as many templates as the cycle needs, then `StartWorkersAsync(agentA, agentB, …)`. Handlers are keyed by workflow type (`{agent}:Supervisor Workflow`), so two agents on one host do not overwrite each other.
 
 ## Why a Lib agent exists in this suite
 
@@ -13,14 +45,9 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Built-in supervisor chat (`OnUserChatMessage` / `ReplyAsync`)
 - Task-queue selection for system-scoped agents
 - Activate / send / deactivate / delete against a worker that registered itself
+- Knowledge fallback as the running agent actually reads it (`GetAsync` inside the supervisor)
 
-The Echo cycle is the contract test for that path. It is intentionally small: one built-in supervisor that echoes chat. It is not a catalogue of every Lib sample.
-
-```bash
-dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
-```
-
-The tests project references `../../XiansAi.Lib/Xians.Lib/Xians.Lib.csproj`. Clone that repo next to this one or restore fails for the whole test project.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract. Neither is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -174,38 +201,67 @@ UserApi auth mutates the Moq `ITenantContext` singleton. The test re-binds tenan
 
 Helpers wait for SSE `event: connected` and a connected hub **before** `POST …/messaging/send`, so the change stream has subscribers when `ReplyAsync` writes the outgoing Chat.
 
+## Agent under test: Knowledge
+
+Same host as Echo. The supervisor replies with whatever `GetAsync("playbook")` resolves to — the same read path as [`Xians.Examples/KnowledgeAccess`](../../../../XiansAi.Lib/Xians.Examples/KnowledgeAccess/Program.cs).
+
+Resolution is [`GetLatestByNameForTenantAsync`](../../Shared/Services/KnowledgeService.cs): activation → tenant-default → system. Long form: [Knowledge fallback](../KNOWLEDGE_FALLBACK.md).
+
+```text
+1. System agent uploads "playbook" = "system original playbook"
+2. Deploy to owner tenant and other tenant; also register a second system agent with the same knowledge name
+3. Chat on both tenants and the second agent → original
+4. Admin override at tenant, then PATCH content → "tenant override playbook"
+5. Owner tenant chat → tenant override
+   Other tenant chat → original
+   Other agent chat → original
+6. Admin override at activation "front-desk", PATCH → "activation override playbook"
+7. front-desk chat → activation override
+   New activation "back-office" of the same agent → tenant override
+   Other agent still → original
+```
+
+Admin HTTP used beyond the shared deploy/activate helpers:
+
+- `GET tenants/{tenant}/knowledge/latest?name&agentName[&activationName]`
+- `POST tenants/{tenant}/knowledge/{id}/override/tenant`
+- `POST tenants/{tenant}/knowledge/{id}/override/activation?activationName=…`
+- `PATCH tenants/{tenant}/knowledge/{id}` (new version; latest is by `CreatedAt`)
+
+Each chat uses a unique `participantId` so history from an earlier step cannot satisfy a later assertion.
+
 ## Test harness around Lib
 
-Lib's HTTP client uses `SocketsHttpHandler`. It cannot be given `TestServer.CreateHandler()`. [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) binds `HttpListener` on `127.0.0.1:{ephemeral}` and forwards to the in-process TestServer.
+Lib's HTTP client uses `SocketsHttpHandler`. It cannot be given `TestServer.CreateHandler()`. [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) binds `HttpListener` on `127.0.0.1:{ephemeral}` and forwards to the in-process TestServer. [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) owns that loopback.
 
 Lib API keys are a base64 PFX whose subject is `CN={user}, OU={user}, O={tenant}`. [`XiansLibTestCertificate`](../../../XiansAi.Server.Tests/TestUtils/XiansLibTestCertificate.cs) builds that key. Certificate policies on the host are remapped to `TestAuthHandler` (see [Host and fixtures](./host.md)).
 
-`ITenantContext` is a Moq singleton. The test assigns `TenantId`, `LoggedInUser`, `ParticipantId`, and roles so Lib uploads and `ReplyAsync` see the same tenant as Admin HTTP.
+`ITenantContext` is a Moq singleton. `BindTenantContext` assigns `TenantId`, `LoggedInUser`, `ParticipantId`, and roles so Lib uploads and `ReplyAsync` see the same tenant as Admin HTTP.
 
-Lib keeps process-wide statics (handlers, definition-upload cache). The test calls `TestCleanup.ResetAllStaticState()` and `WorkflowDefinitionUploader.ResetCache()` before start and in `finally`, then cancels `RunAllAsync`.
+Lib keeps process-wide statics (handlers, definition-upload cache). The host calls `TestCleanup.ResetAllStaticState()` and `WorkflowDefinitionUploader.ResetCache()` on start and dispose, and cancels `RunAllAsync`.
 
-`XiansPlatform.InitializeAsync` is given the loopback URL, the PFX key, `EnableTasks = false`, and `TemporalConfiguration` pointing at `TemporalFixture` (same local CLI as the rest of the collection).
+`XiansPlatform.InitializeAsync` is given the loopback URL, the PFX key, `EnableTasks = false`, `Cache.Enabled = false`, and `TemporalConfiguration` pointing at `TemporalFixture` (same local CLI as the rest of the collection).
 
-## What this test does not cover
+## What these cycles do not cover
 
 - Integrator / webhook workflows
 - HITL task workflows
 - Custom (non-built-in) workflow classes
 - Tenant-scoped agents that are not system templates
-- Other Lib samples (`FileUpload`, `KnowledgeAccess`, `CustomWorkflow`, …)
+- Other Lib samples (`FileUpload`, `CustomWorkflow`, …)
 
-Keep those as separate tests if they become required. Do not grow Echo into a second sample.
+Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo or Knowledge into a second sample.
 
 ## Adding another Lib agent workflow
 
-Reuse the Echo harness rather than inventing a second loopback or certificate helper:
+Reuse [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) and the helpers on `AdminApiTemporalIntegrationTestBase`:
 
 1. Stay in the `AdminApiTemporal` collection and `AdminApiTemporalIntegrationTestBase`.
-2. Reset Lib statics; start `TestServerLoopback`; bind `ITenantContext`.
-3. Register with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
-4. Define only the workflows the assertion needs.
-5. Wait for template upload before deploy.
+2. `await using var host = await LibAgentWorkflowHost.StartAsync(...)`; `BindTenantContext`.
+3. `host.RegisterTemplate` with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
+4. Define only the workflows (and knowledge) the assertion needs.
+5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy.
 6. Drive the public Admin API; poll history or list endpoints instead of a single Temporal visibility read.
-7. Cancel the worker and reset statics in `finally`.
+7. Dispose of the host (cancels workers and resets Lib statics).
 
 If the new agent is tenant-scoped only (`IsTemplate = false`) and no system template of that name exists, the worker queue is `{tenantId}:{workflowType}` and SignalWithStart must use the same. Do not mix a system template of the same name with a tenant worker.

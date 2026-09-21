@@ -2,8 +2,8 @@
 
 Automated tests for the XiansAi Server.
 
-The full description of the integration suite (host, fixtures, API catalog, Temporal, Echo
-cycle) is in
+The full description of the integration suite (host, fixtures, API catalog, Temporal, Lib
+agent cycles) is in
 [`XiansAi.Server.Src/docs/integration-tests/`](../XiansAi.Server.Src/docs/integration-tests/index.md).
 
 ## Quick start

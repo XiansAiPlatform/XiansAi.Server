@@ -1,13 +1,5 @@
 using System.Net;
-using System.Text.Json;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Shared.Auth;
 using Tests.TestUtils;
-using Xians.Lib.Agents.Core;
-using Xians.Lib.Agents.Workflows;
-using Xians.Lib.Common.Testing;
-using Xians.Lib.Configuration.Models;
 using Xunit;
 
 namespace Tests.IntegrationTests.AdminApi;
@@ -38,205 +30,82 @@ public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrati
         var activationName = "front-desk";
         var participantId = "reader@example.com";
         var userText = "hello from echo cycle";
-        var encodedAgent = Uri.EscapeDataString(agentName);
 
-        TestCleanup.ResetAllStaticState();
-        WorkflowDefinitionUploader.ResetCache();
+        await using var host = await LibAgentWorkflowHost.StartAsync(
+            _factory.Server,
+            Temporal.TargetHost,
+            Temporal.Namespace,
+            tenantId,
+            _adminUserId!);
 
-        await using var loopback = TestServerLoopback.Start(_factory.Server);
-        CancellationTokenSource? workerCts = null;
-        Task? workerTask = null;
-
-        try
-        {
-            var platform = await CreatePlatformAsync(loopback.BaseAddress, tenantId);
-            var echoAgent = RegisterEchoAgent(platform, agentName, isTemplate: true);
-            workerCts = new CancellationTokenSource();
-            workerTask = echoAgent.RunAllAsync(workerCts.Token);
-            await WaitForWorkerAsync(workerTask);
-            await WaitForTemplateAsync(encodedAgent);
-
-            var deploy = await PostAsJsonAsync(
-                $"/api/v1/admin/agentTemplates/by-name/{encodedAgent}/deploy?tenantId={Uri.EscapeDataString(tenantId)}",
-                new { });
-            Assert.Equal(HttpStatusCode.OK, deploy.StatusCode);
-
-            var create = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agentActivations", new
-            {
-                name = activationName,
-                agentName,
-                participantId = _adminUserId
-            });
-            Assert.Equal(HttpStatusCode.OK, create.StatusCode);
-            using var createdJson = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
-            var activationId = createdJson.RootElement.GetProperty("id").GetString();
-            Assert.False(string.IsNullOrWhiteSpace(activationId));
-
-            var activate = await PostAsJsonAsync(
-                $"/api/v1/admin/tenants/{tenantId}/agentActivations/{activationId}/activate",
-                new { });
-            Assert.Equal(HttpStatusCode.OK, activate.StatusCode);
-
-            var expectedEcho = $"Echo: {userText}";
-            var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
-            using var liveCts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
-            var adminSseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
-            var userSseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
-            await using var adminSse = await LiveEchoStreams.ListenAdminAsync(
-                adminSseClient, tenantId, agentName, activationName, participantId, liveCts.Token);
-            await using var userSse = await LiveEchoStreams.ListenUserApiAsync(
-                userSseClient, tenantId, workflowId, participantId, liveCts.Token);
-            await using var tenantHub = await LiveEchoStreams.ConnectTenantChatHubAsync(
-                _factory.Server, _adminApiKey!, tenantId, workflowId, liveCts.Token);
-            await using var chatHub = await LiveEchoStreams.ConnectChatHubAsync(
-                _factory.Server, _adminApiKey!, tenantId, workflowId, participantId, liveCts.Token);
-            BindTenantContext(tenantId, _adminUserId!);
-
-            var send = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/messaging/send", new
-            {
-                agentName,
-                activationName,
-                participantId,
-                text = userText
-            });
-            Assert.Equal(HttpStatusCode.OK, send.StatusCode);
-
-            var (echoed, historyBody) = await WaitForHistoryAsync(
-                tenantId, agentName, activationName, participantId, expectedEcho);
-            var workerError = workerTask.IsFaulted ? workerTask.Exception?.GetBaseException().Message : "none";
-            Assert.True(
-                echoed,
-                $"Echo reply did not appear in messaging history. Worker error: {workerError}. History: {historyBody}");
-
-            await AssertLiveTextAsync(
-                "Admin SSE",
-                ct => adminSse.WaitForTextAsync(expectedEcho, ct),
-                () => adminSse.Buffer,
-                liveCts.Token);
-            await AssertLiveTextAsync(
-                "UserApi SSE",
-                ct => userSse.WaitForTextAsync(expectedEcho, ct),
-                () => userSse.Buffer,
-                liveCts.Token);
-            await AssertLiveTextAsync(
-                "tenant SignalR /ws/tenant/chat",
-                ct => tenantHub.WaitForTextAsync(expectedEcho, ct),
-                () => tenantHub.Received,
-                liveCts.Token);
-            await AssertLiveTextAsync(
-                "ChatHub /ws/chat",
-                ct => chatHub.WaitForTextAsync(expectedEcho, ct),
-                () => chatHub.Received,
-                liveCts.Token);
-
-            var deactivate = await PostAsJsonAsync(
-                $"/api/v1/admin/tenants/{tenantId}/agentActivations/{activationId}/deactivate",
-                new { });
-            Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
-
-            var deleteActivation = await DeleteAsync(
-                $"/api/v1/admin/tenants/{tenantId}/agentActivations/{activationId}");
-            Assert.Equal(HttpStatusCode.OK, deleteActivation.StatusCode);
-
-            var deleteDeployment = await DeleteAsync(
-                $"/api/v1/admin/tenants/{tenantId}/agentDeployments/{encodedAgent}?forceDelete=true");
-            Assert.Equal(HttpStatusCode.OK, deleteDeployment.StatusCode);
-
-            var deleteTemplate = await DeleteAsync(
-                $"/api/v1/admin/agentTemplates/by-name/{encodedAgent}?cleanActivations=true");
-            Assert.Equal(HttpStatusCode.NoContent, deleteTemplate.StatusCode);
-        }
-        finally
-        {
-            if (workerCts != null)
-            {
-                workerCts.Cancel();
-                if (workerTask != null)
-                {
-                    try
-                    {
-                        await workerTask.WaitAsync(TimeSpan.FromSeconds(10));
-                    }
-                    catch (Exception)
-                    {
-                        // Worker shutdown is best-effort; Temporal cancel races are expected.
-                    }
-                }
-
-                workerCts.Dispose();
-            }
-
-            TestCleanup.ResetAllStaticState();
-            WorkflowDefinitionUploader.ResetCache();
-        }
-    }
-
-    private async Task<XiansPlatform> CreatePlatformAsync(string serverUrl, string tenantId)
-    {
-        return await XiansPlatform.InitializeAsync(new XiansOptions
-        {
-            ServerUrl = serverUrl,
-            ApiKey = XiansLibTestCertificate.CreateApiKey(tenantId, _adminUserId ?? "test-admin"),
-            ConsoleLogLevel = LogLevel.Warning,
-            ServerLogLevel = LogLevel.None,
-            EnableTasks = false,
-            TemporalConfiguration = new TemporalConfiguration
-            {
-                ServerUrl = Temporal.TargetHost,
-                Namespace = Temporal.Namespace
-            }
-        });
-    }
-
-    private static XiansAgent RegisterEchoAgent(XiansPlatform platform, string agentName, bool isTemplate)
-    {
-        var agent = platform.Agents.Register(new XiansAgentRegistration
-        {
-            Name = agentName,
-            Description = "A simple conversational agent that echoes back user messages",
-            SamplePrompts =
-            [
-                "Hello, Echo Agent!",
-                "Echo this message back to me"
-            ],
-            IsTemplate = isTemplate,
-            EnableTasks = false
-        });
-
-        var supervisor = agent.Workflows.DefineSupervisor();
+        var echoAgent = host.RegisterTemplate(
+            agentName,
+            "A simple conversational agent that echoes back user messages",
+            ["Hello, Echo Agent!", "Echo this message back to me"]);
+        var supervisor = echoAgent.Workflows.DefineSupervisor();
         supervisor.OnUserChatMessage(async context =>
         {
             var userMessage = context.Message.Text ?? string.Empty;
             await context.ReplyAsync($"Echo: {userMessage}");
         });
 
-        return agent;
-    }
+        await host.StartWorkersAsync(echoAgent);
+        await WaitForTemplateAsync(agentName);
+        await DeployLibTemplateAsync(tenantId, agentName);
+        var activationId = await ActivateLibAgentAsync(tenantId, agentName, activationName);
 
-    private void BindTenantContext(string tenantId, string userId)
-    {
-        var tenantContext = _factory.Services.GetRequiredService<ITenantContext>();
-        tenantContext.TenantId = tenantId;
-        tenantContext.LoggedInUser = userId;
-        tenantContext.ParticipantId = userId;
-        tenantContext.UserRoles = [SystemRoles.SysAdmin, SystemRoles.TenantAdmin, SystemRoles.TenantUser];
-        tenantContext.AuthorizedTenantIds = [tenantId];
-    }
+        var expectedEcho = $"Echo: {userText}";
+        var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
+        using var liveCts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+        var adminSseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
+        var userSseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
+        await using var adminSse = await LiveEchoStreams.ListenAdminAsync(
+            adminSseClient, tenantId, agentName, activationName, participantId, liveCts.Token);
+        await using var userSse = await LiveEchoStreams.ListenUserApiAsync(
+            userSseClient, tenantId, workflowId, participantId, liveCts.Token);
+        await using var tenantHub = await LiveEchoStreams.ConnectTenantChatHubAsync(
+            _factory.Server, _adminApiKey!, tenantId, workflowId, liveCts.Token);
+        await using var chatHub = await LiveEchoStreams.ConnectChatHubAsync(
+            _factory.Server, _adminApiKey!, tenantId, workflowId, participantId, liveCts.Token);
+        BindTenantContext(tenantId, _adminUserId!);
 
-    private async Task WaitForTemplateAsync(string encodedAgent)
-    {
-        for (var attempt = 0; attempt < 20; attempt++)
+        var send = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/messaging/send", new
         {
-            var response = await GetAsync($"/api/v1/admin/agentTemplates/by-name/{encodedAgent}");
-            if (response.StatusCode == HttpStatusCode.OK)
-            {
-                return;
-            }
+            agentName,
+            activationName,
+            participantId,
+            text = userText
+        });
+        Assert.Equal(HttpStatusCode.OK, send.StatusCode);
 
-            await Task.Delay(250);
-        }
+        var (echoed, historyBody) = await WaitForHistoryContainsAsync(
+            tenantId, agentName, activationName, participantId, expectedEcho);
+        Assert.True(echoed, $"Echo reply did not appear in messaging history. History: {historyBody}");
 
-        Assert.Fail("Xians.Lib did not upload the system Echo template in time.");
+        await AssertLiveTextAsync(
+            "Admin SSE",
+            ct => adminSse.WaitForTextAsync(expectedEcho, ct),
+            () => adminSse.Buffer,
+            liveCts.Token);
+        await AssertLiveTextAsync(
+            "UserApi SSE",
+            ct => userSse.WaitForTextAsync(expectedEcho, ct),
+            () => userSse.Buffer,
+            liveCts.Token);
+        await AssertLiveTextAsync(
+            "tenant SignalR /ws/tenant/chat",
+            ct => tenantHub.WaitForTextAsync(expectedEcho, ct),
+            () => tenantHub.Received,
+            liveCts.Token);
+        await AssertLiveTextAsync(
+            "ChatHub /ws/chat",
+            ct => chatHub.WaitForTextAsync(expectedEcho, ct),
+            () => chatHub.Received,
+            liveCts.Token);
+
+        await RemoveLibActivationAsync(tenantId, activationId);
+        await RemoveLibDeploymentAsync(tenantId, agentName);
+        await RemoveLibTemplateAsync(agentName);
     }
 
     private static async Task AssertLiveTextAsync(
@@ -253,43 +122,5 @@ public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrati
         {
             Assert.Fail($"Echo reply did not appear on {channel}. {ex.Message} Payload: {dump()}");
         }
-    }
-
-    private static async Task WaitForWorkerAsync(Task workerTask)
-    {
-        var started = await Task.WhenAny(workerTask, Task.Delay(TimeSpan.FromSeconds(5)));
-        if (started == workerTask)
-        {
-            await workerTask;
-        }
-    }
-
-    private async Task<(bool Found, string LastBody)> WaitForHistoryAsync(
-        string tenantId,
-        string agentName,
-        string activationName,
-        string participantId,
-        string expectedText)
-    {
-        var query =
-            $"agentName={Uri.EscapeDataString(agentName)}" +
-            $"&activationName={Uri.EscapeDataString(activationName)}" +
-            $"&participantId={Uri.EscapeDataString(participantId)}";
-        var lastBody = string.Empty;
-
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            var history = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/history?{query}");
-            lastBody = await history.Content.ReadAsStringAsync();
-            if (history.StatusCode == HttpStatusCode.OK &&
-                lastBody.Contains(expectedText, StringComparison.Ordinal))
-            {
-                return (true, lastBody);
-            }
-
-            await Task.Delay(250);
-        }
-
-        return (false, lastBody);
     }
 }
