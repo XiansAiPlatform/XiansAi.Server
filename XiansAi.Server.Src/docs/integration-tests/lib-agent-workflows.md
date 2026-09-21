@@ -9,11 +9,15 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Echo | [`AdminApiTemporalEchoAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalEchoAgentLifecycleTests.cs) | Template → deploy → chat, plus live SSE/SignalR |
 | Knowledge | [`AdminApiTemporalKnowledgeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeAgentLifecycleTests.cs) | System knowledge upload, tenant override, activation override, isolation |
 | Secret Vault | [`AdminApiTemporalSecretVaultAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultAgentLifecycleTests.cs) | Create/fetch/update/delete through a running agent; strict tenant / agent / participant / activation isolation; Admin never sees values |
+| Document DB | [`AdminApiTemporalDocumentDbAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbAgentLifecycleTests.cs) | Agent `SaveAsync` / `GetByKeyAsync`; Admin list/get/update/create; isolation by tenant, agent, activation, and participant |
+| Webhooks | [`AdminApiTemporalWebhookAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWebhookAgentLifecycleTests.cs) | Integrator `OnWebhook` + `context.Respond`; agent SDK create/list; Admin create/list/delete; inbound `POST /api/user/webhooks/builtin` with `apikeyId`; tenant/agent isolation; 401 after revoke; 409 after deactivate |
 
 ```bash
 dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
 dotnet test --filter "FullyQualifiedName~KnowledgeAgent_SystemUpload_TenantAndActivationOverridesIsolate"
 dotnet test --filter "FullyQualifiedName~SecretVaultAgent_CreateFetch_StrictScopeIsolationAndRotation"
+dotnet test --filter "FullyQualifiedName~DocumentDbAgent_SavePush_AdminReadModifyAdd_Isolates"
+dotnet test --filter "FullyQualifiedName~WebhookAgent_InboundBuiltin_AdminCrudIsolatesAndRevokes"
 ```
 
 The tests project references `../../XiansAi.Lib/Xians.Lib/Xians.Lib.csproj`. Clone that repo next to this one or restore fails for the whole test project.
@@ -49,8 +53,10 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Activate / send / deactivate / delete against a worker that registered itself
 - Knowledge fallback as the running agent actually reads it (`GetAsync` inside the supervisor)
 - Secret Vault strict scope as the running agent writes and reads it (`TenantScope()` / `FetchByKeyAsync` inside the supervisor)
+- Document DB Type+Key as the running agent writes and reads it (`SaveAsync` / `GetByKeyAsync` inside the supervisor)
+- Builtin inbound webhooks as the running Integrator handles them (`OnWebhook` / `context.Respond`, SDK `Webhooks.CreateAsync`)
 
-Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). None of these is a catalogue of every Lib sample.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). None of these is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -92,7 +98,7 @@ await agent.RunAllAsync(cancellationToken);
 | Workflow | Temporal type | Activable | Task queue (system template) | In this test |
 | --- | --- | --- | --- | --- |
 | Supervisor | `{agentName}:Supervisor Workflow` | `false` | `{agentName}:Supervisor Workflow` | Yes |
-| Integrator | `{agentName}:Integrator Workflow` | `false` | system queue of that type | No (not registered) |
+| Integrator | `{agentName}:Integrator Workflow` | `false` | system queue of that type | Webhooks cycle only |
 | Task (HITL) | `{agentName}:Task Workflow` | n/a | `hitl_task:…` prefix | No (`EnableTasks = false`) |
 
 Built-in workflows are **not activable**. [`ActivationService`](../../Shared/Services/ActivationService.cs) skips `Activable = false` definitions, so **activate does not `StartWorkflow` for Echo**. Chat uses `SignalWithStart` instead.
@@ -257,6 +263,62 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 
 Values are proven only through the agent's `FetchByKeyAsync` + `ReplyAsync`. Participant isolation reuses a fixed `participantId` for create and fetch; other chats still use a unique id so history cannot collide. History polling matches each message's `text` field, not the raw JSON (a reply of `created` must not match `createdAt`).
 
+## Agent under test: Document DB
+
+Same host as Echo, Knowledge, and Secret Vault. The supervisor saves and reads JSON through `XiansContext.CurrentAgent.Documents` — Type + Key, the same model as [Document DB](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/document-db/). Saves from chat stamp agent, activation, and participant. Gets from chat auto-filter those fields, so another tenant, agent, activation, or participant does not see the owner's document.
+
+```text
+1. Agent SaveAsync user-profile / user-{id} { plan: gold } → Admin list/schema/get return gold
+2. Admin PUT content { plan: platinum } → agent GetByKeyAsync returns platinum
+3. Other tenant, other agent, other participant, other activation → missing
+4. Admin POST a second key (bronze) with the same activation and participant → agent GetByKeyAsync returns bronze
+```
+
+Admin HTTP used beyond the shared deploy/activate helpers:
+
+- `GET /api/v1/admin/tenants/{tenant}/data/schema?startDate&endDate&agentName`
+- `GET /api/v1/admin/tenants/{tenant}/data?startDate&endDate&agentName&dataType`
+- `GET /api/v1/admin/tenants/{tenant}/data/{recordId}`
+- `PUT /api/v1/admin/tenants/{tenant}/data/{recordId}`
+- `POST /api/v1/admin/tenants/{tenant}/data`
+
+Owner save/get/admin-create reuse a fixed `participantId` so auto-scoped queries match. Isolation chats still use a unique id.
+
+## Agent under test: Webhooks
+
+Same host as the other Lib cycles. The agent registers **both** `DefineSupervisor` (SDK create/list via chat) and `DefineIntegrator` (`OnWebhook` + `context.Respond`) — the shape of [`Xians.Examples/EchoAgent`](../../../../XiansAi.Lib/Xians.Examples/EchoAgent/Program.cs) plus [`WebhookCollection`](../../../../XiansAi.Lib/Xians.Lib/Agents/Webhooks/WebhookCollection.cs). Product behaviour: [Webhooks](../WEBHOOKS.md).
+
+Admin `POST /tenants/{tenant}/webhooks` (and Agent `POST /api/agent/webhooks`) creates a webhook-type API key and a `builtin_webhook` integration whose URL is:
+
+```text
+/api/user/webhooks/builtin?apikeyId=…&timeoutSeconds=30&agentName=…&workflowName=Integrator Workflow&webhookName=…&activationName=…
+```
+
+`apikeyId` is itself the credential. UserApi `EndpointAuthPolicy` is **not** stubbed, so the test posts with a fresh factory client (no Admin Bearer). `EndpointAuthenticationHandler` authenticates `apikeyId` **before** the Authorization header. Inbound headers are forwarded as `WebhookContext.Metadata` (builtin path only). The HTTP caller waits on `IPendingRequestService` until the Integrator handler calls `context.Respond`.
+
+```text
+1. Agent Webhooks.CreateAsync EmailReceived via supervisor chat → Admin list returns the URL
+2. POST that URL with JSON body + X-Test-Trace → 200 JSON from OnWebhook (agent, tenant, webhook name, payload, header)
+3. Other tenant Admin list does not include the owner's id
+   Admin creates the same webhook name on the other tenant → POST returns the other tenant id
+4. Admin creates the same webhook name on a second agent → POST returns the other agent name
+5. POST builtin with no apikeyId → 401
+6. Admin creates InvoicePaid on the owner agent → POST returns InvoicePaid; chat list is 2
+7. Admin delete EmailReceived (revokes the API key) → POST that URL → 401; chat list is 1
+8. Deactivate the owner activation → POST InvoicePaid → 409
+```
+
+Admin / UserApi HTTP used beyond the shared deploy/activate helpers:
+
+- `POST /api/v1/admin/tenants/{tenant}/webhooks`
+- `GET /api/v1/admin/tenants/{tenant}/webhooks?agentName=…`
+- `DELETE /api/v1/admin/tenants/{tenant}/webhooks/{id}`
+- `POST /api/user/webhooks/builtin?apikeyId&…` (no Admin Bearer; UserApi authenticates the webhook key)
+
+UserApi auth mutates the Moq `ITenantContext` singleton. Re-bind the owner tenant after inbound POSTs before the next Admin call (`TenantRouteScopeFilter` requires route tenant == context tenant).
+
+Default inbound `participantId` is `webhook`. Workflow id is `{tenant}:{agent}:Integrator Workflow:{activation}`. The Integrator worker listens on the unprefixed system queue, same reason as Supervisor.
+
 ## Test harness around Lib
 
 Lib's HTTP client uses `SocketsHttpHandler`. It cannot be given `TestServer.CreateHandler()`. [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) binds `HttpListener` on `127.0.0.1:{ephemeral}` and forwards to the in-process TestServer. [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) owns that loopback.
@@ -271,13 +333,13 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 
 ## What these cycles do not cover
 
-- Integrator / webhook workflows
 - HITL task workflows
 - Custom (non-built-in) workflow classes
 - Tenant-scoped agents that are not system templates
 - Other Lib samples (`FileUpload`, `CustomWorkflow`, …)
+- Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, or Secret Vault into a second sample.
+Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, or Webhooks into a second sample.
 
 ## Adding another Lib agent workflow
 
@@ -286,7 +348,7 @@ Reuse [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentW
 1. Stay in the `AdminApiTemporal` collection and `AdminApiTemporalIntegrationTestBase`.
 2. `await using var host = await LibAgentWorkflowHost.StartAsync(...)`; `BindTenantContext`.
 3. `host.RegisterTemplate` with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
-4. Define only the workflows (and knowledge / secrets) the assertion needs.
+4. Define only the workflows (and knowledge / secrets / documents / webhooks) the assertion needs.
 5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy.
 6. Drive the public Admin API; poll history or list endpoints instead of a single Temporal visibility read.
 7. Dispose of the host (cancels workers and resets Lib statics).

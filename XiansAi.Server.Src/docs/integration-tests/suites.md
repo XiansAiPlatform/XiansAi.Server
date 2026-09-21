@@ -41,9 +41,9 @@ await CreateTestTenantAsync(tenantId);
 
 ## Admin API (Temporal)
 
-See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`.
+See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`, `AdminApiTemporalDocumentDbAgentLifecycleTests`, `AdminApiTemporalWebhookAgentLifecycleTests`.
 
-Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes) are documented in [Lib agent workflows](./lib-agent-workflows.md).
+Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes, Document DB, builtin Webhooks) are documented in [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Web API
 
@@ -92,7 +92,7 @@ UserApi `EndpointAuthPolicy` is **not** overridden. Tests create a key in Mongo 
 | `RestEndpointsTests` | Unauthorized without key; invalid type/body; validation before Temporal |
 | `WebhookEndpointsTests` | Inbound user webhooks (auth and validation) |
 
-Live UserApi SSE (`/api/user/sse/events`) and ChatHub (`/ws/chat`) are asserted in the Echo Lib cycle (AdminApiTemporal), not in this Mongo-only class. See [Lib agent workflows](./lib-agent-workflows.md) and [User API docs](../user-api/index.md).
+Live UserApi SSE (`/api/user/sse/events`) and ChatHub (`/ws/chat`) are asserted in the Echo Lib cycle (AdminApiTemporal), not in this Mongo-only class. The builtin webhook success path (`POST /api/user/webhooks/builtin` with `apikeyId`, Integrator `OnWebhook`) is the Webhooks Lib cycle. See [Lib agent workflows](./lib-agent-workflows.md) and [User API docs](../user-api/index.md).
 
 ## Apps API
 
