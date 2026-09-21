@@ -48,7 +48,7 @@ public static class TemplateEndpoints
             return result.ToHttpResult();
         })
         .WithName("Deploy Template Agent")
-        
+
         .WithSummary("Deploy a template agent to user's tenant")
         .WithDescription("Creates a replica of a system-scoped agent and its flow definitions in the user's tenant");
 

@@ -28,6 +28,7 @@ public class TenantServiceMetadataTests
     private readonly Mock<ITenantContext> _context = new();
     private readonly Mock<IRoleManagementService> _roles = new();
     private readonly Mock<IWebhookEventPublisher> _webhooks = new();
+    private readonly Mock<IAuditLogService> _audit = new();
     private readonly Mock<IActivationRepository> _activationRepository = new();
     private readonly Mock<IActivationService> _activationService = new();
     private readonly Mock<IKnowledgeRepository> _knowledgeRepository = new();
@@ -54,6 +55,15 @@ public class TenantServiceMetadataTests
         _repo.Setup(x => x.UpdateAsync(It.IsAny<string>(), It.IsAny<Tenant>())).ReturnsAsync(true);
         _webhooks.Setup(x => x.PublishAsync(It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<string?>()))
             .Returns(Task.CompletedTask);
+        _audit.Setup(x => x.RecordEntryAsync(
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<object?>(), It.IsAny<string?>()))
+            .ReturnsAsync(ServiceResult<AuditLogEntry>.Success(new AuditLogEntry
+            {
+                TenantId = TenantId,
+                ParticipantId = "p",
+                LoggedInUser = "u",
+                Action = "tenant.updated"
+            }));
 
         _service = new TenantService(
             _repo.Object,
@@ -65,7 +75,8 @@ public class TenantServiceMetadataTests
             _protector,
             _activationRepository.Object,
             _activationService.Object,
-            _knowledgeRepository.Object);
+            _knowledgeRepository.Object,
+            _audit.Object);
     }
 
     private static Tenant CreateStoredTenant(List<TenantMetadata>? metadata = null)
@@ -208,6 +219,53 @@ public class TenantServiceMetadataTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(originalCiphertext, persisted!.Metadata!.Single().Value);
+    }
+
+    [Fact]
+    public async Task UpdateTenant_WhenOnlyEnabledChanges_EmitsDisabledNotUpdated()
+    {
+        var stored = CreateStoredTenant();
+        stored.Enabled = true;
+        _repo.Setup(x => x.GetByIdAsync(stored.Id)).ReturnsAsync(stored);
+
+        var result = await _service.UpdateTenant(stored.Id, new UpdateTenantRequest { Enabled = false });
+
+        Assert.True(result.IsSuccess);
+        _audit.Verify(a => a.RecordEntryAsync(
+            DomainEventTypes.TenantDisabled,
+            $"Tenant '{stored.Name}' ({stored.TenantId}) was disabled. It was previously enabled.",
+            null,
+            It.IsAny<object?>(),
+            TenantId), Times.Once);
+        _audit.Verify(a => a.RecordEntryAsync(
+            DomainEventTypes.TenantUpdated,
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<object?>(),
+            It.IsAny<string?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateTenant_WhenNameChanges_EmitsUpdatedWithSpecificDescription()
+    {
+        var stored = CreateStoredTenant();
+        _repo.Setup(x => x.GetByIdAsync(stored.Id)).ReturnsAsync(stored);
+
+        var result = await _service.UpdateTenant(stored.Id, new UpdateTenantRequest { Name = "Renamed" });
+
+        Assert.True(result.IsSuccess);
+        _audit.Verify(a => a.RecordEntryAsync(
+            DomainEventTypes.TenantUpdated,
+            $"Tenant 'Renamed' ({stored.TenantId}) was updated (name).",
+            null,
+            It.IsAny<object?>(),
+            TenantId), Times.Once);
+        _audit.Verify(a => a.RecordEntryAsync(
+            DomainEventTypes.TenantDisabled,
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<object?>(),
+            It.IsAny<string?>()), Times.Never);
     }
 
     // ---------- GetTenantMetadata ----------

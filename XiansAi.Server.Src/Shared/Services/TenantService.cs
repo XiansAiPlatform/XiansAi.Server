@@ -95,6 +95,7 @@ public class TenantService : ITenantService
     private readonly IActivationRepository _activationRepository;
     private readonly IActivationService _activationService;
     private readonly IKnowledgeRepository _knowledgeRepository;
+    private readonly IAuditLogService _auditLogService;
 
 
     public TenantService(
@@ -107,7 +108,8 @@ public class TenantService : ITenantService
         ITenantMetadataProtector metadataProtector,
         IActivationRepository activationRepository,
         IActivationService activationService,
-        IKnowledgeRepository knowledgeRepository)
+        IKnowledgeRepository knowledgeRepository,
+        IAuditLogService auditLogService)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
@@ -119,6 +121,7 @@ public class TenantService : ITenantService
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
         _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
         _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -378,7 +381,8 @@ public class TenantService : ITenantService
 
             var metadata = existingTenant.Metadata ?? [];
             var index = metadata.FindIndex(m => string.Equals(m.Key, validatedEntry.Key, StringComparison.OrdinalIgnoreCase));
-            if (index >= 0)
+            var isUpdate = index >= 0;
+            if (isUpdate)
             {
                 metadata[index] = protectedEntry;
             }
@@ -388,7 +392,12 @@ public class TenantService : ITenantService
             }
             existingTenant.Metadata = metadata;
 
-            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id);
+            var persistResult = await PersistTenantUpdate(
+                existingTenant,
+                existingTenant.Id,
+                description: isUpdate
+                    ? $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) metadata key '{validatedEntry.Key}' ({validatedEntry.Type}) was updated."
+                    : $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) metadata key '{validatedEntry.Key}' ({validatedEntry.Type}) was added.");
             if (!persistResult.IsSuccess)
             {
                 return ServiceResult<TenantMetadata>.Failure(
@@ -444,7 +453,10 @@ public class TenantService : ITenantService
                 return ServiceResult<bool>.NotFound("Metadata key not found");
             }
 
-            var persistResult = await PersistTenantUpdate(existingTenant, existingTenant.Id);
+            var persistResult = await PersistTenantUpdate(
+                existingTenant,
+                existingTenant.Id,
+                description: $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) metadata key '{key}' was deleted.");
             if (!persistResult.IsSuccess)
             {
                 return ServiceResult<bool>.Failure(
@@ -664,16 +676,23 @@ public class TenantService : ITenantService
             await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.TenantCreated,
-                new
-                {
-                    tenantId = validatedTenant.TenantId,
-                    name = validatedTenant.Name,
-                    domain = validatedTenant.Domain,
-                    createdBy = validatedTenant.CreatedBy,
-                },
-                validatedTenant.TenantId);
+            var metadata = new
+            {
+                tenantId = validatedTenant.TenantId,
+                name = validatedTenant.Name,
+                domain = validatedTenant.Domain,
+                createdBy = validatedTenant.CreatedBy,
+            };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.TenantCreated,
+                metadata,
+                validatedTenant.TenantId,
+                description: string.IsNullOrWhiteSpace(validatedTenant.Domain)
+                    ? $"Tenant '{validatedTenant.Name}' ({validatedTenant.TenantId}) was created by '{validatedTenant.CreatedBy}' and is disabled until an administrator enables it."
+                    : $"Tenant '{validatedTenant.Name}' ({validatedTenant.TenantId}) was created by '{validatedTenant.CreatedBy}' with domain '{validatedTenant.Domain}' and is disabled until an administrator enables it.");
 
             var result = new TenantCreatedResult
             {
@@ -727,6 +746,19 @@ public class TenantService : ITenantService
         return "A tenant with this ID or domain already exists.";
     }
 
+    private static string SummarizeTenantProfileChanges(UpdateTenantRequest request)
+    {
+        var fields = new List<string>();
+        if (request.Name != null) fields.Add("name");
+        if (request.Domain != null) fields.Add("domain");
+        if (request.Description != null) fields.Add("description");
+        if (request.Logo != null) fields.Add("logo");
+        if (request.Theme != null) fields.Add("theme");
+        if (request.Timezone != null) fields.Add("timezone");
+        if (request.Metadata != null) fields.Add("metadata");
+        return fields.Count == 0 ? "profile" : string.Join(", ", fields);
+    }
+
     public async Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request)
     {
         try
@@ -769,14 +801,46 @@ public class TenantService : ITenantService
             if (request.Metadata != null)
                 existingTenant.Metadata = _metadataProtector.Protect(request.Metadata, existingTenant.TenantId);
 
-            var result = await PersistTenantUpdate(existingTenant, id);
+            var requestedEnabled = request.Enabled;
+            var enabledChanged = requestedEnabled.HasValue && requestedEnabled.Value != wasEnabled;
+            var profileChanged =
+                request.Name != null ||
+                request.Domain != null ||
+                request.Description != null ||
+                request.Logo != null ||
+                request.Theme != null ||
+                request.Timezone != null ||
+                request.Metadata != null;
 
-            if (result.IsSuccess && request.Enabled.HasValue && request.Enabled.Value != wasEnabled)
+            var result = await PersistTenantUpdate(
+                existingTenant,
+                id,
+                emitUpdatedEvent: profileChanged,
+                description: profileChanged
+                    ? $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) was updated ({SummarizeTenantProfileChanges(request)})."
+                    : null);
+
+            if (result.IsSuccess && requestedEnabled.HasValue && enabledChanged)
             {
-                await _webhookEventPublisher.PublishAsync(
-                    request.Enabled.Value ? WebhookEventTypes.TenantEnabled : WebhookEventTypes.TenantDisabled,
-                    new { tenantId = existingTenant.TenantId, id = existingTenant.Id },
-                    existingTenant.TenantId);
+                var enabled = requestedEnabled.Value;
+                var enabledEvent = enabled
+                    ? DomainEventTypes.TenantEnabled
+                    : DomainEventTypes.TenantDisabled;
+                var verb = enabled ? "enabled" : "disabled";
+                var metadata = new
+                {
+                    tenantId = existingTenant.TenantId,
+                    id = existingTenant.Id,
+                    name = existingTenant.Name
+                };
+
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    enabledEvent,
+                    metadata,
+                    existingTenant.TenantId,
+                    description: $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) was {verb}. It was previously {(enabled ? "disabled" : "enabled")}.");
             }
 
             return result;
@@ -818,7 +882,11 @@ public class TenantService : ITenantService
 
             existingTenant.Theme = string.IsNullOrWhiteSpace(theme) ? null : theme;
 
-            return await PersistTenantUpdate(existingTenant, id);
+            var themeDescription = string.IsNullOrWhiteSpace(existingTenant.Theme)
+                ? $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) theme was cleared."
+                : $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) theme was set to '{existingTenant.Theme}'.";
+
+            return await PersistTenantUpdate(existingTenant, id, description: themeDescription);
         }
         catch (ValidationException ex)
         {
@@ -857,7 +925,11 @@ public class TenantService : ITenantService
 
             existingTenant.Logo = logo;
 
-            return await PersistTenantUpdate(existingTenant, id);
+            var logoDescription = logo == null
+                ? $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) logo was cleared."
+                : $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) logo was updated.";
+
+            return await PersistTenantUpdate(existingTenant, id, description: logoDescription);
         }
         catch (ValidationException ex)
         {
@@ -880,7 +952,11 @@ public class TenantService : ITenantService
     /// Validates, persists and cache-invalidates an already-mutated tenant entity.
     /// Shared by the tenant update operations so the save/validate/cache logic lives in one place.
     /// </summary>
-    private async Task<ServiceResult<Tenant>> PersistTenantUpdate(Tenant existingTenant, string id)
+    private async Task<ServiceResult<Tenant>> PersistTenantUpdate(
+        Tenant existingTenant,
+        string id,
+        bool emitUpdatedEvent = true,
+        string? description = null)
     {
         existingTenant.UpdatedAt = DateTime.UtcNow;
         var validatedTenant = existingTenant.SanitizeAndValidate();
@@ -911,17 +987,26 @@ public class TenantService : ITenantService
 
         _logger.LogInformation("Updated tenant with ID {Id}", LogSanitizer.Sanitize(id));
 
-        await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.TenantUpdated,
-            new
+        if (emitUpdatedEvent)
+        {
+            var metadata = new
             {
                 tenantId = validatedTenant.TenantId,
                 id = validatedTenant.Id,
                 name = validatedTenant.Name,
                 domain = validatedTenant.Domain,
                 enabled = validatedTenant.Enabled,
-            },
-            validatedTenant.TenantId);
+            };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.TenantUpdated,
+                metadata,
+                validatedTenant.TenantId,
+                description: description
+                    ?? $"Tenant '{validatedTenant.Name}' ({validatedTenant.TenantId}) was updated.");
+        }
 
         return ServiceResult<Tenant>.Success(validatedTenant);
     }
@@ -956,10 +1041,15 @@ public class TenantService : ITenantService
                     _logger.LogWarning("Skipping tenant cache invalidation: Tenant {Id} has null or empty TenantId", LogSanitizer.Sanitize(id));
                 _logger.LogInformation("Deleted tenant with ID {Id}", LogSanitizer.Sanitize(id));
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.TenantDeleted,
-                    new { tenantId = existingTenant.TenantId, id = existingTenant.Id, name = existingTenant.Name },
-                    existingTenant.TenantId);
+                var metadata = new { tenantId = existingTenant.TenantId, id = existingTenant.Id, name = existingTenant.Name };
+
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.TenantDeleted,
+                    metadata,
+                    existingTenant.TenantId,
+                    description: $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) was deleted, including a best-effort cleanup of its activations.");
 
                 return ServiceResult<bool>.Success(true);
             }

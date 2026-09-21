@@ -106,17 +106,20 @@ public class SecretVaultService : ISecretVaultService
     private readonly ISecretVaultRepository _repository;
     private readonly ISecretStoreProvider _secretStore;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<SecretVaultService> _logger;
 
     public SecretVaultService(
         ISecretVaultRepository repository,
         ISecretStoreProvider secretStore,
         IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<SecretVaultService> logger)
     {
         _repository = repository;
         _secretStore = secretStore;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -162,10 +165,15 @@ public class SecretVaultService : ISecretVaultService
                 "Secret vault entry created. id={SecretId} key={Key} tenant={TenantId} actor={Actor} provider={Provider}",
                 LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(input.Key), LogSanitizer.Sanitize(entity.TenantId ?? "*"), LogSanitizer.Sanitize(actorUserId), LogSanitizer.Sanitize(_secretStore.Name));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretCreated,
-                new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId },
-                entity.TenantId);
+            var createdMetadata = new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId };
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.SecretCreated,
+                createdMetadata,
+                entity.TenantId,
+                entity.ActivationName,
+                description: DescribeVaultSecret(entity, "created", actorUserId));
 
             return ServiceResult<SecretVaultGetResponse>.Success(ToGetResponse(entity, input.Value), StatusCode.Ok);
         }
@@ -250,27 +258,42 @@ public class SecretVaultService : ISecretVaultService
 
         try
         {
+            var changedFields = new List<string>();
             string? updatedValue = null;
             if (input.Value != null)
             {
                 await _secretStore.SetAsync(entity.Id, input.Value);
                 updatedValue = input.Value;
+                changedFields.Add("value");
             }
 
             if (input.TenantId != null)
+            {
                 entity.TenantId = string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId;
+                changedFields.Add("tenant");
+            }
             if (input.AgentId != null)
+            {
                 entity.AgentId = string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId;
+                changedFields.Add("agent");
+            }
             if (input.UserId != null)
+            {
                 entity.UserId = string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId;
+                changedFields.Add("user");
+            }
             if (input.ActivationName != null)
+            {
                 entity.ActivationName = string.IsNullOrWhiteSpace(input.ActivationName) ? null : input.ActivationName;
+                changedFields.Add("activation");
+            }
             if (input.AdditionalData != null)
             {
                 var (sanitizedAdditionalData, additionalDataError) = ValidateAndSanitizeAdditionalData(input.AdditionalData);
                 if (additionalDataError != null)
                     return ServiceResult<SecretVaultGetResponse>.BadRequest(additionalDataError);
                 entity.AdditionalData = sanitizedAdditionalData;
+                changedFields.Add("additional data");
             }
 
             entity.UpdatedAt = DateTime.UtcNow;
@@ -282,10 +305,15 @@ public class SecretVaultService : ISecretVaultService
                 "Secret vault entry updated. id={SecretId} key={Key} tenant={TenantId} actor={Actor} valueChanged={ValueChanged} provider={Provider}",
                 LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(entity.Key), LogSanitizer.Sanitize(entity.TenantId ?? "*"), LogSanitizer.Sanitize(actorUserId), updatedValue != null, LogSanitizer.Sanitize(_secretStore.Name));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretUpdated,
-                new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId },
-                entity.TenantId);
+            var updatedMetadata = new { tenantId = entity.TenantId, secretId = entity.Id, key = entity.Key, agentId = entity.AgentId, userId = entity.UserId, activationName = entity.ActivationName, actorUserId };
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.SecretUpdated,
+                updatedMetadata,
+                entity.TenantId,
+                entity.ActivationName,
+                description: DescribeVaultSecret(entity, "updated", actorUserId, changedFields));
 
             // For the response value: prefer the just-set value to avoid an extra round-trip to the store.
             var responseValue = updatedValue ?? await _secretStore.GetAsync(entity.Id) ?? string.Empty;
@@ -326,10 +354,17 @@ public class SecretVaultService : ISecretVaultService
 
             _logger.LogInformation("Secret vault entry deleted. id={SecretId} provider={Provider}", LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(_secretStore.Name));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.SecretDeleted,
-                new { tenantId = entity?.TenantId, secretId = id, key = entity?.Key, agentId = entity?.AgentId, userId = entity?.UserId, activationName = entity?.ActivationName },
-                entity?.TenantId);
+            var deletedMetadata = new { tenantId = entity?.TenantId, secretId = id, key = entity?.Key, agentId = entity?.AgentId, userId = entity?.UserId, activationName = entity?.ActivationName };
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.SecretDeleted,
+                deletedMetadata,
+                entity?.TenantId,
+                entity?.ActivationName,
+                description: entity == null
+                    ? $"Vault secret '{id}' was deleted."
+                    : DescribeVaultSecret(entity, "deleted"));
 
             return ServiceResult<bool>.Success(true);
         }
@@ -567,5 +602,28 @@ public class SecretVaultService : ISecretVaultService
                 sb.Append(c);
         }
         return sb.ToString();
+    }
+
+    private static string DescribeVaultSecret(
+        SecretVault entity,
+        string verb,
+        string? actor = null,
+        IReadOnlyCollection<string>? changedFields = null)
+    {
+        var description = $"Vault secret '{entity.Key}' ({entity.Id}) was {verb}";
+        if (!string.IsNullOrWhiteSpace(actor))
+            description += $" by '{actor}'";
+
+        var scope = new List<string>();
+        if (!string.IsNullOrWhiteSpace(entity.TenantId)) scope.Add($"tenant '{entity.TenantId}'");
+        if (!string.IsNullOrWhiteSpace(entity.AgentId)) scope.Add($"agent '{entity.AgentId}'");
+        if (!string.IsNullOrWhiteSpace(entity.UserId)) scope.Add($"user '{entity.UserId}'");
+        if (!string.IsNullOrWhiteSpace(entity.ActivationName)) scope.Add($"activation '{entity.ActivationName}'");
+        if (scope.Count > 0)
+            description += $" for {string.Join(", ", scope)}";
+        if (changedFields != null && changedFields.Count > 0)
+            description += $" ({string.Join(", ", changedFields)})";
+
+        return description + ".";
     }
 }

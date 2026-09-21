@@ -171,7 +171,8 @@ public class DataToolsTests
                     return [record];
                 return [];
             });
-        var service = new AdminDataService(_documents.Object, Mock.Of<ILogger<AdminDataService>>());
+        var service = new AdminDataService(_documents.Object, _agents.Object,
+            _tenant.Object, Mock.Of<ILogger<AdminDataService>>());
         await Assert.ThrowsAsync<McpException>(() => Tools(service).DeleteDataRecord(_target, id, true));
         _documents.Verify(x => x.QueryAsync("tenant", It.Is<DocumentQueryFilter>(f =>
             f.AgentId == "agent" && f.ActivationName == "activation" && f.Ids!.Single() == id)), Times.Once);
@@ -203,7 +204,8 @@ public class DataToolsTests
             new Document { Id = id, TenantId = "tenant", AgentId = "agent", ActivationName = "activation" }
         ]);
         _documents.Setup(x => x.DeleteByFilterAsync("tenant", It.IsAny<DocumentQueryFilter>())).ReturnsAsync(1);
-        var service = new AdminDataService(_documents.Object, Mock.Of<ILogger<AdminDataService>>());
+        var service = new AdminDataService(_documents.Object, _agents.Object,
+            _tenant.Object, Mock.Of<ILogger<AdminDataService>>());
         Assert.True((await Tools(service).DeleteDataRecord(_target, id, true)).Deleted);
         _documents.Verify(x => x.QueryAsync("tenant", It.Is<DocumentQueryFilter>(f =>
             f.Ids!.Single() == id && f.AgentId == "agent" && f.ActivationName == "activation" && f.Limit == 1)), Times.Once);

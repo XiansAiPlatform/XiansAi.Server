@@ -155,6 +155,7 @@ namespace Features.AdminApi.Auth
                         _tenantContext.UserRoles = userRoles.ToArray();
                         _tenantContext.AuthorizedTenantIds = new[] { finalTenantId };
                         _tenantContext.Authorization = accessToken;
+                        AdminOnBehalfOfBinder.Apply(Request, _tenantContext, _logger);
 
                         var claims = new List<Claim>
                         {

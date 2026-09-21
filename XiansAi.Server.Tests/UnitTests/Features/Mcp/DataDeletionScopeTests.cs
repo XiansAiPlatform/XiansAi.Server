@@ -4,8 +4,10 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using Moq;
+using Shared.Auth;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Repositories;
 using Shared.Services;
 
 namespace XiansAi.Server.Tests.UnitTests.Features.Mcp;
@@ -21,7 +23,8 @@ public class DataDeletionScopeTests
         var ids = new List<string>();
         if (!empty) ids.Add("0123456789abcdef01234567");
         repository.Setup(x => x.DeleteByFilterAsync("tenant", It.IsAny<DocumentQueryFilter>())).ReturnsAsync(ids.Count);
-        var service = new AdminDataService(repository.Object, Mock.Of<ILogger<AdminDataService>>());
+        var service = new AdminDataService(repository.Object, Mock.Of<IAgentRepository>(),
+            Mock.Of<ITenantContext>(), Mock.Of<ILogger<AdminDataService>>());
         var start = DateTime.UtcNow.AddDays(-1);
         var end = DateTime.UtcNow;
         var result = await service.DeleteDataAsync(new AdminDataDeleteRequest

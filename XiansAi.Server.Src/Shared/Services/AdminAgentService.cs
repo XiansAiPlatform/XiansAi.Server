@@ -51,6 +51,7 @@ public class AdminAgentService : IAdminAgentService
     private readonly ILogger<AdminAgentService> _logger;
     private readonly ITenantContext _tenantContext;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
 
     public AdminAgentService(
         IAgentRepository agentRepository,
@@ -58,7 +59,8 @@ public class AdminAgentService : IAdminAgentService
         IAgentDeletionService agentDeletionService,
         ILogger<AdminAgentService> logger,
         ITenantContext tenantContext,
-        IWebhookEventPublisher webhookEventPublisher
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService
     )
     {
         _agentRepository = agentRepository ?? throw new ArgumentNullException(nameof(agentRepository));
@@ -67,6 +69,7 @@ public class AdminAgentService : IAdminAgentService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _webhookEventPublisher = webhookEventPublisher ?? throw new ArgumentNullException(nameof(webhookEventPublisher));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     /// <summary>
@@ -191,6 +194,9 @@ public class AdminAgentService : IAdminAgentService
                 return ServiceResult<Agent>.NotFound($"Agent with name '{validatedAgentName}' not found in tenant '{tenantId}'");
             }
 
+            var originalName = agent.Name;
+            var changedFields = new List<string>();
+
             // Update fields if provided
             if (!string.IsNullOrWhiteSpace(request.Name) && request.Name != agent.Name)
             {
@@ -206,21 +212,25 @@ public class AdminAgentService : IAdminAgentService
                     return ServiceResult<Agent>.Conflict($"Agent with name '{validatedNewName}' already exists in tenant");
                 }
                 agent.Name = validatedNewName;
+                changedFields.Add($"name '{originalName}' → '{validatedNewName}'");
             }
 
             if (request.Description != null)
             {
                 agent.Description = request.Description;
+                changedFields.Add("description");
             }
 
             if (request.OnboardingJson != null)
             {
                 agent.OnboardingJson = request.OnboardingJson;
+                changedFields.Add("onboarding");
             }
 
             if (request.SamplePrompts != null)
             {
                 agent.SamplePrompts = request.SamplePrompts;
+                changedFields.Add($"sample prompts ({request.SamplePrompts.Count})");
             }
 
             var updated = await _agentRepository.UpdateInternalAsync(agent.Id, agent);
@@ -232,10 +242,17 @@ public class AdminAgentService : IAdminAgentService
 
             _logger.LogInformation("Successfully updated agent instance {AgentName} in tenant {TenantId}", LogSanitizer.Sanitize(agentName), LogSanitizer.Sanitize(tenantId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentDeploymentUpdated,
-                new { tenantId, agentId = agent.Id, agentName = agent.Name },
-                tenantId);
+            var metadata = new { tenantId, agentId = agent.Id, agentName = agent.Name };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.AgentDeploymentUpdated,
+                metadata,
+                tenantId,
+                description: changedFields.Count == 0
+                    ? $"Deployment configuration for agent '{agent.Name}' ({agent.Id}) in tenant '{tenantId}' was updated."
+                    : $"Deployment configuration for agent '{agent.Name}' ({agent.Id}) in tenant '{tenantId}' was updated ({string.Join(", ", changedFields)}).");
 
             return ServiceResult<Agent>.Success(agent);
         }

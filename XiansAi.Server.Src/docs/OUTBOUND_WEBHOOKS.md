@@ -156,8 +156,8 @@ Delivery is **at-least-once**. A listener may occasionally receive the same even
 
 ## Currently emitted events
 
-The full catalog of event type constants lives in `WebhookEventTypes`
-(`Shared/Data/Models/WebhookDelivery.cs`). Events are published from shared services (so they fire
+The full catalog of event type constants lives in `DomainEventTypes`
+(`Shared/Data/Models/DomainEventTypes.cs`). Events are published from shared services (so they fire
 regardless of whether the action came via the Admin API, Agent API or Web API) wherever possible.
 
 High-volume telemetry — per-message conversation writes, agent logs, activity history, usage
@@ -174,6 +174,9 @@ overwhelming listeners.
 | `tenant.deleted` | A tenant is deleted. |
 | `tenant.oidc.updated` | A tenant's OIDC config is created or updated. |
 | `tenant.oidc.deleted` | A tenant's OIDC config is deleted. |
+| `tenant.temporal.updated` | A tenant's Temporal (flow-server) config is created or updated. Certificates are never included. |
+| `tenant.temporal.reverted` | A tenant's Temporal config is reverted to the platform default. |
+| `platform.bootstrapped` | The platform is bootstrapped (first SysAdmin, tenant, and API key). |
 
 ### Users
 
@@ -198,6 +201,7 @@ overwhelming listeners.
 | `agent.deployment.updated` | An agent deployment's config is updated (Admin API). |
 | `agent.ownership.transferred` | Agent ownership is transferred to another user. |
 | `agent.template.deployed` | A system template agent is deployed into a tenant. |
+| `agent.template.promoted` | A tenant-scoped agent is promoted into a new system-scoped template. |
 | `template.updated` / `template.deleted` | A system-scoped template agent is updated/deleted. |
 | `flow.definition.created` / `flow.definition.updated` | A workflow definition is registered or changes hash. |
 
@@ -213,7 +217,7 @@ overwhelming listeners.
 
 | Event type | Emitted when |
 | --- | --- |
-| `knowledge.created` / `knowledge.updated` / `knowledge.deleted` | Knowledge items change (Admin or Agent API). |
+| `knowledge.created` / `knowledge.updated` / `knowledge.deleted` | Knowledge items change (Admin or Agent API), including bulk delete of an activation's knowledge. |
 | `secret.created` / `secret.updated` / `secret.deleted` | Vault secrets change (values are never included). |
 | `apikey.created` / `apikey.revoked` / `apikey.rotated` | API keys change. |
 | `certificate.created` / `certificate.revoked` | Client certificates are issued/revoked. |
@@ -228,13 +232,14 @@ overwhelming listeners.
 
 ## Adding a new event
 
-1. Add a constant to `WebhookEventTypes` (`Shared/Data/Models/WebhookDelivery.cs`).
+1. Add a constant to `DomainEventTypes` (`Shared/Data/Models/DomainEventTypes.cs`).
 2. Inject `IWebhookEventPublisher` into the relevant service and call `PublishAsync(...)` after
    the operation succeeds.
 
 ## Implementation
 
 - Options: `Shared/Configuration/Options/WebhooksOptions.cs`
+- Event type catalog: `Shared/Data/Models/DomainEventTypes.cs`
 - Model / outbox document: `Shared/Data/Models/WebhookDelivery.cs`
 - Repository (outbox + atomic claim): `Shared/Repositories/WebhookDeliveryRepository.cs`
 - Publisher: `Shared/Services/WebhookEventPublisher.cs`

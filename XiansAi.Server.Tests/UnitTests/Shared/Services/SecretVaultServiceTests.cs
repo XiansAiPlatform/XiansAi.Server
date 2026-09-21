@@ -19,7 +19,7 @@ public class SecretVaultServiceTests
 
     public SecretVaultServiceTests()
     {
-        _service = new SecretVaultService(_repo.Object, _store, _webhookEventPublisher.Object, NullLogger<SecretVaultService>.Instance);
+        _service = new SecretVaultService(_repo.Object, _store, _webhookEventPublisher.Object, Mock.Of<IAuditLogService>(), NullLogger<SecretVaultService>.Instance);
     }
 
     [Fact]

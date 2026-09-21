@@ -19,6 +19,28 @@ Authentication and authorization happen in two stages:
 Both stages delegate role/tenant resolution to **`AdminRoleTenantResolver`**, which is the
 single source of truth for who may call the Admin API.
 
+### Attributing the UI user (`X-On-Behalf-Of`)
+
+Admin API authentication identifies the **API-key owner**, not the human signed into a
+client UI. Trusted backends such as Agent Studio can assert that human's identity with:
+
+```http
+Authorization: Bearer sk-Xnai-...
+X-On-Behalf-Of: auth0|64f2ab...
+```
+
+`AdminOnBehalfOfBinder` copies a valid header into `TenantContext.ParticipantId`. Audit
+rows then record:
+
+| Field | Meaning |
+|-------|---------|
+| `LoggedInUser` | Authenticated API-key owner (not spoofable via this header) |
+| `ParticipantId` | Asserted UI user, or the key owner when the header is omitted/invalid |
+
+The header is **attribution, not impersonation**: it does not change authorization. Invalid
+values (empty after sanitization, longer than 200 characters, or containing disallowed
+characters) are ignored and a warning is logged. Authorization still uses `LoggedInUser`.
+
 > **Key rule:** Only callers whose API key owner holds the **`SysAdmin`** or **`TenantAdmin`**
 > role can use the Admin API. Access is granted by an *explicit* role assignment only —
 > email-domain matching is intentionally **not** used to grant admin access.
@@ -245,4 +267,5 @@ the validated schema) so clients can fetch a starting point instead of duplicati
 - `Features/AdminApi/Auth/AdminRoleTenantResolver.cs` — role & tenant resolution
 - `Features/AdminApi/Auth/AdminEndpointAuthenticationHandler.cs` — API key authentication
 - `Features/AdminApi/Auth/ValidAdminEndpointAccessHandler.cs` — authorization requirement
+- `Features/AdminApi/Auth/AdminOnBehalfOfBinder.cs` — optional `X-On-Behalf-Of` audit attribution
 - `Features/AdminApi/Auth/AdminTenantScopeGuard.cs` — tenant-scope guards & route filter

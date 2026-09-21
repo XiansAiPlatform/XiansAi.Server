@@ -1,0 +1,74 @@
+using Shared.Auditing;
+using Shared.Data.Models;
+
+namespace Shared.Services;
+
+/// <summary>
+/// Starts the webhook outbox write and the audit-log write together, without waiting for either.
+/// Both operations snapshot request identity on this thread; the actual I/O runs in the background
+/// so the originating business operation is not delayed.
+/// </summary>
+public static class DomainEventEmitter
+{
+    /// <summary>
+    /// Emits a domain event to outbound webhooks and the audit log.
+    /// When <paramref name="tenantId"/> is omitted the event is treated as platform-scoped:
+    /// the webhook envelope has no owning tenant, and the audit row is stamped with
+    /// <see cref="AuditLogTenants.Platform"/> so tenant admins cannot see it.
+    /// </summary>
+    /// <param name="webhookEventPublisher">Webhook outbox publisher.</param>
+    /// <param name="auditLogService">Audit log writer.</param>
+    /// <param name="eventType">One of the <see cref="DomainEventTypes"/> constants.</param>
+    /// <param name="data">Event payload shared by the webhook envelope and the audit details.</param>
+    /// <param name="tenantId">Owning tenant. Omit for platform-scoped actions.</param>
+    /// <param name="activationName">Activation the action was performed against, when applicable.</param>
+    /// <param name="description">
+    /// Human-readable audit sentence. Prefer a specific one (who/what was acted on). When omitted,
+    /// <see cref="DomainEventTypes.Describe"/> is used.
+    /// </param>
+    public static void Emit(
+        IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
+        string eventType,
+        object? data,
+        string? tenantId = null,
+        string? activationName = null,
+        string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(webhookEventPublisher);
+        ArgumentNullException.ThrowIfNull(auditLogService);
+
+        var auditTenantId = string.IsNullOrWhiteSpace(tenantId)
+            ? AuditLogTenants.Platform
+            : tenantId;
+
+        var auditDescription = string.IsNullOrWhiteSpace(description)
+            ? DomainEventTypes.Describe(eventType)
+            : description.Trim();
+
+        // Kick both off on this thread so they snapshot ambient tenant/HTTP context while it is
+        // still valid. Task.WhenAll lets their I/O overlap; we do not await it, because waiting
+        // would still stall the write path by the slower of the two calls.
+        _ = EmitConcurrentlyAsync(
+            webhookEventPublisher.PublishAsync(eventType, data, tenantId),
+            auditLogService.RecordEntryAsync(
+                action: eventType,
+                description: auditDescription,
+                activationName: activationName,
+                details: data,
+                tenantId: auditTenantId));
+    }
+
+    private static async Task EmitConcurrentlyAsync(Task webhookTask, Task auditTask)
+    {
+        try
+        {
+            await Task.WhenAll(webhookTask, auditTask);
+        }
+        catch (Exception)
+        {
+            // Both callees swallow and log their own failures. This net exists only so an
+            // unexpected exception cannot become an unobserved task exception.
+        }
+    }
+}

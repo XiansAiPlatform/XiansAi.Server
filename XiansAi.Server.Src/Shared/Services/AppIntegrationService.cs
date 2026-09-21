@@ -29,16 +29,16 @@ public interface IAppIntegrationService
     /// Create a new integration
     /// </summary>
     Task<ServiceResult<AppIntegrationResponse>> CreateIntegrationAsync(
-        CreateAppIntegrationRequest request, 
-        string tenantId, 
+        CreateAppIntegrationRequest request,
+        string tenantId,
         string createdBy);
 
     /// <summary>
     /// Update an existing integration
     /// </summary>
     Task<ServiceResult<AppIntegrationResponse>> UpdateIntegrationAsync(
-        string id, 
-        UpdateAppIntegrationRequest request, 
+        string id,
+        UpdateAppIntegrationRequest request,
         string tenantId,
         string updatedBy);
 
@@ -117,6 +117,7 @@ public class AppIntegrationService : IAppIntegrationService
     private readonly IApiKeyService _apiKeyService;
     private readonly IActivationValidationService _activationValidationService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<AppIntegrationService> _logger;
 
     public AppIntegrationService(
@@ -124,12 +125,14 @@ public class AppIntegrationService : IAppIntegrationService
         IApiKeyService apiKeyService,
         IActivationValidationService activationValidationService,
         IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<AppIntegrationService> logger)
     {
         _repository = repository;
         _apiKeyService = apiKeyService;
         _activationValidationService = activationValidationService;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -353,10 +356,16 @@ public class AppIntegrationService : IAppIntegrationService
             _logger.LogInformation("Created integration {IntegrationId} with webhook URL {WebhookUrl}",
                 LogSanitizer.Sanitize(id), LogSanitizer.Sanitize(response.WebhookUrl));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationCreated,
-                new { tenantId, integrationId = id, name = integration.Name, platformId = integration.PlatformId, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = integration.Name, platformId = integration.PlatformId, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.IntegrationCreated,
+                metadata,
+                tenantId,
+                integration.ActivationName,
+                description: $"App integration '{integration.Name}' ({integration.PlatformId}, id '{id}') was created for agent '{integration.AgentName}' activation '{integration.ActivationName}' by '{createdBy}'.");
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -391,6 +400,7 @@ public class AppIntegrationService : IAppIntegrationService
             }
 
             // Check name uniqueness if name is being changed
+            var changedFields = new List<string>();
             if (!string.IsNullOrEmpty(request.Name) && request.Name != existing.Name)
             {
                 if (await _repository.ExistsByNameAsync(tenantId, existing.AgentName, existing.ActivationName, request.Name, id))
@@ -398,6 +408,7 @@ public class AppIntegrationService : IAppIntegrationService
                     return ServiceResult<AppIntegrationResponse>.BadRequest(
                         $"An integration with name '{request.Name}' already exists for agent '{existing.AgentName}' and activation '{existing.ActivationName}'");
                 }
+                changedFields.Add($"name '{existing.Name}' → '{request.Name}'");
                 existing.Name = request.Name;
             }
 
@@ -405,6 +416,7 @@ public class AppIntegrationService : IAppIntegrationService
             if (request.Description != null)
             {
                 existing.Description = request.Description;
+                changedFields.Add("description");
             }
 
             if (request.Configuration != null)
@@ -425,16 +437,20 @@ public class AppIntegrationService : IAppIntegrationService
                 {
                     return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
                 }
+
+                changedFields.Add("configuration");
             }
 
             if (request.MappingConfig != null)
             {
                 existing.MappingConfig = request.MappingConfig;
+                changedFields.Add("mapping");
             }
 
             if (request.IsEnabled.HasValue)
             {
                 existing.IsEnabled = request.IsEnabled.Value;
+                changedFields.Add(request.IsEnabled.Value ? "enabled" : "disabled");
             }
 
             // Update secrets if provided
@@ -461,6 +477,8 @@ public class AppIntegrationService : IAppIntegrationService
                     existing.Secrets.OutlookClientSecret = request.Secrets.OutlookClientSecret;
                 if (request.Secrets.GenericWebhookSecret != null)
                     existing.Secrets.GenericWebhookSecret = request.Secrets.GenericWebhookSecret;
+
+                changedFields.Add("secrets");
             }
 
             // Migrate secrets from Configuration to Secrets for backward compatibility
@@ -499,10 +517,18 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Updated integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationUpdated,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.IntegrationUpdated,
+                metadata,
+                tenantId,
+                existing.ActivationName,
+                description: changedFields.Count == 0
+                    ? $"App integration '{existing.Name}' ({existing.PlatformId}, id '{id}') was updated by '{updatedBy}'."
+                    : $"App integration '{existing.Name}' ({existing.PlatformId}, id '{id}') was updated by '{updatedBy}' ({string.Join(", ", changedFields)}).");
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -541,10 +567,16 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Deleted integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationDeleted,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.IntegrationDeleted,
+                metadata,
+                tenantId,
+                existing.ActivationName,
+                description: $"App integration '{existing.Name}' ({existing.PlatformId}, id '{id}') was deleted from agent '{existing.AgentName}' activation '{existing.ActivationName}'.");
 
             return ServiceResult<bool>.Success(true);
         }
@@ -685,10 +717,16 @@ public class AppIntegrationService : IAppIntegrationService
             var response = AppIntegrationResponse.FromEntity(integration, maskWebhookUrl: false);
             _logger.LogInformation("Created builtin webhook integration {IntegrationId} with webhook URL", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationWebhookCreated,
-                new { tenantId, integrationId = id, name = integration.Name, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = integration.Name, agentName = integration.AgentName, activationName = integration.ActivationName, createdBy };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.IntegrationWebhookCreated,
+                metadata,
+                tenantId,
+                integration.ActivationName,
+                description: $"Builtin webhook integration '{integration.Name}' ({id}) was created for agent '{integration.AgentName}' activation '{integration.ActivationName}' by '{createdBy}'.");
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -790,8 +828,8 @@ public class AppIntegrationService : IAppIntegrationService
     }
 
     public async Task<ServiceResult<AppIntegrationResponse>> EnableIntegrationAsync(
-        string id, 
-        string tenantId, 
+        string id,
+        string tenantId,
         string updatedBy)
     {
         try
@@ -826,10 +864,16 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Enabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationEnabled,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.IntegrationEnabled,
+                metadata,
+                tenantId,
+                existing.ActivationName,
+                description: $"App integration '{existing.Name}' ({existing.PlatformId}, id '{id}') was enabled by '{updatedBy}'.");
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
@@ -842,8 +886,8 @@ public class AppIntegrationService : IAppIntegrationService
     }
 
     public async Task<ServiceResult<AppIntegrationResponse>> DisableIntegrationAsync(
-        string id, 
-        string tenantId, 
+        string id,
+        string tenantId,
         string updatedBy)
     {
         try
@@ -878,10 +922,16 @@ public class AppIntegrationService : IAppIntegrationService
 
             _logger.LogInformation("Disabled integration {IntegrationId}", LogSanitizer.Sanitize(id));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.IntegrationDisabled,
-                new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy },
-                tenantId);
+            var metadata = new { tenantId, integrationId = id, name = existing.Name, platformId = existing.PlatformId, updatedBy };
+
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.IntegrationDisabled,
+                metadata,
+                tenantId,
+                existing.ActivationName,
+                description: $"App integration '{existing.Name}' ({existing.PlatformId}, id '{id}') was disabled by '{updatedBy}'.");
 
             return ServiceResult<AppIntegrationResponse>.Success(response);
         }
