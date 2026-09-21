@@ -9,6 +9,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Echo | [`AdminApiTemporalEchoAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalEchoAgentLifecycleTests.cs) | Template → deploy → chat, plus live SSE/SignalR |
 | Knowledge | [`AdminApiTemporalKnowledgeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeAgentLifecycleTests.cs) | System knowledge upload, tenant override, activation override, isolation |
 | Secret Vault | [`AdminApiTemporalSecretVaultAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultAgentLifecycleTests.cs) | Create/fetch/update/delete through a running agent; strict tenant / agent / participant / activation isolation; Admin never sees values |
+| Secret Vault SDK | [`AdminApiTemporalSecretVaultSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultSdkAgentLifecycleTests.cs) | TenantScope Create/Fetch/GetById/Update/List/Delete from a Temporal **activity**; List/Delete from **workflow** code (system `SecretVaultActivities` stub); Create/Fetch/GetById/Update refused in a workflow so plaintext never enters history |
 | Document DB | [`AdminApiTemporalDocumentDbAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbAgentLifecycleTests.cs) | Agent `SaveAsync` / `GetByKeyAsync`; Admin list/get/update/create; isolation by tenant, agent, activation, and participant |
 | Webhooks | [`AdminApiTemporalWebhookAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWebhookAgentLifecycleTests.cs) | Integrator `OnWebhook` + `context.Respond`; agent SDK create/list; Admin create/list/delete; inbound `POST /api/user/webhooks/builtin` with `apikeyId`; tenant/agent isolation; 401 after revoke; 409 after deactivate |
 | Files | [`AdminApiTemporalFileMessagingAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalFileMessagingAgentLifecycleTests.cs) | User `POST .../send/file` → `OnFileUpload` hydrates GridFS bytes; agent `ReplyWithFileAsync` / `SendFileAsync`; history is `fileId` refs only; Admin download tenant isolation |
@@ -25,6 +26,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
 dotnet test --filter "FullyQualifiedName~KnowledgeAgent_SystemUpload_TenantAndActivationOverridesIsolate"
 dotnet test --filter "FullyQualifiedName~SecretVaultAgent_CreateFetch_StrictScopeIsolationAndRotation"
+dotnet test --filter "FullyQualifiedName~SecretVaultSdkAgent_CollectionOps"
 dotnet test --filter "FullyQualifiedName~DocumentDbAgent_SavePush_AdminReadModifyAdd_Isolates"
 dotnet test --filter "FullyQualifiedName~WebhookAgent_InboundBuiltin_AdminCrudIsolatesAndRevokes"
 dotnet test --filter "FullyQualifiedName~FileMessagingAgent_UserUploadAndAgentSend_RoundTripAndIsolate"
@@ -71,6 +73,7 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Activate / send / deactivate / delete against a worker that registered itself
 - Knowledge fallback as the running agent actually reads it (`GetAsync` inside the supervisor)
 - Secret Vault strict scope as the running agent writes and reads it (`TenantScope()` / `FetchByKeyAsync` inside the supervisor)
+- Secret Vault `GetByIdAsync` from an activity, and `ListAsync` / `DeleteAsync` from workflow code (Create/Fetch/GetById/Update refuse a workflow so the value never enters Temporal history)
 - Document DB Type+Key as the running agent writes and reads it (`SaveAsync` / `GetByKeyAsync` inside the supervisor)
 - Builtin inbound webhooks as the running Integrator handles them (`OnWebhook` / `context.Respond`, SDK `Webhooks.CreateAsync`)
 - File messages both ways: user `POST .../send/file` into `OnFileUpload`, agent `ReplyWithFileAsync` / `SendFileAsync` back through GridFS
@@ -83,7 +86,7 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Metrics `context.Metrics` / `XiansContext.Metrics` `ReportAsync` from a running agent, then Admin stats/categories
 - Logging `XiansLogger.GetLogger` from a chat activity and `Workflow.Logger` from a workflow, then Admin streams/logs
 
-Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. Schedules is the [self-scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) contract (activable Setup creates a Tick interval; ScheduleCollection also runs from an activity and from a workflow). HITL is the [human-in-the-loop](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/hitl-tasks/) contract (Review waits on a task; Admin draft/action/timeout). Cross-agent is the [cross-agent workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/cross-agent-workflows/) contract (Invoice starts Fraud Scan/Review; activations do not cross agent boundaries). Activations SDK is the [agents and activations](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/activations/) contract (Manager provisions Target from an activity and from a workflow; Heartbeat starts on activate). Metrics is the [usage tracking](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/metrics/) contract (`context.Metrics` from a handler, `XiansContext.Metrics` from a workflow; Admin reads the flattened `usage_metrics` collection). Logging is the [agent logging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/logging/) contract (`XiansLogger` from an activity, `Workflow.Logger` from a workflow; Admin reads the `logs` collection after batched upload). None of these is a catalogue of every Lib sample.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match; List/Delete also from a workflow). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. Schedules is the [self-scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) contract (activable Setup creates a Tick interval; ScheduleCollection also runs from an activity and from a workflow). HITL is the [human-in-the-loop](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/hitl-tasks/) contract (Review waits on a task; Admin draft/action/timeout). Cross-agent is the [cross-agent workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/cross-agent-workflows/) contract (Invoice starts Fraud Scan/Review; activations do not cross agent boundaries). Activations SDK is the [agents and activations](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/activations/) contract (Manager provisions Target from an activity and from a workflow; Heartbeat starts on activate). Metrics is the [usage tracking](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/metrics/) contract (`context.Metrics` from a handler, `XiansContext.Metrics` from a workflow; Admin reads the flattened `usage_metrics` collection). Logging is the [agent logging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/logging/) contract (`XiansLogger` from an activity, `Workflow.Logger` from a workflow; Admin reads the `logs` collection after batched upload). None of these is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -289,6 +292,15 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 - `GET /api/v1/admin/secrets/fetch?key&tenantId` (metadata probe, no values)
 
 Values are proven only through the agent's `FetchByKeyAsync` + `ReplyAsync`. Participant isolation reuses a fixed `participantId` for create and fetch; other chats still use a unique id so history cannot collide. History polling matches each message's `text` field, not the raw JSON (a reply of `created` must not match `createdAt`).
+
+## Agent under test: Secret Vault SDK
+
+Same host as the other Lib cycles. Chat `ExecuteAsync` a Manage workflow that either runs TenantScope CRUD in an activity or List/Delete in workflow code (`fromWorkflow`). Create/Fetch/GetById/Update throw from a workflow because those payloads would be recorded in Temporal history. The activity path is the one that includes `GetByIdAsync` (the isolation cycle looks up ids from `ListAsync` only). Replies never include secret values.
+
+```text
+1. Chat "run" from activity → Create, Fetch, List, GetById, Update, GetById, Delete, Fetch/GetById missing
+2. Chat "run" from workflow → activity seed Create; List finds it; Create/Fetch/GetById/Update throw; Delete; List no longer has it
+```
 
 ## Agent under test: Document DB
 
@@ -568,7 +580,7 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 - Other Lib samples (`CustomWorkflow` HITL/MAF, …)
 - Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, Schedule SDK, HITL, Cross-agent, Activations SDK, Metrics, or Logging into a second sample.
+Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Secret Vault SDK, Document DB, Webhooks, Files, Custom workflows, Schedules, Schedule SDK, HITL, Cross-agent, Activations SDK, Metrics, or Logging into a second sample.
 
 ## Adding another Lib agent workflow
 

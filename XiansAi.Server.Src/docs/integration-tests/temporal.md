@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules / HITL / Cross-agent / Activations SDK / Metrics / Logging Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Secret Vault / Secret Vault SDK / Document DB / Webhooks / Files / Custom workflow / Schedules / Schedule SDK / HITL / Cross-agent / Activations SDK / Metrics / Logging Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -43,7 +43,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent, Activations SDK, Metrics, Logging) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Secret Vault, Secret Vault SDK, Document DB, Webhooks, Files, Custom workflows, Schedules, Schedule SDK, HITL, Cross-agent, Activations SDK, Metrics, Logging) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -88,6 +88,10 @@ System Knowledge agent authored with Xians.Lib (supervisor replies with `GetAsyn
 ### `AdminApiTemporalSecretVaultAgentLifecycleTests`
 
 System Secret Vault agent authored with Xians.Lib. Chat commands create / fetch / update / delete via `XiansContext.CurrentAgent.Secrets` with no-arg scopes from live context. Fetch is a **strict** match (tenant / agent / participant / activation) — unlike Knowledge, there is no fallback. Admin list/fetch return metadata only. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalSecretVaultSdkAgentLifecycleTests`
+
+System Secret Vault agent authored with Xians.Lib. Chat `ExecuteAsync` a Manage workflow that calls TenantScope Create/Fetch/GetById/Update/List/Delete from an activity, and List/Delete from workflow code (system `SecretVaultActivities` stub). Create/Fetch/GetById/Update are refused in a workflow so the secret value never enters Temporal history. Same host: [Lib agent workflows](./lib-agent-workflows.md). Isolation remains `AdminApiTemporalSecretVaultAgentLifecycleTests`.
 
 ### `AdminApiTemporalDocumentDbAgentLifecycleTests`
 
