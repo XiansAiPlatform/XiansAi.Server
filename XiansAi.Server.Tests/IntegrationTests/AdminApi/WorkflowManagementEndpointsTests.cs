@@ -1,6 +1,6 @@
 using System.Net;
-using Xunit;
 using Tests.TestUtils;
+using Xunit;
 
 namespace Tests.IntegrationTests.AdminApi;
 
@@ -11,101 +11,96 @@ public class WorkflowManagementEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
-    public async Task ActivateWorkflow_WithValidRequest_ReturnsSuccess()
+    public async Task ActivateWorkflow_WhenDefinitionMissing_ReturnsNotFound()
     {
-        // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
 
-        var request = new
+        var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/workflows/activate", new
         {
-            workflowType = "test-workflow",
-            agent = $"agent-{Guid.NewGuid()}",
-            threadId = $"thread-{Guid.NewGuid()}"
-        };
+            workflowType = "Missing Agent:Missing Flow",
+            agentName = "Missing Agent"
+        });
 
-        // Act
-        var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/workflows/activate", request);
-
-        // Assert
-        // Workflow activation may return various status codes depending on implementation
-        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task GetWorkflow_WithValidId_ReturnsWorkflow()
+    public async Task GetWorkflow_WhenIdIsNotTenantPrefixed_ReturnsNotFound()
     {
-        // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
 
-        var workflowId = $"workflow-{Guid.NewGuid()}";
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows?workflowId=no-colon-id");
 
-        // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows?workflowId={workflowId}");
-
-        // Assert
-        // May return 404 if workflow doesn't exist, but should not be 401/403
-        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task ListWorkflows_WithValidRequest_ReturnsWorkflowList()
+    public async Task GetWorkflow_WhenIdBelongsToOtherTenant_ReturnsNotFound()
     {
-        // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
 
-        // Act
+        var response = await GetAsync(
+            $"/api/v1/admin/tenants/{tenantId}/workflows?workflowId=other-tenant:agent:Chat:run");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ListWorkflows_WithNoAgents_ReturnsEmptyPage()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
         var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows/list");
 
-        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
         var content = await response.Content.ReadAsStringAsync();
-        Assert.NotNull(content);
+        Assert.Contains("workflows", content, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task GetWorkflowEvents_WithValidId_ReturnsEvents()
+    public async Task GetWorkflowTypes_WithMissingAgent_ReturnsBadRequest()
     {
-        // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
 
-        var workflowId = $"workflow-{Guid.NewGuid()}";
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows/types");
 
-        // Act
-        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/workflows/events?workflowId={workflowId}");
-
-        // Assert
-        // May return 404 if workflow doesn't exist, but should not be 401/403
-        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task CancelWorkflow_WithValidId_ReturnsSuccess()
+    public async Task CancelWorkflow_WhenIdBelongsToOtherTenant_ReturnsNotFound()
     {
-        // Arrange
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
         await CreateTestTenantAsync(tenantId);
 
-        var workflowId = $"workflow-{Guid.NewGuid()}";
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/workflows/cancel?workflowId=other-tenant:agent:Chat:run&force=false",
+            new { });
 
-        // Act
-        var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/workflows/cancel?workflowId={workflowId}&force=false", new { });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 
-        // Assert
-        // May return 404 if workflow doesn't exist, but should not be 401/403
-        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    [Fact]
+    public async Task GetWorkflowEvents_WhenIdBelongsToOtherTenant_ReturnsNotFound()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await GetAsync(
+            $"/api/v1/admin/tenants/{tenantId}/workflows/events?workflowId=other-tenant:agent:Chat:run");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }

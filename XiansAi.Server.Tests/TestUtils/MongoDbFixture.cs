@@ -137,7 +137,9 @@ public class MongoDbFixture : IDisposable
                 "activity_history",
                 "flow_definitions",
                 "instructions",
-                "knowledge"
+                "knowledge",
+                "conversation_message",
+                "conversation_thread"
             };
 
             foreach (var collectionName in collections)

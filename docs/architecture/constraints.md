@@ -277,17 +277,18 @@ public static IServiceCollection ConfigureAdminApiServices(this IServiceCollecti
 | **Status** | proposed |
 | **Rationale** | Integration tests must be self-contained and not depend on external services to ensure reliability and fast feedback |
 
-**Rule:** Integration tests must use in-memory/stubbed dependencies (MongoDB in-memory, mocked Temporal, stubbed auth). No test may require a live external service.
+**Rule:** Integration tests must use in-process or local fixtures (MongoDB via Mongo2Go, stubbed auth). No test may require a live shared service or SaaS. See [Integration tests](../../XiansAi.Server.Src/docs/integration-tests/index.md).
 
 **Allowed:**
-- `MongoDbFixture` (in-memory MongoDB)
+- `MongoDbFixture` (ephemeral Mongo2Go replica set)
 - `TestAuthHandler` (stubbed authentication)
-- Mocked `ITemporalClientService`
+- Mocked `ITemporalGatewayService` (default)
+- `TemporalFixture` / `WorkflowEnvironment.StartLocalAsync` (local Temporal CLI; opt-in collection only)
 
 **Forbidden:**
-- Tests connecting to a live MongoDB instance
-- Tests calling real Temporal workflows
-- Tests requiring Auth0/Azure AD
+- Tests connecting to a shared or remote MongoDB instance
+- Tests calling a remote Temporal cluster
+- Tests requiring Auth0/Azure AD/Keycloak
 
 ---
 

@@ -412,6 +412,64 @@ public class AdminDataEndpointsTests : AdminApiIntegrationTestBase
         Assert.DoesNotContain(emptyList!.Data, item => item.Id == created.Id);
     }
 
+    [Fact]
+    public async Task DeleteRecordById_RemovesDocument()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var created = await CreateRecordAsync(tenantId, agent.Name);
+
+        var delete = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/data/{created.Id}");
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+        var deleted = await ReadAsJsonAsync<AdminDataDeleteRecordResponse>(delete);
+        Assert.True(deleted!.Deleted);
+        Assert.Equal(created.Id, deleted.RecordId);
+
+        var getAfterDelete = await GetAsync($"/api/v1/admin/tenants/{tenantId}/data/{created.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteRecordById_UnknownId_ReturnsNotFound()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await DeleteAsync(
+            $"/api/v1/admin/tenants/{tenantId}/data/{ObjectId.GenerateNewId()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteDataByActivation_RemovesMatchingRecords()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        var agent = await CreateTestAgentAsync($"test-agent-{Guid.NewGuid()}", tenantId);
+        var create = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data", new
+        {
+            agentName = agent.Name,
+            dataType = "Companies",
+            key = $"acme-{Guid.NewGuid()}",
+            activationName = "front-desk",
+            content = new { status = "Completed" }
+        });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var created = await ReadAsJsonAsync<AdminDataItemResponse>(create);
+
+        var delete = await DeleteAsync(
+            $"/api/v1/admin/tenants/{tenantId}/data/agents/{Uri.EscapeDataString(agent.Name)}/activation/front-desk");
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        var getAfterDelete = await GetAsync($"/api/v1/admin/tenants/{tenantId}/data/{created!.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
+    }
+
     private async Task<AdminDataItemResponse> CreateRecordAsync(string tenantId, string agentName, string? key = null)
     {
         var response = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/data", new
