@@ -9,7 +9,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Secret Vault SDK, Document DB, Webhooks, Files, Custom workflows, Schedules, Schedule SDK, HITL tasks, HITL SDK, Cross-agent, Activations SDK, Metrics, Logging).
+/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Webhooks, Files, Workflow files, Custom workflows, Workflow handle, Schedules, Schedule SDK, HITL tasks, HITL SDK, HITL conversation, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, Tenant-scoped).
 /// </summary>
 public abstract partial class AdminApiTemporalIntegrationTestBase
 {
@@ -63,11 +63,59 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
             $"Xians.Lib did not upload template '{agentName}' with flow definitions in time.");
     }
 
+    /// <summary>
+    /// Waits until Lib has uploaded a tenant-scoped agent (not a system template) and its flow
+    /// definitions. Tenant workers listen on <c>{tenantId}:{workflowType}</c>; there is no deploy step.
+    /// </summary>
+    protected async Task WaitForTenantAgentAsync(string tenantId, string agentName)
+    {
+        var encodedAgent = Uri.EscapeDataString(agentName);
+        var lastDefinitionCount = -1;
+        var stableRounds = 0;
+        const int requiredStableRounds = 3;
+        const int maxAttempts = 80;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var deployment = await GetAsync(
+                $"/api/v1/admin/tenants/{tenantId}/agentDeployments/{encodedAgent}");
+            var definitions = await GetTenantFlowDefinitionsAsync(tenantId, agentName);
+            if (deployment.StatusCode == HttpStatusCode.OK && definitions.Count > 0)
+            {
+                if (definitions.Count == lastDefinitionCount)
+                {
+                    stableRounds++;
+                    if (stableRounds >= requiredStableRounds)
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    lastDefinitionCount = definitions.Count;
+                    stableRounds = 0;
+                }
+            }
+
+            await Task.Delay(250);
+        }
+
+        Assert.Fail(
+            $"Xians.Lib did not upload tenant agent '{agentName}' with flow definitions in time.");
+    }
+
     private async Task<List<FlowDefinition>> GetSystemFlowDefinitionsAsync(string agentName)
     {
         using var scope = _factory.Services.CreateScope();
         var flows = scope.ServiceProvider.GetRequiredService<IFlowDefinitionRepository>();
         return await flows.GetByNameAsync(agentName, tenant: null);
+    }
+
+    private async Task<List<FlowDefinition>> GetTenantFlowDefinitionsAsync(string tenantId, string agentName)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var flows = scope.ServiceProvider.GetRequiredService<IFlowDefinitionRepository>();
+        return await flows.GetByNameAsync(agentName, tenantId);
     }
 
     protected async Task DeployLibTemplateAsync(string tenantId, string agentName)
@@ -200,12 +248,18 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
         string agentName,
         string activationName,
         string participantId,
-        string expectedText)
+        string expectedText,
+        string? topic = null)
     {
         var query =
             $"agentName={Uri.EscapeDataString(agentName)}" +
             $"&activationName={Uri.EscapeDataString(activationName)}" +
             $"&participantId={Uri.EscapeDataString(participantId)}";
+        if (!string.IsNullOrEmpty(topic))
+        {
+            query += $"&topic={Uri.EscapeDataString(topic)}";
+        }
+
         var lastBody = string.Empty;
 
         for (var attempt = 0; attempt < 40; attempt++)

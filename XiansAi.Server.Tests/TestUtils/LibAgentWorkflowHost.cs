@@ -71,12 +71,31 @@ public sealed class LibAgentWorkflowHost : IAsyncDisposable
         IReadOnlyList<string>? samplePrompts = null,
         bool enableTasks = false)
     {
+        return RegisterAgent(agentName, description, samplePrompts, enableTasks, isTemplate: true);
+    }
+
+    public XiansAgent RegisterTenant(
+        string agentName,
+        string? description = null,
+        IReadOnlyList<string>? samplePrompts = null,
+        bool enableTasks = false)
+    {
+        return RegisterAgent(agentName, description, samplePrompts, enableTasks, isTemplate: false);
+    }
+
+    private XiansAgent RegisterAgent(
+        string agentName,
+        string? description,
+        IReadOnlyList<string>? samplePrompts,
+        bool enableTasks,
+        bool isTemplate)
+    {
         return Platform.Agents.Register(new XiansAgentRegistration
         {
             Name = agentName,
             Description = description ?? agentName,
             SamplePrompts = samplePrompts,
-            IsTemplate = true,
+            IsTemplate = isTemplate,
             EnableTasks = enableTasks
         });
     }
