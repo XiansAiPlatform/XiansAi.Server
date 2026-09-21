@@ -53,6 +53,9 @@ Integration tests derive from `IntegrationTestBase` (and its `WebApiIntegrationT
 - **External dependencies are mocked by default**: `ITemporalGatewayService` (no live Temporal),
   email, background tasks, and certificate generation. Tests in the `AdminApiTemporal`
   collection skip the Temporal mock and point `Temporal:FlowServerUrl` at the local CLI server.
+  `AdminApiTemporalEchoAgentLifecycleTests` also project-references sibling
+  [`Xians.Lib`](../../XiansAi.Lib/Xians.Lib) and runs the Echo sample's supervisor
+  workflow against that CLI.
 - **Authentication is stubbed** via `TestAuthHandler`, which authenticates every request and
   grants `SysAdmin`, `TenantAdmin`, and `TenantUser` roles. Endpoints guarded by API-key policies
   that are *not* overridden (for example the UserApi `EndpointAuthPolicy`) still require a real

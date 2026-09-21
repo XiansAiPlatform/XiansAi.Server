@@ -170,6 +170,16 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             mockTenantContext.SetupProperty(x => x.UserType, UserType.UserApiKey);
             mockTenantContext.SetupProperty<IEnumerable<string>>(x => x.AuthorizedTenantIds, new List<string> { TestTenantId, "99x.io" });
             mockTenantContext.SetupProperty<string[]>(x => x.UserRoles, new[] { "SysAdmin", "TenantAdmin", "TenantUser" });
+            if (_temporalFixture != null)
+            {
+                mockTenantContext
+                    .Setup(x => x.GetTemporalConfigAsync())
+                    .Returns(() => Task.FromResult(new TemporalConfig
+                    {
+                        FlowServerUrl = _temporalFixture.TargetHost,
+                        FlowServerNamespace = _temporalFixture.Namespace
+                    }));
+            }
             RemoveService<ITenantContext>(services);
             services.AddSingleton(mockTenantContext.Object);
 
@@ -218,6 +228,22 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                     policy.AuthenticationSchemes.Clear();
                     policy.AuthenticationSchemes.Add("Test"); // Use test auth instead of certificate auth
                     policy.RequireAuthenticatedUser();
+                });
+
+                options.AddPolicy("RequireCertificateSysAdmin", policy =>
+                {
+                    policy.AuthenticationSchemes.Clear();
+                    policy.AuthenticationSchemes.Add("Test");
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireRole(SystemRoles.SysAdmin);
+                });
+
+                options.AddPolicy("RequireCertificateTenantAdmin", policy =>
+                {
+                    policy.AuthenticationSchemes.Clear();
+                    policy.AuthenticationSchemes.Add("Test");
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin);
                 });
 
                 // Override WebApi policies to use test authentication instead of JWT
