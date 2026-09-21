@@ -58,9 +58,9 @@ By default Temporal, email, background tasks, and certificate generation are moc
 
 ## What is not tested here
 
-- UserApi SSE (`/api/user/sse/events`) and end-user SignalR (`/ws/chat`)
 - Real identity providers (Auth0, Azure AD, Keycloak)
 - A remote Temporal cluster or a shared MongoDB
+- Native WebSocket transport (SignalR tests use long polling against TestServer)
 
 Manual `.http` files under [`XiansAi.Server.Tests/http/`](../../../XiansAi.Server.Tests/http/) are a developer convenience and are not part of `dotnet test`.
 

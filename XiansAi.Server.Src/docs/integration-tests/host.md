@@ -60,6 +60,8 @@ Policies that are **not** overridden still need a real credential. UserApi `Endp
 | UserApi (policy not stubbed) | `IntegrationTestBase` | Fresh client + repository-created API key on the query string |
 | Xians.Lib worker | Echo cycle only | PFX-shaped key from [`XiansLibTestCertificate`](../../../XiansAi.Server.Tests/TestUtils/XiansLibTestCertificate.cs) over [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) |
 | Tenant SignalR (`/ws/tenant/chat`) | Echo cycle | Same Admin `sk-Xnai-…` key as `apikey` query (UserApi websocket policy is not stubbed) |
+| UserApi SSE (`/api/user/sse/events`) | Echo cycle | Same Admin key as `Authorization: Bearer` on a separate streaming `HttpClient` |
+| ChatHub (`/ws/chat`) | Echo cycle | Same Admin key as `apikey` query; `SubscribeToAgent(workflow, participantId, tenantId)` |
 
 `ITenantContext` is a Moq singleton with `SetupProperty`, so tests that need a specific tenant (Temporal Echo, some Agent API paths) can assign `TenantId`, `LoggedInUser`, `ParticipantId`, and roles on the resolved instance.
 

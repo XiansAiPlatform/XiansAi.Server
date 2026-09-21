@@ -92,9 +92,9 @@ Use the Temporal base helpers rather than starting workflows with the Temporal c
 
 Always pass `participantId` when creating activations that will start workflows.
 
-## What is still skipped
+## Live streams
 
-UserApi SSE (`/api/user/sse/events`) and the end-user SignalR hub (`/ws/chat`) are still out of the automated suite. The Echo cycle covers Admin SSE listen and the tenant SignalR hub (`/ws/tenant/chat`). See [Lib agent workflows](./lib-agent-workflows.md).
+The Echo cycle asserts the change-stream fan-out on Admin SSE, UserApi SSE (`/api/user/sse/events`), tenant SignalR (`/ws/tenant/chat`), and ChatHub (`/ws/chat`). See [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Adding a Temporal test
 

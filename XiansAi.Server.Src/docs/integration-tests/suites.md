@@ -92,7 +92,7 @@ UserApi `EndpointAuthPolicy` is **not** overridden. Tests create a key in Mongo 
 | `RestEndpointsTests` | Unauthorized without key; invalid type/body; validation before Temporal |
 | `WebhookEndpointsTests` | Inbound user webhooks (auth and validation) |
 
-Live SSE (`/api/user/sse/*`) and WebSocket (`/ws/chat`) are not in the automated suite. See [User API docs](../user-api/index.md).
+Live UserApi SSE (`/api/user/sse/events`) and ChatHub (`/ws/chat`) are asserted in the Echo Lib cycle (AdminApiTemporal), not in this Mongo-only class. See [Lib agent workflows](./lib-agent-workflows.md) and [User API docs](../user-api/index.md).
 
 ## Apps API
 

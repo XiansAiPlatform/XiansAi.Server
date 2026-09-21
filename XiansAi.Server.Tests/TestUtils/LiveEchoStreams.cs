@@ -10,12 +10,12 @@ using Microsoft.AspNetCore.TestHost;
 namespace Tests.TestUtils;
 
 /// <summary>
-/// Live Admin SSE and UserApi SignalR subscriptions used by the Echo Lib cycle.
-/// Both are fed by <c>MongoChangeStreamService</c> when an outgoing chat message is inserted.
+/// Live Admin/UserApi SSE and SignalR subscriptions used by the Echo Lib cycle.
+/// All are fed by <c>MongoChangeStreamService</c> when an outgoing chat message is inserted.
 /// </summary>
 public static class LiveEchoStreams
 {
-    public static async Task<AdminSseSession> ListenAdminAsync(
+    public static Task<SseSession> ListenAdminAsync(
         HttpClient client,
         string tenantId,
         string agentName,
@@ -28,28 +28,33 @@ public static class LiveEchoStreams
             $"&activationName={Uri.EscapeDataString(activationName)}" +
             $"&participantId={Uri.EscapeDataString(participantId)}" +
             "&heartbeatSeconds=300";
-        var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/api/v1/admin/tenants/{tenantId}/messaging/listen?{query}");
-
-        var response = await client.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
+        return ListenSseAsync(
+            client,
+            $"/api/v1/admin/tenants/{tenantId}/messaging/listen?{query}",
+            "Admin SSE",
             cancellationToken);
-
-        if (response.StatusCode != HttpStatusCode.OK)
-        {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException(
-                $"Admin SSE listen returned {(int)response.StatusCode}: {body}");
-        }
-
-        var session = new AdminSseSession(client, response);
-        await session.WaitForConnectedAsync(cancellationToken);
-        return session;
     }
 
-    public static async Task<ChatHubSession> ConnectTenantChatHubAsync(
+    public static Task<SseSession> ListenUserApiAsync(
+        HttpClient client,
+        string tenantId,
+        string workflowId,
+        string participantId,
+        CancellationToken cancellationToken)
+    {
+        var query =
+            $"workflow={Uri.EscapeDataString(workflowId)}" +
+            $"&participantId={Uri.EscapeDataString(participantId)}" +
+            $"&tenantId={Uri.EscapeDataString(tenantId)}" +
+            "&heartbeatSeconds=300";
+        return ListenSseAsync(
+            client,
+            $"/api/user/sse/events?{query}",
+            "UserApi SSE",
+            cancellationToken);
+    }
+
+    public static Task<ChatHubSession> ConnectTenantChatHubAsync(
         TestServer server,
         string apiKey,
         string tenantId,
@@ -59,6 +64,83 @@ public static class LiveEchoStreams
         var hubUrl =
             $"http://localhost/ws/tenant/chat?tenantId={Uri.EscapeDataString(tenantId)}" +
             $"&apikey={Uri.EscapeDataString(apiKey)}";
+        return ConnectHubAsync(
+            server,
+            hubUrl,
+            "Tenant chat hub",
+            (connection, ct) => connection.InvokeAsync("SubscribeToAgent", workflowId, tenantId, ct),
+            cancellationToken);
+    }
+
+    public static Task<ChatHubSession> ConnectChatHubAsync(
+        TestServer server,
+        string apiKey,
+        string tenantId,
+        string workflowId,
+        string participantId,
+        CancellationToken cancellationToken)
+    {
+        var hubUrl =
+            $"http://localhost/ws/chat?tenantId={Uri.EscapeDataString(tenantId)}" +
+            $"&apikey={Uri.EscapeDataString(apiKey)}";
+        return ConnectHubAsync(
+            server,
+            hubUrl,
+            "Chat hub",
+            (connection, ct) => connection.InvokeAsync(
+                "SubscribeToAgent",
+                workflowId,
+                participantId,
+                tenantId,
+                ct),
+            cancellationToken);
+    }
+
+    public static HttpClient CreateStreamingClient(XiansAiWebApplicationFactory factory, string apiKey, string tenantId)
+    {
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = false
+        });
+        client.Timeout = Timeout.InfiniteTimeSpan;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        return client;
+    }
+
+    private static async Task<SseSession> ListenSseAsync(
+        HttpClient client,
+        string url,
+        string channel,
+        CancellationToken cancellationToken)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        var response = await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"{channel} listen returned {(int)response.StatusCode}: {body}");
+        }
+
+        var session = new SseSession(client, response, channel);
+        await session.WaitForConnectedAsync(cancellationToken);
+        return session;
+    }
+
+    private static async Task<ChatHubSession> ConnectHubAsync(
+        TestServer server,
+        string hubUrl,
+        string channel,
+        Func<HubConnection, CancellationToken, Task> subscribe,
+        CancellationToken cancellationToken)
+    {
         var innerHandler = server.CreateHandler();
         var closeReason = new StringBuilder();
         var connection = new HubConnectionBuilder()
@@ -83,39 +165,27 @@ public static class LiveEchoStreams
         if (connection.State != HubConnectionState.Connected)
         {
             throw new InvalidOperationException(
-                $"Tenant chat hub did not stay connected ({connection.State}). {closeReason}");
+                $"{channel} did not stay connected ({connection.State}). {closeReason}");
         }
 
-        await connection.InvokeAsync("SubscribeToAgent", workflowId, tenantId, cancellationToken);
+        await subscribe(connection, cancellationToken);
         return session;
-    }
-
-    public static HttpClient CreateStreamingClient(XiansAiWebApplicationFactory factory, string apiKey, string tenantId)
-    {
-        var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            AllowAutoRedirect = false,
-            HandleCookies = false
-        });
-        client.Timeout = Timeout.InfiniteTimeSpan;
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-        return client;
     }
 }
 
-public sealed class AdminSseSession : IAsyncDisposable
+public sealed class SseSession : IAsyncDisposable
 {
     private readonly HttpClient _client;
     private readonly HttpResponseMessage _response;
     private readonly StreamReader _reader;
     private readonly StringBuilder _buffer = new();
+    private readonly string _channel;
 
-    internal AdminSseSession(HttpClient client, HttpResponseMessage response)
+    internal SseSession(HttpClient client, HttpResponseMessage response, string channel)
     {
         _client = client;
         _response = response;
+        _channel = channel;
         _reader = new StreamReader(response.Content.ReadAsStream());
     }
 
@@ -139,7 +209,7 @@ public sealed class AdminSseSession : IAsyncDisposable
             if (line == null)
             {
                 throw new InvalidOperationException(
-                    $"Admin SSE stream ended before seeing '{text}'. Buffer: {_buffer}");
+                    $"{_channel} stream ended before seeing '{text}'. Buffer: {_buffer}");
             }
 
             _buffer.AppendLine(line);

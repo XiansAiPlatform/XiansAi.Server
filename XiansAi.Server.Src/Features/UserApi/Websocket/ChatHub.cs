@@ -55,10 +55,15 @@ namespace Features.UserApi.Websocket
 
         private readonly ILogger<ChatHub> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly ITenantContext _fallbackTenantContext;
 
-        public ChatHub(IHttpContextAccessor httpContextAccessor, ILogger<ChatHub> logger)
+        public ChatHub(
+            IHttpContextAccessor httpContextAccessor,
+            ITenantContext tenantContext,
+            ILogger<ChatHub> logger)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+            _fallbackTenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -68,25 +73,20 @@ namespace Features.UserApi.Websocket
 
         private ITenantContext GetScopedTenantContext()
         {
-            try
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext?.RequestServices != null)
             {
-                var httpContext = _httpContextAccessor.HttpContext;
-                if (httpContext?.RequestServices != null)
+                var scopedTenantContext = httpContext.RequestServices.GetService<ITenantContext>();
+                if (scopedTenantContext != null)
                 {
-                    var scopedTenantContext = httpContext.RequestServices.GetService<ITenantContext>();
-                    if (scopedTenantContext != null)
-                    {
-                        return scopedTenantContext;
-                    }
+                    return scopedTenantContext;
                 }
-                
-                throw new InvalidOperationException("TenantContext not properly initialized");
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error getting scoped tenant context, using fallback for connection {ConnectionId}", Context.ConnectionId);
-                throw new InvalidOperationException("TenantContext not properly initialized");
-            }
+
+            // Long-polling TestServer (and some reverse proxies) can leave HttpContext unset
+            // after the handshake. Authorization already restored tenant context on the
+            // process-wide ITenantContext; use that rather than aborting the connection.
+            return _fallbackTenantContext;
         }
 
         private IMessageService GetScopedMessageService()

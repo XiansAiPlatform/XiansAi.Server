@@ -15,8 +15,8 @@ namespace Tests.IntegrationTests.AdminApi;
 /// <summary>
 /// Full Admin API cycle for a system Echo agent created with Xians.Lib
 /// (the same shape as Xians.Examples/EchoAgent): upload template, deploy to a
-/// tenant, activate, send a chat message, assert history plus live Admin SSE
-/// and tenant SignalR ReceiveChat, then deactivate and remove.
+/// tenant, activate, send a chat message, assert history plus live Admin SSE,
+/// UserApi SSE, tenant SignalR, and ChatHub ReceiveChat, then deactivate and remove.
 /// </summary>
 [Collection(AdminApiTemporalCollection.Name)]
 public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrationTestBase
@@ -79,12 +79,17 @@ public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrati
 
             var expectedEcho = $"Echo: {userText}";
             var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
-            using var liveCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
-            var sseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
-            await using var sse = await LiveEchoStreams.ListenAdminAsync(
-                sseClient, tenantId, agentName, activationName, participantId, liveCts.Token);
-            await using var hub = await LiveEchoStreams.ConnectTenantChatHubAsync(
+            using var liveCts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+            var adminSseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
+            var userSseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
+            await using var adminSse = await LiveEchoStreams.ListenAdminAsync(
+                adminSseClient, tenantId, agentName, activationName, participantId, liveCts.Token);
+            await using var userSse = await LiveEchoStreams.ListenUserApiAsync(
+                userSseClient, tenantId, workflowId, participantId, liveCts.Token);
+            await using var tenantHub = await LiveEchoStreams.ConnectTenantChatHubAsync(
                 _factory.Server, _adminApiKey!, tenantId, workflowId, liveCts.Token);
+            await using var chatHub = await LiveEchoStreams.ConnectChatHubAsync(
+                _factory.Server, _adminApiKey!, tenantId, workflowId, participantId, liveCts.Token);
             BindTenantContext(tenantId, _adminUserId!);
 
             var send = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/messaging/send", new
@@ -103,23 +108,26 @@ public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrati
                 echoed,
                 $"Echo reply did not appear in messaging history. Worker error: {workerError}. History: {historyBody}");
 
-            try
-            {
-                await sse.WaitForTextAsync(expectedEcho, liveCts.Token);
-            }
-            catch (Exception ex)
-            {
-                Assert.Fail($"Echo reply did not appear on Admin SSE. {ex.Message} Buffer: {sse.Buffer}");
-            }
-
-            try
-            {
-                await hub.WaitForTextAsync(expectedEcho, liveCts.Token);
-            }
-            catch (Exception ex)
-            {
-                Assert.Fail($"Echo reply did not appear on SignalR ReceiveChat. {ex.Message} Payload: {hub.Received}");
-            }
+            await AssertLiveTextAsync(
+                "Admin SSE",
+                ct => adminSse.WaitForTextAsync(expectedEcho, ct),
+                () => adminSse.Buffer,
+                liveCts.Token);
+            await AssertLiveTextAsync(
+                "UserApi SSE",
+                ct => userSse.WaitForTextAsync(expectedEcho, ct),
+                () => userSse.Buffer,
+                liveCts.Token);
+            await AssertLiveTextAsync(
+                "tenant SignalR /ws/tenant/chat",
+                ct => tenantHub.WaitForTextAsync(expectedEcho, ct),
+                () => tenantHub.Received,
+                liveCts.Token);
+            await AssertLiveTextAsync(
+                "ChatHub /ws/chat",
+                ct => chatHub.WaitForTextAsync(expectedEcho, ct),
+                () => chatHub.Received,
+                liveCts.Token);
 
             var deactivate = await PostAsJsonAsync(
                 $"/api/v1/admin/tenants/{tenantId}/agentActivations/{activationId}/deactivate",
@@ -229,6 +237,22 @@ public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrati
         }
 
         Assert.Fail("Xians.Lib did not upload the system Echo template in time.");
+    }
+
+    private static async Task AssertLiveTextAsync(
+        string channel,
+        Func<CancellationToken, Task> wait,
+        Func<string> dump,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await wait(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail($"Echo reply did not appear on {channel}. {ex.Message} Payload: {dump()}");
+        }
     }
 
     private static async Task WaitForWorkerAsync(Task workerTask)
