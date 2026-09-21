@@ -85,6 +85,10 @@ System Echo agent authored with Xians.Lib (supervisor + `ReplyAsync($"Echo: …"
 
 System Knowledge agent authored with Xians.Lib (supervisor replies with `GetAsync("playbook")`). Admin tenant override, second tenant still sees system original; activation override, second agent and second activation still see the less-specific copy. Same host as Echo: [Lib agent workflows](./lib-agent-workflows.md).
 
+### `AdminApiTemporalKnowledgeListAgentLifecycleTests`
+
+System Knowledge list agent authored with Xians.Lib. Admin POSTs tenant knowledge; chat `"list"` is `ListAsync`. Another agent does not see the owner's names. GetAsync fallback stays on the Knowledge cycle. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
 ### `AdminApiTemporalSecretVaultAgentLifecycleTests`
 
 System Secret Vault agent authored with Xians.Lib. Chat commands create / fetch / update / delete via `XiansContext.CurrentAgent.Secrets` with no-arg scopes from live context. Fetch is a **strict** match (tenant / agent / participant / activation) — unlike Knowledge, there is no fallback. Admin list/fetch return metadata only. Same host: [Lib agent workflows](./lib-agent-workflows.md).
@@ -104,6 +108,10 @@ System Document DB agent authored with Xians.Lib. Chat `"run"` calls `QueryAsync
 ### `AdminApiTemporalWebhookAgentLifecycleTests`
 
 System webhook agent authored with Xians.Lib (`DefineIntegrator` + `OnWebhook`, supervisor `agent.Webhooks.CreateAsync`). Admin `/tenants/{tenant}/webhooks` lists, creates, and deletes. Inbound `POST /api/user/webhooks/builtin` authenticates with `apikeyId` (UserApi policy is not stubbed) and waits for `context.Respond`. Other tenants and agents do not share the owner's URL; delete revokes the key (401); deactivate returns 409. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalWebhookSdkAgentLifecycleTests`
+
+System webhook agent authored with Xians.Lib. Integrator `WebhookResponse.NotFound` is HTTP 404. Chat SDK `DeleteAsync` revokes the key (401). Create/list/200 respond stay on the Webhooks cycle. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### `AdminApiTemporalFileMessagingAgentLifecycleTests`
 
@@ -125,6 +133,10 @@ System scheduling agent authored with Xians.Lib. Activable Setup creates an inte
 
 System scheduling agent authored with Xians.Lib. Chat `ExecuteAsync` a Manage workflow that calls `ScheduleCollection` CreateIfNotExists/Exists/List/Get/Pause/Unpause/Trigger/Delete from an activity and from workflow code (system `ScheduleActivities` stub). Admin history confirms Trigger; GET by-id is 404 after Delete. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
+### `AdminApiTemporalScheduleCreateAgentLifecycleTests`
+
+System scheduling agent authored with Xians.Lib. Chat (activity) strict `CreateAsync` throws on a second create; `DescribeAsync` confirms the paused schedule. CreateIfNotExists / GetSnapshot stay on Schedule SDK. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
 ### `AdminApiTemporalHitlTaskAgentLifecycleTests`
 
 System HITL agent authored with Xians.Lib (`EnableTasks` + Review `StartTaskAsync` / `GetResultAsync`). Admin list/get/draft/metadata/action that waiting task; a second Review times out with no action. Another tenant cannot GET the owner's task id. Same host: [Lib agent workflows](./lib-agent-workflows.md). Stub HITL HTTP without Lib is still `AdminApiTemporalScheduleAndTaskTests`.
@@ -136,6 +148,10 @@ System HITL agent authored with Xians.Lib. Chat `ExecuteAsync` a Review workflow
 ### `AdminApiTemporalHitlTaskConversationAgentLifecycleTests`
 
 System HITL agent authored with Xians.Lib. Chat starts Wait (`CreateAndWaitAsync`) and Forget (fire-and-forget `CreateAsync` with `SurviveParentClose`); `HitlTask.FromWorkflowIdAsync` / `ApproveAsync` completes both. StartTask/GetResult and TaskCollection stay on the other HITL cycles. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalHitlLastTaskIdAgentLifecycleTests`
+
+System HITL agent authored with Xians.Lib. Chat stamps a HITL workflow id on a supervisor message; `GetLastTaskIdAsync` returns it for that participant and not for another. CreateAndWait / HitlTask stay on the HITL conversation cycle. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### `AdminApiTemporalCrossAgentWorkflowLifecycleTests`
 

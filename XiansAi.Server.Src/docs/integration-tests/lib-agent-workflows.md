@@ -8,20 +8,24 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | --- | --- | --- |
 | Echo | [`AdminApiTemporalEchoAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalEchoAgentLifecycleTests.cs) | Template → deploy → chat, plus live SSE/SignalR |
 | Knowledge | [`AdminApiTemporalKnowledgeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeAgentLifecycleTests.cs) | System knowledge upload, tenant override, activation override, isolation |
+| Knowledge list | [`AdminApiTemporalKnowledgeListAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeListAgentLifecycleTests.cs) | `ListAsync` returns tenant knowledge for this agent only |
 | Secret Vault | [`AdminApiTemporalSecretVaultAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultAgentLifecycleTests.cs) | Create/fetch/update/delete through a running agent; strict tenant / agent / participant / activation isolation; Admin never sees values |
 | Secret Vault SDK | [`AdminApiTemporalSecretVaultSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultSdkAgentLifecycleTests.cs) | TenantScope Create/Fetch/GetById/Update/List/Delete from a Temporal **activity**; List/Delete from **workflow** code (system `SecretVaultActivities` stub); Create/Fetch/GetById/Update refused in a workflow so plaintext never enters history |
 | Document DB | [`AdminApiTemporalDocumentDbAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbAgentLifecycleTests.cs) | Agent `SaveAsync` / `GetByKeyAsync`; Admin list/get/update/create; isolation by tenant, agent, activation, and participant |
 | Document DB SDK | [`AdminApiTemporalDocumentDbSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbSdkAgentLifecycleTests.cs) | `QueryAsync`, `GetAsync(id)`, `UpdateAsync`, `ExistsAsync`, `DeleteAsync` / `DeleteManyAsync`; Query auto-scope hides another participant |
 | Webhooks | [`AdminApiTemporalWebhookAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWebhookAgentLifecycleTests.cs) | Integrator `OnWebhook` + `context.Respond`; agent SDK create/list; Admin create/list/delete; inbound `POST /api/user/webhooks/builtin` with `apikeyId`; tenant/agent isolation; 401 after revoke; 409 after deactivate |
+| Webhook SDK | [`AdminApiTemporalWebhookSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWebhookSdkAgentLifecycleTests.cs) | SDK `DeleteAsync` revokes the key; Integrator `WebhookResponse.NotFound` is HTTP 404 |
 | Files | [`AdminApiTemporalFileMessagingAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalFileMessagingAgentLifecycleTests.cs) | User `POST .../send/file` → `OnFileUpload` hydrates GridFS bytes; agent `ReplyWithFileAsync` / `SendFileAsync`; history is `fileId` refs only; Admin download tenant isolation |
 | Workflow files | [`AdminApiTemporalWorkflowFileMessagingAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWorkflowFileMessagingAgentLifecycleTests.cs) | Custom workflow `XiansContext.Messaging.SendFileAsSupervisorAsync`; GridFS + history `fileId` refs |
 | Custom workflows | [`AdminApiTemporalCustomWorkflowAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalCustomWorkflowAgentLifecycleTests.cs) | `DefineCustom` + `XiansContext.Workflows` `ExecuteAsync` / `StartAsync` / `SignalAsync`; `Activable=true` Onboarding starts on Admin activate; Admin list/get/types/cancel; uniqueKey IDs; UseExisting on a running Approval; tenant GET isolation |
 | Workflow handle | [`AdminApiTemporalWorkflowHandleAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWorkflowHandleAgentLifecycleTests.cs) | Client-only `SignalWithStartAsync`; typed `GetWorkflowHandleAsync` + `QueryAsync` + `SignalAsync`; second SignalWithStart hits the running execution |
 | Schedules | [`AdminApiTemporalScheduleAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleAgentLifecycleTests.cs) | Activable Setup `CreateIfNotExistsAsync` on Tick; interval fires; Admin list/get/history/pause/resume/delete; tenant list isolation |
 | Schedule SDK | [`AdminApiTemporalScheduleSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleSdkAgentLifecycleTests.cs) | `ScheduleCollection` CreateIfNotExists/Exists/List/Get/Pause/Unpause/Trigger/Delete from a Temporal **activity** and from **workflow** code (system `ScheduleActivities` stub); Admin history confirms Trigger; GET 404 after Delete |
+| Schedule create | [`AdminApiTemporalScheduleCreateAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleCreateAgentLifecycleTests.cs) | Strict `CreateAsync` throws if it exists; activity-only `DescribeAsync` (paused); Admin GET 404 after Delete |
 | HITL tasks | [`AdminApiTemporalHitlTaskAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalHitlTaskAgentLifecycleTests.cs) | `EnableTasks` Review `StartTaskAsync` / `GetResultAsync`; Admin list/get/draft/metadata/action; timeout completes without an action; tenant GET isolation |
 | HITL SDK | [`AdminApiTemporalHitlTaskSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalHitlTaskSdkAgentLifecycleTests.cs) | `TaskCollection` UpdateDraft/UpdateMetadata/PerformAction from a Temporal **activity** and from **workflow** code (system `TaskActivities` stub); StartTask/GetResult stay in the parent workflow; result FinalWork/action/metadata |
 | HITL conversation | [`AdminApiTemporalHitlTaskConversationAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalHitlTaskConversationAgentLifecycleTests.cs) | `CreateAndWaitAsync`; fire-and-forget `CreateAsync` (`SurviveParentClose`); `HitlTask.FromWorkflowIdAsync` / `ApproveAsync` |
+| HITL last task | [`AdminApiTemporalHitlLastTaskIdAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalHitlLastTaskIdAgentLifecycleTests.cs) | Stamp HITL workflow id on chat; `GetLastTaskIdAsync` returns it for that participant only |
 | Cross-agent | [`AdminApiTemporalCrossAgentWorkflowLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalCrossAgentWorkflowLifecycleTests.cs) | Invoice `ExecuteAsync` / `StartAsync` / `SignalAsync` on Fraud type strings; no inherited activation postfix; explicit `activationName`; not-found / deactivated; tenant GET isolation |
 | Activations SDK | [`AdminApiTemporalActivationSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalActivationSdkAgentLifecycleTests.cs) | Manager `Tenant.Agent(target)` Exists/Create/Activate/status/list/Deactivate from a Temporal **activity** and from **workflow** code (system `ActivationActivities` stub); Target Heartbeat starts on SDK activate; self `ActivationExistsAsync`; tenant isolation |
 | Metrics | [`AdminApiTemporalMetricsAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalMetricsAgentLifecycleTests.cs) | `context.Metrics` from chat and `XiansContext.Metrics` from a workflow; Admin stats/categories; `ForModel` filter; tenant/agent isolation; delete by activation |
@@ -32,19 +36,23 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 ```bash
 dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
 dotnet test --filter "FullyQualifiedName~KnowledgeAgent_SystemUpload_TenantAndActivationOverridesIsolate"
+dotnet test --filter "FullyQualifiedName~KnowledgeListAgent_ListAsync_AgentScoped"
 dotnet test --filter "FullyQualifiedName~SecretVaultAgent_CreateFetch_StrictScopeIsolationAndRotation"
 dotnet test --filter "FullyQualifiedName~SecretVaultSdkAgent_CollectionOps"
 dotnet test --filter "FullyQualifiedName~DocumentDbAgent_SavePush_AdminReadModifyAdd_Isolates"
 dotnet test --filter "FullyQualifiedName~DocumentDbSdkAgent_QueryGetUpdateExistsDelete"
 dotnet test --filter "FullyQualifiedName~WebhookAgent_InboundBuiltin_AdminCrudIsolatesAndRevokes"
+dotnet test --filter "FullyQualifiedName~WebhookSdkAgent_DeleteAsync_AndNon200Response"
 dotnet test --filter "FullyQualifiedName~FileMessagingAgent_UserUploadAndAgentSend_RoundTripAndIsolate"
 dotnet test --filter "FullyQualifiedName~CustomWorkflowAgent_DefineCustom_StartExecuteSignalAndAdminOps"
 dotnet test --filter "FullyQualifiedName~WorkflowHandleAgent_SignalWithStart_QueryAndComplete"
 dotnet test --filter "FullyQualifiedName~SchedulerAgent_ActivableSetup_CreatesScheduleAndAdminOps"
 dotnet test --filter "FullyQualifiedName~ScheduleSdkAgent_CollectionOps"
+dotnet test --filter "FullyQualifiedName~ScheduleCreateAgent_StrictCreate_DescribeFromActivity"
 dotnet test --filter "FullyQualifiedName~HitlTaskAgent_StartTaskWait_AdminProgressAndTimeout"
 dotnet test --filter "FullyQualifiedName~HitlTaskSdkAgent_ProgressOps"
 dotnet test --filter "FullyQualifiedName~HitlTaskConversationAgent_CreateAndWait_HitlTaskApprove_AndFireAndForget"
+dotnet test --filter "FullyQualifiedName~HitlLastTaskIdAgent_StampAndGetLastTaskId_IsolatesParticipant"
 dotnet test --filter "FullyQualifiedName~CrossAgentWorkflow_InvoiceCallsFraud_ActivationTargetAndValidation"
 dotnet test --filter "FullyQualifiedName~ActivationSdkAgent_ManagerProvisionsTarget"
 dotnet test --filter "FullyQualifiedName~MetricsAgent_HandlerAndWorkflowReport_AdminReadsAndIsolates"
@@ -86,19 +94,23 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Task-queue selection for system-scoped agents
 - Activate / send / deactivate / delete against a worker that registered itself
 - Knowledge fallback as the running agent actually reads it (`GetAsync` inside the supervisor)
+- Knowledge `ListAsync` as the running agent lists tenant-scoped items (agent-scoped, no system fallback)
 - Secret Vault strict scope as the running agent writes and reads it (`TenantScope()` / `FetchByKeyAsync` inside the supervisor)
 - Secret Vault `GetByIdAsync` from an activity, and `ListAsync` / `DeleteAsync` from workflow code (Create/Fetch/GetById/Update refuse a workflow so the value never enters Temporal history)
 - Document DB Type+Key as the running agent writes and reads it (`SaveAsync` / `GetByKeyAsync` inside the supervisor)
 - Document DB `QueryAsync` / `GetAsync(id)` / `UpdateAsync` / `ExistsAsync` / `DeleteAsync` as the running agent calls them
 - Builtin inbound webhooks as the running Integrator handles them (`OnWebhook` / `context.Respond`, SDK `Webhooks.CreateAsync`)
+- Webhook SDK `DeleteAsync` and Integrator `WebhookResponse.NotFound` (HTTP 404)
 - File messages both ways: user `POST .../send/file` into `OnFileUpload`, agent `ReplyWithFileAsync` / `SendFileAsync` back through GridFS
 - Custom Temporal classes registered with `DefineCustom` and driven through `XiansContext.Workflows`
 - `SignalWithStartAsync` (client-only) and typed `GetWorkflowHandleAsync` / `QueryAsync`
 - Schedules created from an activable workflow (`CreateIfNotExistsAsync`) and managed through Admin HTTP
 - `ScheduleCollection` CreateIfNotExists/Exists/List/Get/Pause/Unpause/Trigger/Delete from a Temporal activity and from workflow code (system `ScheduleActivities` stub)
+- Strict schedule `CreateAsync` (throws if it exists) and activity-only `DescribeAsync`
 - HITL tasks created from a workflow (`StartTaskAsync` / `GetResultAsync`) and progressed through Admin HTTP, including timeout
 - HITL `TaskCollection` UpdateDraft/UpdateMetadata/PerformAction from an activity and from workflow code (system `TaskActivities` stub)
 - HITL `CreateAndWaitAsync`, fire-and-forget `CreateAsync` (`SurviveParentClose`), and `HitlTask.FromWorkflowIdAsync` / `ApproveAsync`
+- HITL `GetLastTaskIdAsync` after a chat message stamped with the task workflow id
 - Cross-agent `XiansContext.Workflows` calls (`ExecuteAsync` / `StartAsync` / `SignalAsync` by `"OtherAgent:WorkflowName"`, including `activationName` targeting)
 - Activation SDK `agent.Tenant.Agent(...)` Exists/Create/Activate/status/list/Deactivate from a Temporal activity and from workflow code (HTTP stubbed to `ActivationActivities`)
 - Metrics `context.Metrics` / `XiansContext.Metrics` `ReportAsync` from a running agent, then Admin stats/categories
@@ -107,7 +119,7 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - File send from workflow code (`XiansContext.Messaging.SendFileAsSupervisorAsync`)
 - Tenant-scoped agents that are not system templates (`IsTemplate = false`, `{tenantId}:{workflowType}` queue)
 
-Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match; List/Delete also from a workflow). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Document DB SDK is Query/Get/Update/Exists/Delete on that store. Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract from **handlers** (bytes in GridFS, `fileId` on the wire). Workflow files is the same File contract from **workflow** code (`SendFileAsSupervisorAsync`). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. Workflow handle is client-only `SignalWithStartAsync` plus typed Query. Schedules is the [self-scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) contract (activable Setup creates a Tick interval; ScheduleCollection also runs from an activity and from a workflow). HITL is the [human-in-the-loop](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/hitl-tasks/) contract (Review waits on a task; Admin draft/action/timeout; TaskCollection also progresses from an activity and from a workflow; CreateAndWait / fire-and-forget Create / HitlTask approve are a third cycle). Cross-agent is the [cross-agent workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/cross-agent-workflows/) contract (Invoice starts Fraud Scan/Review; activations do not cross agent boundaries). Activations SDK is the [agents and activations](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/activations/) contract (Manager provisions Target from an activity and from a workflow; Heartbeat starts on activate). Metrics is the [usage tracking](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/metrics/) contract (`context.Metrics` from a handler, `XiansContext.Metrics` from a workflow; Admin reads the flattened `usage_metrics` collection). Logging is the [agent logging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/logging/) contract (`XiansLogger` from an activity, `Workflow.Logger` from a workflow; Admin reads the `logs` collection after batched upload). Messaging SDK is the remaining [messaging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/messaging-replying/) contract (Data, progress, proactive Supervisor chat, scoped history). Tenant-scoped is the [multitenancy](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/multitenancy/) non-template queue. None of these is a catalogue of every Lib sample.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Knowledge list is tenant `ListAsync` scoped to the agent. Secret Vault is the scoped-secret contract (strict match; List/Delete also from a workflow). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Document DB SDK is Query/Get/Update/Exists/Delete on that store. Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Webhook SDK is `DeleteAsync` and non-200 `WebhookResponse`. Files is the first-class `File` message contract from **handlers** (bytes in GridFS, `fileId` on the wire). Workflow files is the same File contract from **workflow** code (`SendFileAsSupervisorAsync`). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. Workflow handle is client-only `SignalWithStartAsync` plus typed Query. Schedules is the [self-scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) contract (activable Setup creates a Tick interval; ScheduleCollection also runs from an activity and from a workflow; strict Create / Describe is a third cycle). HITL is the [human-in-the-loop](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/hitl-tasks/) contract (Review waits on a task; Admin draft/action/timeout; TaskCollection also progresses from an activity and from a workflow; CreateAndWait / fire-and-forget Create / HitlTask approve are a third cycle; GetLastTaskId is a fourth). Cross-agent is the [cross-agent workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/cross-agent-workflows/) contract (Invoice starts Fraud Scan/Review; activations do not cross agent boundaries). Activations SDK is the [agents and activations](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/activations/) contract (Manager provisions Target from an activity and from a workflow; Heartbeat starts on activate). Metrics is the [usage tracking](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/metrics/) contract (`context.Metrics` from a handler, `XiansContext.Metrics` from a workflow; Admin reads the flattened `usage_metrics` collection). Logging is the [agent logging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/logging/) contract (`XiansLogger` from an activity, `Workflow.Logger` from a workflow; Admin reads the `logs` collection after batched upload). Messaging SDK is the remaining [messaging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/messaging-replying/) contract (Data, progress, proactive Supervisor chat, scoped history). Tenant-scoped is the [multitenancy](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/multitenancy/) non-template queue. None of these is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -290,6 +302,16 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 
 Each chat uses a unique `participantId` so history from an earlier step cannot satisfy a later assertion.
 
+## Agent under test: Knowledge list
+
+Same host. Admin POSTs tenant knowledge (`alpha`/`beta` on the owner, `gamma` on a second agent). Chat `"list"` replies with sorted names from `ListAsync`. List is tenant-scoped (no system fallback) and agent-scoped.
+
+```text
+1. Admin POST tenant knowledge alpha, beta on owner; gamma on other agent
+2. Owner chat "list" → list:alpha,beta
+3. Other agent chat "list" → list:gamma
+```
+
 ## Agent under test: Secret Vault
 
 Same host as Echo and Knowledge. The supervisor parses a short chat command and calls the documented SDK (`TenantScope()` then optional `AgentScope()` / `ParticipantScope()` / `ActivationScope()`). Fetch is **strict** — the read scope must equal the write scope. There is no Knowledge-style fallback. Product behaviour: [Secret Vault](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/secret-vault/).
@@ -388,6 +410,17 @@ Admin / UserApi HTTP used beyond the shared deploy/activate helpers:
 UserApi auth mutates the Moq `ITenantContext` singleton. Re-bind the owner tenant after inbound POSTs before the next Admin call (`TenantRouteScopeFilter` requires route tenant == context tenant).
 
 Default inbound `participantId` is `webhook`. Workflow id is `{tenant}:{agent}:Integrator Workflow:{activation}`. The Integrator worker listens on the unprefixed system queue, same reason as Supervisor.
+
+## Agent under test: Webhook SDK
+
+Same host. Integrator always `Respond(WebhookResponse.NotFound("denied"))`. Chat `"create"` uses SDK Create; inbound POST is HTTP 404. Chat `"delete"` uses SDK `DeleteAsync`; the same URL is then 401.
+
+```text
+1. Chat "create Deny-…" → Admin list has the URL
+2. POST that URL → 404 {"error":"denied"}
+3. Chat "delete" → deleted:1; Admin list empty
+4. POST the same URL → 401
+```
 
 ## Agent under test: Files
 
@@ -488,7 +521,17 @@ Same host as the other Lib cycles. Chat `ExecuteAsync` a Manage workflow that ei
 7. Admin GET by-id 404
 ```
 
-Not covered here: strict `CreateAsync` (throws if it exists), `idPostfix` overloads, `XiansSchedule.UpdateAsync` / `BackfillAsync` / `DescribeAsync` / `GetHandle`.
+Not covered here: `idPostfix` overloads, `XiansSchedule.UpdateAsync` / `BackfillAsync` / `GetHandle`. Strict `CreateAsync` and `DescribeAsync` are the Schedule create cycle.
+
+## Agent under test: Schedule create
+
+Same host. Chat `ExecuteAsync` a Manage workflow that always runs in an **activity** (`DescribeAsync` throws inside a workflow). Strict `CreateAsync` starts paused; a second Create throws `ScheduleAlreadyExistsException`; `DescribeAsync` confirms paused and the id.
+
+```text
+1. Chat "run" → CreateAsync paused, second Create throws, DescribeAsync paused → run:ok:
+2. Admin list {tenant}:{agent}:front-desk:strict
+3. Chat "cleanup" → DeleteAsync; Admin GET by-id 404
+```
 
 ## Agent under test: HITL tasks
 
@@ -538,6 +581,16 @@ Same host, with `enableTasks: true`. Chat `StartAsync` a Wait workflow that `Cre
 2. Chat "approve {taskId}" → HitlTask ApproveAsync → approved:{name}; Wait Completed
 3. Chat "forget {name}" → Execute Forget CreateAsync SurviveParentClose; parent Completed; task still pending
 4. Chat "approve {taskId}" → task completed
+```
+
+## Agent under test: HITL last task
+
+Same host, with `enableTasks: true`. Chat `"ask {name}"` `ExecuteAsync`es Ask (`CreateAsync` SurviveParentClose) then `SendChatAsSupervisorAsync` with `taskId` equal to `{tenant}:{agent}:Task Workflow:{activation}--{name}`. Chat `"last"` is `GetLastTaskIdAsync`. Another participant does not see that id.
+
+```text
+1. Owner chat "ask {name}" → stamped:{name}
+2. Owner chat "last" → last:{tenant}:{agent}:Task Workflow:front-desk--{name}
+3. Other participant "last" → last:none
 ```
 
 ## Agent under test: Cross-agent workflows
@@ -673,14 +726,7 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 
 ## What these cycles do not cover
 
-Documented Agent SDK methods that are still **not** worth a Temporal Lib cycle, or that are P1 follow-ups (related cycle already exists):
-
-P1 (add only if a distinct contract starts to fail in production):
-
-- Knowledge `ListAsync`
-- Webhook SDK `DeleteAsync` and `WebhookResponse` non-200 factories
-- Schedule strict `CreateAsync` / `DescribeAsync`
-- HITL `GetLastTaskIdAsync`
+Documented Agent SDK methods that are still **not** worth a Temporal Lib cycle:
 
 Skip for Lib server tests:
 
@@ -691,7 +737,7 @@ Skip for Lib server tests:
 - A2A (not on the public concepts overview)
 - Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep new coverage as separate tests on `LibAgentWorkflowHost`. Do not grow Echo, Knowledge, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Webhooks, Files, Workflow files, Custom workflows, Workflow handle, Schedules, Schedule SDK, HITL, HITL SDK, HITL conversation, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, or Tenant-scoped into a second sample.
+Keep new coverage as separate tests on `LibAgentWorkflowHost`. Do not grow Echo, Knowledge, Knowledge list, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Webhooks, Webhook SDK, Files, Workflow files, Custom workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, or Tenant-scoped into a second sample.
 
 ## Adding another Lib agent workflow
 
