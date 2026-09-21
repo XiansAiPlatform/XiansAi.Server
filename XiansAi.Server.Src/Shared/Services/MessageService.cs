@@ -832,7 +832,7 @@ public class MessageService : IMessageService
             }
             else
             {
-                cutoff = timestamp!.Value;
+                cutoff = timestamp.Value;
             }
 
             var markedCount = await _conversationRepository.MarkThreadMessagesAsReadAsync(tenantId, threadId, cutoff);
