@@ -85,7 +85,7 @@ public class MongoIndexSynchronizer(
         var collections = await collectionsCursor.ToListAsync();
 
         // Detect if we're using Cosmos DB by checking connection string or error patterns
-        var isCosmosDb = await IsCosmosDbAsync(database);
+        var isCosmosDb = await MongoDeployment.IsApiCompatibleEngineAsync(database);
 
         var expectedIndexes = await GetIndexDefinitionsAsync();
         foreach (var (collectionName, definitions) in expectedIndexes.OrderBy(kvp => kvp.Key))
@@ -264,33 +264,6 @@ public class MongoIndexSynchronizer(
                             "cannot be corrected automatically on Cosmos DB. Recreate the collection with the " +
                             "intended indexes to clear this. Existing definition: {ExistingIndex}",
                 definition.Name, collectionName, existingIndex.ToJson());
-        }
-    }
-
-    /// <summary>
-    /// Detects if we're connected to Cosmos DB by checking for specific characteristics
-    /// </summary>
-    private static async Task<bool> IsCosmosDbAsync(IMongoDatabase database)
-    {
-        try
-        {
-            // Cosmos DB has specific admin database characteristics
-            var adminDb = database.Client.GetDatabase("admin");
-            var result = await adminDb.RunCommandAsync<BsonDocument>(
-                new BsonDocument("buildInfo", 1));
-            
-            // Check if response contains Cosmos DB indicators
-            return result.Contains("version") && 
-                   (result["version"]?.ToString()?.Contains("cosmos") ?? false || 
-                    result.ToString().Contains("DocumentDB"));
-        }
-        catch
-        {
-            // If we can't determine, check connection string as fallback
-            var connectionString = database.Client.Settings.ToString();
-            return connectionString?.Contains("cosmos") == true || 
-                   connectionString?.Contains("documents.azure.com") == true ||
-                   connectionString?.Contains("mongo.cosmos.azure.com") == true;
         }
     }
 

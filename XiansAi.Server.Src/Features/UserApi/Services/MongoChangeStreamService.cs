@@ -27,6 +27,7 @@ namespace Features.UserApi.Services
         private readonly ILogger<MongoChangeStreamService> _logger;
         private readonly IMessageEventPublisher _messageEventPublisher;
         private readonly ISecureEncryptionService _encryptionService;
+        private readonly IMongoDBConfig _mongoConfig;
         private readonly string _uniqueSecret;
 
         public MongoChangeStreamService(
@@ -34,6 +35,7 @@ namespace Features.UserApi.Services
             ILogger<MongoChangeStreamService> logger,
             IMessageEventPublisher messageEventPublisher,
             ISecureEncryptionService encryptionService,
+            IMongoDBConfig mongoConfig,
             IConfiguration configuration
             )
         {
@@ -41,6 +43,7 @@ namespace Features.UserApi.Services
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _messageEventPublisher = messageEventPublisher ?? throw new ArgumentNullException(nameof(messageEventPublisher));
             _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
+            _mongoConfig = mongoConfig ?? throw new ArgumentNullException(nameof(mongoConfig));
         
             // Get the unique secret for conversation messages
             _uniqueSecret = configuration["EncryptionKeys:UniqueSecrets:ConversationMessageKey"] ?? string.Empty;
@@ -80,7 +83,10 @@ namespace Features.UserApi.Services
                     // retry instead of escaping.
                     if (!_changeStreamSupportEnsured)
                     {
-                        if (!await SupportsChangeStreamsAsync(database, stoppingToken))
+                        var changeStreamsAvailable = await MongoDeployment.SupportsChangeStreamsAsync(
+                            database, _mongoConfig.Provider, _logger, stoppingToken);
+
+                        if (!changeStreamsAvailable)
                         {
                             _logger.LogWarning(
                                 "MongoDB deployment does not support change streams (standalone instance detected). " +
@@ -304,26 +310,21 @@ namespace Features.UserApi.Services
             }
         }
 
-        private static async Task<bool> SupportsChangeStreamsAsync(
-            IMongoDatabase database,
-            CancellationToken cancellationToken)
+        /// <summary>
+        /// Whether the server rejected the watch because it cannot serve change streams at all,
+        /// rather than because of a transient fault. mongod says so plainly; API-compatible engines
+        /// that do not implement change streams reject `$changeStream` as an unknown stage instead.
+        /// </summary>
+        private static bool IsChangeStreamUnsupported(MongoCommandException ex)
         {
-            var hello = await database.RunCommandAsync<BsonDocument>(
-                new BsonDocument("hello", 1),
-                cancellationToken: cancellationToken);
-
-            if (hello.TryGetValue("setName", out var setName)
-                && setName.IsString
-                && !string.IsNullOrWhiteSpace(setName.AsString))
+            if (ex.Message.Contains("only supported on replica sets", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            return hello.TryGetValue("msg", out var msg) && msg.IsString && msg.AsString == "isdbgrid";
+            return ex.Message.Contains("$changeStream", StringComparison.OrdinalIgnoreCase)
+                && ex.Message.Contains("Unrecognized pipeline stage", StringComparison.OrdinalIgnoreCase);
         }
-
-        private static bool IsChangeStreamUnsupported(MongoCommandException ex) =>
-            ex.Message.Contains("only supported on replica sets", StringComparison.OrdinalIgnoreCase);
 
         private void ConvertBsonMetadataToObjectInternal(ConversationMessage message)
         {
