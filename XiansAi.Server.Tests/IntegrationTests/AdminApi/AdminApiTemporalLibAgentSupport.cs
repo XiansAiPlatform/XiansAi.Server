@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Shared.Auth;
 using Shared.Data.Models;
+using Shared.Repositories;
 using Xunit;
 
 namespace Tests.IntegrationTests.AdminApi;
@@ -22,21 +23,51 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
         tenantContext.AuthorizedTenantIds = [tenantId];
     }
 
+    /// <summary>
+    /// Waits until Lib has uploaded the system template <b>and</b> its flow definitions.
+    /// The agent record can appear before definitions; activate/send 400 if we continue too early.
+    /// </summary>
     protected async Task WaitForTemplateAsync(string agentName)
     {
         var encodedAgent = Uri.EscapeDataString(agentName);
-        for (var attempt = 0; attempt < 20; attempt++)
+        var lastDefinitionCount = -1;
+        var stableRounds = 0;
+        const int requiredStableRounds = 3;
+        const int maxAttempts = 80;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            var response = await GetAsync($"/api/v1/admin/agentTemplates/by-name/{encodedAgent}");
-            if (response.StatusCode == HttpStatusCode.OK)
+            var template = await GetAsync($"/api/v1/admin/agentTemplates/by-name/{encodedAgent}");
+            var definitions = await GetSystemFlowDefinitionsAsync(agentName);
+            if (template.StatusCode == HttpStatusCode.OK && definitions.Count > 0)
             {
-                return;
+                if (definitions.Count == lastDefinitionCount)
+                {
+                    stableRounds++;
+                    if (stableRounds >= requiredStableRounds)
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    lastDefinitionCount = definitions.Count;
+                    stableRounds = 0;
+                }
             }
 
             await Task.Delay(250);
         }
 
-        Assert.Fail($"Xians.Lib did not upload the system template '{agentName}' in time.");
+        Assert.Fail(
+            $"Xians.Lib did not upload template '{agentName}' with flow definitions in time.");
+    }
+
+    private async Task<List<FlowDefinition>> GetSystemFlowDefinitionsAsync(string agentName)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var flows = scope.ServiceProvider.GetRequiredService<IFlowDefinitionRepository>();
+        return await flows.GetByNameAsync(agentName, tenant: null);
     }
 
     protected async Task DeployLibTemplateAsync(string tenantId, string agentName)
@@ -45,7 +76,7 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
         var deploy = await PostAsJsonAsync(
             $"/api/v1/admin/agentTemplates/by-name/{encodedAgent}/deploy?tenantId={Uri.EscapeDataString(tenantId)}",
             new { });
-        Assert.Equal(HttpStatusCode.OK, deploy.StatusCode);
+        await AssertStatusAsync(deploy, HttpStatusCode.OK);
     }
 
     protected async Task<string> ActivateLibAgentAsync(string tenantId, string agentName, string activationName)
@@ -65,7 +96,7 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
             agentName,
             participantId = _adminUserId
         });
-        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        await AssertStatusAsync(create, HttpStatusCode.OK);
         using var createdJson = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
         var activationId = createdJson.RootElement.GetProperty("id").GetString();
         Assert.False(string.IsNullOrWhiteSpace(activationId));
@@ -73,7 +104,7 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
         var activate = await PostAsJsonAsync(
             $"/api/v1/admin/tenants/{tenantId}/agentActivations/{activationId}/activate",
             new { });
-        Assert.Equal(HttpStatusCode.OK, activate.StatusCode);
+        await AssertStatusAsync(activate, HttpStatusCode.OK);
         using var activateJson = JsonDocument.Parse(await activate.Content.ReadAsStringAsync());
         var workflowIds = new List<string>();
         if (activateJson.RootElement.TryGetProperty("workflowIds", out var ids) &&
@@ -193,7 +224,7 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
             participantId,
             text = userText
         });
-        Assert.Equal(HttpStatusCode.OK, send.StatusCode);
+        await AssertStatusAsync(send, HttpStatusCode.OK);
 
         var (found, historyBody) = await WaitForHistoryContainsAsync(
             tenantId, agentName, activationName, participantId, expectedText);
@@ -248,6 +279,17 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
         var response = await PatchAsJsonAsync(
             $"/api/v1/admin/tenants/{tenantId}/knowledge/{knowledgeId}",
             new { content, type = "text" });
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    private static async Task AssertStatusAsync(HttpResponseMessage response, HttpStatusCode expected)
+    {
+        if (response.StatusCode == expected)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Fail($"Expected {expected} but got {response.StatusCode}. Body: {body}");
     }
 }

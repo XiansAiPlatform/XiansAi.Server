@@ -559,7 +559,7 @@ Reuse [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentW
 2. `await using var host = await LibAgentWorkflowHost.StartAsync(...)`; `BindTenantContext`.
 3. `host.RegisterTemplate` with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
 4. Define only the workflows (and knowledge / secrets / documents / webhooks / files / custom types / schedules / tasks / extra agents / metrics / logs) the assertion needs.
-5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy.
+5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy. The wait is for the template **and** a stable set of system-scoped flow definitions — the agent record alone is not enough to activate.
 6. Drive the public Admin API; poll history or list endpoints instead of a single Temporal visibility read.
 7. Dispose of the host (cancels workers and resets Lib statics).
 

@@ -124,7 +124,7 @@ public sealed class LibAgentWorkflowHost : IAsyncDisposable
 
     private static async Task WaitUntilRunningAsync(Task workerTask)
     {
-        var started = await Task.WhenAny(workerTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        var started = await Task.WhenAny(workerTask, Task.Delay(TimeSpan.FromSeconds(15)));
         if (started == workerTask)
         {
             await workerTask;
