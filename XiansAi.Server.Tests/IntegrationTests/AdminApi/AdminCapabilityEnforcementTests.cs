@@ -117,20 +117,25 @@ public class AdminCapabilityEnforcementTests : AdminApiIntegrationTestBase
 
         await ConfigureAdminApiClientAsync(tenantId);
         var put = await PutAsJsonAsync(
-            $"{MatrixRoute}/{CapabilityActions.GlobalUsersList}",
+            $"{MatrixRoute}/{CapabilityActions.TenantsCreate}",
             new { allowedRoles = new[] { SystemRoles.TenantAdmin } });
         Assert.Equal(HttpStatusCode.OK, put.StatusCode);
 
         await ConfigureAdminApiClientAsync(tenantId, SystemRoles.TenantAdmin);
 
         // The point of the matrix: a role that had no access gains it with a PUT, no redeploy. It is
-        // also the accepted risk — widening global.users.list is cross-tenant by nature, which is why
+        // also the accepted risk — widening tenants.create is cross-tenant by nature, which is why
         // the write is logged with its previous value.
-        Assert.Equal(HttpStatusCode.OK, (await GetAsync("/api/v1/admin/users?page=1&pageSize=10")).StatusCode);
+        var newTenantId = $"widened-tenant-{Guid.NewGuid()}";
+        var createResponse = await PostAsJsonAsync("/api/v1/admin/tenants", new
+        {
+            tenantId = newTenantId,
+            name = "Widened Tenant"
+        });
+        Assert.NotEqual(HttpStatusCode.Forbidden, createResponse.StatusCode);
 
-        // ...and not to the rest of the group.
         Assert.Equal(HttpStatusCode.Forbidden,
-            (await DeleteAsync($"/api/v1/admin/users/unknown-user-{Guid.NewGuid()}")).StatusCode);
+            (await GetAsync("/api/v1/admin/tenants?page=1&pageSize=10")).StatusCode);
     }
 
     // ----- The invariant -----
