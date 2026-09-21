@@ -109,6 +109,10 @@ System custom-workflow agent authored with Xians.Lib (`DefineCustom` + `XiansCon
 
 System scheduling agent authored with Xians.Lib. Activable Setup creates an interval schedule that starts Tick. Admin list/get/history/pause/resume/delete that schedule; another tenant's list does not include it. Same host: [Lib agent workflows](./lib-agent-workflows.md). Stub schedule HTTP without Lib is still `AdminApiTemporalScheduleAndTaskTests`.
 
+### `AdminApiTemporalScheduleSdkAgentLifecycleTests`
+
+System scheduling agent authored with Xians.Lib. Chat `ExecuteAsync` a Manage workflow that calls `ScheduleCollection` CreateIfNotExists/Exists/List/Get/Pause/Unpause/Trigger/Delete from an activity and from workflow code (system `ScheduleActivities` stub). Admin history confirms Trigger; GET by-id is 404 after Delete. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
 ### `AdminApiTemporalHitlTaskAgentLifecycleTests`
 
 System HITL agent authored with Xians.Lib (`EnableTasks` + Review `StartTaskAsync` / `GetResultAsync`). Admin list/get/draft/metadata/action that waiting task; a second Review times out with no action. Another tenant cannot GET the owner's task id. Same host: [Lib agent workflows](./lib-agent-workflows.md). Stub HITL HTTP without Lib is still `AdminApiTemporalScheduleAndTaskTests`.

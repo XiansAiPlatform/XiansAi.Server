@@ -123,50 +123,6 @@ public class AdminApiTemporalScheduleAgentLifecycleTests : AdminApiTemporalInteg
         return agent;
     }
 
-    private async Task<bool> WaitForScheduleInListAsync(string schedulesPath, string scheduleId)
-    {
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            var response = await GetAsync(schedulesPath);
-            if (response.StatusCode == HttpStatusCode.OK)
-            {
-                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                foreach (var item in json.RootElement.EnumerateArray())
-                {
-                    if (string.Equals(item.GetProperty("id").GetString(), scheduleId, StringComparison.Ordinal))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            await Task.Delay(250);
-        }
-
-        return false;
-    }
-
-    private async Task<bool> WaitForScheduleHistoryCountAsync(string schedulesPath, string scheduleId, int minimum)
-    {
-        var uri = $"{schedulesPath}/history?scheduleId={Uri.EscapeDataString(scheduleId)}";
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            var response = await GetAsync(uri);
-            if (response.StatusCode == HttpStatusCode.OK)
-            {
-                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                if (json.RootElement.GetArrayLength() >= minimum)
-                {
-                    return true;
-                }
-            }
-
-            await Task.Delay(500);
-        }
-
-        return false;
-    }
-
     private async Task AssertScheduleStatusAsync(string schedulesPath, string scheduleId, string expectedStatus)
     {
         var uri = $"{schedulesPath}/by-id?scheduleId={Uri.EscapeDataString(scheduleId)}";

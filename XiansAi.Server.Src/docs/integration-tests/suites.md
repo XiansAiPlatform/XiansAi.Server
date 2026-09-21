@@ -42,9 +42,9 @@ await CreateTestTenantAsync(tenantId);
 
 ## Admin API (Temporal)
 
-See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`, `AdminApiTemporalDocumentDbAgentLifecycleTests`, `AdminApiTemporalWebhookAgentLifecycleTests`, `AdminApiTemporalFileMessagingAgentLifecycleTests`, `AdminApiTemporalCustomWorkflowAgentLifecycleTests`, `AdminApiTemporalScheduleAgentLifecycleTests`, `AdminApiTemporalHitlTaskAgentLifecycleTests`, `AdminApiTemporalCrossAgentWorkflowLifecycleTests`, `AdminApiTemporalActivationSdkAgentLifecycleTests`, `AdminApiTemporalMetricsAgentLifecycleTests`, `AdminApiTemporalLoggingAgentLifecycleTests`.
+See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`, `AdminApiTemporalDocumentDbAgentLifecycleTests`, `AdminApiTemporalWebhookAgentLifecycleTests`, `AdminApiTemporalFileMessagingAgentLifecycleTests`, `AdminApiTemporalCustomWorkflowAgentLifecycleTests`, `AdminApiTemporalScheduleAgentLifecycleTests`, `AdminApiTemporalScheduleSdkAgentLifecycleTests`, `AdminApiTemporalHitlTaskAgentLifecycleTests`, `AdminApiTemporalCrossAgentWorkflowLifecycleTests`, `AdminApiTemporalActivationSdkAgentLifecycleTests`, `AdminApiTemporalMetricsAgentLifecycleTests`, `AdminApiTemporalLoggingAgentLifecycleTests`.
 
-Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes, Document DB, builtin Webhooks, file messaging, custom workflows, schedules, HITL tasks, cross-agent workflows, activations SDK, metrics, logging) are documented in [Lib agent workflows](./lib-agent-workflows.md).
+Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes, Document DB, builtin Webhooks, file messaging, custom workflows, schedules, schedule SDK, HITL tasks, cross-agent workflows, activations SDK, metrics, logging) are documented in [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Web API
 

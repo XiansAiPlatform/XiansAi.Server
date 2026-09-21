@@ -9,7 +9,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL tasks, Cross-agent, Activations SDK, Metrics, Logging).
+/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, Schedule SDK, HITL tasks, Cross-agent, Activations SDK, Metrics, Logging).
 /// </summary>
 public abstract partial class AdminApiTemporalIntegrationTestBase
 {
@@ -149,6 +149,50 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
         var deleteTemplate = await DeleteAsync(
             $"/api/v1/admin/agentTemplates/by-name/{encodedAgent}?cleanActivations=true");
         Assert.Equal(HttpStatusCode.NoContent, deleteTemplate.StatusCode);
+    }
+
+    protected async Task<bool> WaitForScheduleInListAsync(string schedulesPath, string scheduleId)
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            var response = await GetAsync(schedulesPath);
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                foreach (var item in json.RootElement.EnumerateArray())
+                {
+                    if (string.Equals(item.GetProperty("id").GetString(), scheduleId, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            await Task.Delay(250);
+        }
+
+        return false;
+    }
+
+    protected async Task<bool> WaitForScheduleHistoryCountAsync(string schedulesPath, string scheduleId, int minimum)
+    {
+        var uri = $"{schedulesPath}/history?scheduleId={Uri.EscapeDataString(scheduleId)}";
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            var response = await GetAsync(uri);
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                if (json.RootElement.GetArrayLength() >= minimum)
+                {
+                    return true;
+                }
+            }
+
+            await Task.Delay(500);
+        }
+
+        return false;
     }
 
     protected async Task<(bool Found, string LastBody)> WaitForHistoryContainsAsync(
