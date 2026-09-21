@@ -12,9 +12,13 @@ groups.
 dotnet test
 ```
 
-No environment variables or certificates are required. Each integration test spins up the full
-application in-process with an ephemeral MongoDB instance, so a clean `dotnet test` run is
-self-contained.
+No environment variables or certificates are required for the default suite. Each integration
+test spins up the full application in-process with an ephemeral MongoDB instance.
+
+Admin API tests that talk to Temporal (`AdminApiTemporalEndpointsTests`) also start a local
+Temporal CLI/dev server via `WorkflowEnvironment.StartLocalAsync`. The first run downloads the
+CLI; later runs reuse the cache. To skip the download in CI or air-gapped environments, point
+`XIANS_TEMPORAL_CLI_PATH` (or `TEMPORAL_CLI_PATH`) at a `temporal` executable.
 
 ## What we test
 
@@ -28,9 +32,10 @@ We deliberately avoid:
 - Weak assertions such as `Assert.True(status == OK || status == BadRequest)`. Every test
   asserts a single, deterministic outcome, seeding data where necessary.
 - Duplicated tests that re-exercise the same code path with cosmetic differences.
-- Endpoints that cannot run meaningfully in-process (SignalR hubs, SSE streams, and live
-  Temporal workflow start/cancel). These are covered by manual `.http` files and higher-level
-  environments instead.
+- Endpoints that cannot run meaningfully in-process (SignalR hubs and live SSE streams).
+  Temporal list/get/cancel and related Admin API paths run against a local CLI/dev server in
+  `AdminApiTemporalEndpointsTests`; HITL/heartbeat success still needs a worker and is not
+  covered here.
 
 ## How the integration test host works
 
@@ -45,8 +50,9 @@ Integration tests derive from `IntegrationTestBase` (and its `WebApiIntegrationT
 - **`AuthProvider:Provider` is set to `Oidc`** so the WebApi endpoints are registered. Without it,
   `Program.cs` skips mapping the WebApi routes and those tests would 404.
 - **MongoDB** points at the in-process `MongoDbFixture` (a throwaway database per test run).
-- **External dependencies are mocked**: `ITemporalClientService` (no live Temporal), email,
-  background tasks, and certificate generation.
+- **External dependencies are mocked by default**: `ITemporalGatewayService` (no live Temporal),
+  email, background tasks, and certificate generation. Tests in the `AdminApiTemporal`
+  collection skip the Temporal mock and point `Temporal:FlowServerUrl` at the local CLI server.
 - **Authentication is stubbed** via `TestAuthHandler`, which authenticates every request and
   grants `SysAdmin`, `TenantAdmin`, and `TenantUser` roles. Endpoints guarded by API-key policies
   that are *not* overridden (for example the UserApi `EndpointAuthPolicy`) still require a real
@@ -73,6 +79,9 @@ dotnet test --filter "FullyQualifiedName~CacheEndpointTests.SetAndGetCacheValue_
 
 # All tests in a class
 dotnet test --filter "FullyQualifiedName~KnowledgeEndpointsTests"
+
+# Admin API tests that use the local Temporal CLI/dev server
+dotnet test --filter "FullyQualifiedName~AdminApiTemporalEndpointsTests"
 
 # Generate an HTML report
 dotnet test --logger "html;LogFileName=test-results.html"

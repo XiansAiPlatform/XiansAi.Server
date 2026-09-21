@@ -26,7 +26,8 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
     protected string? _adminUserId;
     protected string? _adminTenantId;
 
-    protected AdminApiIntegrationTestBase(MongoDbFixture mongoDbFixture) : base(mongoDbFixture)
+    protected AdminApiIntegrationTestBase(MongoDbFixture mongoDbFixture, TemporalFixture? temporalFixture = null)
+        : base(mongoDbFixture, temporalFixture)
     {
     }
 

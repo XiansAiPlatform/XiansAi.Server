@@ -17,7 +17,10 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
     protected const string TestApiKey = "test-api-key";
     protected const string TestCertificateThumbprint = "test-certificate-thumbprint";
 
-    protected IntegrationTestBase(MongoDbFixture mongoFixture, string? environment = null)
+    protected IntegrationTestBase(
+        MongoDbFixture mongoFixture,
+        string? environment = null,
+        TemporalFixture? temporalFixture = null)
     {
         _mongoFixture = mongoFixture;
 
@@ -25,7 +28,7 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         // This should be done before creating the factory to ensure proper configuration
         TestCertificateHelper.Initialize();
 
-        _factory = new XiansAiWebApplicationFactory(mongoFixture, environment);
+        _factory = new XiansAiWebApplicationFactory(mongoFixture, environment, temporalFixture);
 
         var httpClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
