@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules / HITL / Cross-agent / Activations SDK Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules / HITL / Cross-agent / Activations SDK / Metrics Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -43,7 +43,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent, Activations SDK) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent, Activations SDK, Metrics) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -120,6 +120,10 @@ Invoice and Fraud system agents on one Lib host. Invoice chat `ExecuteAsync` / `
 ### `AdminApiTemporalActivationSdkAgentLifecycleTests`
 
 Manager and Target system agents on one Lib host. Manager Lifecycle calls `Tenant.Agent(target)` Exists/Create/Activate/status/list/Deactivate from an activity and from workflow code (system `ActivationActivities` stub). Target Heartbeat starts on SDK activate; deactivate cancels it. Another tenant sees the agent but not the owner's `sdk-demo` activation. Same host: [Lib agent workflows](./lib-agent-workflows.md). Mongo-only Admin activation CRUD remains `AdminAgentActivationEndpointsTests`.
+
+### `AdminApiTemporalMetricsAgentLifecycleTests`
+
+System metrics agent authored with Xians.Lib. Chat reports token usage through `context.Metrics` and business outcomes through `XiansContext.Metrics` in a custom workflow. Admin stats/categories read those rows; another tenant and agent see none; DELETE by activation clears them. Same host: [Lib agent workflows](./lib-agent-workflows.md). Mongo-seeded Admin metrics remain `AdminMetricsEndpointsTests`.
 
 ## Seeding Temporal tests
 
