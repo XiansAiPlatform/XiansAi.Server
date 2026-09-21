@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules / HITL / Cross-agent / Activations SDK / Metrics Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules / HITL / Cross-agent / Activations SDK / Metrics / Logging Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -43,7 +43,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent, Activations SDK, Metrics) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent, Activations SDK, Metrics, Logging) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -124,6 +124,10 @@ Manager and Target system agents on one Lib host. Manager Lifecycle calls `Tenan
 ### `AdminApiTemporalMetricsAgentLifecycleTests`
 
 System metrics agent authored with Xians.Lib. Chat reports token usage through `context.Metrics` and business outcomes through `XiansContext.Metrics` in a custom workflow. Admin stats/categories read those rows; another tenant and agent see none; DELETE by activation clears them. Same host: [Lib agent workflows](./lib-agent-workflows.md). Mongo-seeded Admin metrics remain `AdminMetricsEndpointsTests`.
+
+### `AdminApiTemporalLoggingAgentLifecycleTests`
+
+System logging agent authored with Xians.Lib. Chat logs through `XiansLogger.GetLogger` in the supervisor activity and through `Workflow.Logger` in a custom workflow. Admin streams/logs read those rows after batched upload; `logLevel=Warning` filters; another tenant and agent do not see the probe token; DELETE by activation clears them. Same host: [Lib agent workflows](./lib-agent-workflows.md). Mongo-seeded Admin logs remain `AdminLogsEndpointsTests`.
 
 ## Seeding Temporal tests
 

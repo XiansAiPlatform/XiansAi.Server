@@ -5,6 +5,7 @@ using Xians.Lib.Agents.Workflows;
 using Xians.Lib.Common.Caching;
 using Xians.Lib.Common.Testing;
 using Xians.Lib.Configuration.Models;
+using Xians.Lib.Logging;
 
 namespace Tests.TestUtils;
 
@@ -32,18 +33,26 @@ public sealed class LibAgentWorkflowHost : IAsyncDisposable
         string temporalHost,
         string temporalNamespace,
         string certificateTenantId,
-        string certificateUserId)
+        string certificateUserId,
+        LogLevel consoleLogLevel = LogLevel.Warning,
+        LogLevel serverLogLevel = LogLevel.None)
     {
+        LoggingServices.Shutdown();
         TestCleanup.ResetAllStaticState();
         WorkflowDefinitionUploader.ResetCache();
+
+        if (serverLogLevel != LogLevel.None)
+        {
+            LoggingServices.ConfigureBatchSettings(batchSize: 50, processingIntervalMs: 250);
+        }
 
         var loopback = TestServerLoopback.Start(server);
         var platform = await XiansPlatform.InitializeAsync(new XiansOptions
         {
             ServerUrl = loopback.BaseAddress,
             ApiKey = XiansLibTestCertificate.CreateApiKey(certificateTenantId, certificateUserId),
-            ConsoleLogLevel = LogLevel.Warning,
-            ServerLogLevel = LogLevel.None,
+            ConsoleLogLevel = consoleLogLevel,
+            ServerLogLevel = serverLogLevel,
             EnableTasks = false,
             Cache = new CacheOptions { Enabled = false },
             TemporalConfiguration = new TemporalConfiguration
@@ -107,6 +116,7 @@ public sealed class LibAgentWorkflowHost : IAsyncDisposable
             cts.Dispose();
         }
 
+        LoggingServices.Shutdown();
         TestCleanup.ResetAllStaticState();
         WorkflowDefinitionUploader.ResetCache();
         await _loopback.DisposeAsync();

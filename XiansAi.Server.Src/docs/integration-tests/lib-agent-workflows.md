@@ -18,6 +18,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Cross-agent | [`AdminApiTemporalCrossAgentWorkflowLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalCrossAgentWorkflowLifecycleTests.cs) | Invoice `ExecuteAsync` / `StartAsync` / `SignalAsync` on Fraud type strings; no inherited activation postfix; explicit `activationName`; not-found / deactivated; tenant GET isolation |
 | Activations SDK | [`AdminApiTemporalActivationSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalActivationSdkAgentLifecycleTests.cs) | Manager `Tenant.Agent(target)` Exists/Create/Activate/status/list/Deactivate from a Temporal **activity** and from **workflow** code (system `ActivationActivities` stub); Target Heartbeat starts on SDK activate; self `ActivationExistsAsync`; tenant isolation |
 | Metrics | [`AdminApiTemporalMetricsAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalMetricsAgentLifecycleTests.cs) | `context.Metrics` from chat and `XiansContext.Metrics` from a workflow; Admin stats/categories; `ForModel` filter; tenant/agent isolation; delete by activation |
+| Logging | [`AdminApiTemporalLoggingAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalLoggingAgentLifecycleTests.cs) | Activity `XiansLogger.GetLogger` and workflow `Workflow.Logger`; Admin streams/logs; `logLevel` filter; tenant/agent isolation; delete by activation |
 
 ```bash
 dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
@@ -32,6 +33,7 @@ dotnet test --filter "FullyQualifiedName~HitlTaskAgent_StartTaskWait_AdminProgre
 dotnet test --filter "FullyQualifiedName~CrossAgentWorkflow_InvoiceCallsFraud_ActivationTargetAndValidation"
 dotnet test --filter "FullyQualifiedName~ActivationSdkAgent_ManagerProvisionsTarget"
 dotnet test --filter "FullyQualifiedName~MetricsAgent_HandlerAndWorkflowReport_AdminReadsAndIsolates"
+dotnet test --filter "FullyQualifiedName~LoggingAgent_WorkflowAndActivityLogs_AdminReadsAndIsolates"
 ```
 
 The tests project references `../../XiansAi.Lib/Xians.Lib/Xians.Lib.csproj`. Clone that repo next to this one or restore fails for the whole test project.
@@ -76,8 +78,9 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Cross-agent `XiansContext.Workflows` calls (`ExecuteAsync` / `StartAsync` / `SignalAsync` by `"OtherAgent:WorkflowName"`, including `activationName` targeting)
 - Activation SDK `agent.Tenant.Agent(...)` Exists/Create/Activate/status/list/Deactivate from a Temporal activity and from workflow code (HTTP stubbed to `ActivationActivities`)
 - Metrics `context.Metrics` / `XiansContext.Metrics` `ReportAsync` from a running agent, then Admin stats/categories
+- Logging `XiansLogger.GetLogger` from a chat activity and `Workflow.Logger` from a workflow, then Admin streams/logs
 
-Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. Schedules is the [self-scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) contract (activable Setup creates a Tick interval). HITL is the [human-in-the-loop](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/hitl-tasks/) contract (Review waits on a task; Admin draft/action/timeout). Cross-agent is the [cross-agent workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/cross-agent-workflows/) contract (Invoice starts Fraud Scan/Review; activations do not cross agent boundaries). Activations SDK is the [agents and activations](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/activations/) contract (Manager provisions Target from an activity and from a workflow; Heartbeat starts on activate). Metrics is the [usage tracking](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/metrics/) contract (`context.Metrics` from a handler, `XiansContext.Metrics` from a workflow; Admin reads the flattened `usage_metrics` collection). None of these is a catalogue of every Lib sample.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. Schedules is the [self-scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) contract (activable Setup creates a Tick interval). HITL is the [human-in-the-loop](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/hitl-tasks/) contract (Review waits on a task; Admin draft/action/timeout). Cross-agent is the [cross-agent workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/cross-agent-workflows/) contract (Invoice starts Fraud Scan/Review; activations do not cross agent boundaries). Activations SDK is the [agents and activations](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/activations/) contract (Manager provisions Target from an activity and from a workflow; Heartbeat starts on activate). Metrics is the [usage tracking](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/metrics/) contract (`context.Metrics` from a handler, `XiansContext.Metrics` from a workflow; Admin reads the flattened `usage_metrics` collection). Logging is the [agent logging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/logging/) contract (`XiansLogger` from an activity, `Workflow.Logger` from a workflow; Admin reads the `logs` collection after batched upload). None of these is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -504,6 +507,28 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 - `GET .../metrics/categories?agentName=…`
 - `DELETE .../metrics/agents/{agent}/activation/{activationName}`
 
+## Agent under test: Logging
+
+Same host, two templates: the Logging agent (`DefineCustom<LoggingProbeWorkflow>`) and a supervisor-only isolation agent. The host opts into server upload (`ServerLogLevel = Information`) and a 250 ms batch interval; other Lib cycles keep `ServerLogLevel = None`. Chat `"activity {token}"` logs from the supervisor handler (a Temporal activity) with `XiansLogger.GetLogger`. Chat `"workflow {token}"` `ExecuteAsync`es `{agent}:LogProbe`, which logs with `Workflow.Logger`. Admin streams/logs read the uploaded `logs` rows. `logLevel=Warning` returns the activity warning only. Another tenant and another agent do not see the token. DELETE by activation name clears the owner's rows. Mongo-only Admin seeding remains `AdminLogsEndpointsTests`.
+
+```text
+1. Chat "activity {token}" → XiansLogger Information + Warning
+2. Chat "workflow {token}" → Workflow.Logger Information
+3. Admin logs by supervisor workflow id contain activity-log and activity-warn
+4. Admin logs by LogProbe workflow id contain workflow-log
+5. Admin streams list both workflow ids
+6. Admin logs?logLevel=Warning is the warning only
+7. Other tenant / other agent do not contain the token
+8. DELETE .../logs/agents/{agent}/activation/front-desk → token gone
+```
+
+Admin HTTP used beyond the shared deploy/activate helpers:
+
+- `GET /api/v1/admin/tenants/{tenant}/logs?agentName=…&workflowId=…`
+- `GET .../logs/streams?agentName=…`
+- `GET .../logs?agentName=…&logLevel=Warning`
+- `DELETE .../logs/agents/{agent}/activation/{activationName}`
+
 ## Test harness around Lib
 
 Lib's HTTP client uses `SocketsHttpHandler`. It cannot be given `TestServer.CreateHandler()`. [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) binds `HttpListener` on `127.0.0.1:{ephemeral}` and forwards to the in-process TestServer. [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) owns that loopback.
@@ -514,7 +539,7 @@ Lib API keys are a base64 PFX whose subject is `CN={user}, OU={user}, O={tenant}
 
 Lib keeps process-wide statics (handlers, definition-upload cache). The host calls `TestCleanup.ResetAllStaticState()` and `WorkflowDefinitionUploader.ResetCache()` on start and dispose, and cancels `RunAllAsync`.
 
-`XiansPlatform.InitializeAsync` is given the loopback URL, the PFX key, `EnableTasks = false` (the HITL cycle opts in per agent with `RegisterTemplate(..., enableTasks: true)`), `Cache.Enabled = false`, and `TemporalConfiguration` pointing at `TemporalFixture` (same local CLI as the rest of the collection).
+`XiansPlatform.InitializeAsync` is given the loopback URL, the PFX key, `EnableTasks = false` (the HITL cycle opts in per agent with `RegisterTemplate(..., enableTasks: true)`), `Cache.Enabled = false`, `ServerLogLevel = None` unless a cycle opts in (Logging uses `Information` plus a 250 ms upload interval), and `TemporalConfiguration` pointing at `TemporalFixture` (same local CLI as the rest of the collection).
 
 ## What these cycles do not cover
 
@@ -524,7 +549,7 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 - Other Lib samples (`CustomWorkflow` HITL/MAF, …)
 - Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent, Activations SDK, or Metrics into a second sample.
+Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent, Activations SDK, Metrics, or Logging into a second sample.
 
 ## Adding another Lib agent workflow
 
@@ -533,7 +558,7 @@ Reuse [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentW
 1. Stay in the `AdminApiTemporal` collection and `AdminApiTemporalIntegrationTestBase`.
 2. `await using var host = await LibAgentWorkflowHost.StartAsync(...)`; `BindTenantContext`.
 3. `host.RegisterTemplate` with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
-4. Define only the workflows (and knowledge / secrets / documents / webhooks / files / custom types / schedules / tasks / extra agents / metrics) the assertion needs.
+4. Define only the workflows (and knowledge / secrets / documents / webhooks / files / custom types / schedules / tasks / extra agents / metrics / logs) the assertion needs.
 5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy.
 6. Drive the public Admin API; poll history or list endpoints instead of a single Temporal visibility read.
 7. Dispose of the host (cancels workers and resets Lib statics).
