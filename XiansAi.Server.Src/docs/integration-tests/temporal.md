@@ -94,7 +94,7 @@ Always pass `participantId` when creating activations that will start workflows.
 
 ## What is still skipped
 
-Live SSE streams remain out of the automated suite even when Temporal is running. SignalR is also skipped.
+UserApi SSE (`/api/user/sse/events`) and the end-user SignalR hub (`/ws/chat`) are still out of the automated suite. The Echo cycle covers Admin SSE listen and the tenant SignalR hub (`/ws/tenant/chat`). See [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Adding a Temporal test
 

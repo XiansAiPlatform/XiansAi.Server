@@ -58,8 +58,7 @@ By default Temporal, email, background tasks, and certificate generation are moc
 
 ## What is not tested here
 
-- SignalR hubs
-- Live SSE streams
+- UserApi SSE (`/api/user/sse/events`) and end-user SignalR (`/ws/chat`)
 - Real identity providers (Auth0, Azure AD, Keycloak)
 - A remote Temporal cluster or a shared MongoDB
 

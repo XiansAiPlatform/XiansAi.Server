@@ -15,7 +15,8 @@ namespace Tests.IntegrationTests.AdminApi;
 /// <summary>
 /// Full Admin API cycle for a system Echo agent created with Xians.Lib
 /// (the same shape as Xians.Examples/EchoAgent): upload template, deploy to a
-/// tenant, activate, send a chat message, deactivate, and remove.
+/// tenant, activate, send a chat message, assert history plus live Admin SSE
+/// and tenant SignalR ReceiveChat, then deactivate and remove.
 /// </summary>
 [Collection(AdminApiTemporalCollection.Name)]
 public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrationTestBase
@@ -76,6 +77,16 @@ public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrati
                 new { });
             Assert.Equal(HttpStatusCode.OK, activate.StatusCode);
 
+            var expectedEcho = $"Echo: {userText}";
+            var workflowId = $"{tenantId}:{agentName}:Supervisor Workflow:{activationName}";
+            using var liveCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var sseClient = LiveEchoStreams.CreateStreamingClient(_factory, _adminApiKey!, tenantId);
+            await using var sse = await LiveEchoStreams.ListenAdminAsync(
+                sseClient, tenantId, agentName, activationName, participantId, liveCts.Token);
+            await using var hub = await LiveEchoStreams.ConnectTenantChatHubAsync(
+                _factory.Server, _adminApiKey!, tenantId, workflowId, liveCts.Token);
+            BindTenantContext(tenantId, _adminUserId!);
+
             var send = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/messaging/send", new
             {
                 agentName,
@@ -86,11 +97,29 @@ public class AdminApiTemporalEchoAgentLifecycleTests : AdminApiTemporalIntegrati
             Assert.Equal(HttpStatusCode.OK, send.StatusCode);
 
             var (echoed, historyBody) = await WaitForHistoryAsync(
-                tenantId, agentName, activationName, participantId, $"Echo: {userText}");
+                tenantId, agentName, activationName, participantId, expectedEcho);
             var workerError = workerTask.IsFaulted ? workerTask.Exception?.GetBaseException().Message : "none";
             Assert.True(
                 echoed,
                 $"Echo reply did not appear in messaging history. Worker error: {workerError}. History: {historyBody}");
+
+            try
+            {
+                await sse.WaitForTextAsync(expectedEcho, liveCts.Token);
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail($"Echo reply did not appear on Admin SSE. {ex.Message} Buffer: {sse.Buffer}");
+            }
+
+            try
+            {
+                await hub.WaitForTextAsync(expectedEcho, liveCts.Token);
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail($"Echo reply did not appear on SignalR ReceiveChat. {ex.Message} Payload: {hub.Received}");
+            }
 
             var deactivate = await PostAsJsonAsync(
                 $"/api/v1/admin/tenants/{tenantId}/agentActivations/{activationId}/deactivate",

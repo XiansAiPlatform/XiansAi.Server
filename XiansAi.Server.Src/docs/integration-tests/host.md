@@ -35,6 +35,8 @@ On each host:
 
 It is an `IClassFixture` on `IntegrationTestBase`, so each test **class** gets its own replica set. Tests in the same class share that database; seed unique tenant and agent names (`Guid`) so cases do not collide.
 
+The fixture starts Mongo as a replica set so change streams work. It also creates `conversation_message` / `conversation_thread` so [`MongoChangeStreamService`](../../Features/UserApi/Services/MongoChangeStreamService.cs) can watch without racing collection creation. That is what fans Echo replies out to Admin SSE and SignalR.
+
 Do not hard-code `mongodb://` or `mongodb+srv://` connection strings in tests. The fixture supplies the address.
 
 ## Authentication
@@ -57,12 +59,13 @@ Policies that are **not** overridden still need a real credential. UserApi `Endp
 | AdminApi | [`AdminApiIntegrationTestBase`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiIntegrationTestBase.cs) | Real `sk-Xnai-…` key from `ConfigureAdminApiClientAsync(tenantId)` plus `X-Tenant-Id` |
 | UserApi (policy not stubbed) | `IntegrationTestBase` | Fresh client + repository-created API key on the query string |
 | Xians.Lib worker | Echo cycle only | PFX-shaped key from [`XiansLibTestCertificate`](../../../XiansAi.Server.Tests/TestUtils/XiansLibTestCertificate.cs) over [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) |
+| Tenant SignalR (`/ws/tenant/chat`) | Echo cycle | Same Admin `sk-Xnai-…` key as `apikey` query (UserApi websocket policy is not stubbed) |
 
 `ITenantContext` is a Moq singleton with `SetupProperty`, so tests that need a specific tenant (Temporal Echo, some Agent API paths) can assign `TenantId`, `LoggedInUser`, `ParticipantId`, and roles on the resolved instance.
 
 ## Configuration and secrets
 
-[`appsettings.Tests.json`](../../../XiansAi.Server.Tests/appsettings.Tests.json) holds only synthetic fixtures (RFC-2606 `.invalid` URLs, non-secret encryption padding). Never copy production values into that file.
+[`appsettings.Tests.json`](../../../XiansAi.Server.Tests/appsettings.Tests.json) holds only synthetic fixtures (RFC-2606 `.invalid` URLs, non-secret encryption padding). Never copy production values into that file. `WebSockets:Enabled` is `true` so UserApi SignalR handshakes are accepted.
 
 Override any key without editing JSON:
 

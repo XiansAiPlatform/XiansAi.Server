@@ -16,13 +16,12 @@ namespace Features.UserApi.Services
     public class MongoChangeStreamService : BackgroundService
     {
         // Skip the ListCollectionNames + CreateCollection roundtrip on reconnects after the
-        // first successful WatchAsync. The collection is created once at app startup and
-        // never dropped; re-checking on every transient-error reconnect adds unnecessary I/O.
-        private static volatile bool _collectionEnsured = false;
+        // first successful WatchAsync. Instance (not static) so each test host with its own
+        // Mongo2Go replica set still creates conversation_message and checks topology.
+        private bool _collectionEnsured = false;
 
-        // Skip the replica-set support check after it has passed once. The deployment
-        // topology does not change while the process runs.
-        private static volatile bool _changeStreamSupportEnsured = false;
+        // Skip the replica-set support check after it has passed once for this host.
+        private bool _changeStreamSupportEnsured = false;
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MongoChangeStreamService> _logger;

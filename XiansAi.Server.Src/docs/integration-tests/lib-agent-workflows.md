@@ -101,6 +101,8 @@ sequenceDiagram
     participant Lib as Xians.Lib
     participant Admin as Admin API
     participant Temporal
+    participant SSE as Admin SSE
+    participant Hub as SignalR tenant hub
 
     Test->>Lib: Register Echo (IsTemplate=true)
     Test->>Lib: RunAllAsync
@@ -111,11 +113,15 @@ sequenceDiagram
     Test->>Admin: POST create activation (participantId = admin user)
     Test->>Admin: POST activate
     Note over Admin: Supervisor is Activable=false; no StartWorkflow
+    Test->>SSE: GET messaging/listen
+    Test->>Hub: SubscribeToAgent
     Test->>Admin: POST messaging/send
     Admin->>Temporal: SignalWithStart HandleInboundChatOrData
     Temporal->>Lib: Signal on system queue
     Lib->>Admin: ReplyAsync("Echo: {text}")
     Test->>Admin: GET messaging/history (contains Echo: {text})
+    Test->>SSE: event Chat with Echo: {text}
+    Test->>Hub: ReceiveChat with Echo: {text}
     Test->>Admin: POST deactivate
     Test->>Admin: DELETE activation, deployment, template
     Test->>Lib: Cancel RunAllAsync
@@ -126,14 +132,35 @@ Admin HTTP used (all under `/api/v1/admin`):
 1. `POST agentTemplates/by-name/{agent}/deploy?tenantId=…`
 2. `POST tenants/{tenant}/agentActivations` — `participantId` must be a real user id, not empty (empty is sanitized then rejected as a Temporal user id)
 3. `POST tenants/{tenant}/agentActivations/{id}/activate`
-4. `POST tenants/{tenant}/messaging/send` — `agentName`, `activationName` (`front-desk`), `participantId` (`reader@example.com`), `text`
-5. `GET tenants/{tenant}/messaging/history?agentName&activationName&participantId` until the body contains `Echo: {text}`
-6. `POST …/deactivate`
-7. `DELETE …/agentActivations/{id}`
-8. `DELETE tenants/{tenant}/agentDeployments/{agent}?forceDelete=true`
-9. `DELETE agentTemplates/by-name/{agent}?cleanActivations=true` (expects 204)
+4. `GET tenants/{tenant}/messaging/listen` — subscribe **before** send (`HttpCompletionOption.ResponseHeadersRead`)
+5. SignalR `SubscribeToAgent` on `/ws/tenant/chat` (API-key tenant hub, long polling against TestServer)
+6. `POST tenants/{tenant}/messaging/send` — `agentName`, `activationName` (`front-desk`), `participantId` (`reader@example.com`), `text`
+7. `GET tenants/{tenant}/messaging/history?agentName&activationName&participantId` until the body contains `Echo: {text}`
+8. Assert the same `Echo: {text}` on the Admin SSE `Chat` event and on SignalR `ReceiveChat`
+9. `POST …/deactivate`
+10. `DELETE …/agentActivations/{id}`
+11. `DELETE tenants/{tenant}/agentDeployments/{agent}?forceDelete=true`
+12. `DELETE agentTemplates/by-name/{agent}?cleanActivations=true` (expects 204)
 
-The assertion is the round-trip through Lib, not merely that send returned 200.
+The assertion is the round-trip through Lib: history **and** the live change-stream fan-out (Admin SSE + SignalR), not merely that send returned 200.
+
+## Live SSE and SignalR
+
+Outgoing Echo replies are inserted into `conversation_message`. [`MongoChangeStreamService`](../../Features/UserApi/Services/MongoChangeStreamService.cs) decrypts them and:
+
+- publishes to [`IMessageEventPublisher`](../../Features/UserApi/Services/MessageEventPublisher.cs) (Admin/Web/User SSE)
+- sends `ReceiveChat` to SignalR groups on [`ChatHub`](../../Features/UserApi/Websocket/ChatHub.cs) and [`TenantChatHub`](../../Features/UserApi/Websocket/TenantChatHub.cs)
+
+The Echo test opens both live subscriptions **before** send, via [`LiveEchoStreams`](../../../XiansAi.Server.Tests/TestUtils/LiveEchoStreams.cs):
+
+| Path | Endpoint | How the test connects |
+| --- | --- | --- |
+| Admin SSE | `GET /api/v1/admin/tenants/{tenant}/messaging/listen` | Separate `HttpClient` with `HttpCompletionOption.ResponseHeadersRead` (the default RetryHttpClient would wait for the stream to end) |
+| SignalR | `/ws/tenant/chat` | `HubConnection` + TestServer handler, **long polling** (`WebSockets:Enabled` is on in `appsettings.Tests.json`) |
+
+`/ws/tenant/chat` is the API-key tenant hub: `SubscribeToAgent(workflowId, tenantId)` joins the tenant group that the change stream broadcasts to. `/ws/chat` (end-user hub) is not used here because its `OnConnectedAsync` requires `IHttpContextAccessor.HttpContext`, which TestServer long-polling does not keep reliably.
+
+Helpers wait for SSE `event: connected` and a connected hub **before** `POST …/messaging/send`, so the change stream has subscribers when `ReplyAsync` writes the outgoing Chat.
 
 ## Test harness around Lib
 
@@ -153,7 +180,7 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The test cal
 - HITL task workflows
 - Custom (non-built-in) workflow classes
 - Tenant-scoped agents that are not system templates
-- Live SSE / SignalR of the Echo replies
+- UserApi SSE (`/api/user/sse/events`) and end-user SignalR (`/ws/chat`)
 - Other Lib samples (`FileUpload`, `KnowledgeAccess`, `CustomWorkflow`, …)
 
 Keep those as separate tests if they become required. Do not grow Echo into a second sample.
