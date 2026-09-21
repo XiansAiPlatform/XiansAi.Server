@@ -78,8 +78,28 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
         IUserRepository userRepository,
         ITenantCacheService tenantCacheService,
         ILogger<AdminKeylessUserResolver> logger)
+        : this(
+            new DynamicOidcValidator(tenantOidcConfigService, oidcValidationPolicy, memoryCache, validatorLogger),
+            userRepository, tenantCacheService, logger)
     {
-        _oidcValidator = new DynamicOidcValidator(tenantOidcConfigService, oidcValidationPolicy, memoryCache, validatorLogger);
+    }
+
+    /// <summary>
+    /// Initializes a test instance with a preconfigured OIDC validator.
+    ///
+    /// This constructor is internal so dependency injection cannot select it. The shared container
+    /// already registers <see cref="IDynamicOidcValidator"/> with a different
+    /// <c>ITenantOidcConfigService</c> configuration than AdminApi requires. Tests can use this
+    /// constructor to supply a stub validator and exercise resolver branches without contacting an
+    /// identity provider.
+    /// </summary>
+    internal AdminKeylessUserResolver(
+        IDynamicOidcValidator oidcValidator,
+        IUserRepository userRepository,
+        ITenantCacheService tenantCacheService,
+        ILogger<AdminKeylessUserResolver> logger)
+    {
+        _oidcValidator = oidcValidator;
         _userRepository = userRepository;
         _tenantCacheService = tenantCacheService;
         _logger = logger;
@@ -99,7 +119,7 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
         var providerUserId = validation.ProviderUserId;
 
         var user = await _userRepository.GetByUserIdAsync(providerUserId);
-        if (user == null && !string.IsNullOrEmpty(validation.Email))
+        if (user == null && !string.IsNullOrEmpty(validation.Email) && validation.EmailVerified)
         {
             var matches = await _userRepository.GetAllByUserEmailAsync(validation.Email);
             if (matches.Count > 1)
@@ -120,6 +140,13 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
 
         if (user == null)
         {
+            if (!string.IsNullOrEmpty(validation.Email) && !validation.EmailVerified)
+            {
+                _logger.LogWarning(
+                    "X-User-Token validated but the provider did not assert email_verified, so the email fallback was not attempted for {UserId}",
+                    LogSanitizer.RedactUserId(providerUserId));
+            }
+
             _logger.LogWarning("X-User-Token validated but no platform user exists for {UserId}",
                 LogSanitizer.RedactUserId(providerUserId));
             return new AdminKeylessResolutionResult(false, null, null, null, "User is not registered on this platform");
@@ -187,7 +214,7 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
             }
         }
         
-        var roles = await _userRepository.GetUserRolesAsync(providerUserId, finalTenantId);
+        var roles = _userRepository.GetUserRoles(user, finalTenantId);
 
         _logger.LogInformation("Resolved keyless AdminApi caller: User={UserId}, Tenant={TenantId}, Roles={Roles}",
             LogSanitizer.RedactUserId(providerUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", roles)));

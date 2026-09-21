@@ -66,6 +66,10 @@
   </ItemGroup>
   
   <ItemGroup>
+    <InternalsVisibleTo Include="XiansAi.Server.Tests" />
+  </ItemGroup>
+  
+  <ItemGroup>
     <Content Remove="mongodb-indexes.yaml" />
     <Content Remove="mongodb-indexes.schema.json" />
   </ItemGroup>

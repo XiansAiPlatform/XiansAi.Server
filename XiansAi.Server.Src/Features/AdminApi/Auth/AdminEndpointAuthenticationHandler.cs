@@ -218,7 +218,7 @@ namespace Features.AdminApi.Auth
                 var resolvedUserId = resolution.CanonicalUserId!;
 
                 _logger.LogDebug("Setting tenant context with user ID: {userId}, user type: {userType}, and roles: {roles}",
-                    LogSanitizer.RedactUserId(resolvedUserId), UserType.UserToken, string.Join(", ", userRoles));
+                    LogSanitizer.RedactUserId(resolvedUserId), UserType.UserToken, LogSanitizer.Sanitize(string.Join(", ", userRoles)));
                 _tenantContext.LoggedInUser = resolvedUserId;
                 _tenantContext.UserType = UserType.UserToken;
                 _tenantContext.TenantId = finalTenantId;
