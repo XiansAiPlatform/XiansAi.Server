@@ -36,7 +36,7 @@
     <PackageReference Include="Mongo2Go" Version="4.1.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <ProjectReference Include="..\XiansAi.Server.Src\XiansAi.Server.csproj" />
-    <!-- Sibling SDK used by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files). -->
+    <!-- Sibling SDK used by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows). -->
     <ProjectReference Include="..\..\XiansAi.Lib\Xians.Lib\Xians.Lib.csproj" />
   </ItemGroup>
 

@@ -12,6 +12,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Document DB | [`AdminApiTemporalDocumentDbAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbAgentLifecycleTests.cs) | Agent `SaveAsync` / `GetByKeyAsync`; Admin list/get/update/create; isolation by tenant, agent, activation, and participant |
 | Webhooks | [`AdminApiTemporalWebhookAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWebhookAgentLifecycleTests.cs) | Integrator `OnWebhook` + `context.Respond`; agent SDK create/list; Admin create/list/delete; inbound `POST /api/user/webhooks/builtin` with `apikeyId`; tenant/agent isolation; 401 after revoke; 409 after deactivate |
 | Files | [`AdminApiTemporalFileMessagingAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalFileMessagingAgentLifecycleTests.cs) | User `POST .../send/file` → `OnFileUpload` hydrates GridFS bytes; agent `ReplyWithFileAsync` / `SendFileAsync`; history is `fileId` refs only; Admin download tenant isolation |
+| Custom workflows | [`AdminApiTemporalCustomWorkflowAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalCustomWorkflowAgentLifecycleTests.cs) | `DefineCustom` + `XiansContext.Workflows` `ExecuteAsync` / `StartAsync` / `SignalAsync`; `Activable=true` Onboarding starts on Admin activate; Admin list/get/types/cancel; uniqueKey IDs; UseExisting on a running Approval; tenant GET isolation |
 
 ```bash
 dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
@@ -20,6 +21,7 @@ dotnet test --filter "FullyQualifiedName~SecretVaultAgent_CreateFetch_StrictScop
 dotnet test --filter "FullyQualifiedName~DocumentDbAgent_SavePush_AdminReadModifyAdd_Isolates"
 dotnet test --filter "FullyQualifiedName~WebhookAgent_InboundBuiltin_AdminCrudIsolatesAndRevokes"
 dotnet test --filter "FullyQualifiedName~FileMessagingAgent_UserUploadAndAgentSend_RoundTripAndIsolate"
+dotnet test --filter "FullyQualifiedName~CustomWorkflowAgent_DefineCustom_StartExecuteSignalAndAdminOps"
 ```
 
 The tests project references `../../XiansAi.Lib/Xians.Lib/Xians.Lib.csproj`. Clone that repo next to this one or restore fails for the whole test project.
@@ -58,8 +60,9 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Document DB Type+Key as the running agent writes and reads it (`SaveAsync` / `GetByKeyAsync` inside the supervisor)
 - Builtin inbound webhooks as the running Integrator handles them (`OnWebhook` / `context.Respond`, SDK `Webhooks.CreateAsync`)
 - File messages both ways: user `POST .../send/file` into `OnFileUpload`, agent `ReplyWithFileAsync` / `SendFileAsync` back through GridFS
+- Custom Temporal classes registered with `DefineCustom` and driven through `XiansContext.Workflows`
 
-Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). None of these is a catalogue of every Lib sample.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. None of these is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -345,6 +348,33 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 
 Reuse a fixed `participantId` for upload, generate, and download so GridFS participant ownership matches the outbound send. The generate chat uses `AssertAgentRepliesWithAsync` on the File message caption.
 
+## Agent under test: Custom workflows
+
+Same host as the other Lib cycles. The supervisor registers **Onboarding** with `Activable = true` and three `DefineCustom` types with `Activable = false`, each with a runtime `typeName` of `{agentName}:…` — the [Workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/workflows/) pattern (`StartAsync`, `ExecuteAsync`, `SignalAsync`, uniqueKey IDs). Admin activate starts only Onboarding (`ActivationService` skips `Activable = false`). Chat handlers run as Temporal activities, so `XiansContext.Workflows` uses the Temporal **client** path (not child-workflow start). Client `StartAsync` sets `IdConflictPolicy = UseExisting`: a second start of a still-running workflow succeeds without creating another execution (it does not throw `WorkflowAlreadyStartedException`). The Approval signal is registered as `ApproveAsync` (Temporal otherwise trims the `Async` suffix from the method name). Template deploy copies `Activable` onto the tenant flow definition so activate can see it.
+
+```text
+1. Admin activate → starts only Onboarding at {tenant}:{agent}:Onboarding:front-desk (Running; worker took the task). System and tenant flow copies of the same type may both be activable; the started workflow id is still that one Onboarding id.
+2. Chat "check {sku}" → ExecuteAsync Inventory Check → reply in-stock:{sku}
+3. Chat "pay {orderId}" → StartAsync Payment uniqueKey=orderId
+   Admin list/get {tenant}:{agent}:Payment:front-desk:{orderId} → Completed
+4. Chat "hold" → StartAsync Approval (no uniqueKey)
+   Admin get {tenant}:{agent}:Approval:front-desk → Running
+5. Chat "hold" again → still one Running Approval (UseExisting)
+6. GET .../workflows/types includes Onboarding, Inventory Check, Payment, Approval
+7. Chat "approve granted" → SignalAsync("ApproveAsync") → Completed
+8. Chat "hold" after complete → new run; Admin cancel force=true → Terminated
+9. Other tenant GET of the owner's workflowId → 404
+```
+
+Admin HTTP used beyond the shared deploy/activate helpers:
+
+- `GET /api/v1/admin/tenants/{tenant}/workflows/list?agent&status` (count matching `workflowId`; TQL rejects `:` in `workflowType`)
+- `GET /api/v1/admin/tenants/{tenant}/workflows?workflowId=…`
+- `GET /api/v1/admin/tenants/{tenant}/workflows/types?agent=…`
+- `POST /api/v1/admin/tenants/{tenant}/workflows/cancel?workflowId=…&force=true`
+
+Custom workers listen on the unprefixed system queue (`{agent}:Onboarding`, `{agent}:Inventory Check`, `{agent}:Payment`, `{agent}:Approval`), same reason as Supervisor.
+
 ## Test harness around Lib
 
 Lib's HTTP client uses `SocketsHttpHandler`. It cannot be given `TestServer.CreateHandler()`. [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) binds `HttpListener` on `127.0.0.1:{ephemeral}` and forwards to the in-process TestServer. [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) owns that loopback.
@@ -360,12 +390,14 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 ## What these cycles do not cover
 
 - HITL task workflows
-- Custom (non-built-in) workflow classes, including file send from workflow code (`XiansContext.Messaging.SendFileAsSupervisorAsync`)
+- File send from workflow code (`XiansContext.Messaging.SendFileAsSupervisorAsync`)
+- `SignalWithStartAsync` and typed `GetWorkflowHandleAsync` queries
+- Cross-agent `activationName` targeting
 - Tenant-scoped agents that are not system templates
-- Other Lib samples (`CustomWorkflow`, …)
+- Other Lib samples (`CustomWorkflow` HITL/MAF, …)
 - Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, Webhooks, or Files into a second sample.
+Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, or Custom workflows into a second sample.
 
 ## Adding another Lib agent workflow
 
@@ -374,7 +406,7 @@ Reuse [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentW
 1. Stay in the `AdminApiTemporal` collection and `AdminApiTemporalIntegrationTestBase`.
 2. `await using var host = await LibAgentWorkflowHost.StartAsync(...)`; `BindTenantContext`.
 3. `host.RegisterTemplate` with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
-4. Define only the workflows (and knowledge / secrets / documents / webhooks / files) the assertion needs.
+4. Define only the workflows (and knowledge / secrets / documents / webhooks / files / custom types) the assertion needs.
 5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy.
 6. Drive the public Admin API; poll history or list endpoints instead of a single Temporal visibility read.
 7. Dispose of the host (cancels workers and resets Lib statics).

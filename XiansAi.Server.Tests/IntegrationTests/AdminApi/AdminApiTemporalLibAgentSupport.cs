@@ -8,7 +8,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files).
+/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows).
 /// </summary>
 public abstract partial class AdminApiTemporalIntegrationTestBase
 {
@@ -50,6 +50,15 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
 
     protected async Task<string> ActivateLibAgentAsync(string tenantId, string agentName, string activationName)
     {
+        var (activationId, _) = await ActivateLibAgentWithWorkflowsAsync(tenantId, agentName, activationName);
+        return activationId;
+    }
+
+    protected async Task<(string ActivationId, IReadOnlyList<string> WorkflowIds)> ActivateLibAgentWithWorkflowsAsync(
+        string tenantId,
+        string agentName,
+        string activationName)
+    {
         var create = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/agentActivations", new
         {
             name = activationName,
@@ -65,7 +74,22 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
             $"/api/v1/admin/tenants/{tenantId}/agentActivations/{activationId}/activate",
             new { });
         Assert.Equal(HttpStatusCode.OK, activate.StatusCode);
-        return activationId!;
+        using var activateJson = JsonDocument.Parse(await activate.Content.ReadAsStringAsync());
+        var workflowIds = new List<string>();
+        if (activateJson.RootElement.TryGetProperty("workflowIds", out var ids) &&
+            ids.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in ids.EnumerateArray())
+            {
+                var workflowId = item.GetString();
+                if (!string.IsNullOrWhiteSpace(workflowId))
+                {
+                    workflowIds.Add(workflowId);
+                }
+            }
+        }
+
+        return (activationId!, workflowIds);
     }
 
     protected async Task RemoveLibActivationAsync(string tenantId, string activationId)
