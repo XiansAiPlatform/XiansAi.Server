@@ -41,9 +41,9 @@ await CreateTestTenantAsync(tenantId);
 
 ## Admin API (Temporal)
 
-See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`, `AdminApiTemporalDocumentDbAgentLifecycleTests`, `AdminApiTemporalWebhookAgentLifecycleTests`, `AdminApiTemporalFileMessagingAgentLifecycleTests`, `AdminApiTemporalCustomWorkflowAgentLifecycleTests`, `AdminApiTemporalScheduleAgentLifecycleTests`, `AdminApiTemporalHitlTaskAgentLifecycleTests`.
+See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`, `AdminApiTemporalDocumentDbAgentLifecycleTests`, `AdminApiTemporalWebhookAgentLifecycleTests`, `AdminApiTemporalFileMessagingAgentLifecycleTests`, `AdminApiTemporalCustomWorkflowAgentLifecycleTests`, `AdminApiTemporalScheduleAgentLifecycleTests`, `AdminApiTemporalHitlTaskAgentLifecycleTests`, `AdminApiTemporalCrossAgentWorkflowLifecycleTests`.
 
-Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes, Document DB, builtin Webhooks, file messaging, custom workflows, schedules, HITL tasks) are documented in [Lib agent workflows](./lib-agent-workflows.md).
+Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes, Document DB, builtin Webhooks, file messaging, custom workflows, schedules, HITL tasks, cross-agent workflows) are documented in [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Web API
 

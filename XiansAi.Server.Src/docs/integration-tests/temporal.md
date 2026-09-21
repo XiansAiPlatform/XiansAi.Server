@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules / HITL Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules / HITL / Cross-agent Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -43,7 +43,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules, HITL, Cross-agent) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -112,6 +112,10 @@ System scheduling agent authored with Xians.Lib. Activable Setup creates an inte
 ### `AdminApiTemporalHitlTaskAgentLifecycleTests`
 
 System HITL agent authored with Xians.Lib (`EnableTasks` + Review `StartTaskAsync` / `GetResultAsync`). Admin list/get/draft/metadata/action that waiting task; a second Review times out with no action. Another tenant cannot GET the owner's task id. Same host: [Lib agent workflows](./lib-agent-workflows.md). Stub HITL HTTP without Lib is still `AdminApiTemporalScheduleAndTaskTests`.
+
+### `AdminApiTemporalCrossAgentWorkflowLifecycleTests`
+
+Invoice and Fraud system agents on one Lib host. Invoice chat `ExecuteAsync` / `StartAsync` / `SignalAsync` Fraud Scan and Review by type string. Cross-agent Scan does not inherit Invoice's activation postfix; `activationName=fraud-eu` is required to target Fraud's activation. Missing and deactivated activations fail with typed exceptions before Temporal starts an orphan. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Seeding Temporal tests
 
