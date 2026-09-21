@@ -30,6 +30,8 @@ public class AdminDataListRequest
 
 public class AdminDataDeleteRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<string>? RecordIds { get; set; }
     public string TenantId { get; set; } = string.Empty;
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
@@ -40,6 +42,10 @@ public class AdminDataDeleteRequest
 
 public class AdminDataDeleteRecordRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? AgentName { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? ActivationName { get; set; }
     public string TenantId { get; set; } = string.Empty;
     public string RecordId { get; set; } = string.Empty;
 }

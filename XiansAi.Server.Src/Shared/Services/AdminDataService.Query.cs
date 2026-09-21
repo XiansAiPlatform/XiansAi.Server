@@ -1,4 +1,5 @@
 using Features.AgentApi.Repositories;
+using Shared.Data.Models;
 using Shared.Utils;
 using Shared.Utils.Services;
 
@@ -152,6 +153,8 @@ public partial class AdminDataService
 
             var queryFilter = new DocumentQueryFilter
             {
+                // Internal callers can constrain deletion to a previously previewed snapshot.
+                Ids = request.RecordIds,
                 AgentId = request.AgentName,
                 Type = request.DataType,
                 ActivationName = request.ActivationName,
@@ -206,7 +209,23 @@ public partial class AdminDataService
                 "Deleting record - TenantId: {TenantId}, RecordId: {RecordId}",
                 LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(request.RecordId));
 
-            var existingRecord = await _documentRepository.GetByIdAsync(request.RecordId);
+            DocumentQueryFilter? scopedFilter = null;
+            Document? existingRecord;
+            if (request.AgentName is not null)
+            {
+                scopedFilter = new DocumentQueryFilter
+                {
+                    Ids = [request.RecordId],
+                    AgentId = request.AgentName,
+                    ActivationName = request.ActivationName,
+                    Limit = 1
+                };
+                existingRecord = (await _documentRepository.QueryAsync(request.TenantId, scopedFilter)).FirstOrDefault();
+            }
+            else
+            {
+                existingRecord = await _documentRepository.GetByIdAsync(request.RecordId);
+            }
 
             if (existingRecord == null || existingRecord.TenantId != request.TenantId)
             {
@@ -224,7 +243,9 @@ public partial class AdminDataService
                 return ServiceResult<AdminDataDeleteRecordResponse>.NotFound("Record not found");
             }
 
-            var deleted = await _documentRepository.DeleteAsync(request.RecordId, request.TenantId);
+            var deleted = scopedFilter is not null
+                ? await _documentRepository.DeleteByFilterAsync(request.TenantId, scopedFilter) == 1
+                : await _documentRepository.DeleteAsync(request.RecordId, request.TenantId);
 
             var response = new AdminDataDeleteRecordResponse
             {
@@ -388,6 +409,13 @@ public partial class AdminDataService
 
     private ServiceResult<AdminDataDeleteRecordResponse> ValidateDeleteRecordRequest(AdminDataDeleteRecordRequest request)
     {
+        if (request.AgentName is not null &&
+            (string.IsNullOrWhiteSpace(request.AgentName) || string.IsNullOrWhiteSpace(request.ActivationName)))
+        {
+            return ServiceResult<AdminDataDeleteRecordResponse>.BadRequest(
+                "Scoped deletion requires an agent and activation.");
+        }
+
         var tenantError = ValidateTenantId(request.TenantId);
         if (tenantError != null)
         {
