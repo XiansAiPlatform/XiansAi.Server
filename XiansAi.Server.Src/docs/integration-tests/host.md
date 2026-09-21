@@ -41,7 +41,7 @@ Do not hard-code `mongodb://` or `mongodb+srv://` connection strings in tests. T
 
 ## Authentication
 
-[`TestAuthHandler`](../../../XiansAi.Server.Tests/TestUtils/TestAuthHandler.cs) authenticates every request and issues `SysAdmin`, `TenantAdmin`, and `TenantUser` roles plus `test-tenant` / `99x.io` as authorized tenants.
+[`TestAuthHandler`](../../../XiansAi.Server.Tests/TestUtils/TestAuthHandler.cs) authenticates every request and issues `SysAdmin`, `TenantAdmin`, and `TenantUser` roles plus `test-tenant` / `99x.io` as authorized tenants. On Agent API paths (`/api/agent`) it also copies `X-Tenant-Id` onto the singleton `ITenantContext`, standing in for `CertificateAuthenticationHandler` so Lib SDK calls (activations, replies) see the acting tenant.
 
 The factory rebinds these policies onto the `Test` scheme:
 
@@ -58,7 +58,7 @@ Policies that are **not** overridden still need a real credential. UserApi `Endp
 | WebApi, AgentApi | `IntegrationTestBase` / `WebApiIntegrationTestBase` | Bearer `test-api-key`, `X-Tenant-Id: test-tenant`, `X-Test-Certificate` |
 | AdminApi | [`AdminApiIntegrationTestBase`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiIntegrationTestBase.cs) | Real `sk-Xnai-…` key from `ConfigureAdminApiClientAsync(tenantId)` plus `X-Tenant-Id` |
 | UserApi (policy not stubbed) | `IntegrationTestBase` | Fresh client + repository-created API key on the query string |
-| Xians.Lib worker | Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflow, Schedules, HITL, and Cross-agent cycles | PFX-shaped key from [`XiansLibTestCertificate`](../../../XiansAi.Server.Tests/TestUtils/XiansLibTestCertificate.cs) over [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs), owned by [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) |
+| Xians.Lib worker | Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflow, Schedules, HITL, Cross-agent, and Activations SDK cycles | PFX-shaped key from [`XiansLibTestCertificate`](../../../XiansAi.Server.Tests/TestUtils/XiansLibTestCertificate.cs) over [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs), owned by [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) |
 | Tenant SignalR (`/ws/tenant/chat`) | Echo cycle | Same Admin `sk-Xnai-…` key as `apikey` query (UserApi websocket policy is not stubbed) |
 | UserApi SSE (`/api/user/sse/events`) | Echo cycle | Same Admin key as `Authorization: Bearer` on a separate streaming `HttpClient` |
 | ChatHub (`/ws/chat`) | Echo cycle | Same Admin key as `apikey` query; `SubscribeToAgent(workflow, participantId, tenantId)` |

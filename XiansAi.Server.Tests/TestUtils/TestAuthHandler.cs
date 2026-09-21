@@ -3,8 +3,6 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.AspNetCore.Http;
-using System.Collections.Generic;
 using Shared.Auth;
 
 namespace Tests.TestUtils;
@@ -17,13 +15,16 @@ public class TestAuthHandler : AuthenticationHandler<TestAuthenticationOptions>
 {
     private const string TestTenantId = "test-tenant";
     private const string TestUserId = "test-user";
+    private readonly ITenantContext _tenantContext;
 
     public TestAuthHandler(
         IOptionsMonitor<TestAuthenticationOptions> options,
         ILoggerFactory logger,
-        UrlEncoder encoder)
+        UrlEncoder encoder,
+        ITenantContext tenantContext)
         : base(options, logger, encoder)
     {
+        _tenantContext = tenantContext;
     }
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -43,9 +44,29 @@ public class TestAuthHandler : AuthenticationHandler<TestAuthenticationOptions>
 
             // Check for tenant ID in header
             var tenantId = Request.Headers["X-Tenant-Id"].ToString();
-            if (string.IsNullOrEmpty(tenantId))
+            var hasTenantHeader = !string.IsNullOrWhiteSpace(tenantId);
+            if (!hasTenantHeader)
             {
                 tenantId = TestTenantId;
+            }
+
+            // CertificateAuthenticationHandler writes ITenantContext. Tests remap Agent API
+            // to this scheme; only Agent paths get cert-equivalent tenant binding so Web API
+            // tests keep the factory authorized-tenant list.
+            if (hasTenantHeader && Request.Path.StartsWithSegments("/api/agent"))
+            {
+                _tenantContext.TenantId = tenantId;
+                _tenantContext.AuthorizedTenantIds = [tenantId];
+            }
+
+            if (string.IsNullOrWhiteSpace(_tenantContext.LoggedInUser))
+            {
+                _tenantContext.LoggedInUser = TestUserId;
+            }
+
+            if (string.IsNullOrWhiteSpace(_tenantContext.ParticipantId))
+            {
+                _tenantContext.ParticipantId = TestUserId;
             }
 
             // Create claims for the authenticated user
