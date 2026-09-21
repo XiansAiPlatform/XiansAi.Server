@@ -28,6 +28,7 @@ public interface IDocumentRepository
 
 public class DocumentQueryFilter
 {
+    public List<string>? Ids { get; set; }
     public string? AgentId { get; set; }
     public List<string>? AgentIds { get; set; }
     public string? Type { get; set; }
@@ -164,6 +165,9 @@ public class DocumentRepository : IDocumentRepository
     {
         var builder = Builders<Document>.Filter;
         var filter = builder.Empty;
+
+        if (queryFilter.Ids is not null)
+            filter &= builder.In(d => d.Id, queryFilter.Ids);
 
         // Add tenant filter if provided
         if (!string.IsNullOrEmpty(tenantId))
