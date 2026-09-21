@@ -20,7 +20,7 @@ These classes use [`AdminApiIntegrationTestBase`](../../../XiansAi.Server.Tests/
 | `AdminGlobalUserEndpointsTests` | Cross-tenant user admin |
 | `AdminKnowledgeEndpointsTests` | Knowledge CRUD scoped to a tenant |
 | `AdminLogsEndpointsTests` | Log query |
-| `AdminMessagingEndpointsTests` | Messaging history/send validation and persistence without a worker |
+| `AdminMessagingEndpointsTests` | Messaging history/send validation and persistence without a worker; GridFS download isolation (no Temporal) |
 | `AdminMetricsEndpointsTests` | Usage metrics |
 | `AdminOwnershipEndpointsTests` | Agent ownership transfer |
 | `AdminParticipantsEndpointsTests` | Participant listing |
@@ -41,9 +41,9 @@ await CreateTestTenantAsync(tenantId);
 
 ## Admin API (Temporal)
 
-See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`, `AdminApiTemporalDocumentDbAgentLifecycleTests`, `AdminApiTemporalWebhookAgentLifecycleTests`.
+See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`, `AdminApiTemporalDocumentDbAgentLifecycleTests`, `AdminApiTemporalWebhookAgentLifecycleTests`, `AdminApiTemporalFileMessagingAgentLifecycleTests`.
 
-Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes, Document DB, builtin Webhooks) are documented in [Lib agent workflows](./lib-agent-workflows.md).
+Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes, Document DB, builtin Webhooks, file messaging) are documented in [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Web API
 

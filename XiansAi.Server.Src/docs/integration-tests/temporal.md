@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Secret Vault / Document DB / Webhooks Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -43,7 +43,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -96,6 +96,10 @@ System Document DB agent authored with Xians.Lib. Chat saves Type+Key JSON (`Sav
 ### `AdminApiTemporalWebhookAgentLifecycleTests`
 
 System webhook agent authored with Xians.Lib (`DefineIntegrator` + `OnWebhook`, supervisor `agent.Webhooks.CreateAsync`). Admin `/tenants/{tenant}/webhooks` lists, creates, and deletes. Inbound `POST /api/user/webhooks/builtin` authenticates with `apikeyId` (UserApi policy is not stubbed) and waits for `context.Respond`. Other tenants and agents do not share the owner's URL; delete revokes the key (401); deactivate returns 409. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalFileMessagingAgentLifecycleTests`
+
+System file-messaging agent authored with Xians.Lib (`OnFileUpload` / `ReplyWithFileAsync` / `SendFileAsync`). Admin `POST .../messaging/send/file` stores bytes in GridFS and signals `fileId` references; the handler hydrates bytes and sends a file back. Chat `SendFileAsync` is the agent-originated direction. History has refs only; Admin download is tenant-scoped. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Seeding Temporal tests
 
