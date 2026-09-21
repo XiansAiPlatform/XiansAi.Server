@@ -59,7 +59,8 @@ public sealed class LibAgentWorkflowHost : IAsyncDisposable
     public XiansAgent RegisterTemplate(
         string agentName,
         string? description = null,
-        IReadOnlyList<string>? samplePrompts = null)
+        IReadOnlyList<string>? samplePrompts = null,
+        bool enableTasks = false)
     {
         return Platform.Agents.Register(new XiansAgentRegistration
         {
@@ -67,7 +68,7 @@ public sealed class LibAgentWorkflowHost : IAsyncDisposable
             Description = description ?? agentName,
             SamplePrompts = samplePrompts,
             IsTemplate = true,
-            EnableTasks = false
+            EnableTasks = enableTasks
         });
     }
 
