@@ -835,6 +835,8 @@ public class MessageService : IMessageService
                 cutoff = timestamp!.Value;
             }
 
+            // Two separate queries, so the count is a snapshot taken after the update, not atomic with it.
+            // Keep the count second: a message that lands between the calls is then included, not missed.
             var markedCount = await _conversationRepository.MarkThreadMessagesAsReadAsync(tenantId, threadId, cutoff);
             var unreadCount = await _conversationRepository.GetUnreadMessageCountAsync(tenantId, threadId);
 
