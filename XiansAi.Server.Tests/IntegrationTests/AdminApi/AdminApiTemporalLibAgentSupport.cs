@@ -8,7 +8,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows).
+/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules).
 /// </summary>
 public abstract partial class AdminApiTemporalIntegrationTestBase
 {

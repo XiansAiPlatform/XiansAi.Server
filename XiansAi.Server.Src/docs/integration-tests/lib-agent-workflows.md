@@ -13,6 +13,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Webhooks | [`AdminApiTemporalWebhookAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWebhookAgentLifecycleTests.cs) | Integrator `OnWebhook` + `context.Respond`; agent SDK create/list; Admin create/list/delete; inbound `POST /api/user/webhooks/builtin` with `apikeyId`; tenant/agent isolation; 401 after revoke; 409 after deactivate |
 | Files | [`AdminApiTemporalFileMessagingAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalFileMessagingAgentLifecycleTests.cs) | User `POST .../send/file` → `OnFileUpload` hydrates GridFS bytes; agent `ReplyWithFileAsync` / `SendFileAsync`; history is `fileId` refs only; Admin download tenant isolation |
 | Custom workflows | [`AdminApiTemporalCustomWorkflowAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalCustomWorkflowAgentLifecycleTests.cs) | `DefineCustom` + `XiansContext.Workflows` `ExecuteAsync` / `StartAsync` / `SignalAsync`; `Activable=true` Onboarding starts on Admin activate; Admin list/get/types/cancel; uniqueKey IDs; UseExisting on a running Approval; tenant GET isolation |
+| Schedules | [`AdminApiTemporalScheduleAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleAgentLifecycleTests.cs) | Activable Setup `CreateIfNotExistsAsync` on Tick; interval fires; Admin list/get/history/pause/resume/delete; tenant list isolation |
 
 ```bash
 dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
@@ -22,6 +23,7 @@ dotnet test --filter "FullyQualifiedName~DocumentDbAgent_SavePush_AdminReadModif
 dotnet test --filter "FullyQualifiedName~WebhookAgent_InboundBuiltin_AdminCrudIsolatesAndRevokes"
 dotnet test --filter "FullyQualifiedName~FileMessagingAgent_UserUploadAndAgentSend_RoundTripAndIsolate"
 dotnet test --filter "FullyQualifiedName~CustomWorkflowAgent_DefineCustom_StartExecuteSignalAndAdminOps"
+dotnet test --filter "FullyQualifiedName~SchedulerAgent_ActivableSetup_CreatesScheduleAndAdminOps"
 ```
 
 The tests project references `../../XiansAi.Lib/Xians.Lib/Xians.Lib.csproj`. Clone that repo next to this one or restore fails for the whole test project.
@@ -61,8 +63,9 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Builtin inbound webhooks as the running Integrator handles them (`OnWebhook` / `context.Respond`, SDK `Webhooks.CreateAsync`)
 - File messages both ways: user `POST .../send/file` into `OnFileUpload`, agent `ReplyWithFileAsync` / `SendFileAsync` back through GridFS
 - Custom Temporal classes registered with `DefineCustom` and driven through `XiansContext.Workflows`
+- Schedules created from an activable workflow (`CreateIfNotExistsAsync`) and managed through Admin HTTP
 
-Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. None of these is a catalogue of every Lib sample.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). Document DB is the agent's persistent JSON store (Type+Key, auto-scoped queries). Webhooks is the inbound Integrator contract (`POST /api/user/webhooks/builtin`). Files is the first-class `File` message contract (bytes in GridFS, `fileId` on the wire). Custom workflows is `DefineCustom` + Start / Execute / Signal plus Admin list/get/types/cancel. Schedules is the [self-scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) contract (activable Setup creates a Tick interval). None of these is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -375,6 +378,32 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 
 Custom workers listen on the unprefixed system queue (`{agent}:Onboarding`, `{agent}:Inventory Check`, `{agent}:Payment`, `{agent}:Approval`), same reason as Supervisor.
 
+## Agent under test: Schedules
+
+Same host as the other Lib cycles. Setup is `Activable = true` and Tick is not — the [Scheduling](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/scheduling/) pattern: create the schedule **inside** the activable workflow so the id is `{tenant}:{agent}:{activation}:{scheduleName}`. Admin activate starts Setup; Setup calls `CreateIfNotExistsAsync` on Tick with `.EverySeconds(1)`.
+
+```text
+1. Admin activate → starts Setup; Setup creates schedule tick
+2. Admin list/get {tenant}:{agent}:front-desk:tick; workflowType is {agent}:Tick
+3. GET upcoming-runs; GET history until at least two Tick actions
+4. POST pause → status Suspended; executionCount stays put
+5. POST resume → status Running
+6. Other tenant list does not include the owner's schedule id
+7. DELETE by-id → GET by-id 404
+```
+
+Admin HTTP used beyond the shared deploy/activate helpers:
+
+- `GET /api/v1/admin/tenants/{tenant}/agents/{agent}/schedules`
+- `GET .../schedules/by-id?scheduleId=…`
+- `GET .../schedules/upcoming-runs?scheduleId=…`
+- `GET .../schedules/history?scheduleId=…`
+- `POST .../schedules/pause?scheduleId=…`
+- `POST .../schedules/resume?scheduleId=…`
+- `DELETE .../schedules/by-id?scheduleId=…`
+
+Stub schedule create/pause/resume/delete (no Lib agent) remains [`AdminApiTemporalScheduleAndTaskTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleAndTaskTests.cs).
+
 ## Test harness around Lib
 
 Lib's HTTP client uses `SocketsHttpHandler`. It cannot be given `TestServer.CreateHandler()`. [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) binds `HttpListener` on `127.0.0.1:{ephemeral}` and forwards to the in-process TestServer. [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) owns that loopback.
@@ -397,7 +426,7 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 - Other Lib samples (`CustomWorkflow` HITL/MAF, …)
 - Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, or Custom workflows into a second sample.
+Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, or Schedules into a second sample.
 
 ## Adding another Lib agent workflow
 
@@ -406,7 +435,7 @@ Reuse [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentW
 1. Stay in the `AdminApiTemporal` collection and `AdminApiTemporalIntegrationTestBase`.
 2. `await using var host = await LibAgentWorkflowHost.StartAsync(...)`; `BindTenantContext`.
 3. `host.RegisterTemplate` with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
-4. Define only the workflows (and knowledge / secrets / documents / webhooks / files / custom types) the assertion needs.
+4. Define only the workflows (and knowledge / secrets / documents / webhooks / files / custom types / schedules) the assertion needs.
 5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy.
 6. Drive the public Admin API; poll history or list endpoints instead of a single Temporal visibility read.
 7. Dispose of the host (cancels workers and resets Lib statics).

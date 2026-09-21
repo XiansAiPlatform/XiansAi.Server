@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Secret Vault / Document DB / Webhooks / Files / Custom workflow / Schedules Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -43,7 +43,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Secret Vault, Document DB, Webhooks, Files, Custom workflows, Schedules) | Full system-template lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -104,6 +104,10 @@ System file-messaging agent authored with Xians.Lib (`OnFileUpload` / `ReplyWith
 ### `AdminApiTemporalCustomWorkflowAgentLifecycleTests`
 
 System custom-workflow agent authored with Xians.Lib (`DefineCustom` + `XiansContext.Workflows`). Admin activate starts the `Activable` Onboarding workflow. Chat `ExecuteAsync` / `StartAsync` / `SignalAsync` start Inventory Check, Payment, and Approval. Admin list/get/types/cancel those runs; a second tenant cannot GET the owner's workflow id. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalScheduleAgentLifecycleTests`
+
+System scheduling agent authored with Xians.Lib. Activable Setup creates an interval schedule that starts Tick. Admin list/get/history/pause/resume/delete that schedule; another tenant's list does not include it. Same host: [Lib agent workflows](./lib-agent-workflows.md). Stub schedule HTTP without Lib is still `AdminApiTemporalScheduleAndTaskTests`.
 
 ## Seeding Temporal tests
 
