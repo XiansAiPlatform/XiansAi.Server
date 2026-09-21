@@ -8,6 +8,7 @@ These classes use [`AdminApiIntegrationTestBase`](../../../XiansAi.Server.Tests/
 
 | Class | Coverage |
 | --- | --- |
+| `AdminAuthEndpointsTests` | Real `sk-Xnai-` Admin scheme: missing/malformed/unknown keys, query-string `apikey` ignored, non-admin roles 401, TenantAdmin own-tenant vs other-tenant vs IDOR 403, SysAdmin-only 403, SysAdmin cross-tenant 200 / missing tenant 404, revoked key, legacy email `CreatedBy`, `X-On-Behalf-Of` |
 | `AdminAgentEndpointsTests` | List, get, create, update, delete tenant agents |
 | `AdminAgentActivationEndpointsTests` | Activation CRUD and Mongo-side activate/deactivate flags |
 | `AdminAgentAccessEndpointsTests` | Participant access to an agent |

@@ -49,7 +49,10 @@ The factory rebinds these policies onto the `Test` scheme:
 - Web API: `RequireTokenAuth`, `RequireTenantAuth`, `RequireTenantAuthWithoutConfig`
 - Admin-style role policies: `RequireSysAdmin`, `RequireTenantAdmin`
 
-Policies that are **not** overridden still need a real credential. UserApi `EndpointAuthPolicy` is one of those: [`RestEndpointsTests`](../../../XiansAi.Server.Tests/IntegrationTests/UserApi/RestEndpointsTests.cs) creates an API key through the repository and passes it as `apikey`.
+Policies that are **not** overridden still need a real credential:
+
+- UserApi `EndpointAuthPolicy`: [`RestEndpointsTests`](../../../XiansAi.Server.Tests/IntegrationTests/UserApi/RestEndpointsTests.cs) creates an API key through the repository and passes it as `apikey`.
+- Admin API `AdminEndpointAuthPolicy` stays on `AdminEndpointApiKeyScheme` (`sk-Xnai-…` Bearer keys). [`AdminAuthEndpointsTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminAuthEndpointsTests.cs) exercises that path with a raw factory `HttpClient` so [`RetryHttpClient`](../../../XiansAi.Server.Tests/TestUtils/RetryHttpClient.cs) does not retry expected 401s.
 
 ### Per-surface HTTP headers
 
@@ -104,7 +107,7 @@ When Temporal is opted in, the real gateway and `ActivationCleanupService` stay 
 | [`AdminApiIntegrationTestBase`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiIntegrationTestBase.cs) | Admin key setup plus seed helpers (`CreateTestTenantAsync`, `CreateTestAgentAsync`, `CreateTestActivationAsync`, `CreateBuiltInFlowDefinitionAsync`, …) |
 | [`AdminApiTemporalIntegrationTestBase`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalIntegrationTestBase.cs) | Shared Temporal client, stub worker start, workflow/HITL wait helpers |
 
-[`RetryHttpClient`](../../../XiansAi.Server.Tests/TestUtils/RetryHttpClient.cs) retries unauthorized and timeout responses. Prefer the helpers on the Web/Admin bases over constructing `HttpRequestMessage` by hand.
+[`RetryHttpClient`](../../../XiansAi.Server.Tests/TestUtils/RetryHttpClient.cs) retries unauthorized and timeout responses. Prefer the helpers on the Web/Admin bases over constructing `HttpRequestMessage` by hand. Auth-negative Admin tests are the exception: they call `_factory.CreateClient()` so a 401 is the assertion, not a retry.
 
 ## Logging
 
