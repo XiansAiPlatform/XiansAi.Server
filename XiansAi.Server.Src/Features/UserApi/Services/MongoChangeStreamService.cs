@@ -110,14 +110,14 @@ namespace Features.UserApi.Services
                         {
                             var collections = await database.ListCollectionNamesAsync(cancellationToken: stoppingToken);
                             return await collections.ToListAsync(stoppingToken);
-                        }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "ListCollectionNames");
+                        }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "ListCollectionNames", cancellationToken: stoppingToken);
 
                         if (!exists.Contains(collectionName))
                         {
                             await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
                             {
                                 await database.CreateCollectionAsync(collectionName, cancellationToken: stoppingToken);
-                            }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "CreateCollection");
+                            }, _logger, maxRetries: 5, baseDelayMs: 1000, operationName: "CreateCollection", cancellationToken: stoppingToken);
                         }
 
                         _collectionEnsured = true;
@@ -146,10 +146,12 @@ namespace Features.UserApi.Services
                         _logger,
                         maxRetries: 5,
                         baseDelayMs: 2000,
-                        operationName: "WatchChangeStream");
+                        operationName: "WatchChangeStream",
+                        cancellationToken: stoppingToken);
 
-                    // Iterate using MoveNextAsync and Current
-                    while (await cursor.MoveNextAsync(stoppingToken))
+                    // WaitAsync so host shutdown does not sit out the driver's server-selection
+                    // timeout when MoveNextAsync ignores the stopping token.
+                    while (await cursor.MoveNextAsync(stoppingToken).WaitAsync(stoppingToken))
                     {
                         if (stoppingToken.IsCancellationRequested) break;
 
