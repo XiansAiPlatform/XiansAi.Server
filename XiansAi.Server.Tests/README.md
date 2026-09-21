@@ -33,9 +33,9 @@ We deliberately avoid:
   asserts a single, deterministic outcome, seeding data where necessary.
 - Duplicated tests that re-exercise the same code path with cosmetic differences.
 - Endpoints that cannot run meaningfully in-process (SignalR hubs and live SSE streams).
-  Temporal list/get/cancel and related Admin API paths run against a local CLI/dev server in
-  `AdminApiTemporalEndpointsTests`; HITL/heartbeat success still needs a worker and is not
-  covered here.
+  Temporal list/get/cancel, activate/deactivate, messaging, heartbeat, HITL tasks,
+  schedules, and worker deployments run against a local CLI/dev server in the
+  `AdminApiTemporal` collection. Live SSE streams are still skipped.
 
 ## How the integration test host works
 
@@ -81,7 +81,7 @@ dotnet test --filter "FullyQualifiedName~CacheEndpointTests.SetAndGetCacheValue_
 dotnet test --filter "FullyQualifiedName~KnowledgeEndpointsTests"
 
 # Admin API tests that use the local Temporal CLI/dev server
-dotnet test --filter "FullyQualifiedName~AdminApiTemporalEndpointsTests"
+dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 
 # Generate an HTML report
 dotnet test --logger "html;LogFileName=test-results.html"

@@ -104,7 +104,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton(mockBackgroundTaskService.Object);
 
             // Default tests mock Temporal. Opt-in Temporal tests keep the real gateway
-            // and talk to the local CLI/dev server started by TemporalFixture.
+            // and ActivationCleanupService so deactivate/schedule cleanup hit the local CLI.
             if (_temporalFixture == null)
             {
                 var mockTemporalGatewayService = new Mock<ITemporalGatewayService>();
@@ -119,15 +119,14 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                     .Returns(Task.CompletedTask);
                 RemoveService<ITemporalGatewayService>(services);
                 services.AddSingleton(mockTemporalGatewayService.Object);
-            }
 
-            // Mock activation cleanup so deactivate endpoints can succeed without Temporal.
-            var mockActivationCleanupService = new Mock<IActivationCleanupService>();
-            mockActivationCleanupService
-                .Setup(x => x.CleanupActivationResourcesAsync(It.IsAny<AgentActivation>()))
-                .ReturnsAsync(ServiceResult<ActivationCleanupResult>.Success(new ActivationCleanupResult()));
-            RemoveService<IActivationCleanupService>(services);
-            services.AddSingleton(mockActivationCleanupService.Object);
+                var mockActivationCleanupService = new Mock<IActivationCleanupService>();
+                mockActivationCleanupService
+                    .Setup(x => x.CleanupActivationResourcesAsync(It.IsAny<AgentActivation>()))
+                    .ReturnsAsync(ServiceResult<ActivationCleanupResult>.Success(new ActivationCleanupResult()));
+                RemoveService<IActivationCleanupService>(services);
+                services.AddSingleton(mockActivationCleanupService.Object);
+            }
 
             // Mock IUserTenantService to always return the test tenant for the test user
             var mockUserTenantService = new Mock<IUserTenantService>();

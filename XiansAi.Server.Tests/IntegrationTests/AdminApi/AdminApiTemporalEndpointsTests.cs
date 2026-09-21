@@ -202,29 +202,4 @@ public class AdminApiTemporalEndpointsTests : AdminApiTemporalIntegrationTestBas
             new { });
         Assert.Equal(HttpStatusCode.OK, cancel.StatusCode);
     }
-
-    private async Task<bool> WaitForWorkflowInListAsync(string tenantId, string agentName, string workflowId)
-    {
-        var uri = $"/api/v1/admin/tenants/{tenantId}/workflows/list?agent={Uri.EscapeDataString(agentName)}";
-
-        for (var attempt = 0; attempt < 20; attempt++)
-        {
-            var response = await GetAsync(uri);
-            if (response.StatusCode == HttpStatusCode.OK)
-            {
-                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                foreach (var item in json.RootElement.GetProperty("workflows").EnumerateArray())
-                {
-                    if (string.Equals(item.GetProperty("workflowId").GetString(), workflowId, StringComparison.Ordinal))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            await Task.Delay(250);
-        }
-
-        return false;
-    }
 }
