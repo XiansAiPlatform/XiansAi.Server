@@ -41,9 +41,9 @@ await CreateTestTenantAsync(tenantId);
 
 ## Admin API (Temporal)
 
-See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`.
+See [Temporal tests](./temporal.md). Classes: `AdminApiTemporalEndpointsTests`, `AdminApiTemporalLifecycleTests`, `AdminApiTemporalScheduleAndTaskTests`, `AdminApiTemporalEchoAgentLifecycleTests`, `AdminApiTemporalKnowledgeAgentLifecycleTests`, `AdminApiTemporalSecretVaultAgentLifecycleTests`.
 
-Lib-backed cycles (Echo chat/SSE, Knowledge overrides) are documented in [Lib agent workflows](./lib-agent-workflows.md).
+Lib-backed cycles (Echo chat/SSE, Knowledge overrides, Secret Vault strict scopes) are documented in [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Web API
 

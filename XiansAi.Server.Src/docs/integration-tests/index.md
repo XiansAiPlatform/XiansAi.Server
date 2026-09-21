@@ -9,7 +9,7 @@ This folder is the canonical description of that suite. The test project [`READM
 - [Host and fixtures](./host.md) — `WebApplicationFactory`, MongoDB, auth, configuration, and mocks
 - [API suites](./suites.md) — what each test class covers, and how to add one
 - [Temporal tests](./temporal.md) — local Temporal CLI and the in-process stub worker
-- [Lib agent workflows](./lib-agent-workflows.md) — Echo and Knowledge cycles authored with Xians.Lib
+- [Lib agent workflows](./lib-agent-workflows.md) — Echo, Knowledge, and Secret Vault cycles authored with Xians.Lib
 
 ## Quick start
 

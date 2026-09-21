@@ -8,7 +8,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, later agents).
+/// Admin HTTP helpers shared by Lib-backed Temporal cycles (Echo, Knowledge, Secret Vault).
 /// </summary>
 public abstract partial class AdminApiTemporalIntegrationTestBase
 {
@@ -114,7 +114,7 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
             var history = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/history?{query}");
             lastBody = await history.Content.ReadAsStringAsync();
             if (history.StatusCode == HttpStatusCode.OK &&
-                lastBody.Contains(expectedText, StringComparison.Ordinal))
+                HistoryMessageTextContains(lastBody, expectedText))
             {
                 return (true, lastBody);
             }
@@ -125,20 +125,49 @@ public abstract partial class AdminApiTemporalIntegrationTestBase
         return (false, lastBody);
     }
 
+    private static bool HistoryMessageTextContains(string body, string expectedText)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return body.Contains(expectedText, StringComparison.Ordinal);
+            }
+
+            foreach (var item in json.RootElement.EnumerateArray())
+            {
+                if (item.TryGetProperty("text", out var text) &&
+                    text.GetString()?.Contains(expectedText, StringComparison.Ordinal) == true)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (JsonException)
+        {
+            return body.Contains(expectedText, StringComparison.Ordinal);
+        }
+    }
+
     protected async Task AssertAgentRepliesWithAsync(
         string tenantId,
         string agentName,
         string activationName,
-        string expectedText)
+        string expectedText,
+        string userText = "what knowledge do you have?",
+        string? participantId = null)
     {
         BindTenantContext(tenantId, _adminUserId!);
-        var participantId = $"reader-{Guid.NewGuid():N}@example.com";
+        participantId ??= $"reader-{Guid.NewGuid():N}@example.com";
         var send = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/messaging/send", new
         {
             agentName,
             activationName,
             participantId,
-            text = "what knowledge do you have?"
+            text = userText
         });
         Assert.Equal(HttpStatusCode.OK, send.StatusCode);
 

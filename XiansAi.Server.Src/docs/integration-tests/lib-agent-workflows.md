@@ -8,10 +8,12 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | --- | --- | --- |
 | Echo | [`AdminApiTemporalEchoAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalEchoAgentLifecycleTests.cs) | Template → deploy → chat, plus live SSE/SignalR |
 | Knowledge | [`AdminApiTemporalKnowledgeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeAgentLifecycleTests.cs) | System knowledge upload, tenant override, activation override, isolation |
+| Secret Vault | [`AdminApiTemporalSecretVaultAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultAgentLifecycleTests.cs) | Create/fetch/update/delete through a running agent; strict tenant / agent / participant / activation isolation; Admin never sees values |
 
 ```bash
 dotnet test --filter "FullyQualifiedName~EchoAgent_TemplateDeployActivateMessageDeactivateAndRemove"
 dotnet test --filter "FullyQualifiedName~KnowledgeAgent_SystemUpload_TenantAndActivationOverridesIsolate"
+dotnet test --filter "FullyQualifiedName~SecretVaultAgent_CreateFetch_StrictScopeIsolationAndRotation"
 ```
 
 The tests project references `../../XiansAi.Lib/Xians.Lib/Xians.Lib.csproj`. Clone that repo next to this one or restore fails for the whole test project.
@@ -46,8 +48,9 @@ The stub worker proves Admin routes can start, signal, and cancel Temporal workf
 - Task-queue selection for system-scoped agents
 - Activate / send / deactivate / delete against a worker that registered itself
 - Knowledge fallback as the running agent actually reads it (`GetAsync` inside the supervisor)
+- Secret Vault strict scope as the running agent writes and reads it (`TenantScope()` / `FetchByKeyAsync` inside the supervisor)
 
-Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract. Neither is a catalogue of every Lib sample.
+Echo is the chat/fan-out contract. Knowledge is the scoped-knowledge contract (fallback). Secret Vault is the scoped-secret contract (strict match). None of these is a catalogue of every Lib sample.
 
 ## Agent under test: Echo
 
@@ -230,6 +233,30 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 
 Each chat uses a unique `participantId` so history from an earlier step cannot satisfy a later assertion.
 
+## Agent under test: Secret Vault
+
+Same host as Echo and Knowledge. The supervisor parses a short chat command and calls the documented SDK (`TenantScope()` then optional `AgentScope()` / `ParticipantScope()` / `ActivationScope()`). Fetch is **strict** — the read scope must equal the write scope. There is no Knowledge-style fallback. Product behaviour: [Secret Vault](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/secret-vault/).
+
+```text
+1. Create tenant-only secret via chat → owner fetch returns the value
+   Other tenant fetch of the same key → missing
+   Same tenant fetch with AgentScope() → missing (strict)
+   Admin list/fetch include the key and never the value
+2. Admin creates a second tenant secret (response redacted) → agent TenantScope fetch returns the value
+3. Create agent-scoped secret → that agent fetches it; the second agent and TenantScope() do not
+4. Create activation-scoped secret on front-desk → front-desk fetches it; back-office and the second agent do not
+5. Create participant-scoped secret as owner@… → that participant fetches it; another participant does not
+6. Update then delete the tenant secret through the agent → fetch sees rotated value, then missing
+```
+
+Admin HTTP used beyond the shared deploy/activate helpers:
+
+- `POST /api/v1/admin/secrets` (value is stripped from the response)
+- `GET /api/v1/admin/secrets?tenantId=…` (list metadata, no values)
+- `GET /api/v1/admin/secrets/fetch?key&tenantId` (metadata probe, no values)
+
+Values are proven only through the agent's `FetchByKeyAsync` + `ReplyAsync`. Participant isolation reuses a fixed `participantId` for create and fetch; other chats still use a unique id so history cannot collide. History polling matches each message's `text` field, not the raw JSON (a reply of `created` must not match `createdAt`).
+
 ## Test harness around Lib
 
 Lib's HTTP client uses `SocketsHttpHandler`. It cannot be given `TestServer.CreateHandler()`. [`TestServerLoopback`](../../../XiansAi.Server.Tests/TestUtils/TestServerLoopback.cs) binds `HttpListener` on `127.0.0.1:{ephemeral}` and forwards to the in-process TestServer. [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentWorkflowHost.cs) owns that loopback.
@@ -250,7 +277,7 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 - Tenant-scoped agents that are not system templates
 - Other Lib samples (`FileUpload`, `CustomWorkflow`, …)
 
-Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo or Knowledge into a second sample.
+Keep those as separate tests on `LibAgentWorkflowHost` if they become required. Do not grow Echo, Knowledge, or Secret Vault into a second sample.
 
 ## Adding another Lib agent workflow
 
@@ -259,7 +286,7 @@ Reuse [`LibAgentWorkflowHost`](../../../XiansAi.Server.Tests/TestUtils/LibAgentW
 1. Stay in the `AdminApiTemporal` collection and `AdminApiTemporalIntegrationTestBase`.
 2. `await using var host = await LibAgentWorkflowHost.StartAsync(...)`; `BindTenantContext`.
 3. `host.RegisterTemplate` with a unique name. Use `IsTemplate = true` if Admin send should hit the system queue.
-4. Define only the workflows (and knowledge) the assertion needs.
+4. Define only the workflows (and knowledge / secrets) the assertion needs.
 5. `StartWorkersAsync` then `WaitForTemplateAsync` before deploy.
 6. Drive the public Admin API; poll history or list endpoints instead of a single Temporal visibility read.
 7. Dispose of the host (cancels workers and resets Lib statics).
