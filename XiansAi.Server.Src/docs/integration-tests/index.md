@@ -9,7 +9,7 @@ This folder is the canonical description of that suite. The test project [`READM
 - [Host and fixtures](./host.md) — `WebApplicationFactory`, MongoDB, auth, configuration, and mocks
 - [API suites](./suites.md) — what each test class covers, and how to add one
 - [Temporal tests](./temporal.md) — local Temporal CLI and the in-process stub worker
-- [Lib agent workflows](./lib-agent-workflows.md) — Echo, Knowledge, Knowledge list, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Webhooks, Webhook SDK, Files, Workflow files, Custom workflow, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, and Tenant-scoped cycles authored with Xians.Lib
+- [Lib agent workflows](./lib-agent-workflows.md) — Echo, Knowledge, Knowledge list, Knowledge SDK, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Document context, Webhooks, Webhook SDK, Webhook context, Files, Workflow files, Custom workflow, Child workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, and Tenant-scoped cycles authored with Xians.Lib
 
 ## Quick start
 

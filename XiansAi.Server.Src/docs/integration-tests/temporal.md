@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Secret Vault / Secret Vault SDK / Document DB / Webhooks / Files / Workflow files / Custom workflow / Schedules / Schedule SDK / HITL / HITL SDK / Cross-agent / Activations SDK / Metrics / Logging / Messaging SDK / Tenant-scoped Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Knowledge list / Knowledge SDK / Secret Vault / Secret Vault SDK / Document DB / Document DB SDK / Document context / Webhooks / Webhook SDK / Webhook context / Files / Workflow files / Custom workflow / Child workflows / Workflow handle / Schedules / Schedule SDK / Schedule create / HITL / HITL SDK / HITL conversation / HITL last task / Cross-agent / Activations SDK / Metrics / Logging / Messaging SDK / Tenant-scoped Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -43,7 +43,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Secret Vault, Secret Vault SDK, Document DB, Webhooks, Files, Workflow files, Custom workflows, Schedules, Schedule SDK, HITL, HITL SDK, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, Tenant-scoped) | Full system-template (or tenant-scoped) lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Knowledge list, Knowledge SDK, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Document context, Webhooks, Webhook SDK, Webhook context, Files, Workflow files, Custom workflows, Child workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, Tenant-scoped) | Full system-template (or tenant-scoped) lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -89,6 +89,10 @@ System Knowledge agent authored with Xians.Lib (supervisor replies with `GetAsyn
 
 System Knowledge list agent authored with Xians.Lib. Admin POSTs tenant knowledge; chat `"list"` is `ListAsync`. Another agent does not see the owner's names. GetAsync fallback stays on the Knowledge cycle. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
+### `AdminApiTemporalKnowledgeSdkAgentLifecycleTests`
+
+System Knowledge agent authored with Xians.Lib. Chat `ExecuteAsync` a Manage workflow that calls `GetAsync("playbook")` and `ListAsync` from an activity and from workflow code (system `KnowledgeActivities` stub). Fallback isolation stays on Knowledge; List agent-scoping stays on Knowledge list. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
 ### `AdminApiTemporalSecretVaultAgentLifecycleTests`
 
 System Secret Vault agent authored with Xians.Lib. Chat commands create / fetch / update / delete via `XiansContext.CurrentAgent.Secrets` with no-arg scopes from live context. Fetch is a **strict** match (tenant / agent / participant / activation) — unlike Knowledge, there is no fallback. Admin list/fetch return metadata only. Same host: [Lib agent workflows](./lib-agent-workflows.md).
@@ -105,6 +109,10 @@ System Document DB agent authored with Xians.Lib. Chat saves Type+Key JSON (`Sav
 
 System Document DB agent authored with Xians.Lib. Chat `"run"` calls `QueryAsync` / `GetAsync(id)` / `ExistsAsync` / `UpdateAsync` / `DeleteAsync` / `DeleteManyAsync`. A leftover save plus another participant `"query leftover"` proves Query auto-scope. Save/GetByKey and Admin CRUD stay on the Document DB cycle. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
+### `AdminApiTemporalDocumentDbContextAgentLifecycleTests`
+
+System Document DB agent authored with Xians.Lib. Chat `ExecuteAsync` a Manage workflow that calls `SaveAsync` / `GetByKeyAsync` from an activity and from workflow code (system `DocumentActivities` stub). Isolation and Query/Update/Delete stay on Document DB / Document DB SDK. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
 ### `AdminApiTemporalWebhookAgentLifecycleTests`
 
 System webhook agent authored with Xians.Lib (`DefineIntegrator` + `OnWebhook`, supervisor `agent.Webhooks.CreateAsync`). Admin `/tenants/{tenant}/webhooks` lists, creates, and deletes. Inbound `POST /api/user/webhooks/builtin` authenticates with `apikeyId` (UserApi policy is not stubbed) and waits for `context.Respond`. Other tenants and agents do not share the owner's URL; delete revokes the key (401); deactivate returns 409. Same host: [Lib agent workflows](./lib-agent-workflows.md).
@@ -113,13 +121,21 @@ System webhook agent authored with Xians.Lib (`DefineIntegrator` + `OnWebhook`, 
 
 System webhook agent authored with Xians.Lib. Integrator `WebhookResponse.NotFound` is HTTP 404. Chat SDK `DeleteAsync` revokes the key (401). Create/list/200 respond stay on the Webhooks cycle. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
+### `AdminApiTemporalWebhookContextAgentLifecycleTests`
+
+System webhook agent authored with Xians.Lib. Chat `ExecuteAsync` a Manage workflow that calls `CreateAsync` / `ListAsync` / `DeleteAsync` from an activity and from workflow code (system `WebhookActivities` stub). Inbound POST stays on Webhooks; non-200 respond stays on Webhook SDK. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
 ### `AdminApiTemporalFileMessagingAgentLifecycleTests`
 
 System file-messaging agent authored with Xians.Lib (`OnFileUpload` / `ReplyWithFileAsync` / `SendFileAsync`). Admin `POST .../messaging/send/file` stores bytes in GridFS and signals `fileId` references; the handler hydrates bytes and sends a file back. Chat `SendFileAsync` is the agent-originated direction. History has refs only; Admin download is tenant-scoped. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### `AdminApiTemporalCustomWorkflowAgentLifecycleTests`
 
-System custom-workflow agent authored with Xians.Lib (`DefineCustom` + `XiansContext.Workflows`). Admin activate starts the `Activable` Onboarding workflow. Chat `ExecuteAsync` / `StartAsync` / `SignalAsync` start Inventory Check, Payment, and Approval. Admin list/get/types/cancel those runs; a second tenant cannot GET the owner's workflow id. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+System custom-workflow agent authored with Xians.Lib (`DefineCustom` + `XiansContext.Workflows`). Admin activate starts the `Activable` Onboarding workflow. Chat `ExecuteAsync` / `StartAsync` / `SignalAsync` start Inventory Check, Payment, and Approval (Temporal **client** path). Admin list/get/types/cancel those runs; a second tenant cannot GET the owner's workflow id. Parent `[WorkflowRun]` child start is the Child workflows cycle. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalChildWorkflowAgentLifecycleTests`
+
+System child-workflow agent authored with Xians.Lib. Chat starts a Parent `[WorkflowRun]` that `ExecuteAsync` / `StartAsync` / `SignalAsync` sibling custom types as Temporal **children**. Hold has no uniqueKey so `SignalAsync` can target `{tenant}:{agent}:Hold:{activation}`. Client-path Start/Execute/Signal stay on Custom workflows. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### `AdminApiTemporalWorkflowHandleAgentLifecycleTests`
 

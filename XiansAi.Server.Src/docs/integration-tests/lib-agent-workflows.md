@@ -324,6 +324,16 @@ Same host. Admin POSTs tenant knowledge (`alpha`/`beta` on the owner, `gamma` on
 3. Other agent chat "list" → list:gamma
 ```
 
+## Agent under test: Knowledge SDK
+
+Same host as the other Lib cycles. Chat `ExecuteAsync` a Manage workflow that either runs `GetAsync("playbook")` + `ListAsync` in an activity or in workflow code (`fromWorkflow`), matching the Secret Vault SDK dual-context pattern. Workflow reads go through the system `KnowledgeActivities` stub so HTTP is not recorded as workflow history. Fallback isolation stays on the Knowledge cycle; List agent-scoping stays on Knowledge list.
+
+```text
+1. Admin POST tenant knowledge playbook, glossary
+2. Chat "run" from activity → run:ok:activity:playbook (Get content + List includes playbook)
+3. Chat "run" from workflow → run:ok:workflow:playbook
+```
+
 ## Agent under test: Secret Vault
 
 Same host as Echo and Knowledge. The supervisor parses a short chat command and calls the documented SDK (`TenantScope()` then optional `AgentScope()` / `ParticipantScope()` / `ActivationScope()`). Fetch is **strict** — the read scope must equal the write scope. There is no Knowledge-style fallback. Product behaviour: [Secret Vault](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/secret-vault/).
@@ -388,6 +398,15 @@ Same host. Chat `"run"` saves two Type+Key documents, then `QueryAsync` / `GetAs
 3. Other participant "query leftover" → query:0
 ```
 
+## Agent under test: Document context
+
+Same host. Chat `ExecuteAsync` a Manage workflow that either runs `SaveAsync` + `GetByKeyAsync` in an activity or in workflow code (`fromWorkflow`). Workflow path uses the system `DocumentActivities` stub. Persistence isolation and Query/Update/Delete stay on Document DB / Document DB SDK.
+
+```text
+1. Chat "run" from activity → Save + GetByKey → run:ok:activity
+2. Chat "run" from workflow → Save + GetByKey via DocumentActivities → run:ok:workflow
+```
+
 ## Agent under test: Webhooks
 
 Same host as the other Lib cycles. The agent registers **both** `DefineSupervisor` (SDK create/list via chat) and `DefineIntegrator` (`OnWebhook` + `context.Respond`) — the shape of [`Xians.Examples/EchoAgent`](../../../../XiansAi.Lib/Xians.Examples/EchoAgent/Program.cs) plus [`WebhookCollection`](../../../../XiansAi.Lib/Xians.Lib/Agents/Webhooks/WebhookCollection.cs). Product behaviour: [Webhooks](../WEBHOOKS.md).
@@ -434,6 +453,15 @@ Same host. Integrator always `Respond(WebhookResponse.NotFound("denied"))`. Chat
 4. POST the same URL → 401
 ```
 
+## Agent under test: Webhook context
+
+Same host. Chat `ExecuteAsync` a Manage workflow that either runs `CreateAsync` / `ListAsync` / `DeleteAsync` in an activity or in workflow code (`fromWorkflow`). Workflow path uses the system `WebhookActivities` stub. Inbound POST and Integrator respond stay on the Webhooks cycle; non-200 respond and Delete-only stay on Webhook SDK.
+
+```text
+1. Chat "run" from activity → Create, List finds it, Delete → run:ok:activity
+2. Chat "run" from workflow → same via WebhookActivities → run:ok:workflow
+```
+
 ## Agent under test: Files
 
 Same host as the other Lib cycles. The supervisor registers `OnFileUpload` and `OnUserChatMessage`, the receive/send shape of [File messaging](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/messaging-fileupload/) and [`Xians.Examples/FileUpload`](../../../../XiansAi.Lib/Xians.Examples/FileUpload/Program.cs) (handler path only — not the custom workflow send).
@@ -459,7 +487,7 @@ Reuse a fixed `participantId` for upload, generate, and download so GridFS parti
 
 ## Agent under test: Custom workflows
 
-Same host as the other Lib cycles. The supervisor registers **Onboarding** with `Activable = true` and three `DefineCustom` types with `Activable = false`, each with a runtime `typeName` of `{agentName}:…` — the [Workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/workflows/) pattern (`StartAsync`, `ExecuteAsync`, `SignalAsync`, uniqueKey IDs). Admin activate starts only Onboarding (`ActivationService` skips `Activable = false`). Chat handlers run as Temporal activities, so `XiansContext.Workflows` uses the Temporal **client** path (not child-workflow start). Client `StartAsync` sets `IdConflictPolicy = UseExisting`: a second start of a still-running workflow succeeds without creating another execution (it does not throw `WorkflowAlreadyStartedException`). The Approval signal is registered as `ApproveAsync` (Temporal otherwise trims the `Async` suffix from the method name). Template deploy copies `Activable` onto the tenant flow definition so activate can see it.
+Same host as the other Lib cycles. The supervisor registers **Onboarding** with `Activable = true` and three `DefineCustom` types with `Activable = false`, each with a runtime `typeName` of `{agentName}:…` — the [Workflows](https://xiansaiplatform.github.io/XiansAi.Docs/concepts/workflows/) pattern (`StartAsync`, `ExecuteAsync`, `SignalAsync`, uniqueKey IDs). Admin activate starts only Onboarding (`ActivationService` skips `Activable = false`). Chat handlers run as Temporal activities, so `XiansContext.Workflows` uses the Temporal **client** path (not child-workflow start). Parent `[WorkflowRun]` child start is the Child workflows cycle. Client `StartAsync` sets `IdConflictPolicy = UseExisting`: a second start of a still-running workflow succeeds without creating another execution (it does not throw `WorkflowAlreadyStartedException`). The Approval signal is registered as `ApproveAsync` (Temporal otherwise trims the `Async` suffix from the method name). Template deploy copies `Activable` onto the tenant flow definition so activate can see it.
 
 ```text
 1. Admin activate → starts only Onboarding at {tenant}:{agent}:Onboarding:front-desk (Running; worker took the task). System and tenant flow copies of the same type may both be activable; the started workflow id is still that one Onboarding id.
@@ -483,6 +511,15 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 - `POST /api/v1/admin/tenants/{tenant}/workflows/cancel?workflowId=…&force=true`
 
 Custom workers listen on the unprefixed system queue (`{agent}:Onboarding`, `{agent}:Inventory Check`, `{agent}:Payment`, `{agent}:Approval`), same reason as Supervisor.
+
+## Agent under test: Child workflows
+
+Same host. Chat `"run {sku}"` `ExecuteAsync` a Parent `[WorkflowRun]` that starts sibling custom types as Temporal **children** (`ExecuteAsync` Inventory, `StartAsync` Hold without uniqueKey, `SignalAsync` Approve). Hold has no uniqueKey because `SignalAsync` builds the id from the activation postfix only (`{tenant}:{agent}:Hold:{activation}`). The Custom workflows cycle covers the same APIs from a chat activity (Temporal **client** path).
+
+```text
+1. Chat "run {sku}" → Parent Execute Inventory → in-stock:{sku}; Start Hold; Signal Approve → run:ok:in-stock:{sku}:granted
+2. Admin list {tenant}:{agent}:Hold:front-desk → Completed
+```
 
 ## Agent under test: Workflow handle
 
@@ -738,6 +775,24 @@ Lib keeps process-wide statics (handlers, definition-upload cache). The host cal
 
 ## What these cycles do not cover
 
+Chat handlers (`OnUserChatMessage`) already run as Temporal **activities**. A “workflow variant” means the same SDK call from `[WorkflowRun]`, which Lib routes through `*Activities` stubs so HTTP/Temporal I/O is not recorded as workflow history.
+
+### Dual-context matrix
+
+| Area | Activity / chat | Workflow `[WorkflowRun]` | Notes |
+| --- | --- | --- | --- |
+| Knowledge `GetAsync` / `ListAsync` | Knowledge SDK | Knowledge SDK | Fallback isolation stays on Knowledge; List scoping on Knowledge list |
+| Documents Save/GetByKey | Document context | Document context | Query/Update/Delete on Document DB SDK |
+| Webhooks Create/List/Delete | Webhook context | Webhook context | Inbound POST on Webhooks |
+| Secret Vault List/Delete | Secret Vault SDK | Secret Vault SDK | Create/Fetch/GetById/Update refused in workflow |
+| Schedules CreateIfNotExists…Delete | Schedule SDK | Schedule SDK | Strict Create/Describe on Schedule create |
+| HITL TaskCollection progress | HITL SDK | HITL SDK | CreateAndWait / HitlTask are workflow-only |
+| Activations Exists…Deactivate | Activations SDK | Activations SDK | |
+| Metrics / Logging | Metrics / Logging | Metrics / Logging | |
+| Workflows Start/Execute/Signal | Custom workflows (client) | Child workflows (child) | Different ID/policy/history contract |
+| `SignalWithStart` / `GetWorkflowHandle` / `Describe` | Workflow handle / Schedule create | — | Client/activity-only (throw in workflow) |
+| HITL `CreateAndWait` / `Create` / `HitlTask` | — | HITL conversation | Workflow-only (child tasks) |
+
 Documented Agent SDK methods that are still **not** worth a Temporal Lib cycle:
 
 Skip for Lib server tests:
@@ -746,10 +801,11 @@ Skip for Lib server tests:
 - Operating Context registry helpers
 - Convenience twins of covered APIs (`WithMetric`, `ReplyWithFilesAsync`, `UploadEmbeddedResourceAsync`)
 - Secret `ScopeUnbound()`, Schedule `UpdateAsync` / `BackfillAsync` / `GetHandle`
+- Proactive messaging matrix (`SendChatAsync` vs supervisor), document TTL, `HitlTask.RejectAsync`, extra `WebhookResponse` factories, `SkipResponse`
 - A2A (not on the public concepts overview)
 - Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep new coverage as separate tests on `LibAgentWorkflowHost`. Do not grow Echo, Knowledge, Knowledge list, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Webhooks, Webhook SDK, Files, Workflow files, Custom workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, or Tenant-scoped into a second sample.
+Keep new coverage as separate tests on `LibAgentWorkflowHost`. Do not grow Echo, Knowledge, Knowledge list, Knowledge SDK, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Document context, Webhooks, Webhook SDK, Webhook context, Files, Workflow files, Custom workflows, Child workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, or Tenant-scoped into a second sample.
 
 ## Adding another Lib agent workflow
 
