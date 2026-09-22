@@ -67,7 +67,7 @@ public static class KnowledgeEndpoints
             [FromQuery] string agent,
             [FromServices] IKnowledgeService endpoint) =>
         {
-            var request = new DeleteAllVersionsRequest 
+            var request = new DeleteAllVersionsRequest
             {
                 Name = name,
                 Agent = agent

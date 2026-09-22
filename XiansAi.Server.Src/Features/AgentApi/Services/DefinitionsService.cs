@@ -142,7 +142,8 @@ public class DefinitionsService : IDefinitionsService
     private readonly IAgentPermissionRepository _agentPermissionRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IActivationValidationService _activationValidationService;
-    
+    private readonly IAuditLogService _auditLogService;
+
     public DefinitionsService(
         Repositories.IFlowDefinitionRepository flowDefinitionRepository,
         IAgentRepository agentRepository,
@@ -150,7 +151,8 @@ public class DefinitionsService : IDefinitionsService
         ITenantContext tenantContext,
         IAgentPermissionRepository agentPermissionRepository,
         IWebhookEventPublisher webhookEventPublisher,
-        IActivationValidationService activationValidationService
+        IActivationValidationService activationValidationService,
+        IAuditLogService auditLogService
     )
     {
         _flowDefinitionRepository = flowDefinitionRepository;
@@ -160,6 +162,7 @@ public class DefinitionsService : IDefinitionsService
         _agentPermissionRepository = agentPermissionRepository;
         _webhookEventPublisher = webhookEventPublisher;
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
+        _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
     }
 
     public async Task<IResult> CreateAsync(FlowDefinitionRequest request)
@@ -247,10 +250,14 @@ public class DefinitionsService : IDefinitionsService
                 await _flowDefinitionRepository.CreateAsync(definition);
                 _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.FlowDefinitionUpdated,
-                    new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash },
-                    _tenantContext.TenantId);
+                var updatedMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.FlowDefinitionUpdated,
+                    updatedMetadata,
+                    _tenantContext.TenantId,
+                    description: $"Workflow definition '{definition.WorkflowType}' for agent '{request.Agent}' was updated because its hash changed (system-scoped: {request.SystemScoped}).");
 
                 return Results.Ok("Definition deleted and recreated successfully");
             }
@@ -262,10 +269,14 @@ public class DefinitionsService : IDefinitionsService
         await _flowDefinitionRepository.CreateAsync(definition);
         _activationValidationService.InvalidateAgentWorkflowTypesCache(_tenantContext.TenantId, request.Agent!);
 
-        await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.FlowDefinitionCreated,
-            new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash },
-            _tenantContext.TenantId);
+        var createdMetadata = new { tenantId = _tenantContext.TenantId, agentName = request.Agent, workflowType = definition.WorkflowType, systemScoped = request.SystemScoped, hash = definition.Hash };
+        DomainEventEmitter.Emit(
+            _webhookEventPublisher,
+            _auditLogService,
+            DomainEventTypes.FlowDefinitionCreated,
+            createdMetadata,
+            _tenantContext.TenantId,
+            description: $"Workflow definition '{definition.WorkflowType}' for agent '{request.Agent}' was registered (system-scoped: {request.SystemScoped}).");
 
         return Results.Ok("New definition created successfully");
     }
@@ -352,10 +363,16 @@ public class DefinitionsService : IDefinitionsService
 
         if (existingAgent == null)
         {
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.AgentRegistered,
-                new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy },
-                _tenantContext.TenantId);
+            var registeredMetadata = new { tenantId = _tenantContext.TenantId, agentId = agent.Id, agentName = agent.Name, systemScoped = agent.SystemScoped, createdBy = agent.CreatedBy };
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.AgentRegistered,
+                registeredMetadata,
+                _tenantContext.TenantId,
+                description: agent.SystemScoped
+                    ? $"System-scoped agent '{agent.Name}' ({agent.Id}) was registered by '{agent.CreatedBy}'."
+                    : $"Agent '{agent.Name}' ({agent.Id}) was registered in tenant '{_tenantContext.TenantId}' by '{agent.CreatedBy}'.");
         }
         
         return Results.Ok(new 

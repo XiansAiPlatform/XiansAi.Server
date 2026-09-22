@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Shared.Auditing;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -16,12 +17,21 @@ public class GlobalUserAdminServiceDeleteTests
     private readonly Mock<IUserRepository> _userRepo = new();
     private readonly Mock<IUserAuthorizationInvalidator> _invalidator = new();
     private readonly Mock<IWebhookEventPublisher> _webhooks = new();
+    private readonly Mock<IAuditLogService> _audit = new();
     private readonly GlobalUserAdminService _service;
 
     public GlobalUserAdminServiceDeleteTests()
     {
         _webhooks.Setup(x => x.PublishAsync(It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<string?>()))
             .Returns(Task.CompletedTask);
+        _audit.Setup(x => x.RecordEntryAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<object?>(), It.IsAny<string?>()))
+            .ReturnsAsync(ServiceResult<AuditLogEntry>.Success(new AuditLogEntry
+            {
+                TenantId = AuditLogTenants.Platform,
+                ParticipantId = ActingUserId,
+                LoggedInUser = ActingUserId,
+                Action = DomainEventTypes.UserDeleted
+            }));
         _invalidator.Setup(x => x.InvalidateAsync(It.IsAny<User>()))
             .Returns(Task.CompletedTask);
 
@@ -30,6 +40,7 @@ public class GlobalUserAdminServiceDeleteTests
             Mock.Of<ITenantCacheService>(),
             _invalidator.Object,
             _webhooks.Object,
+            _audit.Object,
             NullLogger<GlobalUserAdminService>.Instance);
     }
 
@@ -48,7 +59,15 @@ public class GlobalUserAdminServiceDeleteTests
         // account sharing its address.
         _invalidator.Verify(x => x.InvalidateAsync(user), Times.Once);
         _webhooks.Verify(
-            x => x.PublishAsync(WebhookEventTypes.UserDeleted, It.IsAny<object?>(), It.IsAny<string?>()),
+            x => x.PublishAsync(DomainEventTypes.UserDeleted, It.IsAny<object?>(), null),
+            Times.Once);
+        _audit.Verify(
+            x => x.RecordEntryAsync(
+                DomainEventTypes.UserDeleted,
+                "User 'target-user@example.com' (target-user) was permanently deleted by 'acting-admin'.",
+                null,
+                It.IsAny<object?>(),
+                AuditLogTenants.Platform),
             Times.Once);
     }
 

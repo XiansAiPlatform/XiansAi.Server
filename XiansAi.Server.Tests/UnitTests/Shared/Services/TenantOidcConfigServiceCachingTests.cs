@@ -50,6 +50,7 @@ public class TenantOidcConfigServiceCachingTests
             configuration,
             new ObjectCache(new NoOpCacheProvider(), NullLogger<ObjectCache>.Instance),
             Mock.Of<IWebhookEventPublisher>(),
+            Mock.Of<IAuditLogService>(),
             policy);
     }
 

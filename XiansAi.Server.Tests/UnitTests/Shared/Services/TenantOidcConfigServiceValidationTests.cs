@@ -68,6 +68,7 @@ public class TenantOidcConfigServiceValidationTests
             configuration,
             new ObjectCache(Mock.Of<ICacheProvider>(), NullLogger<ObjectCache>.Instance),
             Mock.Of<IWebhookEventPublisher>(),
+            Mock.Of<IAuditLogService>(),
             policy);
     }
 

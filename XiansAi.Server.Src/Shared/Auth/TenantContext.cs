@@ -25,6 +25,11 @@ namespace Shared.Auth;
         /// and display, while threads are keyed on the raw provider subject (or the account email
         /// when that is preferred for conversation continuity). Defaults to
         /// <see cref="LoggedInUser"/> for the flows where the two are the same.
+        ///
+        /// On Admin API requests authenticated with an API key, trusted clients may assert a
+        /// different value via the <c>X-On-Behalf-Of</c> header so audit rows record the human
+        /// signed into their UI. That header is an attribution assertion, not impersonation:
+        /// authorization still uses <see cref="LoggedInUser"/> (the API-key owner).
         /// </summary>
         string ParticipantId { get; set; }
 

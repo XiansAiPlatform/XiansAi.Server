@@ -28,6 +28,7 @@ public static class CorsConfiguration
                     "Content-Type",
                     "Accept",
                     "X-Tenant-Id",
+                    "X-On-Behalf-Of",
                     "X-API-Key",
                     "X-Requested-With",
                     "X-SignalR-User-Agent"

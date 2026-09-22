@@ -82,8 +82,7 @@ public interface ITenantParticipantUserService
     Task<ServiceResult<TenantParticipantUser>> CreateAsync(
         string tenantId, string? email, string? name, string role, string? userId = null);
     Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
-        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved,
-        bool callerIsSysAdmin = false);
+        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved, bool callerIsSysAdmin = false);
     Task<ServiceResult<bool>> DeleteAsync(string tenantId, string userId, bool callerIsSysAdmin = false);
     /// <summary>
     /// Removes a single role from a user's tenant membership.
@@ -100,6 +99,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
     private readonly IUserTenantService _userTenantService;
     private readonly IUserAuthorizationInvalidator _authorizationInvalidator;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<TenantParticipantUserService> _logger;
 
     public TenantParticipantUserService(
@@ -107,12 +107,14 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         IUserTenantService userTenantService,
         IUserAuthorizationInvalidator authorizationInvalidator,
         IWebhookEventPublisher webhookEventPublisher,
+        IAuditLogService auditLogService,
         ILogger<TenantParticipantUserService> logger)
     {
         _userRepository = userRepository;
         _userTenantService = userTenantService;
         _authorizationInvalidator = authorizationInvalidator;
         _webhookEventPublisher = webhookEventPublisher;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -245,17 +247,21 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         var created = result.Data;
         var tenantRole = created.TenantRoles.FirstOrDefault(t => t.Tenant == tenantId);
 
-        await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.UserCreated,
-            new
-            {
-                userId = created.UserId,
-                email = created.Email,
-                name = created.Name,
-                tenantId,
-                role = normalizedRole,
-            },
-            tenantId);
+        var createdMetadata = new
+        {
+            userId = created.UserId,
+            email = created.Email,
+            name = created.Name,
+            tenantId,
+            role = normalizedRole,
+        };
+        DomainEventEmitter.Emit(
+            _webhookEventPublisher,
+            _auditLogService,
+            DomainEventTypes.UserCreated,
+            createdMetadata,
+            tenantId,
+            description: $"User '{created.Email}' ({created.UserId}) was created in tenant '{tenantId}' with role '{normalizedRole}'.");
 
         return ServiceResult<TenantParticipantUser>.Success(
             ToTenantUserDto(
@@ -305,6 +311,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         }
 
         var existingMembership = user.TenantRoles.FirstOrDefault(t => t.Tenant == tenantId);
+        var alreadyInTenant = existingMembership != null;
         if (existingMembership != null)
         {
             if (existingMembership.Roles.Contains(normalizedRole))
@@ -333,24 +340,29 @@ public class TenantParticipantUserService : ITenantParticipantUserService
         _logger.LogInformation("Existing user {UserId} added to tenant {TenantId} with role {Role}",
             LogSanitizer.Sanitize(user.UserId), LogSanitizer.Sanitize(tenantId), normalizedRole);
 
-        await _webhookEventPublisher.PublishAsync(
-            WebhookEventTypes.UserTenantAdded,
-            new
-            {
-                userId = user.UserId,
-                email = user.Email,
-                name = user.Name,
-                tenantId,
-                role = normalizedRole,
-            },
-            tenantId);
+        var addedMetadata = new
+        {
+            userId = user.UserId,
+            email = user.Email,
+            name = user.Name,
+            tenantId,
+            role = normalizedRole,
+        };
+        DomainEventEmitter.Emit(
+            _webhookEventPublisher,
+            _auditLogService,
+            DomainEventTypes.UserTenantAdded,
+            addedMetadata,
+            tenantId,
+            description: alreadyInTenant
+                ? $"User '{user.Email}' ({user.UserId}) already in tenant '{tenantId}' was granted additional role '{normalizedRole}'."
+                : $"User '{user.Email}' ({user.UserId}) was added to tenant '{tenantId}' with role '{normalizedRole}'.");
 
         return ServiceResult<TenantParticipantUser>.Success(MapToTenantUser(user, tenantId)!, StatusCode.Created);
     }
 
     public async Task<ServiceResult<TenantParticipantUser>> UpdateAsync(
-        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved,
-        bool callerIsSysAdmin = false)
+        string tenantId, string userId, string? name, string? email, string? role, bool? isApproved, bool callerIsSysAdmin = false)
     {
         try
         {
@@ -370,6 +382,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
             var wasApproved = tr.IsApproved;
             var profileChanged = false;
+            var profileFields = new List<string>();
 
             if (name != null)
             {
@@ -378,6 +391,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                     return ServiceResult<TenantParticipantUser>.BadRequest("Name cannot be empty");
                 user.Name = sanitized;
                 profileChanged = true;
+                profileFields.Add("name");
             }
 
             if (email != null)
@@ -391,6 +405,7 @@ public class TenantParticipantUserService : ITenantParticipantUserService
                     return ServiceResult<TenantParticipantUser>.Conflict("Another user already uses this email");
                 user.Email = sanitizedEmail;
                 profileChanged = true;
+                profileFields.Add("email");
             }
 
             if (isApproved.HasValue)
@@ -423,33 +438,48 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
             if (profileChanged)
             {
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.UserUpdated,
-                    new { userId = user.UserId, email = user.Email, name = user.Name, tenantId },
-                    tenantId);
+                var updatedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.UserUpdated,
+                    updatedMetadata,
+                    tenantId,
+                    description: $"User '{user.Email}' ({user.UserId}) profile was updated in tenant '{tenantId}' ({string.Join(", ", profileFields)}).");
             }
 
             if (isApproved.HasValue && isApproved.Value != wasApproved)
             {
-                await _webhookEventPublisher.PublishAsync(
-                    isApproved.Value ? WebhookEventTypes.UserApproved : WebhookEventTypes.UserUnapproved,
-                    new { userId = user.UserId, email = user.Email, tenantId },
-                    tenantId);
+                var approvalEvent = isApproved.Value ? DomainEventTypes.UserApproved : DomainEventTypes.UserUnapproved;
+                var approvalMetadata = new { userId = user.UserId, email = user.Email, tenantId };
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    approvalEvent,
+                    approvalMetadata,
+                    tenantId,
+                    description: isApproved.Value
+                        ? $"User '{user.Email}' ({user.UserId}) was approved in tenant '{tenantId}'."
+                        : $"User '{user.Email}' ({user.UserId}) approval was revoked in tenant '{tenantId}'.");
             }
 
             if (addedRole != null)
             {
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.UserRoleChanged,
-                    new
-                    {
-                        userId = user.UserId,
-                        email = user.Email,
-                        tenantId,
-                        role = addedRole,
-                        roles = tr.Roles,
-                    },
-                    tenantId);
+                var roleChangedMetadata = new
+                {
+                    userId = user.UserId,
+                    email = user.Email,
+                    tenantId,
+                    role = addedRole,
+                    roles = tr.Roles,
+                };
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.UserRoleChanged,
+                    roleChangedMetadata,
+                    tenantId,
+                    description: $"Role '{addedRole}' was added to user '{user.Email}' ({user.UserId}) in tenant '{tenantId}'. Roles are now: {string.Join(", ", tr.Roles)}.");
             }
 
             var mapped = MapToTenantUser(user, tenantId);
@@ -492,10 +522,14 @@ public class TenantParticipantUserService : ITenantParticipantUserService
 
             await InvalidateCachesAsync(userId, tenantId);
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserTenantRemoved,
-                new { userId = user.UserId, email = user.Email, name = user.Name, tenantId },
-                tenantId);
+            var removedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.UserTenantRemoved,
+                removedMetadata,
+                tenantId,
+                description: $"User '{user.Email}' ({user.UserId}) was removed from tenant '{tenantId}' (all tenant roles cleared).");
 
             return ServiceResult<bool>.Success(true);
         }
@@ -549,17 +583,27 @@ public class TenantParticipantUserService : ITenantParticipantUserService
             _logger.LogInformation("Role {Role} removed from user {UserId} in tenant {TenantId}",
                 normalizedRole, LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(tenantId));
 
-            await _webhookEventPublisher.PublishAsync(
-                WebhookEventTypes.UserRoleRemoved,
-                new { userId = user.UserId, email = user.Email, tenantId, role = normalizedRole },
-                tenantId);
+            var roleRemovedMetadata = new { userId = user.UserId, email = user.Email, tenantId, role = normalizedRole };
+            DomainEventEmitter.Emit(
+                _webhookEventPublisher,
+                _auditLogService,
+                DomainEventTypes.UserRoleRemoved,
+                roleRemovedMetadata,
+                tenantId,
+                description: membershipRemoved
+                    ? $"Role '{normalizedRole}' was removed from user '{user.Email}' ({user.UserId}) in tenant '{tenantId}'. No tenant roles remain."
+                    : $"Role '{normalizedRole}' was removed from user '{user.Email}' ({user.UserId}) in tenant '{tenantId}'. Remaining roles: {string.Join(", ", tr.Roles)}.");
 
             if (membershipRemoved)
             {
-                await _webhookEventPublisher.PublishAsync(
-                    WebhookEventTypes.UserTenantRemoved,
-                    new { userId = user.UserId, email = user.Email, name = user.Name, tenantId },
-                    tenantId);
+                var tenantRemovedMetadata = new { userId = user.UserId, email = user.Email, name = user.Name, tenantId };
+                DomainEventEmitter.Emit(
+                    _webhookEventPublisher,
+                    _auditLogService,
+                    DomainEventTypes.UserTenantRemoved,
+                    tenantRemovedMetadata,
+                    tenantId,
+                    description: $"User '{user.Email}' ({user.UserId}) was removed from tenant '{tenantId}' after their last role was removed.");
             }
 
             return ServiceResult<bool>.Success(true);

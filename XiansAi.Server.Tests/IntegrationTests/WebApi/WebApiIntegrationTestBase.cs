@@ -15,7 +15,8 @@ namespace Tests.IntegrationTests.WebApi;
 
 public abstract class WebApiIntegrationTestBase : IntegrationTestBase
 {
-    protected WebApiIntegrationTestBase(MongoDbFixture mongoFixture) : base(mongoFixture)
+    protected WebApiIntegrationTestBase(MongoDbFixture mongoFixture, TemporalFixture? temporalFixture = null)
+        : base(mongoFixture, environment: null, temporalFixture)
     {
     }
 

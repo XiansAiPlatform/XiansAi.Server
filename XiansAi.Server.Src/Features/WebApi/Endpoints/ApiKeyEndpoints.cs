@@ -21,8 +21,7 @@ namespace Features.WebApi.Endpoints
             group.MapPost("/create", async (
                 [FromServices] IApiKeyService apiKeyService,
                 [FromServices] ITenantContext tenantContext,
-                [FromBody] CreateApiKeyRequest request,
-                HttpContext httpContext) =>
+                [FromBody] CreateApiKeyRequest request) =>
             {
                 var userId = tenantContext.LoggedInUser ?? "system";
                 var result = await apiKeyService.CreateApiKeyAsync(tenantContext.TenantId, request.Name, userId);

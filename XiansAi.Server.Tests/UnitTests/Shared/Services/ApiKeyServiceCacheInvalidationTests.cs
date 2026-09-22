@@ -23,6 +23,7 @@ public class ApiKeyServiceCacheInvalidationTests
         new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }),
         Mock.Of<IWebhookEventPublisher>(),
         _bus.Object,
+        Mock.Of<IAuditLogService>(),
         new CacheOperationMode(isNoOp));
 
     private static ApiKey ExistingKey() => new()
