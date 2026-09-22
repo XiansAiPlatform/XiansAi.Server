@@ -457,4 +457,54 @@ public class MessagingEndpointsTests : WebApiIntegrationTestBase, IClassFixture<
         // Should contain all 3 messages
         Assert.Equal(3, defaultTopic.MessageCount);
     }
+
+    [Fact]
+    public async Task DeleteMessagesByScope_RemovesOnlyThatScopesMessagesFromMongo()
+    {
+        // Arrange - reproduces the reported "delete topic" bug: messages in a scope,
+        // deleted via the same repository method the DELETE /messaging/messages endpoint
+        // calls, other scopes in the same thread untouched.
+        var thread = await CreateTestThreadAsync();
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "Billing 1");
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "Billing 2");
+        await CreateTestMessageAsync(thread.Id, scope: null, content: "General message");
+
+        using var scope = _factory.Services.CreateScope();
+        var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+
+        // Act
+        var deleted = await conversationRepository.DeleteMessagesByWorkflowParticipantAndScopeAsync(
+            TestTenantId, thread.WorkflowId, thread.ParticipantId, "billing");
+
+        // Assert - deletion actually reached Mongo
+        Assert.True(deleted);
+        var remaining = await conversationRepository.GetMessagesByThreadIdAsync(TestTenantId, thread.Id);
+        Assert.Single(remaining);
+        Assert.Null(remaining[0].Scope);
+    }
+
+    [Fact]
+    public async Task DeleteMessagesByScope_ThenResendToSameScope_DoesNotResurrectDeletedMessages()
+    {
+        // Arrange - the exact reported sequence: delete a topic, then send a new message
+        // into a topic with the same name (same thread, since thread = one per participant).
+        var thread = await CreateTestThreadAsync();
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "Old billing message 1");
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "Old billing message 2");
+
+        using var scope = _factory.Services.CreateScope();
+        var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+
+        await conversationRepository.DeleteMessagesByWorkflowParticipantAndScopeAsync(
+            TestTenantId, thread.WorkflowId, thread.ParticipantId, "billing");
+
+        // Act - "start a new thread" == send a new message into the same-named topic
+        await CreateTestMessageAsync(thread.Id, scope: "billing", content: "New billing message");
+
+        // Assert - only the new message is there; the old ones did not come back
+        var messages = await conversationRepository.GetMessagesByThreadIdAsync(
+            TestTenantId, thread.Id, scope: "billing");
+        Assert.Single(messages);
+        Assert.Equal("New billing message", messages[0].Text);
+    }
 }

@@ -460,7 +460,7 @@ namespace Features.UserApi.Websocket
                 }
 
                 if (!IsValidUser(participantId, tenantContext)) {
-                    _logger.LogWarning("DeleteThread called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                    _logger.LogWarning("DeleteThread called with invalid participantId {ParticipantId} on connection {ConnectionId}",
                         participantId, Context.ConnectionId);
                     await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
                     return;
@@ -473,7 +473,7 @@ namespace Features.UserApi.Websocket
                 var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
 
                 // Call the delete service
-                var result = await messageService.DeleteThreadAsync(workflowId, participantId);
+                var result = await messageService.DeleteThreadAsync(workflowId, participantId.ToLowerInvariant());
 
                 if (result.IsSuccess)
                 {
