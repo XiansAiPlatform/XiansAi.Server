@@ -262,7 +262,7 @@ namespace Features.UserApi.Websocket
 
 
                 if (!IsValidUser(participantId, tenantContext)) {
-                    _logger.LogWarning("GetScopedThreadHistory called with invalid participantId {ParticipantId} on connection {ConnectionId}", 
+                    _logger.LogWarning("GetScopedThreadHistory called with invalid participantId {ParticipantId} on connection {ConnectionId}",
                         participantId, Context.ConnectionId);
                     await Clients.Caller.SendAsync(SignalRMethods.Error, ErrorMessages.InvalidParticipantId);
                     return;
