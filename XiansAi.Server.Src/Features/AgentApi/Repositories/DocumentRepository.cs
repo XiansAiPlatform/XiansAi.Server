@@ -12,6 +12,17 @@ public interface IDocumentRepository
 {
     Task<Document> CreateAsync(Document document);
     Task<Document?> GetByIdAsync(string id);
+
+    /// <summary>
+    /// Resolves the single document that owns a key slot: the lookup the
+    /// <c>useKeyAsIdentifier</c> save path uses. See <see cref="DocumentIdentity"/>.
+    /// </summary>
+    Task<Document?> GetByIdentityAsync(DocumentIdentity identity);
+
+    /// <summary>
+    /// Tenant + type + key lookup that ignores agent, activation and participant; it may return
+    /// a document that belongs to any agent in the tenant.
+    /// </summary>
     Task<Document?> GetByKeyAsync(string type, string key, string? tenantId);
     Task<List<Document>> QueryAsync(string? tenantId, DocumentQueryFilter filter);
     Task<long> CountAsync(string? tenantId, DocumentQueryFilter filter);
@@ -24,6 +35,26 @@ public interface IDocumentRepository
     Task<int> DeleteByFilterAsync(string? tenantId, DocumentQueryFilter filter);
     Task<bool> ExistsAsync(string id, string? tenantId);
     Task<bool> ExistsByKeyAsync(string type, string key, string? tenantId);
+}
+
+/// <summary>
+/// The identity of a keyed document: tenant + agent + type + key + activation + participant.
+/// This is the same set of fields the client stamps on a save and filters on when it reads a
+/// document back by key, so a save replaces exactly the document the caller can read.
+/// Null <see cref="ActivationName"/> means "no activation" (written outside a workflow context)
+/// and null <see cref="ParticipantId"/> means "no participant" (for example a scheduled run);
+/// each is a slot of its own, distinct from every named one.
+/// </summary>
+public sealed record DocumentIdentity(
+    string TenantId,
+    string AgentId,
+    string Type,
+    string Key,
+    string? ActivationName,
+    string? ParticipantId)
+{
+    /// <summary>Empty or whitespace stamps mean "none" and are stored as null.</summary>
+    public static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }
 
 public class DocumentQueryFilter
@@ -91,6 +122,32 @@ public class DocumentRepository : IDocumentRepository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving document with ID: {Id}", LogSanitizer.Sanitize(id));
+            throw;
+        }
+    }
+
+    public async Task<Document?> GetByIdentityAsync(DocumentIdentity identity)
+    {
+        try
+        {
+            // Eq(field, null) matches both a stored null and a missing field, so documents
+            // written before the stamps existed land in the "none" slots.
+            var builder = Builders<Document>.Filter;
+            var filter = builder.Eq(d => d.TenantId, identity.TenantId)
+                & builder.Eq(d => d.AgentId, identity.AgentId)
+                & builder.Eq(d => d.Type, identity.Type)
+                & builder.Eq(d => d.Key, identity.Key)
+                & builder.Eq(d => d.ActivationName, identity.ActivationName)
+                & builder.Eq(d => d.ParticipantId, identity.ParticipantId);
+
+            return await MongoRetryHelper.ExecuteWithRetryAsync(
+                async () => await _documents.Find(filter).FirstOrDefaultAsync(),
+                _logger);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving document by identity Agent: {AgentId}, Type: {Type}, Key: {Key}",
+                LogSanitizer.Sanitize(identity.AgentId), LogSanitizer.Sanitize(identity.Type), LogSanitizer.Sanitize(identity.Key));
             throw;
         }
     }
