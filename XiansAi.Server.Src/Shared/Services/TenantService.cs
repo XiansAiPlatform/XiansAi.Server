@@ -559,6 +559,10 @@ public class TenantService : ITenantService
             await _tenantRepository.CreateAsync(validatedTenant);
             _logger.LogInformation("Created new tenant with ID {Id} and CreatedBy: {CreatedBy}", LogSanitizer.Sanitize(validatedTenant.Id), LogSanitizer.Sanitize(validatedTenant.CreatedBy));
 
+            // Clear any stale negative cache entry (e.g. from a pre-creation existence check) so
+            // an immediate GetTenantByTenantId/auth resolution right after creation doesn't 404.
+            _tenantCacheService.InvalidateTenant(validatedTenant.TenantId);
+
             var result = new TenantCreatedResult
             {
                 Tenant = validatedTenant,
