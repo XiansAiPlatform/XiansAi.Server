@@ -63,8 +63,11 @@ public partial class AdminDataService : IAdminDataService
 
         try
         {
+            var activationName = DocumentIdentity.Normalize(request.ActivationName);
+            var participantId = DocumentIdentity.Normalize(request.ParticipantId);
             var agentTask = _agentRepository.GetByNameInternalAsync(request.AgentName, tenantId);
-            var existingByKeyTask = _documentRepository.GetByKeyAsync(request.DataType, request.Key, tenantId);
+            var existingByKeyTask = _documentRepository.GetByIdentityAsync(new DocumentIdentity(
+                tenantId, request.AgentName, request.DataType, request.Key, activationName, participantId));
             await Task.WhenAll(agentTask, existingByKeyTask);
 
             var agent = await agentTask;
@@ -92,8 +95,8 @@ public partial class AdminDataService : IAdminDataService
                 AgentId = request.AgentName,
                 Type = request.DataType,
                 Key = request.Key,
-                ActivationName = request.ActivationName,
-                ParticipantId = request.ParticipantId,
+                ActivationName = activationName,
+                ParticipantId = participantId,
                 WorkflowId = request.WorkflowId,
                 ContentType = "JsonElement",
                 Content = AdminDataMapper.ToBsonValue(request.Content),
@@ -141,18 +144,26 @@ public partial class AdminDataService : IAdminDataService
         {
             var newType = string.IsNullOrWhiteSpace(request.DataType) ? existing.Type : request.DataType;
             var newKey = string.IsNullOrWhiteSpace(request.Key) ? existing.Key : request.Key;
+            var newActivation = DocumentIdentity.Normalize(request.ActivationName ?? existing.ActivationName);
+            var newParticipant = DocumentIdentity.Normalize(request.ParticipantId ?? existing.ParticipantId);
 
-            if (!string.Equals(newType, existing.Type, StringComparison.Ordinal) ||
-                !string.Equals(newKey, existing.Key, StringComparison.Ordinal))
+            var identityChanged =
+                !string.Equals(newType, existing.Type, StringComparison.Ordinal) ||
+                !string.Equals(newKey, existing.Key, StringComparison.Ordinal) ||
+                !string.Equals(newActivation, DocumentIdentity.Normalize(existing.ActivationName), StringComparison.Ordinal) ||
+                !string.Equals(newParticipant, DocumentIdentity.Normalize(existing.ParticipantId), StringComparison.Ordinal);
+
+            if (identityChanged &&
+                !string.IsNullOrWhiteSpace(existing.AgentId) &&
+                !string.IsNullOrWhiteSpace(newType) &&
+                !string.IsNullOrWhiteSpace(newKey))
             {
-                if (!string.IsNullOrWhiteSpace(newType) && !string.IsNullOrWhiteSpace(newKey))
+                var colliding = await _documentRepository.GetByIdentityAsync(new DocumentIdentity(
+                    tenantId, existing.AgentId, newType, newKey, newActivation, newParticipant));
+                if (colliding != null && colliding.Id != existing.Id)
                 {
-                    var colliding = await _documentRepository.GetByKeyAsync(newType, newKey, tenantId);
-                    if (colliding != null && colliding.Id != existing.Id)
-                    {
-                        return ServiceResult<AdminDataItemResponse>.Conflict(
-                            "A record with the same type and key already exists");
-                    }
+                    return ServiceResult<AdminDataItemResponse>.Conflict(
+                        "A record with the same type and key already exists");
                 }
             }
 
@@ -204,12 +215,12 @@ public partial class AdminDataService : IAdminDataService
 
         if (request.ParticipantId != null)
         {
-            existing.ParticipantId = request.ParticipantId;
+            existing.ParticipantId = DocumentIdentity.Normalize(request.ParticipantId);
         }
 
         if (request.ActivationName != null)
         {
-            existing.ActivationName = request.ActivationName;
+            existing.ActivationName = DocumentIdentity.Normalize(request.ActivationName);
         }
 
         if (request.ExpiresAt.HasValue)
