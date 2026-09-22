@@ -9,6 +9,8 @@ For detailed configuration and deployment information, see the [docs](./docs/) f
 - **[Authentication Configuration](./docs/AUTH_CONFIGURATION.md)** - Complete guide for configuring Auth0, Azure AD, Azure B2C, and Keycloak
 - **[Docker Documentation](./docs/DOCKER.md)** - Docker build, publish, and deployment instructions
 - **[Start Options](./docs/START_OPTIONS.md)** - Application startup options and microservice configuration
+- **[Integration Tests](./docs/integration-tests/index.md)** - In-process HTTP + Mongo suite, plus optional local Temporal
+- **[Xians MCP](./Features/Mcp/README.md)** - Authenticated workflow discovery, scheduling, and Data Explorer tools
 
 ## Quick Start
 

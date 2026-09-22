@@ -25,11 +25,16 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
     private readonly MongoDbFixture _mongoFixture;
     private const string TestTenantId = "test-tenant";
     private readonly string? _environment;
+    private readonly TemporalFixture? _temporalFixture;
 
-    public XiansAiWebApplicationFactory(MongoDbFixture mongoFixture, string? environment = null)
+    public XiansAiWebApplicationFactory(
+        MongoDbFixture mongoFixture,
+        string? environment = null,
+        TemporalFixture? temporalFixture = null)
     {
         _mongoFixture = mongoFixture;
         _environment = environment;
+        _temporalFixture = temporalFixture;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -63,10 +68,21 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                 ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName
             });
 
-            // Register environment variables LAST so devs can override any test fixture
+            // Register environment variables so devs can override any test fixture
             // (e.g. EncryptionKeys__BaseSecret, Certificates__AppServerCertPassword) without
             // editing the committed JSON. Standard ASP.NET Core double-underscore syntax.
             config.AddEnvironmentVariables();
+
+            // Pin Temporal to the local CLI/dev server after env vars so leftover
+            // Temporal__* values cannot redirect these tests at a remote cluster.
+            if (_temporalFixture != null)
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Temporal:FlowServerUrl"] = _temporalFixture.TargetHost,
+                    ["Temporal:FlowServerNamespace"] = _temporalFixture.Namespace
+                });
+            }
         });
 
         builder.ConfigureServices(services =>
@@ -87,29 +103,30 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             RemoveService<IBackgroundTaskService>(services);
             services.AddSingleton(mockBackgroundTaskService.Object);
 
-            // Mock the Temporal gateway so tests never reach out to a live Temporal
-            // server. Workflow-dependent endpoints surface a handled error instead of hanging
-            // on a connection attempt; the startup validation also succeeds against this mock.
-            var mockTemporalGatewayService = new Mock<ITemporalGatewayService>();
-            mockTemporalGatewayService
-                .Setup(x => x.GetClientAsync(It.IsAny<string>(), It.IsAny<string?>()))
-                .ReturnsAsync(Mock.Of<ITemporalClient>());
-            mockTemporalGatewayService
-                .Setup(x => x.GetClientsAsync(It.IsAny<string>()))
-                .Returns(EmptyTemporalClients());
-            mockTemporalGatewayService
-                .Setup(x => x.RemoveClients(It.IsAny<string>()))
-                .Returns(Task.CompletedTask);
-            RemoveService<ITemporalGatewayService>(services);
-            services.AddSingleton(mockTemporalGatewayService.Object);
+            // Default tests mock Temporal. Opt-in Temporal tests keep the real gateway
+            // and ActivationCleanupService so deactivate/schedule cleanup hit the local CLI.
+            if (_temporalFixture == null)
+            {
+                var mockTemporalGatewayService = new Mock<ITemporalGatewayService>();
+                mockTemporalGatewayService
+                    .Setup(x => x.GetClientAsync(It.IsAny<string>(), It.IsAny<string?>()))
+                    .ReturnsAsync(Mock.Of<ITemporalClient>());
+                mockTemporalGatewayService
+                    .Setup(x => x.GetClientsAsync(It.IsAny<string>()))
+                    .Returns(EmptyTemporalClients());
+                mockTemporalGatewayService
+                    .Setup(x => x.RemoveClients(It.IsAny<string>()))
+                    .Returns(Task.CompletedTask);
+                RemoveService<ITemporalGatewayService>(services);
+                services.AddSingleton(mockTemporalGatewayService.Object);
 
-            // Mock activation cleanup so deactivate endpoints can succeed without Temporal.
-            var mockActivationCleanupService = new Mock<IActivationCleanupService>();
-            mockActivationCleanupService
-                .Setup(x => x.CleanupActivationResourcesAsync(It.IsAny<AgentActivation>()))
-                .ReturnsAsync(ServiceResult<ActivationCleanupResult>.Success(new ActivationCleanupResult()));
-            RemoveService<IActivationCleanupService>(services);
-            services.AddSingleton(mockActivationCleanupService.Object);
+                var mockActivationCleanupService = new Mock<IActivationCleanupService>();
+                mockActivationCleanupService
+                    .Setup(x => x.CleanupActivationResourcesAsync(It.IsAny<AgentActivation>()))
+                    .ReturnsAsync(ServiceResult<ActivationCleanupResult>.Success(new ActivationCleanupResult()));
+                RemoveService<IActivationCleanupService>(services);
+                services.AddSingleton(mockActivationCleanupService.Object);
+            }
 
             // Mock IUserTenantService to always return the test tenant for the test user
             var mockUserTenantService = new Mock<IUserTenantService>();
@@ -159,6 +176,16 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             // from AdminEndpointAuthenticationHandler would be lost and every route gated by
             // RequireApiKeyFilter would incorrectly look like a keyless caller.
             mockTenantContext.SetupProperty<string?>(x => x.Authorization, null);
+            if (_temporalFixture != null)
+            {
+                mockTenantContext
+                    .Setup(x => x.GetTemporalConfigAsync())
+                    .Returns(() => Task.FromResult(new TemporalConfig
+                    {
+                        FlowServerUrl = _temporalFixture.TargetHost,
+                        FlowServerNamespace = _temporalFixture.Namespace
+                    }));
+            }
             RemoveService<ITenantContext>(services);
             services.AddSingleton(mockTenantContext.Object);
 
@@ -207,6 +234,22 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                     policy.AuthenticationSchemes.Clear();
                     policy.AuthenticationSchemes.Add("Test"); // Use test auth instead of certificate auth
                     policy.RequireAuthenticatedUser();
+                });
+
+                options.AddPolicy("RequireCertificateSysAdmin", policy =>
+                {
+                    policy.AuthenticationSchemes.Clear();
+                    policy.AuthenticationSchemes.Add("Test");
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireRole(SystemRoles.SysAdmin);
+                });
+
+                options.AddPolicy("RequireCertificateTenantAdmin", policy =>
+                {
+                    policy.AuthenticationSchemes.Clear();
+                    policy.AuthenticationSchemes.Add("Test");
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireRole(SystemRoles.SysAdmin, SystemRoles.TenantAdmin);
                 });
 
                 // Override WebApi policies to use test authentication instead of JWT

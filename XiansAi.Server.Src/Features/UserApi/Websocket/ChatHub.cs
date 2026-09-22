@@ -66,52 +66,74 @@ namespace Features.UserApi.Websocket
             return ParticipantIdResolver.CanActAs(participantId, tenantContext);
         }
 
+        /// <summary>
+        /// The tenant context authorization populated for this connection. Prefers the live
+        /// handshake request scope and falls back to the snapshot taken in
+        /// <see cref="OnConnectedAsync"/>, which is the only source that survives transports that
+        /// do not keep the handshake request open.
+        /// </summary>
         private ITenantContext GetScopedTenantContext()
         {
-            try
+            var requestScopedTenantContext = TryGetHandshakeTenantContext();
+            if (requestScopedTenantContext != null && IsValidTenantContext(requestScopedTenantContext))
             {
-                var httpContext = _httpContextAccessor.HttpContext;
-                if (httpContext?.RequestServices != null)
-                {
-                    var scopedTenantContext = httpContext.RequestServices.GetService<ITenantContext>();
-                    if (scopedTenantContext != null)
-                    {
-                        return scopedTenantContext;
-                    }
-                }
-                
-                throw new InvalidOperationException("TenantContext not properly initialized");
+                return requestScopedTenantContext;
             }
-            catch (Exception ex)
+
+            var capturedTenantContext = ConnectionTenantContext.Find(Context);
+            if (capturedTenantContext != null)
             {
-                _logger.LogWarning(ex, "Error getting scoped tenant context, using fallback for connection {ConnectionId}", Context.ConnectionId);
-                throw new InvalidOperationException("TenantContext not properly initialized");
+                return capturedTenantContext;
             }
+
+            _logger.LogError("No tenant context available for connection {ConnectionId}", Context.ConnectionId);
+            throw new InvalidOperationException("TenantContext not properly initialized");
+        }
+
+        private ITenantContext? TryGetHandshakeTenantContext()
+        {
+            return ResolveFromHandshakeScope<ITenantContext>();
         }
 
         private IMessageService GetScopedMessageService()
         {
+            return ResolveFromHandshakeScope<IMessageService>()
+                ?? throw new InvalidOperationException("MessageService not properly initialized");
+        }
+
+        /// <summary>
+        /// Resolves a service from the DI scope of the handshake request, or null once that scope
+        /// is gone.
+        ///
+        /// <see cref="IHttpContextAccessor"/> only sees the ambient request, which is unset
+        /// whenever a hub invocation runs outside the execution context of the request that
+        /// carried it — long polling always, WebSockets after a reconnect. The connection's own
+        /// HttpContext is kept by SignalR for every transport, so it is tried next.
+        /// </summary>
+        private T? ResolveFromHandshakeScope<T>() where T : class
+        {
+            return ResolveFrom<T>(_httpContextAccessor.HttpContext)
+                ?? ResolveFrom<T>(Context.GetHttpContext());
+        }
+
+        private T? ResolveFrom<T>(HttpContext? httpContext) where T : class
+        {
+            if (httpContext == null)
+            {
+                return null;
+            }
+
             try
             {
-                var httpContext = _httpContextAccessor.HttpContext;
-                if (httpContext?.RequestServices != null)
-                {
-                    var scopedMessageService = httpContext.RequestServices.GetService<IMessageService>();
-                    if (scopedMessageService != null)
-                    {
-                        _logger.LogDebug("Using scoped MessageService for connection {ConnectionId}", Context.ConnectionId);
-                        return scopedMessageService;
-                    }
-                }
-                
-                // Fallback to injected message service
-                _logger.LogWarning("Using fallback MessageService for connection {ConnectionId}", Context.ConnectionId);
-                throw new InvalidOperationException("MessageService not properly initialized");
+                return httpContext.RequestServices?.GetService<T>();
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException ex)
             {
-                _logger.LogWarning(ex, "Error getting scoped MessageService, using fallback for connection {ConnectionId}", Context.ConnectionId);
-                throw new InvalidOperationException("MessageService not properly initialized");
+                // A long-polling request's scope is disposed as soon as that poll returns, and
+                // reading it afterwards throws rather than returning null.
+                _logger.LogDebug(ex, "Handshake request scope already disposed for connection {ConnectionId} while resolving {Service}",
+                    Context.ConnectionId, typeof(T).Name);
+                return null;
             }
         }
 
@@ -121,12 +143,12 @@ namespace Features.UserApi.Websocket
             
             try
             {
-                var tenantContext = GetScopedTenantContext();
-                
-                if (!IsValidTenantContext(tenantContext))
+                var tenantContext = TryGetHandshakeTenantContext();
+
+                if (tenantContext == null || !IsValidTenantContext(tenantContext))
                 {
                     _logger.LogError("TenantContext not properly initialized for connection {ConnectionId}. TenantId: {TenantId}, User: {UserId}", 
-                        Context.ConnectionId, tenantContext.TenantId, tenantContext.LoggedInUser);
+                        Context.ConnectionId, tenantContext?.TenantId, tenantContext?.LoggedInUser);
                     await Clients.Caller.SendAsync(SignalRMethods.ConnectionError, new
                     {
                         StatusCode = StatusCodes.Status401Unauthorized,
@@ -135,6 +157,10 @@ namespace Features.UserApi.Websocket
                     Context.Abort();
                     return;
                 }
+
+                // Later invocations get their own DI scope and may no longer reach the handshake
+                // request, so keep what authorization resolved on the connection itself.
+                ConnectionTenantContext.Capture(Context, tenantContext);
 
                 _logger.LogInformation("SignalR Connection established for user: {UserId}, UserType: {UserType}, Tenant: {TenantId}, Connection: {ConnectionId}",
                     tenantContext.LoggedInUser, tenantContext.UserType, tenantContext.TenantId, Context.ConnectionId);

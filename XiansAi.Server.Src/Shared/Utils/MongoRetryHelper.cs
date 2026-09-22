@@ -1,6 +1,5 @@
 using MongoDB.Driver;
 using System.Net.Sockets;
-using Shared.Utils;
 
 namespace Shared.Utils;
 
@@ -16,13 +15,15 @@ public static class MongoRetryHelper
     /// <param name="maxRetries">Maximum number of retry attempts (default: 3)</param>
     /// <param name="baseDelayMs">Base delay in milliseconds for exponential backoff (default: 50)</param>
     /// <param name="operationName">Name of the operation for logging purposes</param>
+    /// <param name="cancellationToken">Stops retries immediately, including an in-flight operation wait</param>
     /// <returns>The result of the operation</returns>
     public static async Task<T> ExecuteWithRetryAsync<T>(
         Func<Task<T>> operation,
         ILogger logger,
         int maxRetries = 3,
         int baseDelayMs = 50,
-        string operationName = "MongoDB operation")
+        string operationName = "MongoDB operation",
+        CancellationToken cancellationToken = default)
     {
         var baseDelay = TimeSpan.FromMilliseconds(baseDelayMs);
         
@@ -30,19 +31,23 @@ public static class MongoRetryHelper
         {
             try
             {
-                var result = await operation();
+                var result = await AwaitOperationAsync(operation, cancellationToken);
                 if (attempt > 0)
                 {
                     logger.LogDebug("Successfully completed {OperationName} on attempt {Attempt}", operationName, attempt + 1);
                 }
                 return result;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (MongoCommandException ex) when (IsRetryableException(ex) && attempt < maxRetries)
             {
                 var delay = CalculateDelay(ex, baseDelay, attempt);
                 logger.LogWarning(ex, "Retryable error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
                     operationName, attempt + 1, delay.TotalMilliseconds);
-                await Task.Delay(delay);
+                await Task.Delay(delay, cancellationToken);
                 continue;
             }
             catch (MongoWriteException ex) when (IsRetryableWriteException(ex) && attempt < maxRetries)
@@ -50,7 +55,7 @@ public static class MongoRetryHelper
                 var delay = CalculateDelay(ex.WriteError, baseDelay, attempt);
                 logger.LogWarning(ex, "Retryable write error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
                     operationName, attempt + 1, delay.TotalMilliseconds);
-                await Task.Delay(delay);
+                await Task.Delay(delay, cancellationToken);
                 continue;
             }
             catch (MongoConnectionException ex) when (attempt < maxRetries)
@@ -58,7 +63,7 @@ public static class MongoRetryHelper
                 var delay = CalculateConnectionDelay(baseDelay, attempt);
                 logger.LogWarning(ex, "Connection error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
                     operationName, attempt + 1, delay.TotalMilliseconds);
-                await Task.Delay(delay);
+                await Task.Delay(delay, cancellationToken);
                 continue;
             }
             catch (TimeoutException ex) when (attempt < maxRetries)
@@ -66,7 +71,7 @@ public static class MongoRetryHelper
                 var delay = CalculateConnectionDelay(baseDelay, attempt);
                 logger.LogWarning(ex, "Timeout error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
                     operationName, attempt + 1, delay.TotalMilliseconds);
-                await Task.Delay(delay);
+                await Task.Delay(delay, cancellationToken);
                 continue;
             }
             catch (SocketException ex) when (attempt < maxRetries)
@@ -74,7 +79,7 @@ public static class MongoRetryHelper
                 var delay = CalculateConnectionDelay(baseDelay, attempt);
                 logger.LogWarning(ex, "Socket error in {OperationName} on attempt {Attempt}, retrying after {Delay}ms", 
                     operationName, attempt + 1, delay.TotalMilliseconds);
-                await Task.Delay(delay);
+                await Task.Delay(delay, cancellationToken);
                 continue;
             }
             catch (Exception ex)
@@ -96,18 +101,20 @@ public static class MongoRetryHelper
     /// <param name="maxRetries">Maximum number of retry attempts (default: 3)</param>
     /// <param name="baseDelayMs">Base delay in milliseconds for exponential backoff (default: 50)</param>
     /// <param name="operationName">Name of the operation for logging purposes</param>
+    /// <param name="cancellationToken">Stops retries immediately, including an in-flight operation wait</param>
     public static async Task ExecuteWithRetryAsync(
         Func<Task> operation,
         ILogger logger,
         int maxRetries = 3,
         int baseDelayMs = 50,
-        string operationName = "MongoDB operation")
+        string operationName = "MongoDB operation",
+        CancellationToken cancellationToken = default)
     {
         await ExecuteWithRetryAsync(async () =>
         {
             await operation();
             return true; // Dummy return value
-        }, logger, maxRetries, baseDelayMs, operationName);
+        }, logger, maxRetries, baseDelayMs, operationName, cancellationToken);
     }
 
     /// <summary>
@@ -119,24 +126,61 @@ public static class MongoRetryHelper
     /// <param name="maxRetries">Maximum number of retry attempts (default: 2 for non-critical operations)</param>
     /// <param name="baseDelayMs">Base delay in milliseconds for exponential backoff (default: 1000)</param>
     /// <param name="operationName">Name of the operation for logging purposes</param>
+    /// <param name="cancellationToken">Stops retries immediately rather than treating cancel as a soft failure</param>
     /// <returns>True if operation succeeded, false if it failed after all retries</returns>
     public static async Task<bool> ExecuteWithGracefulRetryAsync(
         Func<Task> operation,
         ILogger logger,
         int maxRetries = 2,
         int baseDelayMs = 1000,
-        string operationName = "MongoDB operation")
+        string operationName = "MongoDB operation",
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            await ExecuteWithRetryAsync(operation, logger, maxRetries, baseDelayMs, operationName);
+            await ExecuteWithRetryAsync(operation, logger, maxRetries, baseDelayMs, operationName, cancellationToken);
             return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Non-critical operation {OperationName} failed after all retry attempts, continuing without it", operationName);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Waits for the operation, but abandons it as soon as <paramref name="cancellationToken"/>
+    /// fires. Mongo server selection can ignore a token for the full timeout (60s by default);
+    /// without this, a shutting-down hosted service would sit that out before StopAsync returned.
+    /// </summary>
+    private static async Task<T> AwaitOperationAsync<T>(
+        Func<Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var operationTask = operation();
+        try
+        {
+            return await operationTask.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            ObserveFaults(operationTask);
+            throw;
+        }
+    }
+
+    private static void ObserveFaults(Task task)
+    {
+        _ = task.ContinueWith(
+            static t => t.Exception!.Handle(static _ => true),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     /// <summary>

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shared.Repositories;
 using Shared.Services;
+using Features.Mcp.Configuration;
 
 namespace Features.AdminApi.Configuration;
 
@@ -25,6 +26,7 @@ public static class AdminApiConfiguration
     /// </summary>
     public static WebApplicationBuilder AddAdminApiServices(this WebApplicationBuilder builder)
     {
+        builder.Services.AddXiansMcp();
         // Register AdminApi specific services
         builder.Services.AddScoped<IAdminAgentService, AdminAgentService>();
         builder.Services.AddScoped<IActivationService, ActivationService>();
@@ -123,6 +125,7 @@ public static class AdminApiConfiguration
     /// </summary>
     public static WebApplication UseAdminApiEndpoints(this WebApplication app)
     {
+        app.MapXiansMcp();
         // Map v1 endpoints (current version)
         MapAdminApiVersion(app, AdminApiConstants.CurrentVersion);
         
@@ -168,7 +171,5 @@ public static class AdminApiConfiguration
         AdminApiKeyEndpoints.MapAdminApiKeyEndpoints(adminApiGroup);
     }
 }
-
-
 
 

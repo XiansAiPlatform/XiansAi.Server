@@ -7,7 +7,7 @@ using System.Net;
 
 namespace Tests.TestUtils;
 
-public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
+public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>, IAsyncLifetime
 {
     protected readonly MongoDbFixture _mongoFixture;
     protected XiansAiWebApplicationFactory _factory;
@@ -17,7 +17,10 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
     protected const string TestApiKey = "test-api-key";
     protected const string TestCertificateThumbprint = "test-certificate-thumbprint";
 
-    protected IntegrationTestBase(MongoDbFixture mongoFixture, string? environment = null)
+    protected IntegrationTestBase(
+        MongoDbFixture mongoFixture,
+        string? environment = null,
+        TemporalFixture? temporalFixture = null)
     {
         _mongoFixture = mongoFixture;
 
@@ -25,7 +28,7 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         // This should be done before creating the factory to ensure proper configuration
         TestCertificateHelper.Initialize();
 
-        _factory = new XiansAiWebApplicationFactory(mongoFixture, environment);
+        _factory = new XiansAiWebApplicationFactory(mongoFixture, environment, temporalFixture);
 
         var httpClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -43,10 +46,24 @@ public abstract class IntegrationTestBase : IClassFixture<MongoDbFixture>
         _database = _mongoFixture.Database;
     }
 
-    public Task DisposeAsync()
+    public virtual Task InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Stops the test host before xUnit disposes <see cref="MongoDbFixture"/>. Otherwise
+    /// <c>MongoChangeStreamService</c> keeps watching a Mongo2Go process that has already been
+    /// killed, and each retry sits out the driver's 60s server-selection timeout.
+    /// </summary>
+    public virtual async Task DisposeAsync()
     {
-        _client?.DisposeAsync();
-        return Task.CompletedTask;
+        if (_client != null)
+        {
+            await _client.DisposeAsync();
+        }
+
+        if (_factory != null)
+        {
+            await _factory.DisposeAsync();
+        }
     }
 
     protected virtual void ConfigureClientWithAuth(HttpClient client)

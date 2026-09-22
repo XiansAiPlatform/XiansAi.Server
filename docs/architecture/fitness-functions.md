@@ -225,6 +225,7 @@ grep -r "AddAuthentication" XiansAi.Server.Tests/TestUtils/ | grep -q "TestAuthH
 **Manual review:**
 - Check `XiansAiWebApplicationFactory.cs` for proper service mocking
 - Verify `appsettings.Tests.json` points to in-memory or test fixtures
+- See [Integration tests](../../XiansAi.Server.Src/docs/integration-tests/index.md) for the current host, mocks, and Temporal opt-in
 
 ---
 

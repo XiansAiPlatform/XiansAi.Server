@@ -466,7 +466,8 @@ public class TemplateService : ITemplateService
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     Tenant = tenantId,
-                    SystemScoped = false // User tenant definitions are not system scoped
+                    SystemScoped = false, // User tenant definitions are not system scoped
+                    Activable = templateDefinition.Activable
                 };
 
                 await _flowDefinitionRepository.CreateAsync(newDefinition);
@@ -611,7 +612,8 @@ public class TemplateService : ITemplateService
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     Tenant = null,
-                    SystemScoped = true
+                    SystemScoped = true,
+                    Activable = sourceDefinition.Activable
                 };
 
                 await _flowDefinitionRepository.CreateAsync(newDefinition);

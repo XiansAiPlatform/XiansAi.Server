@@ -7,7 +7,7 @@ namespace Features.AdminApi.Endpoints;
 
 /// <summary>
 /// AdminApi endpoints for document data access and analytics.
-/// Provides schema discovery and data retrieval for admin dashboards.
+/// Provides schema discovery, retrieval, create, update, and delete for admin dashboards.
 /// All endpoints are under /api/v{version}/admin/ prefix (versioned).
 /// </summary>
 public static class AdminDataEndpoints
@@ -23,7 +23,6 @@ public static class AdminDataEndpoints
             .AddEndpointFilter<TenantRouteScopeFilter>()
             .EnforceCapabilities();
 
-        // Get available data schema (types and filters)
         dataGroup.MapGet("/schema", async (
             string tenantId,
             [FromQuery] DateTime startDate,
@@ -51,7 +50,6 @@ public static class AdminDataEndpoints
         .WithName("GetAdminDataSchema")
         .RequireCapability(CapabilityActions.TenantDataSchema);
 
-        // Get paginated data
         dataGroup.MapGet("", async (
             string tenantId,
             [FromQuery] DateTime startDate,
@@ -85,7 +83,63 @@ public static class AdminDataEndpoints
         .WithName("GetAdminData")
         .RequireCapability(CapabilityActions.TenantDataList);
 
-        // Delete data by type and filters
+        dataGroup.MapPost("", async (
+            string tenantId,
+            [FromBody] AdminDataCreateRequest request,
+            [FromServices] IAdminDataService dataService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await dataService.CreateDataAsync(tenantId, request, cancellationToken);
+            return result.ToHttpResult();
+        })
+        .Produces<AdminDataItemResponse>(StatusCodes.Status201Created)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status409Conflict)
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithName("CreateAdminData")
+        .WithSummary("Create a data record")
+        .WithDescription("Creates a new document for the given agent. Tenant is taken from the route. Duplicate type+key in the tenant returns 409.")
+        ;
+
+        dataGroup.MapGet("/{recordId}", async (
+            string tenantId,
+            string recordId,
+            [FromServices] IAdminDataService dataService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await dataService.GetRecordAsync(tenantId, recordId, cancellationToken);
+            return result.ToHttpResult();
+        })
+        .Produces<AdminDataItemResponse>()
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithName("GetAdminDataRecord")
+        .WithSummary("Get a data record by ID")
+        .WithDescription("Retrieves a single data record. Records from another tenant are returned as 404.")
+        ;
+
+        dataGroup.MapPut("/{recordId}", async (
+            string tenantId,
+            string recordId,
+            [FromBody] AdminDataUpdateRequest request,
+            [FromServices] IAdminDataService dataService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await dataService.UpdateDataAsync(tenantId, recordId, request, cancellationToken);
+            return result.ToHttpResult();
+        })
+        .Produces<AdminDataItemResponse>()
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status409Conflict)
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithName("UpdateAdminData")
+        .WithSummary("Update a data record")
+        .WithDescription("Partially updates an existing data record. Id, tenant, and agent cannot be changed. Missing or cross-tenant records return 404.")
+        ;
+
         dataGroup.MapDelete("", async (
             string tenantId,
             [FromQuery] DateTime startDate,
@@ -115,7 +169,6 @@ public static class AdminDataEndpoints
         .WithName("DeleteAdminData")
         .RequireCapability(CapabilityActions.TenantDataDelete);
 
-        // Delete a specific record by ID
         dataGroup.MapDelete("/{recordId}", async (
             string tenantId,
             string recordId,
@@ -129,8 +182,7 @@ public static class AdminDataEndpoints
             };
 
             var result = await dataService.DeleteRecordAsync(request, cancellationToken);
-            
-            // Handle NotFound case with structured response
+
             if (!result.IsSuccess && result.StatusCode == StatusCode.NotFound)
             {
                 var notFoundResponse = new AdminDataDeleteRecordResponse
@@ -141,7 +193,7 @@ public static class AdminDataEndpoints
                 };
                 return Results.Json(notFoundResponse, statusCode: StatusCodes.Status404NotFound);
             }
-            
+
             return result.ToHttpResult();
         })
         .Produces<AdminDataDeleteRecordResponse>()
