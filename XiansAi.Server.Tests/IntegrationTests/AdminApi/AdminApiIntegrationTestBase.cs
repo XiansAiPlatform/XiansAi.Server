@@ -406,7 +406,7 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
             CreatedBy = _adminUserId ?? "test-admin",
             Direction = direction,
             Text = text,
-            Status = MessageStatus.DeliveredToWorkflow,
+            Status = MessageStatus.Read,
             Scope = topic,
             MessageType = MessageType.Chat
         };

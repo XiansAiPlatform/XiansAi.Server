@@ -121,6 +121,21 @@ public interface IMessageService
     Task<ServiceResult<string?>> GetLastTaskIdAsync(string workflowId, string participantId, string? scope = null);
     Task<ServiceResult<TopicsResult>> GetTopicsByWorkflowAndParticipantAsync(string workflowId, string participantId, int page, int pageSize);
     Task<ServiceResult<int>> DeleteMessagesByActivationAsync(string tenantId, string agentName, string activationName);
+    /// <summary>
+    /// Marks all messages in the thread up to and including the given cutoff as read.
+    /// The cutoff is either an explicit timestamp, or resolved from a messageId's CreatedAt.
+    /// Exactly one of <paramref name="timestamp"/> or <paramref name="messageId"/> must be provided.
+    /// </summary>
+    Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId);
+}
+
+/// <summary>
+/// Result of marking a thread's messages as read: how many were just marked, and how many remain unread.
+/// </summary>
+public class MarkThreadReadResult
+{
+    public long MarkedCount { get; set; }
+    public long UnreadCount { get; set; }
 }
 
 public class MessageService : IMessageService
@@ -616,6 +631,7 @@ public class MessageService : IMessageService
             CreatedBy = _tenantContext.LoggedInUser,
             Direction = direction,
             Text = request.Text,
+            Status = MessageStatus.Unread,
             Data = request.Data, // Assign original metadata
             WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType ?? throw new Exception("WorkflowType is required"),
@@ -781,6 +797,62 @@ public class MessageService : IMessageService
             _logger.LogError(ex, "Error deleting messages for workflowId {WorkflowId}, participant {ParticipantId}, topic {Topic}", 
                 LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(topic ?? "null"));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting messages");
+        }
+    }
+
+    public async Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(threadId))
+            {
+                return ServiceResult<MarkThreadReadResult>.BadRequest("ThreadId is required");
+            }
+
+            var hasTimestamp = timestamp.HasValue;
+            var hasMessageId = !string.IsNullOrWhiteSpace(messageId);
+
+            if (hasTimestamp == hasMessageId)
+            {
+                return ServiceResult<MarkThreadReadResult>.BadRequest(
+                    "Provide exactly one of timestamp or messageId");
+            }
+
+            var tenantId = _tenantContext.TenantId;
+            DateTime cutoff;
+
+            if (hasMessageId)
+            {
+                var anchorMessage = await _conversationRepository.GetMessageByIdAsync(messageId!, tenantId);
+                if (anchorMessage == null || anchorMessage.ThreadId != threadId)
+                {
+                    return ServiceResult<MarkThreadReadResult>.NotFound("Message not found in the specified thread");
+                }
+                cutoff = anchorMessage.CreatedAt;
+            }
+            else
+            {
+                cutoff = timestamp.Value;
+            }
+
+            // Two separate queries, so the count is a snapshot taken after the update, not atomic with it.
+            // Keep the count second: a message that lands between the calls is then included, not missed.
+            var markedCount = await _conversationRepository.MarkThreadMessagesAsReadAsync(tenantId, threadId, cutoff);
+            var unreadCount = await _conversationRepository.GetUnreadMessageCountAsync(tenantId, threadId);
+
+            _logger.LogInformation("Marked {MarkedCount} messages as read in thread {ThreadId}; {UnreadCount} remain unread",
+                markedCount, LogSanitizer.Sanitize(threadId), unreadCount);
+
+            return ServiceResult<MarkThreadReadResult>.Success(new MarkThreadReadResult
+            {
+                MarkedCount = markedCount,
+                UnreadCount = unreadCount
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error marking thread {ThreadId} as read", LogSanitizer.Sanitize(threadId));
+            return ServiceResult<MarkThreadReadResult>.InternalServerError("An error occurred while marking the thread as read");
         }
     }
 
