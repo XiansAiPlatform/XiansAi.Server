@@ -447,7 +447,7 @@ namespace Features.UserApi.Websocket
                 var workflowId = new WorkflowIdentifier(workflow, tenantContext).WorkflowId;
 
                 // Call the delete service
-                var result = await messageService.DeleteThreadAsync(workflowId, participantId);
+                var result = await messageService.DeleteThreadAsync(workflowId, participantId.ToLowerInvariant());
 
                 if (result.IsSuccess)
                 {
