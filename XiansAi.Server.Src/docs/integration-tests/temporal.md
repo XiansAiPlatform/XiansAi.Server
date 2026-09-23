@@ -10,7 +10,7 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
-The Echo / Knowledge / Knowledge list / Knowledge SDK / Secret Vault / Secret Vault SDK / Document DB / Document DB SDK / Document context / Webhooks / Webhook SDK / Webhook context / Files / Workflow files / Custom workflow / Child workflows / Workflow handle / Schedules / Schedule SDK / Schedule create / HITL / HITL SDK / HITL conversation / HITL last task / Cross-agent / Activations SDK / Metrics / Logging / Messaging SDK / Tenant-scoped Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Knowledge list / Knowledge SDK / Secret Vault / Secret Vault user scope / Secret Vault SDK / Document DB / Document DB SDK / Document context / Webhooks / Webhook SDK / Webhook context / Files / Workflow files / Custom workflow / Child workflows / Workflow handle / Schedules / Schedule SDK / Schedule create / HITL / HITL SDK / HITL conversation / HITL last task / Cross-agent / Activations SDK / Metrics / Logging / Messaging SDK / Tenant-scoped Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -96,6 +96,10 @@ System Knowledge agent authored with Xians.Lib. Chat `ExecuteAsync` a Manage wor
 ### `AdminApiTemporalSecretVaultAgentLifecycleTests`
 
 System Secret Vault agent authored with Xians.Lib. Chat commands create / fetch / update / delete via `XiansContext.CurrentAgent.Secrets` with no-arg scopes from live context. Fetch is a **strict** match (tenant / agent / participant / activation) — unlike Knowledge, there is no fallback. Admin list/fetch return metadata only. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests`
+
+System Secret Vault agent authored with Xians.Lib. Admin creates tenant-scoped and user-scoped secrets (the Agent Studio shapes). Chat fetch proves strict tenant and participant isolation, including the same participant in another tenant. TenantAdmin cannot read or change another tenant's secret. Admin responses never include the value. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### `AdminApiTemporalSecretVaultSdkAgentLifecycleTests`
 

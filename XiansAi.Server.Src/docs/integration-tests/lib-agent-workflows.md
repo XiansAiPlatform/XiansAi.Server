@@ -11,6 +11,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Knowledge list | [`AdminApiTemporalKnowledgeListAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeListAgentLifecycleTests.cs) | `ListAsync` returns tenant knowledge for this agent only |
 | Knowledge SDK | [`AdminApiTemporalKnowledgeSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeSdkAgentLifecycleTests.cs) | `GetAsync` / `ListAsync` from a Temporal **activity** and from **workflow** code (system `KnowledgeActivities` stub) |
 | Secret Vault | [`AdminApiTemporalSecretVaultAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultAgentLifecycleTests.cs) | Create/fetch/update/delete through a running agent; strict tenant / agent / participant / activation isolation; Admin never sees values |
+| Secret Vault user scope | [`AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests.cs) | Admin-created tenant secrets and user secrets (tenant + participant, no agent); running agent fetch isolation; TenantAdmin cannot cross tenants; Admin never sees values |
 | Secret Vault SDK | [`AdminApiTemporalSecretVaultSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultSdkAgentLifecycleTests.cs) | TenantScope Create/Fetch/GetById/Update/List/Delete from a Temporal **activity**; List/Delete from **workflow** code (system `SecretVaultActivities` stub); Create/Fetch/GetById/Update refused in a workflow so plaintext never enters history |
 | Document DB | [`AdminApiTemporalDocumentDbAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbAgentLifecycleTests.cs) | Agent `SaveAsync` / `GetByKeyAsync`; Admin list/get/update/create; isolation by tenant, agent, activation, and participant |
 | Document DB SDK | [`AdminApiTemporalDocumentDbSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbSdkAgentLifecycleTests.cs) | `QueryAsync`, `GetAsync(id)`, `UpdateAsync`, `ExistsAsync`, `DeleteAsync` / `DeleteManyAsync`; Query auto-scope hides another participant |
@@ -43,6 +44,7 @@ dotnet test --filter "FullyQualifiedName~KnowledgeAgent_SystemUpload_TenantAndAc
 dotnet test --filter "FullyQualifiedName~KnowledgeListAgent_ListAsync_AgentScoped"
 dotnet test --filter "FullyQualifiedName~KnowledgeSdkAgent_GetAndList"
 dotnet test --filter "FullyQualifiedName~SecretVaultAgent_CreateFetch_StrictScopeIsolationAndRotation"
+dotnet test --filter "FullyQualifiedName~SecretVaultUserScopeAgent_AdminCreate_IsolatesTenantAndUser"
 dotnet test --filter "FullyQualifiedName~SecretVaultSdkAgent_CollectionOps"
 dotnet test --filter "FullyQualifiedName~DocumentDbAgent_SavePush_AdminReadModifyAdd_Isolates"
 dotnet test --filter "FullyQualifiedName~DocumentDbSdkAgent_QueryGetUpdateExistsDelete"
@@ -357,6 +359,22 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 - `GET /api/v1/admin/secrets/fetch?key&tenantId` (metadata probe, no values)
 
 Values are proven only through the agent's `FetchByKeyAsync` + `ReplyAsync`. Participant isolation reuses a fixed `participantId` for create and fetch; other chats still use a unique id so history cannot collide. History polling matches each message's `text` field, not the raw JSON (a reply of `created` must not match `createdAt`).
+
+## Agent under test: Secret Vault user scope
+
+Same host. Admin creates the two shapes Agent Studio stores: a tenant secret (`tenantId` only) and a user secret (`tenantId` + `userId`, no `agentId`). Chat `fetch tenant|user|agent {key}` calls `TenantScope()`, `TenantScope().ParticipantScope()`, or `TenantScope().AgentScope()`. The same key is also stored in a second tenant for the same participant. Replies are the value, or `missing:{scope}:{key}` so repeated misses stay distinct in history.
+
+```text
+1. Owner participant TenantScope fetch → tenant value; ParticipantScope fetch → user value
+   TenantScope of the user key, ParticipantScope of the tenant key, AgentScope of the user key → missing
+2. Another participant TenantScope → tenant value; ParticipantScope → missing
+3. Other tenant, same participant → that tenant's values, not the owner's
+4. Second agent in the owner tenant → both values for the owner participant; other participant still missing
+5. Admin list/fetch/get return metadata only. Fetch without userId or with the wrong user → 404
+   Same key cannot be created again in that tenant for another user (409)
+6. Other tenant's TenantAdmin: create/list/fetch against the owner tenant is 403 or 401; get/update/delete by id is 403
+   Owner TenantAdmin still reads metadata for its own secret
+```
 
 ## Agent under test: Secret Vault SDK
 
@@ -805,7 +823,7 @@ Skip for Lib server tests:
 - A2A (not on the public concepts overview)
 - Legacy Temporal Update webhooks (`POST /api/user/webhooks/{workflow}/{methodName}`)
 
-Keep new coverage as separate tests on `LibAgentWorkflowHost`. Do not grow Echo, Knowledge, Knowledge list, Knowledge SDK, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Document context, Webhooks, Webhook SDK, Webhook context, Files, Workflow files, Custom workflows, Child workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, or Tenant-scoped into a second sample.
+Keep new coverage as separate tests on `LibAgentWorkflowHost`. Do not grow Echo, Knowledge, Knowledge list, Knowledge SDK, Secret Vault, Secret Vault user scope, Secret Vault SDK, Document DB, Document DB SDK, Document context, Webhooks, Webhook SDK, Webhook context, Files, Workflow files, Custom workflows, Child workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, or Tenant-scoped into a second sample.
 
 ## Adding another Lib agent workflow
 
