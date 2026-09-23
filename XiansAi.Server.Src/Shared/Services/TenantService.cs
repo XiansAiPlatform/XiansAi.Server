@@ -694,6 +694,10 @@ public class TenantService : ITenantService
                     ? $"Tenant '{validatedTenant.Name}' ({validatedTenant.TenantId}) was created by '{validatedTenant.CreatedBy}' and is disabled until an administrator enables it."
                     : $"Tenant '{validatedTenant.Name}' ({validatedTenant.TenantId}) was created by '{validatedTenant.CreatedBy}' with domain '{validatedTenant.Domain}' and is disabled until an administrator enables it.");
 
+            // Clear any stale negative cache entry (e.g. from a pre-creation existence check) so
+            // an immediate GetTenantByTenantId/auth resolution right after creation doesn't 404.
+            _tenantCacheService.InvalidateTenant(validatedTenant.TenantId);
+            
             var result = new TenantCreatedResult
             {
                 Tenant = validatedTenant,
