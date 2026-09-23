@@ -78,6 +78,7 @@ These use `IntegrationTestBase` directly (certificate policy is remapped to `Tes
 | `CacheEndpointTests` | Cache set/get |
 | `ConversationEndpointsTests` | Conversation threads and messages |
 | `DefinitionsEndpointsTests` | Flow definition upload/get |
+| `DocumentIdentityEndpointTests` | `useKeyAsIdentifier` saves resolve by tenant + agent + type + key + activation + participant: two activations, two agents, or two participants keep separate documents; `overwrite=false` → 409 only against the caller's own document |
 | `FileEndpointsTests` | Inbound files |
 | `InstructionsEndpointTests` | Instructions |
 | `LogsEndpointTests` | Agent logs |

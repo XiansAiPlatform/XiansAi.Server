@@ -96,7 +96,8 @@ public class AdminDataServiceTests
     public async Task CreateDataAsync_Returns_Conflict_On_Duplicate_Type_And_Key()
     {
         SetupAgent("tenant-a", "CustomerSupportAgent");
-        _documents.Setup(r => r.GetByKeyAsync("Companies", "acme-2026-01", "tenant-a"))
+        _documents.Setup(r => r.GetByIdentityAsync(
+                new DocumentIdentity("tenant-a", "CustomerSupportAgent", "Companies", "acme-2026-01", null, null)))
             .ReturnsAsync(new Document { Id = ObjectId.GenerateNewId().ToString(), TenantId = "tenant-a" });
 
         var result = await _service.CreateDataAsync("tenant-a", ValidCreateRequest());
@@ -109,7 +110,7 @@ public class AdminDataServiceTests
     public async Task CreateDataAsync_Persists_Route_Tenant_And_Actor()
     {
         SetupAgent("tenant-a", "CustomerSupportAgent");
-        _documents.Setup(r => r.GetByKeyAsync("Companies", "acme-2026-01", "tenant-a"))
+        _documents.Setup(r => r.GetByIdentityAsync(It.IsAny<DocumentIdentity>()))
             .ReturnsAsync((Document?)null);
 
         Document? captured = null;
@@ -261,7 +262,8 @@ public class AdminDataServiceTests
                 Type = "Companies",
                 Key = "original-key"
             });
-        _documents.Setup(r => r.GetByKeyAsync("Companies", "taken-key", "tenant-a"))
+        _documents.Setup(r => r.GetByIdentityAsync(
+                new DocumentIdentity("tenant-a", "CustomerSupportAgent", "Companies", "taken-key", null, null)))
             .ReturnsAsync(new Document { Id = otherId, TenantId = "tenant-a" });
 
         var result = await _service.UpdateDataAsync("tenant-a", recordId, new AdminDataUpdateRequest
@@ -304,7 +306,7 @@ public class AdminDataServiceTests
         Assert.True(result.IsSuccess);
         Assert.NotNull(captured);
         Assert.Equal("acme-2026-01", captured!.Key);
-        _documents.Verify(r => r.GetByKeyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+        _documents.Verify(r => r.GetByIdentityAsync(It.IsAny<DocumentIdentity>()), Times.Never);
     }
 
     private void SetupAgent(string tenantId, string agentName)
@@ -317,6 +319,26 @@ public class AdminDataServiceTests
                 Tenant = tenantId,
                 CreatedBy = "admin-user"
             });
+    }
+
+    [Fact]
+    public async Task CreateDataAsync_Same_Type_And_Key_In_Another_Activation_Is_Not_A_Conflict()
+    {
+        SetupAgent("tenant-a", "CustomerSupportAgent");
+        _documents.Setup(r => r.GetByIdentityAsync(
+                new DocumentIdentity("tenant-a", "CustomerSupportAgent", "Companies", "acme-2026-01", "front-desk", null)))
+            .ReturnsAsync(new Document { Id = ObjectId.GenerateNewId().ToString(), TenantId = "tenant-a" });
+        _documents.Setup(r => r.GetByIdentityAsync(
+                new DocumentIdentity("tenant-a", "CustomerSupportAgent", "Companies", "acme-2026-01", "back-office", null)))
+            .ReturnsAsync((Document?)null);
+        _documents.Setup(r => r.CreateAsync(It.IsAny<Document>())).ReturnsAsync((Document d) => d);
+
+        var request = ValidCreateRequest();
+        request.ActivationName = "back-office";
+        var result = await _service.CreateDataAsync("tenant-a", request);
+
+        Assert.Equal(StatusCode.Created, result.StatusCode);
+        _documents.Verify(r => r.CreateAsync(It.Is<Document>(d => d.ActivationName == "back-office")), Times.Once);
     }
 
     private static AdminDataCreateRequest ValidCreateRequest()

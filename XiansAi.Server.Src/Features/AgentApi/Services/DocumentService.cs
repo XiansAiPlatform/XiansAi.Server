@@ -78,8 +78,9 @@ public class DocumentService : IDocumentService
                 TenantId = _tenantContext.TenantId,
                 AgentId = documentData.AgentId,
                 WorkflowId = documentData.WorkflowId,
-                ParticipantId = documentData.ParticipantId,
-                ActivationName = documentData.ActivationName,
+                // Empty stamps mean "none"; store them as null so they resolve to one slot.
+                ParticipantId = DocumentIdentity.Normalize(documentData.ParticipantId),
+                ActivationName = DocumentIdentity.Normalize(documentData.ActivationName),
                 Type = documentData.Type,
                 Key = documentData.Key,
                 ContentType = "JsonElement",
@@ -126,13 +127,17 @@ public class DocumentService : IDocumentService
                     return ServiceResult<JsonElement>.BadRequest(message);
                 }
 
-                // Check if document with same type and key exists
-                var existingByKey = await _repository.GetByKeyAsync(document.Type!, document.Key!, _tenantContext.TenantId);
+                // Resolve the document this caller owns for the key: same agent, activation and
+                // participant. Another agent's or instance's document with the same type and key
+                // is a different identity and is neither read nor replaced here.
+                var existingByKey = await _repository.GetByIdentityAsync(new DocumentIdentity(
+                    _tenantContext.TenantId, document.AgentId!, document.Type!, document.Key!,
+                    document.ActivationName, document.ParticipantId));
                 if (existingByKey != null)
                 {
                     if (!(options?.Overwrite ?? false))
                     {
-                        return ServiceResult<JsonElement>.Conflict("Document with same Type and Key already exists. Set Overwrite to true to update.");
+                        return ServiceResult<JsonElement>.Conflict("Document with same Type and Key already exists for this agent, activation and participant. Set Overwrite to true to update.");
                     }
 
                     // Update existing document
