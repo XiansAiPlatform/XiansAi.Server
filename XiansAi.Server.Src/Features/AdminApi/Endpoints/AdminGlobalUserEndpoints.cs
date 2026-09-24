@@ -1,16 +1,17 @@
 using System.Text.Json.Serialization;
+using Features.AdminApi.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Auth;
 using Shared.Services;
-using Shared.Utils;
 using Shared.Utils.Services;
 
 namespace Features.AdminApi.Endpoints;
 
 /// <summary>
 /// Tenant-independent user management endpoints for the System Admin UI.
-/// All endpoints require the caller to be a System Admin (enforced here);
-/// business logic lives in <see cref="IGlobalUserAdminService"/>.
+///
+/// Authorization is declarative: each route names a <see cref="CapabilityActions"/> action that
+/// <see cref="CapabilityMatrixFilter"/> resolves.
 /// </summary>
 public static class AdminGlobalUserEndpoints
 {
@@ -42,7 +43,9 @@ public static class AdminGlobalUserEndpoints
     {
         var group = adminApiGroup.MapGroup("/users")
             .WithTags("AdminAPI - Global User Management")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .EnforceCapabilities()
+            .WithMetadata(TenantOptionalForSysAdminMetadata.Instance);
 
         // GET /api/v1/admin/users — list all users across tenants
         group.MapGet("", async (
@@ -52,13 +55,8 @@ public static class AdminGlobalUserEndpoints
             [FromQuery] bool? isSysAdmin,
             [FromQuery] bool? isEnabled,
             [FromQuery] string? role,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] IGlobalUserAdminService service,
-            [FromServices] ILoggerFactory loggerFactory) =>
+            [FromServices] IGlobalUserAdminService service) =>
         {
-            if (!IsSysAdminCaller(tenantContext, loggerFactory, "list global users", out var forbid))
-                return forbid;
-
             var filter = new UserFilter
             {
                 Page = page,
@@ -71,111 +69,69 @@ public static class AdminGlobalUserEndpoints
             var result = await service.ListUsersAsync(filter);
             return result.ToHttpResult();
         })
-        .WithName("AdminListGlobalUsers");
+        .WithName("AdminListGlobalUsers")
+        .RequireCapability(CapabilityActions.GlobalUsersList);
 
         // GET /api/v1/admin/users/{userId} — single user with all tenant memberships
         group.MapGet("/{userId}", async (
             string userId,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] IGlobalUserAdminService service,
-            [FromServices] ILoggerFactory loggerFactory) =>
+            [FromServices] IGlobalUserAdminService service) =>
         {
-            if (!IsSysAdminCaller(tenantContext, loggerFactory, "get global user", out var forbid))
-                return forbid;
-
             var result = await service.GetUserWithMembershipsAsync(userId);
             return result.ToHttpResult();
         })
-        .WithName("AdminGetGlobalUser");
+        .WithName("AdminGetGlobalUser")
+        .RequireCapability(CapabilityActions.GlobalUsersGet);
 
         // PATCH /api/v1/admin/users/{userId} — update global profile (name, email)
         group.MapPatch("/{userId}", async (
             string userId,
             [FromBody] PatchGlobalUserRequest body,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] IGlobalUserAdminService service,
-            [FromServices] ILoggerFactory loggerFactory) =>
+            [FromServices] IGlobalUserAdminService service) =>
         {
-            if (!IsSysAdminCaller(tenantContext, loggerFactory, "patch global user", out var forbid))
-                return forbid;
-
             var result = await service.UpdateProfileAsync(userId, body.Name, body.Email);
             return result.ToHttpResult();
         })
-        .WithName("AdminPatchGlobalUser");
+        .WithName("AdminPatchGlobalUser")
+        .RequireCapability(CapabilityActions.GlobalUsersUpdate);
 
         // PUT /api/v1/admin/users/{userId}/sysadmin — grant or revoke SysAdmin flag
         group.MapPut("/{userId}/sysadmin", async (
             string userId,
             [FromBody] SetSysAdminRequest body,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] IGlobalUserAdminService service,
-            [FromServices] ILoggerFactory loggerFactory) =>
+            [FromServices] IGlobalUserAdminService service) =>
         {
-            if (!IsSysAdminCaller(tenantContext, loggerFactory, "set sysadmin flag", out var forbid))
-                return forbid;
-
             var result = await service.SetSysAdminAsync(userId, body.IsSysAdmin);
             return result.ToHttpResult();
         })
-        .WithName("AdminSetGlobalUserSysAdmin");
+        .WithName("AdminSetGlobalUserSysAdmin")
+        .RequireCapability(CapabilityActions.GlobalUsersSysAdminSet);
 
         // PUT /api/v1/admin/users/{userId}/status — enable or disable user account
         group.MapPut("/{userId}/status", async (
             string userId,
             [FromBody] SetUserStatusRequest body,
             [FromServices] ITenantContext tenantContext,
-            [FromServices] IGlobalUserAdminService service,
-            [FromServices] ILoggerFactory loggerFactory) =>
+            [FromServices] IGlobalUserAdminService service) =>
         {
-            if (!IsSysAdminCaller(tenantContext, loggerFactory, "set user status", out var forbid))
-                return forbid;
-
             var actingUserId = tenantContext.LoggedInUser ?? "system";
             var result = await service.SetStatusAsync(userId, body.Enabled, body.Reason, actingUserId);
             return result.ToHttpResult();
         })
-        .WithName("AdminSetGlobalUserStatus");
+        .WithName("AdminSetGlobalUserStatus")
+        .RequireCapability(CapabilityActions.GlobalUsersStatusSet);
 
         // DELETE /api/v1/admin/users/{userId} — permanently delete the user account
         group.MapDelete("/{userId}", async (
             string userId,
             [FromServices] ITenantContext tenantContext,
-            [FromServices] IGlobalUserAdminService service,
-            [FromServices] ILoggerFactory loggerFactory) =>
+            [FromServices] IGlobalUserAdminService service) =>
         {
-            if (!IsSysAdminCaller(tenantContext, loggerFactory, "delete global user", out var forbid))
-                return forbid;
-
             var actingUserId = tenantContext.LoggedInUser ?? "system";
             var result = await service.DeleteUserAsync(userId, actingUserId);
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult();
         })
-        .WithName("AdminDeleteGlobalUser");
-    }
-
-    /// <summary>
-    /// Ensures the caller has the SysAdmin role. Returns false and a 403 result via
-    /// <paramref name="forbid"/> when access should be denied.
-    /// </summary>
-    private static bool IsSysAdminCaller(
-        ITenantContext tenantContext,
-        ILoggerFactory loggerFactory,
-        string operation,
-        out IResult forbid)
-    {
-        if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) == true)
-        {
-            forbid = Results.Empty;
-            return true;
-        }
-
-        loggerFactory.CreateLogger("AdminGlobalUserEndpoints").LogWarning(
-            "Access denied: {Operation} requires SysAdmin role. User: {UserId}",
-            operation, LogSanitizer.Sanitize(tenantContext.LoggedInUser));
-        forbid = Results.Json(
-            new { message = "Access denied: Only system administrators can manage users" },
-            statusCode: StatusCodes.Status403Forbidden);
-        return false;
+        .WithName("AdminDeleteGlobalUser")
+        .RequireCapability(CapabilityActions.GlobalUsersDelete);
     }
 }

@@ -348,7 +348,9 @@ public static class AdminMessagingEndpoints
         var adminMessagingGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/messaging")
             .WithTags("AdminAPI - Messaging")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .AddEndpointFilter<RequireApiKeyFilter>()
+            .EnforceCapabilities();
 
         // Server-Sent Events endpoint for real-time message streaming
         adminMessagingGroup.MapGet("/listen", async (
@@ -426,6 +428,7 @@ public static class AdminMessagingEndpoints
             return await streamHandler.HandleStreamAsync();
         })
         .WithName("ListenToAgentActivationMessagesForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingListen)
         ;
 
         // Unified send message endpoint
@@ -490,6 +493,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("SendMessageForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingSend)
         ;
 
         // Specialized file-message endpoint (typed JSON). Convenience wrapper over /send for
@@ -548,6 +552,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("SendFileMessageForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingSendFile)
         ;
 
         // Download a stored message file attachment by its GridFS id (tenant-scoped).
@@ -565,6 +570,7 @@ public static class AdminMessagingEndpoints
             return Results.File(download.Stream, download.ContentType, download.FileName);
         })
         .WithName("DownloadMessageFileForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingDownloadFile)
         ;
 
         // Get topics (distinct scopes) for a specific agent activation and participant
@@ -611,6 +617,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetTopicsForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingTopics)
         ;
 
         // Get message history for a specific agent activation and participant
@@ -669,6 +676,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetHistoryForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingHistory)
         ;
 
         // Mark all messages in a thread as read, up to a (threadId, timestamp) or (threadId, messageId) cutoff.
@@ -734,6 +742,7 @@ public static class AdminMessagingEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteMessagesByTopicForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingDeleteByTopic)
         ;
 
         // Delete all messages (across every participant) for a given agent activation.
@@ -753,6 +762,7 @@ public static class AdminMessagingEndpoints
             return Results.Ok(new { message = $"Deleted {result.Data} thread(s)", deletedCount = result.Data });
         })
         .WithName("DeleteMessagesByActivationForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingDeleteByActivation)
 
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound);

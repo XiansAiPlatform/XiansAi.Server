@@ -267,6 +267,121 @@ watch the logs for the warning it emits, fix each tenant it names, then set the 
 | `Auth__RequireOidcAudience` | Provider declares no `expectedAudience` | Set `expectedAudience` on the provider. Until then, any token that issuer signed is accepted — including one minted for an unrelated application at the same identity provider. New configurations cannot be saved without one, so this warning only names tenants configured before that rule. |
 | `Auth__StrictSubjectClaim` | Identity fell back to a claim users can change | Leave `userIdClaim` unset (defaults to `sub`/`oid`), or set it to a stable claim. Note that this changes the user id of anyone currently signing in through a fallback claim, orphaning their existing record — naming the claim they already resolve to keeps them on it. Do not set it to a mutable claim; that is refused at save time for new configurations. |
 
+### Admin Console OIDC (ID-token-only auth for AdminApi)
+
+AdminApi is normally authenticated by a shared API key (see `Features/AdminApi/README.md`). Any
+AdminApi client may instead authenticate with **no API key at all**, presenting only a verified
+OIDC ID token in an `X-User-Token` header. The mechanism is generic and not tied to any specific
+UI — the server has no built-in knowledge of which client(s) use it. This is validated against a
+dedicated **`admin-console` pseudo-tenant**, not any real tenant's own OIDC config, since the
+humans behind an AdminApi client operate across many tenants rather than belonging to one.
+
+The pseudo-tenant's provider list is configured **at runtime**, the same way a real tenant
+self-configures its own OIDC rules (`Features/AdminApi/Endpoints/AdminTenantEndpoints.cs`'s
+`/tenants/{tenantId}/oidc-config`) — there is no `.env` entry and nothing to seed at startup. Each
+AdminApi client with its own login/IdP registers its own provider entry in the same config, via
+`PUT`, independently of any other client already registered there.
+
+**Bootstrap flow** (fresh deployment, no users yet):
+
+```bash
+# 1. Anonymous, works exactly once — until any user exists. Creates the first SysAdmin + API key.
+curl -X POST https://your-server/api/v1/admin/bootstrap -d '{"email":"you@example.com"}'
+#   -> { "apiKey": "sk-Xnai-...", ... }
+
+# 2. Fetch a schema template to start from (optional).
+curl https://your-server/api/v1/admin/admin-console/oidc-config/template \
+  -H "Authorization: Bearer sk-Xnai-..."
+
+# 3. Register the provider(s). SysAdmin-only; can be called again any time to add/change providers
+#    or reconfigure existing ones — no server restart involved.
+curl -X PUT https://your-server/api/v1/admin/admin-console/oidc-config \
+  -H "Authorization: Bearer sk-Xnai-..." -H "Content-Type: application/json" \
+  -d '{
+    "allowedProviders": ["microsoft"],
+    "providers": {
+      "microsoft": {
+        "authority": "https://login.microsoftonline.com/<tenant-id>/v2.0",
+        "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
+        "expectedAudience": ["your-client-app-microsoft-client-id"]
+      }
+    }
+  }'
+```
+
+`GET`/`DELETE /api/v1/admin/admin-console/oidc-config` read back or remove the configuration; all
+four operations require `SysAdmin`. Leaving the configuration unset (or deleting it) keeps AdminApi
+exactly as it was: API key only, no `X-User-Token` support — any forwarded header simply fails
+validation with "No auth config has been set for jwt validation".
+
+**Identity must resolve to the same `User` record as this platform's other sign-in path**, since
+that's where the caller's `SysAdmin`/`TenantAdmin` role actually lives. Each provider defaults to
+preferring the token's `sub` claim, falling back to `oid`. This is a real trap for Azure AD
+specifically: its `sub` is pairwise **per app registration**, so a token from one client's own app
+registration carries a different `sub` than a token from a different Azure AD app in the very
+same tenant for the very same human — meaning it won't resolve to a `User` record created via
+that other app's login. Set `"providerSpecificSettings": {"userIdClaim": "oid"}` on the provider to
+match whatever this platform's other Azure AD sign-in path (e.g. WebApi's) already resolves by, so
+both paths land on the same `User` record.
+
+**Each Entra tenant a custom admin UI should support must be registered explicitly** — set
+`authority`/`issuer` to that tenant's real, known issuer
+(`https://login.microsoftonline.com/<tenant-id>/v2.0`), as in the example above. There is no
+"accept any Azure AD tenant" mode: a token from a tenant nobody registered here simply fails
+issuer validation. This is a deliberate scope decision, not a missing feature — accepting an
+unregistered tenant would mean trusting that tenant's unverified `email`/`mail` claim to decide who
+a caller is, since anyone can create their own free Azure AD tenant and set that claim to any
+string, including a domain they don't own. Registering each supported tenant's real issuer avoids
+that risk entirely: the exact-match issuer check already guarantees the token came from a tenant an
+admin explicitly chose to trust.
+
+`upn` is not included in a v2.0 ID token by default — request it as an optional claim in the Azure
+app registration (Token configuration → Add optional claim → ID → `upn`). Matching on `email`
+instead avoids that extra step, as long as `xms_edov` is still required.
+
+If the resolved claim still doesn't match any `User.UserId`, `AdminKeylessUserResolver` falls back
+to an exact match on the token's own verified email (the same pattern `AdminRoleTenantResolver`
+uses for legacy API keys) — refusing outright, rather than guessing, if more than one account
+shares that email. This covers the common case without needing `UserIdClaim` at all: no single
+claim value is guaranteed to already match a stored `User.UserId`, since that depends entirely on
+how the account was originally provisioned.
+
+**A caller authenticated this way may hold any tenant role** — `SysAdmin`, `TenantAdmin`,
+`TenantUser`, `TenantParticipant`, or `TenantParticipantAdmin` — as long as they are an *approved*
+member of at least one tenant (or are `SysAdmin`, which needs no membership). This is deliberately
+broader than the API-key path (`AdminRoleTenantResolver`), which only ever recognizes
+`SysAdmin`/`TenantAdmin`: a Custom UI's whole point is letting any signed-in tenant member reach
+AdminApi under their own identity, with the **capability matrix** — not this auth step — deciding
+what each role may actually do on a given route. The matrix's declarative rules live in
+`Features/AdminApi/Auth/CapabilityActions.cs` (compiled-in defaults) and can be viewed/edited at
+runtime (SysAdmin-only) via `GET`/`PUT /api/v1/admin/admin-console/capability-matrix/*`
+(`Features/AdminApi/Endpoints/AdminCapabilityMatrixEndpoints.cs`). A route this caller reaches that
+isn't yet migrated onto the matrix still enforces whatever role check it always has (usually
+`TenantAdmin`/`SysAdmin`), unaffected by this broader authentication floor.
+
+On a **tenant-scoped** route, a SysAdmin must supply a `tenantId` explicitly (no API key to derive
+a default "home tenant" from); any other caller defaults to their own tenant when they hold an
+approved role in exactly one. A route that isn't tenant-scoped at all — admin-console's own OIDC
+config being the example — is exempt from that requirement (marked via
+`TenantOptionalForSysAdminMetadata` on the route group in
+`Features/AdminApi/Auth/AdminTenantScopeGuard.cs`), so a SysAdmin can call it without naming any tenant.
+`AdminMessagingEndpoints` and `AdminHeartbeatEndpoints` forward the raw API key downstream to
+agents via Temporal signals and are **not** reachable this way — they still require an API key
+regardless of role.
+
+**Roles are read directly from the platform's `User` record, not through the shared role cache.**
+Every other sign-in path (WebApi, UserApi, every OIDC/GitHub/Keycloak/Auth0/AzureB2C provider) goes
+through `RoleCacheService`, which strips `TenantParticipant`/`TenantParticipantAdmin` before
+returning anything — those two roles are normally chat-contact roles, not sign-in roles. This
+keyless path is the one deliberate exception: a participant is a legitimate Custom UI sign-in
+identity here, so `AdminKeylessUserResolver` reads the caller's roles straight from
+`IUserRepository` instead. This does not change what any other sign-in path does.
+
+**The two auth modes don't interact.** When an `Authorization: Bearer` API key is present,
+`X-User-Token` is never read and authorization works exactly as it always has, via
+`AdminRoleTenantResolver`. `X-User-Token` is only consulted when there is no API key at all — it
+does not upgrade or modify an API-key-authenticated request's identity.
+
 ### Tenant membership on User API sign-in
 
 A first-time User API sign-in records the caller as a member of the tenant they asked for. That

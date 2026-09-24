@@ -25,7 +25,8 @@ public static class AdminAuditLogEndpoints
         var auditLogGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/audit-logs")
             .WithTags("AdminAPI - Audit Log")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         auditLogGroup.MapGet("", async (
             string tenantId,
@@ -50,6 +51,7 @@ public static class AdminAuditLogEndpoints
         })
         .Produces<AdminAuditLogListResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
+        .RequireCapability(CapabilityActions.TenantAuditLogAccess)
         .WithName("GetAdminAuditLogs")
         .WithSummary("List audit log entries")
         .WithDescription(
@@ -71,6 +73,7 @@ public static class AdminAuditLogEndpoints
         })
         .Produces<IEnumerable<string>>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
+        .RequireCapability(CapabilityActions.TenantAuditLogAccess)
         .WithName("GetAdminAuditLogPerformedByOptions")
         .WithSummary("List distinct performed-by values")
         .WithDescription("Returns the distinct, non-empty performedBy values recorded for the tenant, sorted alphabetically.");
@@ -89,6 +92,7 @@ public static class AdminAuditLogEndpoints
         })
         .Produces<IEnumerable<string>>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
+        .RequireCapability(CapabilityActions.TenantAuditLogAccess)
         .WithName("GetAdminAuditLogActivationNameOptions")
         .WithSummary("List distinct activation names")
         .WithDescription("Returns the distinct, non-empty activation names recorded for the tenant, sorted alphabetically.");
