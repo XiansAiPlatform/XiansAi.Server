@@ -64,6 +64,7 @@ public static class AdminAgentAccessEndpoints
                     user,
                     isSysAdmin = false,
                     isTenantAdmin = false,
+                    isAgentOperator = false,
                     agents = new Dictionary<string, string>()
                 });
             }
@@ -72,6 +73,15 @@ public static class AdminAgentAccessEndpoints
                 string.Equals(r.Tenant, tenantId, StringComparison.OrdinalIgnoreCase)
                 && r.IsApproved
                 && r.Roles.Contains(SystemRoles.TenantAdmin));
+
+            // Participant Admin / Developer: Studio falls back to role-default write
+            // when this user has no explicit Read/Write/Owner grant on an agent.
+            var isAgentOperator = account.TenantRoles.Any(r =>
+                string.Equals(r.Tenant, tenantId, StringComparison.OrdinalIgnoreCase)
+                && r.IsApproved
+                && (r.Roles.Contains(SystemRoles.TenantParticipantAdmin)
+                    || r.Roles.Contains(SystemRoles.TenantUser)
+                    || r.Roles.Contains(SystemRoles.TenantAdmin)));
 
             var allAgents = await agentRepository.GetAgentsWithPermissionAsync(
                 tenantContext.LoggedInUser ?? "system", tenantId);
@@ -102,6 +112,7 @@ public static class AdminAgentAccessEndpoints
                 user = account.UserId,
                 isSysAdmin = account.IsSysAdmin,
                 isTenantAdmin,
+                isAgentOperator,
                 agents
             });
         })
