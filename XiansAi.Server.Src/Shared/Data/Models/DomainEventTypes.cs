@@ -197,6 +197,9 @@ public static class DomainEventTypes
     /// <summary>A builtin webhook integration was created. (Deletion emits the generic integration.deleted event.)</summary>
     public const string IntegrationWebhookCreated = "integration.webhook.created";
 
+    /// <summary>A privileged admin viewed another tenant member's conversations (view-as read).</summary>
+    public const string ConversationViewAs = "conversation.view_as";
+
     /// <summary>
     /// Canonical audit-log sentence for <paramref name="eventType"/>. Callers should pass a more
     /// specific description (names, ids) when they have them; this is the fallback so a row is
@@ -260,6 +263,7 @@ public static class DomainEventTypes
         IntegrationEnabled => "An app integration was enabled.",
         IntegrationDisabled => "An app integration was disabled.",
         IntegrationWebhookCreated => "A builtin webhook integration was created.",
+        ConversationViewAs => "A system admin viewed another user's conversations.",
         _ => null
     };
 }

@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using Shared.Data.Models.Validation;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Shared.Data.Models;
 
@@ -12,6 +13,9 @@ namespace Shared.Data.Models;
 [BsonIgnoreExtraElements]
 public class AuditLogEntry : ModelValidatorBase<AuditLogEntry>
 {
+    internal const int MaxDetailEntries = 16;
+    internal const int MaxDetailKeyLength = 100;
+    internal const int MaxDetailStringLength = 500;
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public string? Id { get; set; }
@@ -47,6 +51,19 @@ public class AuditLogEntry : ModelValidatorBase<AuditLogEntry>
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Last time this logical session was seen. First access keeps <see cref="CreatedAt"/>.</summary>
+    [BsonElement("last_seen_at")]
+    public DateTime? LastSeenAt { get; set; }
+
+    /// <summary>How many times this logical session was recorded, including the first write.</summary>
+    [BsonElement("access_count")]
+    public int AccessCount { get; set; }
+
+    /// <summary>Hour-bucket key used to collapse concurrent inserts of the same session.</summary>
+    [BsonElement("idempotency_key")]
+    [JsonIgnore]
+    public string? IdempotencyKey { get; set; }
+
     public override AuditLogEntry SanitizeAndReturn()
     {
         return new AuditLogEntry
@@ -59,7 +76,10 @@ public class AuditLogEntry : ModelValidatorBase<AuditLogEntry>
             ActivationName = string.IsNullOrEmpty(ActivationName) ? ActivationName : ValidationHelpers.SanitizeString(ActivationName),
             Description = string.IsNullOrEmpty(Description) ? Description : ValidationHelpers.SanitizeString(Description),
             Details = SanitizeDetails(Details),
-            CreatedAt = CreatedAt
+            CreatedAt = CreatedAt,
+            LastSeenAt = LastSeenAt,
+            AccessCount = AccessCount,
+            IdempotencyKey = IdempotencyKey
         };
     }
 
@@ -70,11 +90,16 @@ public class AuditLogEntry : ModelValidatorBase<AuditLogEntry>
             return null;
         }
 
-        var sanitized = new Dictionary<string, object?>(details.Count);
+        var sanitized = new Dictionary<string, object?>(Math.Min(details.Count, MaxDetailEntries));
         foreach (var (key, value) in details)
         {
+            if (sanitized.Count >= MaxDetailEntries)
+            {
+                break;
+            }
+
             var sanitizedKey = ValidationHelpers.SanitizeString(key);
-            if (string.IsNullOrEmpty(sanitizedKey))
+            if (string.IsNullOrEmpty(sanitizedKey) || sanitizedKey.Length > MaxDetailKeyLength)
             {
                 continue;
             }
@@ -89,10 +114,23 @@ public class AuditLogEntry : ModelValidatorBase<AuditLogEntry>
         value switch
         {
             null => null,
-            string text => ValidationHelpers.SanitizeString(text),
+            string text => SanitizeDetailString(text),
             Dictionary<string, object?> nested => SanitizeDetails(nested),
             _ => value
         };
+
+    private static string SanitizeDetailString(string text)
+    {
+        var sanitized = ValidationHelpers.SanitizeString(text)
+            .Replace("<", string.Empty, StringComparison.Ordinal)
+            .Replace(">", string.Empty, StringComparison.Ordinal)
+            .Replace("\"", string.Empty, StringComparison.Ordinal)
+            .Replace("'", string.Empty, StringComparison.Ordinal);
+
+        return sanitized.Length <= MaxDetailStringLength
+            ? sanitized
+            : sanitized[..MaxDetailStringLength];
+    }
 
     public override AuditLogEntry SanitizeAndValidate()
     {
