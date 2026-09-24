@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using MongoDB.Bson;
+using MongoDB.Driver;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Data.Models.Validation;
@@ -123,7 +124,7 @@ public class AdminAuditLogService : IAdminAuditLogService
             _logger.LogWarning("Validation failed while creating audit log entry: {Message}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<AuditLogEntry>.BadRequest($"Validation failed: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (MongoException ex)
         {
             _logger.LogError(ex, "Error creating audit log entry for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<AuditLogEntry>.InternalServerError("An error occurred while recording the audit log entry");
