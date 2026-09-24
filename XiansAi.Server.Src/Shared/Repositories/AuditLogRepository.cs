@@ -10,6 +10,20 @@ public interface IAuditLogRepository
 {
     Task CreateAsync(AuditLogEntry entry);
 
+    /// <summary>
+    /// Latest row matching tenant, action, actor, and <c>details.targetParticipantId</c>
+    /// created at or after <paramref name="createdAtOrAfter"/>. Used to collapse repeated
+    /// view-as reads into one logical session.
+    /// </summary>
+    Task<AuditLogEntry?> FindRecentMatchingAsync(
+        string tenantId,
+        string action,
+        string participantId,
+        string targetParticipantId,
+        DateTime createdAtOrAfter);
+
+    Task ReplaceAsync(AuditLogEntry entry);
+
     Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
         string tenantId,
         string? performedBy = null,
@@ -48,6 +62,31 @@ public class AuditLogRepository : IAuditLogRepository
     public async Task CreateAsync(AuditLogEntry entry)
     {
         await _auditLogs.InsertOneAsync(entry);
+        InvalidateDistinctCaches(entry.TenantId);
+    }
+
+    public async Task<AuditLogEntry?> FindRecentMatchingAsync(
+        string tenantId,
+        string action,
+        string participantId,
+        string targetParticipantId,
+        DateTime createdAtOrAfter)
+    {
+        var filter = Builders<AuditLogEntry>.Filter.And(
+            Builders<AuditLogEntry>.Filter.Eq(x => x.TenantId, tenantId),
+            Builders<AuditLogEntry>.Filter.Eq(x => x.Action, action),
+            Builders<AuditLogEntry>.Filter.Eq(x => x.ParticipantId, participantId),
+            Builders<AuditLogEntry>.Filter.Eq("details.targetParticipantId", targetParticipantId),
+            Builders<AuditLogEntry>.Filter.Gte(x => x.CreatedAt, createdAtOrAfter));
+
+        return await _auditLogs.Find(filter)
+            .SortByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task ReplaceAsync(AuditLogEntry entry)
+    {
+        await _auditLogs.ReplaceOneAsync(x => x.Id == entry.Id, entry);
         InvalidateDistinctCaches(entry.TenantId);
     }
 

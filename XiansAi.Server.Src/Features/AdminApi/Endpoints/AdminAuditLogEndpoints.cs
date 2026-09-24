@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Shared.Data.Models;
 using Shared.Services;
 using Shared.Utils.Services;
 using Shared.Auditing;
@@ -7,7 +8,7 @@ using Features.AdminApi.Auth;
 namespace Features.AdminApi.Endpoints;
 
 /// <summary>
-/// AdminApi endpoints for reading the audit log (who did what, and when).
+/// AdminApi endpoints for reading and writing the audit log (who did what, and when).
 /// Tenant-scoped entries live under <c>/api/v{version}/admin/tenants/{tenantId}/audit-logs</c>.
 /// Platform-scoped entries (SysAdmin grant/revoke, global user edits, system templates) live
 /// under <c>/api/v{version}/admin/platform/audit-logs</c> and are SysAdmin-only.
@@ -92,6 +93,31 @@ public static class AdminAuditLogEndpoints
         .WithName("GetAdminAuditLogActivationNameOptions")
         .WithSummary("List distinct activation names")
         .WithDescription("Returns the distinct, non-empty activation names recorded for the tenant, sorted alphabetically.");
+
+        auditLogGroup.MapPost("", async (
+            string tenantId,
+            [FromBody] AdminAuditLogCreateRequest request,
+            [FromServices] IAdminAuditLogService auditLogService) =>
+        {
+            if (AuditLogTenants.IsPlatform(tenantId))
+            {
+                return Results.NotFound();
+            }
+
+            var result = await auditLogService.CreateEntryAsync(tenantId, request);
+            return result.ToHttpResult();
+        })
+        .Produces<AuditLogEntry>(StatusCodes.Status201Created)
+        .Produces<AuditLogEntry>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .WithName("CreateAdminAuditLog")
+        .WithSummary("Record an audit log entry")
+        .WithDescription(
+            "Persists an admin audit row for the tenant. Performed-by is X-On-Behalf-Of when present " +
+            "(otherwise the API-key owner); loggedInUser is always the key owner. " +
+            "Repeated conversation.view_as rows for the same admin and target within an hour update the existing row.");
     }
 
     private static void MapPlatformAuditLogEndpoints(RouteGroupBuilder adminApiGroup)
