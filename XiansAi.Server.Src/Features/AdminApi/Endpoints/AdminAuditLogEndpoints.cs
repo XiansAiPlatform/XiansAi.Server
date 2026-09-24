@@ -117,7 +117,7 @@ public static class AdminAuditLogEndpoints
         .WithDescription(
             "Persists an admin audit row for the tenant. Performed-by is X-On-Behalf-Of when present " +
             "(otherwise the API-key owner); loggedInUser is always the key owner. " +
-            "Repeated conversation.view_as rows for the same admin and target within an hour update the existing row.");
+            "Repeated conversation.view_as rows for the same admin and target within an hour return the existing row and update lastSeenAt only.");
     }
 
     private static void MapPlatformAuditLogEndpoints(RouteGroupBuilder adminApiGroup)

@@ -105,24 +105,24 @@ public class AdminAuditLogService : IAdminAuditLogService
                 return ServiceResult<AuditLogEntry>.BadRequest("details.targetParticipantId is required");
             }
 
+            if (!string.IsNullOrWhiteSpace(targetParticipantId))
+                details[TargetParticipantIdKey] = targetParticipantId;
+
             var entry = BuildEntry(tenantId, actor, loggedInUser, request, details);
             var sanitized = entry.SanitizeAndValidate();
-            var sanitizedTarget = ReadRequiredDetail(sanitized.Details ?? [], TargetParticipantIdKey);
 
-            if (!string.IsNullOrWhiteSpace(sanitizedTarget))
+            if (string.IsNullOrWhiteSpace(targetParticipantId))
             {
-                var replayed = await TryReplayRecentAsync(sanitized, sanitizedTarget);
-                if (replayed != null)
-                    return ServiceResult<AuditLogEntry>.Success(replayed);
+                await _auditLogRepository.CreateAsync(sanitized);
+                return ServiceResult<AuditLogEntry>.Success(sanitized, StatusCode.Created);
             }
 
-            await _auditLogRepository.CreateAsync(sanitized);
-            return ServiceResult<AuditLogEntry>.Success(sanitized, StatusCode.Created);
+            return await PersistOrReplayAsync(sanitized, targetParticipantId);
         }
         catch (ValidationException ex)
         {
             _logger.LogWarning("Validation failed while creating audit log entry: {Message}", LogSanitizer.Sanitize(ex.Message));
-            return ServiceResult<AuditLogEntry>.BadRequest($"Validation failed: {ex.Message}");
+            return ServiceResult<AuditLogEntry>.BadRequest("Validation failed while creating the audit log entry");
         }
         catch (MongoException ex)
         {
@@ -217,26 +217,52 @@ public class AdminAuditLogService : IAdminAuditLogService
         }
     }
 
-    private async Task<AuditLogEntry?> TryReplayRecentAsync(AuditLogEntry sanitized, string targetParticipantId)
+    private async Task<ServiceResult<AuditLogEntry>> PersistOrReplayAsync(
+        AuditLogEntry sanitized,
+        string targetParticipantId)
+    {
+        sanitized.IdempotencyKey = BuildIdempotencyKey(
+            sanitized.TenantId, sanitized.Action, sanitized.ParticipantId, targetParticipantId);
+
+        var replayed = await TouchRecentAsync(sanitized, targetParticipantId);
+        if (replayed != null)
+            return ServiceResult<AuditLogEntry>.Success(replayed);
+
+        try
+        {
+            await _auditLogRepository.CreateAsync(sanitized);
+            return ServiceResult<AuditLogEntry>.Success(sanitized, StatusCode.Created);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            var raced = await TouchRecentAsync(sanitized, targetParticipantId);
+            if (raced != null)
+                return ServiceResult<AuditLogEntry>.Success(raced);
+
+            throw;
+        }
+    }
+
+    private Task<AuditLogEntry?> TouchRecentAsync(AuditLogEntry sanitized, string targetParticipantId)
     {
         var cutoff = DateTime.UtcNow.Subtract(ViewAsIdempotencyWindow);
-        var existing = await _auditLogRepository.FindRecentMatchingAsync(
+        return _auditLogRepository.TouchRecentMatchingAsync(
             sanitized.TenantId,
             sanitized.Action,
             sanitized.ParticipantId,
             targetParticipantId,
-            cutoff);
+            cutoff,
+            DateTime.UtcNow);
+    }
 
-        if (existing == null)
-            return null;
-
-        existing.CreatedAt = DateTime.UtcNow;
-        existing.Description = sanitized.Description;
-        existing.ActivationName = sanitized.ActivationName;
-        existing.Details = sanitized.Details;
-        existing.LoggedInUser = sanitized.LoggedInUser;
-        await _auditLogRepository.ReplaceAsync(existing);
-        return existing;
+    internal static string BuildIdempotencyKey(
+        string tenantId,
+        string action,
+        string participantId,
+        string targetParticipantId)
+    {
+        var window = DateTime.UtcNow.Ticks / ViewAsIdempotencyWindow.Ticks;
+        return string.Join('|', tenantId, action, participantId, targetParticipantId, window);
     }
 
     private static AuditLogEntry BuildEntry(
@@ -249,6 +275,7 @@ public class AdminAuditLogService : IAdminAuditLogService
         var activationName = string.IsNullOrWhiteSpace(request.ActivationName)
             ? null
             : request.ActivationName.Trim();
+        var now = DateTime.UtcNow;
 
         return new AuditLogEntry
         {
@@ -260,7 +287,9 @@ public class AdminAuditLogService : IAdminAuditLogService
             Description = request.Description,
             ActivationName = activationName,
             Details = details,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now,
+            LastSeenAt = now,
+            AccessCount = 1
         };
     }
 
@@ -287,7 +316,9 @@ public class AdminAuditLogService : IAdminAuditLogService
 
         foreach (var (key, value) in details)
         {
-            if (string.IsNullOrWhiteSpace(key))
+            if (normalized.Count >= AuditLogEntry.MaxDetailEntries)
+                break;
+            if (string.IsNullOrWhiteSpace(key) || key.Length > AuditLogEntry.MaxDetailKeyLength)
                 continue;
 
             normalized[key] = NormalizeDetailValue(value);

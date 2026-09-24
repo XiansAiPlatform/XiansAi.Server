@@ -40,6 +40,28 @@ public class AuditLogEntryTests
         Assert.Equal("value", nested["Inner"]);
     }
 
+    [Fact]
+    public void SanitizeAndReturn_CapsDetailEntriesAndStripsMarkup()
+    {
+        var details = new Dictionary<string, object?>
+        {
+            ["markup"] = "<script>alert('x')</script>",
+            ["long"] = new string('a', AuditLogEntry.MaxDetailStringLength + 25),
+            [new string('k', AuditLogEntry.MaxDetailKeyLength + 1)] = "skipped-long-key"
+        };
+        for (var i = 0; i < AuditLogEntry.MaxDetailEntries + 5; i++)
+        {
+            details[$"key-{i}"] = i;
+        }
+
+        var sanitized = CreateEntry(details).SanitizeAndReturn();
+
+        Assert.True(sanitized.Details!.Count <= AuditLogEntry.MaxDetailEntries);
+        Assert.Equal("scriptalert(x)/script", sanitized.Details["markup"]);
+        Assert.Equal(AuditLogEntry.MaxDetailStringLength, ((string)sanitized.Details["long"]!).Length);
+        Assert.False(sanitized.Details.Keys.Any(key => key.Length > AuditLogEntry.MaxDetailKeyLength));
+    }
+
     private static AuditLogEntry CreateEntry(Dictionary<string, object?> details) => new()
     {
         TenantId = "test-tenant",

@@ -11,18 +11,17 @@ public interface IAuditLogRepository
     Task CreateAsync(AuditLogEntry entry);
 
     /// <summary>
-    /// Latest row matching tenant, action, actor, and <c>details.targetParticipantId</c>
-    /// created at or after <paramref name="createdAtOrAfter"/>. Used to collapse repeated
-    /// view-as reads into one logical session.
+    /// Atomically records another access on the latest matching row created at or after
+    /// <paramref name="createdAtOrAfter"/>. Leaves CreatedAt, Description, ActivationName,
+    /// Details, and LoggedInUser unchanged.
     /// </summary>
-    Task<AuditLogEntry?> FindRecentMatchingAsync(
+    Task<AuditLogEntry?> TouchRecentMatchingAsync(
         string tenantId,
         string action,
         string participantId,
         string targetParticipantId,
-        DateTime createdAtOrAfter);
-
-    Task ReplaceAsync(AuditLogEntry entry);
+        DateTime createdAtOrAfter,
+        DateTime lastSeenAt);
 
     Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
         string tenantId,
@@ -65,12 +64,13 @@ public class AuditLogRepository : IAuditLogRepository
         InvalidateDistinctCaches(entry.TenantId);
     }
 
-    public async Task<AuditLogEntry?> FindRecentMatchingAsync(
+    public async Task<AuditLogEntry?> TouchRecentMatchingAsync(
         string tenantId,
         string action,
         string participantId,
         string targetParticipantId,
-        DateTime createdAtOrAfter)
+        DateTime createdAtOrAfter,
+        DateTime lastSeenAt)
     {
         var filter = Builders<AuditLogEntry>.Filter.And(
             Builders<AuditLogEntry>.Filter.Eq(x => x.TenantId, tenantId),
@@ -79,15 +79,18 @@ public class AuditLogRepository : IAuditLogRepository
             Builders<AuditLogEntry>.Filter.Eq("details.targetParticipantId", targetParticipantId),
             Builders<AuditLogEntry>.Filter.Gte(x => x.CreatedAt, createdAtOrAfter));
 
-        return await _auditLogs.Find(filter)
-            .SortByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync();
-    }
+        var update = Builders<AuditLogEntry>.Update
+            .Set(x => x.LastSeenAt, lastSeenAt)
+            .Inc(x => x.AccessCount, 1);
 
-    public async Task ReplaceAsync(AuditLogEntry entry)
-    {
-        await _auditLogs.ReplaceOneAsync(x => x.Id == entry.Id, entry);
-        InvalidateDistinctCaches(entry.TenantId);
+        return await _auditLogs.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AuditLogEntry>
+            {
+                ReturnDocument = ReturnDocument.After,
+                Sort = Builders<AuditLogEntry>.Sort.Descending(x => x.CreatedAt)
+            });
     }
 
     public async Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
